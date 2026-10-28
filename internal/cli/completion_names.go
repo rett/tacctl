@@ -55,8 +55,10 @@ var completionArgKinds = map[string]func(inv *invocation, args []string) []strin
 // completionDescKinds answer '_completion-names <kind> --desc' (the shell's
 // Tab listing): one 'name<TAB>description' line per name, the same names,
 // in the same order, behind the same scope filter, as without --desc. A
-// kind that is not here answers --desc with its plain names.
-var completionDescKinds = map[string]func(inv *invocation) []string{
+// kind that is not here answers --desc with its plain names. With
+// --desc-short (the generated scripts, which print one line per name) the
+// description is the vendor and the scope alone, without the address.
+var completionDescKinds = map[string]func(inv *invocation, short bool) []string{
 	KindHosts:          (*invocation).hostDescs,
 	KindDevices:        (*invocation).deviceDescs,
 	KindCiscoDevices:   vendorDescs("cisco"),
@@ -87,8 +89,9 @@ func hostOf(target string) string {
 	return target
 }
 
-// hostDescs are the enrolled hosts as 'name<TAB>linux <host> <scope>'.
-func (inv *invocation) hostDescs() []string {
+// hostDescs are the enrolled hosts as 'name<TAB>linux <host> <scope>' ('linux
+// <scope>' when short).
+func (inv *invocation) hostDescs(short bool) []string {
 	reg, err := hosts.LoadRegistry(inv.app.Paths.LinuxHosts)
 	if err != nil {
 		return nil
@@ -97,7 +100,7 @@ func (inv *invocation) hostDescs() []string {
 	var out []string
 	for _, e := range reg.Entries() {
 		if f.allows(e.Scope) {
-			out = append(out, descLine(e.Name, "linux", hostOf(e.Target), e.Scope))
+			out = append(out, descLine(e.Name, "linux", unless(short, hostOf(e.Target)), e.Scope))
 		}
 	}
 	return out
@@ -108,7 +111,7 @@ func (inv *invocation) hostDescs() []string {
 // entries the caller's scopes allow are named, as for the names. When the
 // registry cannot be joined with the store the names come without a
 // description.
-func (inv *invocation) deviceDescs() []string {
+func (inv *invocation) deviceDescs(short bool) []string {
 	names := inv.deviceNames(nil)
 	_, res, err := inv.deviceLoad()
 	if err != nil {
@@ -117,7 +120,7 @@ func (inv *invocation) deviceDescs() []string {
 	f := inv.callerScopes()
 	by := map[string]string{}
 	for _, e := range res.Visible(devreg.ScopeFilter{Restricted: f.restricted, Scopes: f.scopes}) {
-		by[e.Name] = entryDesc(e)
+		by[e.Name] = entryDesc(e, short)
 	}
 	out := make([]string, 0, len(names))
 	for _, n := range names {
@@ -131,8 +134,8 @@ func (inv *invocation) deviceDescs() []string {
 }
 
 // entryDesc is the 'devices' line of an entry: 'name<TAB><vendor> <address>
-// <scope>'.
-func entryDesc(e devreg.Entry) string {
+// <scope>', or '<vendor> <scope>' when short.
+func entryDesc(e devreg.Entry, short bool) string {
 	where := e.Address
 	if where == "" {
 		where = hostOf(e.Target)
@@ -140,7 +143,15 @@ func entryDesc(e devreg.Entry) string {
 	if where == "" {
 		where = e.Hostname
 	}
-	return descLine(e.Name, e.Vendor, where, e.Scope)
+	return descLine(e.Name, e.Vendor, unless(short, where), e.Scope)
+}
+
+// unless is s, or "" when skip.
+func unless(skip bool, s string) string {
+	if skip {
+		return ""
+	}
+	return s
 }
 
 // vendorEntries are the registry devices of vendor (never an enrolled
@@ -175,11 +186,11 @@ func vendorNames(vendor string) func(inv *invocation, args []string) []string {
 
 // vendorDescs answers a vendor's devices kind with --desc: the lines of
 // the 'devices' kind, for vendorEntries.
-func vendorDescs(vendor string) func(inv *invocation) []string {
-	return func(inv *invocation) []string {
+func vendorDescs(vendor string) func(inv *invocation, short bool) []string {
+	return func(inv *invocation, short bool) []string {
 		var out []string
 		for _, e := range inv.vendorEntries(vendor) {
-			out = append(out, entryDesc(e))
+			out = append(out, entryDesc(e, short))
 		}
 		return out
 	}
@@ -346,9 +357,9 @@ func completionNamesCmd(inv *invocation) *cobra.Command {
 	c.RunE = func(cmd *cobra.Command, args []string) error {
 		kind := arg(args, 0)
 		return inv.native(withPreflight, func(args []string) error {
-			if n := len(args); n == 2 && args[1] == "--desc" {
+			if n := len(args); n == 2 && (args[1] == "--desc" || args[1] == "--desc-short") {
 				if descs, ok := completionDescKinds[kind]; ok {
-					if l := descs(inv); len(l) > 0 {
+					if l := descs(inv, args[1] == "--desc-short"); len(l) > 0 {
 						inv.write(strings.Join(l, "\n") + "\n")
 					}
 					return nil

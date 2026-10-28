@@ -17,7 +17,8 @@
 !                         alone. To remove it later, type these lines in order: aaa server radius
 !                         dynamic-author / no client 192.0.2.7
 ! Consistent: roles, snmp, mgmt-acl. Not planned: netconf, breakglass.
-! Secrets: 2 present on the device, not changed (--secrets pushes them).
+! Secrets: 2 present (the RADIUS server key, the SNMP community); only their presence is checked,
+! --secrets writes them again.
 ! Cleanup (--converge): cleanup comes after this region is pasted and verified: pull the device, then
 ! plan --converge again.
 ! WARNING: the device has no enable secret: with the server unreachable, level 15 is reached only

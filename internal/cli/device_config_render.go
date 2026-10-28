@@ -109,6 +109,10 @@ func (inv *invocation) deviceRenderInput(p renderParams) (devices.Request, devic
 	if p.Vendor != "wti" {
 		d.ACL.Name = inv.readMgmtACLName(p.Vendor, p.Scope)
 	}
+	// The management filter mode is the Junos filter's alone (0.2.20).
+	if p.Vendor == "juniper" {
+		d.ACL.Mode = inv.readMgmtACLMode(p.Scope)
+	}
 	if p.Protocol == devices.RADIUS {
 		if d.Radius, err = inv.deviceRadius(p.Vendor, p.Scope); err != nil {
 			return req, d, err

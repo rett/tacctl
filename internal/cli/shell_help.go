@@ -103,9 +103,11 @@ func applyTopShorts(root *cobra.Command) {
 
 // familyRows are the rows of the usage block of a command family (the
 // block 'help <family>' prints), in the order of the block, by verb: the
-// first row of each verb wins.
-func (inv *invocation) familyRows(family string) []usageRow {
-	f, ok := shellHelpBlocks[family]
+// first row of each verb wins. A row that is a form of a sub-command of the
+// verb ('config forget <name>' under 'device', where config is a node with
+// forget below it) is not the verb's row and is left out.
+func (inv *invocation) familyRows(fam *cobra.Command) []usageRow {
+	f, ok := shellHelpBlocks[fam.Name()]
 	if !ok {
 		return nil
 	}
@@ -114,10 +116,17 @@ func (inv *invocation) familyRows(family string) []usageRow {
 	seen := map[string]bool{}
 	for _, heading := range []string{"Subcommands:", "Usage:"} {
 		for _, r := range usageRows(block, heading) {
-			if !seen[r.Name] && !strings.ContainsAny(r.Name[:1], "-[<(") {
-				seen[r.Name] = true
-				rows = append(rows, r)
+			if seen[r.Name] || strings.ContainsAny(r.Name[:1], "-[<(") {
+				continue
 			}
+			if node := child(fam, r.Name); node != nil && len(node.Commands()) > 0 {
+				w := strings.Fields(reProg.ReplaceAllString(r.Left, ""))
+				if len(w) > 1 && child(node, w[1]) != nil {
+					continue
+				}
+			}
+			seen[r.Name] = true
+			rows = append(rows, r)
 		}
 	}
 	return rows

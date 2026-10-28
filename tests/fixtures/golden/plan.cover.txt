@@ -1,30 +1,30 @@
 # tacctl device config plan: 28 devices
-#   dev-juniper-synthetic-lab           needs change: 1 irregularity fixed by the paste, 3 left (1 ACCESS, 2 MONITORING), 3 extras
-#   dev-juniper-synthetic-lab           needs change: 1 irregularity fixed by the paste, 3 left (1 ACCESS, 2 MONITORING), 3 extras [break-glass held]
-#   dev-juniper-synthetic-lab-engineer  NOT consistent, nothing to paste: 5 irregularities left (2 ACCESS, 2 MONITORING, 1 COSMETIC)
-#   dev-juniper-synthetic-lab-nolo0     needs change: 1 irregularity fixed by the paste, 3 left (1 ACCESS, 2 MONITORING), 3 extras
+#   dev-juniper-synthetic-lab           needs change: 1 irregularity fixed by the paste, 1 left (1 ACCESS), 1 extra
+#   dev-juniper-synthetic-lab           needs change: 1 irregularity fixed by the paste, 1 left (1 ACCESS), 1 extra [break-glass held]
+#   dev-juniper-synthetic-lab-engineer  NOT consistent, nothing to paste: 3 irregularities left (2 ACCESS, 1 COSMETIC)
+#   dev-juniper-synthetic-lab-nolo0     needs change: 1 irregularity fixed by the paste, 1 left (1 ACCESS), 1 extra
 #   dev-juniper-synthetic-inherit       needs change: 14 irregularities fixed by the paste
-#   dev-juniper-lab-superuser           needs change: 9 irregularities fixed by the paste, 3 left (1 ACCESS, 2 MONITORING), 7 extras
-#   dev-juniper-lab-engineer            needs change: 1 irregularity fixed by the paste, 14 left (4 ACCESS, 4 MONITORING, 6 COSMETIC)
-#   dev-cisco-reference-lab             needs change: 3 irregularities fixed by the paste, 3 left (3 MONITORING), 3 extras
-#   dev-cisco-reference-lab             needs change: 3 irregularities fixed by the paste, 3 left (3 MONITORING), 3 extras [break-glass held]
+#   dev-juniper-lab-superuser           needs change: 9 irregularities fixed by the paste, 1 left (1 ACCESS), 2 extras
+#   dev-juniper-lab-engineer            needs change: 1 irregularity fixed by the paste, 12 left (4 ACCESS, 2 MONITORING, 6 COSMETIC)
+#   dev-cisco-reference-lab             needs change: 3 irregularities fixed by the paste
+#   dev-cisco-reference-lab             needs change: 3 irregularities fixed by the paste [break-glass held]
 #   dev-cisco-reference-12x             needs change: 1 irregularity fixed by the paste
 #   dev-cisco-real-12-4-7200            needs change: 3 irregularities fixed by the paste
 #   dev-cisco-reference-bare            needs change: 17 irregularities fixed by the paste, 2 left (2 ACCESS)
 #   dev-cisco-xe-reference-16           needs change: 3 irregularities fixed by the paste, 1 left (1 ACCESS), 1 extra
-#   dev-cisco-same-address-block        needs change: 7 irregularities fixed by the paste, 3 left (3 MONITORING), 3 extras
-#   dev-cisco-same-address-block-nocmd  needs change: 8 irregularities fixed by the paste, 3 left (3 MONITORING), 3 extras
-#   dev-juniper-synthetic-communities   NOT consistent, nothing to paste: 9 irregularities left (1 ACCESS, 8 MONITORING), 12 extras
-#   dev-juniper-synthetic-system        needs change: 1 irregularity fixed by the paste, 3 left (1 ACCESS, 2 MONITORING), 3 extras
-#   dev-juniper-synthetic-system-new    needs change: 11 irregularities fixed by the paste, 3 left (1 ACCESS, 2 MONITORING), 3 extras
-#   dev-cisco-synthetic-block           needs change: 3 irregularities fixed by the paste, 3 left (3 MONITORING), 3 extras
-#   dev-cisco-synthetic-block-new       needs change: 7 irregularities fixed by the paste, 2 left (2 MONITORING), 2 extras
-#   dev-cisco-synthetic-block-stray     needs change: 7 irregularities fixed by the paste, 3 left (3 MONITORING), 3 extras
-#   dev-cisco-synthetic-system          needs change: 3 irregularities fixed by the paste, 8 left (3 MONITORING, 5 COSMETIC), 8 extras
-#   dev-cisco-synthetic-system-new      needs change: 15 irregularities fixed by the paste, 3 left (3 MONITORING), 3 extras
-#   dev-cisco-synthetic-system-stray    needs change: 10 irregularities fixed by the paste, 9 left (3 MONITORING, 6 COSMETIC), 9 extras
-#   dev-cisco-synthetic-vrf             needs change: 3 irregularities fixed by the paste, 16 left (5 MONITORING, 11 COSMETIC), 16 extras
-#   dev-cisco-synthetic-vrf-new         needs change: 16 irregularities fixed by the paste, 3 left (3 MONITORING), 3 extras
-#   dev-cisco-synthetic-vrf-stray       needs change: 12 irregularities fixed by the paste, 19 left (8 MONITORING, 11 COSMETIC), 19 extras
+#   dev-cisco-same-address-block        needs change: 7 irregularities fixed by the paste
+#   dev-cisco-same-address-block-nocmd  needs change: 8 irregularities fixed by the paste
+#   dev-juniper-synthetic-communities   NOT consistent, nothing to paste: 1 irregularity left (1 ACCESS), 1 extra
+#   dev-juniper-synthetic-system        needs change: 1 irregularity fixed by the paste, 1 left (1 ACCESS), 1 extra
+#   dev-juniper-synthetic-system-new    needs change: 11 irregularities fixed by the paste, 1 left (1 ACCESS), 1 extra
+#   dev-cisco-synthetic-block           needs change: 3 irregularities fixed by the paste
+#   dev-cisco-synthetic-block-new       needs change: 7 irregularities fixed by the paste
+#   dev-cisco-synthetic-block-stray     needs change: 7 irregularities fixed by the paste
+#   dev-cisco-synthetic-system          needs change: 3 irregularities fixed by the paste
+#   dev-cisco-synthetic-system-new      needs change: 15 irregularities fixed by the paste
+#   dev-cisco-synthetic-system-stray    needs change: 10 irregularities fixed by the paste
+#   dev-cisco-synthetic-vrf             needs change: 3 irregularities fixed by the paste
+#   dev-cisco-synthetic-vrf-new         needs change: 16 irregularities fixed by the paste
+#   dev-cisco-synthetic-vrf-stray       needs change: 12 irregularities fixed by the paste
 #   dev-not-pulled                      cannot be planned: not pulled
 # 0 consistent, 25 need a change, 2 not consistent with nothing to paste, 1 cannot be planned

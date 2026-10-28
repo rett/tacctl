@@ -153,6 +153,8 @@ func TestDetailLinesOfTheScopeVerbs(t *testing.T) {
 			"scope vendor-attrs scope=x1 from=- to=cisco by=alice"},
 		{"scope mgmt-acl", "", []string{"scope", "mgmt-acl", "x1", "add", "10.1.1.1/32"}, "auth.info",
 			"scope mgmt-acl scope=x1 op=add value=10.1.1.1/32 by=alice"},
+		{"scope mgmt-acl mode", "", []string{"scope", "mgmt-acl", "x1", "mode", "strict"}, "auth.info",
+			"scope mgmt-acl scope=x1 op=mode value=strict by=alice"},
 		{"scope secret set", "", []string{"scope", "secret", "x1", "set", secret}, "auth.info",
 			"scope secret set scope=x1 source=set by=alice"},
 		{"scope secret generate", "", []string{"scope", "secret", "x1", "generate"}, "auth.info",
@@ -170,21 +172,18 @@ func TestDetailLinesOfTheScopeVerbs(t *testing.T) {
 		{"config snmp community", secret + "\n", []string{"config", "snmp", "community", "--stdin"}, "auth.info", "snmp set kind=community by=alice"},
 		{"scope snmp port", "", []string{"scope", "snmp", "lab", "port", "1162"}, "auth.info", "snmp set kind=port scope=lab by=alice"},
 		{"console idle-timeout", "", []string{"console", "idle-timeout", "45"}, "auth.info", "console set key=idle-timeout item=- from=30 to=45 by=alice"},
-		{"console tiers", "", []string{"console", "tiers", "operator", "disable"}, "auth.notice", "console set key=tiers item=operator from=enable to=disable by=alice"},
-		{"console user", "", []string{"console", "user", "bob", "enable"}, "auth.notice", "console set key=user item=bob from=none to=enable by=alice"},
-		{"console system-shell", "", []string{"console", "system-shell", "tiers", "superuser"}, "auth.notice",
-			"console set key=system-shell item=tiers from=superuser to=superuser by=alice"},
+		{"console color", "", []string{"console", "color", "on"}, "auth.info", "console set key=color item=- from=auto to=on by=alice"},
+		{"console list-max", "", []string{"console", "list-max", "-5"}, "auth.info", "console set key=list-max item=- from=40 to=-1 by=alice"},
+		{"console system-shell tier", "", []string{"console", "system-shell", "operator", "enable"}, "auth.notice",
+			"console set key=system-shell item=operator from=disable to=enable by=alice"},
+		{"console system-shell user", "", []string{"console", "system-shell", "user", "bob", "enable"}, "auth.notice",
+			"console set key=system-shell item=user:bob from=none to=enable by=alice"},
+		{"console system-shell user clear", "", []string{"console", "system-shell", "user", "bob", "clear"}, "auth.notice",
+			"console set key=system-shell item=user:bob from=enable to=none by=alice"},
 	} {
 		sb.asAlice(c.stdin, c.args...)
 		if sb.code != 0 {
 			t.Errorf("%s: exit %d %q", c.name, sb.code, sb.stderr())
-			continue
-		}
-		if c.name == "console system-shell" {
-			// The default already names superuser: only the shape of the line.
-			if !hasAuditPrefix(sb.runner, "auth.notice", "console set key=system-shell item=tiers from=") {
-				t.Errorf("%s: %q", c.name, auditLines(sb.runner))
-			}
 			continue
 		}
 		wantDetail(t, c.name, auditCalls(sb.runner), c.prio, c.line)

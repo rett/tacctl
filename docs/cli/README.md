@@ -2,12 +2,12 @@
 
 [Documentation](../README.md)
 
-> For a single-page reference, run `man tacctl` after install.
+> For a single-page reference, run `man tacctl` after install, or `tacctl man` (it needs no `man` command of your own).
 
 ## Pages
 
 - [Conventions and top-level commands](conventions.md): Argument conventions and the top-level commands.
-- [Shell and completion](shell.md): Shell completion, `tacctl shell` and the password cache.
+- [Shell, completion and manual page](shell.md): Shell completion, `tacctl man`, `tacctl shell` and the password cache.
 - [User Commands — `tacctl user`](user.md): Users, passwords and per-user scope membership.
 - [Group Commands — `tacctl group`](group.md): Groups, their privilege level, tier and Junos class.
 - [Config Commands — `tacctl config`](config.md): Configuration settings and the device configuration walkthroughs.

@@ -32,24 +32,24 @@ func TestRollbackTablesMatchTheSchema(t *testing.T) {
 		}
 	}
 	for _, f := range schema {
-		in022, in023, in024, in025, in027, in029, in0210, in0217, in0219 := slices.Contains(Known022, f), slices.Contains(Added023, f), slices.Contains(Added024, f), slices.Contains(Added025, f), slices.Contains(Added027, f), slices.Contains(Added029, f), slices.Contains(Added0210, f), slices.Contains(Added0217, f), slices.Contains(Added0219, f)
+		in022, in023, in024, in025, in027, in029, in0210, in0217, in0219, in0220 := slices.Contains(Known022, f), slices.Contains(Added023, f), slices.Contains(Added024, f), slices.Contains(Added025, f), slices.Contains(Added027, f), slices.Contains(Added029, f), slices.Contains(Added0210, f), slices.Contains(Added0217, f), slices.Contains(Added0219, f), slices.Contains(Added0220, f)
 		n := 0
-		for _, in := range []bool{in022, in023, in024, in025, in027, in029, in0210, in0217, in0219} {
+		for _, in := range []bool{in022, in023, in024, in025, in027, in029, in0210, in0217, in0219, in0220} {
 			if in {
 				n++
 			}
 		}
 		switch {
 		case n > 1:
-			t.Errorf("%+v is in more than one of Known022, Added023, Added024, Added025, Added027, Added029, Added0210, Added0217 and Added0219", f)
+			t.Errorf("%+v is in more than one of Known022, Added023, Added024, Added025, Added027, Added029, Added0210, Added0217, Added0219 and Added0220", f)
 		case n == 0:
-			t.Errorf("schema.go has the key family %+v, which rollback.go lists in none of Known022 (0.2.2 has it), Added023 (0.2.3 added it), Added024 (0.2.4 added it), Added025 (0.2.5 added it), Added027 (0.2.7 added it), Added029 (0.2.9 added it) and Added0210 (0.2.10 added it) and Added0217 (0.2.17 added it): decide, so a rollback knows what to remove", f)
+			t.Errorf("schema.go has the key family %+v, which rollback.go lists in none of Known022 (0.2.2 has it), Added023 (0.2.3 added it), Added024 (0.2.4 added it), Added025 (0.2.5 added it), Added027 (0.2.7 added it), Added029 (0.2.9 added it) and Added0210 (0.2.10 added it), Added0217 (0.2.17 added it), Added0219 (0.2.19 added it) and Added0220 (0.2.20 added it): decide, so a rollback knows what to remove", f)
 		}
 	}
 	for _, tbl := range []struct {
 		name string
 		list []Family
-	}{{"Known022", Known022}, {"Added023", Added023}, {"Added024", Added024}, {"Added025", Added025}, {"Added027", Added027}, {"Added029", Added029}, {"Added0210", Added0210}, {"Added0217", Added0217}, {"Added0219", Added0219}} {
+	}{{"Known022", Known022}, {"Added023", Added023}, {"Added024", Added024}, {"Added025", Added025}, {"Added027", Added027}, {"Added029", Added029}, {"Added0210", Added0210}, {"Added0217", Added0217}, {"Added0219", Added0219}, {"Added0220", Added0220}} {
 		for _, f := range tbl.list {
 			if !slices.Contains(schema, f) {
 				t.Errorf("%s lists %+v, which schema.go no longer has", tbl.name, f)
@@ -214,6 +214,63 @@ func TestAdded0219IsNotInTheSchemaOfTheTag(t *testing.T) {
 	}
 	if got := strings.Join(c.RollbackKeys029(), " "); got != "audit.strict emergency.lockdown.lab.reason" {
 		t.Errorf("RollbackKeys029 = %q", got)
+	}
+}
+
+// Where the 0.2.19 tag is here, Added0220 holds nothing its schema has, so a
+// 0.2.19 binary refuses the mode key; every rollback lists the keys, and
+// 0.2.3 lists them as keys it does not know.
+func TestAdded0220IsNotInTheSchemaOfTheTag(t *testing.T) {
+	want := tagSchemaKeys(t, "0.2.19")
+	for _, f := range Added0220 {
+		if slices.Contains(want, f.Path) {
+			t.Errorf("Added0220 lists %q, which the schema of 0.2.19 has", f.Path)
+		}
+	}
+	if !Added0220Key("scope_mgmt_acl.mode.lab") || Added0220Key("scope_mgmt_acl.permits.lab") || Added0220Key("scope_mgmt_acl.names.juniper.lab") || Added0220Key("scope_mgmt_acl.modes.lab") {
+		t.Error("Added0220Key is not the scope_mgmt_acl.mode family")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tacctl.yaml")
+	if err := os.WriteFile(path, []byte("audit:\n  strict: true\nscope_mgmt_acl:\n  permits:\n    lab: [10.0.0.0/8]\n  mode:\n    lab: strict\n    dmz: strict\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	c := Load(path, DefaultBackends)
+	for name, got := range map[string][]string{"0.2.18": c.RollbackKeys0218(), "0.2.16": c.RollbackKeys0216(), "0.2.9": c.RollbackKeys029(), "0.2.3": c.RollbackKeys023()} {
+		if !slices.Contains(got, "scope_mgmt_acl.mode.lab") || !slices.Contains(got, "scope_mgmt_acl.mode.dmz") || slices.Contains(got, "scope_mgmt_acl.permits.lab") {
+			t.Errorf("RollbackKeys for %s = %v", name, got)
+		}
+	}
+	if got := c.MgmtACLStrictScopes(); !slices.Equal(got, []string{"dmz", "lab"}) {
+		t.Errorf("MgmtACLStrictScopes = %v", got)
+	}
+}
+
+// The mode of a scope: strict only when it is stored, ssh-only for a scope
+// that has none, for the global list and for a word the schema refuses.
+func TestMgmtACLMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tacctl.yaml")
+	if err := os.WriteFile(path, []byte("scope_mgmt_acl:\n  mode:\n    lab: strict\n    dmz: ssh-only\n    odd: lax\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	c := Load(path, DefaultBackends)
+	for scope, want := range map[string]string{"lab": MgmtModeStrict, "dmz": MgmtModeSSHOnly, "odd": MgmtModeSSHOnly, "none": MgmtModeSSHOnly, "": MgmtModeSSHOnly} {
+		if got := c.MgmtACLMode(scope); got != want {
+			t.Errorf("MgmtACLMode(%q) = %q, want %q", scope, got, want)
+		}
+	}
+	s := NewSchema(DefaultBackends)
+	if lines := s.ValidateFile(path); len(lines) != 1 || !strings.HasPrefix(lines[0], "scope_mgmt_acl.mode.odd: must be one of: ssh-only, strict") {
+		t.Errorf("a word that is no mode is not reported: %q", lines)
+	}
+	for value, ok := range map[any]bool{"strict": true, "ssh-only": true, "lax": false, "": false, 1: false} {
+		if got := s.Validate("scope_mgmt_acl.mode.lab", value, false) == ""; got != ok {
+			t.Errorf("Validate(%v) accepted = %v", value, got)
+		}
+	}
+	if s.Validate("scope_mgmt_acl.mode.lab", []any{"strict"}, true) == "" {
+		t.Error("a list is accepted as a mode")
 	}
 }
 

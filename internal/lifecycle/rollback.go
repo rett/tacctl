@@ -6,9 +6,10 @@ package lifecycle
 // one. The command (internal/cli/rollback.go) adds what needs the
 // invocation: the snapshot and the sudoers installer.
 //
-// The targets are 0.2.18 (the release before this one: RollbackTarget0218;
-// rollback0218.go: the tiers drop-in, the lockdown record and a warning for
-// the system blocks that hold 0.2.19's statements), 0.2.17
+// The targets are 0.2.19 (the release before this one: RollbackTarget0219;
+// rollback0219.go: the tiers drop-in and the management filter mode), 0.2.18
+// (RollbackTarget0218; rollback0218.go: the tiers drop-in, the lockdown record
+// and a warning for the system blocks that hold 0.2.19's statements), 0.2.17
 // (RollbackTarget0217, docs/plans/0.2.18-plan.md D273; rollback0217.go: the
 // tiers drop-in), 0.2.16 (RollbackTarget0216, docs/plans/0.2.17-plan.md D257;
 // rollback0216.go), 0.2.9 (RollbackTarget029,
@@ -44,9 +45,27 @@ package lifecycle
 //	                       while one stands (ACLServicesRefusal), in the dry
 //	                       run and --apply alike, with each entry and the
 //	                       command that removes it.
+//	                       The management filter mode of a scope (0.2.20,
+//	                       scope_mgmt_acl.mode.<scope>) is removed for this and
+//	                       every other target (conf.Added0220), and a warning
+//	                       names the scopes that were strict
+//	                       (mgmtModeWarning): the older release renders and
+//	                       plans the ssh-only filter for them. It is a
+//	                       warning, not a refusal, as for the system blocks
+//	                       that hold 0.2.19's statements: nothing here touches
+//	                       a device, the key cannot stay, and the older
+//	                       release's plan is read by a person.
 //	console.yaml           0.2.3's parser rejects settings.password_cache;
 //	                       removed (console.Rollback). 'tiers.engineer' and
 //	                       'settings.space_completion' are 0.2.3's own.
+//	                       Every target's parser rejects the settings 0.2.20
+//	                       added, settings.color, settings.system_shell_users
+//	                       (the system shell of single users),
+//	                       settings.password_cache_users (the users who turned
+//	                       the password cache on) and a list_max of -1 (never
+//	                       ask): removed, and list_max written as 1000
+//	                       (console.Keys0220; console.RollbackSince0220 for
+//	                       the targets that have the cache).
 //	devices.yaml           0.2.3's parser rejects the per-device 'snmp:' map
 //	                       and the keys 'ios_syntax' and 'netconf';
 //	                       removed (devreg.RollbackSNMP,
@@ -72,8 +91,8 @@ package lifecycle
 //	                       tiers file with its own text and its group
 //	                       drop-in is never refreshed: a file
 //	                       that is exactly this release's text, or the one
-//	                       0.2.4 to 0.2.18 wrote (tier.Sudoers0218,
-//	                       Sudoers0217, Sudoers0216,
+//	                       0.2.4 to 0.2.19 wrote (tier.Sudoers0219,
+//	                       Sudoers0218, Sudoers0217, Sudoers0216,
 //	                       Sudoers0214, Sudoers0213, Sudoers028,
 //	                       Sudoers027, GroupSudoers026, GroupSudoers027,
 //	                       GroupSudoers028, GroupSudoers0216), is
@@ -83,9 +102,23 @@ package lifecycle
 //	hosts                  0.2.4 changed nothing on the enrolled Linux hosts;
 //	                       '--hosts' is accepted and says so.
 //
+// A break-glass entry of the Junos root account (0.2.20, root:admin) is one
+// every target's schema accepts: it stays, and every target warns what the
+// older release makes of it (rollback_rootbg.go). The root statements 0.2.20's
+// pull keeps in the breakglass section of a Junos device's stored sections
+// are taken out for every target but 0.2.3, which never opens them
+// (rollback_rootleaves.go).
+//
 // What is not a rollback step: the rendered backend files (nothing 0.2.4
 // changed reaches them), the sshd drop-ins, the tier-pin marker and the host
 // records (all as 0.2.3 has them).
+//
+// Every target is refused while the store has a user name with a period
+// (0.2.20; DottedUsersRefusal): the targets read letters, digits, '_' and '-'
+// only, and fail on every store command with "user '<name>': invalid name".
+// An override under such a name in console.yaml (the console switches of a
+// user, ignored since 0.2.20) is taken out of the file by the plan; the other
+// 'tiers' and 'users' entries stay, for the older release reads them.
 //
 // Every target is refused while a record of devices-config.json says an
 // apply of 'device config apply' is pending or unknown (PendingRefusal): the
@@ -128,22 +161,25 @@ import (
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/paths"
+	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/tier"
 )
 
 // RollbackTarget is the oldest release 'tacctl rollback' prepares for;
 // RollbackTarget029 is the one before the NETCONF service setting,
 // RollbackTarget0216 the one before audit.strict, RollbackTarget0217 the
-// one before the renamed verbs and RollbackTarget0218 the release before this
-// one (0.2.10 to 0.2.16 changed no format 0.2.9 reads strictly, so 0.2.9
-// stays a target; 0.2.18 changed none 0.2.16 or 0.2.17 reads, so 0.2.16 stays
-// one too).
+// one before the renamed verbs, RollbackTarget0218 the one before the
+// emergency lockdown and RollbackTarget0219 the release before this one
+// (0.2.10 to 0.2.16 changed no format 0.2.9 reads strictly, so 0.2.9 stays a
+// target; 0.2.18 changed none 0.2.16 or 0.2.17 reads, so 0.2.16 stays one
+// too).
 const (
 	RollbackTarget     = "0.2.3"
 	RollbackTarget029  = "0.2.9"
 	RollbackTarget0216 = "0.2.16"
 	RollbackTarget0217 = "0.2.17"
 	RollbackTarget0218 = "0.2.18"
+	RollbackTarget0219 = "0.2.19"
 )
 
 // RollbackRefusal is a version the command does not take: Lines say why.
@@ -190,7 +226,7 @@ func LockdownRefusal(ls []conf.Lockdown) *RollbackRefusal {
 		lift = append(lift, "tacctl emergency lockdown "+l.Scope+" disable")
 	}
 	lines = append(lines,
-		"Every older release lacks the record: its next render would put the locked users back into the scope.",
+		"Every release before 0.2.19 lacks the record: its next render would put the locked users back into the scope.",
 		"Lift it first: "+strings.Join(lift, "; ")+". Nothing was changed.")
 	return &RollbackRefusal{Lines: lines}
 }
@@ -227,10 +263,10 @@ func pluralWord(n int, one, many string) string {
 
 var reVersion = regexp.MustCompile(`^v?([0-9]+)\.([0-9]+)\.([0-9]+)$`)
 
-const rollbackUsage = "Usage: tacctl rollback " + RollbackTarget0218 + "|" + RollbackTarget0217 + "|" + RollbackTarget0216 + "|" + RollbackTarget029 + "|" + RollbackTarget + " [--apply] [--yes] [--hosts]"
+const rollbackUsage = "Usage: tacctl rollback " + RollbackTarget0219 + "|" + RollbackTarget0218 + "|" + RollbackTarget0217 + "|" + RollbackTarget0216 + "|" + RollbackTarget029 + "|" + RollbackTarget + " [--apply] [--yes] [--hosts]"
 
-// CheckRollbackVersion is the version a rollback is asked for ("0.2.18",
-// "0.2.17", "0.2.16", "0.2.9", "0.2.3" or any with a "v"), or a *RollbackRefusal: 0.2.4
+// CheckRollbackVersion is the version a rollback is asked for ("0.2.19",
+// "0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3" or any with a "v"), or a *RollbackRefusal: 0.2.4
 // to 0.2.8 and older than 0.2.3 (a release's tool prepares the state for the
 // releases it knows, so the way back is one release at a time), 0.2.10 to
 // 0.2.15, this
@@ -244,11 +280,11 @@ func CheckRollbackVersion(arg string) (string, error) {
 			rollbackUsage}}
 	}
 	v := strings.TrimPrefix(arg, "v")
-	if v == RollbackTarget || v == RollbackTarget029 || v == RollbackTarget0216 || v == RollbackTarget0217 || v == RollbackTarget0218 {
+	if v == RollbackTarget || v == RollbackTarget029 || v == RollbackTarget0216 || v == RollbackTarget0217 || v == RollbackTarget0218 || v == RollbackTarget0219 {
 		return v, nil
 	}
 	n := func(i int) int { x, _ := strconv.Atoi(m[i]); return x }
-	both := "'tacctl rollback' prepares the state for " + RollbackTarget0218 + " (the release before this one), " + RollbackTarget0217 + ", " + RollbackTarget0216 + ", " + RollbackTarget029 + " and " + RollbackTarget + " only"
+	both := "'tacctl rollback' prepares the state for " + RollbackTarget0219 + " (the release before this one), " + RollbackTarget0218 + ", " + RollbackTarget0217 + ", " + RollbackTarget0216 + ", " + RollbackTarget029 + " and " + RollbackTarget + " only"
 	fallback := "The fallback that needs no tool is 'tacctl backup restore' of a snapshot of the time (see 'tacctl backup list')."
 	switch {
 	case n(1) == 0 && n(2) == 2 && n(3) > 3 && n(3) < 9:
@@ -345,8 +381,8 @@ type RollbackInput struct {
 	HasStore bool
 	// WithHosts: the command was given --hosts.
 	WithHosts bool
-	// Target is the release rolled back to: RollbackTarget0218,
-	// RollbackTarget0217, RollbackTarget0216, RollbackTarget029 or RollbackTarget (the zero value is 0.2.3, as
+	// Target is the release rolled back to: RollbackTarget0219,
+	// RollbackTarget0218, RollbackTarget0217, RollbackTarget0216, RollbackTarget029 or RollbackTarget (the zero value is 0.2.3, as
 	// before 0.2.9).
 	Target string
 	// InstallSudoers writes a sudoers drop-in the way the commands do
@@ -383,7 +419,14 @@ type RollbackPlan struct {
 	in      RollbackInput
 	keys    []string
 	console console.RollbackPlan
-	snmpDev []devSNMP
+	// pwStore are the users of the store that carry the required password
+	// change (0.2.20), which every older release refuses (rollback_pwchange.go).
+	pwStore []pwFlag
+	// rootLeaf are the stored pulls whose breakglass section holds the root
+	// statements of 0.2.20's pull (rollback_rootleaves.go): taken out for
+	// the targets that read the records.
+	rootLeaf []rootLeafFile
+	snmpDev  []devSNMP
 	// syntaxDev are the devices with a configuration syntax setting
 	// (D113, 0.2.5): an older parser refuses the key, so it goes like the
 	// SNMP map does.
@@ -428,13 +471,13 @@ type sudoersPlan struct {
 
 // Pending: there is a file to convert.
 func (p *RollbackPlan) Pending() bool {
-	return p.PendingFiles() || len(p.todoSudoers()) > 0
+	return p.PendingFiles() || len(p.todoSudoers()) > 0 || len(p.rootLeaf) > 0
 }
 
 // PendingFiles: there is a file of tacctl's own to convert (the snapshot
-// holds those; the sudoers drop-ins are not in it).
+// holds those; the sudoers drop-ins and the stored pulls are not in it).
 func (p *RollbackPlan) PendingFiles() bool {
-	return len(p.keys) > 0 || p.console.Text != nil || len(p.snmpDev) > 0 || len(p.syntaxDev) > 0 || len(p.netconfDev) > 0 || len(p.syntaxKeyDev) > 0
+	return len(p.keys) > 0 || len(p.pwStore) > 0 || p.console.Text != nil || len(p.snmpDev) > 0 || len(p.syntaxDev) > 0 || len(p.netconfDev) > 0 || len(p.syntaxKeyDev) > 0
 }
 
 func (p *RollbackPlan) todoSudoers() []sudoersPlan {
@@ -488,23 +531,53 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 	if len(pend) > 0 {
 		return nil, PendingRefusal(pend)
 	}
-	// An emergency lockdown (0.2.19) is refused for every target, in the dry
-	// run and --apply alike: no older release has the record, and the next
-	// render under it would put every locked user back into the scope.
-	if ls := in.Conf.Lockdowns(); len(ls) > 0 {
+	// An emergency lockdown (0.2.19) is refused for every target before
+	// 0.2.19, in the dry run and --apply alike: no older release has the
+	// record, and the next render under it would put every locked user back
+	// into the scope. 0.2.19 has the record as this release writes it, and
+	// takes a lockdown over as it stands.
+	if ls := in.Conf.Lockdowns(); len(ls) > 0 && in.Target != RollbackTarget0219 {
 		return nil, LockdownRefusal(ls)
 	}
-	if in.Target == RollbackTarget029 {
-		return planRollback029(p)
+	// A store user name with a period (0.2.20) is refused for every target:
+	// no release a rollback goes to reads it (DottedUsersRefusal). An
+	// override of such a name in console.yaml is taken out by the plan.
+	if inStore, err := DottedUsers(pa, in.HasStore); err != nil {
+		return nil, err
+	} else if len(inStore) > 0 {
+		return nil, DottedUsersRefusal(inStore)
 	}
-	if in.Target == RollbackTarget0216 {
-		return planRollback0216(p)
+	// The required password change (0.2.20) is a key every older release
+	// refuses in the store: it is removed for every target, after the
+	// snapshot, with a warning that names the users who get their device
+	// access back (rollback_pwchange.go).
+	if err := p.planPasswordChange(); err != nil {
+		return nil, err
 	}
-	if in.Target == RollbackTarget0217 {
-		return planRollback0217(p)
-	}
-	if in.Target == RollbackTarget0218 {
-		return planRollback0218(p)
+	// Every older release rejects the console settings 0.2.20 added (the
+	// colour setting, a list_max that never asks): they are taken out for
+	// every target (console.PlanRollbackSince0220; 0.2.3's plan below also
+	// reads the file, for the password cache).
+	targetPlan := map[string]func(*RollbackPlan) (*RollbackPlan, error){
+		RollbackTarget029: planRollback029, RollbackTarget0216: planRollback0216,
+		RollbackTarget0217: planRollback0217, RollbackTarget0218: planRollback0218,
+		RollbackTarget0219: planRollback0219,
+	}[in.Target]
+	if targetPlan != nil {
+		cp, err := console.PlanRollbackSince0220(pa.ConsoleFile)
+		if err != nil {
+			return nil, err
+		}
+		p.console = cp
+		rp, err := targetPlan(p)
+		if err != nil {
+			return nil, err
+		}
+		rp.addConsoleStep()
+		rp.addRootLeaves()
+		rp.Warnings = append(rp.Warnings, rp.rootBreakGlassWarning()...)
+		rp.addPasswordChange()
+		return rp, nil
 	}
 	// A break-glass hold is refused, in the dry run and --apply alike: the
 	// release being left has the record (docs/plans/0.2.5-plan.md D122), and
@@ -561,7 +634,8 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 		p.Steps = append(p.Steps, p.hostsStep())
 	}
 
-	p.Warnings = p.warnings()
+	p.Warnings = append(append(append(p.warnings(), p.mgmtModeWarning(RollbackTarget)...), p.consoleWideningWarning()...), p.rootBreakGlassWarning()...)
+	p.addPasswordChange()
 	p.Notes = p.notes()
 	return p, nil
 }
@@ -607,7 +681,7 @@ func (p *RollbackPlan) confStep() RollbackStep {
 	}
 	var added, other []string
 	for _, k := range p.keys {
-		if conf.Added024Key(k) || conf.Added025Key(k) || conf.Added027Key(k) || conf.Added029Key(k) || conf.Added0210Key(k) || conf.Added0217Key(k) {
+		if conf.Added024Key(k) || conf.Added025Key(k) || conf.Added027Key(k) || conf.Added029Key(k) || conf.Added0210Key(k) || conf.Added0217Key(k) || conf.Added0220Key(k) {
 			added = append(added, k)
 		} else {
 			other = append(other, k)
@@ -631,12 +705,52 @@ func (p *RollbackPlan) consoleStep() RollbackStep {
 	case p.console.Text == nil:
 		s.Lines = []string{"nothing to remove (settings.password_cache is not written)"}
 	default:
-		for _, k := range p.console.Remove {
-			s.Lines = append(s.Lines, "remove "+k)
-		}
-		s.Lines = append(s.Lines, "(0.2.3's parser rejects the key; every other setting is kept, the password cache is off again)")
+		s.Lines = p.consoleChangeLines()
+		s.Lines = append(s.Lines, "(0.2.3's parser rejects them; every other setting is kept"+map[bool]string{true: ", the password cache is off again", false: ""}[p.hasCacheRemoval()]+")")
 	}
 	return s
+}
+
+// consoleChangeLines are the lines of what the plan removes from console.yaml
+// and sets in it.
+func (p *RollbackPlan) consoleChangeLines() []string {
+	var lines []string
+	for _, k := range p.console.Remove {
+		lines = append(lines, "remove "+k)
+	}
+	for _, k := range p.console.Set {
+		lines = append(lines, "set "+k)
+	}
+	return lines
+}
+
+// hasCacheRemoval reports whether the console plan removes the password
+// cache's settings.
+func (p *RollbackPlan) hasCacheRemoval() bool {
+	return slices.ContainsFunc(p.console.Remove, func(r string) bool { return strings.HasPrefix(r, "settings.password_cache: ") })
+}
+
+// addConsoleStep adds the step that takes the settings of 0.2.20 out of
+// console.yaml to the plan of a target after 0.2.3, before the step that
+// lists what is left alone, and takes the file out of that step's list.
+func (p *RollbackPlan) addConsoleStep() {
+	if p.console.Text == nil {
+		return
+	}
+	cf := p.in.Paths.ConsoleFile
+	s := RollbackStep{Title: cf + ": take out the settings " + p.target() + " does not know", Todo: true}
+	s.Lines = append(p.consoleChangeLines(), "("+p.target()+"'s parser rejects what 0.2.20 added to console.yaml (the colour setting, the system shell and the password cache of single users, a list_max of -1) and an override of a user name with a period; everything else is kept)")
+	at := len(p.Steps)
+	for i := range p.Steps {
+		if p.Steps[i].Title == "leave every other file untouched" {
+			at = i
+			if len(p.Steps[i].Lines) > 0 {
+				p.Steps[i].Lines[0] = strings.Replace(p.Steps[i].Lines[0], cf+", ", "", 1)
+			}
+			break
+		}
+	}
+	p.Steps = slices.Insert(p.Steps, at, s)
 }
 
 func (p *RollbackPlan) devicesStep() RollbackStep {
@@ -673,7 +787,7 @@ func (p *RollbackPlan) planSudoers() []sudoersPlan {
 	tiers := sudoersPlan{label: "the per-tier drop-in", file: pt.TierSudoersFile, state: "absent"}
 	if b, err := os.ReadFile(pt.TierSudoersFile); err == nil {
 		switch got := string(b); {
-		case got == tier.Sudoers(), got == tier.Sudoers0218(), got == tier.Sudoers0217(), got == tier.Sudoers0216(), got == tier.Sudoers0214(), got == tier.Sudoers0213(), got == tier.Sudoers028(), got == tier.Sudoers027():
+		case got == tier.Sudoers(), got == tier.Sudoers0219(), got == tier.Sudoers0218(), got == tier.Sudoers0217(), got == tier.Sudoers0216(), got == tier.Sudoers0214(), got == tier.Sudoers0213(), got == tier.Sudoers028(), got == tier.Sudoers027():
 			tiers.state, tiers.body = "rewrite", tier.Sudoers023()
 		case got == tier.Sudoers023():
 			tiers.state = "done"
@@ -884,8 +998,10 @@ func (p *RollbackPlan) warnings() []RollbackWarning {
 			lines = append(lines, "  "+d.name+": "+d.what)
 		}
 	}
-	if len(p.console.Remove) > 0 {
-		lines = append(lines, "The password cache's settings of console.yaml are removed ("+strings.TrimPrefix(p.console.Remove[0], "settings.password_cache: ")+"): 0.2.3 has no cache, every login is asked for its password.")
+	for _, r := range p.console.Remove {
+		if w, ok := strings.CutPrefix(r, "settings.password_cache: "); ok {
+			lines = append(lines, "The password cache's settings of console.yaml are removed ("+w+"): 0.2.3 has no cache, every login is asked for its password.")
+		}
 	}
 	if len(lines) > 0 {
 		lines = append(lines, "Everything removed from tacctl.yaml, console.yaml and devices.yaml stays in the snapshot --apply takes first (tacctl backup list); 'tacctl backup restore' of it, with 0.2.5, brings it back.")
@@ -911,9 +1027,9 @@ func (p *RollbackPlan) notes() []string {
 
 // --- apply ---------------------------------------------------------------------
 
-// ApplyRollback converts the files of the plan: tacctl.yaml, console.yaml
-// and devices.yaml, in this order, each in one write, then the sudoers
-// drop-ins. The snapshot is the caller's, taken before. It returns one line
+// ApplyRollback converts the files of the plan: tacctl.yaml, the store,
+// console.yaml and devices.yaml, in this order, each in one write, the stored
+// pulls, then the sudoers drop-ins. The snapshot is the caller's, taken before. It returns one line
 // for each file it changed. An error leaves the files already converted
 // converted; running the same command again finishes (every step is
 // idempotent). A drop-in that cannot be rewritten is not an error: it is
@@ -928,13 +1044,26 @@ func ApplyRollback(p *RollbackPlan) ([]string, error) {
 		}
 		done = append(done, fmt.Sprintf("%s: removed %d %s", pt.Overrides, len(p.keys), plural(len(p.keys), "key", "keys")))
 	}
+	if len(p.pwStore) > 0 {
+		removed, _, err := store.RollbackPasswordChange(pt.StoreFile, nil)
+		if err != nil {
+			return done, fmt.Errorf("%s: %w", pt.StoreFile, err)
+		}
+		if len(removed) > 0 {
+			done = append(done, fmt.Sprintf("%s: removed the required password change of %d %s", pt.StoreFile, len(removed), plural(len(removed), "user", "users")))
+		}
+	}
 	if p.console.Text != nil {
-		changed, err := console.Rollback(pt.ConsoleFile, nil)
+		write := console.RollbackSince0220
+		if p.target() == RollbackTarget {
+			write = console.Rollback
+		}
+		changed, err := write(pt.ConsoleFile, nil)
 		if err != nil {
 			return done, err
 		}
 		if changed {
-			done = append(done, pt.ConsoleFile+": removed settings.password_cache")
+			done = append(done, pt.ConsoleFile+": "+p.console.Summary())
 		}
 	}
 	if len(p.snmpDev) > 0 {
@@ -973,6 +1102,15 @@ func ApplyRollback(p *RollbackPlan) ([]string, error) {
 		}
 		if len(names) > 0 {
 			done = append(done, fmt.Sprintf("%s: wrote the configuration syntax of %d %s under %s", pt.DevicesFile, len(names), plural(len(names), "device", "devices"), devreg.OldSyntaxKey))
+		}
+	}
+	if len(p.rootLeaf) > 0 {
+		n, err := p.applyRootLeaves()
+		if err != nil {
+			return done, err
+		}
+		if n > 0 {
+			done = append(done, fmt.Sprintf("%s: took the Junos root statements out of %d stored %s", pt.ConfigDir, n, plural(n, "pull", "pulls")))
 		}
 	}
 	p.notWritten = nil

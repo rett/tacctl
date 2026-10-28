@@ -198,6 +198,21 @@ var engineerRowCases = map[string]engineerRow{
 		refusedCase("does not exist", "scope snmp prod show --reveal"),
 		refusedCase("does not exist", "scope snmp prod community --stdin"),
 		refusedCase("does not exist", "scope snmp prod clear"))},
+	// The management filter mode of a scope of their own is theirs to read
+	// (0.2.20); the setter, the permit list and the names are the
+	// superuser's, and another scope does not exist.
+	"scope mgmt-acl": {cases: append(cases("scope mgmt-acl lab mode"),
+		refusedCase("The engineer tier reads the management filter mode of a scope", "scope mgmt-acl lab mode strict"),
+		refusedCase("The engineer tier reads the management filter mode of a scope", "scope mgmt-acl lab mode ssh-only"),
+		refusedCase("The engineer tier reads the management filter mode of a scope", "scope mgmt-acl lab list"),
+		refusedCase("The engineer tier reads the management filter mode of a scope", "scope mgmt-acl lab add 10.1.0.0/16"),
+		refusedCase("The engineer tier reads the management filter mode of a scope", "scope mgmt-acl lab remove 10.1.0.0/16"),
+		refusedCase("The engineer tier reads the management filter mode of a scope", "scope mgmt-acl lab clear"),
+		refusedCase("The engineer tier reads the management filter mode of a scope", "scope mgmt-acl lab cisco-name X"),
+		refusedCase("The engineer tier reads the management filter mode of a scope", "scope mgmt-acl lab juniper-name X"),
+		refusedCase("does not exist", "scope mgmt-acl prod mode"),
+		refusedCase("does not exist", "scope mgmt-acl prod mode strict"),
+		refusedCase("does not exist", "scope mgmt-acl prod add 10.2.0.0/16"))},
 	// The same for the devices of their own scopes (D72): they read, and
 	// every setter and clear is the superuser's; another scope's device, and
 	// an enrolled host, are not a device of theirs to read.

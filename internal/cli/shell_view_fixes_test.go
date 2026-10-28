@@ -178,7 +178,7 @@ func TestSetViewBatchWaitsForTheAnswer(t *testing.T) {
 func TestViewExplainHiddenFamily(t *testing.T) {
 	explain := func(view tier.Tier, w ...string) (string, bool) {
 		inv, root := viewInv(t, view)
-		return inv.shellExplain(root)(w)
+		return inv.plainExplain(root)(w)
 	}
 	for _, c := range []struct {
 		view   tier.Tier
@@ -291,7 +291,7 @@ func TestViewNoneListsNoVerb(t *testing.T) {
 // alternative as an argument.
 func TestExplainNoAlternativePlaceholder(t *testing.T) {
 	inv, root := viewInv(t, tier.Superuser)
-	got, ok := inv.shellExplain(root)([]string{"scope", "staging"})
+	got, ok := inv.plainExplain(root)([]string{"scope", "staging"})
 	if !ok || strings.Contains(got, "Next: [") || strings.Contains(got, "[list,") {
 		t.Errorf("scope staging ?: %q (%v)", got, ok)
 	}

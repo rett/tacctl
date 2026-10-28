@@ -378,19 +378,16 @@ func TestPtyQuestionMark(t *testing.T) {
 	}
 }
 
-// With Styled the label of each row of the '?' list is bold; the padding,
-// the descriptions and everything around the list are the plain bytes, and
-// Tab's columns stay plain.
+// With Styled the words of the '?' list and of Tab's columns are in the
+// palette; the padding, the descriptions and everything around the lists are
+// the plain bytes.
 func TestPtyQuestionMarkStyled(t *testing.T) {
 	p := startShell(t, "-styled")
 	p.send("user ?")
-	p.expect(`tacctl> user \r\nPossible completions:\r\n  \x1b\[1mlist\x1b\[0m  List all users\r\n  \x1b\[1mshow\x1b\[0m  Show a user\r\n`)
+	p.expect(`tacctl> user \r\nPossible completions:\r\n  \x1b\[36mlist\x1b\[0m  List all users\r\n  \x1b\[36mshow\x1b\[0m  Show a user\r\n`)
 	p.expect(`tacctl> user `)
 	p.send("\x15user \t\t")
-	p.expect(`\r\nlist  show\r\n`)
-	if out := p.Output(); strings.Contains(out, "\x1b[1mlist\x1b[0m  show") {
-		t.Errorf("the Tab columns are styled: %q", out)
-	}
+	p.expect(`\r\n\x1b\[36mlist\x1b\[0m  \x1b\[36mshow\x1b\[0m\r\n`)
 	p.send("\x15exit\r")
 	p.exits(0)
 	var plain bytes.Buffer
@@ -402,12 +399,12 @@ func TestPtyQuestionMarkStyled(t *testing.T) {
 	}
 }
 
-// A styled list that pages: the rows carry the bold labels and the more
-// prompt row is plain.
+// A styled list that pages: the rows carry the palette and the more prompt
+// row is plain.
 func TestPtyPagerStyled(t *testing.T) {
 	p := startShell(t, "-listmax", "-1", "-styled")
 	p.send("many ?")
-	p.expect(`Possible completions:\r\n  \x1b\[1mn01\x1b\[0m  device\r\n(?s:.*)  \x1b\[1mn22\x1b\[0m  device\r\n` + regexp.QuoteMeta(morePrompt))
+	p.expect(`Possible completions:\r\n  \x1b\[36mn01\x1b\[0m  device\r\n(?s:.*)  \x1b\[36mn22\x1b\[0m  device\r\n` + regexp.QuoteMeta(morePrompt))
 	if out := p.Output(); strings.Contains(out, "\x1b[1m"+morePrompt) || strings.Contains(out, "\x1b[0m"+morePrompt) {
 		t.Errorf("the more prompt is styled: %q", out)
 	}

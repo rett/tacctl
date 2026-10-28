@@ -39,7 +39,8 @@ re-executes itself under
 automatically when invoked by a non-root user.
 .BR "tacctl hash" ,
 .BR "tacctl version" ,
-.B tacctl completion
+.BR "tacctl completion" ,
+.B tacctl man
 and
 .B tacctl shell
 are deliberate exceptions: they run as the invoking user.
@@ -212,8 +213,9 @@ The tacctl repo branch to install or upgrade from (default: the current one).
 Prepare tacctl's state for the release before this one; run on the newer
 release, before the older one is installed. A dry run by default: it lists
 every step and every warning and changes nothing. The versions it takes are
-.B 0.2.18
+.B 0.2.19
 (the release before this one),
+.BR 0.2.18 ,
 .BR 0.2.17 ,
 .BR 0.2.16 ,
 .B 0.2.9
@@ -226,12 +228,12 @@ and older are refused, with the way there (one release at a time: this
 rollback,
 .BR "tacctl upgrade \-\-branch 0.2.9" ,
 then the rollback of that release), and so is any other word (0.2.10 to
-0.2.15 included: the refusal names the five targets). Every target is
-refused while an emergency lockdown locks a group (the refusal lists each one
-and
+0.2.15 included: the refusal names the six targets). Every target but 0.2.19
+is refused while an emergency lockdown locks a group (the refusal lists each
+one and
 .B "emergency lockdown <scope> disable"
-lifts it; an older release would render the locked users back into the scope)
-and while a device's record says a confirmed commit of
+lifts it; a release before 0.2.19 would render the locked users back into the
+scope; 0.2.19 has the record and keeps it), and every target is refused while a device's record says a confirmed commit of
 .B "device config apply"
 is
 .B pending
@@ -241,12 +243,78 @@ or
 .B "device config apply <name> \-\-check"
 or
 .B "device config forget <name>"
-settles it).
+settles it) and while the store has a user whose name has a period (no
+target reads such a name: the refusal lists each, with
+.B "user rename <name> <new\-name>"
+as the way out, and changes nothing; an override under such a name in the
+ignored
+.B users
+mapping of console.yaml does not stop it, the rollback takes that entry out).
+The
+.B tiers
+and
+.B users
+mappings of console.yaml that this release ignores stay in the file, and the
+release a rollback goes to reads them as it always did: a user or a tier
+switched off there gets a plain shell again, and the password cache is on again
+for every user of a tier that is allowed it, so the plan lists each user who
+would gain a system shell or the cache, with the reason, as a warning that
+.B \-\-apply
+refuses without
+.BR \-\-yes .
+Every target also takes out of
+.I console.yaml
+the settings of 0.2.20 that no older release reads:
+.BR settings.color ,
+.B settings.system_shell_users
+(the system shell of single users; the tiers' list
+.B settings.system_shell_tiers
+stays) and
+.B settings.password_cache_users
+(the users who turned the password cache on; the cache's tiers and lifetimes in
+.B settings.password_cache
+stay, for the releases that have them) are removed and a
+.B settings.list_max
+of \-1 (never ask) is written as 1000, with every other setting kept and a
+snapshot first.
+.IP
+.B "rollback 0.2.19"
+.B \-\-apply
+rewrites the per\-tier sudoers drop\-in, when it is exactly the text this
+release writes, with the one 0.2.19 writes (after
+.BR "visudo \-cf" ):
+the engineer's rule of
+.B "scope mgmt\-acl * mode"
+and the operator's rules of
+.B "console system\-shell"
+and
+.B "console password\-cache"
+are taken out. An edited drop\-in is left (0.2.19's upgrade rewrites it). The
+emergency lockdown record, a lockdown that stands included, is 0.2.19's own and
+stays. Besides what every target removes (below), nothing is converted:
+.IR devices.yaml ,
+the group drop\-in, the blocks, the apply state, the host registry and the
+hosts are in formats 0.2.19 reads.
+.B \-\-hosts
+is accepted and does nothing. The command ends with the next step,
+.BR "tacctl upgrade \-\-branch 0.2.19" ,
+and names the verbs that write a key 0.2.19 refuses until then
+.RB ( "scope mgmt\-acl" " ... " "mode strict" ,
+.B "user add"
+and
+.BR "user passwd" ,
+which require a password change by default,
+.BR "user require\-password\-change" ,
+.BR "console color" ,
+.BR "console list\-max" ,
+.B "console system\-shell user"
+and
+.BR "console password\-cache on" ).
 .IP
 .B "rollback 0.2.18"
 .B \-\-apply
 rewrites the per\-tier sudoers drop\-in, when it is exactly the text this
-release writes, with the one 0.2.18 writes (after
+release writes (or the one 0.2.19 wrote), with the one 0.2.18 writes (after
 .BR "visudo \-cf" ):
 the engineer's rules of
 .BR "device config apply" ,
@@ -271,7 +339,7 @@ the group drop\-in and the hosts are in formats 0.2.18 reads.
 is accepted and does nothing. The command ends with the next step,
 .BR "tacctl upgrade \-\-branch 0.2.18" .
 .IP
-Every target but 0.2.3 lists in a warning (and
+Every target but 0.2.19 and 0.2.3 lists in a warning (and
 .B \-\-apply
 refuses without
 .BR \-\-yes )
@@ -287,10 +355,91 @@ An older release lints such a block as an error and plans nothing for the
 devices it reaches. The block files are not rewritten; take the statements
 out before the upgrade.
 .IP
+Every target removes the management filter mode of the scopes
+.RB ( scope_mgmt_acl.mode.\fIscope\fR ,
+only
+.B strict
+is stored; 0.2.20) from
+.I tacctl.yaml
+after a snapshot, because the older schema refuses the key, and lists the
+scopes that were strict in a warning (and
+.B \-\-apply
+refuses without
+.BR \-\-yes ):
+the older release renders and plans the
+.B ssh\-only
+filter for them, which ends in a
+.B default\-accept
+term, so its
+.B "device config plan"
+or
+.B "device config apply"
+would put that filter back on a device that holds the strict one, without
+saying so. The rollback is not refused, and no device is contacted.
+.IP
+Every target removes the required password change
+.RB ( password_change_required
+of a user in
+.IR store.yaml ,
+written only for a flagged user; 0.2.20) after a snapshot, because the older
+schema refuses the key. The dry run lists the flagged users, and
+warns, with
+.B \-\-apply
+refusing without
+.BR \-\-yes ,
+of those who are not superusers (the flag never binds a superuser): the older
+release renders them into every scope of theirs again, so they can log in to
+the devices with the password an administrator set or knew, the one they were
+to change. The rollback renders nothing, so the running TACACS+ and RADIUS
+files keep them off the devices until the older release renders.
+.IP
+Every target keeps a break\-glass entry of the Junos root account
+.RB ( root:admin
+in
+.BR breakglass_scope.\fIscope\fB.users ;
+0.2.20), which the older schema accepts, and names the scopes that record it
+in a warning (and
+.B \-\-apply
+refuses without
+.BR \-\-yes ):
+the older release takes
+.B root
+for a local user like any other, so its Junos walkthrough renders a commented
+.B "set system login user root"
+line, which Junos refuses, in place of
+.B "system root\-authentication"
+and
+.BR "system services ssh root\-login allow" ,
+its Cisco and WTI walkthroughs render a root account, and (but for 0.2.3) its
+.B "device config pull"
+and
+.B diff
+expect the login line on each Junos device of the scope, whose
+.B breakglass
+section reads
+.BR differs .
+.B "tacctl scope breakglass <scope> remove root"
+takes the entry out.
+.IP
+Every target but 0.2.3 takes the statements of root's access
+.RB ( "system root\-authentication" ,
+the leaf's name only, and
+.BR "system services ssh root\-login" )
+out of the
+.B breakglass
+section of the stored pulls
+.RI ( /var/lib/tacctl/device\-config/ name .yaml
+and the plain view beside it; every other line stays). This release's pull
+keeps them for every Junos device, and an older release takes them for extra
+statements of the section, which would read
+.B differs
+until its next pull. The files are derived and not in the snapshot; this
+release, if it stays, reads the two as missing until its next pull.
+.IP
 .B "rollback 0.2.17"
 .B \-\-apply
 rewrites the per\-tier sudoers drop\-in, when it is exactly the text this
-release writes (or the one 0.2.18 wrote), with the one 0.2.17 writes (after
+release writes (or the one 0.2.19 or 0.2.18 wrote), with the one 0.2.17 writes (after
 .BR "visudo \-cf" ):
 the rules of
 .BR "device ios\-syntax" ,
@@ -532,7 +681,10 @@ Answer yes to the confirmations.
 .TP
 .B status
 Show service health, authentication statistics, recent errors, and
-password-age warnings. With more than one backend enabled each backend has a
+password-age warnings, and a line
+.B "Password change"
+with the number of users who must change the password when there are any.
+With more than one backend enabled each backend has a
 labelled section
 .RB ( "== Backend: <id> ..." )
 holding its service, config, accounting log, drift and activity lines; the
@@ -572,10 +724,17 @@ Also the commit, build date, Go version and whether test knobs are on.
 .\" END GENERATED: command version
 .TP
 .B completion bash|zsh|fish
-Print the completion script of that shell on stdout. The script asks
+Print the completion script of that shell on stdout (the word is completed in
+the scripts and in the shell). The script asks
 .B "tacctl __complete"
-for the words. Live names
-(users, groups, scopes, backends, listeners, backups) come from
+for the words. The bash script asks for the words alone (a second Tab lists
+them in columns, as the shell does); the zsh and fish scripts ask for a
+description of each sub-command, each flag (after the value it takes) and each
+verb word after a name (the six words of
+.BR "scope mgmt-acl lab" ),
+each at most 72 characters and ending in \(lq...\(rq when cut. Live names
+(users, groups, scopes, backends, listeners, backups; a device or host with
+its vendor and scope) come from
 .BR "sudo -n tacctl" ,
 which needs root or the NOPASSWD rule of
 .BR "config sudoers install" ;
@@ -590,11 +749,186 @@ before
 .BR compinit )
 or to
 .IR ~/.config/fish/completions/tacctl.fish .
+The bash script ends with a key binding: on a line that starts with
+.BR tacctl ,
+the question mark prints the help of the words before the cursor
+.RB ( "tacctl user add ?"
+prints what
+.B "tacctl user add \-\-help"
+prints, in colour on a terminal) and leaves the command line as it is; the word
+being typed is not part of the question. The key runs one thing, the hidden
+.BR "tacctl __help \-\- " words ,
+which prints the help and runs nothing else: the words are plain words to it,
+so a flag that waits for its value, a
+.B \-\-
+earlier on the line or a hidden command is never run as a command or given
+.BR \-\-help .
+The key types a literal question mark instead when the line does not start with
+.BR tacctl ,
+has a second line before the cursor, or has before the cursor anything but
+ASCII letters, digits, spaces, tabs and
+.BR "_ @ % + = : , . / \-"
+(so a quote, a backslash,
+.BR "$ * ~ ! # [ {" ,
+a shell operator, a carriage return or a non-ASCII character anywhere before the
+cursor;
+.B "ls *.?"
+works). On a line that does start with
+.B tacctl
+and has only such words, the key always asks for help, even inside a word
+.RB ( "tacctl device description sw1 why?"
+prints help); quote the character first (Ctrl-V, then
+.BR ? )
+to type it there.
+.B TACCTL_HELP_KEY
+read when the script is sourced changes the key: unset or
+.B ?
+is the question mark, a readline key spelling such as
+.B \\eh
+is that key instead, and
+.B off
+binds nothing. Sourcing the script replaces whatever the key was bound to and
+does not restore it, and
+.B off
+only keeps the script from binding: set before the script is sourced, it unbinds
+nothing that an earlier source bound. The system-wide script is sourced before
+.IR ~/.bashrc :
+set the variable there and source the script again.
+.\" BEGIN GENERATED: command completion
+.RS
+.PP
+Requires: \fBreadonly\fR.
+.RE
+.\" END GENERATED: command completion
+.TP
+.BI "man " "[ \-\-path ] [ " word... " ]"
+Open this manual page in a pager and return when the pager is quit. It runs as
+the invoking user, with no
+.BR sudo (8)
+and no tier needed, so every tier can run it, in the shell and in the login
+console, where there is no
+.BR man (1)
+of one's own. With words it opens the page at that place: the heading of a
+section or subsection
+.RB ( "man tiers" ,
+.BR "man audit log" ),
+a family
+.RB ( "man user"
+is \(lqUser management\(rq), or a command
+.RB ( "man device config plan"
+is the entry of that command). The words are matched without regard to case
+and choose among the headings and entries of the page only; they are never
+given to
+.BR man (1)
+or to the pager. The place is reached with searches in the pager (the heading
+or the first words of the entry, made after the searches of the entries just
+before it, so that a sentence earlier in the page that begins with the same word
+is not found; a search cannot name the end of a line), so
+.B n
+finds the next match and
+.B q
+quits; the page itself has no anchors. A word that names nothing opens the page
+at the top and says so on standard error. On a stream that is not a terminal the
+page is written whole as plain text, without a pager and without bold or
+underline sequences (also when groff renders it), and the words do nothing.
+The page shown is always the copy the binary carries, which is the page of the
+version that runs, whether or not
+.B install
+and
+.B upgrade
+placed one.
+.B \-\-path
+shows nothing: it prints
+.B built into tacctl
+and, when the installed file
+(normally
+.IR /usr/share/man/man1/tacctl.1.gz )
+exists, a second line
+.RB \(lq "installed: " \fIpath\fR\(rq
+saying whether it is identical to the built-in page or differs from it.
+The page is rendered by
+.B man \-l
+(given the page on standard input, the only page it can show), else by
+.BR groff (1)
+and shown by
+.BR less (1);
+with neither, the command names the page and what to install, and exits 1.
+.IP
+The pager cannot start a program. It is the
+.B less
+found in
+.IR /usr/local/bin:/usr/bin:/bin
+(the
+.B PATH
+the programs get, not the caller's),
+chosen by tacctl and started with
+.B LESSSECURE=1
+(no shell escape
+.RB ( ! ),
+no editor
+.RB ( v ),
+no pipe
+.RB ( | ),
+no
+.B s
+or
+.BR :e ;
+they answer \(lqCommand not available\(rq) and a
+.B LESS
+of tacctl's own. The environment of
+.BR man (1),
+.BR groff (1)
+and
+.BR less (1)
+is made from the terminal and the locale of the caller
+.RB ( TERM ,
+.BR LANG ,
+.BR LC_* ;
+a locale named by a path is dropped)
+and a fixed
+.BR PATH :
+a
+.BR PAGER ,
+.BR MANPAGER ,
+.BR LESS ,
+.BR LESSOPEN ,
+.BR LESSCLOSE ,
+.BR MANPATH ,
+.BR MANOPT ,
+.B MAN_*
+or
+.B GROFF_*
+of the caller is ignored, and no
+.I ~/.lesskey
+or
+.I ~/.manpath
+is read. Without
+.B less
+the page is printed whole, with a line on standard error saying so:
+.BR more (1)
+is not used, because its shell escape cannot be switched off.
+.\" BEGIN GENERATED: command man
+.RS
+.PP
+Requires: \fBreadonly\fR.
+.PP
+Options:
+.TP
+\fB\-\-path\fR
+Print which manual page is shown and where one is installed.
+.RE
+.\" END GENERATED: command man
 .SS User management \fB(tacctl user)\fR
 .TP
 .B user list
 List all users with name, Linux UID (\- when none is assigned), group, status,
-password change date and scopes.
+password change date and scopes. A user who must change the password has
+.B (change required)
+after the date; one who cannot log in to this server to do it has
+.B (flagged, cannot log in to change it)
+and one whom the devices of a scope shared with the server still accept
+.B (flagged, devices in a scope shared with the server still accept the password)
+instead.
 .\" BEGIN GENERATED: command user list
 .RS
 .PP
@@ -604,7 +938,10 @@ Requires: \fBreadonly\fR.
 .TP
 .BI "user show " name
 Show detailed user info: group, Linux UID, status, password change date and age,
-last login (the most recent of every enabled backend: the TACACS+
+a line
+.B Password change
+for a user who must change the password (or who is flagged and is a superuser,
+which the flag never binds; with the reason when the user cannot log in to change it), last login (the most recent of every enabled backend: the TACACS+
 accounting log, the RADIUS auth log), Cisco privilege level, Juniper
 class, and a hash fingerprint. Read-only: does not prompt for the
 password (unlike
@@ -616,13 +953,27 @@ Requires: \fBreadonly\fR.
 .RE
 .\" END GENERATED: command user show
 .TP
-.BI "user add " "name group " [ "--hash " hash ] [ "--scopes " name[,name...] ]
+.BI "user add " "name group " [ "--hash " hash ] [ "--scopes " name[,name...] ] [ --no\-change\-required ]
 Add a user. The name is lower case (lower\-case letters, digits,
-.BR _ " and " \- ):
+.BR _ ", " \- " and " .\& ):
 a name with upper case is refused with the lower\-case spelling to use, and a
 user that exists with upper case keeps working as it is
 .RB ( "tacctl config validate"
-lists it). Prompts for the password with confirmation. If
+lists it). A period may join two parts of a name
+.RB ( alice.smith ):
+it is never the first or the last character and never follows another period
+.RB ( .alice ", " alice. ", " alice..smith ", " . " and " ..
+are refused). A name with a period is no Linux account name: a host sync skips
+it with a warning, so the user has no account on enrolled hosts and logs in at
+devices only, and
+.B user rename
+and
+.B config linux uid
+refuse to give one to it. A release before 0.2.20 refuses a store that has such
+a name, so
+.B "tacctl rollback"
+is refused while one stands: rename those users first.
+Prompts for the password with confirmation. If
 .BI --hash " hash"
 is given, the bcrypt hash is used directly and no password is prompted
 (use this when users self-generate a hash; see
@@ -640,6 +991,16 @@ Without
 .BR --scopes ,
 the user lands in the current default scope; on fresh installs that is
 .BR lab .
+.PP
+A new user must change the password at the first login to this server
+(see
+.BR "user require\-password\-change" ):
+until then no device accepts the user.
+.B \-\-no\-change\-required
+skips the requirement. It is not set, and the command says why, for a
+superuser (never held to it) and for a user with no login on this server (the
+server is not enrolled, the user is not in its scope, or its name is no Linux
+account name), who could never change the password.
 .PP
 Reserved usernames
 .RB ( root
@@ -660,11 +1021,24 @@ Add with pre\-generated bcrypt hash (\- reads it from stdin).
 .TP
 \fB\-\-scopes\fR \fI<s>[,s...]\fR
 Grant specific scopes at creation.
+.TP
+\fB\-\-no\-change\-required\fR
+Do not require the user to change the password at the first login to this server. Without it a new user must change it first, and no device accepts the user until then (a superuser, and a user with no login on this server, never must).
 .RE
 .\" END GENERATED: command user add
 .TP
 .BI "user remove " name
-Remove a user after confirmation.
+Remove a user after confirmation. The user's
+.B "console system\-shell user"
+and
+.B "console password\-cache"
+settings, if any, are dropped from
+.I console.yaml
+and the command says so. It is refused, with nothing changed, while
+.I console.yaml
+cannot be read, so that no setting is left for the next user of the name
+.RB ( "user add" " and " "user rename"
+do the same).
 .\" BEGIN GENERATED: command user remove
 .RS
 .PP
@@ -678,7 +1052,9 @@ user whose name matches the login that invoked
 .BR sudo (8).
 The current password must verify before the new one is accepted, and the
 new one is held to the same strength policy as
-.BR "user passwd" .
+.BR "user passwd" ,
+and must differ from the current one. It lifts a password change that was
+required of the caller.
 .\" BEGIN GENERATED: command passwd
 .RS
 .PP
@@ -686,7 +1062,7 @@ Requires: \fBreadonly\fR.
 .RE
 .\" END GENERATED: command passwd
 .TP
-.BI "user passwd " "name " [ "--hash " hash ]
+.BI "user passwd " "name " [ "--hash " hash ] [ --no\-change\-required ]
 Change a user's password. Prompts for the new password with
 confirmation. If
 .BI --hash " hash"
@@ -694,6 +1070,19 @@ is given, the bcrypt hash is used directly and no password is prompted. A lone
 .B \-
 as the hash reads it from one line of standard input, as for
 .BR "user add" .
+An administrator's reset requires a password change of the user too, as a new
+user does (see
+.BR "user require\-password\-change" ),
+unless
+.B \-\-no\-change\-required
+is given, which lifts a requirement that stands, or the user is a superuser
+(whom the requirement never binds, so one that stands is lifted). A reset that
+cannot require a change for another reason (the user has no login on this
+server, the host registry cannot be read) does not lift one that stands: the
+user stays flagged, and the command says so and why; for a user who was not
+flagged it says the change could not be required. The user's own
+.B passwd
+is not a reset: it lifts the requirement.
 .\" BEGIN GENERATED: command user passwd
 .RS
 .PP
@@ -703,6 +1092,9 @@ Options:
 .TP
 \fB\-\-hash\fR \fI<hash>\fR
 Change with pre\-generated bcrypt hash (\- reads it from stdin).
+.TP
+\fB\-\-no\-change\-required\fR
+Do not require the user to change the password at the next login to this server. Without it the reset requires one, and no device accepts the user until it is done (a superuser, and a user with no login on this server, never must); with it a requirement that stands is lifted.
 .RE
 .\" END GENERATED: command user passwd
 .TP
@@ -727,7 +1119,11 @@ Requires: \fBsuperuser\fR.
 .\" END GENERATED: command user enable
 .TP
 .BI "user rename " "old new"
-Rename a user. The new name is lower case; changing only the spelling
+Rename a user. The user's
+.B "console system\-shell user"
+setting moves to the new name, and the command says so. The new name is lower case, and may hold periods as for
+.B user add
+(but see below); changing only the spelling
 .RB ( "user rename Alice alice" )
 is how a name from before is fixed. A device matches the typed login name
 exactly, so the rename changes what the person types at the device. The user
@@ -751,7 +1147,10 @@ builds its script from the ledger under the same lock, so it sends the names as
 they were before the rename or after it, never a mix; an account created under
 the old name is renamed at that host's next sync. When another command keeps
 the lock for 30 seconds the rename stops at the pre\-change snapshot, which
-copies the ledger under it, with nothing changed.
+copies the ledger under it, with nothing changed. A user that has a UID in the
+ledger, or an account on an enrolled host, is not renamed to a name with a
+period, which is no Linux account name: the next sync would remove the account.
+The command says so and changes nothing.
 .\" BEGIN GENERATED: command user rename
 .RS
 .PP
@@ -782,6 +1181,147 @@ authenticates it.
 Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command user verify
+.TP
+.B "user require\-password\-change " \fIname\fR | \fB\-\-all\fR [ " on" | " off" ]
+Require (\fBon\fR, the default) or lift (\fBoff\fR) a password change, for one
+user or for every user with
+.BR \-\-all .
+A user who must change the password can log in to this tacctl server only:
+every device refuses the user, as it refuses an unknown user, and every other
+enrolled Linux host has the account expired from its next
+.BR "host sync" ,
+until the password is changed (a device in a scope shared with the server, and
+port forwarding by a tier of
+.BR "console forwarding tiers" ,
+excepted; see below and
+.BR "console forwarding" ). The user stays in the scope this server is enrolled in
+(\fBhost enroll \-\-local\fR), in the protocol of the method it is enrolled
+with, and is left out of every other scope; in the other protocol the user is
+not rendered at all, even where a catch\-all scope answers 127.0.0.1. So the
+password can be changed at the server and nowhere else is the user let in; a
+change of the requirement therefore restarts the backend whose file changed,
+and none when the user has no other scope. This server's logins come from
+127.0.0.1, and from the address of
+.B \-\-server
+when that is another one, which the enrolled scope must answer too. A scope that holds the server together with
+devices cannot be cut apart: those devices still authenticate the user, and
+the commands say so, naming the prefixes (the ones that flag, a prefix added to
+the server's scope later, and
+.BR "host enroll \-\-local" ),
+as do
+.BR "user list" ,
+.B "user show"
+and
+.BR status ;
+give the server a scope of its own. A user who must change the password and has
+no login on the server (not in its scope, the scope does not answer the
+server's addresses, the backend of the server's own logins is not enabled, the
+server not enrolled) could change nothing, so a change that would leave one is
+refused with nothing changed, with
+.B "user require\-password\-change <name> off"
+as the way out:
+.B "user scope"
+removing the scope or replacing the list,
+.B "scope prefixes"
+removing a prefix and
+.B "scope protocols"
+before anything is written;
+.B "scope add"
+of a scope that answers the server's address more closely than its own,
+.B "group edit ... tier"
+or
+.B priv\-lvl
+(and every other write of the store or
+.IR tacctl.yaml )
+that newly holds a member with no login on the server, and
+.B "backend disable"
+of the backend of the server's own logins after the pre\-change snapshot, put
+back before anything is rendered; and
+.BR "host forget" ,
+.B "host unenroll"
+and
+.B "host enroll \-\-local"
+with another scope or method, while any user is flagged (the backends' files are
+rendered from the server's registration), or with a
+.B \-\-server
+address its scope does not answer.
+On every enrolled Linux host but this server
+.RB ( "host enroll \-\-local" ),
+the next
+.B "host sync"
+expires the account of a user who must change the password, as it expires a
+disabled user's (a password and an SSH key both fail; the files are kept), and
+the sync after the change opens it again; the server's own sync keeps the
+account, since the password is changed there. Until a host is synced it is as
+it was:
+.BR "user require\-password\-change" ,
+.B "user passwd"
+and
+.B passwd
+name the hosts of the user's scopes with
+.BR "tacctl host sync \-\-all" .
+A new or renamed user has an account on this server only after the next
+.BR "host sync" ,
+which
+.B "user add"
+and
+.B "user rename"
+say for a user who must change the password: until then the user can neither
+log in nor change it. The requirement is stored as
+.B password_change_required
+of the user in
+.I store.yaml
+(only for a user who must), and is decided again each time it is used: a
+superuser is never held to it, whatever the store says, so a flagged user moved
+into a superuser group is exempt from then on and one moved out must change
+the password. The user's own
+.B passwd
+and
+.B "user passwd"
+with
+.B \-\-no\-change\-required
+lift it.
+.PP
+While a password change is required of the caller, and the caller is no
+superuser, every command but
+.BR passwd ,
+.B version
+and
+.B help
+is refused with one message (\fBA password change is required of '<user>'\fR ...)
+and exit status 1: this covers a plain shell and
+.BR "ssh <server> tacctl ..." ,
+which the login console does not. A superuser, root and a local administrator
+outside the tacctl users are never affected. The live names that Tab asks for
+in a plain shell are refused without a message or a line. The refusal is logged
+.RB ( "password\-change DENY" ,
+see
+.BR "AUDIT LOG" ).
+.PP
+.B on
+skips, and names with the reason, a superuser and a user with no login on this
+server (the server is not enrolled, the user is not in its scope, the name is
+no Linux account name, or the user is disabled), and ends with
+.BR "Flagged N, skipped M, already required K." ;
+.B off
+clears the requirement of the one user or of every user who has it, a
+superuser's included, and ends with
+.BR "Cleared N, not required K." .
+Every user changed is logged:
+.B "user password\-change name= state=required|cleared via=require|add|passwd|self"
+(see
+.BR "AUDIT LOG" ).
+.\" BEGIN GENERATED: command user require-password-change
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-all\fR
+Apply to every user instead of the one named; the state, on or off, is then the only argument.
+.RE
+.\" END GENERATED: command user require-password-change
 .TP
 .B "user scope " \fIname\fR " " [ "list " | " add " \fIs\fR[,s...] | " remove " \fIs\fR[,s...] | " replace " \fIs\fR[,s...] | " remove \-\-all" ]
 Manage which scopes
@@ -2399,7 +2939,8 @@ ssh connection
 .RB ( "cat /etc/ssh/ssh_host_*_key.pub" ),
 and the target is scanned
 .RB ( ssh\-keyscan
-of the host and port, as root). Only the keys both reads hold are pinned in
+of the host and port, as root; asked one key type at a time when the scan of
+all the types gives no key from a host that accepted the connection). Only the keys both reads hold are pinned in
 the device registry for
 .BR "tacctl ssh" ;
 the output lists their
@@ -2408,7 +2949,8 @@ fingerprints. A key type the two reads give different keys for pins nothing:
 both sets are printed and
 .B "host hostkey\-mismatch"
 is logged to syslog (auth.warning). A type only one read has is reported, not
-pinned. Unreadable key files, or a host that does not answer the scan, pin
+pinned. Unreadable key files, or a host that does not answer the scan (the warning
+names the reads that were made), pin
 nothing, with a warning and the
 .B "device hostkey"
 command; the enrolment succeeds either way.
@@ -2543,7 +3085,11 @@ Options:
 Push the scope's current user list to the host: new users get accounts, a
 renamed user's account is renamed (its UID and home are kept), tier changes
 move group membership, disabled users' accounts are expired
-(files kept; enabling the user restores the account), and the accounts of
+(files kept; enabling the user restores the account), so are the accounts of
+users who must change the password on every host but this server (the sync
+after the change restores them; see
+.BR "user require\-password\-change" ),
+and the accounts of
 users no longer in the scope (or no longer tacctl users) are deleted with
 .BR userdel (8),
 and with their own group when it is empty. Their UIDs stay
@@ -3318,7 +3864,8 @@ after the highest one given, never reused, not even after the user is
 removed), and kept in
 .IR /etc/tacctl/linux\-uids ,
 whose first line records the range it is numbered for.
-A value outside that range is refused; an existing entry outside it is
+A user whose name has a period is refused: it has no Linux account, so a
+number would never be used. A value outside that range is refused; an existing entry outside it is
 listed as not used on hosts, and its user gets no account until
 given a number in the range. When the range is used up, the script refuses
 the next user.
@@ -4461,7 +5008,9 @@ and view, and
 .B "set snmp location|contact|description"
 (the client list restricts communities only; the management filter of Step 4,
 when it is rendered, has permit-snmp and deny-snmp terms for udp port 161 from
-the same clients, which restrict v3 once the filter is applied to lo0); on WTI
+the same clients, which restrict v3 once the filter is applied to lo0; in a scope
+whose filter mode is strict the sources of the permit list reach udp port 161
+as well); on WTI
 the unit's SNMP menu in the walkthrough's style (item names and numbers as on a
 WTI 8.10 unit: SNMP Access under /N: Enable, Version, Read Only, Contact, SNMP
 Location, Read\-Only Community), with the client restriction in the udp port 161
@@ -4480,7 +5029,9 @@ says to ask one; IOS 12.x has none. The Junos walkthrough has a commented
 .B "set system services netconf ssh"
 step with the optional connection and rate limits and the check
 .RB ( "ssh -p 830 -s" " user@device " netconf ),
-and its management filter permits tcp port 830 next to ssh; the WTI unit has
+and its management filter permits tcp port 830 next to ssh (in strict mode every
+protocol from a source without services, and tcp port 830 from a source with
+services only when they include tcp/830); the WTI unit has
 no NETCONF. tacctl enables none of it itself unless the scope's or the
 device's NETCONF setting says so
 .RB ( "scope netconf" ,
@@ -4865,6 +5416,18 @@ recorded in
 and when the tacctl server is enrolled a red line says that users whose tier
 fell keep their old groups until
 .BR "host sync" .
+A rendered file whose users section names users it cut out of their scopes (a
+required password change, an emergency lockdown: a
+.B "# tacctl-carved reason= protocol= users="
+comment) does not hold the scopes they had, so each is listed as something the
+store cannot represent and the import (and
+.BR \-\-check )
+fails unless
+.B \-\-force
+is given. A required password change, which no rendered file holds, is carried
+over from the existing store
+.RB ( \-\-replace ),
+as the password dates are: an import never lifts it.
 .\" BEGIN GENERATED: command store import
 .RS
 .PP
@@ -5339,10 +5902,14 @@ match; Ctrl-G gives the line back). Tab completes commands, sub-commands, flags
 and names (users, groups, scopes, hosts, devices, ..., asked of
 .B sudo \-n tacctl _completion-names
 and kept for 5 seconds); a second Tab lists the matching words alone. ?
-inserts nothing and shows help for the cursor's position: the words that can
-come (\(lqPossible completions:\(rq; a fixed word such as priv\-lvl after
+inserts nothing and shows help for the cursor's position (\fB\-h\fR or \fB\-\-help\fR after the words of a command prints the same help): the words that can
+come (\(lqPossible completions:\(rq in colour on a terminal: command names bright white, sub-commands, fixed words and options teal, live names bold, with each one's argument column, at most 40
+characters and cut with \(lq...\(rq when longer, as a name with no column is, and its description, which goes
+on under its column when it does not fit, the blanks that align a name's vendor, address and scope kept; a fixed word such as priv\-lvl after
 .B group edit
-<name> with the description of the usage line that has it), or after a
+<name> with the description of the usage line that has it; a command
+or sub-command has the same description as in the generated completion
+scripts), or after a
 command that takes arguments the usage lines of the forms the words typed so
 far fit, its options and what comes next (\(lqNext: <username> <group>\(rq;
 where the forms part, the choice:
@@ -5371,7 +5938,15 @@ an operator does not see
 .BR host ;
 a superuser and a caller outside
 .B tac-users
-see everything. The list ends with \(lqShown: the commands the
+see everything. The verbs of
+.B device config
+are listed by the tier of each (an operator sees
+.BR list ,
+an engineer all but
+.B forget
+and
+.BR shapes ).
+The list ends with \(lqShown: the commands the
 .I tier
 tier can run\(rq.
 .BI "help " command
@@ -5986,6 +6561,8 @@ Requires: \fBsuperuser\fR.
 .BI "scope mgmt-acl " scope " list|add|remove|clear [ " entry\fR[,\fIentry\fR...] " ]"
 .TQ
 .BI "scope mgmt-acl " scope " cisco-name|juniper-name [ " label " ]"
+.TQ
+.BI "scope mgmt-acl " scope " mode [ ssh-only | strict ]"
 Per-scope management ACL, with the subcommands of the global
 .BR "tacctl config mgmt-acl" .
 The effective permit list of a
@@ -6018,6 +6595,85 @@ falls back to the global; \fBclear\fR is the explicit way to revert.
 -> shipped default (\fBVTY-ACL\fR for Cisco, \fBMGMT-ACL\fR for
 Junos). A name starts with a letter, then
 [A-Za-z0-9_-]; 1..63 chars.
+.IP \(bu 2
+.BR "mode " [ ssh-only | strict ]
+— the mode of the scope's Junos filter; it affects Junos devices only, and the
+Cisco VTY-ACL and the WTI IP Tables list are the same in both. With no
+argument it prints the mode and where it comes from. The default,
+.BR ssh-only ,
+is the filter that restricts ssh, NETCONF and SNMP and ends in a
+.B default-accept
+term, so everything else is accepted.
+.B strict
+is deny by default: the filter accepts every protocol from the permit list (an
+entry with services keeps only those services, a plain entry accepts
+everything from its source; the tacctl server's own address stays first), keeps
+the SNMP client terms and has no
+.B default-accept
+term, so the implicit discard at the end of the filter drops the rest. The
+walkthrough has a second server address only when the device authenticates
+against another address than the one tacctl reaches it from:
+.B \-\-server
+(unless it is the detected address or
+.BR \-\-source ),
+.B \-\-source
+alone (the device is still told the address detected for the server), or a
+RADIUS listener bound to another address. With neither flag, with
+.B \-\-server
+equal to the detected address or to
+.BR \-\-source ,
+or with the address inside a plain entry of the permit list, there is one
+address and one source /32 is rendered. The second address is not a source of
+.BR permit\-mgmt :
+a term of its own,
+.BR permit\-auth\-replies ,
+after the SNMP terms, accepts from it only the answers of the server (for
+TACACS+ tcp from source port
+.B tacacs
+that are not the first packet of a connection, so a new connection from that
+port is refused; for RADIUS udp from
+.B radius
+and
+.BR radacct ).
+The filter keeps no state and matches them by source port, so for RADIUS it
+cannot tell an answer from another udp packet sent from those ports (udp port
+161 is decided by the SNMP terms first, when the scope has SNMP clients).
+Once a
+strict filter is applied to lo0, these stop reaching the routing engine:
+routing protocols carried over IP from neighbours that are not in the list
+(BGP, OSPF, LDP, VRRP, BFD), TACACS+ and RADIUS replies from a server that is
+not in the list (those of the server the walkthrough names are accepted), NTP,
+syslog and DHCP
+from hosts that are not in the list, SNMP from sources outside it (the SNMP
+clients still poll), and every other protocol from them. IS-IS is not carried
+over IP, so a family inet filter on lo0 does not see it: the filter neither
+stops nor permits it. Add every neighbour and server the device
+needs to the permit list the scope renders from first
+.RB ( "scope mgmt\-acl" " scope " list
+says which: the first entry of the scope's own list replaces the global list
+for that scope, so add the global entries to it too), keep a console session
+open when the filter is applied, and commit with
+.BR "commit confirmed" .
+The lo0 application stays a comment in the walkthrough. A list with no IPv4
+entry that permits ssh (a plain entry, or one with tcp/22) renders no filter in
+either mode, and the walkthrough says why. Setting
+.B ssh-only
+removes the key (only
+.B strict
+is stored). An engineer may read the mode of a scope of their own
+.RB ( "mode" ,
+with no value); the setter and every other verb of
+.B "scope mgmt-acl"
+are the superuser's, and another scope does not exist for an engineer. The value is
+.B scope_mgmt_acl.mode.\fIscope\fR
+in
+.IR tacctl.yaml ;
+a rename moves it and a removal deletes it. A word that is not a mode (the
+words are lower case) is refused with
+.B "Unknown mode '<word>'. Use: ssh\-only | strict."
+(exit 1), a word after the value as an unknown argument with the usage (exit 1),
+and in both nothing is written; setting the mode the scope already has says so
+and writes nothing.
 .RE
 .IP
 Cisco puts the effective name in
@@ -6032,7 +6688,7 @@ and the commented lo0 apply.
 .\" BEGIN GENERATED: command scope mgmt-acl
 .RS
 .PP
-Requires: \fBsuperuser\fR.
+Requires: \fBengineer\fR. An engineer may read the management filter mode of a scope of their own (mode, with no value); the permit list, the ACL and filter names and setting the mode need the superuser tier.
 .RE
 .\" END GENERATED: command scope mgmt-acl
 .SS Per-scope NETCONF service \fB(tacctl scope netconf)\fR
@@ -6638,9 +7294,9 @@ lines at the top, numbered as the editor's window is; those lines are removed
 before any text is read and never reach the file. An editor that exits
 non\-zero, an empty text, a text that states nothing and an edit that changes
 nothing write nothing. In the login console an editor can start a shell, so
-an edit is open to the tiers of
-.B "console system\-shell tiers"
-(never the engineer), and a refusal is logged
+an edit is open to those who have the system shell
+.RB ( "console system\-shell" ;
+never the engineer), and a refusal is logged
 .BR "block edit DENY" .
 The editor has to stay in the foreground until the text is saved (a graphical
 editor needs its wait option, such as
@@ -6863,13 +7519,19 @@ digits,
 and
 .BR - ),
 must not be a user of the scope, and must not collide with a
-template-user or class name of the Juniper walkthrough or be one of the
-reserved names
-.BR root " and " tacquito
+template-user or class name of the Juniper walkthrough or be the reserved
+name
+.B tacquito
 or the Junos account
 .B remote
 (the template account of every remote user without a local-user-name). Names
-compare without regard to case.
+compare without regard to case. The exception is
+.BR root :
+the Junos system account, accepted as a break-glass entry of the scope's Junos
+devices, always
+.B admin
+(\fB--role operator\fR and \fBreadonly\fR are refused) and spelled in lower case;
+Cisco and WTI render, compare and list nothing for it.
 .BR "user add" ,
 .BR "user scope" " (" add " and " replace )
 and
@@ -6927,7 +7589,26 @@ the level the group's
 .B wti-level
 sets, as in the mapping table of the same output) in a menu step, with
 .B <PASSWORD>
-where the password goes. A scope without break-glass users gets the existing
+where the password goes. For
+.B root
+the Junos walkthrough renders, commented out and with the same placeholder rule,
+.B "set system root-authentication encrypted-password '<HASH>'"
+(Junos keeps root there, not under
+.BR "system login user" )
+and
+.BR "set system services ssh root-login allow" :
+Junos refuses root over ssh by default, so the second line is part of the
+access, and a security trade-off the person decides (root can then log in over
+ssh with the password: keep the device behind the management filter, or leave
+the line out and keep root on the console). The Cisco and WTI walkthroughs say
+in one line that nothing is rendered for
+.BR root ,
+and a scope whose only entry is
+.B root
+still gets the no-break-glass notice there; its Cisco and WTI devices are
+named, by vendor, in a
+.B "config validate"
+warning. A scope without break-glass users gets the existing
 advice and a notice, and
 .B "config validate"
 warns (not an error), on one line naming the scopes, that they are a lockout
@@ -6991,13 +7672,22 @@ the notice. The built-in list can be extended with
 Host keys are pinned when a device is registered: tacctl reads the keys the
 device offers with
 .BR ssh\-keyscan (1)
-(as root, outbound, without logging in; for a
+(as root, outbound, without logging in; a device that accepts the
+connection but gives no key to the scan of all the key types, because it
+limits the simultaneous connections
+.B ssh\-keyscan
+opens or drops its long offer, is asked again one key type at a time,
+ed25519, ecdsa, rsa, each with
+.BR "\-T 3" ,
+and the keys of every type that answers are pinned; a device that refuses the
+connection or does not answer is not asked again; for a
 .B legacy\-ssh
 device that
 .B ssh\-keyscan
 cannot read, because it cannot do the SHA-1 key exchange and CBC ciphers
-such a device offers, with tacctl's own ssh client, which stops at the host key,
-before authentication), keeps them in
+such a device offers, and for any device that accepted the connection but gave
+no key even one type at a time, with tacctl's own ssh client, which stops at the
+host key, before authentication), keeps them in
 .IR devices.yaml ,
 and prints their
 .B SHA256:
@@ -7310,10 +8000,15 @@ and ssh port are read with
 (with
 .BR \-\-legacy\-ssh ,
 .B ssh\-rsa
-is asked for by name too, and when
+is asked for by name too; a device that accepts the connection but gives no
+key is asked again one key type at a time, each with
+.BR "\-T 3" ,
+and the keys of every type that answers are pinned; and when
 .B ssh\-keyscan
-reads no key, tacctl's own ssh client reads them, stopping at the host key
-without sending a password) and pinned. Their
+reads no key from a device with
+.B \-\-legacy\-ssh
+or one that accepted the connection, tacctl's own ssh client reads them,
+stopping at the host key without sending a password) and pinned. Their
 .B SHA256:
 fingerprints are printed with the command that shows them on the device's
 console; compare them before the first connection. With
@@ -7325,8 +8020,12 @@ nothing is scanned: the device is registered unpinned and carries a
 .B hostkey-unpinned
 notice. A device that does not answer the scan, or offers no key matching
 .BR \-\-host\-key ,
-is refused and nothing is written. The output says which scope, if any, answers
-the address.
+is refused and nothing is written; when the device accepted the connection but
+no read gave a key, the refusal names the reads that were made and gives
+.BI "ssh\-keyscan \-t ed25519 " address
+to see the key by hand, and the ways to accept a key by its fingerprint
+.RB ( "\-\-host\-key SHA256:" "<fp>, or " "device hostkey " "<name>" " set SHA256:" "<fp>" ).
+The output says which scope, if any, answers the address.
 .IP
 Next to the scan,
 .B add
@@ -9518,7 +10217,16 @@ and
 is the same account and the section reads
 .B ok
 with a note that says so; the names are case\-sensitive on the device, and a
-login by the scope's spelling is refused there). A WTI unit has four sections:
+login by the scope's spelling is refused there; for a scope that records
+.B root
+a Junos device is also checked for its root password, by presence, under
+.B "system root-authentication"
+(a device with ssh keys only has no password, and the section says so) and for
+.BR "system services ssh root-login allow" :
+.B deny
+and
+.B deny\-password
+read as a difference with the reason, and no hash or key is ever kept). A WTI unit has four sections:
 .BR aaa ,
 .BR mgmt\-acl ,
 .B snmp
@@ -9628,7 +10336,7 @@ of
 .B diff
 or
 .B plan
-exit 2 (the plan still lists the extras, as left alone). Only
+exit 2 (the plan has no item for them, only a Kept line with their number). Only
 .B snmp
 reads this way: an extra server, login class, filter or user in
 .BR aaa ,
@@ -9789,6 +10497,49 @@ another device, keep the output in a file when it holds a secret).
 A statement in a standard hierarchy that the standard does not have is an
 .BR extra :
 the report gives the exact line that removes it, and it is left alone.
+A statement of the device's own that the comparison counts as
+.B unmanaged
+(see
+.BR "device config diff" )
+is no extra and no irregularity: it has no item, is not in the number of the
+header, does not keep its section out of the
+.B Consistent:
+line and does not make the plan non\-empty. One line per section keeps it
+visible,
+.BR "Kept: snmp 17 statements of the device's own (name, communities, trap groups, ...): left alone, listed by device config diff" ;
+the number is the one
+.B "device config list"
+shows as
+.BR "snmp +17 unmanaged" ,
+and the kinds never name a community or a value.
+.B \-\-json
+has the
+.B kept
+list (section,
+.BR count ,
+.BR kinds ;
+omitted when empty) and marks these statements in
+.B extras
+with
+.BR own ;
+the cover page does not count them as extras.
+.PP
+A secret is compared by presence only, so the line
+.B Secrets:
+is information and no irregularity:
+.BR "Secrets: 3 present (the TACACS+ server key, the SNMP community); only their presence is checked, \-\-secrets writes them again" .
+It names the kinds, never a value, a community or a label; secrets the pull's
+login could not read are said apart
+.RB ( "N not visible to the pull's login: the plan could not check them" ).
+.B \-\-json
+has the
+.B secrets
+object
+.RB ( present ,
+.BR kinds ,
+.BR not_visible ;
+omitted when there is none).
+.PP
 .B \-\-converge
 makes a region that removes the extras of the kinds the standard names, for a
 device that has nothing else to paste: make the plan after the paste and the
@@ -9842,6 +10593,58 @@ shows no pending
 (type the plan's
 .B commit
 first).
+.PP
+The Junos management filter is owned whole, so a move of a scope's filter mode
+.RB ( "scope mgmt\-acl" " scope " mode )
+between
+.B ssh\-only
+and
+.B strict
+is planned in both directions (the
+.B deny\-mgmt
+and
+.B default\-accept
+terms and the ssh and NETCONF leaves of
+.B permit\-mgmt
+are deleted and the service terms set, and back), and a pulled filter is
+compared with the rendering of the scope's mode. A plan that changes the filter
+warns of what it does to the traffic. For
+.BR strict ,
+where the device's filter has a
+.B default\-accept
+term or there is none: the traffic that stops once the filter is applied to
+lo0 (routing protocols carried over IP from neighbours that are not in the list,
+BFD included, TACACS+ and RADIUS replies from a server that is not in the list,
+NTP, syslog and DHCP, SNMP from sources outside it other than its clients, every other
+protocol; IS-IS is not carried over IP, so the filter neither stops nor permits
+it),
+the sources
+the filter accepts (the address it accepts the authentication server's replies
+from apart), and to keep a console session open. For
+.BR ssh\-only ,
+where the device's filter has terms and no
+.B default\-accept
+term (a strict filter, or the site's own under the same name): that the plan
+adds the term, that the device then accepts everything but ssh, NETCONF and
+SNMP from outside the list again, and the command that sets
+.BR strict .
+When the pulled configuration applies the filter to lo0, a plan that changes it
+warns without
+.BR \-\-from ,
+and with it refuses the filter's section (the rest of the plan stands) if the
+filter would not permit that address: in
+.B ssh\-only
+the address must be inside a source of
+.BR permit\-mgmt ;
+in
+.B strict
+inside a source that the filter accepts for ssh, in
+.B permit\-mgmt
+or in a service term that holds tcp/22 (the
+.B permit\-auth\-replies
+address is not one). An IPv6 address is not checked against
+the family inet filter, and a filter the device does not apply to lo0 has no
+check. An apply makes the same check with the address it connects from.
 .PP
 .B \-\-backout
 prints the back\-out region alone
@@ -10320,7 +11123,7 @@ One file per device (<name>.txt, .set with \-\-plain, .json with \-\-json; each 
 Replace files \-\-out or \-\-out\-dir would write.
 .TP
 \fB\-\-from\fR \fI<address>\fR
-The address you are logged in from: the cleanup keeps it; the management filter check and a WTI unit's IP tables check use it.
+The address you are logged in from: the cleanup keeps it; the management filter check (in either filter mode) and a WTI unit's IP tables check use it.
 .TP
 \fB\-\-exit\-code\fR
 Exit 2 when a device needs a change (and none could not be planned).
@@ -10406,7 +11209,28 @@ proven by a fresh login as you through the device's own login path, by
 .B "show configuration | compare rollback 1"
 being the change the check showed and by a read of the planned sections
 lacking nothing, and then confirmed in the session that committed, with a
-minute of the window left. A proof that fails cancels the commit
+minute of the window left. On a device with several members (a virtual
+chassis, two routing engines, a cluster) the members are the blocks
+.B "show version"
+lists
+.RB ( fpc0: ,
+.BR re0: ,
+.BR node0: ),
+and the answers of
+.B "commit check"
+and of the commits must name exactly those, each with its own success; a member
+that is missing, unexpected or answers otherwise fails the step, and the error
+names the member and its text. Two routing engines that commit without
+.B synchronize
+answer as a single device does, which is read as before. Over NETCONF each
+member is a
+.B routing\-engine
+element named by its label; a reply of a virtual chassis or a cluster that
+names no member is refused, because nothing proves the other members
+committed (a confirmed commit rolls back by itself), and the command line
+transport (the default) can be used. The shape of these replies over NETCONF,
+and the commits' replies on the command line, are inferred: no capture of them
+exists. A proof that fails cancels the commit
 .RB ( "rollback 1" ,
 .BR commit )
 and the device is
@@ -10420,7 +11244,16 @@ or
 .B "commit check"
 typed on it confirms the change, so nothing may be typed on it before then.
 The next apply or check of it reads its commit history first and records what
-happened; while the window stands nothing is sent. Where the history alone
+happened; while the window stands nothing is sent. The history is read whatever
+words each commit was typed with
+.RB ( synchronize ,
+.BR and\-quit ,
+.BR force ,
+.BR full ,
+.BR prepare ,
+.BR "at <time>" ,
+.BR "confirmed, rollback in N mins" ),
+and a newest entry that is none of these is refused with its text. Where the history alone
 does not say (a commit after tacctl's by
 .B "root via other"
 is the device's own rollback or a commit of the system, or the commit after
@@ -11125,7 +11958,9 @@ Open a SOCKS proxy, as ssh \-D (repeatable).
 .\" END GENERATED: command ssh
 .SS Break-glass hold \fB(tacctl breakglass)\fR
 A device's local accounts
-.RB ( "tacctl scope breakglass" )
+.RB ( "tacctl scope breakglass" ;
+.B root
+among them, for a Junos device)
 reach its vty only while no server answers it: a server's refusal is
 final, so a local login there is refused while the server is up. On a Cisco
 console the
@@ -11447,7 +12282,7 @@ takes the group out of every lockdown; making a locked group a superuser group
 .RB ( "group edit" " ... " tier " superuser, or a priv\-lvl edit that does it)"
 is refused, and so is
 .B "tacctl rollback"
-to an older release, until the lockdown is lifted. The log has
+to a release before 0.2.19, until the lockdown is lifted. The log has
 .BI "emergency lockdown enable scope=" name " groups=" list " exempt=" users " reason=\(dq" text "\(dq by=" user " locked=" n " result=ok"
 and
 .BI "emergency lockdown disable scope=" name " groups=" list " held=" duration " by=" user " result=ok" .
@@ -11506,22 +12341,26 @@ The lockdowns that stand: scope, groups, since, how long, by whom, why, the user
 .SS Login console \fB(tacctl console)\fR
 The login console
 .RB ( tacctl\-console )
-is the login shell of tacctl users on the tacctl server: tacctl commands and
-ssh to registered devices, nothing else. It is on for every tier by default
-(the defaults apply while
+is the login shell of every tacctl user, of every tier, on the tacctl server:
+tacctl commands and ssh to registered devices, nothing else. There is no
+switch for it; local accounts that are not tacctl users are never touched. The
+settings are in
 .I /etc/tacctl/console.yaml
-is absent); local accounts that are not tacctl users are never touched. These
+(the defaults apply while it is absent), and the
+.B tiers
+and
+.B users
+mappings of a file written before 0.2.20 are ignored and left in place. These
 commands change
 .I console.yaml
 only, after a snapshot (mode 0600; backup diff and restore include it), and
 never an account or sshd: the accounts' login shells and sshd's drop-in follow
 it when the provisioning of this server applies it
 .RB ( "host sync" " of the host enrolled with " \-\-local ).
-Every change to the tier switches, a user override, agent forwarding or the
-forwarding tiers prints
+Every change to agent forwarding or the forwarding settings prints
 .BI "Apply to the accounts: tacctl host sync " name\fR.
-The idle timeout, the ssh escape, the space completion, the system shell and
-the password cache are read by each console session when it starts; open
+The idle timeout, the ssh escape, the space completion, the colour, the list
+threshold, the system shell and the password cache are read by each console session when it starts; open
 sessions keep their settings.
 .TP
 .B console
@@ -11530,16 +12369,11 @@ With no subcommand (or with
 prints a usage summary and exits 0.
 .TP
 .B console show
-The tiers' switches, the settings, and for each user of the scope of the host
-enrolled with
+The settings, and for each user of the scope of the host enrolled with
 .B \-\-local
 the tier, the effective shell
-.RB ( console
-or
-.BR bash )
-and why
-.RI ( "user override" ", " "tier readonly" ", " "tier readonly disabled" ).
-Then the state of the server's pieces: the
+.RB ( console )
+and why. Then the state of the server's pieces: the
 .I /usr/local/bin/tacctl\-console
 symlink, the
 .I /etc/shells
@@ -11562,38 +12396,6 @@ says so and lists no users.
 Requires: \fBoperator\fR.
 .RE
 .\" END GENERATED: command console show
-.TP
-.BI "console tiers " "[ " tier " " "{ enable | disable }" " ]"
-Show the switches, or one, or set the console for a tier
-.RB ( readonly ,
-.BR operator ,
-.BR engineer ,
-.BR superuser ).
-The engineer tier has the console or no login on the server, so its switch
-is always on: disabling it is refused, and a stored
-.B disable
-is listed as ignored. An engineer whose console cannot be provisioned gets
-.I /usr/sbin/nologin
-as login shell, and so does an account whose tier is none.
-.\" BEGIN GENERATED: command console tiers
-.RS
-.PP
-Requires: \fBsuperuser\fR.
-.RE
-.\" END GENERATED: command console tiers
-.TP
-.BI "console user " "name " "[ { enable | disable | clear } ]"
-Show or set one user's override, which wins over the tier's switch;
-.B clear
-returns the user to the tier rule. The user must exist in the store to be
-given an override. An override never applies to an engineer: disabling one is
-refused.
-.\" BEGIN GENERATED: command console user
-.RS
-.PP
-Requires: \fBsuperuser\fR.
-.RE
-.\" END GENERATED: command console user
 .TP
 .BI "console idle\-timeout " "[ " min " ]"
 Minutes idle at the prompt before the session ends, 0 to 1440 (0: never;
@@ -11641,6 +12443,12 @@ to a device accepts
 and
 .BR \-D .
 Agent, stream-local and tunnel forwarding stay as for every console user.
+A forwarding opens no session and never reaches the console, so a user of such
+a tier who must change the password
+.RB ( "user require\-password\-change" )
+still forwards ports through this server with the old password until it is
+changed; the default tier, superuser, is never held, so list another tier only
+while none of its users must change the password.
 .\" BEGIN GENERATED: command console forwarding
 .RS
 .PP
@@ -11704,8 +12512,107 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command console space-completion
 .TP
+.BI "console color " "[ { auto | on | off } ]"
+Show or set whether the console's lists (Tab's second press,
+.BR ? ,
+.B \-h
+and
+.BR \-\-help )
+are in colour. The default is
+.BR auto :
+the terminal decides, as everywhere else. The console's environment is scrubbed
+of
+.B NO_COLOR
+and
+.BR TACCTL_COLOR ,
+so this is how the operator chooses:
+.B on
+always colours the lists,
+.B off
+never does. It is server-wide, a superuser sets it, and each console session
+reads it when it starts. The key is written to
+.I console.yaml
+only while the setting is not
+.BR auto .
+.\" BEGIN GENERATED: command console color
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command console color
+.TP
+.BI "console list-max " "[ n ]"
+Show or set the longest list the console's Tab and
+.B ?
+show without asking
+.BR "Show all N?" .
+A list of more than
+.I n
+entries asks first (default
+.BR 40 ;
+at most
+.BR 1000 ).
+.B 0
+is the default, and a negative number never asks (the file then holds
+.BR \-1 ;
+the command and
+.B "console show"
+print it as \(lqnever ask\(rq).
+It is server-wide, a superuser sets it, and each console session reads it when
+it starts.
+.\" BEGIN GENERATED: command console list-max
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command console list-max
+.TP
+.BI "console password\-cache " "[ { on | off } ]"
+The caller's own choice of keeping the network password in memory for the
+session, off until the user turns it on; it is the permission of the tier
+.RB ( "console password\-cache tiers" )
+and this choice together that make the cache active in a session. With no
+argument it prints the tiers, the lifetimes, whether the caller's tier is
+allowed and the caller's setting. At the prompt of the shell and the console
+the same words are handled by the session itself:
+.B on
+saves the choice, for every later session, and starts the cache in the running
+one at once;
+.B off
+saves it, forgets a cached password
+.RB ( "password forgotten (console password\-cache off)" )
+and stops caching; with no argument it also says whether a password is cached
+now. When the tier is not allowed,
+.B on
+is refused in one sentence that names the fix and saves nothing. The words take no
+name: the root side takes the user from the one
+.BR sudo (8)
+was run by, so nobody sets another user's choice. Every user of the operator
+tier and up may run these three forms (the sudoers row names them exactly); the
+other forms are the superuser's. The choice is stored in
+.B settings.password_cache_users
+and logged as
+.BR "console set key=password\-cache item=user:" \fIname\fR.
+.B "user rename"
+moves it and
+.B "user remove"
+drops it, as for the system shell of a user. A plain
+.B "tacctl shell \-\-password\-cache"
+is an explicit request and needs only the permission of the tier.
+.\" BEGIN GENERATED: command console password-cache
+.RS
+.PP
+Requires: \fBoperator\fR. Every user of the operator tier and up may run it with no argument (the state) and with on or off (their own choice, which needs their tier to be allowed); tiers, idle, max and user need the superuser tier.
+.RE
+.\" END GENERATED: command console password-cache
+.TP
+.BI "console password\-cache user " "[ " name " [ clear ] ]"
+Show who turned the cache on (each with the tier), a user's setting, or clear it
+so that the cache is off for that user; a session the user has open keeps its
+cache until it ends or they turn it off. The superuser's.
+.TP
 .BI "console password\-cache tiers " "[ " csv "|none ]"
-Show or set the tiers whose shell and console sessions may keep the user's
+Show or set the tiers that are allowed to keep the user's
 network password in memory for the session, so that a device pull, a diff and
 the
 .B ssh
@@ -11715,7 +12622,8 @@ lines after it ask once
 .BR superuser ;
 default
 .BR none :
-off for every tier). The password lives only in the memory of the session's own
+off for every tier). A listed tier is only allowed: each user turns the cache
+on for themselves. The password lives only in the memory of the session's own
 process, in a locked page of a process marked not dumpable, and in no file, log,
 argument or environment; the agent is shut between lines. It is used for the
 lines that run
@@ -11749,12 +12657,6 @@ changes the password, when the clock goes backwards, and with the shell's word
 Root can read any process: the cache
 protects the password against other users and against its landing in files and
 logs.
-.\" BEGIN GENERATED: command console password-cache
-.RS
-.PP
-Requires: \fBsuperuser\fR.
-.RE
-.\" END GENERATED: command console password-cache
 .TP
 .BI "console password\-cache idle " "[ " min " ]"
 Show or set how long a cached password lives without a use, in minutes (1 to
@@ -11777,19 +12679,85 @@ Requires: \fBoperator\fR.
 .RE
 .\" END GENERATED: command console forget
 .TP
-.BI "console system\-shell tiers " "[ " csv "|none ]"
-The tiers that may start their system shell from the console (default
-.BR superuser ).
-The same tiers may open an editor from the console
+.BI "console system\-shell " "[ " tier " { enable | disable } ]"
+Show or set who may start a system shell from the console. With no argument it
+lists each tier
+.RB ( readonly ", " operator ", " engineer ", " superuser )
+as
+.B enabled
+or
+.BR disabled ,
+then the users that have a setting of their own, with their tier. The
+superuser tier is
+.B "enabled (always)"
+and cannot be disabled; readonly and operator are disabled by default; the
+engineer tier is
+.B "disabled (never)"
+and
+.B enable
+is refused for it (a shell on the server would reach its secrets). A tier
+name alone prints that tier's state. Setting a tier writes
+.B settings.system_shell_tiers
+(the superuser tier is always in the list). Those who have the system shell
+may also open an editor from the console
 .RB ( "scope block ... edit|adopt" ,
 .BR "device block ... edit|adopt" ):
-an editor can start a shell.
+an editor can start a shell. Only a superuser sets it, for a tier, a user or
+the path; an operator and an engineer may read each form (no argument, a tier
+alone,
+.BR "user " \fIname\fR
+alone and
+.BR path ),
+and every form that sets something is refused for them (logged as a tier
+denial). The change
+is logged as
+.BR "console set key=system\-shell item=" \fItier\fR
+at
+.BR auth.notice .
+It applies from the next console login.
 .\" BEGIN GENERATED: command console system-shell
 .RS
 .PP
-Requires: \fBsuperuser\fR.
+Requires: \fBoperator\fR. An operator may read it (no argument, a tier, user <name>, path); setting it for a tier or a user, and setting the path, need the superuser tier.
 .RE
 .\" END GENERATED: command console system-shell
+.TP
+.BI "console system\-shell user " "name " "[ { enable | disable | clear } ]"
+Show or set the system shell for one user, over the tier's setting in both
+directions: enabled, it gives a user of a tier that has none the system shell;
+disabled, it takes it from a user of a tier that has it. Without a value it
+prints the user's effective state and why
+.RB ( "user setting" ", " "tier operator" ", " always ", " never ).
+.B clear
+removes the user's setting, and the tier decides again. The user must exist.
+An enable is for the tier the user has when it is set
+.RB ( readonly
+or
+.BR operator ):
+after a move to another tier it gives nothing and is listed as
+.BR "stale: set for" " \fItier\fR" ", now " \fItier\fR
+until it is set again (it counts again if the user returns to that tier); a
+disable holds in any tier.
+A superuser always has the system shell: disabling it is refused, and
+enabling it stores nothing. An engineer never has it: enabling it is refused
+(with the reason of the tier), and disabling stores nothing. The settings are
+kept in
+.B settings.system_shell_users
+and are logged as
+.BR "console set key=system\-shell item=user:" \fIname\fR.
+.B "user rename"
+moves the setting to the new name and
+.B "user remove"
+drops it (both say so and are logged as
+.BR "console set" ),
+so a user created later under the name does not inherit it, and neither does
+.B "user add"
+when a hand\-edited entry of the name is left. An entry for a name that is no
+user is not honoured; it is listed with
+.BR "no such user" ,
+and
+.B clear
+removes it.
 .TP
 .BI "console system\-shell path " "[ " path " ]"
 The system shell, default
@@ -11990,6 +12958,67 @@ With standard input not a terminal and no
 .BR \-c ,
 the lines of the input run as a batch, as in
 .BR "tacctl shell" .
+A word that starts with an underscore at the prompt or in a batch
+.RB ( __help ,
+.BR __complete ,
+.BR _console\-policy ,
+the entry points of the scripts, the key and the console itself) is not a
+command there: it is answered as any word that is no command, and nothing runs.
+.PP
+A user who must change the password
+.RB ( "user require\-password\-change" ;
+never a superuser) gets, at the start of the console, a notice (\fBA password
+change is required of your account.\fR: no device accepts the login, and
+nothing here runs until then but the change itself) and the password change
+dialog, the line
+.BR passwd ,
+straight away. Until the password is changed nothing else runs: every other
+line, the console's own words
+.RB ( help ,
+.BR history ,
+.B system\-shell
+and
+.BR "console forget" )
+included, is refused with
+.B A password change is required: nothing runs here until it is made but 'passwd' (and 'exit').
+and status 1, and Tab and ? list the change only (and
+.B exit
+and
+.BR quit ,
+which end the session). A line typed while the session is locked is not
+entered in the history file, and Up, Down and Ctrl\-R recall no earlier line
+until the lock lifts. The root side tells the console in its policy line
+.RB ( password_change=yes ,
+only for a caller who is held to it, and
+.B password_change=unknown
+when the store could not be read). When the policy line cannot be read at all
+(sudo refuses, the answer is not a policy) or says
+.BR unknown ,
+it cannot be told whether a change is required, and a caller who is no
+superuser is held the same way, with the notice
+.B It could not be read whether a password change is required of your account
+instead of the dialog (the next line asks again); a superuser, known by the
+system group tac\-superuser, is never held by a read error. When the password is
+changed the root side is asked once more and the session goes on as any other. Each line a locked session would
+refuse asks the root side again first, so a session left locked by a password
+changed in another one goes on as soon as the requirement is gone. The dialog is held to the idle time
+like a prompt: one nobody answers is ended, and the session ends as an idle one.
+Ctrl-C in the
+dialog declines it and ends the session (status 130); any other failure (a
+wrong current password, a new one that is too weak or differs from its
+confirmation) leaves a prompt that is still locked, where
+.B passwd
+tries again. A line given with
+.B \-c
+and a batch are held the same way, with no dialog: a
+.B passwd
+line runs, any other is refused with status 1. The session is logged:
+.BI "console password-change required|unknown|done|failed session=" id " user=" user " [status=" n ]\fR,
+and each refused line
+.BI "console DENY session=" id " user=" user " reason=password\-change first=" verb|\- " [len=" n ]
+(auth.warning; the word is named under the rule of the other refusals). The
+command line holds the caller to the change as well (see
+.BR "user require\-password\-change" ).
 .PP
 .B system\-shell
 (the console's own word; interactive sessions only) starts the user's system
@@ -12001,9 +13030,10 @@ as the user, without arguments, with the console's environment and
 .BR SHELL= \fIpath\fR;
 the console's idle timer does not run meanwhile, and sshd's drop-in still
 governs the connection. It is open to the tiers
-.B "console system\-shell tiers"
-names (default: superusers only); otherwise it is refused with
-.IR "system-shell is not available for the tier tier on this console. An administrator enables it with: tacctl console system-shell tiers ..."
+.B "console system\-shell"
+gives it (superusers always; the others by their tier or by a setting of their
+own); otherwise it is refused with
+.IR "system-shell is not available for the tier tier on this console. An administrator enables it with: tacctl console system-shell user name enable (or tier enable for the tier)"
 (status 1). In a batch or through
 .B \-c
 it is refused with status 126.
@@ -12011,7 +13041,7 @@ it is refused with status 126.
 Syslog (tag
 .BR tacctl\-console ):
 .BI "console start session=" id " user=" user " from=" address " tty=" tty " mode=" interactive|command|batch\fR,
-.BI "console end session=" id " user=" user " reason=" exit|eof|idle|hangup|signal|command|failed " lines=" n " status=" n\fR,
+.BI "console end session=" id " user=" user " reason=" exit|eof|idle|hangup|signal|command|failed|locked " lines=" n " status=" n\fR,
 .BI "console DENY session=" id " user=" user " reason=command first=" verb|\- " [len=" n ]
 (auth.warning; the word is the first word of the refused string when it is a
 verb of tacctl or one of the console's own words, else
@@ -12166,13 +13196,13 @@ line.
 user list, user show, group list, group show, scope list,
 backend list, backend status, ssh, device list, device show,
 device notice, device ssh, device client\-config, _completion\-names,
-_console\-policy, \-\-version, \-v, hash
+_console\-policy, \-\-version, \-v, hash, completion, man
 .TP
 .B operator
 log tail, log search, log failures, log accounting, config validate,
 backup list, device check, device scan, device discover,
 device export, device config, console show, console check,
-console forget
+console system\-shell, console password\-cache, console forget
 .TP
 .B engineer
 device add, device remove, device rename, device address,
@@ -12182,7 +13212,8 @@ device hostkey, device import, scope devices, device config,
 device enroll, device collect, device onboard, device sync,
 device support\-bundle, config cisco, config juniper, config wti,
 host list, host show, scope staging, scope secret, scope snmp,
-device snmp, scope block, device block, scope show, breakglass list
+scope mgmt\-acl, device snmp, scope block, device block, scope show,
+breakglass list
 .TP
 .B superuser
 Every verb not listed above, and every verb of the tiers below.
@@ -12195,6 +13226,12 @@ An engineer lists the holds of the devices of their own scopes only; hold and re
 .TP
 .B config cisco
 An engineer may print the walkthrough and read source\-interface for a scope of their own; setting or unsetting source\-interface needs the superuser tier.
+.TP
+.B console password\-cache
+Every user of the operator tier and up may run it with no argument (the state) and with on or off (their own choice, which needs their tier to be allowed); tiers, idle, max and user need the superuser tier.
+.TP
+.B console system\-shell
+An operator may read it (no argument, a tier, user <name>, path); setting it for a tier or a user, and setting the path, need the superuser tier.
 .TP
 .B device block
 An engineer may read the configuration blocks of a device of their own scope (list, show [\-\-effective] [\-\-reveal], check); set, remove, edit and adopt need the superuser tier.
@@ -12222,6 +13259,9 @@ An engineer reads what tacctl recorded of a host; \-\-check logs in to it and ne
 .TP
 .B scope block
 An engineer may read the configuration blocks of a scope of their own (list, show [\-\-reveal], check); set, remove, edit and adopt need the superuser tier.
+.TP
+.B scope mgmt\-acl
+An engineer may read the management filter mode of a scope of their own (mode, with no value); the permit list, the ACL and filter names and setting the mode need the superuser tier.
 .TP
 .B scope secret
 An engineer may run show for a scope of their own; set and generate need the superuser tier.
@@ -12298,7 +13338,8 @@ device ssh, device support\-bundle, emergency lockdown, group add,
 group edit, group remove, host enroll, host forget, host move,
 host rename, host sync, host unenroll, passwd, scope add,
 scope remove, scope rename, ssh, user add, user disable, user enable,
-user move, user passwd, user remove, user rename
+user move, user passwd, user remove, user rename,
+user require\-password\-change
 .TP
 .B "action, auth.notice"
 backup restore, config restore,
@@ -12311,24 +13352,24 @@ config deny, config devices, config juniper, config linux,
 config listen, config loglevel, config metrics, config mgmt\-acl,
 config password\-age, config password\-min\-length, config render,
 config secret\-min\-length, config snmp, config validate, config wti,
-console agent\-forwarding, console forwarding, console idle\-timeout,
-console password\-cache, console space\-completion,
-console ssh\-escape, device address, device block, device collect,
-device config, device description, device hostkey, device hostname,
-device import, device ios\-syntax, device legacy\-ssh,
-device location, device netconf, device onboard, device port,
-device snmp, device stale\-days, device sync, device vendor,
-group commands, group junos, group preset, group privilege,
-group reset, host default\-method, host provisioner, host target,
-scope aaa\-order, scope auth\-method, scope block, scope breakglass,
-scope default, scope devices, scope exec\-timeout, scope mgmt\-acl,
-scope netconf, scope prefixes, scope protocols, scope radius\-group,
-scope secret, scope snmp, scope staging, scope tacacs\-group,
-scope vendor\-attrs, user scope
+console agent\-forwarding, console color, console forwarding,
+console idle\-timeout, console list\-max, console password\-cache,
+console space\-completion, console ssh\-escape, device address,
+device block, device collect, device config, device description,
+device hostkey, device hostname, device import, device ios\-syntax,
+device legacy\-ssh, device location, device netconf, device onboard,
+device port, device snmp, device stale\-days, device sync,
+device vendor, group commands, group junos, group preset,
+group privilege, group reset, host default\-method, host provisioner,
+host target, scope aaa\-order, scope auth\-method, scope block,
+scope breakglass, scope default, scope devices, scope exec\-timeout,
+scope mgmt\-acl, scope netconf, scope prefixes, scope protocols,
+scope radius\-group, scope secret, scope snmp, scope staging,
+scope tacacs\-group, scope vendor\-attrs, user scope
 .TP
 .B "mixed, auth.notice"
-config audit\-strict, config sudoers, console system\-shell,
-console tiers, console user, rollback, store import
+config audit\-strict, config sudoers, console system\-shell, rollback,
+store import
 .\" END GENERATED: audit-classes
 .PP
 The fields, in the order written:
@@ -12467,6 +13508,8 @@ name, source (prompt, hash or generated).
 .TP
 .B "user rename"
 from, to, uid (carried or \-).
+.IP "\fBuser password\-change\fR"
+name, state (required or cleared), via (require, add, passwd or self): a requirement to change the password set or lifted, for whom (the actor is by=).
 .TP
 .B "user move"
 name, from, to (the groups).
@@ -12495,7 +13538,7 @@ name, preset (roles), changes; one line for each group changed.
 .B "config sudoers, config sudoers tiers"
 op (install or remove), file, and group for the first.
 .IP "\fBconsole set\fR"
-key, item, from, to. key is the setting (tiers, user, system\-shell, forwarding, agent\-forwarding, ssh\-escape, password\-cache, idle\-timeout, space\-completion) and item the tier, user or part of it; auth.notice for tiers, user and system\-shell.
+key, item, from, to. key is the setting (tiers, user, system\-shell, forwarding, agent\-forwarding, ssh\-escape, password\-cache, idle\-timeout, space\-completion, color, list\-max) and item the tier, user or part of it; auth.notice for tiers, user and system\-shell.
 .TP
 .B "backup restore"
 id, pre (the snapshot taken first), keep\-uids, legacy; auth.notice.
@@ -12753,6 +13796,20 @@ when the answer is the address or the address was skipped.
 .SS Refusals
 The tier gate's refusals keep their words and carry the session id
 .RB ( "tier DENY user=carol tier=readonly cmd=user remove sid=k3x9a0bq" ).
+A caller who must change the password is refused every command but
+.BR passwd ,
+.B version
+and
+.B help
+right after the gate, with
+.BR "password\-change DENY user=bob tier=operator cmd=\(dquser list\(dq" ,
+at
+.BR auth.warning ,
+which names the two words the gate sees and never an argument, and ends with
+.B state=unknown
+when the store could not be read and the caller is not known to be a superuser
+(see
+.BR "user require\-password\-change" ).
 A verb the gate lets through can still refuse: an engineer naming a scope's
 secret to change, or another scope's device. That is the third central line, at
 .BR auth.warning :
@@ -13047,6 +14104,35 @@ Scalar getter/setters
 .BR "config branch" ,
 .BR "scope default" )
 print the current value when called with no arguments.
+.TP
+.B Help
+.B \-h
+or
+.B \-\-help
+as the last word after the words of a command
+.RB ( "tacctl user \-\-help" ,
+.BR "tacctl user add \-h" ,
+.BR "tacctl device config pull \-\-help" )
+prints the help of that command: the text
+.B ?
+prints in the shell and the console, from the same code. A command with
+sub-commands lists each with its arguments and description; any other prints
+its usage lines, its options with their values and descriptions, and what comes
+next (\(lqNext: <username> <group>\(rq). It exits 0, runs as the invoking user
+(no sudo, no password) and lists no live names. On a terminal the help is in
+colour; piped, with
+.B NO_COLOR
+set or with
+.B TACCTL_COLOR=never
+it is plain. No verb has a flag of its own named
+.B \-h
+or
+.BR \-\-help .
+The word is a value after
+.B \-\-
+or as the value of a flag, and
+.B tacctl \-\-help
+alone is the top-level usage.
 .TP
 .B Multi-item input
 Every
@@ -13752,6 +14838,10 @@ The scope's own filter name, in place of mgmt_acl.names.juniper. Set with \fBtac
 list of CIDRs, each with optional services after a colon (tcp/22, tcp/161\-162, udp/*, icmp, comma separated). Default: [].
 The scope's own permitted entries (a CIDR, or a CIDR with its services), in place of mgmt_acl.permits. Set with \fBtacctl scope mgmt\-acl\fR.
 .TP
+.B scope_mgmt_acl.mode.<scope>
+one of ssh\-only, strict. Default: none (unset).
+The mode of the scope's Junos management filter: strict accepts every protocol from the permit list and has no default-accept term; unset: ssh-only, the filter that restricts ssh, NETCONF and SNMP. Only strict is stored. Set with \fBtacctl scope mgmt\-acl\fR.
+.TP
 .B listeners.<backend>.<name>
 mapping with network, address, role, metrics_address, tls (tls is reserved). Default: tacacs.default is tcp :49; radius.auth is udp :1812; radius.acct is udp :1813.
 Where a backend's daemon listens; the built-in listeners can be changed and reset, not removed. Set with \fBtacctl config listen\fR.
@@ -13858,24 +14948,21 @@ The rate limit of an enabled NETCONF service (1 to 250); unset: none stated. Set
 .\" END GENERATED: config-keys
 .SS console.yaml
 .I /etc/tacctl/console.yaml
-holds the login console's switches and settings (see
+holds the login console's settings (see
 .BR "tacctl console" ).
 Edit it with
 .BR "tacctl console" ;
-an absent file is the defaults, and a key that is not in this list is refused.
+an absent file is the defaults, and a key that is not in this list is refused
+(the
+.B tiers
+and
+.B users
+mappings that releases before 0.2.20 wrote are read and ignored).
 .\" BEGIN GENERATED: console-keys
 .TP
 .B version
 integer. Default: 1.
 The format of the file; this release reads and writes 1.
-.TP
-.B tiers.<tier>
-enable or disable. Default: enable.
-Whether the tier gets the console as its login shell on this server (readonly, operator, engineer, superuser). Set with \fBtacctl console tiers\fR.
-.TP
-.B users.<name>
-enable or disable. Default: none (no override).
-A user's override of the tier's switch; no entry: the tier decides. Set with \fBtacctl console user\fR.
 .TP
 .B settings.idle_timeout
 integer, 0 to 1440 minutes (0: none). Default: 30.
@@ -13895,7 +14982,7 @@ The program the console's system-shell word starts. Set with \fBtacctl console s
 .TP
 .B settings.system_shell_tiers
 list of tiers (not engineer). Default: [superuser].
-The tiers that may start the system shell. Set with \fBtacctl console system\-shell tiers\fR.
+The tiers that may start the system shell. The superuser tier always may, and is written into the list; engineer never. Set with \fBtacctl console system\-shell\fR.
 .TP
 .B settings.forwarding_tiers
 list of tiers (not engineer). Default: [superuser].
@@ -13906,12 +14993,20 @@ true or false. Default: false.
 Whether those tiers may bind forwarded ports to an address other than loopback. Set with \fBtacctl console forwarding gateway\-ports\fR.
 .TP
 .B settings.list_max
-integer, 1 to 1000. Default: 40.
-The number of completions the console's shell lists without asking. Edit the file to change it.
+integer, 1 to 1000, or \-1 (never ask). Default: 40.
+The number of completions the console's shell lists without asking "Show all N?". Set with \fBtacctl console list\-max\fR.
 .TP
 .B settings.space_completion
 true or false. Default: true.
 Whether a typed space at the console's prompt completes a fixed word, as on Junos. Written to the file only when false. Set with \fBtacctl console space\-completion\fR.
+.TP
+.B settings.color
+true or false. Default: absent (auto).
+Whether the console's lists are in colour: true (on) or false (off). Written to the file only when set; a file without the key is auto, the terminal decides. Set with \fBtacctl console color\fR.
+.TP
+.B settings.system_shell_users
+mapping of user name to disable or enable:<tier>. Default: absent (no user has one).
+The users with a system-shell setting of their own, which wins over their tier's: enable:<tier> gives it to a user of a tier that has none, for as long as the user is in that tier (readonly or operator), and disable takes it from a user of a tier that has it. Written to the file only when a user has one. Set with \fBtacctl console system\-shell user\fR.
 .\" END GENERATED: console-keys
 .PP
 A mapping
@@ -14159,7 +15254,15 @@ Whether output is styled (bold titles, colour in the
 .B [WARN]
 and
 .B [ERROR]
-lines and in help and listings). Styling appears only on a terminal, decided
+lines and in help and listings). The lists of the shell, the console,
+.B ?
+and
+.B \-h
+and
+.B \-\-help
+use one palette: command names bright white, sub-commands, fixed words and
+options teal, live names (users, groups, devices, hosts) bold, descriptions
+plain. Styling appears only on a terminal, decided
 for standard output and standard error separately: a stream is styled when it is
 a terminal and
 .B TERM
@@ -14348,10 +15451,9 @@ A device's rename moves it and its removal deletes it; a new device, or a
 rename onto a name whose blocks are already on disk, is refused.
 .TP
 .I /etc/tacctl/console.yaml
-The login console's switches per tier, per-user overrides and settings (see
+The login console's settings (see
 .BR "CONFIGURATION KEYS" ).
-Mode 0600, root only; absent means the defaults (the console on for every
-tier). Edit it with
+Mode 0600, root only; absent means the defaults. Edit it with
 .BR "tacctl console" .
 Snapshots include it.
 .TP
@@ -14677,7 +15779,14 @@ user, removed afterwards on every path). It is not
 .BR TMPDIR .
 .TP
 .I /usr/share/man/man1/tacctl.1.gz
-This manual.
+This manual. Written by
+.B install
+and
+.BR upgrade ;
+.B tacctl man
+shows the copy the binary carries (the page of the running version), and
+.B tacctl man \-\-path
+says whether this file is the same.
 .TP
 .I ~/.local/state/tacctl/history
 The

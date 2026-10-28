@@ -2,7 +2,7 @@
 # Based on the pull of 2026-10-10 14:02 by alice over netconf (18 minutes ago) and the standard of
 # 2026-10-10 14:20 (tacctl 0.2.5).
 #
-# What is irregular on dev-juniper-lab-engineer (15 items; the paste fixes 1, leaves 14):
+# What is irregular on dev-juniper-lab-engineer (13 items; the paste fixes 1, leaves 12):
 #  1. roles    ACCESS     extra: login class OP-CLASS allows clear (set system login class OP-CLASS
 #                         permissions clear). Not fixable by this login: EN-CLASS cannot change
 #                         'system login' (ask a superuser).
@@ -32,22 +32,18 @@
 # 10. snmp     COSMETIC   missing: the SNMP description is Core switch (set snmp description "Core
 #                         switch"). Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a
 #                         superuser).
-# 11. snmp     MONITORING extra: SNMP: name example-switch.example.net (set snmp name
-#                         example-switch.example.net). Not fixable by this login: EN-CLASS cannot
-#                         change 'snmp' (ask a superuser).
-# 12. snmp     COSMETIC   extra: the SNMP location is example location (set snmp location "example
+# 11. snmp     COSMETIC   extra: the SNMP location is example location (set snmp location "example
 #                         location"). Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a
 #                         superuser).
-# 13. snmp     COSMETIC   extra: the SNMP contact is example contact (set snmp contact "example
+# 12. snmp     COSMETIC   extra: the SNMP contact is example contact (set snmp contact "example
 #                         contact"). Not fixable by this login: EN-CLASS cannot change 'snmp' (ask a
 #                         superuser).
-# 14. snmp     MONITORING extra: an SNMP community: 4 statements (e.g. set snmp community <other:1>
-#                         authorization read-only). Not fixable by this login: EN-CLASS cannot change
-#                         'snmp' (ask a superuser).
-# 15. mgmt-acl ACCESS     missing: the management filter MGMT-ACL: 22 statements (e.g. set firewall
+# 13. mgmt-acl ACCESS     missing: the management filter MGMT-ACL: 22 statements (e.g. set firewall
 #                         family inet filter MGMT-ACL term permit-mgmt from source-address
 #                         192.0.2.10/32). Fixed by region lines 3-24.
 # Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
+# Kept: snmp 5 statements of the device's own (name, communities): left alone, listed by device config
+# diff.
 # Cleanup (--converge): cleanup comes after this region is pasted and verified: pull the device, then
 # plan --converge again.
 # WARNING: the pull's login could not see secrets: a secret the device holds could not be compared and

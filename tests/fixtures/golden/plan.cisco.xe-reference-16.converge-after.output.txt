@@ -10,7 +10,8 @@
 !                         dynamic-author / no client 192.0.2.7
 ! Nothing to paste: everything above is left alone or cannot be fixed by this login.
 ! Consistent: roles, snmp, mgmt-acl. Not planned: netconf, breakglass.
-! Secrets: 2 present on the device, not changed (--secrets pushes them).
+! Secrets: 2 present (the RADIUS server key, the SNMP community); only their presence is checked,
+! --secrets writes them again.
 ! Cleanup (--converge): nothing to remove.
 ! 1 extra stays: its item above says why.
 ! Note: no enable secret on the device: with AAA on and the server unreachable, a local user with

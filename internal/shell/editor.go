@@ -30,6 +30,11 @@ type Candidate struct {
 	NoSpace    bool
 	Unlisted   bool
 	Fixed      bool
+	// Command: the word is the name of a command (the first word at the top
+	// level); Live: it is a live name (a user, a group, a device). They
+	// choose the colour of the word in the lists (style); neither: a
+	// sub-command, a fixed word or an option.
+	Command, Live bool
 	// Kind is what the word is, plural ('devices', 'commands'), for the
 	// question before a long list; empty: 'choices'.
 	Kind string
@@ -86,7 +91,7 @@ func builtinCandidates(rows []Row) []Candidate {
 	var out []Candidate
 	for _, r := range rows {
 		for _, w := range r.Words {
-			c := Candidate{Word: w, Desc: r.Desc, Unlisted: true, Fixed: true}
+			c := Candidate{Word: w, Desc: r.Desc, Unlisted: true, Fixed: true, Command: true}
 			if r.Left != w {
 				c.Label = r.Left
 			}
@@ -110,6 +115,10 @@ type editor struct {
 	explain       Explainer
 	// systemShell: the shell has the system-shell word (Rows).
 	systemShell bool
+	// locked answers whether the session is held to a required password
+	// change (Options.Locked): the lists then offer exit only of the shell's
+	// own words.
+	locked func() bool
 	// width and height are the terminal's size (setSize; 0: unknown).
 	width, height atomic.Int32
 	// out writes to the terminal past the Terminal, and readKey reads one
@@ -121,7 +130,7 @@ type editor struct {
 	listMax int
 	// spaces: a typed blank is handled as on Junos (Options.SpaceCompletion).
 	spaces bool
-	// styled: the '?' list shows the labels in bold (Options.Styled).
+	// styled: the lists show their words in colour (Options.Styled).
 	styled bool
 
 	// lastTab: the previous key was a Tab that completed nothing more (a
@@ -283,18 +292,36 @@ func (e *editor) question(line string, pos int) (string, int, bool) {
 		return "", 0, false
 	}
 	e.lastTab = false
-	if cands := e.candidates(words, partial); len(cands) > 0 {
-		e.present(line, pos, partial, cands, "Possible completions:\n"+listingStyled(cands, e.styled), true)
-		return line, pos, true
+	cands := e.candidates(words, partial)
+	var explained string
+	var ok bool
+	if len(cands) == 0 && e.explain != nil {
+		explained, ok = e.explain(words)
 	}
-	text := "No valid completions\n"
-	if e.explain != nil {
-		if t, ok := e.explain(words); ok {
-			text = t
-		}
-	}
-	e.present(line, pos, partial, nil, text, true)
+	text := HelpText(cands, explained, ok, e.styled, e.size().w)
+	e.present(line, pos, partial, cands, text, true)
 	return line, pos, true
+}
+
+// HelpText is the text '?' prints, and the text '-h' and '--help' print
+// after a command's words: one renderer for both. The candidates, when
+// there are any, are listed under 'Possible completions:' (listingWidth);
+// else explained is the usage of the command typed so far, its options and
+// what comes next (Explainer; ok false: it named no command), and with
+// neither, 'No valid completions'. styled shows the words in colour and
+// width (0: not known) wraps a description that does not fit after its
+// column.
+func HelpText(cands []Candidate, explained string, ok, styled bool, width int) string {
+	switch {
+	case len(cands) > 0:
+		return "Possible completions:\n" + listingWidth(cands, styled, width)
+	case ok:
+		if !styled {
+			return stripSGR(explained)
+		}
+		return explained
+	}
+	return "No valid completions\n"
 }
 
 // show prints text below the typed line. Terminal.Write clears the prompt
@@ -342,7 +369,7 @@ func (e *editor) tab(line string, pos int) (string, int, bool) {
 		return line[:start] + ins + line[pos:], start + len(ins), true
 	}
 	if e.lastTab {
-		e.present(line, pos, partial, cands, columns(cands, e.size().w), false)
+		e.present(line, pos, partial, cands, columnsStyled(cands, e.size().w, e.styled), false)
 	}
 	e.lastTab = true
 	return line, pos, true
@@ -394,7 +421,7 @@ func (e *editor) space(line string, pos int) (string, int, bool) {
 		return line[:start] + ins, start + len(ins), true
 	}
 	if n := len(listed(cands)); e.listMax < 0 || n <= e.listMax {
-		e.show(line, "Possible completions:\n"+listingStyled(cands, e.styled))
+		e.show(line, "Possible completions:\n"+listingWidth(cands, e.styled, e.size().w))
 	}
 	return line, pos, true
 }
@@ -414,13 +441,45 @@ func (e *editor) candidates(words []string, partial string) []Candidate {
 
 // candidatesFrom is candidates, asking complete.
 func (e *editor) candidatesFrom(complete Completer, words []string, partial string) []Candidate {
+	if e.locked != nil && e.locked() {
+		return collectLocked(complete, words, partial)
+	}
+	return collect(complete, Rows(e.systemShell), e.systemShell, words, partial)
+}
+
+// Candidates are the completions of partial after words from complete,
+// sorted, once each, as '?' lists them but for the shell's own words: the
+// words of a command line outside the shell ('--help').
+func Candidates(complete Completer, words []string, partial string) []Candidate {
+	return collect(complete, nil, false, words, partial)
+}
+
+// collect is the answer of complete for words and partial, with the shell's
+// own words (rows) at the start of a line, filtered by partial.
+func collect(complete Completer, rows []Row, systemShell bool, words []string, partial string) []Candidate {
+	return collectFrom(complete, rows, systemShell, false, words, partial)
+}
+
+// LockedRows are the shell's own words while the session is held to a
+// required password change: exit and quit.
+var LockedRows = []Row{{"exit | quit", DescExit, []string{"exit", "quit"}}}
+
+// collectLocked is collect for a locked session: exit and quit at the start
+// of a line, nothing after help (a word that does not run), and what the
+// completer offers, which the caller has narrowed to the words that run.
+func collectLocked(complete Completer, words []string, partial string) []Candidate {
+	return collectFrom(complete, LockedRows, false, true, words, partial)
+}
+
+func collectFrom(complete Completer, rows []Row, systemShell, locked bool, words []string, partial string) []Candidate {
 	var all []Candidate
 	switch {
 	case len(words) == 0:
-		all = append(all, builtinCandidates(Rows(e.systemShell))...)
+		all = append(all, builtinCandidates(rows)...)
 		if complete != nil {
 			all = append(all, complete(nil, partial)...)
 		}
+	case words[0] == "help" && locked:
 	case words[0] == "help":
 		if complete != nil {
 			for _, c := range complete(words[1:], partial) {
@@ -429,7 +488,7 @@ func (e *editor) candidatesFrom(complete Completer, words []string, partial stri
 				}
 			}
 		}
-	case words[0] == "history" || words[0] == "exit" || words[0] == "quit" || (e.systemShell && words[0] == SystemShellWord):
+	case words[0] == "history" || words[0] == "exit" || words[0] == "quit" || (systemShell && words[0] == SystemShellWord):
 	default:
 		if complete != nil {
 			all = complete(words, partial)
@@ -456,9 +515,26 @@ func listed(cands []Candidate) []Candidate {
 	return slices.DeleteFunc(slices.Clone(cands), func(c Candidate) bool { return c.Unlisted })
 }
 
+// style is the colour of the word of a candidate in the lists: a command
+// name bright white, a live name bold, any other word (a sub-command, a
+// fixed word, an option) teal.
+func (c Candidate) style() string {
+	switch {
+	case c.Command:
+		return ui.BrightWhite
+	case c.Live:
+		return ui.Bold
+	}
+	return ui.Teal
+}
+
 // columns is the Tab list: the words alone, in columns down then across,
 // as many as fit width (bash's listing); one column when none fit.
-func columns(cands []Candidate, width int) string {
+func columns(cands []Candidate, width int) string { return columnsStyled(cands, width, false) }
+
+// columnsStyled is columns with the words in their colours when styled. The
+// columns are counted on the plain words, so they are the same either way.
+func columnsStyled(cands []Candidate, width int, styled bool) string {
 	cands = listed(cands)
 	if len(cands) == 0 {
 		return ""
@@ -481,43 +557,165 @@ func columns(cands []Candidate, width int) string {
 				break
 			}
 			w := cands[i].Word
-			row.WriteString(w + strings.Repeat(" ", colw-utf8.RuneCountInString(w)))
+			shown := w
+			if styled {
+				shown = ui.Paint(cands[i].style(), w)
+			}
+			row.WriteString(shown + strings.Repeat(" ", colw-utf8.RuneCountInString(w)))
 		}
 		b.WriteString(strings.TrimRight(row.String(), " ") + "\n")
 	}
 	return b.String()
 }
 
+// LabelMax is the widest argument column the '?' list shows: a longer
+// label ('devices [show|max-concurrency|transport|...] [<value>]') is
+// shown as its first words and "...", the whole form being in the usage
+// of the command. With the descriptions at most 72 characters a row is
+// then at most 116 columns wide.
+const LabelMax = 40
+
+// capLabel is l cut to at most max columns, ending in "...": at the last
+// blank that leaves at least a third of max (the first words), else inside
+// a word ('devices [show|max-concurrency|...' keeps more than 'devices').
+// A colour sequence takes no column and is never cut; a style the cut leaves
+// open is closed before the dots.
+func capLabel(l string, max int) string {
+	if visLen(l) <= max {
+		return l
+	}
+	r := []rune(stripSGR(l))
+	cut := max - 3
+	for i := cut; i >= max/3; i-- {
+		if r[i] == ' ' {
+			cut = i
+			break
+		}
+	}
+	for cut > 0 && r[cut-1] == ' ' {
+		cut--
+	}
+	if !strings.Contains(l, "\x1b[") {
+		return string(r[:cut]) + "..."
+	}
+	return cutVisible(l, cut) + "..."
+}
+
+// Cap is s cut to at most max characters, at a blank where it can be, and
+// ending in "...": a description in a menu that has no room for a long one
+// (the zsh and fish scripts).
+func Cap(s string, max int) string { return capLabel(s, max) }
+
+// wrapWords are the lines s takes at w columns, cut at blanks (a word
+// longer than w stays whole). The blanks inside a line stay as they are, a
+// run of them included: the descriptions of live names are aligned in
+// columns by the blanks between their words, and a line that is cut loses
+// only the run at the cut. A colour sequence takes no column, and a style
+// open at a cut is closed there and opened again on the next line.
+func wrapWords(s string, w int) []string {
+	var lines []string
+	cur := ""
+	for rest := s; ; {
+		trimmed := strings.TrimLeft(rest, " ")
+		gap := rest[:len(rest)-len(trimmed)]
+		if trimmed == "" {
+			break
+		}
+		word := trimmed
+		if i := strings.IndexByte(trimmed, ' '); i >= 0 {
+			word = trimmed[:i]
+		}
+		rest = trimmed[len(word):]
+		switch {
+		case cur == "":
+			cur = word
+		case visLen(cur)+len(gap)+visLen(word) <= w:
+			cur += gap + word
+		default:
+			lines = append(lines, cur)
+			cur = word
+		}
+	}
+	return carryStyle(append(lines, cur))
+}
+
 // listing is the '?' list: the candidates one per line, the label (or the
 // word) and the description aligned.
 func listing(cands []Candidate) string { return listingStyled(cands, false) }
 
-// listingStyled is listing with the label in bold when styled. The padding
-// is counted on the plain label, so the columns are the same either way.
-func listingStyled(cands []Candidate, styled bool) string {
-	label := func(c Candidate) string {
-		if c.Label != "" {
-			return c.Label
+// listingStyled is listing with the words in their colours when styled
+// (style): a command name bright white, a sub-command, a fixed word and an
+// option teal, a live name bold; the descriptions are plain. The padding is
+// counted on the plain label, so the columns are the same either way.
+func listingStyled(cands []Candidate, styled bool) string { return listingWidth(cands, styled, 0) }
+
+// styleLabel is label l of c in colour: its first word in the colour of the
+// candidate, an option inside it (a word that starts with a dash) teal, the
+// placeholders as they are. A label that has colour of its own is kept.
+func styleLabel(c Candidate, l string) string {
+	if strings.Contains(l, "\x1b[") {
+		return l
+	}
+	toks := strings.Split(l, " ")
+	for i, t := range toks {
+		switch {
+		case i == 0:
+			toks[i] = ui.Paint(c.style(), t)
+		case strings.HasPrefix(t, "-") || strings.HasPrefix(t, "[-"):
+			toks[i] = ui.Paint(ui.Teal, t)
 		}
-		return c.Word
+	}
+	return strings.Join(toks, " ")
+}
+
+// listingWidth is listingStyled for a terminal w columns wide (0: not
+// known): a description that does not fit after the label column goes on
+// the lines below, indented to the column where it starts. Every width is
+// counted on the text without its colour sequences.
+func listingWidth(cands []Candidate, styled bool, w int) string {
+	label := func(c Candidate) string {
+		l := c.Word
+		if c.Label != "" {
+			l = c.Label
+		}
+		// A word with no label is capped too: a long name must not widen
+		// the column past LabelMax.
+		l = capLabel(l, LabelMax)
+		if !styled {
+			l = stripSGR(l)
+		}
+		return l
 	}
 	width := 0
 	for _, c := range listed(cands) {
-		width = max(width, utf8.RuneCountInString(label(c)))
+		width = max(width, visLen(label(c)))
 	}
+	col := 2 + width + 2 // where the descriptions start
 	var b strings.Builder
 	for _, c := range listed(cands) {
 		l := label(c)
 		shown := l
 		if styled {
-			shown = ui.Bold + l + ui.NC
+			shown = styleLabel(c, l)
 		}
 		if c.Desc == "" {
 			b.WriteString("  " + shown + "\n")
 			continue
 		}
-		pad := width - utf8.RuneCountInString(l)
-		b.WriteString("  " + shown + strings.Repeat(" ", pad) + "  " + c.Desc + "\n")
+		desc := c.Desc
+		if !styled {
+			desc = stripSGR(desc)
+		}
+		descs := []string{desc}
+		// Wrap only where a sensible width is left for the text.
+		if w > 0 && col+visLen(desc) > w && w-col >= 20 {
+			descs = wrapWords(desc, w-col)
+		}
+		pad := width - visLen(l)
+		b.WriteString("  " + shown + strings.Repeat(" ", pad) + "  " + descs[0] + "\n")
+		for _, d := range descs[1:] {
+			b.WriteString(strings.Repeat(" ", col) + d + "\n")
+		}
 	}
 	return b.String()
 }

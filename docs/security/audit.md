@@ -22,7 +22,7 @@ cmd end v=1 user=alice cmd="user add" result=ok status=0 duration=0.312s
 Every command has a class in a table in the code:
 
 - **action**: it changes state or logs in somewhere every time it runs (`user add`, `host sync`, `ssh`, `log clear`, ...). The start line is written before the command does anything, after the tier gate and the preflight; the end line where the exit status is decided.
-- **mixed**: it is a read or a write by its later arguments (`scope secret` shows or sets, `device port <name>` shows and `device port <name> 2222` sets, `config loglevel`, `console tiers`, ...). The start line is written just before the first thing the command changes, so a mixed command that only read writes nothing.
+- **mixed**: it is a read or a write by its later arguments (`scope secret` shows or sets, `device port <name>` shows and `device port <name> 2222` sets, `config loglevel`, `console system-shell`, ...). The start line is written just before the first thing the command changes, so a mixed command that only read writes nothing.
 - **read**: no central line.
 
 A command that is not in the table is treated as an action, and the test suite fails until its row is added. The lines of a verb that logs more (`ssh start`/`ssh end`, the console session, `breakglass hold`, `host enroll`, `device config apply`, ...) are kept; the pair is written for those verbs too.
@@ -84,6 +84,7 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `user remove`, `user disable`, `user enable` | `name` |
 | `user passwd` | `name` `source=prompt\|hash\|generated` |
 | `user rename` | `from` `to` `uid=carried\|-` |
+| `user password-change` | `name` `state=required\|cleared` `via=require\|add\|passwd\|self`: a requirement to change the password set or lifted, for whom (`by=` is who) |
 | `user move` | `name` `from` `to` (groups) |
 | `user scope` | `name` `op=add\|remove\|replace` `scopes` |
 | `group add` | `name` `priv-lvl` `tier` |
@@ -93,7 +94,7 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `group privilege` | `name` `op=add\|remove\|seed` `count` |
 | `group preset` | `name` `preset=roles` `changes`; one line per group changed |
 | `config sudoers`, `config sudoers tiers` | `op=install\|remove` `file`, and `group` for the first |
-| `console set` | `key` `item` `from` `to`: `key` is the setting (`tiers`, `user`, `system-shell`, `forwarding`, `agent-forwarding`, `ssh-escape`, `password-cache`, `idle-timeout`, `space-completion`) and `item` the tier, user or part of it; `auth.notice` for `tiers`, `user` and `system-shell` |
+| `console set` | `key` `item` `from` `to`: `key` is the setting (`system-shell`, `forwarding`, `agent-forwarding`, `ssh-escape`, `password-cache`, `idle-timeout`, `space-completion`, `color`, `list-max`) and `item` the tier, the user (`user:<name>` for a system-shell setting of one user) or part of it; `auth.notice` for `system-shell` |
 | `backup restore` | `id` `pre` (the snapshot taken first) `keep-uids` `legacy`; `auth.notice` |
 | `store import` | `source` `replace` `force`; `auth.notice` |
 | `store rollback` | `pre`; `auth.notice` |
@@ -107,7 +108,7 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `scope prefixes` | `op=add\|remove\|move\|remove-all` `scope` `cidr`, and `to` for a move |
 | `scope protocols`, `scope vendor-attrs`, `scope auth-method`, `scope aaa-order`, `scope exec-timeout`, `scope tacacs-group`, `scope radius-group`, `scope netconf` | `scope` `from` `to` |
 | `scope devices` | `scope` `cidr` `from` `to` (the vendor tag) |
-| `scope mgmt-acl` | `scope` `op=add\|remove\|clear\|cisco-name\|juniper-name` `value` |
+| `scope mgmt-acl` | `scope` `op=add\|remove\|clear\|cisco-name\|juniper-name\|mode` `value` (the mode, for `op=mode`) |
 | `scope secret set` | `scope` `source=set\|generate` |
 | `snmp set` | `kind=community\|v3-user\|clear\|version\|port\|timeout\|clients\|contact`, and `scope` or `device`; `from` `to` for `config snmp port\|timeout` |
 | `secret-read` | `kind` `name`: a secret shown (`scope`, `snmp`, `snmp-device`, `snmp-default`, `block`, `block-adopt`, `store`, `config`, `snapshot`, `backup`); written for every caller, a superuser's too |
@@ -222,6 +223,18 @@ The tier gate's refusals keep their words and carry the session id:
 tier DENY user=carol tier=readonly cmd=user remove sid=k3x9a0bq
 ```
 
+A caller who must change the password (see [A required password change](../cli/user.md)) is
+refused every command but `passwd`, `version` and `help` right after the gate, with a line of its
+own, at `auth.warning`, that names the two words the gate sees and never an argument; the command
+never started, so it has no central line:
+
+```
+password-change DENY user=bob tier=operator cmd="user list" sid=k3x9a0bq
+```
+
+When the store cannot be read it cannot be told whether the requirement stands, and a caller who is not
+known to be a superuser is refused the same way, with `state=unknown` at the end of the line.
+
 A verb the gate lets through can still refuse: an engineer naming a scope's secret to change, or another scope's device. That is the third central line, at `auth.warning`:
 
 ```
@@ -241,7 +254,7 @@ with `reason=superuser` (the verb is the superuser's) or `reason=scope` (the thi
 
 Nothing else is redacted: free text such as `breakglass hold --reason` is why a device was taken out of AAA, and it is logged as typed, as are the arguments of `ssh` after `--`. A secret typed in the place of a name (`user passwd <password>`) is logged as the name; only the words after the verb's own arguments are redacted. Whatever is typed on a command line is also in sudo's own log, which records the whole line, and `ps` shows it while the command runs. The forms that keep a value off the command line are `scope secret <scope> set` (a hidden prompt, or `--stdin`), `user add|passwd --hash -` (the hash on standard input), and the `community` and `v3-user` verbs (a prompt or `--stdin`).
 
-The login console's refusal of a `-c` string (`scp`, a program, a shell) is not a `cmd` line but `console DENY ... reason=command first=<word>` under the tag `tacctl-console`. `first=` is a verb of tacctl or one of the console's own words (`help`, `history`, `exit`, `quit`, `system-shell`); any other first word, a program or a password typed at the prompt, is not logged: the line reads `first=- len=<n>`, `n` the length of the string.
+The login console's refusal of a `-c` string (`scp`, a program, a shell) is not a `cmd` line but `console DENY ... reason=command first=<word>` under the tag `tacctl-console`. `first=` is a verb of tacctl or one of the console's own words (`help`, `history`, `exit`, `quit`, `system-shell`); any other first word, a program or a password typed at the prompt, is not logged: the line reads `first=- len=<n>`, `n` the length of the string. A line refused because a password change is required of the user reads `console DENY ... reason=password-change first=<word>|-` by the same rule, and the opening of such a session writes `console password-change required|done|failed` (the [login console](login-console.md) has the session).
 
 The test suite runs every verb that takes a secret with a marker in each position it can be typed in and fails when the marker is in any `logger` argument.
 

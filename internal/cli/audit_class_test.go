@@ -54,7 +54,7 @@ func TestHelperCommandsAreReads(t *testing.T) {
 func TestWeightyCommands(t *testing.T) {
 	parallel(t)
 	for _, k := range []string{"install", "upgrade", "uninstall", "rollback", "log clear", "store import", "store rollback",
-		"backup restore", "config restore", "config sudoers", "console system-shell", "console tiers", "console user"} {
+		"backup restore", "config restore", "config sudoers", "console system-shell"} {
 		if !auditTable[k].isNotice(nil) {
 			t.Errorf("%q is not weighty", k)
 		}

@@ -70,7 +70,7 @@ func TestConfigCiscoSourceInterface(t *testing.T) {
 	}
 	// help
 	out = plain(sb.cfgRun("", []string{"config", "cisco", "source-interface", "--help"}, nil))
-	if !strings.Contains(out, "Usage:\n  tacctl config cisco source-interface [<scope> [<interface>|none]]") {
+	if !strings.Contains(out, "Usage:\n  cisco source-interface [<scope> [<interface>|none]]") {
 		t.Errorf("help:\n%s", out)
 	}
 }

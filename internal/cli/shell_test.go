@@ -328,8 +328,8 @@ func TestShellCompleterFixedWords(t *testing.T) {
 		{[]string{"user", "show"}, "al", false, "alice"},
 		{[]string{"user", "add", "x", "ops"}, "--h", true, "--hash"},
 		{[]string{"user", "add", "x", "ops"}, "--scopes", true, "--scopes"},
-		{[]string{"console", "tiers"}, "r", true, "readonly"},
-		{[]string{"console", "tiers", "readonly"}, "", true, "enable"},
+		{[]string{"console", "forwarding"}, "ga", true, "gateway-ports"},
+		{[]string{"console", "forwarding", "gateway-ports"}, "", true, "enable"},
 		{[]string{"console", "space-completion"}, "", true, "on"},
 		{[]string{"shell"}, "--sp", true, "--space-completion"},
 		{[]string{"shell", "--space-completion"}, "", true, "off"},
@@ -411,7 +411,7 @@ func TestShellFixedCompleterSkipsLookups(t *testing.T) {
 		{[]string{"user"}, "sh", "show"},
 		{[]string{"user", "add", "x", "ops"}, "--h", "--hash"},
 		{[]string{"user", "add", "x", "ops"}, "--s", "--scopes"},
-		{[]string{"console", "tiers", "readonly"}, "en", "enable"},
+		{[]string{"console", "forwarding", "gateway-ports"}, "en", "enable"},
 	} {
 		if got := words(fixed(c.words, c.partial)); !slices.Contains(got, c.some) {
 			t.Errorf("%q %q: %q lacks %q", c.words, c.partial, got, c.some)
@@ -698,7 +698,7 @@ func TestShellVerbDescriptionsFromUsage(t *testing.T) {
 // their descriptions from the usage block, and what comes next.
 func TestShellExplain(t *testing.T) {
 	inv, root, _ := shellTestInv(t)
-	explain := inv.shellExplain(root)
+	explain := inv.plainExplain(root)
 	cases := []struct {
 		words []string
 		want  []string

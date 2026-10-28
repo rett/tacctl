@@ -1,6 +1,7 @@
 package conf
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/rett/tacctl/internal/mgmtacl"
@@ -13,6 +14,50 @@ const (
 	MgmtACLKey         = "mgmt_acl.permits"
 	ScopeMgmtACLPrefix = "scope_mgmt_acl.permits."
 )
+
+// ScopeMgmtACLModePrefix starts the key of a scope's management filter mode
+// (0.2.20, 'tacctl scope mgmt-acl <scope> mode'): scope_mgmt_acl.mode.<scope>.
+// The mode only shapes the Junos filter. An absent key is MgmtModeSSHOnly,
+// which is never stored, so a tacctl.yaml that never set a mode does not
+// change, and a release before 0.2.20 reads every file that has none.
+const ScopeMgmtACLModePrefix = "scope_mgmt_acl.mode."
+
+// The modes of the Junos management filter. ssh-only restricts ssh, NETCONF
+// and SNMP and ends in a default-accept term; strict accepts every protocol
+// from the permit list only and has none.
+const (
+	MgmtModeSSHOnly = "ssh-only"
+	MgmtModeStrict  = "strict"
+)
+
+// MgmtModes are the modes, in the order they are listed.
+var MgmtModes = []string{MgmtModeSSHOnly, MgmtModeStrict}
+
+// MgmtACLMode is the management filter mode of scope: MgmtModeStrict when the
+// scope has it, else MgmtModeSSHOnly (also for scope "" and for a value the
+// schema would refuse).
+func (c *Config) MgmtACLMode(scope string) string {
+	if scope == "" {
+		return MgmtModeSSHOnly
+	}
+	if v, ok := c.Get(ScopeMgmtACLModePrefix+scope, ""); ok && v == MgmtModeStrict {
+		return MgmtModeStrict
+	}
+	return MgmtModeSSHOnly
+}
+
+// MgmtACLStrictScopes are the scopes whose management filter mode is
+// strict, sorted: what a rollback to a release that has no mode warns of.
+func (c *Config) MgmtACLStrictScopes() []string {
+	var out []string
+	walkLeaves(c.Overrides(), "", func(p string, v any) {
+		if s, ok := strings.CutPrefix(p, ScopeMgmtACLModePrefix); ok && v == MgmtModeStrict {
+			out = append(out, s)
+		}
+	})
+	slices.Sort(out)
+	return out
+}
 
 // ACLServiceEntry is one element of a management ACL list that carries
 // services (0.2.7): the list's key and the entry as the file has it.

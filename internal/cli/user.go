@@ -16,6 +16,7 @@ import (
 	"github.com/rett/tacctl/internal/hash"
 	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/names"
+	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/shellquote"
 	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/ui"
@@ -26,14 +27,21 @@ var userSpecs = map[string]Spec{
 	"list": {},
 	"show": {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}},
 	"add": {MinArgs: 2, MaxArgs: 2, Args: []string{"", KindGroups}, Flags: []Flag{
-		{Names: []string{"--hash"}, Value: true, Secret: true}, {Names: []string{"--scopes"}, Value: true, Kind: KindScopes + KindList}}},
-	"remove":  {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}},
-	"passwd":  {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}, Flags: []Flag{{Names: []string{"--hash"}, Value: true, Secret: true}}},
+		{Names: []string{"--hash"}, Value: true, Secret: true}, {Names: []string{"--scopes"}, Value: true, Kind: KindScopes + KindList},
+		{Names: []string{noChangeRequired}, Desc: "Skip the required password change",
+			Long: "Do not require the user to change the password at the first login to this server. Without it a new user must change it first, and no device accepts the user until then (a superuser, and a user with no login on this server, never must)"}}},
+	"remove": {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}},
+	"passwd": {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}, Flags: []Flag{{Names: []string{"--hash"}, Value: true, Secret: true},
+		{Names: []string{noChangeRequired}, Desc: "Skip the required password change",
+			Long: "Do not require the user to change the password at the next login to this server. Without it the reset requires one, and no device accepts the user until it is done (a superuser, and a user with no login on this server, never must); with it a requirement that stands is lifted"}}},
 	"disable": {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}},
 	"enable":  {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}},
 	"rename":  {MinArgs: 2, MaxArgs: 2, Args: []string{KindUsers, ""}},
 	"move":    {MinArgs: 2, MaxArgs: 2, Args: []string{KindUsers, KindGroups}},
 	"verify":  {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}},
+	"require-password-change": {MinArgs: 0, MaxArgs: 2, Args: []string{Either(KindUsers, "on|off"), "on|off"}, Flags: []Flag{
+		{Names: []string{"--all"}, Desc: "Apply to every user",
+			Long: "Apply to every user instead of the one named; the state, on or off, is then the only argument"}}},
 	"scope": {MinArgs: 1, MaxArgs: 3, Args: []string{KindUsers, "list|add|remove|replace", KindScopes + KindList},
 		Flags: []Flag{{Names: []string{"--all"}, Only: "remove", Alone: true}}},
 }
@@ -45,14 +53,15 @@ func userCmd(inv *invocation) *cobra.Command {
 	c := verb("user <subcommand>", "User management (list, add, remove, passwd, scope, ...)",
 		withRun(verb("list", "List all users (name, group, status, pw age, scopes)"), n(inv.userList)),
 		withRun(verb("show <username>", "Show user details incl. scope membership"), n(inv.userShow)),
-		withRun(verb("add <username> <group> [--hash <hash>|-] [--scopes <s>[,s...]]", "Add a new user; lands in default scope"), n(inv.userAdd)),
+		withRun(verb("add <username> <group> [--hash <hash>|-] [--scopes <s>[,s...]] [--no-change-required]", "Add a new user; lands in default scope"), n(inv.userAdd)),
 		withRun(verb("remove <username>", "Remove a user"), n(inv.userRemove)),
-		withRun(verb("passwd <username> [--hash <hash>|-]", "Change a user's password"), n(inv.userPasswd)),
+		withRun(verb("passwd <username> [--hash <hash>|-] [--no-change-required]", "Change a user's password"), n(inv.userPasswd)),
 		withRun(verb("disable <username>", "Disable a user (preserves hash)"), n(inv.userDisable)),
 		withRun(verb("enable <username>", "Re-enable a disabled user"), n(inv.userEnable)),
 		withRun(verb("rename <old> <new>", "Rename a user"), n(inv.userRename)),
 		withRun(verb("move <user> <group>", "Move user to a different group"), n(inv.userMove)),
 		withRun(verb("verify <username>", "Verify password and show user details"), n(inv.userVerify)),
+		withRun(verb("require-password-change <username>|--all [on|off]", "Require, or lift, a password change at the next login"), n(inv.userRequirePasswordChange)),
 		withRun(verb("scope <user> {list|add|remove|replace} [<scope>[,<scope>...]] | remove --all",
 			"Manage which scopes the user can auth from"), n(inv.userScope)),
 	)
@@ -280,6 +289,7 @@ func (inv *invocation) userList([]string) error {
 		return err
 	}
 	t := ui.NewTable("Users", ui.Left("USERNAME"), ui.Left("UID"), ui.Left("GROUP"), ui.Left("STATUS"), ui.Left("PW CHANGED"), ui.Left("SCOPES"))
+	pw := inv.pwContext(m)
 	for _, row := range m.UserRows() {
 		f := strings.SplitN(row, "|", 5)
 		for len(f) < 5 {
@@ -301,7 +311,7 @@ func (inv *invocation) userList([]string) error {
 				display = f[4]
 			}
 		}
-		t.Add(f[0], inv.userUID(f[0]), f[1], ui.Styled(color, f[2]), f[3], display)
+		t.Add(f[0], inv.userUID(f[0]), f[1], ui.Styled(color, f[2]), f[3]+pw.requiredLine(m.User(f[0])), display)
 	}
 	inv.echo("")
 	inv.write(t.String())
@@ -349,6 +359,21 @@ func (inv *invocation) userShow(args []string) error {
 	} else {
 		inv.echoE("  " + b + "Password changed:" + nc + " " + u.passwordChanged)
 	}
+	if um, _ := inv.model(); um != nil {
+		switch usr := um.User(username); {
+		case pwchange.Subject(inv.app.Conf(), um, usr):
+			switch st := inv.pwContext(um).standing(usr); st.kind {
+			case pwStranded:
+				inv.echoE("  " + b + "Password change:" + nc + "  " + ui.Red + st.text() + nc + " (" + st.why + ")")
+			case pwShared:
+				inv.echoE("  " + b + "Password change:" + nc + "  " + ui.Red + st.text() + nc + " (" + strings.Join(inv.pwContext(um).sharedPrefixes(), ", ") + ")")
+			default:
+				inv.echoE("  " + b + "Password change:" + nc + "  " + ui.Red + "required" + nc + " (no device accepts the user until it is changed at this server)")
+			}
+		case usr != nil && usr.PasswordChangeRequired:
+			inv.echoE("  " + b + "Password change:" + nc + "  flagged, not required: a superuser is never held to it")
+		}
+	}
 	inv.echoE("  " + b + "Last login:" + nc + "       " + last)
 	if u.privLvl != "" {
 		inv.echoE("  " + b + "Cisco priv-lvl:" + nc + "   " + u.privLvl)
@@ -383,7 +408,7 @@ func (inv *invocation) userShow(args []string) error {
 
 // --- add --------------------------------------------------------------------
 
-const userAddUsage = "Usage: tacctl user add <username> <group> [--hash <bcrypt-hash>|-] [--scopes <name>[,<name>...]]"
+const userAddUsage = "Usage: tacctl user add <username> <group> [--hash <bcrypt-hash>|-] [--scopes <name>[,<name>...]] [--no-change-required]"
 
 func (inv *invocation) userAdd(args []string) error {
 	a := inv.app
@@ -413,9 +438,13 @@ func (inv *invocation) userAdd(args []string) error {
 	}
 
 	var hexHash, scopesCSV string
+	skipChange := false
 	rest := args[min(2, len(args)):]
 	for len(rest) > 0 {
 		switch rest[0] {
+		case noChangeRequired:
+			skipChange = true
+			rest = rest[1:]
 		case "--hash":
 			v := arg(rest, 1)
 			if v == "" {
@@ -462,7 +491,22 @@ func (inv *invocation) userAdd(args []string) error {
 	if why := breakGlassClash(a.Conf(), username, scopes); why != "" {
 		return inv.usageErr(why)
 	}
+	// A new user must change the password at the first login to this server,
+	// unless told not to, or unless it cannot (a superuser; no login here).
+	m, err := inv.model()
+	if err != nil {
+		return err
+	}
+	var barrier pwBarrier
+	require := !skipChange
+	if require {
+		barrier = inv.pwBarrier(m, username, group, scopes, false)
+		require = barrier.why == ""
+	}
 
+	if err := inv.consoleSettingsReadable(); err != nil {
+		return err
+	}
 	inv.echo("")
 	inv.echoE("  Adding user: " + ui.Bold + username + ui.NC + " (" + group + ")")
 	if hexHash == "" {
@@ -474,13 +518,34 @@ func (inv *invocation) userAdd(args []string) error {
 	} else {
 		a.Out.Info("Using pre-generated bcrypt hash.")
 	}
-	if err := inv.storeApply(func(s *store.Store) error {
-		return s.UserSet(username, "group="+group, "scopes="+display, "hash="+hexHash, "disabled=false", "password_changed=today")
-	}); err != nil {
+	fields := []string{"group=" + group, "scopes=" + display, "hash=" + hexHash, "disabled=false", "password_changed=today"}
+	if require {
+		fields = append(fields, "password_change_required=true")
+	}
+	// A system-shell setting left under the name (a hand edit, a removal that
+	// could not write console.yaml) is not inherited by the new user.
+	var stale userSettingsMove
+	if err := inv.storeApplyThen(func(s *store.Store) error {
+		return s.UserSet(username, fields...)
+	}, func() { stale = inv.moveUserSettings(username, "") }); err != nil {
 		return err
 	}
 	inv.detail("user add", kvp("name", username), kvp("group", group), kvp("scopes", display))
 	a.Out.InfoE("User '" + username + "' added (" + group + ") with scopes: " + display)
+	if err := inv.userSettingsMoved(stale, username, ""); err != nil {
+		return err
+	}
+	switch {
+	case require:
+		inv.detailPwChange(username, true, "add")
+		a.Out.InfoE("'" + username + "' must change the password at the first login to this server; no device accepts the user until then (" + noChangeRequired + " skips this, 'tacctl user require-password-change " + username + " off' lifts it).")
+		inv.reportRequired(m, []string{username})
+		inv.reportNeedsSync([]string{username}, "the account is made at the next sync of this server")
+	case !skipChange && barrier.exempt:
+		a.Out.InfoE("No password change is required of '" + username + "': " + barrier.why + ".")
+	case !skipChange:
+		a.Out.InfoE("No password change is required of '" + username + "': " + barrier.why + ".")
+	}
 	inv.echo("")
 	return nil
 }
@@ -521,17 +586,25 @@ func (inv *invocation) userRemove(args []string) error {
 	} else if !exists {
 		return inv.usageErr("User '" + username + "' does not exist.")
 	}
+	if err := inv.consoleSettingsReadable(); err != nil {
+		return err
+	}
 	inv.echo("")
 	if !inv.app.Prompter().Confirm("  Remove user '" + username + "'? This cannot be undone. [y/N]: ") {
 		inv.app.Out.Info("Cancelled.")
 		return nil
 	}
 	watch := inv.watchServerTiers()
-	if err := inv.storeApply(func(s *store.Store) error { return s.UserDel(username) }); err != nil {
+	var shell userSettingsMove
+	if err := inv.storeApplyThen(func(s *store.Store) error { return s.UserDel(username) },
+		func() { shell = inv.moveUserSettings(username, "") }); err != nil {
 		return err
 	}
 	inv.detail("user remove", kvp("name", username))
 	inv.app.Out.Info("User '" + username + "' removed.")
+	if err := inv.userSettingsMoved(shell, username, ""); err != nil {
+		return err
+	}
 	inv.echo("")
 	return watch.lowered("'"+username+"'", "'"+username+"' keeps the groups of the old tier")
 }
@@ -541,7 +614,7 @@ func (inv *invocation) userRemove(args []string) error {
 func (inv *invocation) userPasswd(args []string) error {
 	username := arg(args, 0)
 	if username == "" {
-		return inv.usageErr("Usage: tacctl user passwd <username> [--hash <bcrypt-hash>|-]")
+		return inv.usageErr("Usage: tacctl user passwd <username> [--hash <bcrypt-hash>|-] [--no-change-required]")
 	}
 	if err := inv.requireStore(); err != nil {
 		return err
@@ -557,19 +630,26 @@ func (inv *invocation) userPasswd(args []string) error {
 	} else if !exists {
 		return inv.usageErr("User '" + username + "' does not exist.")
 	}
-	// Only '--hash <h>' right after the name counts; anything else is
+	// '--hash <h>' and '--no-change-required' count; any other word is
 	// ignored, as in bash.
 	hexHash, source := "", "prompt"
-	if arg(args, 1) == "--hash" {
-		v := arg(args, 2)
-		if v == "" {
-			return inv.usageErr("Usage: tacctl user passwd <username> --hash <bcrypt-hash>|-")
+	skipChange := false
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case noChangeRequired:
+			skipChange = true
+		case "--hash":
+			v := arg(args, i+1)
+			if v == "" {
+				return inv.usageErr("Usage: tacctl user passwd <username> --hash <bcrypt-hash>|-")
+			}
+			h, err := inv.hashArg(v)
+			if err != nil {
+				return err
+			}
+			hexHash, source = h, "hash"
+			i++
 		}
-		h, err := inv.hashArg(v)
-		if err != nil {
-			return err
-		}
-		hexHash, source = h, "hash"
 	}
 	inv.echo("")
 	inv.echoE("  Changing password for: " + ui.Bold + username + ui.NC)
@@ -585,15 +665,68 @@ func (inv *invocation) userPasswd(args []string) error {
 	} else {
 		inv.app.Out.Info("Using pre-generated bcrypt hash.")
 	}
-	// Setting a password also enables the account (how the seeded
-	// placeholder users are activated).
-	if err := inv.storeApply(func(s *store.Store) error {
-		return s.UserSet(username, "hash="+hexHash, "disabled=false", "password_changed=today")
-	}); err != nil {
+	// An administrator's reset requires a change of the password too, unless
+	// told not to (--no-change-required lifts one that stands) or unless the
+	// user is a superuser (whom it never binds, so it is lifted). A reset
+	// that cannot require one for another reason (no login on this server,
+	// a registry that cannot be read) keeps what stands. Setting a password
+	// also enables the account (how the seeded placeholder users are
+	// activated), so the user is looked at as an enabled one.
+	m, err := inv.model()
+	if err != nil {
+		return err
+	}
+	cur := m.User(username)
+	var barrier pwBarrier
+	require := !skipChange
+	if require {
+		barrier = inv.pwBarrier(m, username, cur.Group, cur.Scopes, false)
+		require = barrier.why == ""
+	}
+	// The flag is written true when the reset requires a change, and false
+	// only when the reset is told to skip it (--no-change-required) or the
+	// user is a superuser, whom it never binds. A reset that cannot require
+	// one for any other reason (the registry cannot be read, the user has no
+	// login here) leaves the flag as it is: a barrier that may pass again
+	// does not lift a requirement that stands.
+	fields := []string{"hash=" + hexHash, "disabled=false", "password_changed=today"}
+	lifted := false
+	switch {
+	case require:
+		fields = append(fields, "password_change_required=true")
+	case skipChange || barrier.exempt:
+		fields = append(fields, "password_change_required=false")
+		lifted = cur.PasswordChangeRequired
+	}
+	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, fields...) }); err != nil {
 		return err
 	}
 	inv.detail("user passwd", kvp("name", username), kvp("source", source))
-	inv.app.Out.Info("Password changed for '" + username + "'.")
+	out := inv.app.Out
+	out.Info("Password changed for '" + username + "'.")
+	switch {
+	case require:
+		inv.detailPwChange(username, true, "passwd")
+		out.InfoE("'" + username + "' must change it at the next login to this server; no device accepts the user until then (" + noChangeRequired + " skips this).")
+		inv.reportRequired(m, []string{username})
+		// a user held already, or disabled until now, had no login on the
+		// other hosts before this reset either
+		if !cur.IsDisabled() && !pwchange.Subject(inv.app.Conf(), m, cur) {
+			inv.reportHostsSync(m, []string{username}, true)
+		}
+	case lifted:
+		inv.detailPwChange(username, false, "passwd")
+		out.InfoE("The password change required of '" + username + "' is lifted.")
+		if pwchange.Subject(inv.app.Conf(), m, cur) {
+			inv.reportHostsSync(m, []string{username}, false)
+		}
+	case !skipChange && barrier.exempt:
+		out.InfoE("No password change is required of '" + username + "': " + barrier.why + ".")
+	case !skipChange && cur.PasswordChangeRequired:
+		out.WarnE("The password change required of '" + username + "' stands (it was not lifted, and could not be required again): " + barrier.why + ".")
+	case !skipChange:
+		out.WarnE("A password change could not be required of '" + username + "': " + barrier.why + ".")
+	}
 	inv.echo("")
 	return nil
 }
@@ -775,14 +908,39 @@ func (inv *invocation) userRename(args []string) error {
 			return inv.usageErr(why)
 		}
 	}
+	// A name with a period is no Linux account name (hosts.LinuxName): the
+	// sync would skip it and remove the account the old name has on the
+	// hosts, so a user that has one is not renamed to it.
+	if strings.Contains(newname, ".") && hosts.LinuxName(oldname) {
+		held, err := hosts.UIDs{Path: inv.app.Paths.LinuxUIDs}.Lookup(oldname)
+		if err != nil {
+			return err
+		}
+		// Fail closed: a registry or model that cannot be read leaves the
+		// hosts unknown, and the rename would remove an account there.
+		n, err := inv.enrolledHostsCount(oldname)
+		if err != nil {
+			return inv.usageErr("'" + newname + "' has a period, so '" + oldname + "' would lose its account on every enrolled host, and the hosts that have it cannot be told: " +
+				msgsJoin(err) + ". Nothing was changed.")
+		}
+		if held != "" || n > 0 {
+			return inv.usageErr("'" + newname + "' cannot be a Linux account name (a period is not allowed), and '" + oldname +
+				"' has an account on hosts (or a UID in linux-uids) that the rename would remove. Nothing was changed.")
+		}
+	}
 	// The old name is gone from the model afterwards, so its account on this
 	// server (and its tac-superuser) goes at the sync that follows; the new
 	// name gets its account there.
+	if err := inv.consoleSettingsReadable(); err != nil {
+		return err
+	}
 	watch := inv.watchServerTiers()
 	hostCount := inv.enrolledHostsWith(oldname)
 	var mv uidMove
+	var shell userSettingsMove
 	if err := inv.storeApplyThen(func(s *store.Store) error { return s.UserRename(oldname, newname) }, func() {
 		mv = inv.moveUID(oldname, newname)
+		shell = inv.moveUserSettings(oldname, newname)
 	}); err != nil {
 		return err
 	}
@@ -793,6 +951,7 @@ func (inv *invocation) userRename(args []string) error {
 	inv.detail("user rename", kvp("from", oldname), kvp("to", newname), kvp("uid", uidWord))
 	out := inv.app.Out
 	out.Info("User renamed: " + oldname + " -> " + newname)
+	shellErr := inv.userSettingsMoved(shell, oldname, newname)
 	switch {
 	case mv.err != nil:
 		id := "<id>"
@@ -811,6 +970,14 @@ func (inv *invocation) userRename(args []string) error {
 	case mv.heldBy != "":
 		out.Warn("'" + newname + "' already has UID " + mv.heldBy + " in linux-uids; the account '" + oldname + "' (UID " + mv.uid +
 			") is removed on hosts and '" + newname + "' created with " + mv.heldBy)
+	}
+	// The account of the new name is made at the next sync of this server.
+	inv.loaded = false
+	if rm, err := inv.model(); err == nil && pwchange.Subject(inv.app.Conf(), rm, rm.User(newname)) {
+		inv.reportNeedsSync([]string{newname}, "the account of '"+oldname+"' is renamed at the next sync of this server")
+	}
+	if shellErr != nil {
+		return shellErr
 	}
 	inv.echo("")
 	// A server that is not enrolled holds no accounts to sync; an enrolled
@@ -864,10 +1031,20 @@ func (inv *invocation) moveUID(oldname, newname string) uidMove {
 // disabled or not: a disabled user's account is expired there and is renamed
 // all the same (the script gets the number in TAC_INACTIVE_UIDS).
 func (inv *invocation) enrolledHostsWith(user string) int {
+	n, _ := inv.enrolledHostsCount(user)
+	return n
+}
+
+// enrolledHostsCount is enrolledHostsWith with the error of a registry or a
+// model that cannot be read (the count is then 0).
+func (inv *invocation) enrolledHostsCount(user string) (int, error) {
 	reg, err := inv.registry()
-	m, merr := inv.model()
-	if err != nil || merr != nil {
-		return 0
+	if err != nil {
+		return 0, err
+	}
+	m, err := inv.model()
+	if err != nil {
+		return 0, err
 	}
 	n := 0
 	for _, e := range reg.Entries() {
@@ -885,7 +1062,7 @@ func (inv *invocation) enrolledHostsWith(user string) int {
 			n++
 		}
 	}
-	return n
+	return n, nil
 }
 
 // hostsText is "1 enrolled host" or "3 enrolled hosts".

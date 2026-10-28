@@ -1,0 +1,2 @@
+# mgmt-acl empty — configure with 'tacctl config mgmt-acl add <cidr>' on the tacctl server
+# to emit a deny-by-default lo0 firewall filter here (mgmt-acl mode strict).

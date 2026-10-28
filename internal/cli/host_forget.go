@@ -108,6 +108,14 @@ func (inv *invocation) hostForget(args []string) error {
 			"Release it first: tacctl breakglass release "+h.Device+". Nothing was changed.")
 	}
 
+	// This server's registration is where users who must change the password
+	// log in to do it: it is not dropped under them.
+	if registered && entry.Target == hosts.Local {
+		if err := inv.pwHostGuard("Forgetting this server's registration '"+name+"'", nil); err != nil {
+			return err
+		}
+	}
+
 	// Another command holds the host's lock: it is not waited for.
 	forgetBase := "host forget name=" + name + " by=" + inv.sudoUser()
 	unlock, err := hosts.LockHost(filepath.Join(a.Paths.StateDir, "locks"), name)

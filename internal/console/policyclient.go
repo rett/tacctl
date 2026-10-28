@@ -1,6 +1,7 @@
 package console
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -26,13 +27,31 @@ type Remote struct {
 	// engineer, ignores); "" when the answer has no gate field.
 	Gate    tier.Tier
 	ListMax int
+	// Color is ColorAuto, ColorOn or ColorOff: whether the console's lists
+	// are in colour (default auto: the terminal decides).
+	Color string
 	// SpaceCompletion: a typed space completes a fixed word (default on).
 	SpaceCompletion bool
-	// PasswordCache: the caller's tier may keep its network password in the
-	// session's memory (D70); PCIdle and PCMax are its lifetimes (0: the
-	// answer named none, the defaults apply).
+	// PCAllowed: the caller's tier may keep its network password in the
+	// session's memory (D70, the permission of 'console password-cache
+	// tiers'). PasswordCache: it does, because the user also turned the
+	// cache on for themselves (the console starts it). PCIdle and PCMax are
+	// the lifetimes (0: the answer named none, the defaults apply).
+	PCAllowed     bool
 	PasswordCache bool
 	PCIdle, PCMax time.Duration
+	// PasswordChange: a password change is required of the caller (0.2.20):
+	// the console opens with the notice and the dialog, and nothing else
+	// runs until the password is changed. Only a caller who is no superuser
+	// is told so; the answer of a release before 0.2.20 has no such field.
+	PasswordChange bool
+	// PasswordChangeUnknown: the root side could not tell whether a password
+	// change is required of the caller (the answer is 'password_change=
+	// unknown': the store could not be read), or there was no answer to read.
+	// The session is then held as if one were required, unless the caller is
+	// a superuser, who is never locked out by a read error. An answer that
+	// names no such field is a release before 0.2.20, which flags nobody.
+	PasswordChangeUnknown bool
 	// Known reports whether the answer was read (false: the defaults).
 	Known bool
 	// TierRead reports whether the answer named the caller's tier (a
@@ -49,6 +68,7 @@ func DefaultRemote() Remote {
 		SystemShellPath: DefaultSystemShell,
 		Tier:            tier.None,
 		ListMax:         DefaultListMax,
+		Color:           ColorAuto,
 		SpaceCompletion: true,
 	}
 }
@@ -97,16 +117,30 @@ func ParseRemote(out string) (r Remote, ok bool) {
 				r.Gate, ok, r.TierRead = t, true, true
 			}
 		case "list_max":
-			if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= MaxListMax {
+			if n, err := strconv.Atoi(v); err == nil && (n == ListMaxNever || (n >= 1 && n <= MaxListMax)) {
 				r.ListMax, ok = n, true
+			}
+		case "color":
+			if slices.Contains(ColorWords, v) {
+				r.Color, ok = v, true
 			}
 		case "space_completion":
 			if b, good := yesNoValue(v); good {
 				r.SpaceCompletion, ok = b, true
 			}
+		case "password_change":
+			if b, good := yesNoValue(v); good {
+				r.PasswordChange, ok = b, true
+			} else if v == "unknown" {
+				r.PasswordChangeUnknown, ok = true, true
+			}
 		case "password_cache":
 			if b, good := yesNoValue(v); good {
 				r.PasswordCache, ok = b, true
+			}
+		case "pc_allowed":
+			if b, good := yesNoValue(v); good {
+				r.PCAllowed, ok = b, true
 			}
 		case "pc_idle":
 			if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= MaxPasswordCacheIdle {

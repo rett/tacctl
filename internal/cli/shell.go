@@ -33,6 +33,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/rett/tacctl/internal/backend"
+	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/shell"
 	"github.com/rett/tacctl/internal/tier"
@@ -157,6 +158,10 @@ type shellRun struct {
 	idle    time.Duration
 	prompt  string
 	listMax int
+	// color is the console's colour setting (console.ColorAuto, ColorOn,
+	// ColorOff; "" is auto): the console's environment holds neither
+	// NO_COLOR nor TACCTL_COLOR, so the setting is the operator's choice.
+	color string
 	// spaceCompletion: a typed space at the prompt is Junos-style
 	// (shell.Options.SpaceCompletion).
 	spaceCompletion bool
@@ -179,6 +184,15 @@ type shellRun struct {
 	// its policy answer already). "": a tac-users member's tier is asked
 	// of the root side on first use, anyone else sees everything.
 	view tier.Tier
+	// lock holds the run to a required password change (nil: none; the
+	// console's, pwchange_console.go): recheck asks the root side whether it
+	// still is (and whether that is a requirement or one nobody could read),
+	// after the change and before each line the lock refuses; lockRefused logs a line it refused; pwEvent
+	// logs the opening dialog ("required", "done", "failed").
+	lock        *pwLock
+	recheck     func() (locked, unknown bool)
+	lockRefused func(words []string)
+	pwEvent     func(event string, status int)
 }
 
 // shellHistoryPath is the history file under home.
@@ -208,7 +222,10 @@ func (inv *invocation) runShell(r shellRun) (int, *shell.Shell) {
 	// The password cache (D70): the agent lives as long as the loop; the
 	// password is forgotten and the socket removed when the loop ends.
 	cache := inv.openPasswordCache(r, managed)
-	defer cache.close()
+	// The cache the session has now: 'console password-cache on' and 'off'
+	// start and stop it, so the one to close at the end is the live one.
+	live := cache
+	defer func() { live.close() }()
 	inv.setView(r, managed)
 	root := newRoot(inv)
 	// The labels of the '?' list are bold on a terminal that shows colour.
@@ -218,6 +235,14 @@ func (inv *invocation) runShell(r shellRun) (int, *shell.Shell) {
 	// environment (console.Scrub) holds neither NO_COLOR nor TACCTL_COLOR,
 	// so it decides by its terminal alone.
 	styled, _ := ui.Colour(a.Env.Get, inv.hooks.terminalWriter(a.Out.Stdout), inv.hooks.terminalWriter(a.Out.Stderr))
+	switch r.color {
+	case console.ColorOn:
+		styled = true
+	case console.ColorOff:
+		styled = false
+	}
+	inv.shellColor = r.color
+	inv.shellConsole = r.console
 	o := shell.Options{
 		Prompt:          r.prompt,
 		Styled:          styled,
@@ -234,8 +259,14 @@ func (inv *invocation) runShell(r shellRun) (int, *shell.Shell) {
 	if cache != nil {
 		o.Cache = cache
 	}
+	if r.mode == shellInteractive && (r.console || managed) {
+		o.CacheStart = func() (shell.PasswordCache, error) { return inv.startPasswordCacheNow(r, &live) }
+	}
 	if r.systemShell != nil {
 		o.SystemShell = r.systemShell
+	}
+	if r.lock != nil {
+		inv.holdSession(r, &o)
 	}
 	if r.mode != shellBatch {
 		o.History = shell.NewHistory(r.history, a.Out.Stderr)
@@ -353,6 +384,20 @@ func (inv *invocation) shellExec(root *cobra.Command, exe string, managed bool, 
 			a.Out.Error("already in the tacctl shell")
 			return 1
 		}
+		// '<command> -h|--help' is the help of the command, as '?' prints
+		// it, written here with the tier's view.
+		// The console runs no entry point of the tool (a word that starts with
+		// an underscore): they run as the user with no tier view, and are the
+		// scripts' and the key's, not the person's. It is answered as any
+		// word that is no command, and nothing is said of what exists.
+		if inv.shellConsole && strings.HasPrefix(words[0], "_") {
+			_ = inv.unknownCommand(root, words[0])
+			return 1
+		}
+		if hw, ok := helpRequest(root, words); ok {
+			inv.helpList(root, hw)
+			return 0
+		}
 		if notACommand(root, words[0]) {
 			// No sudo, so no password prompt, for a word no tier could run.
 			_ = inv.unknownCommand(root, words[0])
@@ -430,7 +475,7 @@ func (inv *invocation) completer(root *cobra.Command, fixedOnly bool) shell.Comp
 			// 'shell' is not offered in the shell.
 			for _, r := range topRows() {
 				if r.Name != "shell" && child(root, r.Name) != nil && shown([]string{r.Name}) {
-					out = append(out, shell.Candidate{Word: r.Name, Label: r.Left, Desc: r.Desc, Kind: "commands", Fixed: true})
+					out = append(out, shell.Candidate{Word: r.Name, Label: r.Left, Desc: r.Desc, Kind: "commands", Fixed: true, Command: true})
 				}
 			}
 			return out
@@ -438,16 +483,21 @@ func (inv *invocation) completer(root *cobra.Command, fixedOnly bool) shell.Comp
 		if len(rest) == 0 && len(cmd.Commands()) > 0 {
 			var rows []usageRow
 			if len(path) == 1 {
-				rows = inv.familyRows(path[0])
+				rows = inv.familyRows(cmd)
 			}
 			for _, sub := range cmd.Commands() {
 				if sub.Hidden || !shown(append(slices.Clone(path), sub.Name())) {
 					continue
 				}
+				// The description is the node's, the one the generated scripts
+				// list; the row of the family's usage gives the argument column.
 				c := shell.Candidate{Word: sub.Name(), Desc: sub.Short, Kind: "commands", Fixed: true}
 				for _, r := range rows {
 					if r.Name == sub.Name() {
-						c.Desc, c.Label = r.Desc, reProg.ReplaceAllString(r.Left, "")
+						c.Label = reProg.ReplaceAllString(r.Left, "")
+						if c.Desc == "" {
+							c.Desc = r.Desc
+						}
 						break
 					}
 				}
@@ -492,7 +542,10 @@ func (inv *invocation) completer(root *cobra.Command, fixedOnly bool) shell.Comp
 			if d == "" && !isFlag {
 				d = wdescs[w]
 			}
-			out = append(out, shell.Candidate{Word: w, Desc: d, NoSpace: noSpace, Kind: k, Fixed: isFlag || fixed})
+			// A name of the store is a live name (bold in the lists); a
+			// flag, a fixed word and any other word of the language are not.
+			live := !isFlag && !fixed && kind != "choices" && kind != "files"
+			out = append(out, shell.Candidate{Word: w, Desc: d, NoSpace: noSpace, Kind: k, Fixed: isFlag || fixed, Live: live})
 		}
 		return out
 	}

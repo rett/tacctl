@@ -315,7 +315,8 @@ func (inv *invocation) hostAccounts(e hosts.Entry, rng hosts.Range) (hostAccount
 		}
 	}
 	uids := hosts.UIDs{Path: inv.app.Paths.LinuxUIDs, Range: rng}
-	for _, r := range m.LinuxUsers(e.Scope) {
+	rows, inactive := inv.linuxAccounts(m, e.Scope, local)
+	for _, r := range rows {
 		name, lvl, _ := strings.Cut(r, "|")
 		if name == "" || name == "root" {
 			continue
@@ -341,7 +342,7 @@ func (inv *invocation) hostAccounts(e hosts.Entry, rng hosts.Range) (hostAccount
 		switch {
 		case local:
 			groups = append(groups, "tac-"+t)
-			if pol.Decide(name, tier.Tier(t)).Console {
+			if pol.Decide(tier.Tier(t)).Console {
 				groups = append(groups, console.Group)
 			}
 		case t == string(tier.Superuser), t == string(tier.Engineer):
@@ -350,7 +351,7 @@ func (inv *invocation) hostAccounts(e hosts.Entry, rng hosts.Range) (hostAccount
 		}
 		out.Users = append(out.Users, hostAccountJSON{Name: name, Tier: t, UID: uid, Groups: groups})
 	}
-	out.Disabled = len(m.LinuxInactive(e.Scope))
+	out.Disabled = len(inactive)
 	return out, nil
 }
 

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/rett/tacctl/internal/model"
+	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/rendered"
 	"github.com/rett/tacctl/internal/store"
 )
@@ -27,7 +28,7 @@ func TestRenderDevauthGolden(t *testing.T) {
 func TestRenderRefusesAnOversizedJunosSet(t *testing.T) {
 	// Written by hand past the schema: the render is the last guard.
 	view := "junos:\n  operator:\n    deny_commands: ['" + strings.Repeat("x", 240) + "']\n"
-	_, err := Render(loadStore(t, "store.devauth.yaml"), viewOf(t, view).Merged(), nil)
+	_, err := Render(loadStore(t, "store.devauth.yaml"), viewOf(t, view).Merged(), nil, pwchange.Server{})
 	if err == nil {
 		t.Fatal("rendered")
 	}

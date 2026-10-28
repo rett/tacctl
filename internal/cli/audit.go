@@ -230,7 +230,9 @@ var auditTable = map[string]auditEntry{
 	"shell":             read(),
 	"ssh":               action(),
 	"completion":        read(),
+	"man":               read(),
 	"_askpass":          read(),
+	"__help":            read(),
 	"_completion-names": read(),
 	"_console-policy":   read(),
 	"_phase":            action(),
@@ -246,6 +248,8 @@ var auditTable = map[string]auditEntry{
 	"user move":    action(),
 	"user verify":  read(),
 	"user scope":   mixed(),
+
+	"user require-password-change": action(),
 
 	"group list":   read(),
 	"group show":   read(),
@@ -369,10 +373,10 @@ var auditTable = map[string]auditEntry{
 	"console idle-timeout":     mixed(),
 	"console password-cache":   mixed(),
 	"console space-completion": mixed(),
+	"console color":            mixed(),
+	"console list-max":         mixed(),
 	"console ssh-escape":       mixed(),
 	"console system-shell":     mixed().weighty(),
-	"console tiers":            mixed().weighty(),
-	"console user":             mixed().weighty(),
 
 	"log tail":       read(),
 	"log search":     read(),

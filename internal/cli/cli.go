@@ -38,6 +38,15 @@ type invocation struct {
 	// shellMode: completion is for the tacctl shell's lists (live names
 	// with descriptions; flags only after a '-').
 	shellMode bool
+	// shellColor is the console's colour setting in a shell or console
+	// session ("": auto; console.ColorOn, ColorOff): '--help' written by the
+	// shell follows it (help_request.go).
+	shellColor string
+	// shellConsole: the shell is the login console. A word that starts with
+	// an underscore is one of the tool's own entry points (__complete,
+	// __help, _console-policy ...), not a command: the console does not run
+	// it (shellExec).
+	shellConsole bool
 	// view is the tier whose verbs the shell lists (shell_view.go); nil:
 	// everything, outside the shell.
 	view viewFn
@@ -123,6 +132,12 @@ func runWith(ctx context.Context, a *app.App, build BuildInfo, hk *hooks) (err e
 	inv := &invocation{ctx: ctx, app: a, build: build, hooks: hk}
 	root := newRoot(inv)
 	inv.root = root
+	hk.builtTree(root)
+	// '<command> -h|--help': the command's help, as the user, before sudo.
+	if words, ok := helpRequest(root, a.Args); ok {
+		inv.helpList(root, words)
+		return nil
+	}
 	if needsSudo(a) {
 		// A word that is no command is answered here: sudo would ask for
 		// the password first to tell the person the same.

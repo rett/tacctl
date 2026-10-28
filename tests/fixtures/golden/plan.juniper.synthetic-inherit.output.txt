@@ -34,7 +34,8 @@
 #                         family inet filter MGMT-ACL term permit-mgmt from source-address
 #                         192.0.2.10/32). Fixed by region lines 42-63.
 # Consistent: aaa. Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
-# Secrets: 1 present on the device, not changed (--secrets pushes them).
+# Secrets: 1 present (the TACACS+ server key); only their presence is checked, --secrets writes them
+# again.
 # The switch undoes this by itself in 5 minutes unless you type the one word after the check (see
 # below).
 # Paste over ssh, not the console; on a console paste at most twenty lines at a time and watch the

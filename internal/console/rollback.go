@@ -9,7 +9,19 @@ package console
 // back to the defaults and a console write fails). The test
 // TestRollbackTextIsReadBy023 holds the key to a fixture of that parser. The
 // keys 0.2.3 itself added ('tiers.engineer', 'settings.space_completion')
-// stay: they are 0.2.3's.
+// stay: they are 0.2.3's. 0.2.20 added two settings that every older release
+// rejects (Keys0220: settings.color, written only when it is on or off, and
+// a list_max of -1, never ask); the rollback to any release takes them out
+// (RollbackSince0220 for those that have the cache), as the key of
+// space_completion is written only when it is off.
+//
+// 0.2.20 also stopped writing 'tiers' and 'users' (the console switches of a
+// tier and of a user, now ignored) and keeps the ones a file has. An older
+// release reads them as it always did, and a file without them as the
+// console on for everyone, so the rollback leaves them: all but an override
+// under a user name with a period, which no older release accepts (names
+// are letters, digits, '_' and '-' there) and which would fail the whole
+// file. Those entries are taken out (DottedUsersKey), the rest stays.
 
 import (
 	"bytes"
@@ -30,23 +42,72 @@ import (
 // business of 'tacctl rollback 0.2.2' of the 0.2.3 release.
 var Keys023 = []string{"settings.password_cache"}
 
-// RollbackPlan is what writing the file for 0.2.3 changes.
+// Keys0220 are the settings 0.2.20 added that every older release rejects:
+// 'settings.color' (written only when it is not auto), the value -1 of
+// 'settings.list_max' (never ask), which the older readers' range 1 to 1000
+// refuses, 'settings.system_shell_users' (the users with a system-shell
+// setting of their own, written only when there is one) and
+// 'settings.password_cache_users' (the users who turned the password cache on). The rollback to any
+// release removes the keys and writes the largest list_max the older readers
+// accept (RollbackSince0220; the same handling as settings.space_completion,
+// written only when set, for 0.2.2). The per-tier list
+// settings.system_shell_tiers is an older key and stays: the user settings go,
+// and an older release has the tiers' setting alone.
+var Keys0220 = []string{"settings.color", "settings.list_max", "settings.system_shell_users", "settings.password_cache_users"}
+
+// DottedUsersKey is the Remove key of the overrides, under users, of user
+// names with a period (0.2.20 allows them; the older releases refuse the
+// file).
+const DottedUsersKey = "users"
+
+// RollbackPlan is what writing the file for an older release changes.
 type RollbackPlan struct {
 	// Exists: the file is there.
 	Exists bool
-	// Remove are the keys of Keys023 the file has, with a word on what
-	// each holds.
+	// Remove are the keys the file has that the release rejects, with a word
+	// on what each holds.
 	Remove []string
-	// Text is the file as 0.2.3 reads it; nil when nothing changes.
+	// Set are the values written in place of ones the release rejects.
+	Set []string
+	// Text is the file as the release reads it; nil when nothing changes.
 	Text []byte
+
+	// cache: the plan is for 0.2.3, which also rejects the password cache.
+	cache bool
+}
+
+// Summary says what writing the plan removes and sets, for the line that
+// reports it ('removed settings.password_cache, settings.color').
+func (p RollbackPlan) Summary() string {
+	var out []string
+	if len(p.Remove) > 0 {
+		var keys []string
+		for _, r := range p.Remove {
+			k, _, _ := strings.Cut(r, ": ")
+			keys = append(keys, k)
+		}
+		out = append(out, "removed "+strings.Join(keys, ", "))
+	}
+	for _, s := range p.Set {
+		out = append(out, "set "+s)
+	}
+	return strings.Join(out, ", ")
 }
 
 // PlanRollback reads the file at path and says what writing it for 0.2.3
-// changes. A file this release cannot read is an error, so the rollback
-// refuses before it changes anything. A missing file, and one without the
-// key, change nothing (it is not rewritten: 0.2.3 reads it as it is).
-func PlanRollback(path string) (RollbackPlan, error) {
-	var p RollbackPlan
+// changes: the password cache's settings go (0.2.3's parser rejects them),
+// and so do the settings of 0.2.20 (Keys0220). A file this release cannot
+// read is an error, so the rollback refuses before it changes anything. A
+// missing file, and one without the keys, change nothing (it is not
+// rewritten: 0.2.3 reads it as it is).
+func PlanRollback(path string) (RollbackPlan, error) { return planRollback(path, true) }
+
+// PlanRollbackSince0220 is PlanRollback for a release that has the password
+// cache (0.2.4 and later): only the settings of 0.2.20 go.
+func PlanRollbackSince0220(path string) (RollbackPlan, error) { return planRollback(path, false) }
+
+func planRollback(path string, cache bool) (RollbackPlan, error) {
+	p := RollbackPlan{cache: cache}
 	data, err := os.ReadFile(path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
@@ -66,21 +127,51 @@ func PlanRollback(path string) (RollbackPlan, error) {
 	if root, ok := v.(*yamlpy.Map); ok {
 		if settings, ok := root.Get("settings"); ok {
 			if m, ok := settings.(*yamlpy.Map); ok {
-				if _, has := m.Get("password_cache"); has {
+				if _, has := m.Get("password_cache"); has && cache {
 					p.Remove = append(p.Remove, "settings.password_cache: "+cacheWord(f))
+				}
+				if _, has := m.Get("color"); has {
+					p.Remove = append(p.Remove, "settings.color: "+f.Color)
+				}
+				if _, has := m.Get("system_shell_users"); has {
+					p.Remove = append(p.Remove, "settings.system_shell_users: "+systemShellUsersWord(f))
+				}
+				if _, has := m.Get("password_cache_users"); has {
+					p.Remove = append(p.Remove, "settings.password_cache_users: "+strings.Join(f.PasswordCacheUserNames(), ", ")+" (on)")
 				}
 			}
 		}
 	}
-	if len(p.Remove) == 0 {
+	for _, u := range f.IgnoredUserNames() {
+		if strings.Contains(u, ".") {
+			p.Remove = append(p.Remove, DottedUsersKey+"."+u+": ignored override of a name with a period")
+		}
+	}
+	if f.ListMax == ListMaxNever {
+		p.Set = append(p.Set, "settings.list_max to "+strconv.Itoa(MaxListMax)+" (it never asked)")
+	}
+	if len(p.Remove) == 0 && len(p.Set) == 0 {
 		return p, nil
 	}
-	text, err := f.Text023()
+	text, err := f.rollbackText(cache)
 	if err != nil {
 		return p, err
 	}
 	p.Text = text
 	return p, nil
+}
+
+// systemShellUsersWord says what the users' system-shell settings are, for
+// the plan.
+func systemShellUsersWord(f *File) string {
+	var w []string
+	for _, u := range f.SystemShellUserNames() {
+		w = append(w, u+" "+word(f.SystemShellUsers[u]))
+	}
+	if len(w) == 0 {
+		return "none"
+	}
+	return strings.Join(w, ", ")
 }
 
 // cacheWord says what the cache's settings are, for the plan.
@@ -98,17 +189,43 @@ func cacheWord(f *File) string {
 
 // Text023 is the file as a tacctl 0.2.3 reads it: no
 // 'settings.password_cache' (the cache's tiers and lifetimes are forgotten,
-// so the cache is off for every tier, which is what 0.2.3 has). Everything
-// else is written as the current tacctl writes it (0.2.4 writes 0.2.3's
-// form of every other setting), and read back with the reader the file is
-// read with.
-func (f *File) Text023() ([]byte, error) {
+// so the cache is off for every tier, which is what 0.2.3 has), and none of
+// the settings of 0.2.20 (Keys0220). Everything else is written as the
+// current tacctl writes it (0.2.4 writes 0.2.3's form of every other
+// setting), and read back with the reader the file is read with.
+func (f *File) Text023() ([]byte, error) { return f.rollbackText(true) }
+
+// Text0219 is the file as a release with the password cache and before
+// 0.2.20 reads it: the settings of 0.2.20 (Keys0220) are gone.
+func (f *File) Text0219() ([]byte, error) { return f.rollbackText(false) }
+
+func (f *File) rollbackText(cache bool) ([]byte, error) {
 	if err := f.validate(); err != nil {
 		return nil, err
 	}
 	doc := f.doc()
 	if settings, ok := doc.Get("settings"); ok {
-		settings.(*yamlpy.Map).Delete("password_cache")
+		m := settings.(*yamlpy.Map)
+		if cache {
+			m.Delete("password_cache")
+		}
+		m.Delete("color")
+		m.Delete("system_shell_users")
+		m.Delete("password_cache_users")
+		if f.ListMax == ListMaxNever {
+			m.Set("list_max", MaxListMax)
+		}
+	}
+	if users, ok := doc.Get("users"); ok {
+		m := users.(*yamlpy.Map)
+		for _, u := range f.IgnoredUserNames() {
+			if strings.Contains(u, ".") {
+				m.Delete(u)
+			}
+		}
+		if m.Len() == 0 {
+			doc.Delete("users")
+		}
 	}
 	out, err := yamlpy.EmitChecked(doc, yamlpy.StoreOptions, Header, pyyaml.LoadBytes)
 	if err != nil {
@@ -123,6 +240,16 @@ func (f *File) Text023() ([]byte, error) {
 // through a temporary file (0600, fsync, rename). changed is false when
 // nothing needed changing.
 func Rollback(path string, before func() error) (changed bool, err error) {
+	return rollback(path, before, true)
+}
+
+// RollbackSince0220 is Rollback for a release with the password cache: only
+// the settings of 0.2.20 are taken out.
+func RollbackSince0220(path string, before func() error) (changed bool, err error) {
+	return rollback(path, before, false)
+}
+
+func rollback(path string, before func() error, cache bool) (changed bool, err error) {
 	if before != nil {
 		if err := before(); err != nil {
 			return false, err
@@ -133,7 +260,7 @@ func Rollback(path string, before func() error) (changed bool, err error) {
 		return false, err
 	}
 	defer unlock()
-	p, err := PlanRollback(path)
+	p, err := planRollback(path, cache)
 	if err != nil || p.Text == nil {
 		return false, err
 	}

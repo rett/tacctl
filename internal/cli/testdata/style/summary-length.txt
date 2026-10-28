@@ -1,0 +1,61 @@
+# Commands whose description is over 72 characters (summaryMax). This list only shrinks.
+breakglass
+breakglass hold
+breakglass list
+config audit-strict
+config cisco
+config devices
+config devices apply-confirm-timeout
+config devices apply-pause
+config devices apply-transport
+config devices confirm-timeout
+config devices timeout
+config devices transport
+config linux build
+config linux engineer-sudo
+config mgmt-acl add
+config snmp show
+config wti
+console check
+console forwarding
+console idle-timeout
+console install
+console remove
+console show
+console space-completion
+console system-shell
+device
+device add
+device address
+device block
+device check
+device collect
+device config
+device config apply
+device config list
+device config plan
+device config pull
+device config shapes
+device description
+device discover
+device enroll
+device import
+device ios-syntax
+device legacy-ssh
+device list
+device location
+device netconf
+device notice
+device onboard
+device snmp
+device support-bundle
+device sync
+host check
+host move
+host provisioner
+host rename
+host show
+rollback
+scope block
+scope breakglass
+scope netconf

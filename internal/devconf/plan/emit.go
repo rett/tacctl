@@ -709,6 +709,9 @@ type jsonExtra struct {
 	// before the line under it.
 	Remove []string `json:"remove,omitempty"`
 	Guard  string   `json:"guard,omitempty"`
+	// Own marks a statement of the device's own (unmanaged): no irregularity,
+	// counted in Kept.
+	Own bool `json:"own,omitempty"`
 }
 
 // jsonRestorePoint is the restore block: the form it takes ('copy' or
@@ -722,27 +725,42 @@ type jsonRestorePoint struct {
 	Note       string `json:"note,omitempty"`
 }
 
+// jsonSecrets is what the plan says of the secrets it compares: how many the
+// device has and their kinds (only their presence is checked), and how many
+// the pull's login could not read. Counts and kinds, never a value.
+type jsonSecrets struct {
+	Present    int      `json:"present,omitempty"`
+	Kinds      []string `json:"kinds,omitempty"`
+	NotVisible int      `json:"not_visible,omitempty"`
+}
+
 type jsonDelta struct {
-	Name            string      `json:"name"`
-	Address         string      `json:"address,omitempty"`
-	Scope           string      `json:"scope"`
-	Vendor          string      `json:"vendor"`
-	BasedOn         jsonBasedOn `json:"based_on"`
-	Status          string      `json:"status"`
-	Reason          string      `json:"reason,omitempty"`
-	Irregularities  []jsonItem  `json:"irregularities"`
-	Region          []string    `json:"region"`
-	After           []string    `json:"after"`
-	Backout         []string    `json:"backout"`
-	Left            LeftCounts  `json:"left"`
-	Extras          []jsonExtra `json:"extras"`
-	Skipped         []Skip      `json:"skipped"`
-	Withheld        []string    `json:"withheld"`
-	Warnings        []string    `json:"warnings"`
-	ByHand          []string    `json:"by_hand,omitempty"`
-	ConfirmTimeout  int         `json:"confirm_timeout,omitempty"`
-	HoldsSecret     bool        `json:"holds_secret"`
-	CommandAuthLast bool        `json:"command_authorization_last,omitempty"`
+	Name           string      `json:"name"`
+	Address        string      `json:"address,omitempty"`
+	Scope          string      `json:"scope"`
+	Vendor         string      `json:"vendor"`
+	BasedOn        jsonBasedOn `json:"based_on"`
+	Status         string      `json:"status"`
+	Reason         string      `json:"reason,omitempty"`
+	Irregularities []jsonItem  `json:"irregularities"`
+	Region         []string    `json:"region"`
+	After          []string    `json:"after"`
+	Backout        []string    `json:"backout"`
+	Left           LeftCounts  `json:"left"`
+	Extras         []jsonExtra `json:"extras"`
+	// Kept counts, per section, the statements of the device's own (the
+	// comparison's unmanaged): they are no irregularity and have no item.
+	Kept []Own `json:"kept,omitempty"`
+	// Secrets is present when the device has a secret the plan compared by
+	// presence, or one the pull's login could not read.
+	Secrets         *jsonSecrets `json:"secrets,omitempty"`
+	Skipped         []Skip       `json:"skipped"`
+	Withheld        []string     `json:"withheld"`
+	Warnings        []string     `json:"warnings"`
+	ByHand          []string     `json:"by_hand,omitempty"`
+	ConfirmTimeout  int          `json:"confirm_timeout,omitempty"`
+	HoldsSecret     bool         `json:"holds_secret"`
+	CommandAuthLast bool         `json:"command_authorization_last,omitempty"`
 	// RestorePoint is the restore block of an IOS plan made with
 	// --restore-point (nil otherwise, and when the plan has nothing to paste).
 	RestorePoint *jsonRestorePoint `json:"restore_point,omitempty"`
@@ -780,9 +798,12 @@ func JSON(d Delta, h Header, w Wrapper) ([]byte, error) {
 			AgeS: int64(h.Now.Sub(h.Pulled).Seconds()), SecretsVisible: h.SecretsVisible},
 		Status: statusOf(d), Left: leftOf(d), Irregularities: []jsonItem{}, Region: []string{}, After: []string{}, Backout: []string{},
 		Extras: []jsonExtra{}, Skipped: nonNilSkip(d.Skipped), Withheld: nonNil(d.Withheld), Warnings: headlineWarnings(d), ByHand: d.ByHand,
-		HoldsSecret: d.HoldsSecret()}
+		HoldsSecret: d.HoldsSecret(), Kept: d.Own}
 	if out.Status == StatusCannotPlan {
 		out.Reason = d.Refusal()
+	}
+	if c := d.Counts; c.SecretsPresent > 0 || c.SecretsNotVisible > 0 {
+		out.Secrets = &jsonSecrets{Present: c.SecretsPresent, Kinds: c.PresentKinds, NotVisible: c.SecretsNotVisible}
 	}
 	lineNo := map[int]int{}
 	if !d.Empty() {
@@ -828,7 +849,7 @@ func JSON(d Delta, h Header, w Wrapper) ([]byte, error) {
 		out.Irregularities = append(out.Irregularities, ji)
 	}
 	for _, e := range d.Extras {
-		je := jsonExtra{Section: e.Section, Text: e.Text, Guard: e.Guard}
+		je := jsonExtra{Section: e.Section, Text: e.Text, Guard: e.Guard, Own: e.Own}
 		if len(e.Remove) > 0 {
 			je.Remove = removeLines(e.Remove)
 		}

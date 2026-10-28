@@ -48,6 +48,8 @@ var topSpecs = map[string]Spec{
 	"uninstall": {Flags: []Flag{{Names: []string{"-y", "--yes"}}}},
 	"rollback":  rollbackSpec,
 	"version":   {Flags: []Flag{{Names: []string{"--long"}}}},
+	// completion <shell>: the word is one of the shells.
+	"completion": {MinArgs: 1, MaxArgs: 1, Args: []string{"bash|zsh|fish"}},
 }
 
 // completionShells are the shells 'tacctl completion' writes a script for.
@@ -61,8 +63,7 @@ const completionUsage = "Usage: tacctl completion bash|zsh|fish"
 // stdout. It runs as the invoking user (reexec.go), reads no state and has
 // no tier gate: the script is the same for everyone.
 func completionCmd(inv *invocation) *cobra.Command {
-	c := verb("completion bash", "Print the shell completion script")
-	c.Hidden = true
+	c := verb("completion bash|zsh|fish", "Print the shell completion script")
 	c.RunE = func(_ *cobra.Command, args []string) error {
 		shell := arg(args, 0)
 		if !slices.Contains(completionShells, shell) {
@@ -74,7 +75,11 @@ func completionCmd(inv *invocation) *cobra.Command {
 	return c
 }
 
-// GenCompletion writes the completion script of shell to w.
+// GenCompletion writes the completion script of shell to w. The bash script
+// asks for the words without descriptions ('__completeNoDesc'): bash lists
+// the words alone, in columns, as the shell does, and does not switch to a
+// described list that cuts the words; the zsh and fish scripts ask for the
+// descriptions their menus show.
 func GenCompletion(w io.Writer, shell string) error {
 	root := newRoot(&invocation{})
 	switch shell {
@@ -83,7 +88,12 @@ func GenCompletion(w io.Writer, shell string) error {
 	case "fish":
 		return root.GenFishCompletion(w, true)
 	}
-	return root.GenBashCompletionV2(w, true)
+	var b strings.Builder
+	if err := root.GenBashCompletionV2(&b, false); err != nil { // no descriptions
+		return err
+	}
+	_, err := io.WriteString(w, bashScript(b.String()))
+	return err
 }
 
 // BashCompletion is the bash script that install and upgrade place in
@@ -176,7 +186,8 @@ func attachCompletion(inv *invocation, root *cobra.Command) {
 			if spec, ok := specFor(path); ok {
 				c.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
 					comps, dir := inv.completeSpec(spec, args, toComplete)
-					return inv.describeFlags(cmd, path, spec, comps), dir
+					comps = inv.describeFlags(cmd, path, spec, comps)
+					return inv.describeWords(cmd, path, spec, args, comps), dir
 				}
 			}
 			return
@@ -208,6 +219,30 @@ func (inv *invocation) describeFlags(cmd *cobra.Command, path []string, spec Spe
 			desc = h[0] + ": " + desc
 		}
 		out = append(out, cobra.CompletionWithDesc(c, desc))
+	}
+	return out
+}
+
+// describeWords gives each fixed word among comps the description the
+// shell's '?' shows for it ('scope mgmt-acl lab ' offers 'cisco-name', which
+// '?' describes as 'Per-scope Cisco VTY-ACL name'), so the scripts list the
+// verbs after a name as they list the sub-commands. A flag, and a word
+// that is not a fixed one of the position (a name, a value of the verb),
+// is left as it is.
+func (inv *invocation) describeWords(cmd *cobra.Command, path []string, spec Spec, args []string, comps []cobra.Completion) []cobra.Completion {
+	if len(comps) == 0 {
+		return comps
+	}
+	descs := inv.wordDescs(cmd, path, spec, args)
+	if len(descs) == 0 {
+		return comps
+	}
+	out := make([]cobra.Completion, 0, len(comps))
+	for _, c := range comps {
+		if d := descs[c]; d != "" && !strings.HasPrefix(c, "-") && !strings.Contains(c, "\t") {
+			c = cobra.CompletionWithDesc(c, d)
+		}
+		out = append(out, c)
 	}
 	return out
 }
@@ -292,23 +327,7 @@ func (inv *invocation) completeSpec(spec Spec, args []string, toComplete string)
 	} else if spec.MaxArgs < 0 && len(spec.Args) == 1 {
 		kind = spec.Args[0] // a list of one kind goes on past the end
 	}
-	if rest, ok := strings.CutPrefix(kind, "@"); ok {
-		word, k, _ := strings.Cut(rest, ":")
-		kind = ""
-		if slices.Contains(words, word) {
-			kind = k
-		}
-	}
-	if rest, ok := strings.CutPrefix(kind, "?"); ok {
-		parts := strings.SplitN(rest, ":", 3)
-		kind = ""
-		if len(parts) == 3 {
-			kind = parts[2]
-			if slices.Contains(words, parts[0]) {
-				kind = parts[1]
-			}
-		}
-	}
+	kind = resolveKind(kind, words)
 	if kind == KindBreakGlass && len(words) > 0 {
 		values["@scope"] = words[0]
 	}
@@ -404,7 +423,7 @@ var configFamilies = map[string]string{
 	"aaa.order.": KindScopes, "exec_timeout.": KindScopes, "tacacs_group.": KindScopes, "radius_group.": KindScopes,
 	"cisco.source_interface.": KindScopes, "scope_auth_method.": KindScopes,
 	"scope_mgmt_acl.names.cisco.": KindScopes, "scope_mgmt_acl.names.juniper.": KindScopes,
-	"scope_mgmt_acl.permits.": KindScopes, "breakglass_scope.": KindScopes, "blocks.": KindScopes,
+	"scope_mgmt_acl.permits.": KindScopes, "scope_mgmt_acl.mode.": KindScopes, "breakglass_scope.": KindScopes, "blocks.": KindScopes,
 	"snmp_scope.": KindScopes, "netconf_scope.": KindScopes,
 	"listeners.": "", "blocks_device.": "", "breakglass_hold.": "", "emergency.lockdown.": "",
 }
@@ -445,8 +464,13 @@ func (inv *invocation) kindWords(kind string, values map[string]string) []string
 	if strings.Contains(kind, "|") {
 		return strings.Split(kind, "|")
 	}
-	if _, ok := completionDescKinds[kind]; ok && inv.shellMode {
-		return inv.liveLines(inv.ctx, kind, "--desc")
+	if _, ok := completionDescKinds[kind]; ok {
+		// The shell lists vendor, address and scope in columns; the scripts
+		// print a line per name, so they get the vendor and the scope.
+		if inv.shellMode {
+			return inv.liveLines(inv.ctx, kind, "--desc")
+		}
+		return inv.liveLines(inv.ctx, kind, "--desc-short")
 	}
 	switch kind {
 	case KindLine:

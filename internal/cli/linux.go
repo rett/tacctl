@@ -27,6 +27,7 @@ import (
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/policy"
+	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -562,8 +563,10 @@ func (inv *invocation) linuxScopeServes(scope, method string) (bool, error) {
 
 // scriptRequest is a hosts.ScriptRequest with the model and listener reads
 // of linux_write_install_script done: the scope's secret, its linux-users
-// rows, the method's backend's listeners.
-func (inv *invocation) scriptRequest(scope, server, method, output string) (hosts.ScriptRequest, error) {
+// rows, the method's backend's listeners. local is the tacctl server's own
+// script ('host enroll --local' and its sync): every other host expires the
+// account of a user who must change the password (linuxAccounts).
+func (inv *invocation) scriptRequest(scope, server, method, output string, local bool) (hosts.ScriptRequest, error) {
 	req := hosts.ScriptRequest{Scope: scope, Server: server, Method: method, Output: output}
 	if err := inv.confReadable(); err != nil {
 		return req, err
@@ -575,8 +578,7 @@ func (inv *invocation) scriptRequest(scope, server, method, output string) (host
 	if m.Exists("scopes", scope) {
 		req.Secret = m.Scope(scope).Secret
 	}
-	req.Rows = m.LinuxUsers(scope)
-	req.Inactive = m.LinuxInactive(scope)
+	req.Rows, req.Inactive = inv.linuxAccounts(m, scope, local)
 	req.GroupTier = inv.syncGroupTier
 	req.EngineerSudo = strings.Join(inv.app.Conf().GetList(engineerSudoKey), ",")
 	id := backend.TACACS
@@ -587,6 +589,17 @@ func (inv *invocation) scriptRequest(scope, server, method, output string) (host
 		req.Listeners, _ = b.Listeners().List()
 	}
 	return req, nil
+}
+
+// linuxAccounts are the linux-users rows and the inactive members of scope
+// on one enrolled host: on every host but this server (local) a user who must
+// change the password is inactive, as a disabled user is, so the sync expires
+// the account there (an SSH key fails as the password does) and the sync after
+// the change opens it again; on the server the account stays open, since that
+// is where the password is changed (pwchange.HostHeld).
+func (inv *invocation) linuxAccounts(m *model.Model, scope string, local bool) (rows, inactive []string) {
+	held := pwchange.HostHeld(inv.app.Conf(), m, local)
+	return m.LinuxUsersHeld(scope, held), m.LinuxInactiveHeld(scope, held)
 }
 
 // confProblem is why the tiers of tacctl.yaml cannot be trusted ("" when
@@ -823,7 +836,7 @@ func (inv *invocation) configLinuxScript(args []string) error {
 	if output == "" {
 		output = "tacctl-linux-" + scope + ".sh"
 	}
-	req, err := inv.scriptRequest(scope, server, method, output)
+	req, err := inv.scriptRequest(scope, server, method, output, false)
 	if err != nil {
 		return err
 	}
@@ -971,6 +984,9 @@ func (inv *invocation) configLinuxUID(args []string) error {
 	}
 	if !m.Exists("users", username) {
 		return inv.usageErr("User '" + username + "' does not exist.")
+	}
+	if strings.Contains(username, ".") {
+		return inv.usageErr("'" + username + "' has no Linux account: a period is not allowed in a Linux account name, so no host gets one and a UID would never be used. Nothing was changed.")
 	}
 	if !rng.Contains(uid) {
 		return inv.usageErr("UID must be a number from " + strconv.Itoa(rng.Min) + " to " + strconv.Itoa(rng.Max) + ": tacctl gives out UIDs in that range only.")

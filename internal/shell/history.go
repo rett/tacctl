@@ -28,6 +28,11 @@ type History struct {
 	// skip, when set, is asked before a line is added: the editor skips a
 	// line ended by Ctrl-C.
 	skip func() bool
+	// hide, when set and true, makes the history look empty to the line
+	// editor (Len): Up, Down and Ctrl-R recall nothing while the session is
+	// held to a required password change, as 'history' lists nothing then.
+	// Entries and the file are not affected.
+	hide func() bool
 	// warn receives one message when the file cannot be written.
 	warn   io.Writer
 	warned bool
@@ -81,10 +86,15 @@ func (h *History) Add(line string) {
 	}
 }
 
-// Len is term.History's Len.
-func (h *History) Len() int { return len(h.lines) }
+// Len is term.History's Len: 0 while hide answers true.
+func (h *History) Len() int {
+	if h.hide != nil && h.hide() {
+		return 0
+	}
+	return len(h.lines)
+}
 
-// At is term.History's At: 0 is the newest entry.
+// At is term.History's At: 0 is the newest entry. Asked only below Len.
 func (h *History) At(i int) string { return h.lines[len(h.lines)-1-i] }
 
 // Entries are the entries, oldest first.

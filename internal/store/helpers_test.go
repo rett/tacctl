@@ -184,3 +184,5 @@ func tempFiles(t *testing.T, dir string) []string {
 	}
 	return m
 }
+
+func writeFileMode(path, text string) error { return os.WriteFile(path, []byte(text), 0o600) }

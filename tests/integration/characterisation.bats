@@ -215,13 +215,21 @@ usage_case() {
 # --- hash ---------------------------------------------------------------------
 
 # bats test_tags=cutover:wp2-4a
-@test "hash: help, -h, --help print the usage and exit 0; an unknown word exits 1" {
+@test "hash: help prints the usage, -h and --help the list of ?, exit 0; an unknown word exits 1" {
     local want
     want=$("$TACCTL_BIN_SCRIPT" hash)
-    for word in help -h --help; do
+    runs "$TACCTL_BIN_SCRIPT" hash help
+    assert_success
+    assert_output "$want"
+    assert_equal "$stderr" ""
+    # -h and --help print what '?' prints there: the sub-commands with
+    # their descriptions (0.2.20).
+    for word in -h --help; do
         runs "$TACCTL_BIN_SCRIPT" hash "$word"
         assert_success
-        assert_output "$want"
+        assert_output "Possible completions:
+  ${ESC}[36mcommands${ESC}[0m  Show OS-specific one-liners for offline generation
+  ${ESC}[36mgenerate${ESC}[0m  Prompt for a password and print its bcrypt hash"
         assert_equal "$stderr" ""
     done
     runs "$TACCTL_BIN_SCRIPT" hash bogus
@@ -513,7 +521,7 @@ EOF
 
     runs "$TACCTL_BIN_SCRIPT" user verify 'bad name'
     assert_failure 1
-    assert_equal "$stderr" "${ESC}[0;31m[ERROR]${ESC}[0m Username must contain only letters, numbers, underscores, and hyphens."
+    assert_equal "$stderr" "${ESC}[0;31m[ERROR]${ESC}[0m Username must contain only letters, numbers, underscores, hyphens, and periods (not first, not last, not two in a row)."
 }
 
 # bats test_tags=cutover:wp2-4a

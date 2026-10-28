@@ -61,6 +61,9 @@ var breakGlassGroup = map[string]string{
 type BreakGlassInput struct {
 	Scope string
 	Users []policy.BreakGlassUser
+	// RootSkipped says the scope records the Junos account 'root', which a
+	// Cisco or WTI walkthrough renders nothing for: it is not in Users there.
+	RootSkipped bool
 	// Legacy is a Cisco IOS 12.x config, which has no type 9 (scrypt).
 	Legacy bool
 	// LocalFirst is the scope's aaa-order local-first: the device tries
@@ -89,6 +92,19 @@ func BreakGlassFor(req Request, d Data) BreakGlassInput {
 	}
 	if d.Conf != nil {
 		in.Users = policy.BreakGlassUsers(d.Conf, req.Scope)
+	}
+	if req.Vendor != "juniper" {
+		// 'root' is the Junos system account: it has no meaning on another
+		// vendor, which renders, compares and names nothing for it.
+		kept := in.Users[:0:0]
+		for _, u := range in.Users {
+			if IsJunosRoot(u.Name) {
+				in.RootSkipped = true
+				continue
+			}
+			kept = append(kept, u)
+		}
+		in.Users = kept
 	}
 	groups := groupInfo(d.Model)
 	wti := wtiGroups(d)
@@ -125,9 +141,19 @@ func BreakGlassFor(req Request, d Data) BreakGlassInput {
 // breakGlassNotice is the lines (each starting with prefix) a scope without
 // break-glass users gets next to the vendor's existing advice.
 func breakGlassNotice(in BreakGlassInput, prefix string) string {
-	return prefix + "No break-glass local user is recorded for scope '" + in.Scope + "': with the server\n" +
+	s := prefix + "No break-glass local user is recorded for scope '" + in.Scope + "': with the server\n" +
 		prefix + "unreachable and no local account on the device, nobody can log in. Record one with\n" +
 		prefix + "  tacctl scope breakglass " + in.Scope + " add <name> [--role admin|operator|readonly]"
+	if in.RootSkipped {
+		s += "\n" + rootSkippedLine(prefix)
+	}
+	return s
+}
+
+// rootSkippedLine is the one line a Cisco or WTI walkthrough says of a
+// recorded 'root'.
+func rootSkippedLine(prefix string) string {
+	return prefix + "'root' is recorded for the scope: it is the Junos system account, so nothing is rendered for it here."
 }
 
 // ciscoBreakGlass is the ${BREAKGLASS_BLOCK} of the Cisco templates.
@@ -137,6 +163,9 @@ func ciscoBreakGlass(in BreakGlassInput) string {
 	}
 	var b strings.Builder
 	b.WriteString("! --- Break-glass local users (scope: " + in.Scope + ") ---\n")
+	if in.RootSkipped {
+		b.WriteString(rootSkippedLine("! ") + "\n")
+	}
 	if in.LocalFirst {
 		b.WriteString("! The scope's aaa-order is local-first: the 'local' method of 'aaa authentication login'\n")
 		b.WriteString("! in Step 1 tries these accounts before the server.\n")
@@ -182,9 +211,25 @@ func juniperBreakGlass(in BreakGlassInput) string {
 	}
 	b.WriteString("# tacctl stores no credential: replace " + breakGlassHash + " with your own crypt hash ($6$...),\n")
 	b.WriteString("# remove the '# ' before the commit of Step 8.\n")
+	root := false
 	for _, u := range in.Users {
+		if IsJunosRoot(u.Name) {
+			root = true
+			continue
+		}
 		b.WriteString("# set system login user " + u.Name + " class " + in.Class[u.Role] +
 			" authentication encrypted-password '" + breakGlassHash + "'\n")
+	}
+	if root {
+		// Junos keeps root under system root-authentication, never under
+		// system login user; it is always a superuser.
+		b.WriteString("# root is the Junos system account: its password is under system root-authentication, not under\n")
+		b.WriteString("# system login user, and it is always a superuser (same hash rule as above).\n")
+		b.WriteString("# set " + JunosRootPassword + " '" + breakGlassHash + "'\n")
+		b.WriteString("# Junos refuses root over ssh by default, so the line below is part of this access. It is a security\n")
+		b.WriteString("# trade-off to decide: root can then log in over ssh, so keep the device behind its management filter\n")
+		b.WriteString("# (Step 4, tacctl scope mgmt-acl). Leave it out to keep root on the console.\n")
+		b.WriteString("# set " + JunosRootLogin + "\n")
 	}
 	return strings.TrimSuffix(b.String(), "\n")
 }
@@ -202,6 +247,9 @@ func wtiBreakGlass(in BreakGlassInput) string {
 	b.WriteString(ind + "user directory (/H lists its command) with the access level shown, and set a password you keep:\n")
 	for _, u := range in.Users {
 		b.WriteString(ind + "  " + u.Name + "  Access Level: " + in.Level[u.Role] + "  Password: " + breakGlassPassword + "\n")
+	}
+	if in.RootSkipped {
+		b.WriteString(rootSkippedLine(ind) + "\n")
 	}
 	b.WriteString(ind + "Save as in Step 7.\n")
 	return strings.TrimSuffix(b.String(), "\n")
@@ -233,6 +281,23 @@ func (o *out) unfilledBreakGlass(in BreakGlassInput) {
 // junosPredefinedClasses are the login classes Junos ships; a local user
 // named like one would be confusing next to the template users.
 var junosPredefinedClasses = []string{"super-user", "operator", "read-only", "unauthorized"}
+
+// JunosRoot is the name of the Junos root account. It is a break-glass entry
+// of a scope for Junos devices only: Junos keeps its password under 'system
+// root-authentication' (JunosRootPassword), never under 'system login user',
+// and root logs in over ssh only with JunosRootLogin set.
+const JunosRoot = "root"
+
+// The two statements of the root break-glass access, as the walkthrough
+// renders them (after 'set ') and the pull compares them.
+const (
+	JunosRootPassword = "system root-authentication encrypted-password"
+	JunosRootLogin    = "system services ssh root-login allow"
+)
+
+// IsJunosRoot reports the name of the Junos root account (exactly, as Junos
+// spells it).
+func IsJunosRoot(name string) bool { return name == JunosRoot }
 
 // JunosSystemAccounts are the Junos login accounts that exist without being
 // configured as users: root, and 'remote', the template account every

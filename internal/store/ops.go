@@ -72,7 +72,8 @@ func isNullArg(v string) bool { return v == "" || v == "null" }
 
 // UserSet is op_user_set (store_user_set <name> [group=<g>]
 // [scopes=<a,b>] [hash=<hex|$2b$..|null>] [disabled=true|false]
-// [password_changed=<YYYY-MM-DD|today|null>]). group= is required for a
+// [password_changed=<YYYY-MM-DD|today|null>]
+// [password_change_required=true|false]). group= is required for a
 // new user; a new user given hash= starts enabled unless disabled= says
 // otherwise, without one it starts disabled; 'root' is always the
 // accounting sink and refuses hash=.
@@ -138,6 +139,19 @@ func (s *Store) UserSet(name string, fields ...string) error {
 				u.Set("password_changed", s.now().Format("2006-01-02"))
 			default:
 				u.Set("password_changed", f.v)
+			}
+		case "password_change_required":
+			b, err := boolArg("password_change_required", f.v)
+			if err != nil {
+				return err
+			}
+			// Written only when true (as accounting_sink is): false is the
+			// absence of the key, so a store that never used the setting is
+			// byte for byte what 0.2.19 wrote.
+			if b {
+				u.Set("password_change_required", true)
+			} else {
+				u.Delete("password_change_required")
 			}
 		default:
 			return storeErr("user '%s': unknown field '%s'", name, f.k)

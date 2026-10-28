@@ -24,7 +24,7 @@ Commands:
       <o>-y</o>, <o>--yes</o>                         Answer yes to the confirmations
   <b>upgrade</b> [<o>--branch <name></o>]             Pull latest source, rebuild, update scripts and every enabled backend
   <b>uninstall</b> [<o>-y</o>|<o>--yes</o>]                  Remove tacctl, its backends' services and all associated files
-  <b>rollback</b> <o><version></o> [options]          Prepare the state for the release before this one (0.2.18), for 0.2.17, 0.2.16, 0.2.9 or 0.2.3: a dry run unless <o>--apply</o>
+  <b>rollback</b> <o><version></o> [options]          Prepare the state for the release before this one (0.2.19), for 0.2.18, 0.2.17, 0.2.16, 0.2.9 or 0.2.3: a dry run unless <o>--apply</o>
       <o>--apply</o>                           Take a snapshot, then convert the files the target cannot read (tacctl.yaml, sudoers; for 0.2.3 also console.yaml, devices.yaml)
       <o>--yes</o>                             Acknowledge the warnings that <o>--apply</o> refuses to go on without
       <o>--hosts</o>                           Accepted; the hosts need nothing for this target (no host is synced)
@@ -45,7 +45,7 @@ Commands:
       <o>--no-history</o>                      Keep no history file for this session
       <o>--space-completion</o> on|off         A typed space completes a fixed word and never doubles (default on)
       <o>--password-cache</o>                  Keep your network password in this shell's memory (when your tier's policy allows)
-  <b>console</b> <o><subcommand></o>                  Login console: tiers, per-user overrides, settings (show, tiers, user, ...)
+  <b>console</b> <o><subcommand></o>                  Login console: its settings (show, idle-timeout, ...)
   <b>backend</b> <o><subcommand></o>                  Auth backends: list, status, enable <o><id></o>, disable <o><id></o>
   <b>store</b> <o><subcommand></o>                    The canonical store: show, import, rollback
   <b>config</b> <o><subcommand></o>                   Configuration (show, render, cisco, juniper, wti, validate, ...)
@@ -53,6 +53,8 @@ Commands:
   <b>backup</b> <o><subcommand></o>                   Backup management (list, diff, restore)
   <b>hash</b> <o><subcommand></o>                     Bcrypt helper (generate, commands — runs as invoking user, no sudo)
   <b>completion</b> bash|zsh|fish              Print the shell completion script
+  <b>man</b> [<o>--path</o>] [<o><word>...</o>]              Open the manual page, at a command or topic
+      <o>--path</o>                            Print which manual page is shown and where one is installed
   <b>version</b> [<o>--long</o>]                      Print tacctl version (<o>--long</o>: commit, build date, Go version)
       <o>--long</o>                            Also the commit, build date, Go version and whether test knobs are on
 
@@ -79,21 +81,27 @@ Documentation: man tacctl, /opt/tacctl/docs/ · Project: https://github.com/rett
 Usage: tacctl user <subcommand> [arguments]
 
 Subcommands:
-  <b>list</b>                                        List all users (name, group, status, pw age, scopes)
-  <b>show</b> <o><username></o>                             Show user details incl. scope membership
-  <b>add</b> <o><username></o> <o><group></o>                      Add a new user; lands in default scope
-  <b>add</b> <o><username></o> <o><group></o> <o>--scopes <s></o>[,s...]  Grant specific scopes at creation
-  <b>add</b> <o><username></o> <o><group></o> <o>--hash <hash></o>        Add with pre-generated bcrypt hash (<o>-</o> reads it from stdin)
-  <b>remove</b> <o><username></o>                           Remove a user
-  <b>passwd</b> <o><username></o>                           Change a user's password
-  <b>passwd</b> <o><username></o> <o>--hash <hash></o>             Change with pre-generated bcrypt hash (<o>-</o> reads it from stdin)
-  <b>disable</b> <o><username></o>                          Disable a user (preserves hash)
-  <b>enable</b> <o><username></o>                           Re-enable a disabled user
-  <b>rename</b> <o><old></o> <o><new></o>                          Rename a user
-  <b>move</b> <o><user></o> <o><group></o>                         Move user to a different group
-  <b>verify</b> <o><username></o>                           Verify password and show user details
-  <b>scope</b> <o><user></o> list|add|remove|replace        Manage which scopes the user can auth from
-  <b>scope</b> <o><user></o> remove <o>--all</o>                   Remove every scope from the user
+  <b>list</b>                                         List all users (name, group, status, pw age, scopes)
+  <b>show</b> <o><username></o>                              Show user details incl. scope membership
+  <b>add</b> <o><username></o> <o><group></o>                       Add a new user; lands in default scope
+  <b>add</b> <o><username></o> <o><group></o> <o>--scopes <s></o>[,s...]   Grant specific scopes at creation
+  <b>add</b> <o><username></o> <o><group></o> <o>--hash <hash></o>         Add with pre-generated bcrypt hash (<o>-</o> reads it from stdin)
+  <b>add</b> <o><username></o> <o><group></o> <o>--no-change-required</o>  Skip the required password change (a new user must change it first)
+  <b>remove</b> <o><username></o>                            Remove a user
+  <b>passwd</b> <o><username></o>                            Change a user's password
+  <b>passwd</b> <o><username></o> <o>--hash <hash></o>              Change with pre-generated bcrypt hash (<o>-</o> reads it from stdin)
+  <b>passwd</b> <o><username></o> <o>--no-change-required</o>       Skip the required password change (a reset requires one)
+  <b>disable</b> <o><username></o>                           Disable a user (preserves hash)
+  <b>enable</b> <o><username></o>                            Re-enable a disabled user
+  <b>rename</b> <o><old></o> <o><new></o>                           Rename a user
+  <b>move</b> <o><user></o> <o><group></o>                          Move user to a different group
+  <b>verify</b> <o><username></o>                            Verify password and show user details
+  <b>require-password-change</b> <o><user></o> [on|off]      Require, or lift, a password change at the next login
+  <b>require-password-change</b> <o>--all</o> [on|off]       Require, or lift, it for every user (superusers are skipped)
+  <b>scope</b> <o><user></o> list|add|remove|replace         Manage which scopes the user can auth from
+  <b>scope</b> <o><user></o> remove <o>--all</o>                    Remove every scope from the user
+
+Names: letters, digits, '_', '-' and '.', new ones in lower case; a '.' is never first, last or next to another.
 
 Examples:
   tacctl user list
@@ -316,6 +324,7 @@ Usage:
   <b>tacctl scope auth-method</b> <o><scope></o> [tacacs|radius|clear]   Protocol this scope's device configs and host enrollments use when the command names none
   <b>tacctl scope mgmt-acl</b> <o><scope></o> list|add|remove|clear      Per-scope permit list (fallback: global mgmt_acl.permits)
   <b>tacctl scope mgmt-acl</b> <o><scope></o> cisco-name|juniper-name [<o><name></o>]  Per-scope ACL / filter name (defaults VTY-ACL / MGMT-ACL)
+  <b>tacctl scope mgmt-acl</b> <o><scope></o> mode [ssh-only|strict]     Junos filter mode of a scope: ssh-only (default) or strict, deny by default (Junos only)
   <b>tacctl scope breakglass</b> <o><scope></o> list                     Per-scope break-glass local users in the device walkthroughs (names and roles only; no credential is stored)
   <b>tacctl scope breakglass</b> <o><scope></o> add <o><name></o> [<o>--role</o> admin|operator|readonly]  Record a break-glass user: one of the accounts 'tacctl breakglass hold' makes usable
       <o>--role <role></o>                                        (add) The role: admin (default), operator or readonly
@@ -373,12 +382,19 @@ Usage:
   <b>tacctl scope mgmt-acl</b> {{scope}} clear                         Wipe the per-scope list (confirms; render falls back to global)
   <b>tacctl scope mgmt-acl</b> {{scope}} cisco-name   [<o><label></o>]        Per-scope Cisco VTY-ACL name
   <b>tacctl scope mgmt-acl</b> {{scope}} juniper-name [<o><label></o>]        Per-scope Junos filter name
+  <b>tacctl scope mgmt-acl</b> {{scope}} mode [ssh-only|strict]        Junos filter mode: ssh-only (default) or strict, deny by default (Junos only)
 
 An <entry> is a <cidr>, or a <cidr> with the services it permits:
   <cidr>[:<service>[,<service>...]]    e.g. 172.16.100.0/23:tcp/22,udp/161,udp/162
   <service> is tcp/<ports>, udp/<ports> or icmp; <ports> is N, N-M or *.
   A <cidr> alone permits every protocol and port from it (the WTI IP Tables list renders that; a
   Cisco VTY-ACL and a Junos filter list a source only when its entry permits tcp/22).
+
+The mode only affects Junos devices. strict accepts every protocol from the permit list and has no
+default-accept term, so routing protocols carried over IP from neighbours outside the list, TACACS+
+and RADIUS replies from servers not in it, NTP, syslog, DHCP and SNMP from other sources stop once the
+filter is applied to lo0 (IS-IS is not carried over IP and is not affected): keep a console session
+open and use commit confirmed.
 
 {{current}}
 

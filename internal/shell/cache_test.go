@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"io"
 	"reflect"
 	"strings"
@@ -46,6 +47,13 @@ func (c *fakeCache) Forget(why string) bool {
 		c.notes = append(c.notes, "password forgotten ("+why+")")
 	}
 	return was
+}
+
+func (c *fakeCache) Holds() bool { return c.held }
+
+func (c *fakeCache) Stop(why string) {
+	c.Forget(why)
+	c.events = append(c.events, "stop")
 }
 
 func (c *fakeCache) Notices() []string {
@@ -157,5 +165,108 @@ func TestPasswdForgets(t *testing.T) {
 		if c.forget && cache.held {
 			t.Errorf("%q: still held", c.line)
 		}
+	}
+}
+
+// 'console password-cache' with no argument, 'on' or 'off' is a word of the
+// shell: the root side (Exec) gets the line to answer or save the person's
+// choice, and the shell then starts the cache (on), stops it and forgets the
+// password (off) or says whether a password is held (the state). Other
+// forms are ordinary commands.
+func TestPasswordCacheWord(t *testing.T) {
+	ctx := context.Background()
+	// on: after the save the cache starts in the running session.
+	f := newFakeShell(nil)
+	f.sh.interactive = true
+	started := &fakeCache{}
+	starts := 0
+	f.sh.o.CacheStart = func() (PasswordCache, error) { starts++; return started, nil }
+	f.sh.Batch(ctx, strings.NewReader("console password-cache on\n"))
+	if len(f.ran) != 1 || strings.Join(f.ran[0], " ") != "console password-cache on" || starts != 1 || f.sh.o.Cache != PasswordCache(started) {
+		t.Fatalf("on: ran %q, starts %d, cache %v", f.ran, starts, f.sh.o.Cache)
+	}
+	if !strings.Contains(f.out.String(), "the password cache is on in this session") {
+		t.Errorf("stdout %q", f.out.String())
+	}
+	// ... and the lines that use it open it from then on.
+	f.sh.Batch(ctx, strings.NewReader("ssh core\n"))
+	if got := strings.Join(started.events, ","); got != "begin:env-1,end" {
+		t.Errorf("events after on: %q", got)
+	}
+	// Already on: nothing is started twice.
+	f.sh.Batch(ctx, strings.NewReader("console password-cache on\n"))
+	if starts != 1 || strings.Count(f.out.String(), "the password cache is on in this session") != 2 {
+		t.Errorf("on again: starts %d, stdout %q", starts, f.out.String())
+	}
+	// The state, with a password held.
+	started.held = true
+	f.out.Reset()
+	f.sh.Batch(ctx, strings.NewReader("console password-cache\n"))
+	if !strings.Contains(f.out.String(), "in this session: the password cache is on and a password is cached now") {
+		t.Errorf("state: %q", f.out.String())
+	}
+	// off: the password is forgotten and said, the cache is stopped and gone.
+	f.out.Reset()
+	f.sh.Batch(ctx, strings.NewReader("console password-cache off\n"))
+	if got := strings.Join(started.events, ","); !strings.HasSuffix(got, "forget:"+askpass.WhyOff+",stop") || started.held || f.sh.o.Cache != nil {
+		t.Errorf("off: events %q held %v cache %v", got, started.held, f.sh.o.Cache)
+	}
+	if !strings.Contains(f.err.String(), "password forgotten ("+askpass.WhyOff+")") || !strings.Contains(f.out.String(), "the password cache is off in this session") {
+		t.Errorf("off: stderr %q stdout %q", f.err.String(), f.out.String())
+	}
+	f.out.Reset()
+	f.sh.Batch(ctx, strings.NewReader("console password-cache\n"))
+	if !strings.Contains(f.out.String(), "in this session: the password cache is not on") {
+		t.Errorf("state after off: %q", f.out.String())
+	}
+	if len(f.ran) != 6 {
+		t.Errorf("the root side got %d lines, want one per line typed: %q", len(f.ran), f.ran)
+	}
+
+	// A choice that could not be saved starts nothing; an off always stops.
+	g := newFakeShell(nil)
+	g.sh.interactive = true
+	g.sh.o.CacheStart = func() (PasswordCache, error) { t.Error("started after a refusal"); return nil, nil }
+	inner := g.sh.o.Exec
+	g.sh.o.Exec = func(c context.Context, words []string, in io.Reader) int {
+		inner(c, words, in)
+		return 1
+	}
+	if got := g.sh.Batch(ctx, strings.NewReader("console password-cache on\n")); got != 1 || g.sh.o.Cache != nil {
+		t.Errorf("refused on: status %d cache %v", got, g.sh.o.Cache)
+	}
+	held := &fakeCache{held: true}
+	g.sh.o.Cache = held
+	g.sh.Batch(ctx, strings.NewReader("console password-cache off\n"))
+	if g.sh.o.Cache != nil || held.held {
+		t.Errorf("off after a failed save: cache %v held %v", g.sh.o.Cache, held.held)
+	}
+
+	// A start that fails is said, with status 1, and the cache stays off.
+	h := newFakeShell(nil)
+	h.sh.interactive = true
+	h.sh.o.CacheStart = func() (PasswordCache, error) {
+		return nil, errors.New("password cache unavailable: cannot lock memory")
+	}
+	if got := h.sh.Batch(ctx, strings.NewReader("console password-cache on\n")); got != 1 || h.sh.o.Cache != nil ||
+		!strings.Contains(h.err.String(), "password cache unavailable: cannot lock memory") {
+		t.Errorf("failed start: status %d cache %v stderr %q", got, h.sh.o.Cache, h.err.String())
+	}
+
+	// Not interactive (-c, a batch) or no way to start: the choice is saved and
+	// the cache starts with the next interactive session.
+	k := newFakeShell(nil)
+	k.sh.o.CacheStart = func() (PasswordCache, error) { t.Error("started in a batch"); return nil, nil }
+	k.sh.Batch(ctx, strings.NewReader("console password-cache on\n"))
+	if !strings.Contains(k.out.String(), "starts with your next interactive session") {
+		t.Errorf("batch: %q", k.out.String())
+	}
+
+	// The other forms are ordinary commands, and the word takes no other value.
+	m := newFakeShell(nil)
+	m.sh.interactive = true
+	m.sh.Batch(ctx, strings.NewReader("console password-cache tiers operator\nconsole password-cache user bob clear\nconsole password-cache on now\n"))
+	if len(m.ran) != 3 || m.sh.o.Cache != nil {
+		t.Errorf("ordinary forms: ran %q", m.ran)
 	}
 }

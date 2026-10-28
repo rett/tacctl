@@ -476,11 +476,12 @@ func (inv *invocation) newNameRules(vendor string) func(string) error {
 func (e *enroll) scan(r *enrollRow) bool {
 	inv := e.inv
 	r.legacy = e.legacySSH
-	keys, err := inv.scanDevice(r.Address, devssh.DefaultPort, r.legacy)
-	if !r.legacy && errors.Is(err, devreg.ErrNoAnswer) && inv.ctx.Err() == nil {
-		if k2, err2 := inv.scanDevice(r.Address, devssh.DefaultPort, true); err2 == nil && len(k2) > 0 {
-			keys, err, r.legacy = k2, nil, true
-		}
+	var keys []devreg.HostKey
+	var err error
+	if r.legacy {
+		keys, err = inv.scanDevice(r.Address, devssh.DefaultPort, true)
+	} else {
+		keys, r.legacy, err = inv.scanLearningLegacy(r.Address, devssh.DefaultPort)
 	}
 	switch {
 	case inv.ctx.Err() != nil:

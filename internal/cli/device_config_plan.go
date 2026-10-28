@@ -254,6 +254,10 @@ func (r *planRun) planOne(e devreg.Entry) planDevice {
 
 	opt := plan.Options{Sections: r.opt.sections, Secrets: r.opt.secrets, NoSecrets: r.opt.noSecrets, From: r.opt.from,
 		Scope: e.Scope, Device: name, Converge: r.opt.converge}
+	if e.Vendor == "juniper" {
+		// the mode the rendering of the mgmt-acl section followed (0.2.20)
+		opt.MgmtMode = r.inv.readMgmtACLMode(e.Scope)
+	}
 	if e.Vendor == "wti" {
 		// the facts of the IP tables builder and of the pull that the plan's
 		// guards read (the server's address, the other sessions)

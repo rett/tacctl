@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/rett/tacctl/internal/model"
+	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/rendered"
 	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/ui"
@@ -44,7 +45,7 @@ func TestARenderedFileImportsBackAndReRendersByteIdentically(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			text, err := RenderToFile(s, defaultView(t), nil, filepath.Join(w, "out.yaml"), DefaultLoader, nil)
+			text, err := RenderToFile(s, defaultView(t), nil, pwchange.Server{}, filepath.Join(w, "out.yaml"), DefaultLoader, nil)
 			if err != nil {
 				t.Fatal(rendered.Report(err))
 			}

@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/rett/tacctl/internal/ui"
 )
 
 // shellCommand is the deepest command words name, its path below the root
@@ -193,8 +195,9 @@ func verbsNamed(desc, verb string) (listed, named bool) {
 	return true, slices.Contains(strings.Fields(strings.ReplaceAll(desc[1:end], ",", " ")), verb)
 }
 
-// flagHelp is what the block says of a flag: its value's placeholder (for
-// a flag that takes one) and its description. An option line ('  -p <port>
+// flagHelp is what a flag says of itself (Desc, and Arg for the value it
+// takes), else what the block says of it: its value's placeholder (for a
+// flag that takes one) and its description. An option line ('  -p <port>
 // Connect ...') gives both, with the lines that continue it; else a row of
 // the verb that adds the flag to the first row ('add <username> <group>
 // --hash <hash>  Add with ...'); the placeholder may also come from
@@ -204,6 +207,22 @@ func verbsNamed(desc, verb string) (listed, named bool) {
 // its rows, one elsewhere that names it, one that names no verb, and last
 // one about other verbs.
 func flagHelp(block string, rows []usageRow, f Flag) (value, desc string) {
+	// A flag that carries its own text (Flag.Desc, and Flag.Arg for the value
+	// it takes) needs nothing of the block.
+	if f.Desc != "" && !f.Value {
+		return "", f.Desc
+	}
+	if f.Desc != "" && f.Arg != "" {
+		return f.Arg, f.Desc
+	}
+	defer func() {
+		if f.Desc != "" {
+			desc = f.Desc
+		}
+		if f.Arg != "" && f.Value {
+			value = f.Arg
+		}
+	}()
 	findValue := func(text string) string {
 		for _, n := range f.Names {
 			for i := strings.Index(text, n); i >= 0; {
@@ -493,7 +512,12 @@ func nextWords(rows []usageRow, pos int) []string {
 }
 
 // alignRows is rows as '  <left>  <desc>' lines, the descriptions aligned.
-func alignRows(rows [][2]string) string {
+func alignRows(rows [][2]string) string { return alignRowsWith(rows, nil) }
+
+// alignRowsWith is alignRows with the left column in colour: paintLeft
+// gives the left column as it is shown (nil: as it is). The columns are
+// counted on the plain text.
+func alignRowsWith(rows [][2]string, paintLeft func(string) string) string {
 	width := 0
 	for _, r := range rows {
 		if r[1] != "" {
@@ -502,13 +526,67 @@ func alignRows(rows [][2]string) string {
 	}
 	var b strings.Builder
 	for _, r := range rows {
+		left := r[0]
+		if paintLeft != nil {
+			left = paintLeft(left)
+		}
 		if r[1] == "" {
-			b.WriteString("  " + r[0] + "\n")
+			b.WriteString("  " + left + "\n")
 			continue
 		}
-		b.WriteString("  " + r[0] + strings.Repeat(" ", max(width-len(r[0]), 0)) + "  " + r[1] + "\n")
+		b.WriteString("  " + left + strings.Repeat(" ", max(width-len(r[0]), 0)) + "  " + r[1] + "\n")
 	}
 	return b.String()
+}
+
+// paintUsage is a usage row's left column in the palette of the lists: the
+// verb (the command's name at the top level, bright white) and the options
+// and fixed words after it (teal); placeholders as they are.
+func paintUsage(left string, top bool) string {
+	toks := strings.Split(left, " ")
+	for i, t := range toks {
+		switch {
+		case i == 0 && top:
+			toks[i] = ui.Paint(ui.BrightWhite, t)
+		case i == 0, isOptionWord(t), isFixedToken(t):
+			toks[i] = ui.Paint(ui.Teal, t)
+		}
+	}
+	return strings.Join(toks, " ")
+}
+
+// paintOptions is the left column of an option row: its spellings and
+// teal, the value it takes as it is ('-y, --yes', '--hash <hash>').
+func paintOptions(left string) string {
+	toks := strings.Split(left, " ")
+	for i, t := range toks {
+		if isOptionWord(strings.TrimSuffix(t, ",")) {
+			toks[i] = ui.Paint(ui.Teal, strings.TrimSuffix(t, ",")) + t[len(strings.TrimSuffix(t, ",")):]
+		}
+	}
+	return strings.Join(toks, " ")
+}
+
+// isOptionWord reports whether a word of a usage row is a flag
+// ('--hash', '-y', '[--long]').
+func isOptionWord(t string) bool {
+	return strings.HasPrefix(t, "-") || strings.HasPrefix(t, "[-")
+}
+
+// isFixedToken reports whether a word of a usage row is a fixed word or a
+// choice of them ('list', 'list|add|remove'), not a placeholder, a bar or the
+// dots.
+func isFixedToken(t string) bool {
+	return t != "" && t != "|" && t != "..." && fixedWords(t) != nil
+}
+
+// paintNext is a word of the 'Next:' line: a fixed word or a choice of them
+// is teal ('list|add|remove'), a placeholder as it is.
+func paintNext(w string) string {
+	if isFixedToken(w) {
+		return ui.Paint(ui.Teal, w)
+	}
+	return w
 }
 
 // shellExplain is the shell's Explainer: for words that name a command
@@ -549,7 +627,7 @@ func (inv *invocation) shellExplain(root *cobra.Command) func([]string) (string,
 			lines = append(lines, [2]string{r.Left, r.Desc})
 		}
 		if len(lines) > 0 {
-			b.WriteString("Usage:\n" + alignRows(lines))
+			b.WriteString("Usage:\n" + alignRowsWith(lines, func(l string) string { return paintUsage(l, len(path) == 1) }))
 		}
 		var flags [][2]string
 		for _, f := range spec.Flags {
@@ -564,11 +642,15 @@ func (inv *invocation) shellExplain(root *cobra.Command) func([]string) (string,
 			flags = append(flags, [2]string{flagLabel(f, value), desc})
 		}
 		if len(flags) > 0 {
-			b.WriteString("Options:\n" + alignRows(flags))
+			b.WriteString("Options:\n" + alignRowsWith(flags, paintOptions))
 		}
 		next := "<Enter> to run"
 		args := positionals(spec, rest)
-		switch remaining := nextWords(forms, pos); {
+		remaining := nextWords(forms, pos)
+		for i := range remaining {
+			remaining[i] = paintNext(remaining[i])
+		}
+		switch {
 		case len(remaining) == 0 || (hasSpec && spec.MaxArgs >= 0 && args >= spec.MaxArgs):
 		case hasSpec && args < spec.MinArgs:
 			next = strings.Join(remaining, " ")
@@ -676,27 +758,7 @@ func specKind(spec Spec, rest []string) string {
 		}
 	}
 	if !pending && pos < len(spec.Args) {
-		kind = spec.Args[pos]
-		if r, ok := strings.CutPrefix(kind, "@"); ok {
-			word, k, _ := strings.Cut(r, ":")
-			kind = ""
-			if slices.Contains(words, word) {
-				kind = k
-			}
-		}
-
-		// A kind taken from one of two lists by a word typed before it
-		// (completeSpec's Cond).
-		if r, ok := strings.CutPrefix(kind, "?"); ok {
-			parts := strings.SplitN(r, ":", 3)
-			kind = ""
-			if len(parts) == 3 {
-				kind = parts[2]
-				if slices.Contains(words, parts[0]) {
-					kind = parts[1]
-				}
-			}
-		}
+		kind = resolveKind(spec.Args[pos], words)
 	}
 	return kind
 }

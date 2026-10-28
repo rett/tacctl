@@ -52,6 +52,35 @@ package fakedev
 //	                    connection unanswered, before it is applied
 //	slow                '<command prefix> => <seconds>' lines ('*' matches
 //	                    every command): the answer waits on the clock
+//	chassis             a device with several members (a virtual chassis, two
+//	                    routing engines): one line '<label> <model> [<host
+//	                    software>]' for each, 'fpc0 ex4600-40f 18.1R3-S6.1'.
+//	                    'show version' prints a block for each member (the
+//	                    hostname and release of the 'device' file), 'commit
+//	                    check' a block 'fpc0: ' and 'configuration check
+//	                    succeeds' for each [C: a virtual chassis of four], a
+//	                    commit the same blocks for its check and for 'commit
+//	                    complete' [inferred: no capture], and a NETCONF commit
+//	                    a <routing-engine> element for each [inferred]
+//	chassis.plain       present: the members are listed by 'show version' but
+//	                    a commit is answered as a single device answers it
+//	                    (two routing engines without 'commit synchronize'):
+//	                    the plain lines over the command line, one
+//	                    <routing-engine> element (re0) over NETCONF
+//	chassis.check       '<label> => <text>' lines: that member fails its check
+//	                    with the text (a NETCONF reply holds an <rpc-error>
+//	                    in its element): 'commit check' and 'commit' report it
+//	                    and commit nothing
+//	chassis.commit      '<label> => <text>' lines: that member answers a
+//	                    commit that is made with the text instead of 'commit
+//	                    complete' (over NETCONF it sends no success)
+//	commit.synchronize  every commit the model records ends its history entry
+//	                    in 'synchronize' (a device with two routing engines,
+//	                    or a virtual chassis, that commits so): 'commit
+//	                    synchronize', 'commit confirmed, rollback in 10mins
+//	                    synchronize'; the words typed after 'commit' on the
+//	                    command line (and-quit, synchronize, force) are
+//	                    printed in any case, in the order typed
 //	timer.minute        seconds one minute of 'commit confirmed' lasts on the
 //	                    server's clock (default 60; bats sets 1)
 //	netconf.private.confirm
@@ -208,6 +237,10 @@ type JunosCommit struct {
 	// Confirmed marks a confirmed commit whose window is under a minute
 	// (RollbackIn 0), which the device still labels 'rollback in 0mins'.
 	Confirmed bool
+	// Options are the words the commit command ended with, as the entry
+	// prints them after 'commit' (and after the label of a confirmed
+	// commit): 'and-quit', 'synchronize', 'force', in the order typed.
+	Options []string
 }
 
 type junosPending struct {
@@ -558,10 +591,10 @@ func (d *junosDevice) writeCommitted() {
 
 // record makes the committed configuration the next version and adds the
 // history entry.
-func (d *junosDevice) record(user, via, comment string, rollbackIn int) {
+func (d *junosDevice) record(user, via, comment string, rollbackIn int, options ...string) {
 	d.versions = slices.Insert(d.versions, 0, d.committed.clone())
 	d.history = slices.Insert(d.history, 0, JunosCommit{
-		Time: d.s.clock.Now(), User: user, Via: via, Comment: comment, RollbackIn: rollbackIn,
+		Time: d.s.clock.Now(), User: user, Via: via, Comment: comment, RollbackIn: rollbackIn, Options: options,
 	})
 	if len(d.versions) > historyMax {
 		d.versions = d.versions[:historyMax]
@@ -593,11 +626,17 @@ func (d *junosDevice) historyText() string {
 	var b strings.Builder
 	for i, h := range d.history {
 		fmt.Fprintf(&b, "%-3d %s by %s via %s", i, formatTime(h.Time), h.User, h.Via)
-		if h.Confirmed || h.RollbackIn > 0 {
+		switch {
+		case h.Confirmed || h.RollbackIn > 0:
 			// the label is the window in whole minutes, rounded down: a
 			// NETCONF commit's seconds make 'rollback in 0mins' under a
 			// minute [lab: 1 and 5 seconds read 0mins, 180 reads 3mins]
 			b.WriteString(" " + fmt.Sprintf(jtRollbackInFmt, h.RollbackIn))
+		case len(h.Options) > 0:
+			b.WriteString(" commit")
+		}
+		for _, o := range h.Options {
+			b.WriteString(" " + o)
 		}
 		b.WriteString("\n")
 		if h.Comment != "" {
@@ -641,6 +680,18 @@ func (d *junosDevice) authorizationText(user string) string {
 func (d *junosDevice) versionText() string {
 	model := d.deviceInfo("model", "ex4300-48mp")
 	rel := d.deviceInfo("junos", "25.4R1.12")
+	if ms := d.members(); len(ms) > 0 {
+		var blocks []string
+		for _, m := range ms {
+			b := fmt.Sprintf("%s:\n%s\nHostname: %s\nModel: %s\nJunos: %s\nJUNOS Base OS boot [%s]\n",
+				m.label, jtMemberRule, d.hostname(), m.model, rel, rel)
+			if m.host != "" {
+				b += fmt.Sprintf("JUNOS Host Software [%s]\n", m.host)
+			}
+			blocks = append(blocks, b)
+		}
+		return strings.Join(blocks, "\n")
+	}
 	return fmt.Sprintf("Hostname: %s\nModel: %s\nFamily: junos\nJunos: %s\nJUNOS Base OS boot [%s]\n",
 		d.hostname(), model, rel, rel)
 }
@@ -659,3 +710,74 @@ func (d *junosDevice) showConfiguration(path []string, displaySet bool) string {
 }
 
 func durationOf(secs float64) time.Duration { return time.Duration(secs * float64(time.Second)) }
+
+// jmember is one member of a device with several (the 'chassis' knob).
+type jmember struct{ label, model, host string }
+
+// members are the lines of the 'chassis' knob, none for a single device.
+func (d *junosDevice) members() []jmember {
+	var ms []jmember
+	for _, l := range d.rules("chassis") {
+		f := strings.Fields(l)
+		if len(f) < 2 {
+			continue
+		}
+		m := jmember{label: f[0], model: f[1]}
+		if len(f) > 2 {
+			m.host = f[2]
+		}
+		ms = append(ms, m)
+	}
+	return ms
+}
+
+// perMember is text as a device with members prints it: a block for each,
+// the label with the trailing space the device prints, then the text; the
+// text alone for a single device. The knob (chassis.check for the check's
+// success, chassis.commit for the commit's) can give a member another text.
+func (d *junosDevice) perMember(text, knob string) string {
+	ms := d.answerMembers()
+	if len(ms) == 0 {
+		return text + "\n"
+	}
+	var b strings.Builder
+	for _, m := range ms {
+		t := text
+		if o, ok := d.memberText(knob, m.label); ok {
+			t = o
+		}
+		b.WriteString(m.label + ": \n" + t + "\n")
+	}
+	return b.String()
+}
+
+// memberText is the text a knob ('<label> => <text>' lines) gives a member.
+func (d *junosDevice) memberText(knob, label string) (string, bool) {
+	for _, l := range d.rules(knob) {
+		if k, v, ok := strings.Cut(l, " => "); ok && strings.TrimSpace(k) == label {
+			return strings.TrimSpace(v), true
+		}
+	}
+	return "", false
+}
+
+// answerMembers are the members a commit's answer names: those of the
+// chassis, none when the knob 'chassis.plain' makes the answer a single
+// device's.
+func (d *junosDevice) answerMembers() []jmember {
+	if d.s.t.exists("chassis.plain") {
+		return nil
+	}
+	return d.members()
+}
+
+// failingMember reports whether a member fails its check (chassis.check):
+// the device then commits nothing, as one whose check fails does.
+func (d *junosDevice) failingMember() bool {
+	for _, m := range d.members() {
+		if _, ok := d.memberText("chassis.check", m.label); ok {
+			return true
+		}
+	}
+	return false
+}

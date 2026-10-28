@@ -14,6 +14,7 @@ import (
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/names"
+	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/yamlpy"
 )
@@ -122,7 +123,9 @@ func Render(m *model.Model, merged *yamlpy.Map, p Params) (*Output, error) {
 	}
 	// the members of a locked group are taken out of the scope that locks it
 	// (0.2.19, the emergency lockdown); the clients above stay
-	usersText, err := renderUsers(m.WithoutMembers(conf.LockedGroups(merged)), merged)
+	// and a user who must change the password (0.2.20) is in no scope but
+	// this server's own, so no device authenticates them until they have
+	usersText, err := renderUsers(pwchange.Carve(m.WithoutMembers(conf.LockedGroups(merged)), merged, "radius", p.Server), merged)
 	if err != nil {
 		return nil, err
 	}

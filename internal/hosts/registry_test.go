@@ -578,3 +578,27 @@ func TestRegistryLockTimesOut(t *testing.T) {
 		t.Error("a write got through")
 	}
 }
+
+// A user name may hold periods (names.ValidateUsername), a Linux account
+// name here may not: such a user gets no account, no UID, and a warning.
+func TestScopeUsersSkipsNamesWithPeriods(t *testing.T) {
+	e, _, errb := testEnv(t)
+	got, keep, err := e.ScopeUsers([]string{"alice.smith|15", "op|7", "a.b-c_d|1"}, nil, nil)
+	if err != nil || got != "op:operator:80000" || len(keep) != 0 {
+		t.Errorf("users %q keep %q err %v", got, keep, err)
+	}
+	for _, n := range []string{"alice.smith", "a.b-c_d"} {
+		if !strings.Contains(errb.String(), "Skipping '"+n+"': not a valid Linux account name") {
+			t.Errorf("no warning for %s: %q", n, errb.String())
+		}
+		if LinuxName(n) {
+			t.Errorf("LinuxName(%q)", n)
+		}
+	}
+	if UserCount([]string{"alice.smith|15", "op|7"}) != 1 {
+		t.Error("UserCount counts a dotted name")
+	}
+	if uid, err := e.UIDs().Lookup("alice.smith"); err != nil || uid != "" {
+		t.Errorf("a UID was given to alice.smith: %q %v", uid, err)
+	}
+}

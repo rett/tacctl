@@ -6,13 +6,13 @@
     "address": "192.0.2.21",
     "state": "needs-change",
     "fixes": 1,
-    "left": 3,
+    "left": 1,
     "remaining": {
       "access": 1,
-      "monitoring": 2,
+      "monitoring": 0,
       "cosmetic": 0
     },
-    "extras": 3
+    "extras": 1
   },
   {
     "device": "dev-juniper-synthetic-lab",
@@ -21,13 +21,13 @@
     "address": "192.0.2.21",
     "state": "needs-change",
     "fixes": 1,
-    "left": 3,
+    "left": 1,
     "remaining": {
       "access": 1,
-      "monitoring": 2,
+      "monitoring": 0,
       "cosmetic": 0
     },
-    "extras": 3,
+    "extras": 1,
     "breakglass_held": true
   },
   {
@@ -37,10 +37,10 @@
     "address": "192.0.2.21",
     "state": "left-alone",
     "fixes": 0,
-    "left": 5,
+    "left": 3,
     "remaining": {
       "access": 2,
-      "monitoring": 2,
+      "monitoring": 0,
       "cosmetic": 1
     },
     "extras": 0
@@ -52,13 +52,13 @@
     "address": "192.0.2.21",
     "state": "needs-change",
     "fixes": 1,
-    "left": 3,
+    "left": 1,
     "remaining": {
       "access": 1,
-      "monitoring": 2,
+      "monitoring": 0,
       "cosmetic": 0
     },
-    "extras": 3
+    "extras": 1
   },
   {
     "device": "dev-juniper-synthetic-inherit",
@@ -82,13 +82,13 @@
     "address": "192.0.2.21",
     "state": "needs-change",
     "fixes": 9,
-    "left": 3,
+    "left": 1,
     "remaining": {
       "access": 1,
-      "monitoring": 2,
+      "monitoring": 0,
       "cosmetic": 0
     },
-    "extras": 7
+    "extras": 2
   },
   {
     "device": "dev-juniper-lab-engineer",
@@ -97,10 +97,10 @@
     "address": "192.0.2.21",
     "state": "needs-change",
     "fixes": 1,
-    "left": 14,
+    "left": 12,
     "remaining": {
       "access": 4,
-      "monitoring": 4,
+      "monitoring": 2,
       "cosmetic": 6
     },
     "extras": 0
@@ -112,13 +112,13 @@
     "address": "192.0.2.21",
     "state": "needs-change",
     "fixes": 3,
-    "left": 3,
+    "left": 0,
     "remaining": {
       "access": 0,
-      "monitoring": 3,
+      "monitoring": 0,
       "cosmetic": 0
     },
-    "extras": 3
+    "extras": 0
   },
   {
     "device": "dev-cisco-reference-lab",
@@ -127,13 +127,13 @@
     "address": "192.0.2.21",
     "state": "needs-change",
     "fixes": 3,
-    "left": 3,
+    "left": 0,
     "remaining": {
       "access": 0,
-      "monitoring": 3,
+      "monitoring": 0,
       "cosmetic": 0
     },
-    "extras": 3,
+    "extras": 0,
     "breakglass_held": true
   },
   {
@@ -203,13 +203,13 @@
     "address": "192.0.2.21",
     "state": "needs-change",
     "fixes": 7,
-    "left": 3,
+    "left": 0,
     "remaining": {
       "access": 0,
-      "monitoring": 3,
+      "monitoring": 0,
       "cosmetic": 0
     },
-    "extras": 3
+    "extras": 0
   },
   {
     "device": "dev-cisco-same-address-block-nocmd",
@@ -218,13 +218,13 @@
     "address": "192.0.2.21",
     "state": "needs-change",
     "fixes": 8,
-    "left": 3,
+    "left": 0,
     "remaining": {
       "access": 0,
-      "monitoring": 3,
+      "monitoring": 0,
       "cosmetic": 0
     },
-    "extras": 3
+    "extras": 0
   },
   {
     "device": "dev-juniper-synthetic-communities",
@@ -233,13 +233,13 @@
     "address": "192.0.2.21",
     "state": "left-alone",
     "fixes": 0,
-    "left": 9,
+    "left": 1,
     "remaining": {
       "access": 1,
-      "monitoring": 8,
+      "monitoring": 0,
       "cosmetic": 0
     },
-    "extras": 12
+    "extras": 1
   },
   {
     "device": "dev-juniper-synthetic-system",
@@ -248,13 +248,13 @@
     "address": "192.0.2.21",
     "state": "needs-change",
     "fixes": 1,
-    "left": 3,
+    "left": 1,
     "remaining": {
       "access": 1,
-      "monitoring": 2,
+      "monitoring": 0,
       "cosmetic": 0
     },
-    "extras": 3
+    "extras": 1
   },
   {
     "device": "dev-juniper-synthetic-system-new",
@@ -263,13 +263,13 @@
     "address": "192.0.2.21",
     "state": "needs-change",
     "fixes": 11,
-    "left": 3,
+    "left": 1,
     "remaining": {
       "access": 1,
-      "monitoring": 2,
+      "monitoring": 0,
       "cosmetic": 0
     },
-    "extras": 3
+    "extras": 1
   },
   {
     "device": "dev-cisco-synthetic-block",
@@ -278,13 +278,13 @@
     "address": "192.0.2.21",
     "state": "needs-change",
     "fixes": 3,
-    "left": 3,
+    "left": 0,
     "remaining": {
       "access": 0,
-      "monitoring": 3,
+      "monitoring": 0,
       "cosmetic": 0
     },
-    "extras": 3
+    "extras": 0
   },
   {
     "device": "dev-cisco-synthetic-block-new",
@@ -293,13 +293,13 @@
     "address": "192.0.2.21",
     "state": "needs-change",
     "fixes": 7,
-    "left": 2,
+    "left": 0,
     "remaining": {
       "access": 0,
-      "monitoring": 2,
+      "monitoring": 0,
       "cosmetic": 0
     },
-    "extras": 2
+    "extras": 0
   },
   {
     "device": "dev-cisco-synthetic-block-stray",
@@ -308,13 +308,13 @@
     "address": "192.0.2.21",
     "state": "needs-change",
     "fixes": 7,
-    "left": 3,
+    "left": 0,
     "remaining": {
       "access": 0,
-      "monitoring": 3,
+      "monitoring": 0,
       "cosmetic": 0
     },
-    "extras": 3
+    "extras": 0
   },
   {
     "device": "dev-cisco-synthetic-system",
@@ -323,13 +323,13 @@
     "address": "192.0.2.21",
     "state": "needs-change",
     "fixes": 3,
-    "left": 8,
+    "left": 0,
     "remaining": {
       "access": 0,
-      "monitoring": 3,
-      "cosmetic": 5
+      "monitoring": 0,
+      "cosmetic": 0
     },
-    "extras": 8
+    "extras": 0
   },
   {
     "device": "dev-cisco-synthetic-system-new",
@@ -338,13 +338,13 @@
     "address": "192.0.2.21",
     "state": "needs-change",
     "fixes": 15,
-    "left": 3,
+    "left": 0,
     "remaining": {
       "access": 0,
-      "monitoring": 3,
+      "monitoring": 0,
       "cosmetic": 0
     },
-    "extras": 3
+    "extras": 0
   },
   {
     "device": "dev-cisco-synthetic-system-stray",
@@ -353,13 +353,13 @@
     "address": "192.0.2.21",
     "state": "needs-change",
     "fixes": 10,
-    "left": 9,
+    "left": 0,
     "remaining": {
       "access": 0,
-      "monitoring": 3,
-      "cosmetic": 6
+      "monitoring": 0,
+      "cosmetic": 0
     },
-    "extras": 9
+    "extras": 0
   },
   {
     "device": "dev-cisco-synthetic-vrf",
@@ -368,13 +368,13 @@
     "address": "192.0.2.21",
     "state": "needs-change",
     "fixes": 3,
-    "left": 16,
+    "left": 0,
     "remaining": {
       "access": 0,
-      "monitoring": 5,
-      "cosmetic": 11
+      "monitoring": 0,
+      "cosmetic": 0
     },
-    "extras": 16
+    "extras": 0
   },
   {
     "device": "dev-cisco-synthetic-vrf-new",
@@ -383,13 +383,13 @@
     "address": "192.0.2.21",
     "state": "needs-change",
     "fixes": 16,
-    "left": 3,
+    "left": 0,
     "remaining": {
       "access": 0,
-      "monitoring": 3,
+      "monitoring": 0,
       "cosmetic": 0
     },
-    "extras": 3
+    "extras": 0
   },
   {
     "device": "dev-cisco-synthetic-vrf-stray",
@@ -398,13 +398,13 @@
     "address": "192.0.2.21",
     "state": "needs-change",
     "fixes": 12,
-    "left": 19,
+    "left": 0,
     "remaining": {
       "access": 0,
-      "monitoring": 8,
-      "cosmetic": 11
+      "monitoring": 0,
+      "cosmetic": 0
     },
-    "extras": 19
+    "extras": 0
   },
   {
     "device": "dev-not-pulled",

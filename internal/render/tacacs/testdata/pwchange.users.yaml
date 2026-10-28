@@ -1,0 +1,24 @@
+# --- Users ---
+# tacctl-carved reason=password-change protocol=tacacs users=bob,carol
+users:
+
+  # alice
+  - name: alice
+    scopes: ["prod", "lab", "srv"]
+    groups: [*superuser]
+    authenticator: *bcrypt_alice
+    accounter: *file_accounter
+
+  # bob
+  - name: bob
+    scopes: ["srv"]
+    groups: [*operator]
+    authenticator: *bcrypt_bob
+    accounter: *file_accounter
+
+  # carol
+  - name: carol
+    scopes: ["srv"]
+    groups: [*readonly]
+    authenticator: *bcrypt_carol
+    accounter: *file_accounter

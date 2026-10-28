@@ -37,26 +37,6 @@
     },
     {
       "n": 3,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "an SNMP community: authorization read-only",
-      "statement": "set snmp community \u003cother:1\u003e authorization read-only",
-      "action": "Left alone (its name is the secret and is not known to tacctl).",
-      "fixed": false
-    },
-    {
-      "n": 4,
-      "kind": "extra",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "SNMP: trap-group \u003cother:2\u003e targets 192.0.2.50",
-      "statement": "set snmp trap-group \u003cother:2\u003e targets 192.0.2.50",
-      "action": "Left alone (its name is the secret and is not known to tacctl).",
-      "fixed": false
-    },
-    {
-      "n": 5,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "system",
@@ -69,7 +49,7 @@
       ]
     },
     {
-      "n": 6,
+      "n": 4,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "system",
@@ -82,7 +62,7 @@
       ]
     },
     {
-      "n": 7,
+      "n": 5,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "system",
@@ -95,7 +75,7 @@
       ]
     },
     {
-      "n": 8,
+      "n": 6,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "system",
@@ -108,7 +88,7 @@
       ]
     },
     {
-      "n": 9,
+      "n": 7,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "system",
@@ -121,7 +101,7 @@
       ]
     },
     {
-      "n": 10,
+      "n": 8,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "system",
@@ -136,7 +116,7 @@
       ]
     },
     {
-      "n": 11,
+      "n": 9,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "system",
@@ -149,7 +129,7 @@
       ]
     },
     {
-      "n": 12,
+      "n": 10,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "system",
@@ -162,7 +142,7 @@
       ]
     },
     {
-      "n": 13,
+      "n": 11,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "system",
@@ -175,7 +155,7 @@
       ]
     },
     {
-      "n": 14,
+      "n": 12,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "system",
@@ -263,7 +243,7 @@
   ],
   "left": {
     "access": 1,
-    "monitoring": 2,
+    "monitoring": 0,
     "cosmetic": 0
   },
   "extras": [
@@ -277,14 +257,33 @@
     {
       "section": "snmp",
       "text": "set snmp community \u003cother:1\u003e authorization read-only",
-      "guard": "its name is the secret and is not known to tacctl"
+      "guard": "its name is the secret and is not known to tacctl",
+      "own": true
     },
     {
       "section": "snmp",
       "text": "set snmp trap-group \u003cother:2\u003e targets 192.0.2.50",
-      "guard": "its name is the secret and is not known to tacctl"
+      "guard": "its name is the secret and is not known to tacctl",
+      "own": true
     }
   ],
+  "kept": [
+    {
+      "section": "snmp",
+      "count": 2,
+      "kinds": [
+        "communities",
+        "trap groups"
+      ]
+    }
+  ],
+  "secrets": {
+    "present": 3,
+    "kinds": [
+      "the TACACS+ server key",
+      "the SNMP community"
+    ]
+  },
   "skipped": [],
   "withheld": [],
   "warnings": [],

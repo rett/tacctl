@@ -413,7 +413,7 @@ func TestStoreShowAndImportArguments(t *testing.T) {
 		{[]string{"store", "import", "a", "b"}, 2, "", "Only one file may be given."},
 		{[]string{"store", "import", "/nonexistent"}, 1, "", "Cannot import: /nonexistent not found."},
 		{[]string{"store"}, 0, "show [--json]", ""},
-		{[]string{"store", "-h"}, 0, "import [--check|--force] [--replace] [<file>]", ""},
+		{[]string{"store", "-h"}, 0, "Import a legacy tacquito.yaml (default: the live one)", ""},
 		{[]string{"store", "frobnicate"}, 1, "rollback", "Unknown store subcommand 'frobnicate'."},
 		{[]string{"store", "show", "--json", "ignored"}, 0, `"version": 1`, ""},
 	} {

@@ -226,12 +226,12 @@ func TestComplete(t *testing.T) {
 	for _, l := range strings.Split(h.out.String(), "\n") {
 		words[strings.SplitN(l, "\t", 2)[0]] = true
 	}
-	for _, w := range []string{"user", "group", "scope", "config", "host", "backend", "store", "log", "backup", "hash", "version", "install", "upgrade", "uninstall", "status", "passwd"} {
+	for _, w := range []string{"user", "group", "scope", "config", "host", "backend", "store", "log", "backup", "hash", "version", "completion", "install", "upgrade", "uninstall", "status", "passwd"} {
 		if !words[w] {
 			t.Errorf("top-level completion lacks %q:\n%s", w, h.out.String())
 		}
 	}
-	for _, w := range []string{"help", "_completion-names", "completion", "--version", "-v"} {
+	for _, w := range []string{"help", "_completion-names", "--version", "-v"} {
 		if words[w] {
 			t.Errorf("top-level completion offers %q", w)
 		}

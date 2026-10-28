@@ -12,7 +12,8 @@
 #                         tacplus). Fixed by region line 3.
 # Consistent: roles. Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
 # The standard has nothing for: snmp, mgmt-acl.
-# Secrets: 1 present on the device, not changed (--secrets pushes them).
+# Secrets: 1 present (the TACACS+ server key); only their presence is checked, --secrets writes them
+# again.
 # The pull has no plain view of the configuration: statements that come from a group could not be told
 # apart and were not checked (pull the device again to read it).
 # The switch undoes this by itself in 5 minutes unless you type the one word after the check (see
@@ -70,6 +71,7 @@ commit confirmed 5 comment "tacctl plan lab-j <time> by alice"
 # CONSISTENT: nothing to paste.
 # Consistent: roles, aaa. Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
 # The standard has nothing for: snmp, mgmt-acl.
-# Secrets: 1 present on the device, not changed (--secrets pushes them).
+# Secrets: 1 present (the TACACS+ server key); only their presence is checked, --secrets writes them
+# again.
 # The pull has no plain view of the configuration: statements that come from a group could not be told
 # apart and were not checked (pull the device again to read it).

@@ -127,6 +127,30 @@
       "text": "iptables -A INPUT -s 10.0.31.0/24 -p tcp --dport 22 -j ACCEPT"
     }
   ],
+  "kept": [
+    {
+      "section": "aaa",
+      "count": 13,
+      "kinds": [
+        "RADIUS settings"
+      ]
+    },
+    {
+      "section": "snmp",
+      "count": 4,
+      "kinds": [
+        "system name",
+        "trap settings"
+      ]
+    }
+  ],
+  "secrets": {
+    "present": 2,
+    "kinds": [
+      "the SNMP community",
+      "the TACACS+ server key"
+    ]
+  },
   "skipped": [
     {
       "section": "mgmt-acl",

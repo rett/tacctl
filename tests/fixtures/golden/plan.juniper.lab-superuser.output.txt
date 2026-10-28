@@ -4,7 +4,7 @@
 # THIS OUTPUT HOLDS THE TACACS+ SECRET AND THE SNMP COMMUNITY OF SCOPE lab: do not keep it in a file
 # or a scrollback.
 #
-# What is irregular on dev-juniper-lab-superuser (12 items; the paste fixes 9, leaves 3):
+# What is irregular on dev-juniper-lab-superuser (10 items; the paste fixes 9, leaves 1):
 #  1. roles    ACCESS     extra: login class OP-CLASS allows clear (set system login class OP-CLASS
 #                         permissions clear). Fixed by region line 3.
 #  2. aaa      ACCESS     missing: the TACACS+ server 192.0.2.10: 2 statements (e.g. set system
@@ -26,16 +26,12 @@
 #                         Fixed by region line 15.
 #  9. snmp     COSMETIC   missing: the SNMP description is Core switch (set snmp description "Core
 #                         switch"). Fixed by region line 16.
-# 10. snmp     MONITORING extra: SNMP: name example-switch.example.net (set snmp name
-#                         example-switch.example.net). Left alone (the device's own identity: never
-#                         removed).
-# 11. snmp     MONITORING extra: an SNMP community: 4 statements (e.g. set snmp community <other:1>
-#                         authorization read-only). Left alone (its name is the secret and is not
-#                         known to tacctl).
-# 12. mgmt-acl ACCESS     missing: the management filter MGMT-ACL: 22 statements (e.g. set firewall
+# 10. mgmt-acl ACCESS     missing: the management filter MGMT-ACL: 22 statements (e.g. set firewall
 #                         family inet filter MGMT-ACL term permit-mgmt from source-address
 #                         192.0.2.10/32). Fixed by region lines 18-39.
 # Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
+# Kept: snmp 5 statements of the device's own (name, communities): left alone, listed by device config
+# diff.
 # The switch undoes this by itself in 5 minutes unless you type the one word after the check (see
 # below).
 # Paste over ssh, not the console; on a console paste at most twenty lines at a time and watch the

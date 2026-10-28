@@ -45,7 +45,10 @@ var (
 )
 
 var (
-	reUser  = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+	// reUser: letters, digits, '_' and '-', in runs joined by single
+	// periods: no leading, trailing or doubled period, and not a period
+	// alone ('.', '..').
+	reUser  = regexp.MustCompile(`^[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)*$`)
 	reGroup = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 	reScope = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,31}$`)
 	reClass = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
@@ -89,7 +92,8 @@ func RequireLower(name string) error {
 }
 
 // MatchUser reports whether s has the shape of a username: letters, digits,
-// '_' and '-'. This is the store's RE_USER; reserved names are separate.
+// '_' and '-', and single periods between them (not first, not last, never
+// two in a row). This is the store's RE_USER; reserved names are separate.
 func MatchUser(s string) bool { return reUser.MatchString(s) }
 
 // MatchGroup reports whether s is a group name: lower case, starting with a
@@ -100,8 +104,9 @@ func MatchGroup(s string) bool { return reGroup.MatchString(s) }
 // letters, digits, '_' or '-' (RE_SCOPE).
 func MatchScope(s string) bool { return reScope.MatchString(s) }
 
-// MatchClass reports whether s is a Juniper class name (RE_CLASS, the same
-// shape as a username).
+// MatchClass reports whether s is a Juniper class name (RE_CLASS). It had
+// the shape of a username until a username could hold periods; a class name
+// still may not.
 func MatchClass(s string) bool { return reClass.MatchString(s) }
 
 // ValidateClassName is validate_class_name.
@@ -116,7 +121,7 @@ func ValidateClassName(value string) error {
 // RejectReservedUsername for the creation-path check.
 func ValidateUsername(value string) error {
 	if !reUser.MatchString(value) {
-		return fail("Username must contain only letters, numbers, underscores, and hyphens.")
+		return fail("Username must contain only letters, numbers, underscores, hyphens, and periods (not first, not last, not two in a row).")
 	}
 	return nil
 }

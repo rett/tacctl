@@ -9,7 +9,8 @@
 !                         authentication enable default group LAB-TACACS enable). Fixed by region line
 !                         3.
 ! Consistent: roles, snmp, mgmt-acl. Not planned: netconf, breakglass.
-! Secrets: 2 present on the device, not changed (--secrets pushes them).
+! Secrets: 2 present (the TACACS+ server key, the SNMP community); only their presence is checked,
+! --secrets writes them again.
 ! WARNING: the device has no enable secret: with the server unreachable, level 15 is reached only
 ! through the local user and 'aaa authorization exec'; set an enable secret first if you want a second
 ! way.

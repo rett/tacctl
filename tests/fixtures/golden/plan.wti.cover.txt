@@ -1,5 +1,5 @@
 # tacctl device config plan: 7 devices
-#   dev-juniper-synthetic-lab  needs change: 1 irregularity fixed by the paste, 3 left (1 ACCESS, 2 MONITORING), 3 extras
+#   dev-juniper-synthetic-lab  needs change: 1 irregularity fixed by the paste, 1 left (1 ACCESS), 1 extra
 #   unit-consistent            consistent
 #   unit-three-irregularities  needs change: 1 irregularity fixed by the paste, 2 left (1 ACCESS, 1 MONITORING), 2 extras
 #   unit-iptables-tail         needs change: 3 irregularities fixed by the paste, 2 left (1 ACCESS, 1 MONITORING), 2 extras

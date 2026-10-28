@@ -239,7 +239,8 @@ func (inv *invocation) hostList(args []string) error {
 		if merr != nil {
 			return 0
 		}
-		return hosts.UserCount(m.LinuxUsers(e.Scope))
+		rows, _ := inv.linuxAccounts(m, e.Scope, e.Target == hosts.Local)
+		return hosts.UserCount(rows)
 	}
 	recorded := func(e hosts.Entry) string {
 		if devs == nil {
@@ -712,6 +713,14 @@ func (inv *invocation) hostEnroll(args []string) error {
 	if method == "" {
 		method = inv.linuxDefaultMethod()
 	}
+	if isLocal {
+		// The scope and the method of this server's own logins decide where
+		// the backends keep a user who must change the password
+		// (internal/pwchange): changing them under such a user is refused.
+		if err := inv.pwHostGuard("Enrolling this server in scope '"+scope+"' with the "+hosts.MethodLabel(method)+" method", &hosts.Entry{Scope: scope, Method: method, Server: server}); err != nil {
+			return err
+		}
+	}
 	if err := inv.linuxMethodRequire(method); err != nil {
 		return err
 	}
@@ -840,7 +849,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 		return err
 	}
 	defer func() { _ = os.Remove(script) }()
-	req, err := inv.scriptRequest(scope, server, method, script)
+	req, err := inv.scriptRequest(scope, server, method, script, target == hosts.Local)
 	if err != nil {
 		return err
 	}
@@ -947,6 +956,15 @@ func (inv *invocation) hostEnroll(args []string) error {
 	inv.recordRun(name, "enroll", "", he)
 	if consoleCheck {
 		inv.consoleAfterLocal()
+	}
+	if isLocal {
+		// users added from now on must change the password, and the devices
+		// of a scope the server shares still accept it
+		if m, err := inv.model(); err == nil {
+			if note := inv.pwContext(m).sharedNote(); note != "" {
+				a.Out.WarnE(note)
+			}
+		}
 	}
 	if res.Users == "" {
 		inv.echo("")
@@ -1634,7 +1652,7 @@ func (inv *invocation) syncRun(he *hosts.Env, e hosts.Entry, method string, scri
 		return false, "", false, err
 	}
 	defer func() { _ = os.Remove(script) }()
-	req, err := inv.scriptRequest(e.Scope, e.Server, method, script)
+	req, err := inv.scriptRequest(e.Scope, e.Server, method, script, e.Target == hosts.Local)
 	if err != nil {
 		return false, "", false, err
 	}
@@ -1751,6 +1769,11 @@ func (inv *invocation) hostUnenroll(args []string) error {
 	if held {
 		return inv.hostRefuse(inv.hostHoldLine(e, h),
 			"Break-glass is held on '"+name+"': release it first (tacctl breakglass release "+name+"). Nothing was attempted over ssh and nothing was changed.")
+	}
+	if e.Target == hosts.Local {
+		if err := inv.pwHostGuard("Removing this server's registration '"+name+"'", nil); err != nil {
+			return err
+		}
 	}
 	label := hosts.MethodLabel(reg.Method(name))
 	a.Out.InfoE("Removing " + label + " authentication from " + name + " (" + e.Target + ")...")

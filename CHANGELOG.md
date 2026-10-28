@@ -3,6 +3,832 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.20 (unreleased)
+
+1. **A user name may hold periods.** `user add alice.smith operator` is
+   accepted: a name is letters, digits, `_` and `-`, in runs joined by single
+   periods. It never starts or ends with a period, never has two in a row, and
+   is never only periods (`.alice`, `alice.`, `alice..smith`, `.` and `..` are
+   refused, with the new error text `Username must contain only letters,
+   numbers, underscores, hyphens, and periods (not first, not last, not two in
+   a row).`); the other rules (lower case for a new name, the reserved names
+   `root` and `tacquito`) are as before. The rule is the shape of every place
+   that checks a user name: the commands, the store, and the users of the
+   console file. Group, scope and Juniper class names keep their patterns (a
+   class name had the shape a user name had, and still has it). Consequences
+   handled: the `tacquito.yaml` authenticator of such a user gets an anchor
+   with each period written `_dot_`, because a YAML anchor cannot hold one
+   (the render failed on the name before); a name with a period is no Linux
+   account name, so `host sync` and `host enroll` skip the user with the
+   existing warning and give it no UID (it logs in at devices only),
+   `config linux uid <user> <uid>` refuses it, and `user rename` refuses to
+   give such a name to a user that has a UID or an account on a host, since the
+   next sync would remove the account (and also when the host registry cannot
+   be read, since the hosts are then unknown). A release before 0.2.20 refuses a
+   store with such a name, so `tacctl rollback` to any target is refused, in the
+   dry run too and with nothing changed, while the store has a user with a
+   period; the refusal lists each with `tacctl user rename <name> <new-name>`.
+   An override under such a name in `console.yaml` (item 18 ignores them) does
+   not stop it: the rollback takes that entry out of the file.
+
+2. **Tab and `?` describe a command as the completion scripts do.** The bash,
+   zsh and fish scripts and the shell and console lists took the description
+   of a sub-command from different texts, so 31 differed (`config cisco`,
+   `scope protocols` and `device config` showed the text of one of their
+   forms; most others the same text with a detail added). Both now list one
+   text per command, the one of the scripts; `device ?` describes `config`
+   as the walkthrough it is and no longer as `config forget`. The usage text
+   (`tacctl scope`, `help scope`) is as before. `emergency lockdown` is
+   described as "Refuse the logins of the groups on the scope's devices and
+   hosts".
+
+3. **The completion scripts describe the verb words after a name.** In bash,
+   zsh and fish, `scope mgmt-acl lab <Tab><Tab>` listed `add`, `cisco-name`,
+   `clear` ... bare, and only the sub-commands and flags had a description.
+   The words that follow a name or another word (the verbs of `scope
+   mgmt-acl`, `scope snmp`, `scope prefixes`, `group edit`, ...) are
+   described as the shell's `?` describes them. A word that is a value
+   (`on`, `off`, a vendor) or one of a choice that stands for several forms
+   (`user scope alice`: `add`, `list`, `remove`, `replace`) stays without
+   one.
+
+4. **The completion scripts name a device or host with its vendor and
+   scope.** `device show <Tab><Tab>` in bash, zsh and fish listed the bare
+   names; each is now followed by `cisco lab` (`linux site-a` for an enrolled
+   host), as the shell's list has it, without the address, so a line stays
+   short. The names still come from `sudo -n tacctl _completion-names`, which
+   takes `--desc-short` for this (the same sudoers rule covers it).
+
+5. **`completion` is offered in the scripts as it is in the shell.** The
+   shell listed `completion bash|zsh|fish` among the commands; the bash, zsh
+   and fish scripts hid it. Both offer it now, with the three shells as its
+   words (`tacctl completion <Tab>`). It is a readonly-tier row of the tier
+   table, like `hash`: it runs as the invoking user and reads no state, so
+   this changes no permission. `shell` stays offered by the scripts only,
+   as it cannot nest in the shell.
+
+6. **The `?` list keeps its descriptions on the screen.** The argument column
+   took the width of the widest form, 125 characters in `config ?`, so
+   on a 120-column terminal every row wrapped and the description landed under
+   nothing. The column is at most 40 characters now: a longer form is cut at
+   a word and ends in `...` (`devices [show|max-concurrency|transpo...`; the
+   usage of the command, `config devices ?`, has the whole form), and a
+   description that does not fit after the column goes on the lines below,
+   indented to the column where it starts.
+
+7. **The shell lists the verbs of `device config` by their own tier.** The
+   lists follow the gate's two words, `device config`, so an operator was
+   offered `apply` and `shapes` (and `show`, `pull`, `diff`, `plan`), which
+   the verb then refused. Tab, `?` and a typed space list the verbs by the
+   tier of each now (an operator: `list`; an engineer: all but `forget` and
+   `shapes`), and `?` on one typed by hand says `Needs the engineer tier.` or
+   the superuser's. Display only: the gate and the verb refuse as before, and
+   the completion scripts, which run as the user and know no tier, list all
+   eight.
+
+8. **A long name no longer widens the `?` column.** The argument column of
+   the `?` list is at most 40 characters, but a candidate with no column of
+   its own (a device or host name, a user) was shown whole, so a name of 60
+   characters moved every description to the right. It is cut at 40 and ends
+   in `...` like a long column (the word itself is what Tab inserts).
+
+9. **A wrapped description keeps its aligned columns.** The `?` list of devices
+   and hosts shows `cisco   192.0.2.1    site-a`, the words aligned by runs of
+   blanks. When such a description did not fit after the column and went on
+   the line below, the runs were collapsed to one blank and the alignment
+   was lost; only the blanks at the cut are dropped now.
+
+10. **`-h` and `--help` print the help that `?` prints.** After the words of a
+    command, in bash and in the shell and console, `tacctl user --help`,
+    `tacctl user add -h` and `device config pull --help` print the text of `?`
+    at that place, from one renderer: a command with sub-commands lists them
+    with their arguments and descriptions, any other prints its usage lines,
+    its options with their values, and `Next:`. It exits 0, runs as you
+    without `sudo`, and lists no live names (`user show --help` is the usage of
+    `show`). The tier's view applies in the shell and the console. A family's
+    `--help` was its usage block with exit 1 (a few exit 0); it is this list
+    now. `tacctl --help` alone is the top-level usage and exit 1 as before, and
+    the word is a value after `--` or as the value of a flag. No verb has a
+    flag named `-h`.
+
+11. **The bash script lists the words alone.** A second Tab in bash listed the
+    sub-commands and flags with their descriptions once more than one word
+    matched, and bash cut the list to the width of the screen, so a word and
+    its description were not always whole. `tacctl completion bash` asks for
+    the words without descriptions now (`__completeNoDesc`), so bash lists
+    them in columns as the shell and the console do. The zsh and fish scripts
+    keep the descriptions in their menus, each cut to 72 characters (the
+    style rule's limit; some commands and many flags had a longer one, which
+    the `?` list of the shell wraps under its column and the menus now end in
+    `...`). Regenerate the bash script with `tacctl completion bash` after the
+    upgrade (`install` and `upgrade` do it for `/etc/bash_completion.d`).
+
+12. **One palette for the command lists.** Tab's columns, the `?` list (the
+    sub-commands, and the `Usage:`, `Options:` and `Next:` lines of a verb)
+    and `-h` / `--help` show the command names (the first word at the top
+    level) in bright white, the sub-commands, fixed words and options in teal,
+    the live names (users, groups, devices, hosts) in bold, and the
+    descriptions in plain text. This replaces the bold labels of the `?` list.
+    The colour is where it was: on a terminal, off in a pipe, with `NO_COLOR`
+    and with `TACCTL_COLOR=never`. Every width, cut and wrap counts the text
+    without the colour sequences, so the columns are those of the plain list,
+    and a style that a wrapped description leaves open is closed at the end
+    of its line and opened on the next.
+
+13. **`console color` and `console list-max` set what the console's lists
+    look like.** `tacctl console color [auto|on|off]` decides whether the
+    console's lists (Tab's second press, `?`, `-h` and `--help`) are in
+    colour: `auto`, the default, lets the terminal decide as everywhere else,
+    `on` always colours them, `off` never does. The console's environment is
+    scrubbed of `NO_COLOR` and `TACCTL_COLOR`, so this is how the operator
+    chooses. `tacctl console list-max [<n>]` sets the longest list the
+    console shows without asking `Show all N?` (default 40, at most 1000; 0
+    is the default, a negative number never asks, and `console list-max` and
+    `console show` print it as `never ask`); the key `settings.list_max` was in
+    the file already, with no verb. Both are server-wide, a
+    superuser's, shown by `console show`, logged as `console set key=color`
+    and `key=list-max`, and read by each console session when it starts.
+    `settings.color` is written to `console.yaml` only when it is `on` or
+    `off` (`true` or `false`), so a file that never chose is the file of
+    before. No older release reads the key or a `list_max` of -1, so `tacctl
+    rollback` takes them out for every target (the colour setting is removed
+    and `list_max` is written as 1000, every other setting is kept, a
+    snapshot comes first); a `console.yaml` that this release cannot read now
+    refuses the rollback to every target, as it did for 0.2.3.
+
+14. **A help key for bash.** The bash completion script ends with a binding
+    for the question mark: on a line that starts with `tacctl`, `?` prints
+    the help of the words before the cursor (`tacctl user add ?` prints what
+    `tacctl user add --help` prints, in colour on a terminal) and leaves the
+    command line as it is. It runs one thing, the hidden `tacctl __help --
+    <words>`, which prints the help and runs nothing else, so a flag that
+    waits for its value, a `--` earlier or a hidden command is never run or
+    given `--help`. It types a `?` instead on a line that does not start
+    with `tacctl`, and when anything but ASCII letters, digits, spaces, tabs
+    and `_ @ % + = : , . / -` is before the cursor (a quote, a backslash,
+    `$ * ~ ! # [ {`, an operator, a carriage return, a non-ASCII character); on a `tacctl` line of plain
+    words it always asks, even inside a word. `TACCTL_HELP_KEY`, read when
+    the script is sourced, changes the key: unset or `?` is the question
+    mark, a readline spelling such as `\eh` is that key, `off` binds nothing
+    (sourcing replaces a previous binding and does not restore it). Regenerate
+    the script with `tacctl completion bash` (`upgrade` does it for
+    `/etc/bash_completion.d`).
+
+15. **The console does not run the tool's entry points.** `__help`,
+    `__complete`, `_console-policy` and every other word that starts with an
+    underscore, typed at the console's prompt or in a batch, run as the user
+    with no tier view (they are the scripts', the bash key's and the
+    console's own words) and listed every verb whatever the tier. The console
+    now answers them as any word that is no command (`Unknown command:
+    '__help'`, no hint that it exists) and runs nothing; from a normal shell
+    the scripts call them as before.
+
+16. **A strict, deny-by-default mode for the Junos management filter.** `tacctl
+    scope mgmt-acl <scope> mode [ssh-only|strict]` shows or sets the mode of
+    the scope's Junos filter (the superuser sets it; an engineer may read it
+    for a scope of their own, through one new row of the engineer's sudoers
+    rules, `scope mgmt-acl * mode`, which `tacctl upgrade` installs: the permit
+    list, the names and the setter stay the superuser's, and another scope does
+    not exist for an engineer). It affects Junos devices only: the Cisco
+    VTY-ACL and the WTI IP Tables list are the same in both modes. `ssh-only`
+    is the default and is the filter as it was. In `strict` the filter accepts
+    every protocol from the scope's permit list (the tacctl server's own
+    address stays first; an entry with services keeps only those, as one term
+    for each service: `permit-tcp-22`, `permit-udp-161-162`, `permit-tcp-any`,
+    `permit-icmp`) and has no `default-accept` term, so the implicit discard
+    drops the rest; the `permit-snmp` and `deny-snmp` terms stay and the `lo0`
+    application stays a comment. The walkthrough has a second server address
+    only when the device authenticates against another address than the one
+    tacctl reaches it from: `--server` (unless it is the detected address or
+    `--source`), `--source` alone (the device is still told the address
+    detected for the server), or a RADIUS listener bound to another address.
+    With neither flag, with `--server` equal to the detected address or to
+    `--source`, or with the address inside a plain entry of the permit list,
+    there is one address and `permit-mgmt` holds one source /32 for it. The
+    second address is not a source of `permit-mgmt`: the device starts those
+    sessions, so a term of its own, `permit-auth-replies`, last in the filter
+    (after the SNMP terms, so that `deny-snmp` decides udp port 161 first),
+    accepts from it only the answers of the server: for TACACS+ tcp from source
+    port `tacacs` with `tcp-established` (not the first packet of a connection,
+    so a new connection from that port is refused), for RADIUS udp from
+    `radius` and `radacct`, the listener's ports. The filter keeps no state and
+    matches the answers by source port, so for RADIUS it cannot tell an answer
+    from another udp packet sent from those ports. An entry with services for
+    the address keeps its services and the term adds the answers; adding the
+    address to the permit list accepts more from it. The comment says what
+    stops once the filter is on `lo0` (routing protocols carried over IP from
+    neighbours outside the list, BFD included, TACACS+ and RADIUS replies from
+    a server that is not in it, except the one the walkthrough names, NTP,
+    syslog and DHCP, SNMP from sources outside the list other than its clients,
+    which still poll, every other protocol; IS-IS is not carried over IP, so a
+    `family inet` filter on `lo0` neither stops nor permits it), and to keep a
+    console session open and commit with `commit confirmed`. `device config
+    plan` and `device config apply` move a device between the two filters in
+    both directions and compare a pulled filter with the rendering of the
+    scope's mode; the report lists the traffic that stops, or what a move back
+    accepts again (which also covers a site's own deny-by-default filter under
+    the same name, which the `ssh-only` plan used to turn accept-by-default
+    without a word). The refusal of a filter that would not permit `--from`
+    holds for the strict filter: the address must be a source that is accepted
+    for ssh, in `permit-mgmt` or in a term that holds `tcp/22` (the
+    authentication server's address, accepted for its answers only, is not one,
+    and the refusal says so). Only `strict` is stored
+    (`scope_mgmt_acl.mode.<scope>` in `tacctl.yaml`, moved by `scope rename`
+    and dropped by `scope remove`), so a state that never sets a mode is
+    unchanged, and the change is logged as `scope mgmt-acl op=mode value=`.
+    `tacctl rollback` to an older release removes the key, which its schema
+    refuses, after a snapshot, and warns which scopes were strict: the older
+    release plans the `ssh-only` filter for them (`--apply` needs `--yes`). The
+    rollbacks to 0.2.18, 0.2.17 and 0.2.3 also rewrite the tiers drop-in when
+    it is the text 0.2.19 wrote. A list with no IPv4 entry that permits ssh
+    renders no filter in either mode. The strict filter has not yet been
+    checked on a Junos device.
+
+17. **A required password change.** A user can be required to change the
+    password before logging in to anything but tacctl (a device in a scope
+    shared with the server, and port forwarding by a tier of `console
+    forwarding tiers`, excepted; both below). `tacctl user add` and
+    `tacctl user passwd <name>` (an administrator's reset, as opposed to the
+    user's own `tacctl passwd`) require it by default, and `--no-change-required`
+    skips it; `tacctl user require-password-change <name>|--all [on|off]`
+    (default `on`) flags or clears users on demand and ends with `Flagged N,
+    skipped M, already required K.` (`Cleared N, not required K.`). An upgrade
+    flags nobody. A flagged user is rendered into no scope of the TACACS+ and
+    RADIUS configuration but the one this server is enrolled in (`host enroll
+    --local`, the scope that must answer `127.0.0.1`), and only in the protocol
+    of the method it is enrolled with; in the other protocol the user is not
+    rendered at all, even where a catch-all scope answers `127.0.0.1` too. So
+    every device refuses the user as it refuses an unknown user, and the login
+    at tacctl, which comes from the server, still works. On every enrolled
+    Linux host but the server itself the next `host sync` expires the
+    account of such a user as it expires a disabled user's (a password and
+    an SSH key both fail, the files are kept), and the sync after the change
+    opens it again; the server's own sync keeps the account. Until a host is
+    synced it is as it was: `require-password-change`, `user passwd` and the
+    user's own `passwd` name the hosts with `tacctl host sync --all`, and
+    `host show` counts the account with the disabled ones. A server enrolled with
+    `--server <address>` is also logged in from that address, which its scope
+    must answer too, and the prefixes the shared-scope warning counts as the
+    server's own are the loopback range and that address. The stored scopes are
+    not changed; a change of the flag restarts the backend whose file changed
+    and nothing when the user has no other scope. A scope that holds the server
+    together with devices cannot be cut apart: the verbs warn and name its
+    prefixes, a prefix added to the server's scope later warns again, enrolling
+    the server in such a scope warns, and `user list`, `user show` and `status`
+    say `flagged, devices in a scope shared with the server still accept the
+    password`. A user who must change the password and has no login on the
+    server (not in its scope, the scope no longer answers `127.0.0.1`, the
+    backend of the server's own logins is not enabled, the server not
+    enrolled) is shown as `flagged, cannot log in to change it`, and a change
+    that would leave one is refused with nothing changed, with `tacctl user
+    require-password-change <name> off` as the way out. A store change (`user
+    scope ... remove|replace`, `scope prefixes ... remove`, `scope protocols`,
+    a rename) is refused before anything is written; every other write of the
+    store or `tacctl.yaml` is checked by one guard under the apply lock and
+    put back before anything is rendered (after the pre-change snapshot):
+    `scope add` of a scope that answers the server's address more closely
+    than its own, `group edit ... tier` or `priv-lvl` (and the other group
+    writes) that newly holds a member with no login on the server, `backend
+    disable` of the backend of the server's own logins. So is `host forget`,
+    `host unenroll` or `host enroll --local` (the move included) with another
+    scope or method while a user is flagged, because the backends' files are
+    rendered from that registration, and `host enroll --local --server
+    <address>` whose scope does not answer that address.
+    `scope rename` renames the server's registration before the backends
+    render. A superuser is never held to it: the tier of the user's group
+    decides each time (a render, a login, a command), not when the flag is set,
+    so a flagged user moved into a superuser group is exempt and one moved out
+    must change the password; the verbs do not set it for a superuser. A user
+    with no login on this server (it is not enrolled, the user is not in its
+    scope, the name has a period, the user is disabled) could never change the
+    password: the flag is not set, `user add` says why, and
+    `require-password-change on` skips the user with the reason. While a
+    password change is required of the caller, and the caller is no
+    superuser, every command but `passwd`, `version` and `help` is refused
+    with one message and exit status 1 (a plain shell and `ssh <server>
+    tacctl ...` included; root and a local administrator who is no tacctl user
+    are not affected), and the refusal is logged as `password-change DENY` (the live names that Tab asks
+    for in a plain shell are refused without a message or a line).
+    The lock holds the console, not sshd's forwarding: a user of a tier in
+    `console forwarding tiers` (default superuser only, who is never held)
+    still forwards ports through the server (`ssh -N -L ...`, which opens no
+    session) with the old password until it is changed.
+    The login console opens, for such a user, with a notice and the password
+    change dialog straight away; until the password is changed nothing else
+    runs there (every other line, `help` included, is refused with status 1, and
+    Tab and `?` list the change only), `-c` lines and batches are held the
+    same way, Ctrl-C in the dialog ends the session and a failed change leaves a
+    locked prompt where `passwd` tries again. The root side tells the console in
+    its policy line (`password_change=yes`), and the session is logged as
+    `console password-change required|done|failed` and `console DENY ...
+    reason=password-change`. A locked session asks the root side again at each line
+    it would refuse and goes on as any other once the requirement is gone, so a
+    second session is not left locked by a password changed in the first, nor
+    one held because the answer could not be read once it can be. The opening dialog is held to the console's idle time as a prompt
+    is: a dialog nobody answers is ended after that time and the session ends as an idle one. A line typed while the session is locked is not
+    entered in the history file (it may be a password typed at the prompt after
+    a failed dialog), and Up, Down and Ctrl-R recall no earlier line until the
+    lock lifts. Whether a change is required is one of three
+    answers, and the third fails closed: when the policy line cannot be read
+    (sudo refuses, the answer is garbage, `console.yaml` or the store cannot
+    be read) the console cannot tell, and a caller who is no superuser gets a
+    session held as above, with the notice `It could not be read whether a
+    password change is required of your account` instead of the dialog (`console
+    password-change unknown`); the command line's gate holds such a caller the
+    same way (`password-change DENY ... state=unknown`). A superuser is never
+    held by a read error: the console knows one by the system group
+    `tac-superuser`, which needs no store, and the root side by the tier. The user's own
+    `tacctl passwd` (which already refused the current password as the new one)
+    lifts the requirement, and so does `user passwd --no-change-required` (or
+    the reset of a superuser); a reset that cannot require a change for another
+    reason (the host registry cannot be read, the user has no login here) keeps
+    a flag that stands and says why, and for an unflagged user says the change
+    could not be required. The flag is the user's `password_change_required` in
+    `store.yaml`, written only when set; `user add` and `user rename` of a user who must change the password
+    say that the account exists on the server only after the next `host sync`,
+    until when the user can neither log in nor change the password. `user list` marks the date with
+    `(change required)`, `user show` has a `Password change` line, and `status`
+    counts the users pending. The flag set and lifted is logged as `user
+    password-change name= state=required|cleared via=require|add|passwd|self`.
+    The TACACS+ file names the users it cut out of their scopes in a
+    `# tacctl-carved reason=password-change|lockdown protocol=tacacs users=`
+    comment of its users section, and `store import` (`--check` too) of such a
+    file, the live one included, lists each as something the store cannot
+    represent and needs `--force`: the file does not hold the scopes the user
+    had, so a plain `store import --replace` would have brought a flagged user
+    (or a locked group's member) back with the server scope only. The
+    requirement itself, which no rendered file holds, is carried over from the
+    existing store as the password dates are (`kept the required password
+    change of N user(s) from the existing store`), so no import lifts it, the
+    forced one and that of a user whose only scope is the server's (whom the
+    comment does not name) included. A release before 0.2.20 refuses the key, so `tacctl rollback` to any target
+    removes it after a snapshot and warns which users who are not superusers
+    get their device access back with the password they were to change
+    (`--apply` needs `--yes`); their accounts on the other enrolled hosts open
+    again at each host's next `host sync`.
+
+18. **The console is the login shell of every managed user, and there is no
+    switch for it.** `tacctl console tiers` and `tacctl console user` are gone
+    (an unknown sub-command, with the usage), along with the "always on"
+    exception for the engineer tier: every managed user of every tier gets the
+    console as login shell at the next `host sync` of the server (or `host
+    enroll --local`), and sshd's drop-in forces it for all of them. The
+    `tiers` and `users` mappings of an existing `console.yaml` are ignored
+    from now on: nothing reads them, nothing writes them (a file that never had
+    them does not get them; one that has them keeps them untouched when a
+    setting changes), and `console show` does not mention them. A user is left
+    without the console only where it cannot be provisioned (the
+    `tacctl-console` link is missing: bash only with the system shell, item
+    22) or has no tier (nologin). `console show` lists each managed user's shell and why (a
+    managed user). The refusal of `console remove` while an account has the
+    console now names `tacctl host unenroll <server>`. Upgrading: the switches
+    of `console.yaml` are ignored and every managed user gets the console at the
+    next `host sync` (docs/install/upgrading.md). `tacctl rollback` leaves the
+    two mappings in the file, which an older release reads as it always did
+    (a file without them is read as the console on for everyone); only an
+    override under a user name with a period, which no older release reads, is
+    taken out, and shown in the plan as a removal of `users.<name>`.
+
+19. **The system shell is an opt-in per tier and per user, and only a
+    superuser sets it.** `tacctl console system-shell` lists each tier as
+    `enabled` or `disabled` (the superuser tier is `enabled (always)` and
+    cannot be disabled; readonly and operator are disabled by default; the
+    engineer tier is `disabled (never)` and `enable` is refused with the
+    existing reason), then the users with a setting of their own and their
+    tier; `console system-shell <tier>` prints one tier, and `console
+    system-shell <tier> enable|disable` sets it. It replaces `console
+    system-shell tiers [<csv>|none]`, which is gone. `console system-shell user
+    <name> [enable|disable|clear]` gives the system shell to one user or takes
+    it from one, over the tier's setting in both directions (`clear`: the tier
+    decides). A superuser cannot be disabled (refused, by the tier the user has
+    at that moment), an engineer cannot be enabled, and enabling a superuser or
+    disabling an engineer stores nothing. A setting follows the user (item 20);
+    an entry of a name that is no user is listed as `no such user` and `clear`
+    removes it. The same people
+    may open an editor from the console. Only a superuser sets it (a tier, a
+    user or the path); the read forms are open to the operator tier and up
+    (item 21), and the verb refuses every write with the usual `is not
+    permitted for the <tier> tier`, logged as a tier denial. `console show` prints the system shell by tier and,
+    for each user of the server, the effective access and why (`tier operator`,
+    `user setting`, `always`, `never`). The changes are logged as `console set
+    key=system-shell item=<tier>|user:<name>|path`. The tiers are still stored
+    in `settings.system_shell_tiers` (now always holding `superuser`, which a
+    list without it does not change), and a user's setting in the new
+    `settings.system_shell_users`, written only when a user has one; that key
+    is one no older release reads, so `tacctl rollback` to any target removes
+    it (the plan names the users) and the older release has the tiers' list
+    alone. `settings.system_shell` is the shell's path as before.
+
+20. **A user's system-shell setting follows the user.** `user remove` drops
+    the `console system-shell user` setting of the user and `user rename`
+    moves it to the new name, so the person keeps the access they had and a
+    user created later under the old name does not inherit it. Both say so in
+    their output (`The system-shell setting of 'bob' (enable) moves to
+    'robert'.` / `... is dropped.`) and log `console set key=system-shell
+    item=user:<name> from= to=` at `auth.notice`, one line for a removal and
+    two for a rename. `user add` drops an entry left under the name (a hand
+    edit, or a removal whose write of `console.yaml` failed, which names the
+    command to finish it). A user without a setting leaves `console.yaml`
+    alone. An entry for a name that is no user is not honoured (the policy
+    looks the caller up by a name that is a user of the store) and is listed
+    as `no such user`. The rollback removes the whole key as before.
+
+21. **An operator and an engineer can read every form of `console
+    system-shell`.** `console system-shell` (the list), `console system-shell
+    <tier>`, `console system-shell user <name>` and `console system-shell
+    path` are open to the operator tier and up; every form that sets
+    something (a tier with `enable|disable`, a user with `enable|disable|clear`,
+    `path <new>`) stays the superuser's, and an operator or an engineer is
+    refused with `'tacctl console system-shell' is not permitted for the
+    <tier> tier.`, logged as a tier denial; a readonly user is refused at the
+    gate as before. The tier table has one row for the verb (its note is in
+    the manual page's TIERS section), and the per-tier sudoers drop-in grants
+    the read forms by exact pattern (the four tiers and `path`), plus `user *`,
+    whose wildcard also matches `user <name> enable`: the verb refuses that
+    write itself. The rollbacks to 0.2.18 and earlier rewrite the drop-in as
+    before (the 0.2.19 text lacks all of the new patterns).
+
+22. **The password cache is the user's own choice, within the tier's
+    permission.** `console password-cache tiers` now only says which tiers
+    may use the cache; for a listed tier it is no longer on for everyone in
+    it. Each user turns it on for themselves, and it is off until they do:
+    `console password-cache on` is a word of the shell and the console (listed
+    by `?` and completed): it saves the choice for every later session and
+    starts the cache in the running one at once; `console password-cache off`
+    saves that, forgets a cached password (`password forgotten (console
+    password-cache off)`) and stops caching; with no argument it prints the
+    tiers, the limits, whether the caller's tier is allowed, the caller's
+    setting and, in a session, whether a password is cached now. When the tier
+    is not allowed, `on` is refused in one sentence naming the fix (`a
+    superuser allows it with: tacctl console password-cache tiers <tiers>`)
+    and saves nothing. The words are open to the operator tier and up and set
+    only the caller's own value: they take no name, the root side takes the
+    user from the one `sudo` was run by, and the sudoers drop-in grants exactly
+    `console password-cache`, `... on` and `... off` (a new row; the derived
+    0.2.19 text leaves it out); the other forms (`tiers`, `idle`, `max`, `user`)
+    stay the superuser's and are refused with the usual tier denial.
+    `console password-cache user [<name> [clear]]` lets a superuser list who
+    turned the cache on and clear a user's choice, and `console show` lists
+    them. The choice is `settings.password_cache_users` in `console.yaml`
+    (a map of user to true, written only when a user is on) and is logged as
+    `console set key=password-cache item=user:<name> from= to=`. `user rename`
+    moves it and `user remove` drops it (and `user add` drops a stale entry),
+    as for the system shell of a user (item 20). The `_console-policy` line
+    carries `password_cache=yes|no` (allowed and on: the console starts the
+    cache) and `pc_allowed=yes` (the permission alone, which `tacctl shell
+    --password-cache` still needs: that flag is an explicit request and works
+    as before). No older release reads the new key, so `tacctl rollback` to
+    any target removes it (the plan names the users) and keeps the cache's own
+    settings for the targets that have them; the older release has the cache
+    on for every user of a listed tier, as it always did. Upgrading: a console
+    that had the cache on for a tier has it off for every user until they turn
+    it on (docs/install/upgrading.md).
+
+23. **No bash for those without the system shell when the console link is
+    missing.** `host sync` and `host enroll --local` on the server gave every
+    readonly and operator user `/bin/bash` when `/usr/local/bin/tacctl-console`
+    was missing, a full system shell for those who have none (item 19). Now an
+    account gets `/bin/bash` there only if it has the system shell (a
+    superuser, a user of a tier a superuser opened it to, or a user it was
+    opened to) and `/usr/sbin/nologin` otherwise, the engineer tier and a tier
+    that is none included; the warning says so. Item 18's mention of bash for
+    that case is adjusted.
+
+24. **A user's system-shell enable is for the tier it was set for.**
+    `console system-shell user <name> enable` gave a user the shell for as
+    long as the entry stood, so a user moved to a lower tier kept a shell the
+    new tier does not give. The enable is now recorded with the tier the user
+    has when it is set (`settings.system_shell_users` holds `enable:<tier>` and
+    `disable`) and counts only while the user is in that tier: after a demotion
+    or a promotion it does nothing, and `console system-shell`, `console show`
+    and the user's own query list it as `stale: set for operator, now readonly`
+    until it is set again; it counts again if the user returns to the tier. A
+    disable holds in any tier, and a superuser (always) and an engineer (never)
+    are not affected. An enable cannot be set for a user with no tier. The
+    setting moves with `user rename` as before, with its tier.
+
+25. **A console.yaml that cannot be read stops `user add|remove|rename`.**
+    The settings that follow a user (the system shell, the password cache) are
+    dropped or moved by those verbs, but a file that did not parse was skipped
+    in silence: `user remove bob` exited 0 and left `bob`'s system shell for
+    the next user of the name. The three verbs now read console.yaml before
+    they change the store and, when it cannot be read, exit 1 with the path,
+    the cut parse error and `nothing was changed`; the store change is made only
+    after the file is known to be readable, because the other order leaves the
+    user gone and the entry behind with no way to take the store change back.
+    A file that breaks in between, or is locked, makes the verb exit 1 after the
+    change and name the two commands that check the settings of the user once the
+    file is repaired. An absent console.yaml is not an error.
+
+26. **`tacctl rollback` lists who would gain a system shell or the password
+    cache.** The rollback keeps the `tiers` and `users` switches of
+    `console.yaml` that this release ignores, and an older release reads
+    them as it always did: a user or a tier switched off there gets a plain
+    `/bin/bash` at its next `host sync` instead of the console; a system-shell
+    `disable` of one user is removed, so the user has their tier's setting;
+    and the password cache, which is each user's choice now, is on again for
+    every user of a tier that is allowed it. None of that was named in the plan.
+    Each user (and, with no store to read, each tier and setting) who would gain
+    a system shell or the cache is now listed with the reason, in a warning
+    that `--apply` refuses without `--yes` (on every target; the cache only on
+    the targets that have it), and the warning stays while the switches do.
+    The upgrading page says how to avoid it.
+
+27. **`root` is a break-glass account of a scope's Junos devices.** Many Junos
+    devices keep `root` as their local access, which Junos holds under `system
+    root-authentication`, not under `system login user`. `tacctl scope
+    breakglass <scope> add root` is accepted (it was refused as a system
+    account; `remote` still is): the role is always `admin` (`--role operator`
+    and `--role readonly` are refused, and `config validate` refuses a
+    `root:operator` entry written by hand), and only the lower-case spelling is
+    the account. `scope breakglass list` and `scope show` print it with a note
+    that it is the Junos system account. The Junos walkthrough renders two
+    statements in the break-glass step, commented out and with the usual
+    placeholder rule (tacctl stores and generates no password or hash):
+    `set system root-authentication encrypted-password '<HASH>'` and `set
+    system services ssh root-login allow`, with a comment that Junos refuses
+    root over ssh by default, that allowing it is a security trade-off (root
+    can then log in over ssh, so keep the device behind the management
+    filter), and nothing for a user named `root` under `system login user`.
+    `root (admin)` is on the `Unfilled break-glass credentials` line. Cisco
+    and WTI have no such account: their walkthroughs render nothing for it and
+    say so in one line, leave it off the `Unfilled` line, and a scope whose
+    only entry is `root` still gets their no-break-glass notice. `config
+    validate` counts `root` for Junos devices only: a scope with `root` alone
+    is warned about once per scope, naming the vendors of its registered
+    Cisco and WTI devices. `breakglass hold` and its documentation list `root`
+    among the accounts it makes usable on a Junos device.
+
+28. **`device config pull|diff` checks the Junos `root` break-glass account.**
+    For a scope that records `root`, the `breakglass` section of a Junos
+    device is checked by two facts: the root password is set (`set system
+    root-authentication encrypted-password (present, not compared)`, by
+    presence, as a named user's hash is) and `set system services ssh
+    root-login allow` is there. A device with the password and without the
+    `allow` reads as missing the `allow` statement only; `root-login deny`
+    and `deny-password` (no password login, which break-glass needs) read as
+    a difference with the reason; a device whose `system root-authentication`
+    holds only ssh keys has no password and says so (a deactivated password
+    is no password), and one with neither reads `missing`. The pull now reads `system
+    root-authentication` and the `root-login` leaf of `system services ssh`
+    into the `breakglass` section (every other leaf under `system services
+    ssh` stays the device's own), for every Junos device, and leaves them out
+    of the comparison for a scope that does not record `root`, so such a scope
+    reads as before. A root hash or key is never put in the output, the
+    record, the sections file or a log: only the leaf's name is kept. A record
+    made by an earlier release lacks the two statements and reads them as
+    missing until the next `device config pull`. `device config plan` and
+    `apply` still never type either statement (the plan keeps `breakglass`
+    among the sections it does not plan, and its report names the
+    walkthrough's break-glass step).
+
+29. **`breakglass hold` names `root` for Junos devices only.** The
+    confirmation of a hold lists the local accounts of the device's scope
+    that become the only way in. `root` is a Junos account, so it is listed
+    for a Junos device and left out for a Cisco or WTI one (a scope whose only
+    entry is `root` reads `no local account is recorded` there).
+
+30. **A device that does not answer the combined host-key scan is asked one
+    key type at a time.** `ssh-keyscan -t ed25519,ecdsa,rsa` opens one
+    connection per type at once, and a Juniper SRX answered it with no key
+    (`ssh-keyscan -t ed25519 <address>` by hand worked), so `device add`,
+    `device enroll`, `device collect`, `device onboard`, `device hostkey
+    accept|set`, `device scan`, `device check` and the pin of `host enroll`
+    and `host sync` could offer no key to accept. When the combined
+    scan reads no key from a device that accepted the connection, tacctl now
+    runs `ssh-keyscan -T 3 -t <type>` for `ed25519`, `ecdsa` and `rsa` in turn
+    (and `ssh-rsa` for a `legacy-ssh` device), one after the other, and
+    returns the keys of every type that answered: a type that fails does not
+    fail the scan, so the pinned set is as complete as the combined scan's.
+    A device that refused the connection, timed out or did not resolve costs
+    its one `ssh-keyscan`, as before: ssh-keyscan's messages tell them apart
+    (its banner line `# <address>:<port> SSH-2.0-...`, or `Connection closed
+    by remote host`, `Connection reset by peer` or a failed negotiation, say
+    the server answered; its exit status does not, being the same for both),
+    so the re-scan of every device (`device scan`, `device check`) stays as
+    fast and as parallel (eight at a time) for unreachable devices, and a
+    silent one costs at most 9 seconds more (12 with `legacy-ssh`).
+
+31. **The built-in ssh client reads the host keys of any device ssh-keyscan
+    cannot.** Only a `legacy-ssh` device was handed to it; now a device that
+    accepted the connection and gave `ssh-keyscan` no key, not even one type
+    at a time (item 30), is read by it as well, in `device add`, `device
+    enroll`, `device collect`, `device onboard`, `device hostkey accept|set`,
+    `device scan` and `device check`. A device that refused the connection or
+    did not answer is not dialled a second time. The client no longer opens
+    with its long offer of the legacy key exchanges and ciphers and every host
+    key algorithm, which some devices drop: it asks ed25519 alone with the
+    library's default algorithms, then each of the other key types in turn
+    with those, and makes the connections of an old device (the legacy lists,
+    the preferred key first) only when none of them read a key. `device enroll`
+    and `device collect` still find out whether a device needs `legacy-ssh`:
+    a device only the built-in client reads is registered with it, one that
+    `ssh-keyscan` reads one type at a time is not.
+
+32. **The refusal of a device that gave no host key says what was tried and
+    what to do.** `No ssh host key could be read from <address> port <port>
+    (ssh-keyscan); nothing was changed.` stays as it was for a device that did
+    not answer. For one that accepted the connection and gave no key to any
+    read, the parenthesis names them (`ssh-keyscan, then one key type at a
+    time (ed25519, ecdsa, rsa), and tacctl's own ssh client`; with `ssh-rsa`
+    and `for legacy-ssh` for a `--legacy-ssh` device), and two lines follow:
+    the command that shows the key by hand (`ssh-keyscan -t ed25519
+    <address>`, with `-p <port>` for another port, also `-t ecdsa` and `-t
+    rsa`), and the ways to accept a key by its fingerprint (`--host-key
+    SHA256:<fp>` for `device add`, `enroll`, `collect` and `onboard`, `tacctl
+    device hostkey <name> set SHA256:<fp>` for a registered device).
+
+33. **`host enroll` and `host sync` name the reads of a host that gave no
+    key.** The warning `no ssh host key could be read from <host> port <port>
+    (ssh-keyscan) to check the session's against; none pinned.` says `(ssh-keyscan,
+    then one key type at a time (ed25519, ecdsa, rsa))` for a host that
+    accepted the connection (item 30); a host that did not answer is worded as
+    before. What is pinned is unchanged: only keys the host's own key files
+    and the scan both hold.
+
+34. **The device's own statements are no irregularity in `device config
+    plan`.** A device whose managed statements were all pasted and whose
+    `snmp` section held the device's own (another community with its clients,
+    a trap group, `snmp name`, trap options, a view, an SNMPv3 user, an
+    interface) kept reading `What is irregular on <device> (14 items; the
+    paste fixes 0, leaves 14)`, one MONITORING item per statement with the
+    action `Left alone`, `Nothing to paste: everything above is left alone`,
+    and `snmp` missing from the `Consistent:` line, while `device config
+    list` read the same device `ok` with `snmp +17 unmanaged` (the plan also
+    folded the statements of one community into one item, so its number was
+    not the comparison's). A statement the comparison counts as unmanaged (in
+    `snmp`, `system` and `netconf`, on Junos and IOS) now has no item: it is
+    not in the header's number, does not keep its section out of
+    `Consistent:` and does not make the plan non-empty, so such a device reads
+    `CONSISTENT: nothing to paste.` and `consistent` on the cover page. One
+    line per section keeps them visible, `Kept: snmp 17 statements of the
+    device's own (name, communities, trap groups, ...): left alone, listed by
+    device config diff.`, with the comparison's number (the one `device config
+    list` shows) and the kinds, never a community or a value. A real finding
+    stays an item: a managed object that differs or is missing, a stray leaf
+    of tacctl's own community, a deactivated statement, a statement under a
+    community of a record made by an older tacctl, an extra in `aaa`, `roles`
+    or `mgmt-acl`. `--json` has the `kept` list (section, `count`, `kinds`;
+    omitted when empty) and marks the extras that are the device's own with
+    `"own": true`; the cover page no longer counts them as extras.
+    A WTI unit's own statements (the other protocol's page, the system name,
+    the trap settings) were a `Note: snmp: 4 statements of the device's own,
+    kept on purpose`; they are the same `Kept:` line now. `--converge` is as
+    before: it still offers the removal lines of the extras it is allowed to
+    remove.
+
+35. **The `Secrets:` line of `device config plan` is information.** It read
+    `Secrets: 3 present on the device, not changed (--secrets pushes them).`
+    on every plan of a device that had its secrets, for good, because a secret
+    is compared by presence only (tacctl never reads a device's secret back),
+    which reads as a complaint. It now says which kinds are present, never a
+    value, a community or a label: `Secrets: 3 present (the TACACS+ server
+    key, the SNMP community); only their presence is checked, --secrets writes
+    them again.` It is no item and no irregularity, and a plan with nothing to
+    paste stays `CONSISTENT: nothing to paste.` Secrets the pull's login could
+    not read are a limit of that login and are said apart: `N not visible to
+    the pull's login: the plan could not check them (--secrets pushes
+    them).` `--json` has the `secrets` object (`present`, `kinds`,
+    `not_visible`; omitted when there is none).
+
+36. **The pre-flight reads every commit command the device prints.** `device
+    config apply` (and `--pull`) failed with `show system commit: entry 0 ends
+    "commit synchronize": the device's answer is not recognised` on a Junos
+    device whose commits end in `synchronize` (a dual-routing-engine or
+    virtual-chassis device). The newest entry of `show system commit` is now
+    read as a commit command in all its spellings: `commit` with `and-quit`,
+    `synchronize`, `force`, `full`, `prepare` and `at <time>` in any order,
+    and `commit confirmed, rollback in <n>mins` followed by the same words
+    (a confirmed commit still counts as pending only as before); an entry
+    with no text after `via <way>` (a commit of the system) is an ordinary
+    commit. A text that is no commit command is still refused, and the error
+    names the entry, its time, user and way, and the text. A time written
+    with a numeric zone (`+03`, `+0530`) is read with its offset.
+
+37. **The apply reads the answers of a device with several members.** On a
+    Junos virtual chassis (or two routing engines) `commit check` prints a
+    block for each member (`fpc0:` and then `configuration check succeeds`),
+    which `device config apply` refused as an answer it did not know
+    (`check: fpc0:; configuration check succeeds; fpc1: ...`). The members are
+    now the blocks `show version` lists (`fpc0:`, `re0:` or `node0:`, one
+    kind per device), and the answers of `commit check`, `commit confirmed`
+    and `commit` must name exactly those members: each with the check's
+    success and, for a commit, the commit's after it (on the command line the
+    check's block is optional in a commit's answer). A member that is
+    missing, unexpected or answers otherwise (an error, a warning, no text, a
+    label of another kind) fails the step, and the error names the member and
+    its text. A single device's answers read as before, and so do those of two
+    routing engines that commit without `commit synchronize`: they answer
+    with the single device's lines, which are read as before, or with exactly
+    their blocks. Over NETCONF the reply is read member by member
+    (`routing-engine` elements named by the label): the check's success and
+    then the commit's, or the commit's alone, an error inside an element
+    names the member. A NETCONF reply of a virtual chassis or a cluster that
+    names no member is refused, because nothing proves the other members
+    committed (a confirmed commit is left to roll back by itself); the
+    command line transport, the default, can be used. For two routing engines
+    a reply with no member element, or one, is read as before. What is
+    inferred and unverified: no capture exists of the commits' replies on a
+    device with members, so their shape (the check's blocks, the confirmed
+    note, the `commit complete` blocks) is taken from the check's; no capture
+    exists of the NETCONF reply, including the check's, nor of the NETCONF
+    `show version` reply, whose text (the `output` elements only) gives the
+    NETCONF member set, and a chassis may answer with a
+    `multi-routing-engine-results` of `multi-routing-engine-item` elements,
+    each with a `re-name` and its `output`, which is read into the same
+    labels from the documented shape, not from a capture.
+
+38. **The end of a pending window is the device's own wall clock.** `PENDING
+    until <time>` and the refusals that name a pending commit computed the end
+    of the window by converting the time of the entry, which moved the wall
+    clock of a device whose zone is written `GMT+3` or `GMT-3` by the hours of
+    the zone (a window of 5 minutes from 14:00 read 17:05 or 11:05). The end is
+    now the entry's wall clock exactly as the device printed it, the window
+    added, and the zone as printed, for every form (an abbreviation, `UTC`,
+    `GMT+3`, `+03`, `+0530`).
+
+39. **`tacctl man` opens the manual page, for every tier and in the console.**
+    The console has no `man` command and its users no shell, so the page
+    that documents every command was out of their reach. `tacctl man` shows
+    it in a pager and returns when the pager is quit; `tacctl man tiers`,
+    `tacctl man audit log`, `tacctl man user` and `tacctl man device config
+    plan` open it at that heading, family or command (searches in the pager
+    for the heading or the first words of the entry, made after those of the
+    entries just before it, so `n` finds the next match; the words only
+    choose the place and never reach an argument, and
+    words that name nothing open the page at the top and say so on standard
+    error). `tacctl man --path` says which page is shown and where one is installed. It runs as
+    you, with no `sudo` and no tier gate, like `completion` and `version`
+    (readonly tier row, audit class `read`), and is listed by Tab, `?`, `help`
+    and `-h` in the shell and the console. The page is the copy the binary
+    now carries (`man/tacctl.1` is embedded, still the one generated file),
+    the page of the version that runs, whether or not `install` and `upgrade`
+    placed one; `tacctl man --path` prints `built into tacctl` and, when
+    the installed file exists, `installed: <path>` with whether it is
+    identical or differs. It is rendered by `man -l`, given the page on
+    standard input, else by `groff` and `less`; with neither, it says so and
+    exits 1. The pager cannot start a program: it is
+    the `less` found in `/usr/local/bin:/usr/bin:/bin` (the fixed `PATH` the
+    programs get; `man` and `groff` are looked for there too, never in the
+    caller's `PATH`), run with `LESSSECURE=1` (no shell escape, no
+    editor, no pipe, no log file) and a `LESS` of tacctl's own, and `man`,
+    `groff` and `less` get an environment made from `TERM`, `LANG` and `LC_*`
+    and a fixed `PATH`, so a `PAGER`, `MANPAGER`, `LESS`, `LESSOPEN`,
+    `LESSCLOSE`, `MANPATH`, `MANOPT`, `MAN_*` or `GROFF_*` of the caller does
+    nothing and no `~/.lesskey` or `~/.manpath` is read. Without `less` the
+    page is printed whole, with a line on standard error saying so (`more`
+    has a shell escape that cannot be switched off, so it is not used).
+
+40. **`tacctl rollback 0.2.19`.** The release before this one is a rollback
+    target (beside 0.2.18, 0.2.17, 0.2.16, 0.2.9 and 0.2.3). `--apply`
+    rewrites the per-tier sudoers drop-in, when it is exactly this release's
+    text, with 0.2.19's (the engineer's row of `scope mgmt-acl * mode` and the
+    operator's rows of `console system-shell` and `console password-cache`
+    are taken out), and removes what every target removes: the management
+    filter mode of a scope (item 16), the required password change (item 17)
+    and the console settings 0.2.19's parser refuses (items 13, 19 and 22),
+    with their warnings and a snapshot first. 0.2.19 has the emergency
+    lockdown record as this release writes it, so a lockdown that stands
+    refuses the rollback to every target but this one, and the record stays.
+    `devices.yaml`, the group drop-in, the blocks, the apply state, the host
+    registry and the hosts are left: 0.2.19 reads them as they are. The
+    command ends with `tacctl upgrade --branch 0.2.19` and names the verbs
+    that would write a key 0.2.19 refuses again before it (`scope mgmt-acl
+    ... mode strict`, `user add` and `user passwd`, which require a password
+    change by default, `user require-password-change`, `console color`,
+    `console list-max`, `console system-shell user`, `console password-cache
+    on`). The check runs that
+    release, built from its tag, against the converted state.
+
+41. **`tacctl rollback` warns of a `root` break-glass entry.** The schema of
+    every release a rollback goes to accepts `root:admin` (item 27), so the
+    entry stays in `tacctl.yaml`, but those releases take `root` for a local
+    user like any other: the Junos walkthrough renders a commented `set
+    system login user root class ... authentication encrypted-password` line
+    (which Junos refuses) in place of the `system root-authentication` and
+    `root-login allow` statements, the Cisco and WTI walkthroughs a root
+    account, and `device config pull|diff` (every target but 0.2.3) expect
+    the login line on each Junos device of the scope, whose breakglass
+    section then reads `differs`. Every target now names the scopes that
+    record `root` in a warning (`--apply` needs `--yes`), with `tacctl scope
+    breakglass <scope> remove root` as the way out.
+
+42. **`tacctl rollback` takes root's statements out of the stored pulls.**
+    The pull of this release keeps `system root-authentication` (the leaf's
+    name only) and `system services ssh root-login` in the breakglass section
+    of every Junos device (item 28). An older release puts neither in a
+    section and, reading this release's sections file, takes them for extra
+    statements, so the breakglass section of every Junos device of a scope
+    with a break-glass user read `differs` until its next pull (checked with
+    0.2.19). Every target but 0.2.3, which never opens the records, now
+    takes the two out of the breakglass section of the sections files and
+    the plain views in `/var/lib/tacctl/device-config/`, under the records'
+    lock, and leaves every other line; the dry run lists each file. The
+    files are derived and not in the snapshot; this release, if it stays,
+    reads the two as missing until its next pull, as for a record of an
+    older release.
+
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

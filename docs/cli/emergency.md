@@ -69,8 +69,8 @@ lockdowns too (`--json` has the locked users and the exempt superusers).
 A scope's rename moves its record and its removal drops it; `group remove`
 takes the group out of every lockdown, and `group edit <group> tier superuser`
 (or a priv-lvl edit that makes the group a superuser's) is refused while the
-group is locked, since a superuser group is never locked. A rollback to an
-older release is refused while a lockdown stands (`tacctl rollback`). `config validate` warns while a
+group is locked, since a superuser group is never locked. A rollback to a
+release before 0.2.19 is refused while a lockdown stands (`tacctl rollback`). `config validate` warns while a
 lockdown stands and reports a record that names a scope or group that no
 longer exists, a group that is a superuser's now, or no group. The log has
 `emergency lockdown enable|disable scope= groups= ...`.

@@ -163,6 +163,11 @@ func TestSessionIDAndLogValues(t *testing.T) {
 		s.DenyLine("user", 12):                  "console DENY session=deadbeef0102 user=carol reason=command first=user",
 		s.DenyLine("", 7):                       "console DENY session=deadbeef0102 user=carol reason=command first=- len=7",
 		s.DenyLine("", 0):                       "console DENY session=deadbeef0102 user=carol reason=command first=- len=0",
+		s.PasswordChangeLine("required", 0):     "console password-change required session=deadbeef0102 user=carol",
+		s.PasswordChangeLine("done", 0):         "console password-change done session=deadbeef0102 user=carol",
+		s.PasswordChangeLine("failed", 130):     "console password-change failed session=deadbeef0102 user=carol status=130",
+		s.PasswordChangeDenyLine("user", 9):     "console DENY session=deadbeef0102 user=carol reason=password-change first=user",
+		s.PasswordChangeDenyLine("", 7):         "console DENY session=deadbeef0102 user=carol reason=password-change first=- len=7",
 		s.SystemShellDenyLine("readonly"):       "console system-shell DENY session=deadbeef0102 user=carol tier=readonly",
 		s.SystemShellStartLine("/bin/bash"):     "console system-shell start session=deadbeef0102 user=carol tty=- shell=/bin/bash",
 		s.SystemShellEndLine(0, 61*time.Second): "console system-shell end session=deadbeef0102 user=carol status=0 duration=61",
@@ -179,7 +184,7 @@ func TestSessionIDAndLogValues(t *testing.T) {
 func TestParseRemote(t *testing.T) {
 	r, ok := ParseRemote("shell=console idle=5 system_shell=yes system_shell_path=/bin/zsh ssh_escape=yes agent=no tier=superuser list_max=12\n")
 	want := Remote{Idle: 5 * time.Minute, SystemShell: true, SystemShellPath: "/bin/zsh", SSHEscape: true,
-		Tier: tier.Superuser, ListMax: 12, SpaceCompletion: true, Known: true, TierRead: true}
+		Tier: tier.Superuser, ListMax: 12, Color: ColorAuto, SpaceCompletion: true, Known: true, TierRead: true}
 	if !ok || r != want {
 		t.Fatalf("ParseRemote = %+v, %t; want %+v", r, ok, want)
 	}
@@ -196,6 +201,42 @@ func TestParseRemote(t *testing.T) {
 		if r, _ := ParseRemote(out); r.SpaceCompletion != want {
 			t.Errorf("ParseRemote(%q).SpaceCompletion = %t", out, r.SpaceCompletion)
 		}
+	}
+	// The colour and the list threshold of 0.2.20: the words, -1 (never
+	// ask), and the defaults for a value that is none.
+	for out, want := range map[string]string{"idle=5": "auto", "color=on": "on", "color=off": "off", "color=auto": "auto", "color=maybe": "auto", "color=": "auto"} {
+		if r, _ := ParseRemote(out); r.Color != want {
+			t.Errorf("ParseRemote(%q).Color = %q, want %q", out, r.Color, want)
+		}
+	}
+	for out, want := range map[string]int{"list_max=-1": -1, "list_max=1000": 1000, "list_max=1001": 40, "list_max=0": 40, "list_max=-2": 40, "list_max=x": 40} {
+		if r, _ := ParseRemote(out); r.ListMax != want {
+			t.Errorf("ParseRemote(%q).ListMax = %d, want %d", out, r.ListMax, want)
+		}
+	}
+	// The required password change of 0.2.20: yes or no, and no without the
+	// field (an older server) or with a value that is neither.
+	for out, want := range map[string]bool{"idle=5": false, "password_change=yes": true, "password_change=no": false, "password_change=true": false, "password_change=": false} {
+		if r, _ := ParseRemote(out); r.PasswordChange != want {
+			t.Errorf("ParseRemote(%q).PasswordChange = %t", out, r.PasswordChange)
+		}
+	}
+	// The third answer: the root side could not tell (unknown), which is not
+	// a no, and not a yes either.
+	for out, want := range map[string]struct{ held, unknown bool }{
+		"password_change=unknown": {false, true}, "password_change=yes": {true, false}, "password_change=no": {false, false},
+		"idle=5": {false, false}, "password_change=maybe": {false, false},
+	} {
+		r, _ := ParseRemote(out)
+		if r.PasswordChange != want.held || r.PasswordChangeUnknown != want.unknown {
+			t.Errorf("ParseRemote(%q): held %t unknown %t", out, r.PasswordChange, r.PasswordChangeUnknown)
+		}
+	}
+	if r, ok := ParseRemote("password_change=unknown"); !ok || !r.Known {
+		t.Errorf("an answer that only says unknown is an answer: %+v %t", r, ok)
+	}
+	if DefaultRemote().PasswordChangeUnknown {
+		t.Error("the defaults say unknown: only the policy that was not read does (unreadPolicy)")
 	}
 	// The tier the shell lists for (D56): the gate's, else the tier field,
 	// and none (read-only verbs only) when the answer was not read.

@@ -65,7 +65,7 @@ users:
     groups: [*readonly]
     authenticator: *marker
     accounter: *file_accounter
-  - name: Dup.per
+  - name: Dup..per
     scopes: [lab]
     groups: [*readonly]
     authenticator: *marker

@@ -483,6 +483,8 @@ type wtiPlanner struct {
 	// aclStems are the compared statements the paste answers.
 	aclStems []string
 	present  int
+	// presentKinds are the kinds (secretWhat) of the present secrets.
+	presentKinds []string
 	// the entries --converge may remove: the read/write community (-1 when
 	// there is none) and the switches of the other protocol's page
 	rw       int
@@ -605,10 +607,8 @@ func planWTI(expected []devices.Section, current devconf.Extracted, opt Options)
 	// what the unit holds beside the rendering and the standard leaves to it
 	// (the tail of its list is noted with the list's guards)
 	for _, name := range []string{devconf.SectionAAA, devconf.SectionSNMP} {
-		if r := p.byName[name]; r.Unmanaged > 0 {
-			if st := d.Of(name).State; st == StatePlanned || st == StateNoChange {
-				d.Notes = append(d.Notes, name+": "+r.UnmanagedNote())
-			}
+		if st := d.Of(name).State; st == StatePlanned || st == StateNoChange {
+			d.setOwn(name, p.byName[name])
 		}
 	}
 	d.Sections = append(d.Sections, SectionPlan{Name: devconf.SectionBreakGlass, State: StateNever})
@@ -700,8 +700,10 @@ func (p *wtiPlanner) settings(sp *SectionPlan, r devconf.SectionResult) {
 				}
 			}
 			p.present++
+			p.presentKinds = append(p.presentKinds, secretWhat(devconf.FamilyWTI, ks.same))
 		case ks.same != "" && ks.sameSecret:
 			p.present++
+			p.presentKinds = append(p.presentKinds, secretWhat(devconf.FamilyWTI, ks.same))
 		}
 	}
 	switch {
@@ -1332,6 +1334,7 @@ func (p *wtiPlanner) finish() {
 	d := p.d
 	d.Counts.Kept = len(d.Kept)
 	d.Counts.SecretsPresent = p.present
+	d.Counts.addKinds(p.presentKinds...)
 	slices.Sort(d.SecretKinds)
 	if d.WTI.GuardedAAA {
 		var ns []int

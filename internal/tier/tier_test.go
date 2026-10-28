@@ -648,7 +648,9 @@ func TestGateRefusesSpoofedSudoUser(t *testing.T) {
 }
 
 // The login console's rows: every tier reads its policy, the operator tier
-// shows the console and checks it, and nothing else of 'console' is open
+// shows the console, checks it and lists who has the system shell (the bare
+// 'console system-shell': the list, a tier, a user and the path; the
+// writes are the verb's refusal), and nothing else of 'console' is open
 // below the superuser.
 func TestConsoleRows(t *testing.T) {
 	for _, c := range []struct {
@@ -664,13 +666,18 @@ func TestConsoleRows(t *testing.T) {
 		{Operator, "console", "check", true},
 		{Operator, "console", "tiers", false},
 		{Operator, "console", "user", false},
-		{Operator, "console", "system-shell", false},
+		{Operator, "console", "system-shell", true},
+		{Readonly, "console", "system-shell", false},
+		{Operator, "console", "forwarding", false},
+		{Operator, "console", "password-cache", true},
+		{Engineer, "console", "password-cache", true},
+		{Readonly, "console", "password-cache", false},
 		{Operator, "console", "", false},
 		{Readonly, "console", "check", false},
 		{Engineer, "console", "show", true},
 		{Engineer, "console", "check", true},
 		{Engineer, "console", "tiers", false},
-		{Engineer, "console", "system-shell", false},
+		{Engineer, "console", "system-shell", true},
 		{Engineer, "console", "forwarding", false},
 		{Engineer, "_console-policy", "", true},
 		{Superuser, "console", "tiers", true},
@@ -692,6 +699,37 @@ func TestConsoleRows(t *testing.T) {
 	}
 	if ro, _, _ := strings.Cut(text, "Cmnd_Alias TACCTL_OP"); strings.Contains(ro, "console show") {
 		t.Error("console show is in the read-only alias")
+	}
+	// The system-shell row names the read forms: no pattern lets an operator
+	// or an engineer set a tier or the path through sudo, and 'user *' (a
+	// wildcard also matches the word after the name) is the one pattern the
+	// verb has to refuse the writes of.
+	op := aliasItems(t, text, "TACCTL_OP")
+	for _, want := range []string{"console system-shell", "console system-shell readonly", "console system-shell operator",
+		"console system-shell engineer", "console system-shell superuser", "console system-shell path", "console system-shell user *"} {
+		if !slices.Contains(op, want) {
+			t.Errorf("the operator alias lacks %q", want)
+		}
+	}
+	// The password cache's words: the state and the caller's own choice, named
+	// exactly (no wildcard grants 'tiers', 'idle', 'max' or 'user').
+	for _, want := range []string{"console password-cache", "console password-cache on", "console password-cache off"} {
+		if !slices.Contains(op, want) {
+			t.Errorf("the operator alias lacks %q", want)
+		}
+	}
+	for _, it := range append(op, aliasItems(t, text, "TACCTL_EN")...) {
+		if strings.HasPrefix(it, "console password-cache") && it != "console password-cache" && it != "console password-cache on" && it != "console password-cache off" {
+			t.Errorf("a pattern %q grants more of console password-cache than the state and on|off", it)
+		}
+		if strings.HasPrefix(it, "console system-shell") && strings.ContainsAny(it, "*") && it != "console system-shell user *" {
+			t.Errorf("a pattern %q grants more of console system-shell than the read forms", it)
+		}
+		for _, w := range []string{"enable", "disable", "clear"} {
+			if strings.HasPrefix(it, "console system-shell") && strings.HasSuffix(it, " "+w) {
+				t.Errorf("a pattern %q grants a write of console system-shell", it)
+			}
+		}
 	}
 }
 
@@ -829,5 +867,57 @@ func TestCheckAnswersTheTier(t *testing.T) {
 	g.run.On([]string{"getent", "passwd", "1234"}, execx.Result{Stdout: []byte("other:x:1234:1234::/home/other:/bin/bash\n")})
 	if got, err := g.gate.Check(ctx, "user", "list"); got != None || err != ErrDenied {
 		t.Errorf("mismatch: %q %v", got, err)
+	}
+}
+
+// 'scope mgmt-acl' (0.2.20): the engineer's row grants the read of the mode and
+// nothing more, as narrowly as a sudoers pattern can say it (it is matched
+// against the whole argument string, and its '*' matches blanks): a setter, the
+// permit list and the names are no match, and the verb refuses what a last word
+// 'mode' lets through. The tiers below the engineer have no row, and the note
+// says what the engineer may run.
+func TestEngineerReadsTheMgmtACLMode(t *testing.T) {
+	for tr, want := range map[Tier]bool{Readonly: false, Operator: false, Engineer: true, Superuser: true} {
+		if got := Permits(tr, "scope", "mgmt-acl"); got != want {
+			t.Errorf("Permits(%s, scope, mgmt-acl) = %v, want %v", tr, got, want)
+		}
+	}
+	text := Sudoers()
+	if en := aliasItems(t, text, "TACCTL_EN"); !slices.Contains(en, "scope mgmt-acl * mode") || slices.Contains(en, "scope mgmt-acl *") {
+		t.Errorf("the engineer alias: %q", en)
+	}
+	for _, name := range []string{"TACCTL_RO", "TACCTL_OP"} {
+		for _, it := range aliasItems(t, text, name) {
+			if strings.HasPrefix(it, "scope mgmt-acl") {
+				t.Errorf("%s has %q", name, it)
+			}
+		}
+	}
+	// sudo matches the argument string against the pattern with '*' as any
+	// run of characters
+	re := regexp.MustCompile("^" + strings.ReplaceAll(regexp.QuoteMeta("scope mgmt-acl * mode"), `\*`, ".*") + "$")
+	for args, want := range map[string]bool{
+		"scope mgmt-acl lab mode":           true,
+		"scope mgmt-acl lab mode strict":    false,
+		"scope mgmt-acl lab mode ssh-only":  false,
+		"scope mgmt-acl lab list":           false,
+		"scope mgmt-acl lab add 10.0.0.0/8": false,
+		"scope mgmt-acl lab clear":          false,
+		"scope mgmt-acl lab cisco-name X":   false,
+		"scope mgmt-acl lab":                false,
+		"scope mgmt-acl":                    false,
+		"scope mgmt-acl lab add mode":       true, // the verb refuses it for an engineer
+		"config mgmt-acl lab mode":          false,
+		"scope mgmt-aclx lab mode":          false,
+	} {
+		if got := re.MatchString(args); got != want {
+			t.Errorf("sudoers pattern on %q = %v, want %v", args, got, want)
+		}
+	}
+	note := Notes()["scope mgmt-acl"]
+	for _, w := range []string{"an engineer may read the management filter mode of a scope of their own", "need the superuser tier"} {
+		if !strings.Contains(note, w) {
+			t.Errorf("the note %q lacks %q", note, w)
+		}
 	}
 }

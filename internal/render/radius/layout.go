@@ -6,6 +6,7 @@ import (
 
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/paths"
+	"github.com/rett/tacctl/internal/pwchange"
 )
 
 // Family names, as TACCTL_RADIUS_FAMILY and the layout use them.
@@ -69,6 +70,9 @@ type Params struct {
 	// one is worded as a host in clients.conf's comment. Not the layout's;
 	// the caller sets it.
 	Hosts map[string]bool
+	// Server is where this server is enrolled (pwchange.LocalServer): the one
+	// scope a user who must change the password keeps. The caller sets it.
+	Server pwchange.Server
 }
 
 // ParamsFor is _radius_params for a layout.

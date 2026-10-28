@@ -62,6 +62,10 @@ var schema = []sectionSpec{
 		{name: "disabled", typ: tBool, required: true},
 		{name: "password_changed", typ: tDate, nullable: true},
 		{name: "accounting_sink", typ: tBool},
+		// password_change_required (0.2.20) is written only when true: a
+		// release before 0.2.20 refuses the key (lifecycle's rollback
+		// removes it).
+		{name: "password_change_required", typ: tBool},
 	}},
 	{key: "scopes", label: "scope", name: names.MatchScope, fields: []fieldSpec{
 		{name: "prefixes", typ: tCIDRList, minItems: 1, required: true},

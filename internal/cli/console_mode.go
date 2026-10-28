@@ -144,6 +144,7 @@ func (inv *invocation) runConsoleSession(args []string) error {
 	if cs.pol.Known {
 		cs.tier = cs.pol.Tier
 	}
+	lock := lockedBy(cs.pol, groups)
 	extra := []string{marker}
 	if d := a.Env.Get("DISPLAY"); cs.pol.Forward && console.ValidDisplay(d) {
 		// sshd's X11 forwarding, for 'ssh -X <device>' (the tiers sudoers
@@ -151,7 +152,7 @@ func (inv *invocation) runConsoleSession(args []string) error {
 		extra = append(extra, "DISPLAY="+d)
 	}
 	r := shellRun{
-		exe: exe, mode: shellBatch, listMax: cs.pol.ListMax, spaceCompletion: cs.pol.SpaceCompletion,
+		exe: exe, mode: shellBatch, listMax: cs.pol.ListMax, color: cs.pol.Color, spaceCompletion: cs.pol.SpaceCompletion,
 		extraEnv: extra, console: true, systemShell: cs.systemShell, groups: groups, view: consoleView(cs.pol),
 	}
 	if cs.pol.PasswordCache {
@@ -162,13 +163,28 @@ func (inv *invocation) runConsoleSession(args []string) error {
 	if groups == nil {
 		r.groups = []string{}
 	}
+	if lock != nil {
+		// A password change is required of the caller: the session opens with
+		// the dialog and runs nothing else until it is made (pwchange_console.go).
+		r.lock = lock
+		r.recheck = func() (bool, bool) {
+			l := lockedBy(inv.consoleRemotePolicy(exe, marker), groups)
+			return l != nil, l != nil && l.unknown.Load()
+		}
+		r.lockRefused = cs.lockRefusedLog(consoleRootCommand(newRoot(inv)))
+		r.pwEvent = func(event string, status int) { cs.log("auth.info", cs.sess.PasswordChangeLine(event, status)) }
+	}
 	switch mode {
 	case console.ModeCommand:
 		r.mode, r.line = shellCommandMode, line
 	case console.ModeInteractive:
 		host := shortHostname()
 		r.mode, r.tty, r.idle, r.prompt = shellInteractive, f, cs.pol.Idle, host+"> "
-		inv.echo("tacctl console on " + host + " — type 'help'. Devices: device list. This session is logged.")
+		if lock != nil {
+			inv.echo("tacctl console on " + host + ". This session is logged.")
+		} else {
+			inv.echo("tacctl console on " + host + " — type 'help'. Devices: device list. This session is logged.")
+		}
 	}
 	if r.mode != shellBatch {
 		if home := a.Env.Get("HOME"); home != "" {
@@ -200,10 +216,22 @@ func consoleView(pol console.Remote) tier.Tier {
 func (inv *invocation) consoleRemotePolicy(exe, marker string) console.Remote {
 	res, err := inv.app.Runner.Run(inv.ctx, execx.Cmd{Name: "sudo", Args: []string{"-n", marker, exe, "_console-policy"}})
 	if err != nil || res.Code != 0 {
-		return console.DefaultRemote()
+		return unreadPolicy()
 	}
-	pol, _ := console.ParseRemote(string(res.Stdout))
+	pol, ok := console.ParseRemote(string(res.Stdout))
+	if !ok {
+		return unreadPolicy()
+	}
 	return pol
+}
+
+// unreadPolicy is the policy when there is no answer to read: the defaults,
+// and whether a password change is required of the caller is unknown, which
+// holds the session unless the caller is a superuser (lockedBy).
+func unreadPolicy() console.Remote {
+	r := console.DefaultRemote()
+	r.PasswordChangeUnknown = true
+	return r
 }
 
 // log writes a line of the console's own to syslog, under the console's tag.
@@ -231,7 +259,7 @@ func (cs *consoleSession) systemShell(ctx context.Context, interactive bool) int
 	}
 	if !cs.pol.SystemShell {
 		a.Out.Error(console.SystemShellWord + " is not available for the " + string(cs.tier) + " tier on this console. " +
-			"An administrator enables it with: tacctl console system-shell tiers " + consoleTiersWith(cs.tier))
+			"An administrator enables it with: " + systemShellEnableHint(cs.sess.User, cs.tier))
 		cs.log("auth.warning", cs.sess.SystemShellDenyLine(string(cs.tier)))
 		return 1
 	}
@@ -251,14 +279,14 @@ func (cs *consoleSession) systemShell(ctx context.Context, interactive bool) int
 	return code
 }
 
-// consoleTiersWith is the system-shell tiers list that adds t to the
-// default (superuser), for the refusal's command.
-func consoleTiersWith(t tier.Tier) string {
+// systemShellEnableHint is the command that opens the system shell to the
+// user or to the whole tier, for the refusal's text.
+func systemShellEnableHint(user string, t tier.Tier) string {
 	switch t {
 	case tier.Readonly, tier.Operator:
-		return "superuser," + string(t)
+		return "tacctl console system-shell user " + user + " enable (or " + string(t) + " enable for the tier)"
 	}
-	return "<tiers>"
+	return "tacctl console system-shell user " + user + " enable"
 }
 
 // consoleRootCommand reports whether w is a command of root a -c line may

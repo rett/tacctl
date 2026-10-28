@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -36,7 +37,19 @@ const consolePtyHelperRun = "-test.run=^TestConsolePtyHelper$"
 type consolePtyRunner struct {
 	execx.Real
 	log, policy, groups string
-	mu                  sync.Mutex
+	canary              string // where 'man' of man_pty_test.go looks for the effects of its environment
+	// passwd is the status the line 'passwd' ends with; a 0 changes the
+	// password, so the policy no longer says one is required
+	passwd      int
+	passwdHangs bool
+	// changedFile, once it exists, stands for a password changed in another
+	// session: the policy no longer says one is required
+	changedFile string
+	// readableFile, once it exists, makes a policy that was refused ("FAIL")
+	// readable
+	readableFile string
+	changed      atomic.Bool
+	mu           sync.Mutex
 }
 
 func (r *consolePtyRunner) Run(ctx context.Context, c execx.Cmd) (execx.Result, error) {
@@ -53,7 +66,21 @@ func (r *consolePtyRunner) Run(ctx context.Context, c execx.Cmd) (execx.Result, 
 	case c.Name == "id":
 		return execx.Result{Stdout: []byte(r.groups + "\n")}, nil
 	case c.Name == "sudo" && slices.Contains(c.Args, "_console-policy"):
-		return execx.Result{Stdout: []byte(r.policy + "\n")}, nil
+		r.mu.Lock()
+		policy := r.policy
+		r.mu.Unlock()
+		if policy == "FAIL" && (r.readableFile == "" || !fileExists(r.readableFile)) {
+			// sudo refuses: no policy answer
+			return execx.Result{Code: 1}, nil
+		}
+		if policy == "FAIL" {
+			// readable now: an operator who is held to nothing
+			policy = "shell=console idle=30 system_shell=no system_shell_path=/bin/bash tier=operator list_max=40"
+		}
+		if r.changed.Load() || (r.changedFile != "" && fileExists(r.changedFile)) {
+			policy = strings.ReplaceAll(policy, " password_change=yes", "")
+		}
+		return execx.Result{Stdout: []byte(policy + "\n")}, nil
 	case c.Name == "sudo":
 		return execx.Result{}, nil
 	}
@@ -61,10 +88,34 @@ func (r *consolePtyRunner) Run(ctx context.Context, c execx.Cmd) (execx.Result, 
 }
 
 func (r *consolePtyRunner) Start(ctx context.Context, c execx.Cmd) (execx.Process, error) {
+	if c.Name == testExe && len(c.Args) > 0 && c.Args[0] == "man" {
+		// 'man ...' is a word of noSudo: the console runs it as '<exe> man ...'.
+		return manPtyRunner{Runner: r.Real, canary: r.canary}.Start(ctx, c)
+	}
 	if c.Name == "sudo" {
 		i := slices.Index(c.Args, testExe)
 		words := c.Args[i+1:]
+		if len(words) == 3 && words[0] == "console" && words[1] == "password-cache" && (words[2] == "on" || words[2] == "off") {
+			// The root side saves the choice: the next policy answer has it.
+			from, to := "password_cache=no", "password_cache=yes"
+			if words[2] == "off" {
+				from, to = to, from
+			}
+			r.mu.Lock()
+			r.policy = strings.Replace(r.policy, from, to, 1)
+			r.mu.Unlock()
+		}
 		switch {
+		case words[0] == "passwd":
+			// the password change: it ends with the status the test chose
+			if r.passwd == 0 {
+				r.changed.Store(true)
+			}
+			c.Name, c.Args = "sh", []string{"-c", "echo RAN-PASSWD; exit " + strconv.Itoa(r.passwd)}
+			if r.passwdHangs {
+				// a dialog nobody answers
+				c.Args = []string{"-c", "echo RAN-PASSWD; sleep 8"}
+			}
 		case words[0] == "user" && len(words) > 1 && words[1] == "slow":
 			// (a real first word: a word that is no command never reaches sudo)
 			c.Name, c.Args = "sleep", []string{"8"}
@@ -104,7 +155,11 @@ func TestConsolePtyHelper(t *testing.T) {
 		"SSH_TTY=/dev/pts/9", "TACCTL_LEAK=1", "LD_PRELOAD=/nonexistent.so", "PATH=/usr/bin:/bin"}
 	env := console.Scrub(dirty, paths.ConsoleCommand, false)
 	// The stub shell and sleep are found through the console's PATH.
-	r := &consolePtyRunner{log: opt["log"], policy: strings.ReplaceAll(opt["policy"], ",", " "), groups: strings.ReplaceAll(opt["groups"], ",", " ")}
+	r := &consolePtyRunner{canary: opt[strings.TrimSuffix(manPtyCanary, "=")], log: opt["log"], policy: strings.ReplaceAll(opt["policy"], ",", " "), groups: strings.ReplaceAll(opt["groups"], ",", " ")}
+	r.passwd, _ = strconv.Atoi(opt["passwd"])
+	r.passwdHangs = opt["passwdhangs"] != ""
+	r.changedFile = opt["changedfile"]
+	r.readableFile = opt["readablefile"]
 	a := app.New(nil, paths.NewEnv(env), testExe, os.Geteuid(),
 		app.Stdio{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}, r)
 	var args []string
@@ -258,7 +313,7 @@ func TestConsolePtySystemShell(t *testing.T) {
 	p := startConsole(t, ptyPolicyRO, "carol,tac-users,tac-readonly")
 	p.expect(host + `> `)
 	p.send("system-shell\r")
-	p.expect(`system-shell is not available for the readonly tier on this console\. An administrator enables it with: tacctl console system-shell tiers superuser,readonly`)
+	p.expect(`system-shell is not available for the readonly tier on this console\. An administrator enables it with: tacctl console system-shell user carol enable \(or readonly enable for the tier\)`)
 	p.expect(`\[exit 1\]`)
 	p.send("exit\r")
 	if log := p.ends(0); len(log) != 3 ||
@@ -399,6 +454,104 @@ func TestConsolePtyNoPasswordCache(t *testing.T) {
 	host := regexp.QuoteMeta(shortHostname())
 	p := startConsole(t, strings.Replace(ptyPolicyRO, "tier=readonly", "tier=operator", 1), "carol,tac-users,tac-operator")
 	p.expect(host + `> `)
+	p.send("ssh core\r")
+	p.expect(`ASKPASS=\r\n`)
+	p.send("console forget\r")
+	p.expect(`no password is cached: the password cache is not on in this session`)
+	p.send("exit\r")
+	p.ends(0)
+}
+
+// The console's color setting: auto lets the terminal decide (the session is
+// on one, so the lists are in colour), off writes none, on writes them; the
+// environment the console runs in holds neither NO_COLOR nor TACCTL_COLOR.
+// '?', a second Tab and --help follow it.
+func TestConsolePtyColor(t *testing.T) {
+	for _, c := range []struct {
+		color  string
+		colour bool
+	}{{"", true}, {"auto", true}, {"on", true}, {"off", false}} {
+		policy := ptyPolicyRO
+		if c.color != "" {
+			policy += ",color=" + c.color
+		}
+		p := startConsole(t, policy, "carol,tac-users,tac-readonly")
+		host := regexp.QuoteMeta(shortHostname())
+		p.expect(host + `> `)
+		p.send("user ?")
+		list := p.Settle(500 * time.Millisecond)
+		p.send("\x15user \t\t")
+		tab := p.Settle(500 * time.Millisecond)
+		p.send("\x15user --help\r")
+		help := p.Settle(500 * time.Millisecond)
+		for name, out := range map[string]string{"?": list, "Tab Tab": tab, "--help": help} {
+			if !strings.Contains(out, "list") {
+				t.Errorf("color=%q %s: no list:\n%q", c.color, name, out)
+			}
+			if got := strings.Contains(out, "\x1b[36m"); got != c.colour {
+				t.Errorf("color=%q %s: colour %v, want %v:\n%q", c.color, name, got, c.colour, out)
+			}
+		}
+		p.send("exit\r")
+		p.ends(0)
+	}
+}
+
+// An entry point of the tool typed at the console's prompt is refused as a
+// word that is no command, and the console goes on.
+func TestConsolePtyRefusesEntryPoints(t *testing.T) {
+	host := regexp.QuoteMeta(shortHostname())
+	p := startConsole(t, ptyPolicyRO, "carol,tac-users,tac-readonly")
+	p.expect(host + `> `)
+	for _, w := range []string{"__help -- user", "__complete user ", "_console-policy"} {
+		p.send(w + "\r")
+		p.expect(`Unknown command: '` + regexp.QuoteMeta(strings.Fields(w)[0]) + `'`)
+		p.expect(host + `> `)
+	}
+	p.send("user list\r")
+	p.expect(`RAN sudo -n TACCTL_CONSOLE=[0-9a-f]{12} ` + regexp.QuoteMeta(testExe) + ` user list\r\n`)
+	p.expect(host + `> `)
+	p.send("exit\r")
+	p.ends(0)
+}
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
+}
+
+// The user turns the password cache on at the console's prompt: the tier is
+// allowed and the user has not (password_cache=no), so no agent starts; 'console
+// password-cache on' saves the choice (the root side, stubbed to change its
+// next answer) and starts the cache in this very session, 'off' stops caching,
+// and the state word says where things stand.
+func TestConsolePtyPasswordCacheChoice(t *testing.T) {
+	if ag, err := askpass.New(askpass.Options{}); errors.Is(err, askpass.ErrNoLock) {
+		t.Skipf("mlock is not available here: %v", err)
+	} else if err == nil {
+		ag.Close()
+	}
+	host := regexp.QuoteMeta(shortHostname())
+	pol := strings.Replace(ptyPolicyRO, "tier=readonly", "tier=operator,password_cache=no,pc_allowed=yes,pc_idle=1,pc_max=1", 1)
+	p := startConsole(t, pol, "carol,tac-users,tac-operator")
+	p.expect(host + `> `)
+	// Allowed, not turned on: nothing is cached or opened.
+	p.send("ssh core\r")
+	p.expect(`ASKPASS=\r\n`)
+	p.send("console password-cache\r")
+	p.expect(`in this session: the password cache is not on`)
+	// On: saved, and started now.
+	p.send("console password-cache on\r")
+	p.expect(`the password cache is on in this session`)
+	p.send("ssh core\r")
+	p.expect(`ASKPASS=(\S+:[0-9a-f]{64})\r\n`)
+	p.expect(host + `> `)
+	p.send("console password-cache\r")
+	p.expect(`in this session: the password cache is on; no password is cached now`)
+	// Off: nothing is cached any more (the forgetting of a held password is the
+	// shell's unit test: storing one needs a line that outlives a keystroke).
+	p.send("console password-cache off\r")
+	p.expect(`the password cache is off in this session`)
 	p.send("ssh core\r")
 	p.expect(`ASKPASS=\r\n`)
 	p.send("console forget\r")

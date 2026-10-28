@@ -30,6 +30,7 @@ import (
 	"github.com/rett/tacctl/internal/hash"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/policy"
+	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/py"
 	"github.com/rett/tacctl/internal/render/radius"
 	"github.com/rett/tacctl/internal/rendered"
@@ -99,6 +100,36 @@ func YName(s string) string {
 		return s
 	}
 	return YQ(s)
+}
+
+// userAnchors are the anchor suffixes of the users' bcrypt authenticators
+// (&bcrypt_<suffix>), in the order of users. YAML anchors hold letters,
+// digits, '_' and '-' only (tacquito's parser refuses a period), so a name
+// is its own suffix unless it has a period: then each period is written
+// "_dot_", and a number is added where that equals the suffix of another
+// user. A user name without a period keeps the suffix it always had.
+func userAnchors(users []*model.User) []string {
+	out := make([]string, len(users))
+	taken := make(map[string]bool, len(users))
+	for i, u := range users {
+		if !strings.Contains(u.Name, ".") {
+			out[i] = u.Name
+			taken[u.Name] = true
+		}
+	}
+	for i, u := range users {
+		if !strings.Contains(u.Name, ".") {
+			continue
+		}
+		base := strings.ReplaceAll(u.Name, ".", "_dot_")
+		cand := base
+		for n := 2; taken[cand]; n++ {
+			cand = base + "_" + strconv.Itoa(n)
+		}
+		taken[cand] = true
+		out[i] = cand
+	}
+	return out
 }
 
 // GroupKey is group_key: the top-level key and anchor of a group, its
@@ -349,9 +380,11 @@ func privText(g *model.Group) string {
 // with every problem ('cannot render an invalid model: ...'), and so is a
 // command rule of tacctl.yaml that is not one. hostNames are the enrolled
 // hosts (hosts.EnrolledNames): a hold on one is worded as a host in the
-// comment block. The output depends only on the inputs, so an unchanged
-// model renders byte-identically.
-func Render(st *store.Store, view *yamlpy.Map, hostNames map[string]bool) ([]byte, error) {
+// comment block. server is where this server is enrolled
+// (pwchange.LocalServer): the one scope a user who must change the password
+// keeps. The output depends only on the inputs, so an unchanged model renders
+// byte-identically.
+func Render(st *store.Store, view *yamlpy.Map, hostNames map[string]bool, server pwchange.Server) ([]byte, error) {
 	if errs := store.Validate(st.Doc()); len(errs) > 0 {
 		return nil, &rendered.Error{Msg: "cannot render an invalid model:\n  - " + strings.Join(errs, "\n  - ")}
 	}
@@ -361,7 +394,7 @@ func Render(st *store.Store, view *yamlpy.Map, hostNames map[string]bool) ([]byt
 	// (docs/plans/0.2.5-plan.md D123); the store is not changed.
 	holds := conf.HoldsOf(view)
 	whole := m
-	m = Carved(m, view)
+	m = Carved(m, view, server)
 	var w strings.Builder
 
 	w.WriteString(Header)
@@ -379,7 +412,8 @@ func Render(st *store.Store, view *yamlpy.Map, hostNames map[string]bool) ([]byt
 		"\n# --- Per-user bcrypt authenticators ---\n" +
 		"# A disabled account and the 'root' accounting sink carry a well-formed\n" +
 		"# hash that no password matches.\n")
-	for _, u := range m.Users {
+	anchors := userAnchors(m.Users)
+	for i, u := range m.Users {
 		h := RenderedHash(u)
 		// All-digit hex would read as a number; nothing else needs quotes.
 		if isDigits(h) {
@@ -388,7 +422,7 @@ func Render(st *store.Store, view *yamlpy.Map, hostNames map[string]bool) ([]byt
 		fmt.Fprintf(&w, "\nbcrypt_%s: &bcrypt_%s\n"+
 			"  type: *authenticator_type_bcrypt\n"+
 			"  options:\n"+
-			"    hash: %s\n", u.Name, u.Name, h)
+			"    hash: %s\n", anchors[i], anchors[i], h)
 	}
 
 	w.WriteString("\n# --- Services ---\n" +
@@ -482,9 +516,12 @@ func Render(st *store.Store, view *yamlpy.Map, hostNames map[string]bool) ([]byt
 	}
 
 	w.WriteString("\n# --- Users ---\n")
+	for _, l := range carvedLines(whole, view, server) {
+		w.WriteString(l + "\n")
+	}
 	if len(m.Users) > 0 {
 		w.WriteString("users:\n")
-		for _, u := range m.Users {
+		for i, u := range m.Users {
 			var mine []string
 			for _, s := range u.Scopes {
 				if sc := m.Scope(s); sc != nil && sc.ServedBy(Protocol) {
@@ -497,7 +534,7 @@ func Render(st *store.Store, view *yamlpy.Map, hostNames map[string]bool) ([]byt
 				"    groups: [*%s]\n"+
 				"    authenticator: *bcrypt_%s\n"+
 				"    accounter: *file_accounter\n",
-				u.Name, YName(u.Name), strings.Join(mine, ", "), GroupKey(u.Group), u.Name)
+				u.Name, YName(u.Name), strings.Join(mine, ", "), GroupKey(u.Group), anchors[i])
 		}
 	} else {
 		w.WriteString("users: []\n")
@@ -585,12 +622,55 @@ func Render(st *store.Store, view *yamlpy.Map, hostNames map[string]bool) ([]byt
 }
 
 // Carved is the model without the addresses of the holds of the merged
-// view (model.WithoutAddresses): the model the renderer writes and the
-// read-back compares the file with.
-func Carved(m *model.Model, view *yamlpy.Map) *model.Model {
+// view (model.WithoutAddresses), without the members of a locked group in
+// the scope that locks them, and with a user who must change the password
+// in this server's own scope only (pwchange.Carve): the model the renderer
+// writes and the read-back compares the file with.
+func Carved(m *model.Model, view *yamlpy.Map, server pwchange.Server) *model.Model {
 	// the members of a locked group are taken out of the scope that locks it
 	// (0.2.19, the emergency lockdown)
-	return m.WithoutAddresses(conf.HeldAddresses(view)).WithoutMembers(conf.LockedGroups(view))
+	m = m.WithoutAddresses(conf.HeldAddresses(view)).WithoutMembers(conf.LockedGroups(view))
+	// a user who must change the password is in no scope but this server's
+	// own (0.2.20): no device authenticates them until they have changed it
+	return pwchange.Carve(m, view, Protocol, server)
+}
+
+// carvedLines are the comments of the users section naming the users cut out
+// of scopes they have in the store: by an emergency lockdown (the members of a
+// locked group) and by a required password change. The import of the file
+// reads them (store.CarvedUsers): it holds neither the scopes nor the
+// requirement. A user counts when the scopes this file shows for the user
+// changed, so one cut only in scopes of the other protocol is not named.
+func carvedLines(m *model.Model, view *yamlpy.Map, server pwchange.Server) []string {
+	base := m.WithoutAddresses(conf.HeldAddresses(view))
+	locked := base.WithoutMembers(conf.LockedGroups(view))
+	final := pwchange.Carve(locked, view, Protocol, server)
+	shown := func(mm *model.Model, u *model.User) []string {
+		var out []string
+		for _, s := range u.Scopes {
+			if sc := mm.Scope(s); sc != nil && sc.ServedBy(Protocol) {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	diff := func(a, b *model.Model) []string {
+		var out []string
+		for _, u := range a.Users {
+			if nu := b.User(u.Name); nu != nil && !slices.Equal(shown(a, u), shown(b, nu)) {
+				out = append(out, u.Name)
+			}
+		}
+		return out
+	}
+	var lines []string
+	if u := diff(base, locked); len(u) > 0 {
+		lines = append(lines, store.CarvedLine(store.CarvedLockdown, Protocol, u))
+	}
+	if u := diff(locked, final); len(u) > 0 {
+		lines = append(lines, store.CarvedLine(store.CarvedPasswordChange, Protocol, u))
+	}
+	return lines
 }
 
 // holdComment is the comment block of the secret providers naming each

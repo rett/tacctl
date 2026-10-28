@@ -286,7 +286,10 @@ func managedJuniper(req Request, d Data) []Section {
 	}
 	// Step 7: the account lines are rendered commented, to be completed
 	// with a hash; the statement is the line as it is once pasted.
-	s.add(sectionBreakGlass, uncommented(juniperBreakGlass(BreakGlassFor(req, d)), "# ", "# set system login user "))
+	// Root's two statements are among them (the password under system
+	// root-authentication and the ssh root-login).
+	s.add(sectionBreakGlass, uncommented(juniperBreakGlass(BreakGlassFor(req, d)), "# ",
+		"# set system login user ", "# set "+JunosRootPassword+" ", "# set "+JunosRootLogin))
 	return s.out
 }
 
@@ -324,13 +327,14 @@ func junosStatements(block string) []string {
 // a trap group (its name is the community its traps are sent with, 0.2.7:
 // only a block has one), an SNMPv3 user's authentication and privacy
 // passwords, an NTP authentication key's value (the system block, 0.2.7), a
-// local user's hash.
+// local user's hash and root's.
 var reJuniperSecret = regexp.MustCompile(`^set (` +
 	`system (tacplus|radius)-server \S+ secret ` +
 	`|snmp (community|trap-group) ` +
 	`|snmp v3 usm local-engine user \S+ (authentication-\S+ authentication|privacy-\S+ privacy)-password ` +
 	`|system ntp authentication-key \S+ (type \S+ )?value ` +
-	`|system login user \S+ class \S+ authentication encrypted-password )`)
+	`|system login user \S+ class \S+ authentication encrypted-password ` +
+	`|system root-authentication encrypted-password )`)
 
 func juniperSecret(line string) bool { return reJuniperSecret.MatchString(line) }
 
@@ -508,11 +512,14 @@ func ciscoSecret(line string) bool { return reCiscoSecret.MatchString(line) }
 // uncommented are the lines of block that begin with prefix, without the
 // comment leader: the statements a builder renders commented out, to be
 // completed and uncommented by hand (the break-glass accounts).
-func uncommented(block, leader, prefix string) []string {
+func uncommented(block, leader string, prefixes ...string) []string {
 	var out []string
 	for _, l := range strings.Split(block, "\n") {
-		if strings.HasPrefix(l, prefix) {
-			out = append(out, strings.TrimPrefix(l, leader))
+		for _, prefix := range prefixes {
+			if strings.HasPrefix(l, prefix) {
+				out = append(out, strings.TrimPrefix(l, leader))
+				break
+			}
 		}
 	}
 	return out

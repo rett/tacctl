@@ -77,7 +77,14 @@ func TestConfigVerbsAllNative(t *testing.T) {
 			t.Errorf("config %s is missing", w)
 		}
 	}
-	for _, args := range [][]string{{"config"}, {"config", "help"}, {"config", "-h"}, {"config", "--help"}, {"config", "bogus", "x"}} {
+	// -h and --help list the sub-commands as '?' does (help_request.go).
+	for _, args := range [][]string{{"config", "-h"}, {"config", "--help"}} {
+		sb := newSandbox(t, true)
+		if out := plain(sb.run("", args)); !strings.HasPrefix(out, "Possible completions:\n") || sb.code != 0 {
+			t.Errorf("%q: exit %d %q", args, sb.code, out)
+		}
+	}
+	for _, args := range [][]string{{"config"}, {"config", "help"}, {"config", "bogus", "x"}} {
 		sb := newSandbox(t, true)
 		// (stderr has preflight's warning that tacquito.yaml is missing)
 		if out := sb.run("", args); out != configUsage() || sb.code != 1 || strings.Contains(sb.err.String(), "[ERROR]") {

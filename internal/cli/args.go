@@ -40,6 +40,15 @@ type Flag struct {
 	// Secret: the value is a secret or a password hash. The audit lines
 	// write it as <redacted> (audit.go).
 	Secret bool
+	// Arg, Desc and Long describe the flag for the lists and the man page,
+	// in place of the text recovered from the verb's usage block (flagHelp):
+	// Arg is the value as the lists show it ('<scope>', '[<name>]',
+	// 'cisco|juniper|wti'); Desc the one line of the flag (an imperative
+	// phrase of at most 72 characters, with no list of the verbs it
+	// applies to: each verb has its own Flag); Long the man page's fuller
+	// text, where Desc is not enough. All three are empty until the flag is
+	// described here; the usage block is then the fallback.
+	Arg, Desc, Long string
 }
 
 // The value kinds of Flag.Kind and Spec.Args: completion offers the live
@@ -87,6 +96,35 @@ func Cond(word, a, b string) string { return "?" + word + ":" + a + ":" + b }
 // Either is the kind of a positional that completion takes from each of
 // kinds, in order ('notice list|<device>' offers the word and the names).
 func Either(kinds ...string) string { return strings.Join(kinds, "+") }
+
+// resolveKind is the kind a positional has, given the positional words typed
+// before it: After and Cond are decided by them, and may nest in their last
+// place ('console system-shell': a file after path, a user after user, else
+// enable|disable).
+func resolveKind(kind string, words []string) string {
+	for {
+		if rest, ok := strings.CutPrefix(kind, "@"); ok {
+			word, k, _ := strings.Cut(rest, ":")
+			kind = ""
+			if slices.Contains(words, word) {
+				kind = k
+			}
+			continue
+		}
+		if rest, ok := strings.CutPrefix(kind, "?"); ok {
+			parts := strings.SplitN(rest, ":", 3)
+			kind = ""
+			if len(parts) == 3 {
+				kind = parts[2]
+				if slices.Contains(words, parts[0]) {
+					kind = parts[1]
+				}
+			}
+			continue
+		}
+		return kind
+	}
+}
 
 // offeredAfter reports whether completion offers the flag, given the
 // positional words typed so far.

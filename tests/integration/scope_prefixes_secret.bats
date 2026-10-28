@@ -180,10 +180,15 @@ setup() {
 }
 
 @test "scopes prefixes help: lists remove --all, not clear" {
-    run "$TACCTL_BIN_SCRIPT" scope prefixes lab --help
+    run "$TACCTL_BIN_SCRIPT" scope prefixes lab help
     assert_success
     assert_output --partial "tacctl scope prefixes lab remove --all [--force]"
     refute_output --partial "lab clear"
+    # --help is the usage of '?': the forms of the verb, by placeholder.
+    run "$TACCTL_BIN_SCRIPT" scope prefixes lab --help
+    assert_success
+    assert_line --regexp "^  prefixes <scope> remove --all \[--force\] +Remove all, which removes the scope "
+    refute_output --partial "clear"
 }
 
 @test "scopes prefixes remove --all: --force removes the scope and strips it from its users" {

@@ -379,11 +379,9 @@ func (c *collect) scan() {
 		}
 	}
 	for _, r := range c.rows {
-		keys, err := inv.scanDevice(r.Address, devssh.DefaultPort, false)
-		if errors.Is(err, devreg.ErrNoAnswer) && inv.ctx.Err() == nil {
-			if k2, err2 := inv.scanDevice(r.Address, devssh.DefaultPort, true); err2 == nil && len(k2) > 0 {
-				keys, err, r.Legacy = k2, nil, true
-			}
+		keys, legacy, err := inv.scanLearningLegacy(r.Address, devssh.DefaultPort)
+		if legacy {
+			r.Legacy = true
 		}
 		switch {
 		case inv.ctx.Err() != nil:

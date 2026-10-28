@@ -130,7 +130,8 @@ config linux remove-script [--output <file>]
 
 config linux uid [<user> [<uid>]]
 
-    Show or change the UID a user gets on every host
+    Show or change the UID a user gets on every host; refused for a user whose
+    name has a period (no Linux account, so the number would never be used)
 
 config linux uid-range [<min>-<max>]
 

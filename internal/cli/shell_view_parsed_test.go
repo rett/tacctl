@@ -56,7 +56,7 @@ func TestListsFollowTheParsedSudoAnswer(t *testing.T) {
 		t.Errorf("space after 'device che': %q", got)
 	}
 	// '?' after a verb typed by hand names the tier it needs.
-	explain, _ := inv.shellExplain(root)([]string{"device", "add"})
+	explain, _ := inv.plainExplain(root)([]string{"device", "add"})
 	if !strings.Contains(explain, "Needs the engineer tier.") {
 		t.Errorf("? after 'device add' for the gate's operator:\n%s", explain)
 	}
@@ -82,7 +82,7 @@ func TestListsFollowTheParsedSudoAnswer(t *testing.T) {
 		t.Errorf("space after 'us' for tier=none: %q", got)
 	}
 	_ = fixed
-	explain, _ = inv.shellExplain(root)([]string{"user", "list"})
+	explain, _ = inv.plainExplain(root)([]string{"user", "list"})
 	if strings.Contains(explain, "Next:") && !strings.Contains(explain, "Needs") {
 		t.Errorf("? after 'user list' for tier=none offers a way in:\n%s", explain)
 	}

@@ -118,10 +118,13 @@ func TestHostFamilyUsage(t *testing.T) {
 	hs := newHostSandbox(t)
 	hs.run(nil, "host")
 	hs.expect(0, "Host Commands", "")
-	for _, w := range []string{"help", "-h", "bogus"} {
+	for _, w := range []string{"help", "bogus"} {
 		hs.run(nil, "host", w)
 		hs.expect(1, "Usage: tacctl host <subcommand>", "[ERROR] Unknown subcommand: '"+w+"'")
 	}
+	// -h lists the sub-commands as '?' does (help_request.go).
+	hs.run(nil, "host", "-h")
+	hs.expect(0, "Possible completions:", "")
 	hs.run(nil, "config", "linux")
 	hs.expect(0, "Linux host TACACS+ or RADIUS login", "")
 	hs.run(nil, "config", "linux", "bogus")

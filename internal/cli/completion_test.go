@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"reflect"
 	"slices"
 	"strings"
@@ -18,7 +19,17 @@ func completeWords(t *testing.T, live map[string]string, words ...string) ([]str
 	t.Helper()
 	h := newHarness(t, append([]string{"__completeNoDesc"}, words...))
 	h.runner.OnFunc([]string{"sudo"}, func(c execx.Cmd) (execx.Result, error) {
-		return execx.Result{Stdout: []byte(live[strings.Join(c.Args[3:], " ")])}, nil
+		key := strings.Join(c.Args[3:], " ")
+		// The scripts ask a kind with descriptions for its names with
+		// --desc-short ('name<TAB>vendor scope'); live holds the names.
+		if kind, ok := strings.CutSuffix(key, " --desc-short"); ok {
+			var lines []string
+			for _, n := range strings.Fields(live[kind]) {
+				lines = append(lines, n+"\tcisco lab")
+			}
+			return execx.Result{Stdout: []byte(strings.Join(lines, "\n") + "\n")}, nil
+		}
+		return execx.Result{Stdout: []byte(live[key])}, nil
 	})
 	if err := h.run(); err != nil {
 		t.Fatal(err)
@@ -88,6 +99,12 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"scope", "vendor-attrs", "lab", ""}, []string{"show", "enable", "disable"}},
 		{[]string{"scope", "vendor-attrs", "lab", "enable", ""}, []string{"cisco", "juniper", "wti"}},
 		{[]string{"scope", "vendor-attrs", "lab", "disable", "w"}, []string{"wti"}},
+		{[]string{"scope", "mgmt-acl", "lab", ""}, []string{"list", "add", "remove", "clear", "cisco-name", "juniper-name", "mode"}},
+		{[]string{"scope", "mgmt-acl", "lab", "mode", ""}, []string{"ssh-only", "strict"}},
+		{[]string{"scope", "mgmt-acl", "lab", "mode", "s"}, []string{"ssh-only", "strict"}},
+		{[]string{"scope", "mgmt-acl", "lab", "mod"}, []string{"mode"}},
+		{[]string{"scope", "mgmt-acl", "lab", "add", ""}, nil},
+		{[]string{"scope", "mgmt-acl", "lab", "juniper-name", ""}, nil},
 		{[]string{"scope", "devices", "lab", ""}, []string{"list", "set", "unset"}},
 		{[]string{"scope", "devices", "lab", "set", "10.1.2.3", ""}, []string{"cisco", "juniper", "wti"}},
 		{[]string{"scope", "devices", "lab", "unset", "10.1.2.3", ""}, nil},
@@ -145,7 +162,11 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"user", "scope", "alice", "add", "lab,"}, []string{"lab,prod"}},
 		{[]string{"user", "show", ""}, []string{"alice", "bob"}},
 		{[]string{"user", "add", "carol", ""}, []string{"ops", "admins"}},
-		{[]string{"user", "add", "carol", "ops", ""}, []string{"--hash", "--scopes"}},
+		{[]string{"user", "add", "carol", "ops", ""}, []string{"--hash", "--scopes", "--no-change-required"}},
+		{[]string{"user", "passwd", "alice", ""}, []string{"--hash", "--no-change-required"}},
+		{[]string{"user", "require-password-change", ""}, []string{"alice", "bob", "on", "off", "--all"}},
+		{[]string{"user", "require-password-change", "bob", ""}, []string{"on", "off", "--all"}},
+		{[]string{"user", "require-password-change", "--all", ""}, []string{"alice", "bob", "on", "off"}},
 		{[]string{"user", "move", "alice", ""}, []string{"ops", "admins"}},
 		{[]string{"group", "commands", "default", "ops", ""}, []string{"permit", "deny"}},
 		{[]string{"group", "commands", "add", "ops", "x", "--action", ""}, []string{"permit", "deny"}},
@@ -235,9 +256,18 @@ func TestCompleteDescribesFlags(t *testing.T) {
 		}
 		got := strings.Split(strings.TrimSuffix(h.out.String(), "\n"), "\n")
 		got = slices.DeleteFunc(got[:len(got)-1], func(s string) bool { return strings.HasPrefix(s, "Completion ended") })
+		// A description over summaryMax is cut for the menus of zsh and fish.
+		want = slices.Clone(want)
+		for i := range want {
+			want[i] = strings.TrimSuffix(capDescriptions(want[i]+"\n", summaryMax), "\n")
+		}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("%q: %q, want %q", line, got, want)
 		}
+	}
+	if got := capDescriptions("--restore-point\t<fs>: (IOS and IOS-XE only) A restore point block before the plan: a copy of the running configuration\nok\tshort\n", summaryMax); got !=
+		"--restore-point\t<fs>: (IOS and IOS-XE only) A restore point block before the plan: a...\nok\tshort\n" {
+		t.Errorf("cut: %q", got)
 	}
 	// Every flag of every verb is described.
 	inv, root, _ := shellTestInv(t)
@@ -301,7 +331,7 @@ func TestCompleteOffersNoHiddenOrRemovedWords(t *testing.T) {
 		got, _ := completeWords(t, liveNames, words...)
 		for _, w := range got {
 			switch w {
-			case "set", "_phase", "_completion-names", "completion", "help", "none":
+			case "set", "_phase", "_completion-names", "help", "none":
 				t.Errorf("%q offers %q", words, w)
 			}
 			if w == "clear" && words[0] != "config" {
@@ -336,6 +366,72 @@ func TestCompletionCommand(t *testing.T) {
 		if code := exitCode(h.run(), h.app.Out); code != 1 || h.out.Len() != 0 || !strings.Contains(h.err.String(), "Usage: tacctl completion bash|zsh|fish") {
 			t.Errorf("%q: %d %q %q", args, code, h.out.String(), h.err.String())
 		}
+	}
+}
+
+// The bash script asks for the words without their descriptions, so a second
+// Tab lists the words alone in columns; the zsh and fish scripts keep asking
+// for them, and every description is short.
+func TestBashScriptAsksForNoDescriptions(t *testing.T) {
+	for shell, want := range map[string]struct{ has, not string }{
+		"bash": {"__completeNoDesc", " __complete "},
+		"zsh":  {" __complete ", "__completeNoDesc"},
+		"fish": {" __complete ", "__completeNoDesc"},
+	} {
+		var b bytes.Buffer
+		if err := GenCompletion(&b, shell); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(b.String(), want.has) || strings.Contains(b.String(), want.not) {
+			t.Errorf("%s: the script asks for %q and not for %q:\n%s", shell, want.has, want.not, b.String())
+		}
+	}
+	// What the bash script asks: words, with no description or tab.
+	for _, words := range [][]string{{"user", ""}, {"device", "config", ""}, {"user", "add", "alice", "-"}} {
+		h := newHarness(t, append([]string{"__completeNoDesc"}, words...))
+		if err := h.run(); err != nil {
+			t.Fatal(err)
+		}
+		if out := h.out.String(); strings.Contains(out, "\t") || !strings.Contains(out, "\n") {
+			t.Errorf("__completeNoDesc %v: %q", words, out)
+		}
+	}
+	// The zsh and fish menus keep their descriptions, each at most
+	// summaryMax characters: the answer of every command's parent and every
+	// leaf's flags, over the whole tree.
+	_, root, _ := shellTestInv(t)
+	var all [][]string
+	treeVerbs(root, nil, &all)
+	described, long := 0, 0
+	asked := map[string]bool{}
+	for _, p := range all {
+		for _, q := range [][]string{p[:len(p)-1], p} {
+			for _, partial := range []string{"", "-"} {
+				key := strings.Join(q, " ") + "|" + partial
+				if asked[key] {
+					continue
+				}
+				asked[key] = true
+				h := newHarness(t, append(append([]string{"__complete"}, q...), partial))
+				if err := h.run(); err != nil {
+					t.Fatal(err)
+				}
+				for _, l := range strings.Split(h.out.String(), "\n") {
+					if _, d, ok := strings.Cut(l, "\t"); ok {
+						described++
+						if n := len([]rune(d)); n > summaryMax {
+							t.Errorf("__complete %v %q: a description of %d characters: %q", q, partial, n, d)
+						}
+						if strings.HasSuffix(d, "...") {
+							long++
+						}
+					}
+				}
+			}
+		}
+	}
+	if described < 500 || long == 0 {
+		t.Errorf("%d descriptions, %d cut: the walk found too little", described, long)
 	}
 }
 
@@ -432,7 +528,7 @@ func TestCompleteThisReleasesWords(t *testing.T) {
 		{[]string{"scope", "secret", "lab", "set", "--"}, []string{"--stdin"}, false},
 		{[]string{"user", "add", "x", "--"}, []string{"--hash"}, false},
 		{[]string{"user", "passwd", "x", "--"}, []string{"--hash"}, false},
-		{[]string{"rollback", ""}, []string{"0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3"}, true},
+		{[]string{"rollback", ""}, []string{"0.2.19", "0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3"}, true},
 	}
 	for _, c := range cases {
 		got, _ := completeWords(t, liveNames, c.words...)
@@ -446,6 +542,49 @@ func TestCompleteThisReleasesWords(t *testing.T) {
 			if !slices.Contains(got, w) {
 				t.Errorf("%q: %q lacks %q", c.words, got, w)
 			}
+		}
+	}
+}
+
+// Completion of 'console system-shell': the tiers, 'user' and 'path'; then a
+// file after path, the users after user, else enable|disable; after a user
+// enable|disable|clear. After and Cond nest for it.
+func TestConsoleSystemShellCompletion(t *testing.T) {
+	for _, c := range []struct {
+		words, want, not []string
+	}{
+		{[]string{"console", "system-shell", ""}, []string{"readonly", "operator", "engineer", "superuser", "user", "path"}, []string{"enable"}},
+		{[]string{"console", "system-shell", "operator", ""}, []string{"enable", "disable"}, []string{"alice", "clear"}},
+		{[]string{"console", "system-shell", "user", ""}, []string{"alice", "bob"}, []string{"enable", "readonly"}},
+		{[]string{"console", "system-shell", "user", "bob", ""}, []string{"enable", "disable", "clear"}, []string{"alice"}},
+		{[]string{"console", "system-shell", "path", ""}, nil, []string{"enable", "alice", "readonly"}},
+	} {
+		got, _ := completeWords(t, liveNames, c.words...)
+		for _, w := range c.want {
+			if !slices.Contains(got, w) {
+				t.Errorf("%q: %q lacks %q", c.words, got, w)
+			}
+		}
+		for _, w := range c.not {
+			if slices.Contains(got, w) {
+				t.Errorf("%q: %q offers %q", c.words, got, w)
+			}
+		}
+	}
+	for _, k := range []struct {
+		kind  string
+		words []string
+		want  string
+	}{
+		{Cond("path", KindFile, Cond("user", KindUsers, "enable|disable")), []string{"path"}, KindFile},
+		{Cond("path", KindFile, Cond("user", KindUsers, "enable|disable")), []string{"user"}, KindUsers},
+		{Cond("path", KindFile, Cond("user", KindUsers, "enable|disable")), []string{"operator"}, "enable|disable"},
+		{After("user", "enable|disable|clear"), []string{"user", "bob"}, "enable|disable|clear"},
+		{After("user", "enable|disable|clear"), []string{"operator"}, ""},
+		{"readonly|operator", []string{"x"}, "readonly|operator"},
+	} {
+		if got := resolveKind(k.kind, k.words); got != k.want {
+			t.Errorf("resolveKind(%q, %q) = %q, want %q", k.kind, k.words, got, k.want)
 		}
 	}
 }

@@ -106,13 +106,17 @@ teardown() { rm -rf "${XDG_RUNTIME_DIR:-/nonexistent}"; }
     assert_failure
 }
 
-@test "_console-policy: password_cache=yes pc_idle= pc_max= only for a tier that has it" {
+@test "_console-policy: password_cache= pc_allowed=yes pc_idle= pc_max= only for a tier that is allowed; yes once the user turned it on" {
     run "$TACCTL_BIN_SCRIPT" console password-cache tiers operator
     run "$TACCTL_BIN_SCRIPT" console password-cache idle 20
     stub_cmd id 'echo "$3 tac-users"'
     SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" _console-policy
     assert_success
-    assert_output --regexp ' password_cache=yes pc_idle=20 pc_max=8$'
+    assert_output --regexp ' password_cache=no pc_allowed=yes pc_idle=20 pc_max=8$'
+    SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" console password-cache on
+    assert_success
+    SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" _console-policy
+    assert_output --regexp ' password_cache=yes pc_allowed=yes pc_idle=20 pc_max=8$'
     SUDO_USER=carol run "$TACCTL_BIN_SCRIPT" _console-policy
     assert_success
     refute_output --partial "password_cache"
@@ -120,8 +124,57 @@ teardown() { rm -rf "${XDG_RUNTIME_DIR:-/nonexistent}"; }
     refute_output --partial "password_cache"
 }
 
+@test "console password-cache on|off: a user's own choice within the tier's permission; only a superuser sees and clears the others'" {
+    stub_cmd id 'echo "$3 tac-users"'
+    run "$TACCTL_BIN_SCRIPT" console password-cache tiers operator,superuser
+    # The state: the permission and the user's own setting (off until turned on).
+    SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" console password-cache
+    assert_success
+    assert_output --partial "your tier (operator): allowed"
+    assert_output --partial "your setting: off"
+    SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" console password-cache on
+    assert_success
+    assert_output --partial "The password cache is on for you"
+    run grep -c '^  password_cache_users: {bob: true}$' "$CONSOLE"
+    assert_output "1"
+    stub_called 'logger -t tacctl -p auth.(info|notice) console set key=password-cache item=user:bob from=off to=on by=bob'
+    # Nobody sets another user's value: the words take no name, and the
+    # superuser's forms are refused for an operator.
+    SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" console password-cache on alice
+    assert_failure 1
+    SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" console password-cache user bob clear
+    assert_failure 1
+    assert_output --partial "'tacctl console password-cache' is not permitted for the operator tier."
+    SUDO_USER=carol run "$TACCTL_BIN_SCRIPT" console password-cache on
+    assert_failure 1
+    assert_output --partial "is not permitted for the readonly tier"
+    run grep -c '^  password_cache_users: {bob: true}$' "$CONSOLE"
+    assert_output "1"
+    # The superuser lists, and clears.
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" console password-cache on
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" console password-cache user
+    assert_output $'alice: on (superuser)\nbob: on (operator)'
+    run "$TACCTL_BIN_SCRIPT" console show
+    plain
+    assert_output --partial "password-cache users: alice, bob (turned it on for themselves)"
+    run "$TACCTL_BIN_SCRIPT" console password-cache user bob clear
+    assert_success
+    SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" _console-policy
+    assert_output --partial " password_cache=no pc_allowed=yes "
+    # Off, and a tier that is not allowed is told so with nothing saved.
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" console password-cache off
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" console password-cache tiers superuser
+    local before; before="$(cat "$CONSOLE")"
+    SUDO_USER=bob run "$TACCTL_BIN_SCRIPT" console password-cache on
+    assert_failure 1
+    assert_output --partial "The password cache is not allowed for the operator tier; a superuser allows it with: tacctl console password-cache tiers <tiers>. Nothing was changed."
+    [[ "$(cat "$CONSOLE")" == "$before" ]]
+}
+
 @test "console on a terminal, cache on: the lines that use it get TACCTL_ASKPASS in the sudo environment, never in its arguments" {
-    printf ' password_cache=yes pc_idle=1 pc_max=1' > "${BATS_TEST_TMPDIR}/policy.extra"
+    printf ' password_cache=yes pc_allowed=yes pc_idle=1 pc_max=1' > "${BATS_TEST_TMPDIR}/policy.extra"
     PTY_INPUT='ssh core-sw1\nuser list\ndevice config pull --all\nconsole forget\nexit\n'
     on_pty "$CONSOLE_BIN"
     assert_success
