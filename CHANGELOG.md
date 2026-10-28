@@ -243,6 +243,31 @@ current behaviour; this file is where history lives.
     renders no filter in either mode. The strict filter has not yet been
     checked on a Junos device.
 
+17. **`root` is a break-glass account of a scope's Junos devices.** Many Junos
+    devices keep `root` as their local access, which Junos holds under `system
+    root-authentication`, not under `system login user`. `tacctl scope
+    breakglass <scope> add root` is accepted (it was refused as a system
+    account; `remote` still is): the role is always `admin` (`--role operator`
+    and `--role readonly` are refused, and `config validate` refuses a
+    `root:operator` entry written by hand), and only the lower-case spelling is
+    the account. `scope breakglass list` and `scope show` print it with a note
+    that it is the Junos system account. The Junos walkthrough renders two
+    statements in the break-glass step, commented out and with the usual
+    placeholder rule (tacctl stores and generates no password or hash):
+    `set system root-authentication encrypted-password '<HASH>'` and `set
+    system services ssh root-login allow`, with a comment that Junos refuses
+    root over ssh by default, that allowing it is a security trade-off (root
+    can then log in over ssh, so keep the device behind the management
+    filter), and nothing for a user named `root` under `system login user`.
+    `root (admin)` is on the `Unfilled break-glass credentials` line. Cisco
+    and WTI have no such account: their walkthroughs render nothing for it and
+    say so in one line, leave it off the `Unfilled` line, and a scope whose
+    only entry is `root` still gets their no-break-glass notice. `config
+    validate` counts `root` for Junos devices only: a scope with `root` alone
+    is warned about once per scope, naming the vendors of its registered
+    Cisco and WTI devices. `breakglass hold` and its documentation list `root`
+    among the accounts it makes usable on a Junos device.
+
 ## 0.2.19 (2026-10-25)
 
 1. **A mixed Junos virtual chassis passes the pre-flight.** `device config

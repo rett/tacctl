@@ -291,8 +291,10 @@ scope breakglass <name> remove <user>
     Per-scope break-glass local users of the device walkthroughs: names and roles (`admin` by
     default, `operator`, `readonly`) only. No password or hash is ever stored
     (devices/break-glass.md, "Break-glass local users"). They are the accounts a `breakglass hold`
-    makes usable (devices/break-glass.md, "Holding break-glass"). Superuser only. Shown by `scope
-    show`.
+    makes usable (devices/break-glass.md, "Holding break-glass"). `root` is the Junos system
+    account: accepted for a scope's Junos devices (always `admin`, `--role operator|readonly` is
+    refused), rendered by the Junos walkthrough only (devices/break-glass.md, "Junos root").
+    Superuser only. Shown by `scope show`.
 ```
 
 **Words at the prompt.** In the shell and the console, `?` after `scope block

@@ -80,7 +80,10 @@ func TestScopeBreakGlassRefusals(t *testing.T) {
 		{[]string{"scope", "breakglass", "lab", "add", "has space"}, "is not a device-safe user name"},
 		{[]string{"scope", "breakglass", "lab", "add", "a;b"}, "is not a device-safe user name"},
 		{[]string{"scope", "breakglass", "lab", "add", strings.Repeat("n", 33)}, "is not a device-safe user name"},
-		{[]string{"scope", "breakglass", "lab", "add", "root"}, "'root' is reserved"},
+		// 'root' itself is a Junos break-glass entry (TestScopeBreakGlassRoot);
+		// only its role is checked
+		{[]string{"scope", "breakglass", "lab", "add", "root", "--role", "operator"}, "'root' is always an admin"},
+		{[]string{"scope", "breakglass", "lab", "add", "root", "--role", "readonly"}, "'root' is always an admin"},
 		{[]string{"scope", "breakglass", "lab", "add", "tacquito"}, "'tacquito' is reserved"},
 		// The Junos template account of every remote user without a
 		// local-user-name; case does not matter.
@@ -112,9 +115,50 @@ func TestScopeBreakGlassRefusals(t *testing.T) {
 	sb.run("", []string{"scope", "breakglass", "prod-inner", "add", "one-more"})
 	sb.expect(1, "", "already has the most break-glass users it may record (16)")
 	// Nothing was written for the refusals.
-	if o := sb.overrides(); strings.Contains(o, "9lives") || strings.Contains(o, "root") || strings.Contains(o, "boss") {
+	if o := sb.overrides(); strings.Contains(o, "9lives") || strings.Contains(o, "root:") || strings.Contains(o, "boss") {
 		t.Errorf("tacctl.yaml:\n%s", o)
 	}
+}
+
+// 'root' is a break-glass entry of a scope's Junos devices: accepted with the
+// admin role only, listed and shown with a note, refused in other spellings,
+// and 'remote' stays refused.
+func TestScopeBreakGlassRoot(t *testing.T) {
+	sb := newSandbox(t, true)
+	sb.run("", []string{"scope", "breakglass", "lab", "add", "root"})
+	sb.expect(0, "Break-glass user 'root' (admin) recorded for scope 'lab'.", "")
+	if out := plain(sb.out.String()); !strings.Contains(out, "'root' is the Junos system account") ||
+		!strings.Contains(out, "system root-authentication") || !strings.Contains(out, "ssh root-login allow") {
+		t.Errorf("add root says nothing of the Junos account:\n%s", out)
+	}
+	sb.run("", []string{"scope", "breakglass", "lab", "add", "lab-ops", "--role", "operator"})
+	if o := sb.overrides(); !strings.Contains(o, "- root:admin\n") {
+		t.Errorf("tacctl.yaml:\n%s", o)
+	}
+	out := plain(sb.run("", []string{"scope", "breakglass", "lab", "list"}))
+	if !strings.Contains(out, "    root  (admin)  the Junos system account (Junos devices only)\n") ||
+		!strings.Contains(out, "    lab-ops  (operator)\n") {
+		t.Errorf("list:\n%s", out)
+	}
+	if out := plain(sb.run("", []string{"scope", "show", "lab"})); !strings.Contains(out, "Break-glass:    root (admin, the Junos system account), lab-ops (operator)\n") {
+		t.Errorf("scope show lab:\n%s", out)
+	}
+	// twice, other spellings and 'remote'
+	sb.run("", []string{"scope", "breakglass", "lab", "add", "root"})
+	sb.expect(1, "", "already has break-glass user 'root' (admin)")
+	sb.run("", []string{"scope", "breakglass", "lab", "add", "Root"})
+	sb.expect(1, "", "'Root' is reserved")
+	sb.run("", []string{"scope", "breakglass", "lab", "add", "remote"})
+	sb.expect(1, "", "'remote' is a Junos system account")
+	// an explicit admin is the default
+	sb.run("", []string{"scope", "breakglass", "dmz", "add", "root", "--role", "admin"})
+	sb.expect(0, "Break-glass user 'root' (admin) recorded for scope 'dmz'.", "")
+	sb.run("", []string{"scope", "breakglass", "dmz", "remove", "root"})
+	sb.expect(0, "Break-glass user 'root' removed from scope 'dmz'.", "")
+	// a hand edit with another role is an error of tacctl.yaml
+	sb.write("state/tacctl.yaml", "breakglass_scope:\n  lab:\n    users: [root:operator]\n", 0o600)
+	sb.run("", []string{"config", "validate"})
+	sb.expect(1, "breakglass_scope.lab.users: element 0: 'root' is the Junos superuser account and is always admin", "")
 }
 
 // The record follows 'scope rename' and goes with 'scope remove'; a scope
@@ -217,6 +261,48 @@ func TestScopeBreakGlassValidateWarns(t *testing.T) {
 	sb.write("state/tacctl.yaml", "breakglass_scope:\n  lab:\n    users: [lab-admin:boss]\n", 0o600)
 	sb.run("", []string{"config", "validate"})
 	sb.expect(1, "breakglass_scope.lab.users: element 0: the role of 'lab-admin' must be one of", "")
+}
+
+// A scope whose only break-glass entry is 'root' (a Junos account) is a
+// lockout risk for its Cisco and WTI devices: 'config validate' warns, per
+// scope and naming the vendors; Junos devices only, or none, give no warning,
+// and a named user next to 'root' ends it.
+func TestScopeBreakGlassValidateRootOnly(t *testing.T) {
+	sb := newSandbox(t, true)
+	for _, d := range [][]string{
+		{"jsw1", "192.168.1.10", "juniper"}, {"sw1", "192.168.1.11", "cisco"}, {"wti1", "192.168.1.12", "wti"}, {"jsw2", "203.0.113.5", "juniper"},
+	} {
+		sb.run("", []string{"device", "add", d[0], d[1], "--vendor", d[2], "--no-host-key", "--no-lookup"})
+		sb.expect(0, "", "")
+	}
+	for _, s := range []string{"lab", "dmz"} {
+		sb.run("", []string{"scope", "breakglass", s, "add", "root"})
+	}
+	sb.run("", []string{"config", "render"})
+	sb.run("", []string{"config", "validate"})
+	out := plain(sb.out.String())
+	// lab has Cisco and WTI devices; dmz has a Junos device only
+	if !strings.Contains(out, "scope 'lab' records only 'root', a Junos account: its cisco and wti devices have no break-glass local user") {
+		t.Errorf("no warning for lab:\n%s", out)
+	}
+	if strings.Contains(out, "scope 'dmz' records only") || strings.Contains(out, "'dmz'") {
+		t.Errorf("a warning for dmz:\n%s", out)
+	}
+	// root is not a scope without break-glass: only prod and prod-inner are
+	if !strings.Contains(out, "scopes 'prod', 'prod-inner' without a break-glass local user") {
+		t.Errorf("the bare scopes:\n%s", out)
+	}
+	sb.expect(0, "Configuration is valid.", "")
+	sb.run("", []string{"config", "validate", "--json"})
+	if o := sb.out.String(); !strings.Contains(o, "records only 'root'") {
+		t.Errorf("--json:\n%s", o)
+	}
+	// a named user next to root ends the warning
+	sb.run("", []string{"scope", "breakglass", "lab", "add", "lab-admin"})
+	sb.run("", []string{"config", "validate"})
+	if out := plain(sb.out.String()); strings.Contains(out, "records only 'root'") {
+		t.Errorf("a warning after adding a named user:\n%s", out)
+	}
 }
 
 // Superuser-only: an engineer reads the walkthrough of their scope, with the

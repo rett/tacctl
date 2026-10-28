@@ -434,11 +434,14 @@ func (inv *invocation) collectValidate(r *validateReport) {
 	// when the server is unreachable, and a name that is also a tacctl user
 	// of its scope is shadowed on the device. Warnings, never errors.
 	if merr == nil {
-		var bare []string
+		var bare, rootOnly []string
 		for _, s := range scopeNames {
 			users := policy.BreakGlassUsers(cfg, s)
 			if len(users) == 0 {
 				bare = append(bare, s)
+			}
+			if onlyJunosRoot(users) {
+				rootOnly = append(rootOnly, s)
 			}
 			for _, u := range users {
 				if containsFold(m.Members(s), u.Name) {
@@ -455,6 +458,11 @@ func (inv *invocation) collectValidate(r *validateReport) {
 			text := word + " " + quoteJoin(bare) + " without a break-glass local user — a lockout risk with the server unreachable"
 			fix := "tacctl scope breakglass <scope> add <name>"
 			r.found(howEchoE, "  "+Y+"Break-glass:"+NC+"          "+text+" ("+fix+")", validateFinding{Section: "breakglass", Level: levelWarning, Text: text, Fix: fix})
+		}
+		// 'root' is a Junos account: a scope whose only entry it is has no
+		// local account on its Cisco and WTI devices.
+		for _, fnd := range inv.rootOnlyFindings(rootOnly) {
+			r.found(howEchoE, "  "+Y+"Break-glass:"+NC+"          "+fnd.Text+" ("+fnd.Fix+")", validateFinding{Section: "breakglass", Level: levelWarning, Text: fnd.Text, Fix: fnd.Fix})
 		}
 	}
 

@@ -109,8 +109,8 @@ A device that authenticates against this server is answered by a scope whose
 prefixes cover its address. 'hold' takes that one address, the one the device
 is registered at, out of every scope's prefixes (the stored scopes do not
 change), so the server stops answering the device and its local accounts, the
-ones 'tacctl scope breakglass <scope> list' records, are usable while the
-server is up; a device that sends its AAA from another address (a source
+ones 'tacctl scope breakglass <scope> list' records ('root' included, for a
+Junos device), are usable while the server is up; a device that sends its AAA from another address (a source
 interface, a NAT) is still answered, and the report says so. It
 asks for the device's name typed back, restarts the backends that serve it
 and shows the way in for the device's vendor. A hold is for an exceptional
