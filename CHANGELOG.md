@@ -28,7 +28,7 @@ current behaviour; this file is where history lives.
    store with such a name, so `tacctl rollback` to any target is refused, in the
    dry run too and with nothing changed, while the store has a user with a
    period; the refusal lists each with `tacctl user rename <name> <new-name>`.
-   An override under such a name in `console.yaml` (item 17 ignores them) does
+   An override under such a name in `console.yaml` (item 18 ignores them) does
    not stop it: the rollback takes that entry out of the file.
 
 2. **Tab and `?` describe a command as the completion scripts do.** The bash,
@@ -374,12 +374,12 @@ current behaviour; this file is where history lives.
     it from one, over the tier's setting in both directions (`clear`: the tier
     decides). A superuser cannot be disabled (refused, by the tier the user has
     at that moment), an engineer cannot be enabled, and enabling a superuser or
-    disabling an engineer stores nothing. A setting follows the user (item 19);
+    disabling an engineer stores nothing. A setting follows the user (item 20);
     an entry of a name that is no user is listed as `no such user` and `clear`
     removes it. The same people
     may open an editor from the console. Only a superuser sets it (a tier, a
     user or the path); the read forms are open to the operator tier and up
-    (item 20), and the verb refuses every write with the usual `is not
+    (item 21), and the verb refuses every write with the usual `is not
     permitted for the <tier> tier`, logged as a tier denial. `console show` prints the system shell by tier and,
     for each user of the server, the effective access and why (`tier operator`,
     `user setting`, `always`, `never`). The changes are logged as `console set
@@ -445,7 +445,7 @@ current behaviour; this file is where history lives.
     (a map of user to true, written only when a user is on) and is logged as
     `console set key=password-cache item=user:<name> from= to=`. `user rename`
     moves it and `user remove` drops it (and `user add` drops a stale entry),
-    as for the system shell of a user (item 19). The `_console-policy` line
+    as for the system shell of a user (item 20). The `_console-policy` line
     carries `password_cache=yes|no` (allowed and on: the console starts the
     cache) and `pc_allowed=yes` (the permission alone, which `tacctl shell
     --password-cache` still needs: that flag is an explicit request and works
@@ -459,11 +459,11 @@ current behaviour; this file is where history lives.
 23. **No bash for those without the system shell when the console link is
     missing.** `host sync` and `host enroll --local` on the server gave every
     readonly and operator user `/bin/bash` when `/usr/local/bin/tacctl-console`
-    was missing, a full system shell for those who have none (item 18). Now an
+    was missing, a full system shell for those who have none (item 19). Now an
     account gets `/bin/bash` there only if it has the system shell (a
     superuser, a user of a tier a superuser opened it to, or a user it was
     opened to) and `/usr/sbin/nologin` otherwise, the engineer tier and a tier
-    that is none included; the warning says so. Item 17's mention of bash for
+    that is none included; the warning says so. Item 18's mention of bash for
     that case is adjusted.
 
 24. **A user's system-shell enable is for the tier it was set for.**
@@ -584,7 +584,7 @@ current behaviour; this file is where history lives.
 31. **The built-in ssh client reads the host keys of any device ssh-keyscan
     cannot.** Only a `legacy-ssh` device was handed to it; now a device that
     accepted the connection and gave `ssh-keyscan` no key, not even one type
-    at a time (item 17), is read by it as well, in `device add`, `device
+    at a time (item 30), is read by it as well, in `device add`, `device
     enroll`, `device collect`, `device onboard`, `device hostkey accept|set`,
     `device scan` and `device check`. A device that refused the connection or
     did not answer is not dialled a second time. The client no longer opens
@@ -614,7 +614,7 @@ current behaviour; this file is where history lives.
     key.** The warning `no ssh host key could be read from <host> port <port>
     (ssh-keyscan) to check the session's against; none pinned.` says `(ssh-keyscan,
     then one key type at a time (ed25519, ecdsa, rsa))` for a host that
-    accepted the connection (item 17); a host that did not answer is worded as
+    accepted the connection (item 30); a host that did not answer is worded as
     before. What is pinned is unchanged: only keys the host's own key files
     and the scan both hold.
 
