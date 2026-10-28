@@ -201,7 +201,7 @@ tacctl config validate         # configuration problems; each warning names its 
 | `clear`, `remove --all` | Always ask `[y/N]` and say what the result will be |
 | A setter with no value | Prints the current value (`tacctl device location sw1`) |
 | `--dry-run`, `--check` | Show what would change and write nothing. Use them before every risky command. |
-| Names | Lower case: letters, digits, `_`, `-` (devices and hosts may also use `.`) |
+| Names | Lower case: letters, digits, `_`, `-` (users, devices and hosts may also use `.`) |
 | Secrets | Let the command prompt for them, or use `--hash -` / `--stdin`. Never type a secret on the command line. |
 
 Every change takes a snapshot first and writes an audit line, so a mistake

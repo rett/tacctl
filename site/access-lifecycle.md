@@ -52,8 +52,11 @@ account expired. Her account on the server exists only after the sync of
 step 2, so run it before she logs in. The requirement and what to check
 are in §5.1.
 
-Names are lower case: letters, digits, `_` and `-`. `root` and `tacquito`
-are reserved.
+Names are lower case: letters, digits, `_` and `-`, and a period between
+two parts (`alice.smith`; never first, last or twice in a row). `root` and
+`tacquito` are reserved. A name with a period is no Linux account name:
+`host sync` skips that user with a warning, so they log in at devices only,
+and `tacctl rollback` is refused while such a name exists.
 
 **Password without you seeing it.** The person creates a bcrypt hash on
 their own machine (`tacctl hash commands` prints the recipes for Linux,

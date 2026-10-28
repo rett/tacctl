@@ -9,7 +9,7 @@ doctype: how-to
 
 # Linux Host Operations
 
-*Keeping enrolled Linux hosts in step · Checked against tacctl 0.2.19*
+*Keeping enrolled Linux hosts in step · Checked against tacctl 0.2.20*
 
 [Printable PDF](../pdf/tacctl-linux-host-operations.pdf){: .pdf-link }
 
@@ -61,7 +61,7 @@ What a sync does:
 
 | User state | Effect on the host |
 |---|---|
-| New in the host's scope | Account created (with a UID consistent across hosts) |
+| New in the host's scope | Account created (with a UID consistent across hosts). A user name with a period is skipped with a warning: it is no Linux account name. |
 | Disabled | Account expired: no login, ssh keys included. Files kept. |
 | Re-enabled | Restored |
 | Removed, or out of the scope | Account deleted. The home is deleted only if you agree (asked at a terminal, or `--remove-home`). Otherwise it is moved to `/home/.tacctl-removed/`. |
