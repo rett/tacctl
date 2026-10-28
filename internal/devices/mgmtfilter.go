@@ -52,6 +52,7 @@ type authReply struct {
 	ports   []string // the source ports of the replies, as the statement writes them
 	entries []string // the entries with services of the permit list that hold the address
 	ssh     bool     // one of them permits ssh
+	snmp    bool     // the address is a source of the permit-snmp term
 }
 
 // authReplyTerm is the name of the term that holds the replies of the
@@ -330,7 +331,14 @@ func authReplyNote(r *authReply, snmpTerms bool) string {
 		}
 		b.WriteString(",\n# and this term adds the answers above.\n")
 	} else {
-		b.WriteString("# Nothing is accepted from " + a + " beyond that. Add the address to the permit list this scope renders from to accept more.\n")
+		beyond := "Nothing is accepted from " + a + " beyond that"
+		if r.snmp {
+			beyond = "Nothing is accepted from " + a + " beyond that and udp port 161 (SNMP), which permit-snmp\n# accepts from it as one of the SNMP clients"
+		}
+		b.WriteString("# " + beyond + ". Add the address to the permit list this scope renders from to accept more.\n")
+	}
+	if len(r.entries) > 0 && r.snmp {
+		b.WriteString("# " + a + " is also one of the SNMP clients: permit-snmp accepts udp port 161 from it.\n")
 	}
 	return b.String()
 }

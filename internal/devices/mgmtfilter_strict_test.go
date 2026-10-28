@@ -252,6 +252,43 @@ func TestStrictFilterAuthenticationServerInTheList(t *testing.T) {
 	}
 }
 
+// When the authentication server's address is also one of the SNMP clients,
+// permit-snmp accepts udp port 161 from it, and the comment of the replies
+// term says so instead of "nothing beyond that"; an address that is not a
+// client keeps the shorter sentence.
+func TestStrictFilterRepliesNoteNamesTheSNMPClients(t *testing.T) {
+	v2c := SNMPInput{Version: "v2c", Community: "example-ro", Ranges: []string{"203.0.113.0/24"}}
+	for _, c := range []struct {
+		name, auth string
+		entries    []string
+		want, not  []string
+	}{
+		{"a client", "203.0.113.7", []string{"10.0.0.0/8"},
+			[]string{"Nothing is accepted from 203.0.113.7 beyond that and udp port 161 (SNMP), which permit-snmp", "accepts from it as one of the SNMP clients"}, nil},
+		{"not a client", "198.51.100.9", []string{"10.0.0.0/8"},
+			[]string{"Nothing is accepted from 198.51.100.9 beyond that."}, []string{"as one of the SNMP clients", "is also one of the SNMP clients"}},
+		{"a client with a services entry", "203.0.113.7", []string{"10.0.0.0/8", "203.0.113.7/32:icmp"},
+			[]string{"The permit list holds 203.0.113.7/32:icmp", "203.0.113.7 is also one of the SNMP clients: permit-snmp accepts udp port 161 from it."}, []string{"Nothing is accepted from"}},
+	} {
+		d := strictData(t, "192.0.2.1", "", append(c.entries, "198.51.100.1/32:tcp/22"), v2c)
+		d.AuthServer = c.auth
+		block := mgmtBlock(d)
+		if !strings.Contains(block, "permit-snmp from source-address 203.0.113.0/24\n") {
+			t.Fatalf("%s: the SNMP clients are not in the filter:\n%s", c.name, block)
+		}
+		for _, w := range c.want {
+			if !strings.Contains(block, w) {
+				t.Errorf("%s: lacks %q:\n%s", c.name, w, block)
+			}
+		}
+		for _, w := range c.not {
+			if strings.Contains(block, w) {
+				t.Errorf("%s: has %q:\n%s", c.name, w, block)
+			}
+		}
+	}
+}
+
 // The second address exists only when the device authenticates against an
 // address other than the one tacctl reaches it from: --server alone, --source
 // alone (the device is still told the detected address), a RADIUS listener

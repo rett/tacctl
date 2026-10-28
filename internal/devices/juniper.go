@@ -259,12 +259,14 @@ func JuniperVars(req Request, d Data) map[string]string {
 		// 161 is matched; routing protocols and everything else fall
 		// through to default-accept (in the strict mode, to the discard).
 		snmpTerms, snmpNote := "", ""
+		var snmpSources []string // the sources of the permit-snmp term
 		if clients := snmpIn.clientList(); snmpIn.Version != "" && len(clients) > 0 {
 			// the clients of the scope's SNMP block are polling this
 			// device too: their udp 161 must pass the same term, or the
 			// deny-snmp term below would refuse a community the block
 			// grants
 			clients, listNote := d.Blocks.snmpClientPermits(clients)
+			snmpSources = clients
 			var sb strings.Builder
 			for _, e := range clients {
 				sb.WriteString(f + "permit-snmp from source-address " + e + "\n")
@@ -296,6 +298,9 @@ func JuniperVars(req Request, d Data) map[string]string {
 				servicesNote = "#\n" +
 					"# A source that has services is accepted for those only: ssh needs tcp/22 among them and\n" +
 					"# NETCONF (Step 6) tcp/830; a source without services has every port.\n"
+			}
+			if reply != nil {
+				reply.snmp = prefixesHold(snmpSources, reply.source)
 			}
 			mgmt = strictHeader(scope) +
 				terms.String() +
