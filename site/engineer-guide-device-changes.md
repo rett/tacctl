@@ -218,10 +218,11 @@ either direction, and its report warns of what that does to the traffic:
 - **To `strict`:** the traffic that stops once the filter is applied to
   `lo0` (routing protocols carried over IP, BFD among them, from neighbours
   that are not in the permit list, TACACS+ and RADIUS replies from servers
-  that are not in it, NTP, syslog and DHCP, SNMP from sources outside it,
-  every other protocol; IS-IS is not carried over IP, so the filter neither
-  stops nor permits it), the sources the filter accepts, apart from the
-  address it accepts the authentication server's answers from
+  that are not in it, NTP, syslog and DHCP, SNMP from sources outside it
+  other than its clients, which still poll, every other protocol; IS-IS is
+  not carried over IP, so the filter neither stops nor permits it), the
+  sources the filter accepts, apart from the address it accepts the
+  authentication server's answers from
   (`permit-auth-replies`, [Vendor Notes](vendor-notes.md) §3.4), and to keep
   a console session open.
 - **To `ssh-only`**, over a filter with no `default-accept` term: that the
