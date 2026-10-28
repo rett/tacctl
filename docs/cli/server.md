@@ -76,5 +76,5 @@ lines every change of state writes. Only the superuser runs the family: the
 tier table has no row for it, as for `scope prefixes`, so the sudoers rules of
 the tiers are as before.
 
-See also [Enrolling hosts](../hosts/enrolling.md#this-machine) and
+See also [Enrolling hosts](../hosts/enrolling.md) (**This machine**) and
 [Installing](../install/installing.md).
