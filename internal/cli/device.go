@@ -357,7 +357,7 @@ var deviceOptions = map[string][][2]string{
 		{"--out <file>", "Write one device's output to a file (0600)"},
 		{"--out-dir <dir>", "One file per device (<name>.txt, .set with --plain, .json with --json; each plan's .backout.txt) and COVER.txt, 0600 in a 0700 directory"},
 		{"--force", "Replace files --out or --out-dir would write"},
-		{"--from <address>", "The address you are logged in from: the cleanup keeps it; the management filter check and a WTI unit's IP tables check use it"},
+		{"--from <address>", "The address you are logged in from: the cleanup keeps it; the management filter check (in either filter mode) and a WTI unit's IP tables check use it"},
 		{"--restore-point[=<fs>]", "(IOS and IOS-XE only) A restore point block before the plan: a copy of the running configuration on <fs> (flash:, bootflash:, disk0:), or, bare, 'archive config' where the pull read an archive path; the back-out names 'configure replace' with it; a file, not a timer (the bare form has not been checked on a device)"},
 		{"--exit-code", "Exit 2 when a device needs a change (and none could not be planned)"},
 	},

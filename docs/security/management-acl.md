@@ -98,3 +98,15 @@ reaching the routing engine:
 Add every neighbour and server the device needs to the scope's permit list
 first, keep a console session open when you apply the filter, and commit with
 `commit confirmed`.
+
+**Planning and applying a change of mode.** `tacctl device config plan` and
+`device config apply` treat the filter as owned whole, so a move between the
+modes is planned and applied like any other change of the filter, in both
+directions, and a pulled filter is compared with the rendering of the scope's
+mode. The report of a move to `strict` lists the traffic that stops (above),
+and the report of a move back to `ssh-only` says that the `default-accept`
+term returns. When the device applies the filter to `lo0`, the filter that
+would replace it must still permit the address you are logged in from
+(`--from <address>` for a plan; an apply knows its own): in `strict` that is a
+source of `permit-mgmt`, or of a service term that holds `tcp/22`; otherwise
+the section is refused. See [Planning](../devices/planning.md).

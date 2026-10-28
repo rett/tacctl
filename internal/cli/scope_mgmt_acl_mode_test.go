@@ -214,3 +214,77 @@ func TestWalkthroughFollowsTheMgmtACLMode(t *testing.T) {
 		t.Errorf("ssh-only after strict differs from before:\n%s", got)
 	}
 }
+
+// 'device config plan' follows the scope's mode end to end: a device that
+// holds the ssh-only filter, applied on lo0, is planned to the strict one
+// when the scope says strict (with the traffic that stops in the report and
+// the lock-out check on --from), and back, and a device that agrees plans
+// nothing in either mode.
+func TestPlanFollowsTheMgmtACLMode(t *testing.T) {
+	b := newPullBox(t)
+	b.devices([3]string{"lab-j", "192.168.1.20", "juniper"})
+	b.run("scope", "mgmt-acl", "lab", "add", "10.0.0.0/8,198.51.100.0/24:tcp/22,udp/161")
+	text := b.expected("lab-j") + "set interfaces lo0 unit 0 family inet filter input MGMT-ACL\n"
+	b.serve("juniper", text)
+	b.servePlain(text)
+	if out := b.run("device", "config", "pull", "lab-j"); b.sb.code != 0 {
+		t.Fatalf("pull: %d %s %s", b.sb.code, out, b.sb.stderr())
+	}
+	plan := func(args ...string) string {
+		return b.run(append([]string{"device", "config", "plan", "lab-j", "--section", "mgmt-acl"}, args...)...)
+	}
+	out := plan()
+	if b.sb.code != 0 || strings.Contains(out, "PASTE FROM HERE") {
+		t.Fatalf("a device that agrees (ssh-only): exit %d\n%s", b.sb.code, out)
+	}
+
+	b.run("scope", "mgmt-acl", "lab", "mode", "strict")
+	out = plan("--from", "10.0.0.5")
+	flat := unwrapPlan(out)
+	if b.sb.code != 0 {
+		t.Fatalf("the move to strict: exit %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
+	}
+	for _, want := range []string{"##### PASTE FROM HERE: lab-j #####", "delete firewall family inet filter MGMT-ACL term default-accept\n",
+		"delete firewall family inet filter MGMT-ACL term deny-mgmt\n", "set firewall family inet filter MGMT-ACL term permit-udp-161 then accept\n",
+		"WARNING: the management filter of 'lab' is strict: it has no default-accept term. The device applies it to lo0 already, so from the commit",
+		"BGP, OSPF, IS-IS, VRRP, LDP", "NTP, syslog and DHCP", "SNMP from sources outside the list"} {
+		if !strings.Contains(out, want) && !strings.Contains(flat, want) {
+			t.Errorf("the plan lacks %q:\n%s", want, out)
+		}
+	}
+	planGolden(t, "junos-mgmt-strict.out", out)
+	// the lock-out check: an address inside a term that holds tcp/22 is
+	// accepted for ssh, one outside the list is refused
+	out = plan("--from", "198.51.100.9")
+	if b.sb.code != 0 || !strings.Contains(out, "term permit-tcp-22 then accept") {
+		t.Errorf("--from inside the service term: exit %d\n%s", b.sb.code, out)
+	}
+	out = plan("--from", "203.0.113.5")
+	if b.sb.code == 0 || !strings.Contains(unwrapPlan(out+b.sb.stderr()), "is not inside a source of the rendered strict filter that is accepted for ssh") {
+		t.Errorf("--from outside: exit %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
+	}
+
+	// the paste is made: the device holds the strict filter, and nothing is left to plan
+	text = b.expected("lab-j") + "set interfaces lo0 unit 0 family inet filter input MGMT-ACL\n"
+	b.serve("juniper", text)
+	b.servePlain(text)
+	b.run("device", "config", "pull", "lab-j")
+	if out = plan("--from", "10.0.0.5"); b.sb.code != 0 || strings.Contains(out, "PASTE FROM HERE") || strings.Contains(out, "WARNING: the management filter") {
+		t.Errorf("a device that agrees (strict): exit %d\n%s", b.sb.code, out)
+	}
+
+	// and back: the scope says ssh-only, the device holds strict
+	b.run("scope", "mgmt-acl", "lab", "mode", "ssh-only")
+	out = plan("--from", "10.0.0.5")
+	if b.sb.code != 0 {
+		t.Fatalf("the move back: exit %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
+	}
+	for _, want := range []string{"set firewall family inet filter MGMT-ACL term default-accept then accept\n",
+		"delete firewall family inet filter MGMT-ACL term permit-udp-161\n", "has no default-accept term, so it drops by default",
+		"tacctl scope mgmt-acl lab mode strict"} {
+		if !strings.Contains(out, want) && !strings.Contains(unwrapPlan(out), want) {
+			t.Errorf("the plan back lacks %q:\n%s", want, out)
+		}
+	}
+	planGolden(t, "junos-mgmt-sshonly.out", out)
+}

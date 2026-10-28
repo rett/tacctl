@@ -4461,7 +4461,9 @@ and view, and
 .B "set snmp location|contact|description"
 (the client list restricts communities only; the management filter of Step 4,
 when it is rendered, has permit-snmp and deny-snmp terms for udp port 161 from
-the same clients, which restrict v3 once the filter is applied to lo0); on WTI
+the same clients, which restrict v3 once the filter is applied to lo0; in a scope
+whose filter mode is strict the sources of the permit list reach udp port 161
+as well); on WTI
 the unit's SNMP menu in the walkthrough's style (item names and numbers as on a
 WTI 8.10 unit: SNMP Access under /N: Enable, Version, Read Only, Contact, SNMP
 Location, Read\-Only Community), with the client restriction in the udp port 161
@@ -4480,7 +4482,9 @@ says to ask one; IOS 12.x has none. The Junos walkthrough has a commented
 .B "set system services netconf ssh"
 step with the optional connection and rate limits and the check
 .RB ( "ssh -p 830 -s" " user@device " netconf ),
-and its management filter permits tcp port 830 next to ssh; the WTI unit has
+and its management filter permits tcp port 830 next to ssh (in strict mode every
+protocol from a source without services, and tcp port 830 from a source with
+services only when they include tcp/830); the WTI unit has
 no NETCONF. tacctl enables none of it itself unless the scope's or the
 device's NETCONF setting says so
 .RB ( "scope netconf" ,
@@ -9882,6 +9886,51 @@ shows no pending
 .B commit
 first).
 .PP
+The Junos management filter is owned whole, so a move of a scope's filter mode
+.RB ( "scope mgmt\-acl" " scope " mode )
+between
+.B ssh\-only
+and
+.B strict
+is planned in both directions (the
+.B deny\-mgmt
+and
+.B default\-accept
+terms and the ssh and NETCONF leaves of
+.B permit\-mgmt
+are deleted and the service terms set, and back), and a pulled filter is
+compared with the rendering of the scope's mode. A plan that changes the filter
+warns of what it does to the traffic. For
+.BR strict ,
+where the device's filter has a
+.B default\-accept
+term or there is none: the traffic that stops once the filter is applied to
+lo0 (routing protocols from neighbours that are not in the list, NTP, syslog
+and DHCP, SNMP from sources outside it, every other protocol), the sources the
+filter accepts, and to keep a console session open. For
+.BR ssh\-only ,
+where the device's filter has terms and no
+.B default\-accept
+term (a strict filter, or the site's own under the same name): that the plan
+adds the term, that the device then accepts everything but ssh, NETCONF and
+SNMP from outside the list again, and the command that sets
+.BR strict .
+When the pulled configuration applies the filter to lo0, a plan that changes it
+warns without
+.BR \-\-from ,
+and with it refuses the filter's section (the rest of the plan stands) if the
+filter would not permit that address: in
+.B ssh\-only
+the address must be inside a source of
+.BR permit\-mgmt ;
+in
+.B strict
+inside a source that the filter accepts for ssh, in
+.B permit\-mgmt
+or in a service term that holds tcp/22. An IPv6 address is not checked against
+the family inet filter, and a filter the device does not apply to lo0 has no
+check. An apply makes the same check with the address it connects from.
+.PP
 .B \-\-backout
 prints the back\-out region alone
 .RB ( "BACK\-OUT FROM HERE" ):
@@ -10359,7 +10408,7 @@ One file per device (<name>.txt, .set with \-\-plain, .json with \-\-json; each 
 Replace files \-\-out or \-\-out\-dir would write.
 .TP
 \fB\-\-from\fR \fI<address>\fR
-The address you are logged in from: the cleanup keeps it; the management filter check and a WTI unit's IP tables check use it.
+The address you are logged in from: the cleanup keeps it; the management filter check (in either filter mode) and a WTI unit's IP tables check use it.
 .TP
 \fB\-\-exit\-code\fR
 Exit 2 when a device needs a change (and none could not be planned).
