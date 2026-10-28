@@ -203,7 +203,10 @@ release download URL) is read by the shim only, for these tests;
 `sshd_config` beside its directory; the engineer tier's drop-in,
 `00-tacctl-engineer.conf`, is written beside it; the earlier `tacctl-engineer.conf` is
 removed), **`TACCTL_SSH_DIR`**
-(`/etc/ssh`, where this machine's `ssh_host_*_key.pub` are read) and
+(`/etc/ssh`, where this machine's `ssh_host_*_key.pub` are read),
+**`TACCTL_CLIENT_PAM_DIR`** (`/etc/pam.d`, where the client script writes
+tacctl's PAM files, which `install` and `upgrade` look for to tell whether this
+machine's own login is set up; the variable the script reads) and
 **`TACCTL_SHELLS_FILE`** (`/etc/shells`) are pointed into the test's tmpdir by `tmpenv.bash`, the Go
 sandboxes and the lifecycle tests alike; `sshd` and `systemctl` are always
 stubs. The console's own path (`/usr/local/bin/tacctl-console`) moves only
