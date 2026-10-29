@@ -9,7 +9,7 @@ doctype: how-to
 
 # Day-to-Day Device Operations
 
-*A console-first guide for operators and engineers · Checked against tacctl 0.2.21*
+*A console-first guide for operators and engineers · Checked against tacctl 0.2.22*
 
 [Printable PDF](../pdf/tacctl-day-to-day-device-operations.pdf){: .pdf-link }
 
@@ -104,6 +104,7 @@ log accounting 50          # the 50 most recent accounting records (commands run
 
 ```bash
 device config list --differs     # devices whose last pull differs from the standard
+device list --differs            # the same devices, in the device table
 device config list --failed      # devices whose last pull failed
 device config list --never       # devices never read
 ```

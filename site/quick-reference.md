@@ -9,7 +9,7 @@ doctype: reference
 
 # Quick Reference
 
-*The most common tacctl commands on one card · Checked against tacctl 0.2.21*
+*The most common tacctl commands on one card · Checked against tacctl 0.2.22*
 
 [Printable PDF](../pdf/tacctl-quick-reference.pdf){: .pdf-link }
 
@@ -35,7 +35,7 @@ usage. In the console and `tacctl shell`, `?` shows help.
 
 | Task | Command | Tier |
 |---|---|---|
-| List / filter | `tacctl device list [--scope s] [--vendor v] [--stale]` | R |
+| List / filter | `tacctl device list [--scope s] [--vendor v] [--stale] [--differs]` (`--differs`: O) | R |
 | Detail | `tacctl device show <n>` | R |
 | Connect | `tacctl ssh <n> [-- <cmd>]` | R |
 | Notices | `tacctl device notice list` | R |
@@ -69,7 +69,7 @@ usage. In the console and `tacctl shell`, `?` shows help.
 
 | Task | Command | Tier |
 |---|---|---|
-| List / detail | `tacctl host list` · `host show <n>` | E |
+| List / filter | `tacctl host list [--name t] [--ip a] [--scope s] [--stale]` · `host show <n>` | E |
 | Check | `tacctl host check --all` | S |
 | Push accounts | `tacctl host sync --all` | S |
 | Enroll | `tacctl host enroll <user>@<host> --scope <s>` | S |

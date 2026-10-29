@@ -28,14 +28,15 @@ including the one that matters most: a changed host key.
 ## 1. Find the device
 
 ```bash
-tacctl device list                      # the devices and hosts of your scopes
+tacctl device list                      # the devices of your scopes
 tacctl device list core                 # a bare word matches name, address, vendor or scope
 tacctl device list --scope site-a --vendor juniper
 tacctl device show sw1                  # one device in full: scope, state, last seen, keys
 ```
 
 A device must be **configured** (a scope covers its address) for anyone to
-log in to it.
+log in to it. Enrolled Linux hosts are in `tacctl host list` (engineer tier);
+`tacctl ssh <name>` takes a host's name as well.
 
 ---
 

@@ -30,13 +30,31 @@ hosts of their own scopes.
 ## 1. See your hosts
 
 ```bash
-tacctl host list                 # target, ADDRESS, scope, server, METHOD, users (+ STATE when held)
+tacctl host list                       # the enrolled hosts, as device list shows devices
+tacctl host list --scope site-a --stale
+tacctl host list --name web --ip 10.30.0.0/24
 tacctl host list --json
 tacctl host show web1            # connection, scope, pinned keys, sightings,
                                  # the accounts the next sync makes
 tacctl host check web1           # read-only: does the host match what tacctl would make it?
 tacctl host check --all
 ```
+
+`host list` shows each host's target, address (recorded at the last enroll or
+sync, else the single address of its scope), scope, `STATE` (`configured`
+when the host's scope exists, `unconfigured`, `stale`, and `BREAK-GLASS` in
+place of those while the host is held), `LAST SEEN` and `BY` (from the seen
+data that `tacctl device scan` refreshes), server, method, users and open
+notices. A line under the table gives the age of the seen data and how many
+notices are open (`tacctl device notice list`).
+
+The filters narrow the list as those of `device list` do, and all must
+match: `--name <text>`, `--ip <addr|cidr|text>` and `--scope <scope>` take one
+value or a comma list, and `--stale` keeps the hosts not seen for stale-days.
+The heading then counts `Enrolled Linux hosts (2), of 5`. An engineer sees the
+hosts of their own scopes only. This server's own login shows `-` as its
+scope, and `--scope` never selects it. `device list` shows network devices
+only.
 
 `host check` logs in, changes nothing, and lists each difference with the
 command that fixes it. It exits 1 if a host differs or could not be
