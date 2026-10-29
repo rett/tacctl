@@ -120,7 +120,11 @@ $J | grep 'console start'                        # console logins (user=, from=)
 The changes of this server's settings each write a detail line beside the
 `cmd` pair: `server name` and `server metrics` carry `from=` and `to=`,
 `server listen` adds `backend=` and `listener=`, and `server addresses` carries
-`op=add` or `op=replace` and `address=`.
+`op=add` or `op=replace` and `address=`. The timing scale is recorded in the
+same way: `scope timeout-scale` writes `scope=`, `from=` and `to=`,
+`device timeout-scale` a `device set` line (`name`, `field=timeout-scale`,
+`from`, `to`), and `config devices timeout-scale` a `config devices` line with
+`key`, `from` and `to`.
 
 > A `cmd start` with no matching `cmd end` means the command did not finish
 > (killed, crash, power loss). The snapshot named on its lines holds the
