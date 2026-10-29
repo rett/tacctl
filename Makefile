@@ -1,5 +1,5 @@
 .PHONY: test test-go test-bats test-integration test-e2e test-diff test-pyyaml build \
-	coverage gate-go gate-ci lint lint-sh lint-go lint-man lint-private lint-logger man hooks clean bootstrap release-assets release-verify release-reproduce
+	coverage gate-go gate-ci lint lint-sh lint-go lint-man lint-private lint-logger lint-short-yes man hooks clean bootstrap release-assets release-verify release-reproduce
 
 BATS := tests/bats/bats-core/bin/bats
 BATS_FLAGS ?= --print-output-on-failure
@@ -154,8 +154,9 @@ coverage:
 # page (complete and current against the code, and clean under groff), then
 # no private names (the repo is public; see tests/tools/no-private.sh), then
 # no read of the process's temporary directory (tests/tools/no-os-tempdir.sh),
-# no logger started outside internal/audit (tests/tools/no-logger.sh).
-lint: lint-sh lint-go lint-man lint-private lint-tempdir lint-logger lint-docs
+# no logger started outside internal/audit (tests/tools/no-logger.sh), no
+# one-letter spelling of --yes (tests/tools/no-short-yes.sh).
+lint: lint-sh lint-go lint-man lint-private lint-tempdir lint-logger lint-short-yes lint-docs
 
 # man/tacctl.1 against the code (docs/plans/0.2.3-plan.md D57): the Man tests
 # of internal/cli (every command, flag, configuration key, path, environment
@@ -185,6 +186,10 @@ lint-tempdir:
 # Every audit line is written by internal/audit (App.Audit).
 lint-logger:
 	tests/tools/no-logger.sh
+
+# --yes has no one-letter spelling (tests/tools/no-short-yes.sh).
+lint-short-yes:
+	tests/tools/no-short-yes.sh
 
 # No line of a fenced code block of the user documentation is wider than
 # GitHub shows (tests/tools/doc-width.sh).

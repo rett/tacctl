@@ -113,7 +113,7 @@ tests/
 ├── integration/         # the command line against real files in the test's tmpdir
 ├── e2e/                 # whole command flows with stubbed system commands
 ├── diff/                # the differential runner, its corpora, stubs and state roots
-├── tools/               # no-private.sh and no-os-tempdir.sh (lint), gate-go.sh and gate-ci.sh (the Go tests as one run with a verdict line, the second as CI runs them), pyyaml-corpus.py, usage-goldens.sh, permcheck.py and permcheck-baseline.txt (the lab permission check, below), pre-push, release-preflight.sh, release-stamps.sh and release-reproduce.sh (the release checks, docs/releasing.md)
+├── tools/               # no-private.sh, no-os-tempdir.sh and no-short-yes.sh (lint), gate-go.sh and gate-ci.sh (the Go tests as one run with a verdict line, the second as CI runs them), pyyaml-corpus.py, usage-goldens.sh, permcheck.py and permcheck-baseline.txt (the lab permission check, below), pre-push, release-preflight.sh, release-stamps.sh and release-reproduce.sh (the release checks, docs/releasing.md)
 ├── containers/radius/   # real FreeRADIUS in podman
 ├── containers/hosts/    # 'host enroll|sync|unenroll' for real, server and client containers
 ├── containers/crossover/ # the upgrade from the bash release to the Go binary, and back
