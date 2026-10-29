@@ -160,6 +160,13 @@ not a warning: the older release connects to every device with its fixed
 timings again, which a slow or distant device may not meet. The values stay in
 the snapshot.
 
+After a rollback, the older release's `config validate` reports the rendered
+config as out of date. The comment at the top of the generated tacquito
+drop-in names this release's commands (`server listen`, `server metrics`), so
+the older release's first render rewrites it, which restarts tacquito once: a
+brief interruption of TACACS+, RADIUS untouched. The rollback itself renders
+and restarts nothing.
+
 The conversion takes a snapshot before it changes anything. Read the dry run's warnings before
 you add `--yes`:
 
