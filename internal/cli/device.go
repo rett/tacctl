@@ -1058,7 +1058,7 @@ func (inv *invocation) deviceList(args []string) error {
 		return err
 	}
 	var shown []devreg.Entry
-	narrow := newDeviceListFilter(p)
+	narrow := newListFilter(p)
 	total := 0
 	for _, e := range res.Visible(inv.deviceFilter()) {
 		_, _, _, stale := deviceSeenCols(inv, res, e)
@@ -1099,14 +1099,7 @@ func (inv *invocation) deviceList(args []string) error {
 	}
 	inv.echo("")
 	if len(shown) == 0 {
-		inv.echoE(ui.Bold + head + ui.NC)
-		inv.echo(ui.Rule(head))
-		if narrow.empty() {
-			inv.echo("  None. Register one with: tacctl device add <name> <address>")
-		} else {
-			inv.echo("  None match.")
-		}
-		inv.echo("")
+		inv.listNone(head, !narrow.empty(), "None. Register one with: tacctl device add <name> <address>")
 		return nil
 	}
 	cols := []ui.Col{ui.Left("NAME"), ui.Left("ADDRESS"), ui.Left("VENDOR"), ui.Left("SCOPE"), ui.Left("STATE"), ui.Left("LAST SEEN"), ui.Left("BY"), ui.Left("VIA"), ui.Left("NOTICES")}
@@ -1119,25 +1112,17 @@ func (inv *invocation) deviceList(args []string) error {
 		reach = inv.probeEntries(shown)
 	}
 	tb := ui.NewTable(head, cols...)
-	open, held := 0, 0
+	open, heldCount := 0, 0
 	for i, e := range shown {
 		last, by, via, stale := deviceSeenCols(inv, res, e)
-		var state any = e.State()
-		if stale {
-			state = e.State() + " stale"
-		}
-		// A device the server has been told not to answer is marked, in
-		// place of what the scopes would say of it.
+		held := false
 		if e.Source == devreg.SourceDevice {
-			if _, isHeld := inv.holdOf(e.Name, e.Address); isHeld {
-				held++
-				text := "BREAK-GLASS"
-				if stale {
-					text += " stale"
-				}
-				state = ui.Styled(ui.Red, text)
+			_, held = inv.holdOf(e.Name, e.Address)
+			if held {
+				heldCount++
 			}
 		}
+		state := listStateCell(e.State(), stale, held)
 		ns := res.NoticesFor(e)
 		open += len(devreg.Open(ns))
 		row := []any{e.Name, dash(e.Address), e.Vendor, dash(e.Scope), state, last, by, via, dash(kinds(ns))}
@@ -1156,11 +1141,9 @@ func (inv *invocation) deviceList(args []string) error {
 	if reach != nil {
 		inv.echo("  REACH: a TCP connect to the ssh port; this server often has no path to management ports, so a timeout may be a false alarm")
 	}
-	if open > 0 {
-		inv.echo(fmt.Sprintf("  %d open notice(s): tacctl device notice list", open))
-	}
-	if held > 0 {
-		inv.echoE(fmt.Sprintf("  %s%d device(s) held for break-glass%s: tacctl breakglass list", ui.Red, held, ui.NC))
+	inv.listOpenNotices(open)
+	if heldCount > 0 {
+		inv.echoE(fmt.Sprintf("  %s%d device(s) held for break-glass%s: tacctl breakglass list", ui.Red, heldCount, ui.NC))
 	}
 	inv.echo("")
 	return nil
