@@ -3,7 +3,7 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
-## 0.2.21 (unreleased)
+## 0.2.21 (2026-10-28)
 
 1. **`user rename` to a name with a period says what to do.** The refusal of
    a rename to a name with a period, for a user that has a UID or an account
@@ -142,6 +142,69 @@ current behaviour; this file is where history lives.
    as before. A template you changed in an earlier release has none of the
    new variables (`TACACS_PORT_LINE`, `TACACS_HOST_PORT`, `TACACS_PORT`):
    the upgrade leaves it and writes the new default beside it as `.new`.
+
+7. **`tacctl install` and `tacctl upgrade` set up this machine's own login.**
+   The managed server login of item 2 (the scope `tacctl`, this server's
+   registry entry, the PAM client and sshd's drop-in, and the server's
+   accounts) is made by `install` and `upgrade` with the machinery of `host
+   enroll --local`, so that command is the way to rebuild, move or repair a
+   server, not a step of an install. Every safeguard of the enrolment holds
+   (sshd is checked with `sshd -t` before it is reloaded and the change undone
+   when it refuses it, local administrators and root are not touched, the PAM
+   files are backed up) and a snapshot is taken first. A healthy setup does
+   nothing and prints nothing; a managed scope whose prefixes drifted is
+   repaired (`Repaired the managed server login.`); a server enrolled before
+   whose login is gone (a rebuilt server: the entry is there, the PAM files
+   are not) or is still in a scope of the operator's is set up again, with no
+   question. A server with no entry is asked once, with the server address in
+   the question (`Set up this machine's own login now, with <address> as the
+   server address? [y/N]`): `install -y` answers yes, `install` reads the
+   answer from standard input as its other prompts do, and `upgrade`, which
+   has no `-y`, asks on a terminal only. What cannot be done safely does not
+   stop the command: it completes as before, nothing is left half applied, and
+   one line says what was skipped and names `tacctl host enroll --local`. The
+   new `install --server <ip>` is the server address (an IP address that
+   devices and hosts reach this server at); otherwise the recorded
+   `server.addresses` wins, then the address of the interface with the
+   default route, said in one line every time it was detected.
+
+8. **`tacctl server addresses [list]|add|remove|replace <ip>`.** A new family
+   for the address devices and hosts reach this server at (the setting
+   `server.addresses`). It holds one address in this release: `add` sets it
+   when none is set and is refused while one is (`only one server address is
+   supported yet; use replace`), `remove` of the only address is refused
+   (`the server needs an address; use replace`), `replace` changes it; the
+   grammar takes `<ip>[,<ip>...]` and refuses more than one element with the
+   same words, so a later release only lifts the limit. A change takes a
+   snapshot and runs in one apply: the setting, the registry copy, the managed
+   scope's prefixes and the server's own PAM and accounts, by the enrolment of
+   this server that `host enroll --local --server <ip>` runs (that command is
+   this change when the address differs from the recorded one), and says once
+   what is left to do (`Re-point the devices and hosts at the new address: tacctl
+   host sync --all; the device walkthroughs name the new address`). If the
+   setup on this machine fails nothing is changed: the managed scope is put
+   back as it was. The verb is the superuser's alone (the tier table has no
+   row for it, so the sudoers drop-in is unchanged and the rollbacks need no
+   step for it); `list` writes no audit line, a change writes the pair of
+   `cmd` lines and `server addresses op=<op> address=<ip>`. The word
+   `server` is a top-level command now, so the manual page no longer says
+   `tacctl server` for the machine.
+
+9. **The recorded server address is the default of `--server`.** The device
+   walkthroughs (`config cisco|juniper|wti`, and so `device config show`,
+   `pull`, `diff`, `plan` and `apply`, which render the same text),
+   `config linux script` and `host enroll` read the first element of
+   `server.addresses` as the default of `--server`, and so does the managed
+   scope's derived prefixes (`host sync` of the server). An explicit
+   `--server` wins for that run; with nothing recorded the behaviour is as
+   before (the source address of the route to the Internet, or to the host).
+   A walkthrough names the recorded address where the device is told where
+   the server is and keeps the detected address as the one tacctl reaches the
+   devices from, saying which plays which role when they differ
+   (`server.addresses` is named as the source of the first); a RADIUS listener
+   bound to an address keeps that address in a RADIUS walkthrough. `host
+   enroll` of a host already enrolled keeps the server address the host has,
+   so a re-enrolment for a repair never repoints it; `--server` changes it.
 
 ## 0.2.20 (2026-10-28)
 
@@ -8118,66 +8181,3 @@ The first `tacctl upgrade` from 0.1.14 or earlier runs the old release's upgrade
 After the upgrade: `tacctl status`, `tacctl config validate` (store, rendered config, drift), and `tacctl backup list` (the pre-store file is under the old-style backups).
 
 ---
-
-4. **`tacctl install` and `tacctl upgrade` set up this machine's own login.**
-   The managed server login of item 2 (the scope `tacctl`, this server's
-   registry entry, the PAM client and sshd's drop-in, and the server's
-   accounts) is made by `install` and `upgrade` with the machinery of `host
-   enroll --local`, so that command is the way to rebuild, move or repair a
-   server, not a step of an install. Every safeguard of the enrolment holds
-   (sshd is checked with `sshd -t` before it is reloaded and the change undone
-   when it refuses it, local administrators and root are not touched, the PAM
-   files are backed up) and a snapshot is taken first. A healthy setup does
-   nothing and prints nothing; a managed scope whose prefixes drifted is
-   repaired (`Repaired the managed server login.`); a server enrolled before
-   whose login is gone (a rebuilt server: the entry is there, the PAM files
-   are not) or is still in a scope of the operator's is set up again, with no
-   question. A server with no entry is asked once, with the server address in
-   the question (`Set up this machine's own login now, with <address> as the
-   server address? [y/N]`): `install -y` answers yes, `install` reads the
-   answer from standard input as its other prompts do, and `upgrade`, which
-   has no `-y`, asks on a terminal only. What cannot be done safely does not
-   stop the command: it completes as before, nothing is left half applied, and
-   one line says what was skipped and names `tacctl host enroll --local`. The
-   new `install --server <ip>` is the server address (an IP address that
-   devices and hosts reach this server at); otherwise the recorded
-   `server.addresses` wins, then the address of the interface with the
-   default route, said in one line every time it was detected.
-
-5. **`tacctl server addresses [list]|add|remove|replace <ip>`.** A new family
-   for the address devices and hosts reach this server at (the setting
-   `server.addresses`). It holds one address in this release: `add` sets it
-   when none is set and is refused while one is (`only one server address is
-   supported yet; use replace`), `remove` of the only address is refused
-   (`the server needs an address; use replace`), `replace` changes it; the
-   grammar takes `<ip>[,<ip>...]` and refuses more than one element with the
-   same words, so a later release only lifts the limit. A change takes a
-   snapshot and runs in one apply: the setting, the registry copy, the managed
-   scope's prefixes and the server's own PAM and accounts, by the enrolment of
-   this server that `host enroll --local --server <ip>` runs (that command is
-   this change when the address differs from the recorded one), and says once
-   what is left to do (`Re-point the devices and hosts at the new address: tacctl
-   host sync --all; the device walkthroughs name the new address`). If the
-   setup on this machine fails nothing is changed: the managed scope is put
-   back as it was. The verb is the superuser's alone (the tier table has no
-   row for it, so the sudoers drop-in is unchanged and the rollbacks need no
-   step for it); `list` writes no audit line, a change writes the pair of
-   `cmd` lines and `server addresses op=<op> address=<ip>`. The word
-   `server` is a top-level command now, so the manual page no longer says
-   `tacctl server` for the machine.
-
-6. **The recorded server address is the default of `--server`.** The device
-   walkthroughs (`config cisco|juniper|wti`, and so `device config show`,
-   `pull`, `diff`, `plan` and `apply`, which render the same text),
-   `config linux script` and `host enroll` read the first element of
-   `server.addresses` as the default of `--server`, and so does the managed
-   scope's derived prefixes (`host sync` of the server). An explicit
-   `--server` wins for that run; with nothing recorded the behaviour is as
-   before (the source address of the route to the Internet, or to the host).
-   A walkthrough names the recorded address where the device is told where
-   the server is and keeps the detected address as the one tacctl reaches the
-   devices from, saying which plays which role when they differ
-   (`server.addresses` is named as the source of the first); a RADIUS listener
-   bound to an address keeps that address in a RADIUS walkthrough. `host
-   enroll` of a host already enrolled keeps the server address the host has,
-   so a re-enrolment for a repair never repoints it; `--server` changes it.
