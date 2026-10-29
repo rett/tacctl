@@ -260,6 +260,17 @@ pieces of tacctl itself were open; both are built in 0.2.8:
   refusal; there is no model or version matrix, because the device's check
   already refuses what it cannot take.
 
+## 3i. Device reports (proposal, filed 2026-10-29; not scheduled)
+
+A report is a saved, dated document about the registered devices, made on demand from data tacctl already holds or reads on the operator's word. Proposal only; nothing here is decided.
+
+- **Verbs:** `tacctl device reports generate --type <type> [--scope <scope>] [--vendor <vendor>] [--format text|csv|json|pdf] [--name <name>]`, `list`, `show <report>`, `rename <report> <new>`, `remove <report>`. Names carry the date (`inventory-20261028`).
+- **Contents by type** (a short catalogue, one row per device): inventory (model, serial number, hardware revision, chassis members), software (release, the version-gate state of backlog 3h), chassis alerts, uptime, licence status, notices and host-key state, configuration state (the `device config list` states: ok, differs, never, failed). Further filters by scope, vendor, the user that generated it and the age of the data.
+- **Source:** the pull records and the device facts already stored (no login). `--pull` reads the devices first, as `device config pull` does, with the operator's own password and no stored credential; a report is never scheduled and no device is contacted by a timer.
+- **Storage:** the invoking user's home, `~/reports/devices/`, mode 0600. A dotted user has no Linux account and no home: decide where their reports go or whether they get the verb at all.
+- **`show <report>`:** the date and time, the user, the exact command line that generated it, the filters, the age of the oldest datum, the size, and an example `scp` line to download it (generic host: `scp alice@tacctl.example.net:reports/devices/<file> .`).
+- **Open points:** a PDF needs a vendored pure-Go writer (the build has no network, `vendor/`), so the first format could be text, CSV and JSON; the tier of each verb (read-only reports for operators, `--pull` for engineers); retention and a size cap; whether a report may carry the SNMP location and description (no secret, hash or community string in any report); the new verbs need completion, man page, docs page and a CHANGELOG item like any other.
+
 ## 4. Linux hosts: considered, not pursued
 
 - **nss_tacplus** (shared template accounts, no per-user local accounts) — considered 2026-10-04, not pursued; revisit if per-user accounts become a burden. 0.2.1 keeps one local account per user (UIDs 20000-29999, created, expired and deleted by `host enroll|sync`).
