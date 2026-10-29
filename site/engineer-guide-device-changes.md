@@ -9,7 +9,7 @@ doctype: how-to
 
 # Engineer Guide: Device Changes
 
-*Register, compare, plan and apply device AAA configuration · Checked against tacctl 0.2.21*
+*Register, compare, plan and apply device AAA configuration · Checked against tacctl 0.2.22*
 
 [Printable PDF](../pdf/tacctl-engineer-guide-device-changes.pdf){: .pdf-link }
 
@@ -61,9 +61,10 @@ tacctl device add pdu1 10.10.0.50 --vendor wti
   console: Cisco `show ip ssh`, Junos
   `file show /etc/ssh/ssh_host_ed25519_key.pub`. If you already have the
   fingerprint, `--host-key SHA256:<fp>` pins only that key. A device that
-  gives no key to the scan is asked one key type at a time, then read with
-  tacctl's own ssh client; when nothing works the refusal says what to do
-  ([Connecting to Devices](connecting-to-devices.md) §6).
+  gives no key to the scan is read one key type at a time and then with
+  tacctl's own ssh client, and a device that is slow to greet goes straight
+  to that client and can take several seconds; when nothing works the refusal
+  says what to do ([Connecting to Devices](connecting-to-devices.md) §6).
 - `--legacy-ssh` affects only the ssh algorithms (SHA-1 key exchange, CBC
   ciphers, ssh-rsa). The Cisco configuration syntax is set separately with
   `--ios-syntax auto|ios12|modern`. With `auto`, the version line of the
@@ -325,6 +326,15 @@ What happens during an apply:
   like a single device: its plain lines are read, and so is a block labelled
   with that one member; a block of another member, or a label twice, is
   refused.
+- The master of a virtual chassis answers `commit check` and the commits
+  without a label, and only the other members get a header (`fpc1:`). tacctl
+  reads the lines no label opens as the answer of the one member of
+  `show version` that has no block, and holds it to the same rules as the
+  others: its success comes first, and on a commit its `commit complete` is
+  the last line, after the other members' blocks. On a confirmed commit every
+  member must print the note that such a commit prints, and a commit without
+  it is refused. A line that is none of these, a label twice, and two members
+  without a block fail the step.
 - The first device of each new shape goes alone (canary). By default at most
   5 devices are changed per run (`--max`), with a pause between devices
   (`--pause`).
