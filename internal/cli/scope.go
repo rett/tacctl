@@ -31,6 +31,7 @@ import (
 	"github.com/rett/tacctl/internal/mgmtacl"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/names"
+	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/shellquote"
 	"github.com/rett/tacctl/internal/snmp"
 	"github.com/rett/tacctl/internal/snmpcred"
@@ -99,17 +100,22 @@ func scopeCmd(inv *invocation) *cobra.Command {
 	// after a write that succeeded it says whether their configuration would
 	// change (device_config_nudge.go).
 	nn := func(verb string, run func([]string) error) func(*cobra.Command, []string) error {
-		return n(inv.withScopeNudge(verb, run))
+		return n(inv.withScopeNudge(verb, inv.reservedScopeArg(run)))
+	}
+	// r is n for a verb whose first argument is a scope: the managed scope
+	// is refused (managed_scope.go)
+	r := func(run func([]string) error) func(*cobra.Command, []string) error {
+		return n(inv.reservedScopeArg(run))
 	}
 	c := verb("scope <subcommand>", "Scope management (named CIDR + shared-secret bundles)",
 		withRun(verb("list", "One row per scope (aggregated prefix list)"), n(inv.scopeListView)),
 		withRun(verb("routing", "One row per (scope, prefix) — first-match order"), n(inv.scopeRouting)),
-		withRun(verb("show <name>", "Detailed view"), n(inv.scopeShow)),
+		withRun(verb("show <name>", "Detailed view"), r(inv.scopeShow)),
 		withRun(verb("add <name> --prefixes <cidrs> [--secret <value>|generate] [--protocols <p>[,<p>...]] [--vendor-attrs <v>[,<v>...]] [--default]",
 			"Create a new scope"), n(inv.scopeAdd)),
-		withRun(verb("remove <name> [--force]", "Delete a scope (confirms)"), n(inv.scopeRemove)),
+		withRun(verb("remove <name> [--force]", "Delete a scope (confirms)"), r(inv.scopeRemove)),
 		withRun(verb("rename <old> <new>", "Rename (updates user references)"), n(inv.scopeRename)),
-		withRun(verb("default [<name>]", "Show or set the default scope"), n(inv.scopeDefault)),
+		withRun(verb("default [<name>]", "Show or set the default scope"), r(inv.scopeDefault)),
 		withRun(verb("lookup <ip|cidr>", "Show which scope owns an address"), n(inv.scopeLookup)),
 		withRun(verb("prefixes <scope> {list|add|remove} [<cidr>[,<cidr>...]] | remove --all [--force] | move <cidrs> <scope>", "Manage a scope's CIDR list"), nn("prefixes", inv.scopePrefixes)),
 		withRun(verb("staging [list | remove <address>]", "Bench addresses of devices provisioned off-site for a scope"), n(inv.scopeStaging)),
@@ -117,9 +123,9 @@ func scopeCmd(inv *invocation) *cobra.Command {
 		withRun(verb("protocols <scope> [list|set <protocol>[,<protocol>...]|clear]",
 			"Limit a scope to some protocols (tacacs, radius); default: all"), nn("protocols", inv.scopeProtocols)),
 		withRun(verb("vendor-attrs <scope> [enable|disable <vendor>[,<vendor>...]]",
-			"RADIUS: vendor privilege attributes sent to the scope's devices"), n(inv.scopeVendorAttrs)),
+			"RADIUS: vendor privilege attributes sent to the scope's devices"), r(inv.scopeVendorAttrs)),
 		withRun(verb("devices <scope> [set <ip|cidr> <vendor>|unset <ip|cidr>]",
-			"RADIUS: tag an address of the scope with its vendor"), n(inv.scopeDevices)),
+			"RADIUS: tag an address of the scope with its vendor"), r(inv.scopeDevices)),
 		withRun(verb("aaa-order <scope> [tacacs-first|local-first]",
 			"AAA method-list order in this scope's rendered device configs"), nn("aaa-order", inv.scopeAAAOrder)),
 		withRun(verb("exec-timeout <scope> [<minutes>]",
@@ -131,7 +137,7 @@ func scopeCmd(inv *invocation) *cobra.Command {
 		withRun(verb("mgmt-acl <scope> {list|add|remove|clear|cisco-name|juniper-name|mode} [args]",
 			"Per-scope permit list, ACL / filter names and the Junos filter mode"), nn("mgmt-acl", inv.scopeMgmtACL)),
 		withRun(verb("breakglass <scope> {list|add <name> [--role admin|operator|readonly]|remove <name>}",
-			"Per-scope break-glass local users (names and roles; no credential is stored): the accounts a breakglass hold makes usable"), n(inv.scopeBreakGlass)),
+			"Per-scope break-glass local users (names and roles; no credential is stored): the accounts a breakglass hold makes usable"), r(inv.scopeBreakGlass)),
 		withRun(verb(scopeSNMPUse, scopeSNMPShort), nn("snmp", inv.scopeSNMP)),
 		withRun(verb(scopeNetconfUse, scopeNetconfShort), nn("netconf", inv.scopeNetconf)),
 		withRun(verb(scopeBlockUse, scopeBlockShort), nn("block", inv.scopeBlock)),
@@ -314,9 +320,9 @@ func (inv *invocation) scopeRequire(name string) error {
 		return err
 	}
 	if m.Exists("scopes", name) {
-		return nil
+		return inv.reservedScope(name)
 	}
-	return inv.usageErr("Scope '" + name + "' does not exist. Available: " + strings.Join(m.ScopesByRouting(), " "))
+	return inv.usageErr("Scope '" + name + "' does not exist. Available: " + strings.Join(m.WithoutScope(inv.managedScope()).ScopesByRouting(), " "))
 }
 
 // scopeExists is model_scope_exists, a model read error returned.
@@ -578,7 +584,7 @@ func (inv *invocation) scopeUsage() error {
 	if def == "" {
 		def = "<unset>"
 	}
-	inv.write(scopeUsageText(len(m.ScopeNames()), def))
+	inv.write(scopeUsageText(len(m.WithoutScope(inv.managedScope()).ScopeNames()), def))
 	return nil
 }
 
@@ -591,7 +597,7 @@ func (inv *invocation) scopeListView([]string) error {
 	if err != nil {
 		return err
 	}
-	m, err := inv.model()
+	m, err := inv.shownModel()
 	if err != nil {
 		return err
 	}
@@ -666,7 +672,7 @@ func (inv *invocation) scopeRouting([]string) error {
 	if err != nil {
 		return err
 	}
-	m, err := inv.model()
+	m, err := inv.shownModel()
 	if err != nil {
 		return err
 	}
@@ -865,10 +871,28 @@ func (inv *invocation) scopePrefixCollisions(cidrs []string, owner string) ([]st
 	var out []string
 	for _, c := range cidrs {
 		if o := m.PrefixOwner(c); o != "" && o != owner {
+			if o == inv.managedScope() {
+				// this server's own login: it is no scope to remove from
+				out = append(out, "    - "+c+"  ("+managedOwnerText+")")
+				continue
+			}
 			out = append(out, "    - "+c+"  (already in scope '"+o+"')")
 		}
 	}
 	return out, nil
+}
+
+// collisionAdvice is the advice after the collision lines: remedy when the
+// owners are scopes of the operator's, one line that names no command when
+// one of them is the server's own login (the scope tacctl manages, which
+// keeps its addresses and cannot be edited).
+func collisionAdvice(collisions []string, remedy ...string) []string {
+	for _, l := range collisions {
+		if strings.HasSuffix(l, "("+managedOwnerText+")") {
+			return []string{"The server's own login keeps its addresses: choose other prefixes."}
+		}
+	}
+	return remedy
 }
 
 // scopeVendorList is _scope_vendor_list: the vendors of a comma list in
@@ -923,6 +947,9 @@ func (inv *invocation) scopeAdd(args []string) error {
 	}
 	if err := names.RequireLower(name); err != nil {
 		return inv.validated(err)
+	}
+	if err := inv.reservedNewScope(name); err != nil {
+		return err
 	}
 	if exists, err := inv.scopeExists(name); err != nil {
 		return err
@@ -1018,8 +1045,8 @@ func (inv *invocation) scopeAdd(args []string) error {
 	}
 	if len(collisions) > 0 {
 		msgs := append([]string{"Cannot create scope '" + name + "': prefix(es) already claimed:"}, collisions...)
-		return inv.usageErr(append(msgs, "Each CIDR belongs to exactly one scope. Remove it from the owning",
-			"scope first with 'tacctl scope prefixes <owner> remove <cidr>'.")...)
+		return inv.usageErr(append(msgs, collisionAdvice(collisions, "Each CIDR belongs to exactly one scope. Remove it from the owning",
+			"scope first with 'tacctl scope prefixes <owner> remove <cidr>'.")...)...)
 	}
 	csv := strings.Join(canon, ",")
 	m, _ := inv.model()
@@ -1159,6 +1186,12 @@ func (inv *invocation) scopeRename(args []string) error {
 	if err := inv.requireStore(); err != nil {
 		return err
 	}
+	if err := inv.reservedScope(old); err != nil {
+		return err
+	}
+	if err := inv.reservedNewScope(newName); err != nil {
+		return err
+	}
 	if err := inv.scopeRenameCheck(old, newName); err != nil {
 		return inv.scopeRefused(err)
 	}
@@ -1238,10 +1271,29 @@ func (inv *invocation) scopeRenameCheck(old, newName string) error {
 // staging addresses that name the scope, in one apply (its own snapshot).
 // 'scope rename' and 'host rename' (for the host's own scope) share it.
 func (inv *invocation) scopeRenameRun(old, newName string) error {
+	return inv.scopeRenameDo(old, newName, nil, false)
+}
+
+// scopeRenameWith is the rename of this server's scope to the managed one
+// (managed_scope.go): extra changes the store in the same mutation, and the
+// rename itself says nothing (the caller says it in its own words).
+func (inv *invocation) scopeRenameWith(old, newName string, extra func(*store.Store) error) error {
+	return inv.scopeRenameDo(old, newName, extra, true)
+}
+
+func (inv *invocation) scopeRenameDo(old, newName string, extra func(*store.Store) error, quiet bool) error {
 	a := inv.app
 	hostsMoved := 0
 	if err := inv.applyWith(func() error {
-		if err := inv.mutate(func(s *store.Store) error { return s.ScopeRename(old, newName) }); err != nil {
+		if err := inv.mutate(func(s *store.Store) error {
+			if err := s.ScopeRename(old, newName); err != nil {
+				return err
+			}
+			if extra != nil {
+				return extra(s)
+			}
+			return nil
+		}); err != nil {
 			return err
 		}
 		// Enrolled hosts and staging addresses name the scope too: they follow
@@ -1259,10 +1311,19 @@ func (inv *invocation) scopeRenameRun(old, newName string) error {
 			return err
 		}
 		if inv.confGet("scope.default", "") == old {
-			if err := a.Conf().Set("scope.default", newName); err != nil {
-				return err
+			if newName == pwchange.ManagedScope {
+				// the scope of this server's own login is no default of the
+				// operator's: the marker is cleared, not moved to the reserved name
+				if err := a.Conf().Unset("scope.default"); err != nil {
+					return err
+				}
+				a.Out.Info("Default-scope marker cleared: '" + old + "' is this server's own login now, which is no default scope; set another: tacctl scope default <name>")
+			} else {
+				if err := a.Conf().Set("scope.default", newName); err != nil {
+					return err
+				}
+				a.Out.Info("Default-scope marker updated: " + old + " -> " + newName)
 			}
-			a.Out.Info("Default-scope marker updated: " + old + " -> " + newName)
 		}
 		return nil
 	}); err != nil {
@@ -1281,6 +1342,9 @@ func (inv *invocation) scopeRenameRun(old, newName string) error {
 		return err
 	}
 	inv.detail("scope rename", kvp("from", old), kvp("to", newName), kvp("users", strconv.Itoa(len(m.Members(newName)))), kvp("hosts", strconv.Itoa(hostsMoved)))
+	if quiet {
+		return nil
+	}
 	a.Out.Info(fmt.Sprintf("Scope renamed: %s -> %s (%d user(s) updated).", old, newName, len(m.Members(newName))))
 	if hostsMoved > 0 {
 		a.Out.Info(fmt.Sprintf("Enrolled hosts registered in '%s' now name '%s': %d.", old, newName, hostsMoved))
@@ -1333,7 +1397,9 @@ func (inv *invocation) scopeLookup(args []string) error {
 		return inv.usageErr("Usage: tacctl scope lookup <ip|cidr>", "Examples:",
 			"  tacctl scope lookup 10.5.1.2", "  tacctl scope lookup 10.5.0.0/16")
 	}
-	m, err := inv.model()
+	// the managed scope is no scope of the operator's: an address only it
+	// answers is covered by none
+	m, err := inv.shownModel()
 	if err != nil {
 		return err
 	}
@@ -1359,6 +1425,11 @@ func (inv *invocation) scopePrefixes(args []string) error {
 		return inv.usageErr("Usage: tacctl scope prefixes <scope> {list|add|remove} [<cidrs>]",
 			"       tacctl scope prefixes <scope> move <cidrs> <other-scope>",
 			"       tacctl scope prefixes <scope> remove --all [--force]")
+	}
+	if sub == "move" {
+		if err := inv.reservedScope(arg(args, 3)); err != nil {
+			return err
+		}
 	}
 	// A membership list: emptying it is 'remove --all'; the old 'clear'
 	// fails naming its replacement.
@@ -1454,8 +1525,8 @@ func (inv *invocation) scopePrefixes(args []string) error {
 		}
 		if len(collisions) > 0 {
 			msgs := append([]string{"Cannot add prefix(es) to scope '" + scope + "':"}, collisions...)
-			return inv.usageErr(append(msgs, "Remove them from the owning scope first:",
-				"  tacctl scope prefixes <owner> remove <cidr>")...)
+			return inv.usageErr(append(msgs, collisionAdvice(collisions, "Remove them from the owning scope first:",
+				"  tacctl scope prefixes <owner> remove <cidr>")...)...)
 		}
 		for _, c := range requested {
 			if contains(current, c) {

@@ -83,12 +83,17 @@ tacctl/
   which runs `internal/cli` under `setsid` with no stdin and ends with one
   `GATE-GO PASS|FAIL` line: start it with the Bash tool's
   `run_in_background`, never with a trailing `&` or a `pgrep -f` wait, and
-  count only that line), bats as the invoking user, the diff corpus
-  against the previous release, the container matrix, `groff -k -ww`; the
-  `test` workflow on the pull request. Tests sandbox host paths, and a
-  test must not read a path of the machine it runs on. A test that needs
-  the process environment, the lock wait or a package-wide registry calls
-  `serial(t)` first; the others run in parallel (`hooks_test.go`).
+  count only that line), `make gate-ci` before a pull request (what the
+  `test` workflow runs, which `make gate-go` does not: the race detector
+  and `-tags testknobs`, `internal/cli` in its two shards; it ends with one
+  `GATE-CI PASS|FAIL` line that names the failing tests, started and read
+  like `gate-go`, and takes several times as long), bats as the invoking
+  user, the diff corpus against the previous release, the container
+  matrix, `groff -k -ww`; the `test` workflow on the pull request. Tests
+  sandbox host paths, and a test must not read a path of the machine it
+  runs on. A test that needs the process environment, the lock wait or a
+  package-wide registry calls `serial(t)` first; the others run in parallel
+  (`hooks_test.go`).
 - A release: `docs/releasing.md`. The release branch is pushed and a pull
   request opened to `master` so the Go tests run before the tag;
   `release-reproducible` runs on the tag by `workflow_dispatch`.

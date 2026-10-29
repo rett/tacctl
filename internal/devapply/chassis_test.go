@@ -1,6 +1,7 @@
 package devapply
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -109,5 +110,64 @@ func TestApplyOnTwoRoutingEnginesSynchronized(t *testing.T) {
 	}
 	both(t, knobs, func(t *testing.T, d *device) {
 		wantExit(t, apply(t, d, &planner{desired: desiredLines()}, nil), ExitApplied, ResultApplied)
+	})
+}
+
+// oneMemberKnobs is a virtual chassis of one member: 'show version' prints
+// the header 'fpc0:'; plain makes the commits answer as a single device
+// does, with no member label (and over NETCONF one element, or none).
+func oneMemberKnobs(plain bool) map[string]string {
+	knobs := map[string]string{
+		"chassis": "fpc0 ex4600-40f 18.1R3-S6.1\n",
+		"device":  "hostname jsw1.example.net\nmodel ex4600-40f\njunos 18.1R3-S6.1\n",
+	}
+	if plain {
+		knobs["chassis.plain"] = ""
+	}
+	return knobs
+}
+
+// A virtual chassis of one member answers like a single device: the apply
+// runs through, on both transports, whether the commits carry no label (the
+// device of the capture) or a block of the member's.
+func TestApplyOnAVirtualChassisOfOneMember(t *testing.T) {
+	for name, plain := range map[string]bool{"plain": true, "labelled": false} {
+		t.Run(name, func(t *testing.T) {
+			both(t, oneMemberKnobs(plain), func(t *testing.T, d *device) {
+				p := &planner{desired: desiredLines()}
+				o := apply(t, d, p, nil)
+				wantExit(t, o, ExitApplied, ResultApplied)
+				if !slices.Equal(o.Identity.Members, []string{"fpc0"}) || o.Identity.Model != "ex4600-40f" {
+					t.Errorf("identity %+v", o.Identity)
+				}
+				if h := d.srv.History(); len(h) < 3 || !strings.HasPrefix(h[0].Comment, "tacctl apply confirm ") {
+					t.Errorf("history %+v", h[:2])
+				}
+				o = apply(t, d, p, nil)
+				wantExit(t, o, ExitNoChange, ResultNoChange)
+			})
+		})
+	}
+}
+
+// Two members that answer a commit without labels are not a single device:
+// the check is refused, and nothing is committed.
+func TestApplyOnAVirtualChassisOfTwoMembersPlainAnswers(t *testing.T) {
+	knobs := chassisKnobs()
+	knobs["chassis"] = "fpc0 ex4600-40f 18.1R3-S6.1\nfpc1 ex4600-40f 18.1R3-S6.1\n"
+	knobs["chassis.plain"] = ""
+	delete(knobs, "commit.synchronize")
+	both(t, knobs, func(t *testing.T, d *device) {
+		before := d.srv.Committed()
+		o := apply(t, d, &planner{desired: desiredLines()}, nil)
+		if o.Exit == ExitApplied || o.Exit == ExitPending {
+			t.Fatalf("exit %s: %s", o.Exit, o.Line())
+		}
+		if !strings.Contains(o.Reason, "the members that answered are not the chassis' (fpc0, fpc1)") {
+			t.Errorf("reason %q", o.Reason)
+		}
+		if d.srv.Committed() != before {
+			t.Error("committed")
+		}
 	})
 }

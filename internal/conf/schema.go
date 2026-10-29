@@ -45,10 +45,14 @@ const (
 	TypeBlockList = "block_list"
 	// TypeBool is audit.strict: the YAML booleans true and false.
 	TypeBool = "bool"
+	// TypeServerAddresses is server.addresses (0.2.21): the addresses
+	// devices and hosts reach this server at, a list that holds one address
+	// for now (ServerAddressesProblem).
+	TypeServerAddresses = "server_addresses"
 )
 
 // listTypes take list input (conf_set_list / a JSON list).
-var listTypes = []string{TypeCIDRList, TypeCiscoCmdList, TypeCommandRules, TypeBackendList, TypeJunosRegexList, TypeSudoCommandList, TypeBreakGlassList, TypeSNMPClients, TypeBlockList, TypeLockdownGroups}
+var listTypes = []string{TypeCIDRList, TypeCiscoCmdList, TypeCommandRules, TypeBackendList, TypeJunosRegexList, TypeSudoCommandList, TypeBreakGlassList, TypeSNMPClients, TypeBlockList, TypeLockdownGroups, TypeServerAddresses}
 
 // Rule is one schema entry.
 type Rule struct {
@@ -111,6 +115,9 @@ func NewSchema(backends []string) *Schema {
 			// than the tacctl server ('tacctl config linux engineer-sudo');
 			// unset is every command.
 			"linux.engineer_sudo": {Type: TypeSudoCommandList},
+			// The address devices and hosts reach this server at (0.2.21;
+			// 'host enroll --local' writes it): a list of one for now.
+			"server.addresses": {Type: TypeServerAddresses},
 			// Backends that serve the model, in render and restart order.
 			"backends.enabled": {Type: TypeBackendList, Values: slices.Clone(backends),
 				Default: []any{"tacacs"}, HasDefault: true},
@@ -476,6 +483,8 @@ func (s *Schema) Validate(path string, value any, isList bool) string {
 		return snmpClientsProblem(value)
 	case TypeSNMPText:
 		return snmpTextProblem(value)
+	case TypeServerAddresses:
+		return ServerAddressesProblem(value)
 	case TypeSudoCommandList:
 		items, isList := py.List(value)
 		if !isList || len(items) == 0 {

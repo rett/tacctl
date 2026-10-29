@@ -604,7 +604,7 @@ _upgrade() {
     assert_output --partial "'host show --check' logs in to the host over ssh, which is the superuser's"
     # Enrolling, syncing and the rest of the deployment are the superuser's.
     local args
-    for args in "enroll root@192.0.2.50 --name h1 --scope lab --server 192.0.2.1" "enroll --local --scope lab" "sync web1" "sync --all" \
+    for args in "enroll root@192.0.2.50 --name h1 --scope lab --server 192.0.2.1" "enroll --local" "sync web1" "sync --all" \
         "move web1 lab" "target web1 root@192.0.2.20" "provisioner web1 rotate deploy2 --key /tmp/k --yes" "unenroll web1 --force" \
         "default-method" "default-method radius"; do
         as_user en yes -- host $args

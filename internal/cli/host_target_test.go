@@ -104,7 +104,7 @@ func TestHostTarget(t *testing.T) {
 
 	// --local: no target.
 	hs.loopback()
-	hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--scope", "lab", "--build-on-host")
+	hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--build-on-host")
 	hs.run(nil, "host", "target", "authsrv", "root@x")
 	hs.expect(1, "", "'authsrv' is this server (enrolled with --local)")
 

@@ -8,7 +8,7 @@ tacctl host enroll admin@web1.example.net     # into the scope that covers web1'
                                               # registers
 tacctl host enroll admin@web2 --method radius # the same with pam_radius_auth against the RADIUS
                                               # backend
-tacctl host enroll --local                    # this machine
+tacctl host enroll --local                    # rebuild, move or repair this machine's own login
 tacctl user scope jsmith add <scope>          # give a user a login on hosts of that scope...
 tacctl host sync web1                         # ...and push the account (or: tacctl host sync --all)
 tacctl host list                              # with each host's address and METHOD
@@ -34,6 +34,48 @@ The method of a host is, in order: `--method`; the method the host is registered
 The scope of a host is, in order: `--scope`; the scope the host is registered in (re-enrolling never moves a host); the scope that answers its address (the first prefix that holds it, see `tacctl scope routing`), which enroll names: `10.1.2.3 (web1.example.net) is answered by scope 'lab' (prefix 10.0.0.0/8); enrolling web1 there`. A host whose address no scope covers is refused before anything changes, since the server would refuse its every login; enroll prints how to add the address to a scope (`tacctl scope prefixes <scope> add <address>/32`) or give the host a scope of its own, whose secret is useless from any other host (`tacctl scope add linux-web1 --prefixes <address>/32 --secret generate`, then `--scope linux-web1`). Enroll never creates a scope: a `/32` scope made for a host takes its address from any broader prefix, and that scope's users lose their accounts there.
 
 **When the scope no longer answers the host.** A prefix change, a new address or an enroll into the wrong scope can leave a host registered in one scope while another answers its address: the server then checks its logins against that scope's users and secret, and refuses them. tacctl never moves a host on its own (a move changes its secret and deletes the accounts of the users it loses); it says so, with the fix, on every `host sync` of the host, after the `host list` table, and in `config validate` (from the address recorded at the last enroll or sync): `dev: registered in scope 'linux-dev', but 192.0.2.22 is answered by scope 'lab' (prefix 192.0.2.0/24): its logins are checked against that scope's users and secret, so they are refused. To move it: tacctl host move dev`. Moving prefixes between scopes is one change: `tacctl scope prefixes site-a move 198.51.100.0/24 lab` takes them out of one scope and into the other and names the enrolled hosts that then belong to the other scope. A scope enrolled hosts use cannot be removed until they are moved.
+
+**This machine.** `tacctl install` and `tacctl upgrade` set up this machine's
+own login (see [Installing](../install/installing.md)), so `host enroll
+--local` is the command to rebuild a server (the registry entry is there, the
+PAM files are not), to move it to another address and to repair it. It sets up
+the login the same way: every user can log in to it and to its console unless
+disabled or of tier none, whatever their scopes; it takes no `--scope`. `--server <address>` is the
+address devices and hosts reach this server at (an address behind NAT or a
+VPN that is not on this machine is taken; a host name, `0.0.0.0`, `::`, a
+loopback, link-local, multicast or broadcast address, or an IPv4-mapped IPv6
+address is not). Without it the recorded address is used, else `--server`
+defaults to the address of the interface with the default route, said in one
+line (`Using 192.0.2.10 as the server address (the address of eth0); pass
+--server to use another.`). It is what devices and other hosts use: this
+machine's own PAM client always connects to `127.0.0.1`, so its logins arrive
+from an address the login scope has whatever the NAT does (the scope answers
+`127.0.0.1` and the server address). The address is the setting
+`server.addresses` in `tacctl.yaml` (a list that holds one address for now);
+`host enroll --local --server <address>` changes it, and so does `tacctl server
+addresses replace <address>`, which is the same change (a snapshot, then the
+setting, the registry entry, the managed scope and this server's own PAM and
+accounts at once; see [Server commands](../cli/server.md)). An install from before
+whose server is registered in a scope that serves the server alone is taken
+over at the next `host sync` of the server or `host enroll --local`, its
+secret kept, in one line (a default-scope marker on it is cleared, in one
+line); one that also serves hosts or devices is left to them, and `host enroll
+--local` sets up the server's own login apart from it; an enrolment that fails
+or is interrupted (an error, Ctrl-C, a failed client script) puts the prefixes
+back and takes the new scope out again, so the same command can be run again.
+`host forget` and `host unenroll` of the server take the scope with the
+registration, its `tacctl.yaml` keys (a lockdown, an ACL name) too, as `scope
+remove` does. A `host sync` of the server repairs its login when it was
+changed by hand (`Repaired the managed server login.`). A scope called
+`tacctl` that answers an address other than this server's own login addresses
+(`127.0.0.1` and the server address) is yours, from an earlier release: it is
+never taken over, given members or repaired, and `host enroll --local`, the
+sync of the server (the other hosts of `host sync --all` are synced) and
+`config validate` stop with one line, `Scope 'tacctl' is reserved. Rename the
+scope of that name first: tacctl scope rename tacctl <new-name>`. A scope of
+that name that answers the login addresses only, has no member and serves no
+one else is what an enrolment that did not finish left: the next `host enroll
+--local` takes it.
 
 **One machine, one registration.** Enroll refuses this server's own address unless it is `--local` (`'<target>' is this server; enroll it with --local`), and a new name for a machine already enrolled under another one (the same address on the same ssh port, or one of this server's own addresses when it is enrolled with `--local`): `'h192-0-2-22' is the enrolled host 'dev' (enrolled as admin@host.example.net): both reach 192.0.2.22.` Re-enroll it under its registered name (`--name dev`) or change how it is reached (`tacctl host target dev <[user@]host>`).
 
@@ -148,7 +190,7 @@ break-glass](../devices/break-glass.md#holding-break-glass).
 
 **Provisioning off-site.** A host or network device set up on a bench, at an address its scope does not cover, before it is shipped to the scope's network: give the scope it will be installed in and `--staging` (`tacctl host enroll admin@bench-host --scope lab --staging`; `tacctl config cisco|juniper|wti --scope lab --staging <bench-ip> [--name <device>]`). The bench address joins the scope as a `/32`, so the scope's own secret and users answer the device on the bench and nothing changes on it when it comes online in the scope's prefixes. tacctl records it (`tacctl scope staging` lists each, with where its host or device is seen now) and removes the `/32` once the host (its next enroll or sync) or the registered device (`tacctl device address <name> <ip>`, `device add`) is seen at another address the scope covers: `Staging address 203.0.113.9/32 removed from scope 'lab': sw1 is now seen at 192.168.5.9 (prefix 192.168.0.0/16).` A device staged without a name, and not registered at its bench address, is removed by hand: `tacctl scope staging remove <address>`. **Moving a host:** `tacctl host move <host> [<scope>]` (without a scope: the one that answers its address; `--all`: every host another scope answers, with one snapshot taken before the first move and none per host), which is an enroll of the registered host naming the new scope; before anything changes it says `Moving dev from scope 'linux-dev' to scope 'lab': it gets that scope's secret and users.` and names the users whose accounts the move deletes, then asks on a terminal (`[y/N]`); without a terminal it stops unless given `-y`. Removed users' homes follow the usual rules (asked, `--remove-home`, or kept). **Switching:** re-enrolling a registered host with the other `--method` removes the first method's module, secret file and SELinux module and installs the other; re-enrolling without `--method` keeps the host's method.
 
-`ssh` runs as the user who invoked `sudo`, with their keys; the remote login must be root or able to `sudo` (a password prompt works when run from a terminal). That login (the provisioning account: the target's `user@`, else your own username) must be a local account on the host that does not authenticate through tacctl, so enrolment and sync keep working when this server cannot be reached: `host enroll` refuses a tacctl user, and `host sync` warns about an existing enrolment that uses one. `tacctl ssh` never uses it. Without a terminal, a host whose sudo needs a password is reported as such rather than attempted. The steps of one command share a single ssh connection per host, so a login without a key asks for its ssh password once, followed by one sudo prompt; with a key (or agent) and passwordless sudo or a root login there is no prompt at all. `--scope` enrolls into an existing scope instead of creating one (the scope must answer the host's requests: `--local` is refused, nothing changed, when the scope does not cover 127.0.0.1, the address this server's own logins come from; another host gets a warning when the scope does not cover the address its name resolves to, and `host sync` of this server warns when its scope stops covering 127.0.0.1), `--server` overrides the detected server address, `--name` the registry name, and `--port` / `--identity` are passed to ssh. `host target <name> [<[user@]host>] [--port <n>] [--identity <file>|--no-identity]` changes how a host is reached without re-enrolling it: it logs in to the new target the same way first, checks that the login is root or may use sudo, compares the host's ssh keys read over that session with the pinned ones (a host whose keys differ is refused: it is not the same machine), records the address reached, and only then rewrites the registry line (scope, server and method kept), after a snapshot. Account changes are not pushed automatically: run `host sync` after `user add`, `remove`, `move`, `disable` or `scope` changes. Until then a removed user is already refused at password login by the server, but an SSH key on the host keeps working.
+`ssh` runs as the user who invoked `sudo`, with their keys; the remote login must be root or able to `sudo` (a password prompt works when run from a terminal). That login (the provisioning account: the target's `user@`, else your own username) must be a local account on the host that does not authenticate through tacctl, so enrolment and sync keep working when this server cannot be reached: `host enroll` refuses a tacctl user, and `host sync` warns about an existing enrolment that uses one. `tacctl ssh` never uses it. Without a terminal, a host whose sudo needs a password is reported as such rather than attempted. The steps of one command share a single ssh connection per host, so a login without a key asks for its ssh password once, followed by one sudo prompt; with a key (or agent) and passwordless sudo or a root login there is no prompt at all. `--scope` enrolls into an existing scope instead of creating one (the scope must answer the host's requests: another host gets a warning when the scope does not cover the address its name resolves to; `--local` takes no `--scope`, and `host sync` of this server warns when its login stops being answered at 127.0.0.1), `--server` overrides the server address (the host's own when it is enrolled already, else the recorded one, `server.addresses`, else the source address of the route to the host), `--name` the registry name, and `--port` / `--identity` are passed to ssh. `host target <name> [<[user@]host>] [--port <n>] [--identity <file>|--no-identity]` changes how a host is reached without re-enrolling it: it logs in to the new target the same way first, checks that the login is root or may use sudo, compares the host's ssh keys read over that session with the pinned ones (a host whose keys differ is refused: it is not the same machine), records the address reached, and only then rewrites the registry line (scope, server and method kept), after a snapshot. Account changes are not pushed automatically: run `host sync` after `user add`, `remove`, `move`, `disable` or `scope` changes. Until then a removed user is already refused at password login by the server, but an SSH key on the host keeps working.
 
 **Snapshots.** `host enroll` (so `host move`), `host unenroll`, `host rename`
 and `host forget` take a snapshot just before they change the registry (for
@@ -161,13 +203,19 @@ names, before it asks, the hosts that come back or go and the users whose UID
 the ledger drops or changes, and a host that no longer matches is fixed with
 `host sync`, `host show <name> --check`, `host unenroll` or `host enroll`.
 
-**This server's registration and a required password change.** The scope and
-the method of this server's own entry (`--local`) decide where the backends
-keep a user who must change the password. While any user is flagged,
-`host forget`, `host unenroll` and `host enroll --local` with another scope or
-method (so `host move` of it), or with a `--server` address the scope does not
-answer, are refused with the command that lifts the requirement first ([A required password
-change](../cli/user.md)); `scope rename` renames the entry with the scope.
+**This server's registration and a required password change.** The method of
+this server's own entry (`--local`) decides where the backends keep a user who
+must change the password. While any user is flagged, `host forget` and
+`host unenroll` of this server, and `host enroll --local` with another method
+than the registered one, are refused with the command that lifts the
+requirement first ([A required password change](../cli/user.md)). `host enroll
+--local` with the registered method is accepted, also for a server registered
+in a scope it shares with devices (the shared-scope warning of `user
+require-password-change` names it): the managed scope keeps a flagged user a
+login on the server, and the devices of the old scope stop accepting the
+password. It is refused only when it would leave a flagged user with no login
+on the server. `host move` of this server says that its login is
+set up by `host enroll --local`.
 With `--keep-uids` the ledger is left as it is, for a snapshot wanted for its
 users or scopes when the hosts have synced since. See
 [Backup commands](../cli/maintenance.md#backup-commands--tacctl-backup).

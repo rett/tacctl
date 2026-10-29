@@ -163,6 +163,29 @@ var Added0220 = []Family{
 	{"scope_mgmt_acl.mode.", true},
 }
 
+// Added0221 are the key families 0.2.21 added: the server address
+// (server.addresses). A 0.2.20 or older binary does not know it (its schema
+// refuses the key), so every rollback removes it; the host registry keeps a
+// copy of the address in this server's entry, which the older release reads.
+var Added0221 = []Family{
+	{"server.addresses", false},
+}
+
+// Added0221Key reports whether path is a key 0.2.21 added.
+func Added0221Key(path string) bool { return inFamilies(Added0221, path) }
+
+// RollbackKeys0220 are the leaf keys of the overrides that a 0.2.20 binary
+// does not know, in file order (Added0221).
+func (c *Config) RollbackKeys0220() []string {
+	var out []string
+	walkLeaves(c.Overrides(), "", func(p string, _ any) {
+		if Added0221Key(p) {
+			out = append(out, p)
+		}
+	})
+	return out
+}
+
 // Added0220Key reports whether path is a key 0.2.20 added.
 func Added0220Key(path string) bool { return inFamilies(Added0220, path) }
 
@@ -264,7 +287,7 @@ func (c *Config) unknown023(path string) bool {
 func (c *Config) RollbackKeys029() []string {
 	var out []string
 	walkLeaves(c.Overrides(), "", func(p string, _ any) {
-		if Added0210Key(p) || Added0217Key(p) || Added0219Key(p) || Added0220Key(p) {
+		if Added0210Key(p) || Added0217Key(p) || Added0219Key(p) || Added0220Key(p) || Added0221Key(p) {
 			out = append(out, p)
 		}
 	})
@@ -281,7 +304,7 @@ func (c *Config) RollbackKeys029() []string {
 func (c *Config) RollbackKeys0218() []string {
 	var out []string
 	walkLeaves(c.Overrides(), "", func(p string, _ any) {
-		if Added0219Key(p) || Added0220Key(p) {
+		if Added0219Key(p) || Added0220Key(p) || Added0221Key(p) {
 			out = append(out, p)
 		}
 	})
@@ -298,7 +321,7 @@ func (c *Config) RollbackKeys0218() []string {
 func (c *Config) RollbackKeys0216() []string {
 	var out []string
 	walkLeaves(c.Overrides(), "", func(p string, _ any) {
-		if Added0217Key(p) || Added0219Key(p) || Added0220Key(p) {
+		if Added0217Key(p) || Added0219Key(p) || Added0220Key(p) || Added0221Key(p) {
 			out = append(out, p)
 		}
 	})

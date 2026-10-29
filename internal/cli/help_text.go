@@ -21,6 +21,7 @@ Usage: tacctl <command> [arguments]
 Commands:
   <b>install</b> [<o>--branch <name></o>] [<o>-y</o>|<o>--yes</o>]  Install tacctl and the TACACS+ backend (tacquito) from scratch
       <o>--branch <name></o>                   The tacctl repo branch to install or upgrade from (default: the current one)
+      <o>--server <ip></o>                     The address devices and hosts reach this server at
       <o>-y</o>, <o>--yes</o>                         Answer yes to the confirmations
   <b>upgrade</b> [<o>--branch <name></o>]             Pull latest source, rebuild, update scripts and every enabled backend
   <b>uninstall</b> [<o>-y</o>|<o>--yes</o>]                  Remove tacctl, its backends' services and all associated files
@@ -37,6 +38,7 @@ Commands:
   <b>device</b> <o><subcommand></o>                   Device registry: list, add, enroll, scan, discover, check, host keys (client-config)
   <b>breakglass</b> <o><subcommand></o>               Break-glass hold: make the server stop answering one device or host (hold, release, list)
   <b>emergency</b> <o><subcommand></o>                Emergency measures (lockdown: refuse the logins of groups on a scope)
+  <b>server</b> <o><subcommand></o>                   This server's settings (addresses: where devices and hosts reach it)
   <b>ssh</b> <o><name|address></o> [<o>-p <port></o>]        Open an ssh session to a registered device or enrolled host, as you
       <o>-p <port></o>                         Connect to this port (default: the device's port, else 22)
   <b>shell</b> [<o>--idle <min></o>] [<o>-c <line></o>]      An interactive tacctl prompt with history and completion
@@ -451,7 +453,8 @@ Subcommands:
       <o>--name <device></o>                  (cisco, juniper, wti) A registered device of the scope: its location, description and sysName fill the SNMP step;
                                        with --staging it is also the device whose move ends the staging (default: the one at the bench address)
       <o>--server <address|name></o>          (cisco, juniper, wti) The address the devices are told to authenticate against, for devices behind a
-                                       translating firewall (a name must resolve to an IPv4 address); not stored
+                                       translating firewall (a name must resolve to an IPv4 address); not stored; without it the recorded server
+                                       address (tacctl server addresses), else the detected one
       <o>--source <address></o>               (cisco, juniper, wti) The address tacctl itself reaches the devices from: the first SNMP client (default: the
                                        address of the route to the Internet); not stored
       <o>--snmp-location <text></o>           (cisco, juniper, wti) The SNMP location for this paste; not stored (a device's own: tacctl device location)
@@ -520,7 +523,7 @@ Usage: tacctl config linux <subcommand>
   script [--scope <name>] [--server <address>] [--method tacplus|radius] [--output <file>]
                                           Write the install script for hosts in a scope (contains the secret)
       --scope <name>                      (script) The scope whose users and secret it carries (default: the default scope)
-      --server <address>                  (script) The address hosts use for this server (default: detected)
+      --server <address>                  (script) The server address hosts use (default: recorded, else detected)
       --method tacplus|radius             (script) pam_tacplus, or the host's pam_radius_auth (default: host default-method)
       --output, -o <file>                 Where the script goes (default: tacctl-linux-<scope>.sh, remove-script: tacctl-linux-remove.sh)
   remove-script [--output <file>]         Write the removal script (no secrets; accounts are left in place)
@@ -547,14 +550,15 @@ Usage: tacctl host <subcommand> [arguments]
       --check                          (show) Log in read-only and compare the host with what tacctl would make it:
                                        one line per difference with the command that fixes it; exit 1 when there is one (superuser only)
   enroll <[user@]host> [options]       Install TACACS+ or RADIUS login on a host over SSH and register it
-  enroll --local [options]             Same, for this machine (its tacctl users get the login console)
+  enroll --local [options]             This machine's own login, for every user (with the login console)
       --method tacplus|radius          pam_tacplus against the TACACS+ backend, or the host's pam_radius_auth
                                        package against the RADIUS backend (default: the host's current
                                        method, else the scope's auth-method, else its only protocol,
                                        else 'host default-method').
                                        Re-enroll with the other to switch
-      --scope <name>                   The host's scope (default: its registered one, else the scope covering its address)
-      --server <address>               Address the host should use for this server (default: detected)
+      --scope <name>                   The host's scope (default: its registered one, else the scope covering its address;
+                                       not with --local)
+      --server <address>               Address the host uses for this server (default: recorded, else detected)
       --name <name>                    Registry name (default: short hostname, lowercased; lower case, not a tacctl word)
       --port <n>, --identity <file>    SSH port and key
       --build-on-host                  (tacplus) Compile pam_tacplus on the host instead of in a container here

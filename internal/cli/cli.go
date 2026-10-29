@@ -34,6 +34,12 @@ type invocation struct {
 	registryNoted bool
 	// lockdownShown: the emergency lockdown notice was decided for this process.
 	lockdownShown bool
+	// pwGuardOff: the guards of a required password change (pwGuard,
+	// pwWriteGuard) judge no store write, while the enrolment of this server
+	// sets its managed scope up: the enrolment's own guard (pwHostGuard)
+	// judges the registration it leads to, which the writes are the first
+	// half of (managed_scope.go: managedSetup).
+	pwGuardOff bool
 
 	// shellMode: completion is for the tacctl shell's lists (live names
 	// with descriptions; flags only after a '-').

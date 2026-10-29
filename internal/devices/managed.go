@@ -373,13 +373,19 @@ func managedCisco(req Request, d Data) []Section {
 			"  server name "+ciscoRadiusServer)
 	case req.Legacy:
 		aaa = append(aaa,
-			"tacacs-server host "+v["SERVER_IP"]+" single-connection timeout 5 key "+v["SECRET"],
+			"tacacs-server host "+v["SERVER_IP"]+" single-connection"+v["TACACS_HOST_PORT"]+" timeout 5 key "+v["SECRET"],
 			"aaa group server tacacs+ "+group,
 			"  server "+v["SERVER_IP"])
 	default:
 		aaa = append(aaa,
 			"tacacs server "+ciscoTacacsServer,
-			"  address ipv4 "+v["SERVER_IP"],
+			"  address ipv4 "+v["SERVER_IP"])
+		// the port leaf, for a listener that is not on 49 (the template's
+		// ${TACACS_PORT_LINE}; nothing otherwise)
+		if v["TACACS_PORT_LINE"] != "" {
+			aaa = append(aaa, v["TACACS_PORT_LINE"])
+		}
+		aaa = append(aaa,
 			"  key "+v["SECRET"],
 			"  single-connection",
 			"  timeout 5",

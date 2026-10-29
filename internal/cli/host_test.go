@@ -34,11 +34,19 @@ type hostSandbox struct {
 	stdin string
 	// tty, when set, says whether the host commands have a terminal.
 	tty func() bool
+	// serverAddress, when set, is the detection of the server address
+	// (testServerAddress otherwise).
+	serverAddress func() (string, string, error)
+	// ctx, when set, is the context the command runs under (cancelled by a
+	// test to interrupt it).
+	ctx context.Context
 }
 
-func newHostSandbox(t *testing.T) *hostSandbox {
+// linuxDirStandIn points the sandbox's TACCTL_LINUX_DIR at a directory of its
+// own with a stand-in pam_tacplus tarball, so a test that enrols a host never
+// reads the Linux host data of the machine it runs on.
+func linuxDirStandIn(t *testing.T, sb *sandbox) {
 	t.Helper()
-	sb := newSandbox(t, true)
 	linux := filepath.Join(sb.dir, "linux")
 	if err := os.MkdirAll(linux, 0o755); err != nil {
 		t.Fatal(err)
@@ -47,6 +55,12 @@ func newHostSandbox(t *testing.T) *hostSandbox {
 		t.Fatal(err)
 	}
 	sb.env = append(sb.env, "TACCTL_LINUX_DIR="+linux)
+}
+
+func newHostSandbox(t *testing.T) *hostSandbox {
+	t.Helper()
+	sb := newSandbox(t, true)
+	linuxDirStandIn(t, sb)
 	hs := &hostSandbox{sandbox: sb}
 	// Rendered once, so preflight finds tacquito.yaml and says nothing.
 	hs.run(nil, "config", "render")
@@ -77,12 +91,9 @@ func (hs *hostSandbox) runner() *fake.Runner {
 	return r
 }
 
-// run runs tacctl with r (a fresh scripted runner when nil).
-func (hs *hostSandbox) run(r *fake.Runner, args ...string) string {
-	hs.t.Helper()
-	if r == nil {
-		r = hs.runner()
-	}
+// newApp is the app of one run of args on r, with the sandbox's output
+// buffers emptied.
+func (hs *hostSandbox) newApp(r *fake.Runner, args []string) *app.App {
 	hs.out.Reset()
 	hs.err.Reset()
 	hs.sandbox.runner = r
@@ -92,7 +103,25 @@ func (hs *hostSandbox) run(r *fake.Runner, args ...string) string {
 		a.Paths = a.Paths.Reroot(hs.dir)
 	}
 	a.HostsTTY = hs.tty
-	hs.code = exitCode(runWith(context.Background(), a, BuildInfo{Version: "0.2.0-test"}, hs.hooks), a.Out)
+	a.ServerAddress = hs.serverAddress
+	if a.ServerAddress == nil {
+		a.ServerAddress = testServerAddress
+	}
+	return a
+}
+
+// run runs tacctl with r (a fresh scripted runner when nil).
+func (hs *hostSandbox) run(r *fake.Runner, args ...string) string {
+	hs.t.Helper()
+	if r == nil {
+		r = hs.runner()
+	}
+	a := hs.newApp(r, args)
+	ctx := hs.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	hs.code = exitCode(runWith(ctx, a, BuildInfo{Version: "0.2.0-test"}, hs.hooks), a.Out)
 	if n := len(r.Execs()); n != 0 {
 		hs.t.Errorf("%q: exec'd", args)
 	}
@@ -685,32 +714,18 @@ func TestHostSyncSeveralNames(t *testing.T) {
 	}
 }
 
-// The scope must answer the host's requests: for this server (127.0.0.1)
-// another scope or none is refused before anything changes; for another
-// host (its resolved address) it is a warning.
+// The scope must answer the host's requests. This server's own login is in
+// the scope tacctl manages, which answers 127.0.0.1 and the server address
+// whatever the operator's scopes hold; for another host (its resolved
+// address) a scope that does not answer it is a warning. A sync of the server
+// whose managed scope lost its prefixes repairs them, in one line.
 func TestHostEnrollScopeMustCoverTheHost(t *testing.T) {
 	hs := newHostSandbox(t)
-	before := hs.registry()
-	hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--scope", "lab", "--build-on-host")
-	hs.expect(1, "", "Scope 'lab' does not cover 127.0.0.1, the address this server's own logins reach TACACS+ and RADIUS from (no scope covers it), so every login of 'authsrv' would be refused.")
-	for _, want := range []string{"tacctl scope prefixes lab add 127.0.0.1/32", "Nothing was changed."} {
-		if !strings.Contains(hs.err.String(), want) {
-			t.Errorf("no %q in %q", want, hs.err.String())
-		}
-	}
-	if hs.registry() != before || hs.sandbox.runner.Called("bash") {
-		t.Error("the refused enrolment changed something")
-	}
-	// Without --scope and no scope covering 127.0.0.1: refused too.
-	hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--build-on-host")
-	hs.expect(1, "", "No scope covers 127.0.0.1 (where this server's own logins come from), so the server would refuse every login of 'authsrv'.")
-	if !strings.Contains(hs.err.String(), "tacctl host enroll --local [--scope <scope>]") {
-		t.Errorf("hint: %q", hs.err.String())
-	}
-	// Its own scope for 127.0.0.1/32: found without --scope.
-	hs.run(nil, "scope", "add", "linux-authsrv", "--prefixes", "127.0.0.1/32", "--secret", "generate")
 	hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--build-on-host")
 	hs.expect(0, "Host 'authsrv' enrolled", "")
+	if st := hs.store(); !strings.Contains(st, "tacctl:\n    prefixes: [127.0.0.1/32, 192.0.2.10/32]") {
+		t.Errorf("store:\n%s", st)
+	}
 
 	// Another host whose address lab does not hold: enrolled, with a warning.
 	hs.run(nil, "host", "enroll", "admin@web1.example.net", "--scope", "lab", "--build-on-host")
@@ -718,12 +733,15 @@ func TestHostEnrollScopeMustCoverTheHost(t *testing.T) {
 	if !strings.Contains(hs.out.String(), "Host 'web1' enrolled") {
 		t.Errorf("not enrolled: %q", hs.out.String())
 	}
-	// A sync of this server whose scope no longer covers 127.0.0.1 warns.
-	hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--build-on-host")
-	hs.run(nil, "scope", "prefixes", "linux-authsrv", "add", "10.99.0.0/16")
-	hs.run(nil, "scope", "prefixes", "linux-authsrv", "remove", "127.0.0.1/32")
+	// The managed scope's prefixes changed by hand: the sync puts them back.
+	st := strings.Replace(hs.store(), "prefixes: [127.0.0.1/32, 192.0.2.10/32]", "prefixes: [192.0.2.10/32]", 1)
+	hs.write("state/store.yaml", st, 0o600)
 	hs.run(nil, "host", "sync", "authsrv")
-	if !strings.Contains(hs.out.String()+hs.err.String(), "authsrv: scope 'linux-authsrv' does not cover 127.0.0.1") {
-		t.Errorf("sync: %q %q", hs.out.String(), hs.err.String())
+	if out := plain(hs.out.String()); !strings.Contains(out, "Repaired the managed server login.") || !strings.Contains(hs.store(), "prefixes: [127.0.0.1/32, 192.0.2.10/32]") {
+		t.Errorf("sync: %q\n%s", out, hs.store())
+	}
+	hs.run(nil, "host", "sync", "authsrv")
+	if strings.Contains(hs.out.String(), "Repaired") {
+		t.Errorf("repaired twice: %q", hs.out.String())
 	}
 }

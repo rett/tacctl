@@ -13,7 +13,7 @@ import (
 // The variables each WTI template may use (cmd_config_wti's and
 // config_wti_radius's envsubst whitelists).
 var (
-	wtiTacacsVars = []string{"SERVER_IP", "SECRET", "SCOPE", "FALLBACK_LOCAL", "SERVICE_NAME", "GROUP_SUMMARY", "SNMP_BLOCK", "IPTABLES_BLOCK", "IPTABLES_DROP_BLOCK"}
+	wtiTacacsVars = []string{"SERVER_IP", "SECRET", "TACACS_PORT", "SCOPE", "FALLBACK_LOCAL", "SERVICE_NAME", "GROUP_SUMMARY", "SNMP_BLOCK", "IPTABLES_BLOCK", "IPTABLES_DROP_BLOCK"}
 	wtiRadiusVars = []string{"SERVER_IP", "SECRET", "SCOPE", "FALLBACK_LOCAL", "AUTH_PORT", "ACCT_PORT", "SNMP_BLOCK", "IPTABLES_BLOCK", "IPTABLES_DROP_BLOCK"}
 )
 
@@ -111,6 +111,7 @@ func WTIVars(req Request, d Data) map[string]string {
 		"SCOPE":               req.Scope,
 		"FALLBACK_LOCAL":      fallbackLocal(d.Conf, req.Scope),
 		"SERVICE_NAME":        wtiServiceName,
+		"TACACS_PORT":         d.tacacsPort(),
 		"SNMP_BLOCK":          WTISNMP(d.snmpInput(req.Scope)).Text,
 		"IPTABLES_BLOCK":      ipt.Rules,
 		"IPTABLES_DROP_BLOCK": ipt.Drop,
@@ -367,7 +368,7 @@ func renderWTIRadius(o *out, req Request, d Data) error {
 		"  - Accounting is not verified: whether the unit sends any, and what (Session Module",
 		"    Type), is not documented",
 		"  - Password logins only (PAP; WTI documents nothing else): no CHAP, MS-CHAP or EAP",
-		"  - UDP, not TCP/49: the unit sends to " + vars["AUTH_PORT"] + " (authentication) and " + vars["ACCT_PORT"] + " (accounting)",
+		"  - UDP, not TCP/" + vars["TACACS_PORT"] + ": the unit sends to " + vars["AUTH_PORT"] + " (authentication) and " + vars["ACCT_PORT"] + " (accounting)",
 		"  - The server answers only a unit whose source address lies in a prefix of scope",
 		"    '" + scope + "' ('tacctl scope lookup <wti-ip>' to check)",
 	} {

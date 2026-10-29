@@ -796,7 +796,7 @@ ${ESC}[0;31m[ERROR]${ESC}[0m $1"
     stub_cmd git
     stub_cmd wget
     runs "$TACCTL_BIN_SCRIPT" install --branch < /dev/null
-    _refused "Usage: tacctl install [--branch <name>] [-y|--yes]" --branch
+    _refused "Usage: tacctl install [--branch <name>] [--server <ip>] [-y|--yes]" --branch
     refute_called '^(git|wget) '
 }
 
@@ -805,7 +805,7 @@ ${ESC}[0;31m[ERROR]${ESC}[0m $1"
     stub_cmd git
     stub_cmd wget
     runs "$TACCTL_BIN_SCRIPT" install -y whatever --branch feature/x < /dev/null
-    _refused "Usage: tacctl install [--branch <name>] [-y|--yes]" whatever
+    _refused "Usage: tacctl install [--branch <name>] [--server <ip>] [-y|--yes]" whatever
     runs "$TACCTL_BIN_SCRIPT" uninstall --branch feature/x < /dev/null
     _refused "Usage: tacctl uninstall [-y|--yes]" --branch
     runs "$TACCTL_BIN_SCRIPT" uninstall -y extra < /dev/null

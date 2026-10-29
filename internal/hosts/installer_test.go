@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -232,6 +233,20 @@ func TestWriteScriptChecksAndPorts(t *testing.T) {
 	if res, _ = e.WriteScript(r); res.Port != "1812" {
 		t.Errorf("radius default port %q", res.Port)
 	}
+	// RADIUS with an authentication listener only: no accounting port is
+	// told, the script says so; and TACACS+ without a listener list is 49
+	r.Listeners = []backend.Listener{{Name: "auth", Address: ":11812"}}
+	if res, err = e.WriteScript(r); err != nil || res.Port != "11812" {
+		t.Fatalf("radius auth only: %+v %v", res, err)
+	}
+	if data, _ = os.ReadFile(out); strings.Contains(string(data), "TAC_ACCT_PORT=1") {
+		t.Errorf("an accounting port without a listener:\n%s", head(string(data)))
+	}
+	r = req
+	r.Listeners = nil
+	if res, err = e.WriteScript(r); err != nil || res.Port != "49" {
+		t.Errorf("tacplus default port %+v %v", res, err)
+	}
 	// Accounts only: no tarball either.
 	r = req
 	r.AccountsOnly = true
@@ -338,4 +353,23 @@ func TestTempFiles(t *testing.T) {
 	if filepath.Dir(d) != tmp {
 		t.Errorf("temp dir %s is not in the directory given, %s", d, tmp)
 	}
+}
+
+// The client script takes the server's port from its header (TAC_PORT,
+// TAC_ACCT_PORT): it names no port of its own, so pam_tacplus's server=ADDR:PORT
+// and pam_radius_auth's server file follow the listener.
+func TestClientScriptNamesNoServerPort(t *testing.T) {
+	re := regexp.MustCompile(`\b(49|1812|1813)\b`)
+	for i, l := range strings.Split(string(assets.LinuxInstallScript), "\n") {
+		if re.MatchString(l) {
+			t.Errorf("line %d names a server port: %s", i+1, l)
+		}
+	}
+}
+
+func head(s string) string {
+	if len(s) > 600 {
+		return s[:600]
+	}
+	return s
 }

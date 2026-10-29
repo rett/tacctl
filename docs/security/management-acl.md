@@ -84,11 +84,12 @@ a Junos filter drops the rest. The terms, in order:
   `--source`, or with the address inside a plain entry, there is one address
   and no such term. The address is not a source of `permit-mgmt`, because the
   device starts those sessions and only the answers of the server need to
-  pass: for TACACS+ the term matches that address, protocol `tcp`, source port
-  `tacacs` and `tcp-established` (every tcp packet but the first of a
-  connection, so a new connection from port 49 is refused); for RADIUS that
-  address, protocol `udp` and the source ports `radius` and `radacct` (the
-  listener's, 1812 and 1813 by default). The filter keeps no state: it
+  pass: for TACACS+ the term matches that address, protocol `tcp`, the source
+  port of the TACACS+ listener (`tacacs` when it is 49, else the number) and
+  `tcp-established` (every tcp packet but the first of a connection, so a new
+  connection from the listener's port is refused); for RADIUS that address,
+  protocol `udp` and the source ports `radius` and `radacct` (the listener's,
+  1812 and 1813 by default). The filter keeps no state: it
   matches the answers by source port and cannot tell them from another packet
   sent from that port, so udp from those ports is accepted whatever it is,
   and the term comes after the SNMP terms so that `deny-snmp` decides udp

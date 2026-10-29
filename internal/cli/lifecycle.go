@@ -44,5 +44,7 @@ func (inv *invocation) lifecycleHost() *lifecycle.Host {
 		// pair of audit lines ends here, the re-run writes its own.
 		BeforeExec: func() { inv.auditEnd(nil, false) },
 		Audit:      func(event string, kv ...audit.KV) { inv.detail(event, kv...) },
+		// This machine's own login: the enrolment's machinery (own_login.go).
+		OwnLogin: inv.ownLogin,
 	}
 }

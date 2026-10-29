@@ -54,6 +54,11 @@ type App struct {
 	// The CLI's tests set it, as they have none.
 	HostsTTY func() bool
 
+	// ServerAddress, when set, is the detection of this machine's server
+	// address ('host enroll --local' without --server); nil reads the
+	// machine's own (hosts.LocalServerAddress). The CLI's tests set it.
+	ServerAddress func() (addr, iface string, err error)
+
 	svc services
 	// ctx is the invocation's context (SetContext).
 	ctx context.Context

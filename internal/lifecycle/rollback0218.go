@@ -116,8 +116,11 @@ func (p *RollbackPlan) lockdownKeysStep(target string) RollbackStep {
 	s := RollbackStep{Title: p.in.Paths.Overrides + ": remove the keys " + target + " does not know", Todo: len(p.keys) > 0}
 	if len(p.keys) == 0 {
 		s.Lines = []string{"nothing to remove (no emergency lockdown is recorded)"}
-		if target == RollbackTarget0219 {
+		switch target {
+		case RollbackTarget0219:
 			s.Lines = []string{"nothing to remove (no scope has a management filter mode)"}
+		case RollbackTarget0220:
+			s.Lines = []string{"nothing to remove (no server address is set)"}
 		}
 		return s
 	}
@@ -131,6 +134,8 @@ func (p *RollbackPlan) lockdownKeysStep(target string) RollbackStep {
 			what = append(what, "the record of an emergency lockdown is 0.2.19's")
 		case conf.Added0220Key(k) && !slices.Contains(what, "the management filter mode of a scope is 0.2.20's"):
 			what = append(what, "the management filter mode of a scope is 0.2.20's")
+		case conf.Added0221Key(k) && !slices.Contains(what, "the server address is 0.2.21's (this server's registry entry keeps a copy, which the older release reads)"):
+			what = append(what, "the server address is 0.2.21's (this server's registry entry keeps a copy, which the older release reads)")
 		}
 	}
 	s.Lines = append(s.Lines, "("+strings.Join(what, ", ")+"; "+target+"'s schema refuses it: its 'config validate' reports it and its 'backup restore' refuses a snapshot that has it; every other key is one it has and stays)")

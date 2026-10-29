@@ -15,7 +15,7 @@ Step 3: Set each item (type the item number, [Enter], then the value)
          4. Secret Word                : ${SECRET}
          5. Fallback Timer             : 15
          6. Fallback Local             : ${FALLBACK_LOCAL}
-         7. Authentication Port        : 49
+         7. Authentication Port        : ${TACACS_PORT}
          8. Default User Access        : Enable On, Access Level ViewOnly,
                                          Service Access Telnet/SSH On   (REQUIRED; see notes),
                                          Port Access: the serial ports User- and
@@ -34,7 +34,7 @@ Step 3: Set each item (type the item number, [Enter], then the value)
 
 Step 4: Ping test
         13. Ping TACACS Servers        -- confirms ${SERVER_IP} answers ICMP from the unit.
-                                          ICMP only: a pass does NOT prove TCP/49 works (Step 5)
+                                          ICMP only: a pass does NOT prove TCP/${TACACS_PORT} works (Step 5)
 
 Step 5: Check the unit's firewall (IP Tables under /N)
         If the IP Tables list sets 'iptables -P INPUT DROP' or ends in

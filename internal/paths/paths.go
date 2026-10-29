@@ -79,6 +79,7 @@ type Paths struct {
 	// console remove and uninstall take it away.
 	SSHDEngineerDropInOld string
 	SSHDir                string // TACCTL_SSH_DIR: /etc/ssh, where this machine's ssh_host_*_key.pub are
+	PAMDir                string // TACCTL_CLIENT_PAM_DIR: /etc/pam.d, where the client script writes tacctl's PAM files (the variable the script reads too)
 	ShellsFile            string // TACCTL_SHELLS_FILE: /etc/shells
 	VarLib                string // TACCTL_VAR_LIB: tacctl's variable data (/var/lib/tacctl, 0711)
 	SeenCache             string // VarLib/devices-seen.json: what the logs showed of each device
@@ -168,6 +169,7 @@ func Resolve(env Env, exe string, exists func(string) bool) Paths {
 	p.SSHDEngineerDropIn = env.Or("TACCTL_SSHD_ENGINEER_DROPIN", filepath.Join(filepath.Dir(p.SSHDDropIn), SSHDEngineerDropInName))
 	p.SSHDEngineerDropInOld = filepath.Join(filepath.Dir(p.SSHDDropIn), "tacctl-engineer.conf")
 	p.SSHDir = env.Or("TACCTL_SSH_DIR", "/etc/ssh")
+	p.PAMDir = env.Or("TACCTL_CLIENT_PAM_DIR", "/etc/pam.d")
 	p.ShellsFile = env.Or("TACCTL_SHELLS_FILE", "/etc/shells")
 	p.VarLib = env.Or("TACCTL_VAR_LIB", "/var/lib/tacctl")
 	p.SeenCache = p.VarLib + "/devices-seen.json"

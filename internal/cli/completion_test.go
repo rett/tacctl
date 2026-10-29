@@ -211,7 +211,7 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"host", "check", ""}, []string{"web1", "web2", "--all", "--json"}},
 		{[]string{"host", "check", "web1", ""}, []string{"web1", "web2", "--all", "--json"}},
 		{[]string{"host", ""}, []string{"check", "default-method", "enroll", "forget", "list", "move", "provisioner", "rename", "show", "sync", "target", "unenroll"}},
-		{[]string{"install", ""}, []string{"--branch", "-y", "--yes"}},
+		{[]string{"install", ""}, []string{"--branch", "--server", "-y", "--yes"}},
 		{[]string{"upgrade", ""}, []string{"--branch"}},
 		{[]string{"uninstall", ""}, []string{"-y", "--yes"}},
 		{[]string{"version", ""}, []string{"--long"}},
@@ -528,7 +528,7 @@ func TestCompleteThisReleasesWords(t *testing.T) {
 		{[]string{"scope", "secret", "lab", "set", "--"}, []string{"--stdin"}, false},
 		{[]string{"user", "add", "x", "--"}, []string{"--hash"}, false},
 		{[]string{"user", "passwd", "x", "--"}, []string{"--hash"}, false},
-		{[]string{"rollback", ""}, []string{"0.2.19", "0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3"}, true},
+		{[]string{"rollback", ""}, []string{"0.2.20", "0.2.19", "0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3"}, true},
 	}
 	for _, c := range cases {
 		got, _ := completeWords(t, liveNames, c.words...)

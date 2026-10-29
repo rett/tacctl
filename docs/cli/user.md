@@ -91,7 +91,12 @@ user rename <old> <new>
     sync. If the ledger is locked by another command for 30 seconds, the rename stops at the
     snapshot with nothing changed (see [Consistent UIDs and GIDs](../hosts/ids-and-groups.md)). A
     user that has a UID in `linux-uids`, or an account on an enrolled host, is not renamed to a name
-    with a period: the next sync would remove the account. The command says so and changes nothing.
+    with a period: the next sync would remove the account. The command says so, changes nothing and
+    names the two ways forward: a name without a period, or a new user (`user remove`, then
+    `host sync --all`, which removes the accounts, then `user add` under the new name with the
+    group and scopes it prints), which gets a new password and no UID (the old number stays
+    reserved). A user whose name has a period has no Linux account on any host, the tacctl server
+    included, so no console login.
 
 user move <name> <group>
 
@@ -121,6 +126,14 @@ user scope <name> remove --all
 
     Revoke every scope (with confirmation)
 ```
+
+**Scopes and this server.** A user's scopes are where the user logs in to
+devices and enrolled hosts. Every user also logs in to the tacctl server and
+its console, unless disabled or of tier none, without a scope for it: the
+listings and Tab do not offer one, and a scope list that is empty means no
+device. A user kept off the server is disabled (`user disable`) or in a group
+of tier none. When a command next writes a user's record, a stored copy of the
+server's own scope (from an install before 0.2.21) is dropped from it.
 
 **A period in a name.** A user name may hold periods between its parts (`alice.smith`, `a.b-c_d`):
 letters, digits, `_` and `-` in runs joined by single periods. It never starts or ends with a period,
@@ -167,24 +180,20 @@ only when set.
   after the next `host sync` of it; `user add` and `user rename` of a user who must change the password
   say so, since until then the user can neither log in nor change the password.
 - *A user must be able to change it.* The flag is not set, and the verb says why, for a user with no
-  login on this server: the server is not enrolled (`host enroll --local`), the user is not in the
-  scope it is enrolled in, the name is no Linux account name (a period), or the user is disabled.
+  login on this server: the server is not enrolled (`host enroll --local`), the name is no Linux
+  account name (a period), or the user is disabled.
   `off` clears the flag of the user or of every user who has it, a superuser's included.
 - *Devices.* The TACACS+ and RADIUS configuration put the user in the scope this server is enrolled
   in (`host enroll --local`) and in no other, and only in the protocol of the method it is enrolled
   with; in the other protocol the user is not rendered at all, so a catch-all scope of that protocol
   does not keep its devices open. The login at tacctl, which comes from the server, works and a
   device finds no scope the user is in. The server's logins come from `127.0.0.1`, and from the
-  address given with `host enroll --local --server <address>` when it is another one (a connection to
-  an address of the machine itself is sourced from that address): the enrolled scope must answer
-  both, and the shared-scope warning below counts the prefixes inside `127.0.0.0/8` and the
-  single-address prefix of that address as the server's own, and every other one as a device's. The stored scopes are not
-  changed, and clearing the flag puts the user back. A change of the flag restarts the backend whose
-  file changed (see [Service restart](conventions.md)), and none when the user has no scope but the
-  server's. A scope that holds the server together with devices cannot be cut apart: the devices in it
-  still accept the user, and the verbs warn and name the prefixes: the ones that flag, a prefix added
-  to the server's scope later (`scope prefixes`), and `host enroll --local`. Give the server a scope
-  of its own (`scope add`, then `host enroll --local --scope <name>`).
+  server address (`server.addresses`, set by `host enroll --local`), and the server's own login
+  answers both. The stored scopes are not changed, and clearing the flag puts the user back. A change
+  of the flag restarts the backend whose file changed (see [Service restart](conventions.md)). An
+  install from before 0.2.21 whose server is still registered in a scope it shares with devices
+  (until `host enroll --local`) keeps the devices of that scope accepting the user, and the verbs
+  that flag warn and name the prefixes.
 - *Enrolled hosts.* On every enrolled Linux host but this server (`host enroll --local`), the next
   `host sync` expires the account of a user who must change the password, as it expires a disabled
   user's (a password and an SSH key both fail; the files are kept), and the sync after the change
@@ -192,8 +201,8 @@ only when set.
   host is synced it is as it was, so `require-password-change`, `user passwd` and `tacctl passwd`
   name the hosts of the user's scopes with `tacctl host sync --all`.
 - *A flagged user must be able to log in.* A user who must change the password and has no login on
-  the server (not in its scope, the scope no longer answers the server's addresses, the backend of
-  the server's own logins is not enabled, the server not enrolled) could change nothing and enter
+  the server (the server's own login no longer answers its addresses, the backend of the server's
+  own logins is not enabled, the server not enrolled) could change nothing and enter
   nothing, so a change that would leave one is refused with nothing changed, with the command that
   lifts the requirement first (`user require-password-change <name> off`):
   - before anything is written: `user scope` removing the scope or replacing the list, `scope
@@ -203,10 +212,14 @@ only when set.
     the server's address more closely than its own, `group edit <group> tier` or `priv-lvl` (or
     another group write) that newly holds a member with no login on the server, `backend disable` of
     the backend of the server's own logins;
-  - `host forget`, `host unenroll` and `host enroll --local` with another scope or method while any
-    user is flagged (the backends' files are rendered from the server's registration, so it is
-    changed with the requirement lifted), and `host enroll --local --server <address>` whose scope
-    does not answer that address.
+  - `host forget` and `host unenroll` of this server, and `host enroll --local` with another method
+    than the registered one, while any user is flagged (the backends' files are rendered from the
+    server's registration, so it is changed with the requirement lifted). `host enroll --local` with
+    the registered method is not refused, also for a server registered in a scope it shares with
+    devices: it gives the server the managed scope, which every user is a member of, so a flagged
+    user keeps a login on the server, and the devices of the old scope stop accepting the old
+    password (this is what the shared-scope warning asks for). It is refused only when it would
+    leave a flagged user with no login on the server.
 
   `scope rename` renames the registration with the scope, before the backends render.
 - *Commands.* While a password change is required of the caller, and the caller is no superuser,

@@ -325,7 +325,7 @@ func TestRotateWithKey(t *testing.T) {
 func TestRotateRefusals(t *testing.T) {
 	hs, rh := rotSandbox(t)
 	hs.loopback()
-	hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--scope", "lab", "--build-on-host")
+	hs.run(nil, "host", "enroll", "--local", "--name", "authsrv", "--build-on-host")
 	hs.write("state/linux-hosts", hs.registry()+
 		"web2|web2.example.net||lab|192.0.2.1|\n"+
 		"rootbox|root@rootbox.example.net||lab|192.0.2.1|\n"+

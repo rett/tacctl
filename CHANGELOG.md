@@ -3,6 +3,209 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.21 (2026-10-28)
+
+1. **`user rename` to a name with a period says what to do.** The refusal of
+   a rename to a name with a period, for a user that has a UID or an account
+   on a host, now names the two ways forward, one line each: choose a name
+   without a period, or make a new user (`user remove`, `host sync --all`,
+   which removes the accounts, then `user add` under the new name with the
+   group and scopes of the old one, printed in the line), who gets a new
+   password and no UID (the old number stays reserved). A third line says that
+   a user whose name has a period has no Linux account on any host, the
+   tacctl server included, so no console login.
+
+2. **Every user can log in to the tacctl server and its console.** The
+   server's own TACACS+/RADIUS client entry is managed by tacctl and is not a
+   scope you create: `host enroll --local` sets up this machine's own login,
+   and every user logs in to it, unless disabled or of tier none, whatever
+   their scopes (a user is kept off the server only by `user disable` or a
+   group of tier none). Device logins keep the user's own scopes. A user's own
+   scopes are written as before; when a command next writes a user's record, a
+   stored copy of the server's scope is dropped from it. The name `tacctl` is
+   reserved: no command creates, renames to, edits or lists it, and no listing
+   or Tab completion shows it (`scope list`, `scope routing`, `user list`,
+   `user show`, `user scope <user> list`, `status`, the scope column and the
+   JSON of `host list` and `host show`; `scope lookup` finds no scope for an
+   address only it answers, `emergency lockdown tacctl ...` is refused, and a
+   prefix its login holds is refused with no command to run; a lockdown of
+   `--all-scopes` includes it, as before, and says `this server's own login`).
+   `host enroll --local` takes no `--scope`; its `--server` is the address
+   devices and hosts reach the server at (an IP address, which may be behind
+   NAT or a VPN; not a host name, `0.0.0.0`, `::`, loopback, link-local,
+   multicast, broadcast or IPv4-mapped IPv6), recorded in the new
+   `tacctl.yaml` key `server.addresses` (a list that holds one address for
+   now); without `--server` the recorded address is used, else `--server`
+   defaults to the address of the interface with the default route, said in
+   one line; this server's own PAM client always connects to `127.0.0.1`, the
+   address is what devices and other hosts use. An install from before whose
+   server is registered in a scope that serves the server alone is taken over
+   at the next `host sync` of the server or `host enroll --local` (renamed,
+   its secret kept, in one line; a default-scope marker on it is cleared, in
+   one line); one that also serves hosts or devices is left to them, and `host
+   enroll --local` sets the server's login up apart from it; an enrolment that
+   fails or is interrupted (an error, Ctrl-C, a failed client script) puts the
+   prefixes back and takes the new scope out again, and the same command run
+   again does it. A `host sync` of the server repairs its login when it was
+   changed by hand (`Repaired the managed server login.`), `host move` of the
+   server says it is set up by `host enroll --local`, and `host forget` and
+   `host unenroll` of the server take its login with them, its `tacctl.yaml`
+   keys too, as `scope remove` does. A scope called `tacctl` that an earlier
+   release made is yours when it answers an address other than this server's
+   own login addresses: it is never taken over, given members or repaired, and
+   stays listed and editable. While it exists, `host enroll --local`, the sync
+   of the server and `config validate` stop with one line that names it and
+   the fix (`scope rename tacctl <new-name>`), and `host sync --all` goes on
+   with the other hosts; rename it before upgrading. `store import` of a
+   rendered file does not import the scope `tacctl` either and takes it out of
+   the users' scopes (in one line; a server registered in it keeps its own),
+   so a migrated store enrols cleanly. A user who must change the password
+   keeps exactly the server's login, as before; `host enroll --local` of a
+   server registered in a scope it shares with devices is accepted while a
+   user must change the password (the managed scope keeps the user a login,
+   and the devices of the old scope stop accepting the password), where a
+   method other than the registered one, `host forget` and `host unenroll` of
+   the server are still refused.
+
+3. **`tacctl rollback 0.2.20`, and every target keeps the users' server
+   login.** The new target removes `server.addresses` (0.2.20 reads every
+   other file this release writes). Every target adds the server's scope to
+   the scopes of each user who logs in to the server and lacks it, since the
+   older releases need it there (a warning that counts and names them, so
+   `--apply` needs `--yes`, after a snapshot), and removes `server.addresses`;
+   the host registry keeps the address in the server's entry.
+
+4. **A Junos virtual chassis of one member is applied to like a single
+   device.** `device config apply` refused such a device at `commit check`
+   with `check: the members that answered are not the chassis' (fpc0): no
+   answer from fpc0; configuration check succeeds`: `show version` prints the
+   header `fpc0:` even for one member, so the pre-flight listed a chassis,
+   but the answers of `commit check` and of the commits carry no member label.
+   A chassis of exactly one member (any kind of label) now answers like a
+   single device: its plain lines are read, and so is a block labelled with
+   that one member; a block of another member, or a label twice, is still
+   refused. Over NETCONF a reply with no member element, or one element named
+   by that member, is read, and another name is refused. A chassis, a cluster
+   or a pair of routing engines of two or more members is read as before.
+
+5. **`ssh` and `device ssh` keep the password you give them.** With the
+   password cache on (`console password-cache on`) the cache stayed empty
+   after an `ssh`: only the logins tacctl makes itself (`device config pull`,
+   `diff --pull`, `plan --pull`, `block ... adopt`, `device config apply`,
+   `device onboard`, `device collect`, `device enroll`) stored the password a
+   device accepted, and `ssh` only used a cached one. Now, with the cache on
+   and empty, `ssh` and `device ssh` to a device with a pinned host key ask for
+   your password themselves the first time, before they connect (the prompt
+   `Password for <you> (device login):`, no echo, on the terminal), store it
+   and then connect by the cached path (the password goes to ssh through the
+   askpass helper, as when it was cached by a pull), so it is typed once,
+   before the device banner, and the next `ssh` to any device asks nothing;
+   the shell says `password cached for this session (console password-cache)`.
+   Ctrl-C at the prompt ends the line with status 130 with nothing started, and
+   an empty answer stores nothing. A wrong password stays only until the first
+   ssh that ends with status 255, which forgets it (a typo costs one more
+   typing, as with ssh itself). The ssh audit line gains `password=asked` for
+   the line that prompted (`password=cached` for a line that used the cache is
+   as before); the password is in no argument, environment of another process,
+   log, audit line or file. A line that keeps today's path: no terminal to
+   prompt on, an entry with no pinned host key, an option of ssh's own after
+   `--`, an account not in the local account database, the cache off or
+   unavailable. `docs/cli/shell.md` (Password cache) lists the lines that use
+   the cache and those that store into it.
+
+6. **The server's port in device walkthroughs follows the configured
+   listener.** The Cisco, Junos and WTI walkthroughs assumed TACACS+ on tcp 49,
+   so `tacctl config listen` could move the listener and leave every device
+   configuration, every compare and every plan on the old port. One helper,
+   `backend.ServerPort`, now returns the port from the listeners in effect:
+   the TACACS+ `default` listener's, the RADIUS `auth` listener's for the
+   authentication port and the `acct` listener's for the accounting port (any
+   further listener is for other clients and is never the answer). With a
+   listener that moved, `config cisco` adds `port <n>` under `tacacs server
+   TACACS` (after `address ipv4`; with `--legacy`, after `single-connection`
+   on the `tacacs-server host` line) and `config juniper` adds `set system
+   tacplus-server <address> port <n>`; the WTI walkthrough's Authentication
+   Port item and its ping note, the `UDP, not TCP/<port>` line of the RADIUS
+   output and the source port of the strict Junos filter's
+   `permit-auth-replies` term say the configured port too. `device config
+   pull --diff`, `diff` and `plan` render the same statements, so a device
+   that still has the old port is a difference and its plan types the new
+   one (`- tacacs server TACACS > port 4949`, `+ tacacs server TACACS > port
+   49`; on a WTI unit the Authentication Port item). With the built-in
+   listeners nothing in any output changes (the goldens are byte for byte the
+   same): a port is written only for a listener that is not on the default,
+   except the WTI item, which always showed 49. The Linux host script already
+   took its port from the listeners; its fallbacks use the helper now, and a
+   test pins that the client script names no port of its own. A device that
+   carries a port the listener no longer has (the listener is back on 49, the
+   device says `port 4949`) is an extra statement, which a plan leaves alone
+   as before. A template you changed in an earlier release has none of the
+   new variables (`TACACS_PORT_LINE`, `TACACS_HOST_PORT`, `TACACS_PORT`):
+   the upgrade leaves it and writes the new default beside it as `.new`.
+
+7. **`tacctl install` and `tacctl upgrade` set up this machine's own login.**
+   The managed server login of item 2 (the scope `tacctl`, this server's
+   registry entry, the PAM client and sshd's drop-in, and the server's
+   accounts) is made by `install` and `upgrade` with the machinery of `host
+   enroll --local`, so that command is the way to rebuild, move or repair a
+   server, not a step of an install. Every safeguard of the enrolment holds
+   (sshd is checked with `sshd -t` before it is reloaded and the change undone
+   when it refuses it, local administrators and root are not touched, the PAM
+   files are backed up) and a snapshot is taken first. A healthy setup does
+   nothing and prints nothing; a managed scope whose prefixes drifted is
+   repaired (`Repaired the managed server login.`); a server enrolled before
+   whose login is gone (a rebuilt server: the entry is there, the PAM files
+   are not) or is still in a scope of the operator's is set up again, with no
+   question. A server with no entry is asked once, with the server address in
+   the question (`Set up this machine's own login now, with <address> as the
+   server address? [y/N]`): `install -y` answers yes, `install` reads the
+   answer from standard input as its other prompts do, and `upgrade`, which
+   has no `-y`, asks on a terminal only. What cannot be done safely does not
+   stop the command: it completes as before, nothing is left half applied, and
+   one line says what was skipped and names `tacctl host enroll --local`. The
+   new `install --server <ip>` is the server address (an IP address that
+   devices and hosts reach this server at); otherwise the recorded
+   `server.addresses` wins, then the address of the interface with the
+   default route, said in one line every time it was detected.
+
+8. **`tacctl server addresses [list]|add|remove|replace <ip>`.** A new family
+   for the address devices and hosts reach this server at (the setting
+   `server.addresses`). It holds one address in this release: `add` sets it
+   when none is set and is refused while one is (`only one server address is
+   supported yet; use replace`), `remove` of the only address is refused
+   (`the server needs an address; use replace`), `replace` changes it; the
+   grammar takes `<ip>[,<ip>...]` and refuses more than one element with the
+   same words, so a later release only lifts the limit. A change takes a
+   snapshot and runs in one apply: the setting, the registry copy, the managed
+   scope's prefixes and the server's own PAM and accounts, by the enrolment of
+   this server that `host enroll --local --server <ip>` runs (that command is
+   this change when the address differs from the recorded one), and says once
+   what is left to do (`Re-point the devices and hosts at the new address: tacctl
+   host sync --all; the device walkthroughs name the new address`). If the
+   setup on this machine fails nothing is changed: the managed scope is put
+   back as it was. The verb is the superuser's alone (the tier table has no
+   row for it, so the sudoers drop-in is unchanged and the rollbacks need no
+   step for it); `list` writes no audit line, a change writes the pair of
+   `cmd` lines and `server addresses op=<op> address=<ip>`. The word
+   `server` is a top-level command now, so the manual page no longer says
+   `tacctl server` for the machine.
+
+9. **The recorded server address is the default of `--server`.** The device
+   walkthroughs (`config cisco|juniper|wti`, and so `device config show`,
+   `pull`, `diff`, `plan` and `apply`, which render the same text),
+   `config linux script` and `host enroll` read the first element of
+   `server.addresses` as the default of `--server`, and so does the managed
+   scope's derived prefixes (`host sync` of the server). An explicit
+   `--server` wins for that run; with nothing recorded the behaviour is as
+   before (the source address of the route to the Internet, or to the host).
+   A walkthrough names the recorded address where the device is told where
+   the server is and keeps the detected address as the one tacctl reaches the
+   devices from, saying which plays which role when they differ
+   (`server.addresses` is named as the source of the first); a RADIUS listener
+   bound to an address keeps that address in a RADIUS walkthrough. `host
+   enroll` of a host already enrolled keeps the server address the host has,
+   so a re-enrolment for a repair never repoints it; `--server` changes it.
+
 ## 0.2.20 (2026-10-28)
 
 1. **A user name may hold periods.** `user add alice.smith operator` is

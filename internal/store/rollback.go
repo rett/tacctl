@@ -68,3 +68,52 @@ func RollbackPasswordChange(path string, before func() error) (removed []string,
 	}
 	return removed, changed, nil
 }
+
+// RollbackAddScope adds scope to the scopes of each of names in the store at
+// path that does not have it yet, in one validated write under the store's
+// lock: the rollback of the scope of this server's own login (0.2.21), which
+// every user is a member of without having it, to a release that needs it in
+// each user's own scopes. It reports the users it was added to; a store where
+// each has it already is not touched.
+func RollbackAddScope(path, scope string, names []string) (added []string, err error) {
+	_, err = mutate(path, false, nil, func(s *Store) error {
+		users := s.section("users")
+		for _, name := range names {
+			u, ok := mapOf(get(users, name))
+			if !ok {
+				continue
+			}
+			var list []string
+			if l, ok := get(u, "scopes").([]any); ok {
+				for _, v := range l {
+					if t, ok := v.(string); ok {
+						list = append(list, t)
+					}
+				}
+			}
+			if inList(list, scope) {
+				continue
+			}
+			if err := s.UserSet(name, "scopes="+joinCSV(append(list, scope))); err != nil {
+				return err
+			}
+			added = append(added, name)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return added, nil
+}
+
+func joinCSV(list []string) string {
+	out := ""
+	for i, s := range list {
+		if i > 0 {
+			out += ","
+		}
+		out += s
+	}
+	return out
+}

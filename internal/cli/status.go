@@ -98,8 +98,10 @@ func (inv *invocation) status([]string) error {
 	var scopeNames []string
 	m, merr := inv.model()
 	if merr == nil {
-		view = readStatusView(m.Status(t.SecretMinLength))
-		scopeNames = m.ScopeNames()
+		// the counts and the scope facts leave out the managed scope
+		shown := m.WithoutScope(inv.managedScope())
+		view = readStatusView(shown.Status(t.SecretMinLength))
+		scopeNames = shown.ScopeNames()
 	} else {
 		inv.reportModelError(merr)
 		view = readStatusView(nil)

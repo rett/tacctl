@@ -441,6 +441,17 @@ func TestDeviceVars(t *testing.T) {
 	if v["AUTH_PORT"] != "11812" || v["ACCT_PORT"] != "1813" {
 		t.Errorf("%v", v)
 	}
+	// both moved, and an extra authentication listener that is nobody's answer
+	if err := r.env.Conf.SetJSON("listeners.radius.acct", `{"network": "udp", "address": ":11813", "role": "acct"}`); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.env.Conf.SetJSON("listeners.radius.guests", `{"network": "udp", "address": ":2812", "role": "auth"}`); err != nil {
+		t.Fatal(err)
+	}
+	v, _ = r.m.DeviceVars(ctx, "juniper", "prod")
+	if v["AUTH_PORT"] != "11812" || v["ACCT_PORT"] != "11813" {
+		t.Errorf("moved: %v", v)
+	}
 	// No scope, or one that does not exist: the ports only.
 	for _, scope := range []string{"", "nowhere"} {
 		v, _ = r.m.DeviceVars(ctx, "cisco", scope)

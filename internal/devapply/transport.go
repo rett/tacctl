@@ -81,7 +81,8 @@ type Identity struct {
 	// Members are the labels of the blocks 'show version' printed, one for
 	// each member of a virtual chassis, two routing engines or a cluster
 	// ('fpc0', 'fpc1', ...); none for a single device. The commit's answers
-	// must name these members.
+	// must name these members, except that one member answers like a single
+	// device (plainOK).
 	Members []string
 }
 

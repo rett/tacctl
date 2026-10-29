@@ -78,6 +78,17 @@ func TestUserPeriodsAndLinuxAccounts(t *testing.T) {
 	before := sb.store()
 	sb.run("", []string{"user", "rename", "alice", "alice.smith"})
 	sb.expect(1, "", "'alice.smith' cannot be a Linux account name (a period is not allowed), and 'alice' has an account on hosts (or a UID in linux-uids) that the rename would remove. Nothing was changed.")
+	// the two ways forward, one line each, and what a period costs
+	for _, want := range []string{
+		"[ERROR] Either choose a name without a period: tacctl user rename alice <new-name>\n",
+		"[ERROR] Or make a new user: tacctl user remove alice; tacctl host sync --all (removes its accounts); tacctl user add alice.smith superuser --scopes ",
+		" (a new password, no UID: the old number stays reserved).\n",
+		"[ERROR] A user whose name has a period has no Linux account on any host, the tacctl server included, so no console login: it logs in at devices only.\n",
+	} {
+		if !strings.Contains(plain(sb.err.String()), want) {
+			t.Errorf("the refusal lacks %q:\n%s", want, sb.err.String())
+		}
+	}
 	if sb.store() != before {
 		t.Error("the store changed")
 	}

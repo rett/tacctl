@@ -1,8 +1,12 @@
 package devapply
 
 import (
+	"errors"
 	"slices"
+	"strings"
 	"testing"
+
+	"github.com/rett/tacctl/internal/devconf/plan"
 )
 
 // Answers as real devices print them (names are made up, as docs/development
@@ -139,5 +143,63 @@ func TestParseHistorySRX214(t *testing.T) {
 	h, err := parseHistory(out)
 	if err != nil || len(h) != 3 || h[0].RollbackIn != 5 || h[1].Comment == "" || h[2].Comment != "" {
 		t.Errorf("%+v %v", h, err)
+	}
+}
+
+// A virtual chassis of one member (an EX4600 on Junos 18.1, as it was
+// captured; the host and user are made up): 'show version' prints the header
+// 'fpc0:' as it does for a chassis of several members, and the answers of
+// 'commit check' and 'commit' carry no member label.
+const oneMemberVersion = `fpc0:
+--------------------------------------------------------------------------
+Hostname: jsw1.example.net
+Model: ex4600-40f
+Junos: 18.1R3-S6.1
+JUNOS Base OS boot [18.1R3-S6.1]
+`
+
+const (
+	oneMemberCheck     = "configuration check succeeds\n"
+	oneMemberConfirmed = "configuration check succeeds\n" +
+		"commit confirmed will be automatically rolled back in 15 minutes unless confirmed\n" +
+		"commit complete\n"
+	oneMemberCommit = "configuration check succeeds\ncommit complete\n"
+)
+
+// The pre-flight lists one member, and every reply of the capture is read
+// for it.
+func TestOneMemberVirtualChassisCapture(t *testing.T) {
+	id, err := parseVersion(oneMemberVersion)
+	if err != nil || id.Hostname != "jsw1.example.net" || id.Model != "ex4600-40f" || id.Release != "18.1R3-S6.1" {
+		t.Fatalf("%+v %v", id, err)
+	}
+	if !slices.Equal(id.Members, []string{"fpc0"}) {
+		t.Fatalf("members %q", id.Members)
+	}
+	if ok, why := checkAnswer(split(oneMemberCheck), id.Members); !ok {
+		t.Errorf("commit check: %s", why)
+	}
+	note := plan.ApplyConfirmedNote(15)
+	if ok, why := readCommitted(split(oneMemberConfirmed), id.Members, note, textCommitComplete); !ok {
+		t.Errorf("commit confirmed: %s", why)
+	}
+	if ok, why := readCommitted(split(oneMemberCommit), id.Members, textCommitComplete); !ok {
+		t.Errorf("commit: %s", why)
+	}
+	// the capture's confirmed commit answers with the wrong window
+	if ok, _ := readCommitted(split(oneMemberConfirmed), id.Members, plan.ApplyConfirmedNote(10), textCommitComplete); ok {
+		t.Error("another window read")
+	}
+}
+
+// 'show system commit' typed in configuration mode shows the statements of
+// [edit system commit], none on this device, so the capture's answer is empty
+// whatever the history holds. The apply reads the history in the operational
+// mode of a fresh login; an empty answer there is no history and is refused,
+// never read as an empty one.
+func TestEmptyShowSystemCommitIsRefused(t *testing.T) {
+	_, err := parseHistory("\n")
+	if !errors.Is(err, ErrUnrecognised) || !strings.HasPrefix(err.Error(), "show system commit: no entry: ") {
+		t.Errorf("%v", err)
 	}
 }

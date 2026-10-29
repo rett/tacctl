@@ -118,7 +118,7 @@ func TestEngineerHostsAreReadOnly(t *testing.T) {
 	sb := engineerSandbox(t)
 	hosts := sb.read("state/linux-hosts")
 	for _, args := range [][]string{{"host", "sync", "web1"}, {"host", "sync", "--all"}, {"host", "target", "web1"}, {"host", "move", "web1", "lab"},
-		{"host", "enroll", "--local", "--scope", "lab"}, {"host", "enroll", "root@192.0.2.50", "--name", "h1", "--scope", "lab"},
+		{"host", "enroll", "--local"}, {"host", "enroll", "root@192.0.2.50", "--name", "h1", "--scope", "lab"},
 		{"host", "unenroll", "web1", "--force"}, {"host", "rename", "web1", "web9"}, {"host", "rename", "web1", "web9", "--yes"}, {"host", "forget", "web1"}, {"host", "forget", "web1", "--yes"}, {"host", "default-method"}, {"host", "default-method", "radius"},
 		{"host", "provisioner", "web1", "rotate", "deploy2", "--key", "/tmp/k", "--yes"}} {
 		sb.asEngineer("", args...)
@@ -360,7 +360,7 @@ func TestBrokenConfCapsTheTierAndRefusesSync(t *testing.T) {
 	if sb.code != 1 || !strings.Contains(sb.stderr(), "cannot be read (") || !strings.Contains(sb.stderr(), "); accounts and tiers are not synced until it is fixed.") {
 		t.Errorf("host sync as root: %d %q", sb.code, sb.stderr())
 	}
-	sb.cfgRun("", []string{"host", "enroll", "--local", "--scope", "lab"}, nil)
+	sb.cfgRun("", []string{"host", "enroll", "--local"}, nil)
 	if sb.code != 1 || !strings.Contains(sb.stderr(), "accounts and tiers are not synced until it is fixed.") {
 		t.Errorf("host enroll as root: %d %q", sb.code, sb.stderr())
 	}

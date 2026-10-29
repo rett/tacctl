@@ -30,7 +30,7 @@ func TestHostSyncExpiresAFlaggedUserOnTheOtherHostsOnly(t *testing.T) {
 		r.On([]string{"getent", "passwd"}, execx.Result{Stdout: []byte("root:x:0:0::/root:/bin/bash\n")})
 		return r
 	}
-	hs.run(local(), "host", "enroll", "--local", "--name", "authsrv", "--scope", "lab", "--build-on-host")
+	hs.run(local(), "host", "enroll", "--local", "--name", "authsrv", "--build-on-host")
 	if hs.code != 0 {
 		t.Fatalf("enroll --local: %d %s", hs.code, plain(hs.out.String()+hs.err.String()))
 	}

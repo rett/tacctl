@@ -253,7 +253,9 @@ if [[ "$CYCLE" == "server" ]]; then
     section "server: the role preset, four lab users and the baseline rules asked of the real tacquito"
     printf 'y\n' | podman exec -i "$S" tacctl group preset roles 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E 'applied|Nothing|ERROR' | head -3
     PC_SECRET='permcheck-secret-0123456789'
-    tacctl scope add permlab --prefixes "${SIP}/32,127.0.0.1/32" --secret "$PC_SECRET" --protocols tacacs > /dev/null
+    # 198.51.100.0/24 is what the scope keeps when 'host enroll --local' (below) takes the server's own
+    # login addresses out of it for the scope tacctl manages: a scope needs one prefix.
+    tacctl scope add permlab --prefixes "${SIP}/32,127.0.0.1/32,198.51.100.0/24" --secret "$PC_SECRET" --protocols tacacs > /dev/null
     pchash=$(s python3 -c 'import bcrypt; print(bcrypt.hashpw(b"Gotest-Net-Pw-1", bcrypt.gensalt(rounds=10)).decode())')
     for pair in gotestviewer:readonly gotestoperator:operator gotestengineer:engineer gotestsuper:superuser; do
         tacctl user add "${pair%%:*}" "${pair##*:}" --hash "$pchash" --scopes permlab > /dev/null
@@ -287,7 +289,9 @@ if [[ "$CYCLE" == "server" ]]; then
     tacctl config linux uid-range 50000-59999 > /dev/null
     # enroll wants a local administrator with a password (the lockout check).
     s bash -c 'useradd -m -s /bin/bash -G sudo ladm && echo ladm:Local-Admin-Pw-1 | chpasswd'
-    tacctl host enroll --local --name srv --method tacplus --scope permlab > "${WORK}/local.out" 2>&1; rc=$?
+    # --local takes no --scope (the server's own login is in the scope tacctl manages); --server is the
+    # address the container's logins come from, which is what the detection would find too.
+    tacctl host enroll --local --name srv --method tacplus --server "$SIP" > "${WORK}/local.out" 2>&1; rc=$?
     sed 's/\x1b\[[0-9;]*m//g' "${WORK}/local.out" | grep -E 'INFO|WARN|ERROR|Installed|Updated' | head -20 | sed 's/^/    | /'
     check "host enroll --local exits 0" test $rc -eq 0
     check "tac-engineer is GID 50005 here too (first + 5), tac-users 50000, tac-superuser 50002" s bash -c "[[ \$(getent group tac-engineer | cut -d: -f3) == 50005 && \$(getent group tac-users | cut -d: -f3) == 50000 && \$(getent group tac-superuser | cut -d: -f3) == 50002 ]]"
