@@ -38,6 +38,7 @@ tacctl host show web1            # connection, scope, pinned keys, sightings,
                                  # the accounts the next sync makes
 tacctl host check web1           # read-only: does the host match what tacctl would make it?
 tacctl host check --all
+tacctl host check --all --concurrency 4    # several hosts at once (§2.1)
 ```
 
 `host list` shows each host's target, address (recorded at the last enroll or
@@ -73,6 +74,7 @@ tacctl host sync web1                  # one host
 tacctl host sync db1 db2               # several, in the order typed
 tacctl host sync --all                 # every enrolled host
 tacctl host sync --all --remove-home   # also delete removed users' homes without asking
+tacctl host sync --all --concurrency 4 # several hosts at once (§2.1)
 ```
 
 What a sync does:
@@ -96,6 +98,36 @@ named.
 > gets no account on the host and you see a warning
 > (`web1: synced (4 users; 1 refused: carl)`). Resolve it by renaming one
 > of the two.
+
+### 2.1 Several hosts at once
+
+`--concurrency <n>` (1 or more; the default, 1, is one host after the other)
+works on n hosts side by side in `host sync` and in `host check`. Each host's
+output is held and printed whole, in the order the hosts were typed, so lines
+never mix, and the lines, the report and the exit status (1 when a host
+failed or differs, the others still run) are those of a run one host after
+the other. What the hosts write on the server (the UID ledger, the host
+records, the registry) is written one host at a time. With one host
+`--concurrency` changes nothing.
+
+With more than one host at once nothing is asked and no terminal is used:
+the login runs in BatchMode (a key or the agent; no password or passphrase)
+and the remote sudo is `sudo -n`, so the login must be root or have
+passwordless sudo. Hosts that share an ssh target and port are handled one
+after the other, since they share one connection.
+
+- **Home directories.** `host sync` does not ask about the homes of removed
+  users. It keeps them and says so after the line that names the removed
+  users: `web1: the home directories of removed users are kept, as no
+  questions are asked with --concurrency above 1: add --remove-home to
+  delete them, or sync web1 alone to be asked.` `--remove-home` deletes them.
+- **Ctrl-C** starts no further host and ends the connections under way, and
+  the hosts not started are named (status 130). A `host sync` reports,
+  records and audits the hosts under way as interrupted. Nothing carries the
+  interrupt to a script already running on a host, so that script may
+  finish.
+- There is no `--timeout` and no `--max-failures`: a time limit would cut a
+  script off in the middle of its account changes.
 
 ---
 
