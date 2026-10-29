@@ -42,14 +42,17 @@ sub-commands, and the one-letter form of `--yes` is refused:
 |---|---|---|
 | **`host list`** | Shows state, last seen, by and open notices as `device list` does, with the filters `--name`, `--ip`, `--scope` and `--stale` | [Linux Host Operations](linux-host-operations.md) §1 |
 | **`device list --differs`** | The devices whose last pull differs from what is rendered now, with no login (operator tier) | [Superuser Daily Operations](superuser-daily-operations.md) §4.1 |
-| **`tacctl server`** | `server show` is this server at a glance; `server name` sets the name the console shows; `server listen` and `server metrics` are the old `config listen` and `config metrics` | [Superuser Daily Operations](superuser-daily-operations.md) §11.3 |
+| **`tacctl server`** | `server show` is this server at a glance (address, name, default method, metrics exporter, backends and listeners); `server name` sets the name the console shows; `server listen` and `server metrics` are the old `config listen` and `config metrics` | [Superuser Daily Operations](superuser-daily-operations.md) §11.3 |
+| **Timing scale** | For a device behind a long round trip or with a slow CPU, one whole number from 1 to 10 multiplies the host-key scan, session, SNMP and per-device pull times: `device timeout-scale <name>`, `scope timeout-scale <scope>`, `config devices timeout-scale` (superuser); engineers read it in `device show` and `scope show`. 1, the default, changes nothing | [Connecting to Devices](connecting-to-devices.md) §7, [Superuser Daily Operations](superuser-daily-operations.md) §4.9 |
+| **`--timing`** | `device config pull`, `diff --pull`, `plan --pull` and `apply` print, per device, the time of each phase and name the slowest device; `timings` in `--json` | [Engineer Guide](engineer-guide-device-changes.md) §3 |
 | `host sync` and `host check` take `--concurrency <n>` | Several hosts at once, output in the order typed; nothing is asked, so a key or agent and a root or passwordless-sudo login are needed | [Linux Host Operations](linux-host-operations.md) §2.1 |
 | Unknown sub-command | One error line, a `Did you mean` hint and a pointer to `-h`; below the first word it is answered before `sudo` asks for a password | [Getting Started](getting-started.md) §5 |
-| User names | A period is refused again; a user stored with one is renamed (`user rename`) | [Access Lifecycle](access-lifecycle.md) §2 |
+| User names | A period is refused again; a user stored with one stays readable and is renamed with `user rename` | [Access Lifecycle](access-lifecycle.md) §2 |
 | Host keys of slow devices | A device `ssh-keyscan` reads nothing from is read by tacctl's own ssh client | [Connecting to Devices](connecting-to-devices.md) §6 |
 | Junos virtual chassis | The master answers without a label, and the apply reads it | [Engineer Guide](engineer-guide-device-changes.md) §5.1 |
 | Teal command names | The console's lists show command names in teal like the other fixed words | [Superuser Daily Operations](superuser-daily-operations.md) §10.2 |
-| `tacctl rollback 0.2.21` | The release before this one is a target; it only removes `server.name` | [Backups and Undo](backups-and-undo.md) §5 |
+| Generated tacquito drop-in | Its comment, and the shipped unit comments, name `server listen` and `server metrics`; the first render restarts tacquito once (see below) | [Backups and Undo](backups-and-undo.md) §5 |
+| `tacctl rollback 0.2.21` | The release before this one is a target; it removes `server.name` and the timing scale and converts nothing else | [Backups and Undo](backups-and-undo.md) §5 |
 
 > **Before upgrading from 0.2.21:**
 >
@@ -64,7 +67,22 @@ sub-commands, and the one-letter form of `--yes` is refused:
 >   reads `host list`.
 > - No sudoers rule and no stored setting needs to change: the `server`
 >   family is the superuser's, as `config listen` and `config metrics` were,
->   and writes the same keys. The way back is `tacctl rollback 0.2.21`.
+>   and writes the same keys. The timing scale needs no conversion either: it
+>   is 1 until a superuser sets it, and every timing is as before.
+> - Expect one brief interruption of TACACS+. The comment at the top of the
+>   generated tacquito drop-in names the current commands, so the first render
+>   after the upgrade (the upgrade's own, else the first `config render` or
+>   change of a listener, `loglevel` or exporter) rewrites the drop-in,
+>   reloads systemd and restarts tacquito once. The upgrade restarts tacquito
+>   once at its end for any changed unit file or drop-in, and that is this
+>   restart. RADIUS is not touched. A drop-in you edited by hand is saved
+>   aside before it is replaced.
+> - The way back is `tacctl rollback 0.2.21`. It removes `server.name` and the
+>   timing scale (the two `tacctl.yaml` keys and each device's
+>   `timeout_scale`), with a note in the plan and no `--yes`. After it the
+>   older release's `config validate` reports the rendered config as out of
+>   date until its first render writes its own comment, which restarts
+>   tacquito once; the rollback itself restarts nothing.
 
 ## 2. tacctl 0.2.21
 
