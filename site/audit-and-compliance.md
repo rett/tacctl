@@ -117,6 +117,11 @@ $J | grep 'backup restore'                       # rollbacks
 $J | grep 'console start'                        # console logins (user=, from=)
 ```
 
+The changes of this server's settings each write a detail line beside the
+`cmd` pair: `server name` and `server metrics` carry `from=` and `to=`,
+`server listen` adds `backend=` and `listener=`, and `server addresses` carries
+`op=add` or `op=replace` and `address=`.
+
 > A `cmd start` with no matching `cmd end` means the command did not finish
 > (killed, crash, power loss). The snapshot named on its lines holds the
 > state from before it. `tacctl config validate` shows the state now.
