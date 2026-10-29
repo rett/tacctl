@@ -110,6 +110,15 @@ tacctl group list                   # groups: Cisco priv-lvl, Junos class, user 
 tacctl group show operator          # every setting of a group and where it comes from
 ```
 
+The optional `engineer` group comes from the preset. A custom group takes a
+Cisco privilege level and a Junos class:
+
+```bash
+tacctl group preset roles --dry-run     # preview the preset
+tacctl group preset roles               # apply it; this creates the engineer group
+tacctl group add ops-ro 1 RO-CLASS      # a custom group: priv-lvl, then Junos class
+```
+
 | Task | Command | Details |
 |---|---|---|
 | New user | `tacctl user add alice operator --scopes site-a,site-b`, then `tacctl host sync --all` | Access Lifecycle §2 |
@@ -260,7 +269,7 @@ Superusers follow the same steps, for every scope.
 ## 5. Linux hosts
 
 ```bash
-tacctl host list                    # target, address, scope, method, users
+tacctl host list                    # target, address, scope, server, method, users
 tacctl host check --all             # read-only: does every host match what tacctl would make it?
 tacctl host sync --all              # push user changes to every enrolled host
 ```
@@ -313,6 +322,19 @@ tacctl scope secret site-a generate               # generate a new one
 After a change that affects device configuration, the command tells you which
 devices now need one, for example
 `tacctl device config apply --scope site-a --check`.
+
+A new scope, a renamed one and a removed one:
+
+```bash
+tacctl scope add site-c --prefixes 10.13.0.0/16 --secret generate    # prefixes are required
+tacctl scope default site-c                       # the scope `user add` uses without --scopes
+tacctl scope rename site-c site-d                 # users, hosts and settings follow the name
+tacctl scope remove site-d                        # refused while a user has it; --force strips it
+```
+
+A prefix belongs to one scope, so `scope add` refuses a prefix another scope
+already has. `scope remove` also removes every setting stored under the
+scope's name, so a new scope of that name starts from the defaults.
 
 > Changing a scope's secret takes effect on the server immediately. Every
 > device in the scope fails to authenticate until its key is updated. Plan

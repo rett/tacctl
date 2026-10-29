@@ -48,9 +48,9 @@ explains it in full.
 | **`PENDING`** | A Junos apply whose state could not be read after the commit. Type nothing on the device until the time shown (the device's own clock) passes. | [Vendor Notes](vendor-notes.md) §3.2 |
 | **Plan** | The exact fix for a device: report, the region between `PASTE FROM HERE` and `PASTE TO HERE`, checks and back-out. | [Engineer Guide](engineer-guide-device-changes.md) §4 |
 | **Pull** | Log in to a device as you and read its managed sections. Read only. | [Engineer Guide](engineer-guide-device-changes.md) §3 |
-| **Required password change** | A user must change the password before logging in to anything but the tacctl server. Set by `user add` and a superuser's `user passwd` by default; never binds a superuser. | [Access Lifecycle](access-lifecycle.md) §5.1 |
 | **Reason** | Free text given with `--reason` on lockdowns and holds. Logged as typed: never put a secret in it. | [Audit and Compliance](audit-and-compliance.md) §6 |
 | **Registry** | The list of devices (and hosts) by name, with address, vendor and pinned keys. | [Concepts](concepts.md) §4 |
+| **Required password change** | A user must change the password before logging in to anything but the tacctl server. Set by `user add` and a superuser's `user passwd` by default; never binds a superuser. | [Access Lifecycle](access-lifecycle.md) §5.1 |
 | **Restore point** | Cisco: a copy of the configuration on flash, added before a plan's region with `--restore-point=flash:`. | [Vendor Notes](vendor-notes.md) §2.5 |
 | **Scope** | Client address prefixes plus a shared secret. Decides *where* a user can log in. | [Concepts](concepts.md) §3 |
 | **Secret (shared secret)** | The TACACS+ or RADIUS key between a scope's devices and the server. Every print writes a `secret-read` audit line. | [Concepts](concepts.md) §3 |
@@ -59,8 +59,8 @@ explains it in full.
 | **`sid`** | The session id that ends every audit line of one command run, so `grep sid=<id>` finds them all. | [Audit and Compliance](audit-and-compliance.md) §2 |
 | **Snapshot** | A copy of tacctl's configuration taken before every change. `tacctl backup list`. | [Backups and Undo](backups-and-undo.md) |
 | **Status (user)** | Enabled or disabled: decides *whether* a user can log in. | [Access Lifecycle](access-lifecycle.md) |
-| **Template user** | Junos: the local account a TACACS+ user logs in through. Must exist before TACACS+ logins work. | [Vendor Notes](vendor-notes.md) §3.1 |
 | **System shell** | A user's own shell on the tacctl server, started with the console word `system-shell`. Superusers always; read-only and operator users when a superuser opens it; engineers never. | [Superuser Daily Operations](superuser-daily-operations.md) §10.1 |
+| **Template user** | Junos: the local account a TACACS+ user logs in through. Must exist before TACACS+ logins work. | [Vendor Notes](vendor-notes.md) §3.1 |
 | **Tier** | The level of tacctl access a group gives: read-only < operator < engineer < superuser. | [Concepts](concepts.md) §2 |
 
 ---

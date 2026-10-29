@@ -29,7 +29,7 @@ engineer or superuser.
 | You can | Read-only tier | Operator tier |
 |---|---|---|
 | Change your own password (`tacctl passwd`) | ✔ | ✔ |
-| See users, groups, scopes, devices (`list`, `show`) | ✔ | ✔ |
+| See users, groups, scopes and devices (`user`, `group`, `device` `list` and `show`; `scope list`) | ✔ | ✔ |
 | `tacctl ssh` to devices in **your own scopes** | ✔ | ✔ |
 | Server health (`status`, `backend status`) | ✔ | ✔ |
 | Read logs (`log tail`, `search`, `failures`, `accounting`) | | ✔ |

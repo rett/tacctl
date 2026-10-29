@@ -163,7 +163,7 @@ Your tacctl **group** sets your **tier**. Tiers, lowest to highest:
 
 | Tier | Typical person | Can do (in short) |
 |---|---|---|
-| Read-only | Monitoring, help desk | Lists and shows, `ssh` to devices in your scopes, `status`, `passwd` |
+| Read-only | Monitoring, help desk | Lists and shows of users, groups and devices, `scope list`, `ssh` to devices in your scopes, `status`, `passwd` |
 | Operator | NOC, tier 1–2 | Read-only plus logs, `config validate`, `device check`, `scan`, `discover`, drift views, `backup list` |
 | Engineer | Change engineers | Operator plus device registry and device configuration work **in your own scopes** |
 | Superuser | Platform owners | Everything: users, groups, scopes, hosts, lockdowns, break-glass, restores |
