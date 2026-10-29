@@ -15602,15 +15602,28 @@ failed, rolled back or left pending (and a review that was not answered, and
 an apply that applied none of its devices and found none already applied:
 .B "\-\-confirmed \-\-yes"
 that skipped them all), a step of a lifecycle phase that failed. An unknown
-sub-command prints on standard error one error line that names it, the
-sub-commands of that command it may have meant (within two letters of it, or
-the commands that have it as a verb further down:
+sub-command prints on standard error one error line that names it
+.RB ( "[ERROR] Unknown subcommand: 'seed'" ),
+a
+.B Did you mean
+line with the sub-commands of that command it may have meant when something
+fits (within two letters of the word, or the commands that have it as a verb
+further down:
 .B "device config seed"
 names
-.BR "device config shapes seed" )
+.BR "device config shapes seed" ;
+in the shell and the console only the commands the caller's tier can run)
 and a pointer
 .RB ( "Run 'tacctl <command> \-h' for usage." ),
-not the usage, and ends with 1 as well. When the word is a sub-command of a
+not the usage, and ends with 1 as well. No word,
+.B help
+and a word that starts with
+.B \-
+still print the usage of a command that has them
+.RB ( host
+has no
+.B help
+word). When the word is a sub-command of a
 command that has fixed sub-commands
 .RB ( "device config seed jr1" )
 it is answered before
