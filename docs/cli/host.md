@@ -103,6 +103,15 @@ host check <name>... | --all [--json]
         Print a JSON array (`[]` for no host) and nothing else on standard output: name, target,
         state (ok, differences, failed or held), differences (text and fix), notes, error and
         breakglass (while held)
+    --concurrency <n>
+        Check n hosts at once (1 or more; the default, 1, is one after the other). Each host's
+        text, standard error included, is held and printed whole in the order typed, so the
+        report, the count and the exit status are those of a sequential run. No terminal is used:
+        the login runs in BatchMode (a key or the agent; no password is asked) and the remote sudo
+        is `sudo -n`, so the login must be root or have passwordless sudo. The first Ctrl-C starts
+        no further host and lets the hosts under way finish, a second cancels them; the hosts not
+        started are named and the status is 130. With one host it changes nothing. There is no
+        per-host time limit
 
 host move <name> [<scope>]|--all
 

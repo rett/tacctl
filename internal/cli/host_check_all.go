@@ -12,11 +12,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/hosts"
+	"github.com/rett/tacctl/internal/ui"
 )
 
 // hostCheckUsage is the usage line of 'host check'.
-const hostCheckUsage = "Usage: tacctl host check <name>... | --all [--json]"
+const hostCheckUsage = "Usage: tacctl host check <name>... | --all [--json] [--concurrency <n>]"
 
 // The states of one host in 'host check' (the "state" of --json).
 const (
@@ -51,6 +53,12 @@ func (inv *invocation) hostCheckAll(args []string) error {
 		return inv.usageErr(msg, hostCheckUsage)
 	}
 	all, asJSON := p.Has("--all"), p.Has("--json")
+	concurrency := 1
+	if p.Has("--concurrency") {
+		if concurrency, err = inv.hostConcurrency(p.Value("--concurrency"), hostCheckUsage); err != nil {
+			return err
+		}
+	}
 	var typed []string
 	for _, n := range p.Args {
 		if !slices.Contains(typed, n) {
@@ -101,40 +109,32 @@ func (inv *invocation) hostCheckAll(args []string) error {
 		}
 	}
 
-	results := make([]hostCheckAllJSON, 0, len(entries))
-	for _, e := range entries {
-		r := hostCheckAllJSON{Name: e.Name, Target: e.Target, Differences: []hostDiffJSON{}, Notes: []string{}}
-		if h, held := inv.hostHoldIn(f, e); held {
-			r.State = checkHeld
-			r.Breakglass = holdJSONOfHold(h)
-			if !asJSON {
-				inv.echo(e.Name + ": skipped: break-glass is held on it " + inv.holdSummary(h) + ": " + h.Reason + " (tacctl breakglass release " + e.Name + ")")
+	results := make([]hostCheckAllJSON, len(entries))
+	if pool := min(concurrency, len(entries)); pool > 1 {
+		names := make([]string, len(entries))
+		for i, e := range entries {
+			names[i] = e.Name
+		}
+		sum, _, errs := inv.runHostPool(names, pool, func(st *hostStep, i int) (bool, error) {
+			r, err := inv.hostCheckOne(st, f, entries[i], asJSON)
+			results[i] = r
+			return false, err
+		})
+		if err := firstError(errs); err != nil {
+			return err
+		}
+		if sum.Interrupted {
+			return ui.ErrInterrupted
+		}
+	} else {
+		st := inv.sequentialStep()
+		for i, e := range entries {
+			r, err := inv.hostCheckOne(st, f, e, asJSON)
+			if err != nil {
+				return err
 			}
-			results = append(results, r)
-			continue
+			results[i] = r
 		}
-		v, err := inv.hostView(e)
-		if err != nil {
-			return err
-		}
-		// What the host prints besides the check goes to stderr, so
-		// standard output holds the results alone.
-		c, failed, err := inv.hostCheckRun(e, v, true)
-		if err != nil {
-			return err
-		}
-		switch {
-		case failed != "":
-			r.State, r.Error = checkFailed, failed
-		case len(c.Differences) > 0:
-			r.State, r.Differences, r.Notes = checkDifferences, c.Differences, c.Notes
-		default:
-			r.State, r.Notes = checkOK, c.Notes
-		}
-		if !asJSON {
-			inv.hostCheckAllText(r)
-		}
-		results = append(results, r)
 	}
 
 	if asJSON {
@@ -150,6 +150,53 @@ func (inv *invocation) hostCheckAll(args []string) error {
 		}
 	}
 	return nil
+}
+
+// hostCheckOne is the check of one host of 'host check': its result, with
+// the text report of the host already printed (st.serial: in the host's own
+// output when hosts run side by side). err ends the command.
+func (inv *invocation) hostCheckOne(st *hostStep, f *devreg.File, e hosts.Entry, asJSON bool) (hostCheckAllJSON, error) {
+	r := hostCheckAllJSON{Name: e.Name, Target: e.Target, Differences: []hostDiffJSON{}, Notes: []string{}}
+	var v *hostShowJSON
+	var he *hosts.Env
+	var err error
+	held := false
+	st.serial(func() {
+		if h, isHeld := inv.hostHoldIn(f, e); isHeld {
+			held = true
+			r.State = checkHeld
+			r.Breakglass = holdJSONOfHold(h)
+			if !asJSON {
+				inv.echo(e.Name + ": skipped: break-glass is held on it " + inv.holdSummary(h) + ": " + h.Reason + " (tacctl breakglass release " + e.Name + ")")
+			}
+			return
+		}
+		if v, err = inv.hostView(e); err != nil {
+			return
+		}
+		// What the host prints besides the check goes to stderr, so
+		// standard output holds the results alone.
+		he = inv.hostCheckEnv(st, true)
+	})
+	if held || err != nil {
+		return r, err
+	}
+	c, failed, err := inv.hostCheckRun(st.ctx, he, e, v)
+	if err != nil {
+		return r, err
+	}
+	switch {
+	case failed != "":
+		r.State, r.Error = checkFailed, failed
+	case len(c.Differences) > 0:
+		r.State, r.Differences, r.Notes = checkDifferences, c.Differences, c.Notes
+	default:
+		r.State, r.Notes = checkOK, c.Notes
+	}
+	if !asJSON {
+		st.serial(func() { inv.hostCheckAllText(r) })
+	}
+	return r, nil
 }
 
 // hostCheckAllText prints one host of the text report (a held host's line is

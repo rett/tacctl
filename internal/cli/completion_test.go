@@ -208,8 +208,8 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"host", "sync", "web1", ""}, []string{"web1", "web2", "--all", "--allow-uid-mismatch", "--remove-home", "--concurrency"}},
 		{[]string{"host", "sync", "web1", "web2", "w"}, []string{"web1", "web2"}},
 		// host check: hosts at every position, then the flags.
-		{[]string{"host", "check", ""}, []string{"web1", "web2", "--all", "--json"}},
-		{[]string{"host", "check", "web1", ""}, []string{"web1", "web2", "--all", "--json"}},
+		{[]string{"host", "check", ""}, []string{"web1", "web2", "--all", "--json", "--concurrency"}},
+		{[]string{"host", "check", "web1", ""}, []string{"web1", "web2", "--all", "--json", "--concurrency"}},
 		{[]string{"host", ""}, []string{"check", "default-method", "enroll", "forget", "list", "move", "provisioner", "rename", "show", "sync", "target", "unenroll"}},
 		{[]string{"install", ""}, []string{"--branch", "--server", "--yes"}},
 		{[]string{"upgrade", ""}, []string{"--branch"}},

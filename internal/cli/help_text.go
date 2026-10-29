@@ -580,6 +580,7 @@ Usage: tacctl host <subcommand> [arguments]
                                        cannot be checked. A held host is skipped (superuser only)
       --all                            Every enrolled host
       --json                           Print a JSON array (check: one object per host) and nothing else on standard output
+      --concurrency <n>                Check n hosts at once (default 1)
   move <name> [<scope>] | --all        Move an enrolled host to another scope (default: the one answering its address);
                                        --all: every host another scope answers. Asks before deleting accounts
   target <name> [<[user@]host>]        Show, or change and test, how tacctl reaches an enrolled host over ssh

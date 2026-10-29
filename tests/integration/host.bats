@@ -1354,6 +1354,29 @@ _container_ssh() {
     assert_output --partial "No enrolled host named 'ghost'"
 }
 
+@test "host check --concurrency: the same report in the order typed, hosts reached without a terminal, a bad number refused" {
+    "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab > /dev/null
+    "$TACCTL_BIN_SCRIPT" host enroll admin@web2.example.net --scope lab > /dev/null
+    : > "$CALLS_LOG"
+    stub_cmd ssh 'case "$*" in
+        *web2.example.net*tacctl-check*) echo "sudo needs a password" >&2; false ;;
+        *tacctl-check*) printf "tacctl-check %s\n" "group tac-users 80000" "group tac-superuser 1002" "group tac-engineer 80005" \
+            "account alice 80000 80000 700 /home/alice" "pam tacctl-auth a" "pam tacctl-account b" "pam tacctl-session c" \
+            "pam-written tacctl-auth a" "pam-written tacctl-account b" "pam-written tacctl-session c" "protocol 6" ;;
+        *) true ;;
+    esac'
+    run --separate-stderr "$TACCTL_BIN_SCRIPT" host check web2 web1 --concurrency 2
+    assert_failure 1
+    [[ "$output" == *"web2: could not be checked"*"web1: 2 differences:"* ]]
+    assert_line "2 hosts: 1 with differences, 1 not checked."
+    stub_called "ssh .*BatchMode=yes .*web1.example.net"
+    : > "$CALLS_LOG"
+    run "$TACCTL_BIN_SCRIPT" host check web1 --concurrency 0
+    assert_failure 1
+    assert_output --partial "--concurrency takes a number of hosts, 1 or more: '0'"
+    if stub_called '^ssh '; then stub_calls; return 1; fi
+}
+
 @test "host show --check: an engineer left in tac-superuser, the tac-engineer group, protocol 5" {
     "$TACCTL_BIN_SCRIPT" user add bob operator --hash "$HASH" --scopes lab > /dev/null
     "$TACCTL_BIN_SCRIPT" group edit operator tier engineer > /dev/null

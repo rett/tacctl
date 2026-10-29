@@ -3484,7 +3484,7 @@ Sync n hosts at once; no home question is asked then (default 1).
 .RE
 .\" END GENERATED: command host sync
 .TP
-.B "host check " "{ " name "... | \-\-all } [ \-\-json ]"
+.B "host check " "{ " name "... | \-\-all } [ \-\-json ] [ \-\-concurrency " n " ]"
 Compare each host named, or every enrolled host with
 .BR \-\-all ,
 with what tacctl would make it, read\-only: for each, what
@@ -3506,7 +3506,22 @@ with the reason. What a host prints besides the check goes to standard error.
 With more than one host a last line counts the hosts in each state. The exit
 status is 1 when a host has a difference or could not be checked, else 0 (a
 skipped host is not a failure); an interrupt ends the run after the host in
-progress. With
+progress.
+.B \-\-concurrency
+.I n
+checks n hosts at once (a whole number, 1 or more; the default, 1, is one host
+after the other). Each host's text, standard error included, is held and
+printed whole, in the order typed, when it and the hosts before it have ended,
+so the report, the count and the exit status are those of a run one host after
+the other. No terminal is used: the login runs in BatchMode
+(a key or the agent; no password or passphrase is asked) and the remote sudo
+with
+.BR "sudo \-n" ,
+so the login must be root or have passwordless sudo. The first interrupt starts
+no further host and lets the hosts under way finish, a second one cancels them;
+the hosts not started are named and the status is 130. With one host
+.B \-\-concurrency
+changes nothing. There is no per\-host time limit. With
 .B \-\-json
 standard output is a JSON array (empty for no host) with, for each host,
 .BR name ,
@@ -3540,6 +3555,9 @@ Options:
 .TP
 \fB\-\-json\fR
 (check) Print a JSON array (one object per host) and nothing else on standard output.
+.TP
+\fB\-\-concurrency\fR \fI<n>\fR
+Check n hosts at once (default 1).
 .RE
 .\" END GENERATED: command host check
 .TP

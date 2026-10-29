@@ -65,7 +65,7 @@ var hostSpecs = map[string]Spec{
 		{Names: []string{"--staging"}},
 		flagAllowUIDMismatch, flagRemoveHome}},
 	"sync":  {MaxArgs: -1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--all"}}, flagAllowUIDMismatch, flagRemoveHome, hostConcurrencyFlag}},
-	"check": {MaxArgs: -1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--all"}}, flagJSON}},
+	"check": {MaxArgs: -1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--all"}}, flagJSON, hostConcurrencyFlag}},
 	"move": {MaxArgs: 2, Args: []string{KindHosts, KindScopes}, Flags: []Flag{{Names: []string{"--all"}, Alone: true},
 		flagYes, flagAllowUIDMismatch, flagRemoveHome}},
 	"unenroll": {MinArgs: 1, MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--force"}}}},

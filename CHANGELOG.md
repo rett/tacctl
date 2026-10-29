@@ -182,6 +182,20 @@ current behaviour; this file is where history lives.
    `--concurrency` changes nothing. There is no `--timeout` and no
    `--max-failures`: a time limit would cut a script off in the middle of its
    account changes.
+10. **`host check --concurrency <n>` checks several hosts at once.** `host
+   check` read its hosts one after the other. `--concurrency <n>` (1 or more,
+   the default 1 is as before, byte for byte) reads n hosts side by side with
+   the runner `host sync --concurrency` uses. Each host's text, with what the
+   host prints on standard error, is held and printed whole in the order the
+   hosts were typed, a held host in its place, so the report, the `--json`
+   array, the count and the exit status (1 when a host differs or could not
+   be checked) are those of a sequential run. Nothing is asked and no terminal
+   is used with more than one host at once: the login runs in BatchMode (a key
+   or the agent; no password or passphrase) and the remote sudo is `sudo -n`,
+   so the login must be root or have passwordless sudo. The first Ctrl-C
+   starts no further host and lets the hosts under way finish (the others are
+   named, status 130), a second cancels them. With one host `--concurrency`
+   changes nothing. There is no `--timeout` and no `--max-failures`.
 
 ## 0.2.21 (2026-10-28)
 
