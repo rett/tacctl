@@ -851,7 +851,8 @@ func (r *pullRun) pullDevice(ctx context.Context, e devreg.Entry, o *pullOutcome
 	// The second connection of a WTI read (the user directory) is the same
 	// login: same target, host keys and password, in memory. A local login
 	// is one connection: it has none (--login is Junos only).
-	second := func(ctx context.Context) (*devssh.Client, error) { return devssh.Dial(ctx, target) }
+	// (its connection is a part of the read, not a connection to time apart)
+	second := func(ctx context.Context) (*devssh.Client, error) { return devssh.Dial(batch.Quiet(ctx), target) }
 	var opts []devssh.CLIOption
 	mode := r.mode
 	if r.local != nil {
@@ -870,6 +871,7 @@ func (r *pullRun) pullDevice(ctx context.Context, e devreg.Entry, o *pullOutcome
 	if err != nil {
 		return r.failed(ctx, e, o, err)
 	}
+	batch.Mark(ctx, "read")
 	o.Transport, o.Facts = rd.Transport, rd.Facts
 	if rd.Unit != nil {
 		o.OS, o.Unit = rd.Version, rd.Unit
@@ -919,6 +921,7 @@ func (r *pullRun) pullDevice(ctx context.Context, e devreg.Entry, o *pullOutcome
 	if err != nil {
 		return r.failed(ctx, e, o, err)
 	}
+	batch.Mark(ctx, "compare")
 	o.Result, o.Sections, o.SecretsVisible = devconf.ResultOK, results, ext.SecretsVisible
 	// The plain view, extracted the same way, tells the planner which
 	// statements a group supplies (D97). A view that does not extract is no
@@ -933,6 +936,7 @@ func (r *pullRun) pullDevice(ctx context.Context, e devreg.Entry, o *pullOutcome
 		o.Result = ""
 		return fail(batch.StatusFailed, "cannot record the result: "+strings.Join(msgs(err), " "), "")
 	}
+	batch.Mark(ctx, "record")
 	return batch.Result{Status: batch.StatusOK, Differs: differingSections(results)}
 }
 
