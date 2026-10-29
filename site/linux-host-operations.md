@@ -52,10 +52,11 @@ notices are open (`tacctl device notice list`).
 The filters narrow the list as those of `device list` do, and all must
 match: `--name <text>`, `--ip <addr|cidr|text>` and `--scope <scope>` take one
 value or a comma list, and `--stale` keeps the hosts not seen for stale-days.
-The heading then counts `Enrolled Linux hosts (2), of 5`. An engineer sees the
-hosts of their own scopes only. This server's own login shows `-` as its
-scope, and `--scope` never selects it. `device list` shows network devices
-only.
+The heading counts the hosts, and `, of 5` follows when the list is narrowed
+(`Enrolled Linux hosts (2), of 5`); a narrowed list with no host says
+`None match.` An engineer sees the hosts of their own scopes only. This
+server's own login shows `-` as its scope, and `--scope` never selects it.
+`device list` shows network devices only.
 
 `host check` logs in, changes nothing, and lists each difference with the
 command that fixes it. It exits 1 if a host differs or could not be
