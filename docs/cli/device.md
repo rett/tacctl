@@ -11,8 +11,10 @@ device list [<word>] [--name <text>] [--ip <addr|cidr|text>] [--vendor <v>] [--s
     Registered devices sorted by name (the enrolled hosts are listed by `host list`); `--name`
     (names containing the text), `--ip` (an address, a CIDR or a text the address contains),
     `--vendor` and `--scope` narrow the list (one value or a comma list, any of them; the options
-    must all match) and a bare word matches a name, an address, a vendor or a scope. Scope, STATE
-    (configured: a scope's prefixes cover the address; unconfigured; stale), last seen / by / via
+    must all match) and a bare word matches a name, an address, a vendor or a scope. The heading
+    counts the devices (`Registered devices (1), of 5` when narrowed; `None match.` when none is
+    left). Scope, STATE (configured: a scope's prefixes cover the address; unconfigured; stale;
+    BREAK-GLASS while the device is held), last seen / by / via
     from the seen cache, CONFIG (the state of the last configuration pull: `ok`, `differs`,
     `never`, `failed`, `pull` for a Cisco device whose syntax is unknown; `-` for a vendor `other`
     and a device in no scope; the operator tier's: a read-only user's list has no such column),

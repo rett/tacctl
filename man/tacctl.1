@@ -2668,7 +2668,11 @@ lists under
 .BR "Names:" .
 The options narrow the list as those of
 .B "device list"
-do; all must match.
+do; all must match. The heading counts the hosts
+.RB ( "Enrolled Linux hosts (2), of 5" :
+the second number appears when the list is narrowed), and a narrowed list with
+no host says
+.BR "None match." .
 .B \-\-name
 keeps the names that contain the text,
 .B \-\-ip
@@ -8037,16 +8041,24 @@ the devices that scope answers; each takes one value or a comma list (any of
 them matches), and different options must all match. A
 .I word
 alone keeps the devices whose name or address contains it or whose vendor or
-scope it is. The heading says how many of the visible devices are shown. The config
+scope it is. The heading counts the devices shown and, when the list is narrowed
+(by an option or a word), how many there were
+.RB ( "Registered devices (1), of 5" ):
+nothing left says
+.BR "None match." .
+The config
 column (the operator tier's: a read-only user's list has none, in the table
 or in the JSON) is the state of the device's last configuration pull
 .RB ( "device config pull" ):
 .BR ok ,
 .BR differs ,
-.B never
+.BR never ,
+.B failed
 or
-.BR failed ,
-from the pull's record without rendering; it is
+.B pull
+(a Cisco device whose configuration syntax is unknown, or whose vendor changed
+since its last pull: the stored pull cannot be compared until it is pulled
+again), from the pull's record without rendering; it is
 .B \-
 for a vendor
 .B other
@@ -8054,7 +8066,11 @@ and a device no scope covers. The state is
 .B configured
 when a scope's prefixes cover the address and
 .B unconfigured
-otherwise.
+otherwise
+.RB ( stale :
+not seen for stale\-days;
+.BR BREAK\-GLASS :
+the device has a break\-glass hold, and a footer counts them).
 .B \-\-unconfigured
 lists only those;
 .B \-\-differs

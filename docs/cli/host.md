@@ -7,9 +7,11 @@ host list [--name <text>] [--ip <addr|cidr|text>] [--scope <scope>] [--stale] [-
 
     Show enrolled Linux hosts sorted by name, as `device list` shows devices: target, ADDRESS,
     scope, STATE (configured: the host's scope exists; unconfigured; stale; BREAK-GLASS while the
-    host is held), LAST SEEN and BY from the seen cache, server, METHOD, users and open notices. A
-    last line gives the age of the seen data and, when the hosts have open notices, how many; when
-    the registrations have findings (below), another says how many and points to `config validate`
+    host is held), LAST SEEN and BY from the seen cache, server, METHOD, users and open notices. The
+    heading counts the hosts (`Enrolled Linux hosts (2), of 5` when narrowed; `None match.` when
+    none is left). A last line gives the age of the seen data and, when the hosts have open
+    notices, how many; when the registrations have findings (below), another says how many and
+    points to `config validate`
 
     --name <text>
         Only names containing the text (one value or a comma list: any of them)
