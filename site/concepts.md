@@ -9,7 +9,7 @@ doctype: explanation
 
 # Concepts
 
-*Users, groups, scopes and tiers, and the other words tacctl uses · Checked against tacctl 0.2.20*
+*Users, groups, scopes and tiers, and the other words tacctl uses · Checked against tacctl 0.2.21*
 
 [Printable PDF](../pdf/tacctl-concepts.pdf){: .pdf-link }
 
@@ -35,6 +35,9 @@ hosts, notices, plans and snapshots.
 > **An empty scope list means no access anywhere.** It never means
 > everywhere. A new user created without `--scopes` is placed in the
 > default scope only (`tacctl scope default` shows which one).
+
+The tacctl server and its console are the exception: every user can log in
+there, whatever their scopes, unless disabled or in a group of tier none.
 
 ---
 
@@ -91,6 +94,8 @@ tacctl scope show site-a             # prefixes, users, secret length, settings
   log in to it.
 - Changing a scope's secret takes effect on the server **at once**. Every
   device in the scope fails until it has the new key.
+- The name `tacctl` is reserved. A scope of that name, managed by tacctl, is
+  this server's own login: it is in no listing and no command edits it.
 
 ---
 

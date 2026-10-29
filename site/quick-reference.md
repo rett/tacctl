@@ -9,7 +9,7 @@ doctype: reference
 
 # Quick Reference
 
-*The most common tacctl commands on one card · Checked against tacctl 0.2.20*
+*The most common tacctl commands on one card · Checked against tacctl 0.2.21*
 
 [Printable PDF](../pdf/tacctl-quick-reference.pdf){: .pdf-link }
 
@@ -100,7 +100,15 @@ usage. In the console and `tacctl shell`, `?` shows help.
 | Release | `tacctl breakglass release <n>` | S |
 | List holds | `tacctl breakglass list` | E |
 
-## 7. Logs and recovery
+## 7. This server
+
+| Task | Command | Tier |
+|---|---|---|
+| Show the server address | `tacctl server addresses` | S |
+| Change it | `tacctl server addresses replace <ip>` | S |
+| Rebuild or repair the server's own login | `tacctl host enroll --local` | S |
+
+## 8. Logs and recovery
 
 | Task | Command | Tier |
 |---|---|---|
@@ -112,7 +120,7 @@ usage. In the console and `tacctl shell`, `?` shows help.
 | Diff / restore | `tacctl backup diff [ts]` · `backup restore <ts>` | S |
 | Audit trail | `journalctl -t tacctl -t tacctl-console` | — |
 
-## 8. Exit codes
+## 9. Exit codes
 
 `0` ok · `1` refused/failed · `2` wrong arguments or a change is needed
 (`--exit-code`) · `3` refused to overwrite a hand edit · `130` interrupted.

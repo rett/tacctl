@@ -9,7 +9,7 @@ doctype: explanation
 
 # Glossary
 
-*The words tacctl and this documentation use, in one list · Checked against tacctl 0.2.20*
+*The words tacctl and this documentation use, in one list · Checked against tacctl 0.2.21*
 
 [Printable PDF](../pdf/tacctl-glossary.pdf){: .pdf-link }
 
@@ -42,6 +42,7 @@ explains it in full.
 | **Host sync** | `tacctl host sync`: push user changes to enrolled Linux hosts. Nothing reaches a host without it. | [Linux Host Operations](linux-host-operations.md) §2 |
 | **Legacy ssh** | A device setting for old IOS that offers only SHA-1 key exchange, CBC ciphers and `ssh-rsa`. Separate from the configuration syntax. | [Vendor Notes](vendor-notes.md) §2.4 |
 | **Managed sections** | The parts of a device's configuration tacctl compares: `aaa`, `roles`, `mgmt-acl`, `snmp`, `netconf`, `breakglass`, and in some scopes `system`. | [Concepts](concepts.md) §6 |
+| **Managed server login** | The login of every user to the tacctl server and its console: the reserved scope `tacctl`, this server's registry entry, the PAM client and sshd's drop-in. `install` and `upgrade` set it up; `host enroll --local` rebuilds or repairs it. | [Superuser Daily Operations](superuser-daily-operations.md) §11.1 |
 | **Notice** | A flag on a device or host that needs attention, with the command that fixes it. `tacctl device notice list`. | [Concepts](concepts.md) §5 |
 | **Onboard** | `tacctl device onboard`: bring a blank Junos device in through one of its local accounts. | [Engineer Guide](engineer-guide-device-changes.md) §2.3 |
 | **Password cache** | Keeps your network password in locked memory for the session. A superuser allows it per tier; each user turns it on with `console password-cache on`. | [Getting Started](getting-started.md) §1.3 |
@@ -54,6 +55,7 @@ explains it in full.
 | **Restore point** | Cisco: a copy of the configuration on flash, added before a plan's region with `--restore-point=flash:`. | [Vendor Notes](vendor-notes.md) §2.5 |
 | **Scope** | Client address prefixes plus a shared secret. Decides *where* a user can log in. | [Concepts](concepts.md) §3 |
 | **Secret (shared secret)** | The TACACS+ or RADIUS key between a scope's devices and the server. Every print writes a `secret-read` audit line. | [Concepts](concepts.md) §3 |
+| **Server address** | The address devices and hosts reach this server at: the setting `server.addresses`, shown and changed by `tacctl server addresses`. It is the default of `--server`. | [Superuser Daily Operations](superuser-daily-operations.md) §11.2 |
 | **Severity** | A plan's rating of each problem: `ACCESS`, `MONITORING` or `COSMETIC`. | [Engineer Guide](engineer-guide-device-changes.md) §4 |
 | **Shape** | A set of devices that need the same change. A Junos apply groups its review by shape. | [Engineer Guide](engineer-guide-device-changes.md) §5.1 |
 | **`sid`** | The session id that ends every audit line of one command run, so `grep sid=<id>` finds them all. | [Audit and Compliance](audit-and-compliance.md) §2 |
