@@ -9,7 +9,7 @@ doctype: how-to
 
 # Superuser Daily Operations
 
-*Day-to-day operations for tacctl superusers · Checked against tacctl 0.2.21*
+*Day-to-day operations for tacctl superusers · Checked against tacctl 0.2.22*
 
 [Printable PDF](../pdf/tacctl-superuser-daily-operations.pdf){: .pdf-link }
 
@@ -396,8 +396,8 @@ The console is the login shell of every tacctl user on the tacctl server,
 of every tier; there is no switch for it, and the user's scopes play no part:
 every user can log in to the server and its console unless disabled
 (`user disable`) or in a group of tier none. The accounts follow at the next
-`host sync` of the server; a user whose name has a period has no Linux
-account on any host, so no console login. Local accounts that are not tacctl
+`host sync` of the server; a user stored with a period in the name (0.2.20
+and 0.2.21 allowed it) has no Linux account on any host, so no console login. Local accounts that are not tacctl
 users keep their own shells.
 
 ```bash

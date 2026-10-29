@@ -9,7 +9,7 @@ doctype: how-to
 
 # Troubleshooting
 
-*Symptom-first fixes for login and device problems · Checked against tacctl 0.2.21*
+*Symptom-first fixes for login and device problems · Checked against tacctl 0.2.22*
 
 [Printable PDF](../pdf/tacctl-troubleshooting.pdf){: .pdf-link }
 
@@ -90,7 +90,8 @@ its own procedure in §5 of that page.
    listener, see step 3). RADIUS uses UDP 1812/1813 by default and can't be
    tested with telnet.
 2. `tacctl backend status`: are the services and listeners up?
-3. `tacctl config listen show` (add `--backend radius` for RADIUS): is the
+3. `tacctl server listen show` (add `--backend radius` for RADIUS), or
+   `tacctl server show` for every listener with its port and unit state: is the
    listener on the right address?
 4. A Cisco device may be sending from an unexpected interface. Check
    `tacctl config cisco source-interface <scope>`. The source must be inside
@@ -140,7 +141,9 @@ retry, run `tacctl log tail 50`, then set the log level back.
 | `is locked by another tacctl command` | Wait, then retry |
 | `not permitted` in the shell | Your tier doesn't allow the command. `?` shows the tier it needs. |
 | `A password change is required of '<user>'` | Only `passwd`, `version` and `help` run until you change your password: `tacctl passwd` |
-| A user cannot log in to the tacctl server or its console | Every user can, unless disabled or in a group of tier none (`tacctl user show <name>`). The account exists after the next `tacctl host sync <server>`. A name with a period has no Linux account. |
+| A user cannot log in to the tacctl server or its console | Every user can, unless disabled or in a group of tier none (`tacctl user show <name>`). The account exists after the next `tacctl host sync <server>`. A name with a period (stored by 0.2.20 or 0.2.21) has no Linux account: `tacctl user rename <name> <new-name>`. |
+| `Username must contain only letters, numbers, underscores and hyphens (a period cannot be part of a Linux account name).` | `user add` or `user rename` was given a name with a period. Use `-` or `_`. |
+| `rename it first: tacctl user rename <name> <new-name>` (from `passwd`, `user passwd`, `user require-password-change`), or `tacctl upgrade` refusing | The store holds a user with a period. Rename it, then repeat the command. |
 | `Scope 'tacctl' is reserved. Rename the scope of that name first` (from `host enroll --local`, the sync of the server or `config validate`) | A scope called `tacctl` from an earlier release blocks the server's own login. `tacctl scope rename tacctl <new-name>`, then `tacctl host enroll --local`. |
 | `This machine's own login was not set up (an upgrade does not ask without a terminal)` | `upgrade` found no login and had no terminal to ask on. Run `tacctl host enroll --local`. |
 | `This machine's own login was not set up (the enrolment stopped, see above; nothing is half applied)` | A safeguard stopped the setup, and the lines above say why. Fix that, then run `tacctl host enroll --local`. |
