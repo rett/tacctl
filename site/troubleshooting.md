@@ -86,8 +86,9 @@ its own procedure in §5 of that page.
 
 ## 5. Nothing reaches the server
 
-1. From the device: `telnet <server_ip> 49` (TACACS+). RADIUS uses UDP
-   1812/1813 and can't be tested with telnet.
+1. From the device: `telnet <server_ip> 49` (TACACS+; the port of the
+   listener, see step 3). RADIUS uses UDP 1812/1813 by default and can't be
+   tested with telnet.
 2. `tacctl backend status`: are the services and listeners up?
 3. `tacctl config listen show` (add `--backend radius` for RADIUS): is the
    listener on the right address?

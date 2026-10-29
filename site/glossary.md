@@ -45,7 +45,7 @@ explains it in full.
 | **Managed server login** | The login of every user to the tacctl server and its console: the reserved scope `tacctl`, this server's registry entry, the PAM client and sshd's drop-in. `install` and `upgrade` set it up; `host enroll --local` rebuilds or repairs it. | [Superuser Daily Operations](superuser-daily-operations.md) §11.1 |
 | **Notice** | A flag on a device or host that needs attention, with the command that fixes it. `tacctl device notice list`. | [Concepts](concepts.md) §5 |
 | **Onboard** | `tacctl device onboard`: bring a blank Junos device in through one of its local accounts. | [Engineer Guide](engineer-guide-device-changes.md) §2.3 |
-| **Password cache** | Keeps your network password in locked memory for the session. A superuser allows it per tier; each user turns it on with `console password-cache on`. | [Getting Started](getting-started.md) §1.3 |
+| **Password cache** | Keeps your network password in locked memory for the session. A superuser allows it per tier; each user turns it on with `console password-cache on`. With it on, `ssh` asks for the password the first time and keeps it. | [Getting Started](getting-started.md) §1.3 |
 | **`PENDING`** | A Junos apply whose state could not be read after the commit. Type nothing on the device until the time shown (the device's own clock) passes. | [Vendor Notes](vendor-notes.md) §3.2 |
 | **Plan** | The exact fix for a device: report, the region between `PASTE FROM HERE` and `PASTE TO HERE`, checks and back-out. | [Engineer Guide](engineer-guide-device-changes.md) §4 |
 | **Pull** | Log in to a device as you and read its managed sections. Read only. | [Engineer Guide](engineer-guide-device-changes.md) §3 |
