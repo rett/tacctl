@@ -71,8 +71,9 @@ current behaviour; this file is where history lives.
    replaced `tacctl` and the tacquito build when the new `tacctl` refuses (the
    store, the configuration and the services are not changed, and the refusal
    says so), and `tacctl upgrade` run again after the rename finishes it.
-   `tacctl rollback` keeps refusing them for every target but 0.2.20, which
-   reads them (a restored snapshot of 0.2.20 or 0.2.21 can bring one back).
+   `tacctl rollback` keeps refusing them for every target but 0.2.21 and
+   0.2.20, which read them (a restored snapshot of 0.2.20 or 0.2.21 can bring
+   one back).
    The refusal of a rename to a name with a period and its notes are gone, as
    that name can no longer be made. The older entries of this file stay as
    they were written.
