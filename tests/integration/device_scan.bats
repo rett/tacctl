@@ -244,7 +244,9 @@ two_scans() {
     plain
     assert_output --regexp "edge-fw +203\.0\.113\.20 +other +dmz +configured +never +- +- +-"
 
-    stub_cmd ssh-keyscan "true"
+    # a name that does not resolve is the failure ssh-keyscan reports: it
+    # alone is tried, the built-in client (3 s to 10 s a device) is not
+    stub_cmd ssh-keyscan "echo 'getaddrinfo core-sw1.example.net: Name or service not known' >&2"
     run at 2026-10-05T12:00:00Z device scan --backend radius
     plain
     assert_output --partial "core-sw1  hostkey-unreachable: no host key could be read from 'core-sw1' (203.0.113.1 port 22) at 2026-10-05 12:00; last good scan 2026-10-04 12:00"

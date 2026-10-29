@@ -481,13 +481,17 @@ x $(key rsa)"
 }
 
 @test "device add: a device that does not answer is refused unless --no-host-key" {
+    # ssh-keyscan prints the resolver's failure, the one failure it reports
+    # about a device (a refused or filtered address prints nothing, like a
+    # silent server): only ssh-keyscan is tried.
+    stub_cmd ssh-keyscan "echo 'getaddrinfo sw1.example.net: Name or service not known' >&2"
     run "$TACCTL_BIN_SCRIPT" device add x 192.0.2.1 --port 2222
     assert_failure 1
     plain
     assert_output --partial "No ssh host key could be read from 192.0.2.1 port 2222 (ssh-keyscan); nothing was changed."
     assert_output --partial "register it without a pinned key: tacctl device add x 192.0.2.1 --port 2222 --no-host-key"
     [[ ! -e "$DEVICES" ]]
-    stub_cmd ssh-keyscan
+    : > "$CALLS_LOG"
     run "$TACCTL_BIN_SCRIPT" device add x 192.0.2.1 --no-host-key
     assert_success
     plain

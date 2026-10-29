@@ -10,9 +10,20 @@ tacctl_mocks_init() {
     # Prepend stub dir so test stubs shadow real binaries.
     export PATH="${STUB_BIN}:${PATH}"
     # tacctl reads host keys with ssh-keyscan (device add, host enroll and
-    # sync): no test may reach a real host, so by default nothing answers.
-    # A test that wants keys stubs it with stub_cmd, which also logs calls.
-    printf '#!/usr/bin/env bash\nexit 0\n' > "${STUB_BIN}/ssh-keyscan"
+    # sync): no test may reach a real host, so by default nothing answers and
+    # the stub says what OpenSSH's ssh-keyscan prints for a name that does not
+    # resolve ('getaddrinfo <host>: Name or service not known' on standard
+    # error), the one failure that tells tacctl the device is down. A stub
+    # that prints nothing would be a silent device, which tacctl reads with
+    # its own ssh client (a real dial). A test that wants keys stubs it with
+    # stub_cmd, which also logs calls; one that wants a silent device
+    # stubs it with stub_cmd ssh-keyscan and points the dial at the fake
+    # device (fakedev_start).
+    cat > "${STUB_BIN}/ssh-keyscan" <<'STUB'
+#!/usr/bin/env bash
+echo "getaddrinfo ${!#}: Name or service not known" >&2
+exit 0
+STUB
     chmod +x "${STUB_BIN}/ssh-keyscan"
 }
 
