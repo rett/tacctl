@@ -111,20 +111,29 @@ func (inv *invocation) hostCheckAll(args []string) error {
 
 	results := make([]hostCheckAllJSON, len(entries))
 	if pool := min(concurrency, len(entries)); pool > 1 {
-		names := make([]string, len(entries))
+		names, keys := make([]string, len(entries)), make([]string, len(entries))
 		for i, e := range entries {
-			names[i] = e.Name
+			names[i], keys[i] = e.Name, hostTargetKey(e)
 		}
-		sum, _, errs := inv.runHostPool(names, pool, func(st *hostStep, i int) (bool, error) {
+		run := inv.runHostPool(names, keys, pool, func(st *hostStep, i int) (bool, error) {
 			r, err := inv.hostCheckOne(st, f, entries[i], asJSON)
 			results[i] = r
 			return false, err
 		})
-		if err := firstError(errs); err != nil {
+		if run.sum.Interrupted {
+			return ui.ErrInterrupted
+		}
+		if err := firstError(run.errs); err != nil {
 			return err
 		}
-		if sum.Interrupted {
-			return ui.ErrInterrupted
+		// a host whose job panicked is one that could not be checked
+		for i, text := range run.panics {
+			if text == "" {
+				continue
+			}
+			r := hostCheckAllJSON{Name: entries[i].Name, Target: entries[i].Target, State: checkFailed,
+				Error: "stopped by an internal error: " + text, Differences: []hostDiffJSON{}, Notes: []string{}}
+			results[i] = r
 		}
 	} else {
 		st := inv.sequentialStep()

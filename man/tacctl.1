@@ -3273,7 +3273,9 @@ held while the script is built and never while it runs on the host, so two syncs
 at once give a user one number; when another command keeps the lock for 30
 seconds the sync stops with nothing changed.
 .IP
-Several names run in one command, in the order typed, each as
+Several names run in one command, in the order typed (with
+.B \-\-concurrency
+they start in that order and their output is printed in that order), each as
 .B \-\-all
 would run it. Every name is checked before the first host is touched: an
 unknown name refuses the run (nothing is synced), a name given twice counts
@@ -3299,9 +3301,14 @@ terminal. The questions about the home directories of removed users are not
 asked, and every home is kept (as with no terminal); a host with removed users
 says so after the line that names them, and
 .B \-\-remove\-home
-deletes them. The first interrupt starts no further host and lets the hosts
-under way finish, a second one cancels them; the hosts not started are named
-and the status is 130. With one host
+deletes them. Registrations that share an ssh target (and port) are synced one
+after the other, since they share one connection. An interrupt (Ctrl\-C, or
+any SIGINT) stops the run as it stops a run one host after the other: no
+further host is started, the connections of the hosts under way are ended and
+those hosts are reported, recorded and audited as interrupted, the hosts not
+started are named, and the status is 130. Nothing carries the interrupt to a
+script already running on a host, as a terminal does in a run one host after
+the other, so that script may finish. With one host
 .B \-\-concurrency
 changes nothing. There is no per\-host time limit and no limit on failures.
 .IP
@@ -3517,9 +3524,11 @@ the other. No terminal is used: the login runs in BatchMode
 (a key or the agent; no password or passphrase is asked) and the remote sudo
 with
 .BR "sudo \-n" ,
-so the login must be root or have passwordless sudo. The first interrupt starts
-no further host and lets the hosts under way finish, a second one cancels them;
-the hosts not started are named and the status is 130. With one host
+so the login must be root or have passwordless sudo. Hosts that share an ssh
+target (and port) are checked one after the other. An interrupt (Ctrl\-C, or any
+SIGINT) stops the run as it stops a run one host after the other: no further
+host is started, the reads under way are ended and give no result, the hosts
+not started are named, and the status is 130. With one host
 .B \-\-concurrency
 changes nothing. There is no per\-host time limit. With
 .B \-\-json

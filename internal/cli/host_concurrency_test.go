@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -11,7 +12,6 @@ import (
 
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
-	"github.com/rett/tacctl/internal/hosts"
 )
 
 // 'host sync' and 'host check' with --concurrency: the hosts run side by
@@ -325,7 +325,6 @@ func TestHostSyncConcurrentSameUIDs(t *testing.T) {
 	if len(uids) != 3 || uids[0] != uids[1] || uids[1] != uids[2] || uids[0] == "" {
 		t.Errorf("the scripts carry different users:\n%q", uids)
 	}
-	_ = hosts.ScriptProtocol
 }
 
 // scriptUsersLine is the TAC_USERS block of a client script.
@@ -338,36 +337,130 @@ func scriptUsersLine(script string) string {
 	return line
 }
 
-// An interrupt lets the hosts under way finish and starts no other: the
-// host that was not started says so in its place, and the status is 130.
+// runStepRule is the match of the ssh call that runs the client script.
+func runStepRule(c execx.Cmd) bool {
+	return c.Name == "ssh" && strings.Contains(strings.Join(c.Args, " "), "rm -f")
+}
+
+// signalledByCancel makes r run its calls in the background and answers the
+// call for which match is true as a program that waits to be signalled: it
+// holds until n signals have reached programs (the hosts are in it together
+// first), cancels the run once with cancel, and then ends with status 255 as
+// ssh does when it is killed. A run that does not signal them fails the call
+// after a timeout.
+func signalledByCancel(r *fake.Runner, match func(execx.Cmd) bool, n int, cancel func()) {
+	gate := newHostGate(n)
+	var once sync.Once
+	r.Async = true
+	r.Func(match, func(execx.Cmd) (execx.Result, error) {
+		if !gate.pass() {
+			return execx.Result{Code: 1}, errors.New("the hosts did not overlap")
+		}
+		once.Do(cancel)
+		deadline := time.Now().Add(10 * time.Second)
+		for len(r.Signals()) < n {
+			if time.Now().After(deadline) {
+				return execx.Result{Code: 1}, errors.New("the hosts were not signalled")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		return execx.Result{Code: 255}, nil
+	})
+}
+
+// A SIGINT (the context of the command is cancelled) ends the whole run as it
+// ends a run one host after the other: the hosts under way are signalled and
+// reported (record, audit) as interrupted, not as script failures, the
+// others are named as not started, the status is 130, and nothing else
+// (a cancelled context in a step) replaces it.
 func TestHostSyncConcurrentInterrupt(t *testing.T) {
 	hs := newHostSandbox(t)
 	hs.concHosts()
-	ch := make(chan struct{}, 4)
-	hs.hooks = newTestHooks()
-	hs.hooks.interruptSource = func() <-chan struct{} { return ch }
-	gate := newHostGate(2)
-	var once sync.Once
-	r := hs.concRunner(gate, nil)
-	// Both hosts of the pool are in their run step: the operator interrupts.
-	r.Func(func(c execx.Cmd) bool { return c.Name == "ssh" && strings.Contains(strings.Join(c.Args, " "), "rm -f") },
-		func(c execx.Cmd) (execx.Result, error) {
-			if !gate.pass() {
-				return execx.Result{Code: 1}, errors.New("the hosts did not overlap")
-			}
-			once.Do(func() { ch <- struct{}{} }) // one Ctrl-C
-			time.Sleep(200 * time.Millisecond)
-			return execx.Result{Stdout: []byte("[INFO] Accounts: 1 managed by tacctl here.\n")}, nil
-		})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	hs.ctx = ctx
+	r := hs.concRunner(nil, nil)
+	signalledByCancel(r, runStepRule, 2, cancel)
 	got := plain(hs.run(r, "host", "sync", "web1", "web2", "web3", "--concurrency", "2"))
+	errText := plain(hs.err.String())
 	if hs.code != 130 {
-		t.Errorf("exit %d\n%s%s", hs.code, got, hs.err.String())
+		t.Errorf("exit %d\n%s%s", hs.code, got, errText)
 	}
-	i1, i2, i3 := strings.Index(got, "web1: synced"), strings.Index(got, "web2: synced"), strings.Index(got, "web3: not started (interrupted).")
-	if i1 < 0 || i2 < i1 || i3 < i2 {
-		t.Errorf("stdout:\n%s\nstderr:\n%s", got, hs.err.String())
+	if !strings.Contains(got, "web3: not started (interrupted).") || strings.Contains(got+errText, "synced") ||
+		strings.Contains(got+errText, "client script failed") || strings.Contains(got+errText, "sync failed") || strings.Contains(got+errText, "canceled") {
+		t.Errorf("stdout:\n%s\nstderr:\n%s", got, errText)
 	}
-	if len(runSteps(r)) != 2 {
+	if n := len(runSteps(r)); n != 2 {
 		t.Errorf("runs: %q", runSteps(r))
+	}
+	for _, n := range []string{"web1", "web2"} {
+		rec := hs.read("state/hosts/" + n + ".json")
+		if !strings.Contains(rec, `"ok": false`) || !strings.Contains(rec, `"reason": "interrupted"`) {
+			t.Errorf("record of %s:\n%s", n, rec)
+		}
+	}
+	if _, err := os.Stat(hs.path("state", "hosts", "web3.json")); err == nil {
+		t.Error("a host that was not started has a record")
+	}
+}
+
+// A panic in the job of one host fails that host, with the text, and no other:
+// the others are synced and printed, and the command ends normally.
+func TestHostSyncConcurrentPanic(t *testing.T) {
+	hs := newHostSandbox(t)
+	hs.concHosts()
+	r := hs.concRunner(nil, nil)
+	r.Func(func(c execx.Cmd) bool {
+		return runStepRule(c) && strings.Contains(strings.Join(c.Args, " "), "web2.example.net")
+	},
+		func(execx.Cmd) (execx.Result, error) { panic("boom") })
+	got := plain(hs.run(r, "host", "sync", "web1", "web2", "web3", "--concurrency", "3"))
+	errText := plain(hs.err.String())
+	if hs.code != 1 || !strings.Contains(got, "web1: synced") || !strings.Contains(got, "web3: synced") ||
+		!strings.Contains(errText, "web2: stopped by an internal error: boom") {
+		t.Errorf("exit %d\n%s%s", hs.code, got, errText)
+	}
+}
+
+// Two registrations of one ssh target share ssh's connection socket, so they
+// run one after the other; a host of another target runs beside them.
+func TestHostSyncConcurrentSameTarget(t *testing.T) {
+	hs := newHostSandbox(t)
+	hs.run(nil, "scope", "prefixes", "lab", "add", "192.0.2.0/24")
+	hs.write("state/linux-hosts", "web1|admin@web1.example.net||lab|192.0.2.1|\n"+
+		"web2|admin@web1.example.net||lab|192.0.2.1|\n"+
+		"web3|admin@web3.example.net||lab|192.0.2.1|\n", 0o600)
+	r := hs.concRunner(nil, nil)
+	var mu sync.Mutex
+	in := map[string]int{}
+	maxIn := map[string]int{}
+	all, maxAll := 0, 0
+	r.Func(runStepRule, func(c execx.Cmd) (execx.Result, error) {
+		target := "web3"
+		if strings.Contains(strings.Join(c.Args, " "), "web1.example.net") {
+			target = "web1"
+		}
+		mu.Lock()
+		in[target]++
+		all++
+		maxIn[target] = max(maxIn[target], in[target])
+		maxAll = max(maxAll, all)
+		mu.Unlock()
+		time.Sleep(150 * time.Millisecond)
+		mu.Lock()
+		in[target]--
+		all--
+		mu.Unlock()
+		return execx.Result{Stdout: []byte("[INFO] Accounts: 1 managed by tacctl here.\n")}, nil
+	})
+	got := plain(hs.run(r, "host", "sync", "web1", "web2", "web3", "--concurrency", "3"))
+	if hs.code != 0 || strings.Count(got, ": synced") != 3 {
+		t.Fatalf("exit %d\n%s%s", hs.code, got, hs.err.String())
+	}
+	if maxIn["web1"] != 1 {
+		t.Errorf("two hosts of one target ran at once")
+	}
+	if maxAll < 2 {
+		t.Errorf("the other target did not run beside them")
 	}
 }

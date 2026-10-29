@@ -59,7 +59,8 @@ host sync <name>... | --all
 
     Push account adds, renames, deletions, expiries and tier changes (a renamed user's account is
     renamed, keeping its UID and home); pins the host's ssh keys if none are (enroll pins them too).
-    Several names run in the order typed, each as --all would run it. Every name is checked first
+    Several names run in the order typed (with `--concurrency`, they start in that order and their
+    output is printed in that order), each as --all would run it. Every name is checked first
     (an unknown one refuses the run, one given twice counts once); a host that fails does not stop
     the rest, and the exit status is 1. Names and --all are not given together. The numbers of
     new users are given out under the UID ledger's lock, held while the script is built and never
@@ -82,10 +83,13 @@ host sync <name>... | --all
         is `sudo -n`, so the login must be root or have passwordless sudo. The questions about
         removed users' home directories are not asked and the homes are kept; a host with removed
         users says so after the line that names them, and `--remove-home` deletes them (or sync
-        the host alone to be asked). The first Ctrl-C starts no further host and lets the hosts
-        under way finish, a second cancels them; the hosts not started are named and the status
-        is 130. With one host it changes nothing. There is no per-host time limit and no limit on
-        failures
+        the host alone to be asked). Registrations that share an ssh target and port are synced one
+        after the other (they share one connection). Ctrl-C stops the run as in a sequential one:
+        no further host is started, the connections of the hosts under way are ended and those
+        hosts are reported, recorded and audited as interrupted, the hosts not started are named
+        and the status is 130. Without a terminal to carry the interrupt to it, a script already
+        running on a host may finish. With one host `--concurrency` changes nothing. There is no
+        per-host time limit and no limit on failures
 
 host check <name>... | --all [--json]
 
@@ -108,10 +112,11 @@ host check <name>... | --all [--json]
         text, standard error included, is held and printed whole in the order typed, so the
         report, the count and the exit status are those of a sequential run. No terminal is used:
         the login runs in BatchMode (a key or the agent; no password is asked) and the remote sudo
-        is `sudo -n`, so the login must be root or have passwordless sudo. The first Ctrl-C starts
-        no further host and lets the hosts under way finish, a second cancels them; the hosts not
-        started are named and the status is 130. With one host it changes nothing. There is no
-        per-host time limit
+        is `sudo -n`, so the login must be root or have passwordless sudo. Hosts that share an
+        ssh target and port are checked one after the other. Ctrl-C stops the run as in a
+        sequential one: no further host is started, the reads under way are ended and give no
+        result, the hosts not started are named and the status is 130. With one host it changes
+        nothing. There is no per-host time limit
 
 host move <name> [<scope>]|--all
 

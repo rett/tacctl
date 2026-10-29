@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"regexp"
@@ -118,5 +119,28 @@ func TestHostCheckConcurrencyArgument(t *testing.T) {
 	got := plain(hs.run(r, "host", "check", "web1", "web2", "--concurrency=50"))
 	if hs.code != 1 || !strings.Contains(got, "web1: as tacctl would make it.") || !strings.Contains(got, "web2: 2 differences:") || len(checkCalls(r)) != 2 {
 		t.Errorf("exit %d\n%s", hs.code, got)
+	}
+}
+
+// A SIGINT (the context of the command is cancelled) ends a concurrent check
+// as it ends a sequential one: the reads under way are signalled and give no
+// result, the hosts not started are named, the status is 130.
+func TestHostCheckConcurrentInterrupt(t *testing.T) {
+	hs, out := checkLabFour(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	hs.ctx = ctx
+	r := hs.checkRunner(out)
+	signalledByCancel(r, func(c execx.Cmd) bool {
+		return c.Name == "ssh" && strings.Contains(strings.Join(c.Args, " "), "tacctl-check")
+	}, 2, cancel)
+	got := plain(hs.run(r, "host", "check", "web1", "web2", "web4", "--concurrency", "2"))
+	errText := plain(hs.err.String())
+	if hs.code != 130 {
+		t.Errorf("exit %d\n%s%s", hs.code, got, errText)
+	}
+	if !strings.Contains(got, "web4: not started (interrupted).") || strings.Contains(got, "as tacctl would make it") ||
+		strings.Contains(got, "could not be checked") || strings.Contains(got+errText, "canceled") || strings.Contains(got, "3 hosts") {
+		t.Errorf("stdout:\n%s\nstderr:\n%s", got, errText)
 	}
 }

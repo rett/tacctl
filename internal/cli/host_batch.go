@@ -16,6 +16,11 @@ package cli
 // whole text at once, when it and every host before it have ended, so lines
 // of two hosts never mix.
 //
+// Pool-wide rules: a SIGINT cancels the whole run as it does a run one host
+// after the other (host_batch.go: runHostPool); a panic in one host's job
+// fails that host and no other; hosts with one ssh target run one after the
+// other.
+//
 // Without --concurrency (or with 1) nothing here is used: serial is a plain
 // call, the output goes where it always went, and the hosts are asked what
 // they were asked.
@@ -23,16 +28,28 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 
 	"github.com/rett/tacctl/internal/devconf/batch"
+	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/ui"
 )
 
 // hostConcurrencyFlag is the flag of both verbs.
 var hostConcurrencyFlag = Flag{Names: []string{"--concurrency"}, Value: true}
+
+// hostTargetKey names the ssh connection a host shares with another
+// registration of the same target (ssh's ControlPath is made of the target
+// and the port); "" for this server's own entry, which is reached without ssh.
+func hostTargetKey(e hosts.Entry) string {
+	if e.Target == hosts.Local {
+		return ""
+	}
+	return e.Target + "|" + e.Port
+}
 
 // hostConcurrency reads --concurrency: the number of hosts at once, 1 or more.
 func (inv *invocation) hostConcurrency(value, usage string) (int, error) {
@@ -129,20 +146,53 @@ type hostPool struct {
 // has said so), err ends the whole command.
 type hostJob func(st *hostStep, i int) (failed bool, err error)
 
+// hostRun is what a pool of hosts reports. panics[i] is the text of a panic
+// in host i's job ("" for none): the host is failed and the others go on.
+type hostRun struct {
+	sum    batch.Summary
+	failed []bool
+	errs   []error
+	panics []string
+}
+
 // runHostPool runs job for each of names, concurrency at once, and prints
-// each host's output in the order of names. It returns the batch summary and
-// what each host reported; the first of errs that is not an interrupt is
-// what the caller returns after it has printed what it prints.
-func (inv *invocation) runHostPool(names []string, concurrency int, job hostJob) (sum batch.Summary, failed []bool, errs []error) {
+// each host's output in the order of names. Hosts with the same non-empty key
+// (the same ssh target, whose connection sharing one host's end would cut
+// for the other) run one after the other.
+//
+// An interrupt of the command (any SIGINT, SIGTERM or SIGHUP, as in a run one
+// host after the other) cancels the whole run: no host is started, and the
+// ssh calls of those under way are ended and report an interrupt. The caller
+// returns ui.ErrInterrupted when sum.Interrupted, after the output; of the
+// other errors the first, in the order typed, is firstError.
+func (inv *invocation) runHostPool(names, keys []string, concurrency int, job hostJob) hostRun {
 	p := &hostPool{inv: inv, real: inv.app.Out, names: names}
-	failed, errs = make([]bool, len(names)), make([]error, len(names))
+	r := hostRun{failed: make([]bool, len(names)), errs: make([]error, len(names)), panics: make([]string, len(names))}
+	targets := map[string]*sync.Mutex{}
+	for _, k := range keys {
+		if k != "" && targets[k] == nil {
+			targets[k] = &sync.Mutex{}
+		}
+	}
 	jobs := make([]batch.Job, len(names))
 	for i, name := range names {
 		p.bufs = append(p.bufs, &hostBuf{})
-		jobs[i] = batch.Job{Name: name, Do: func(ctx context.Context) batch.Result {
-			st := &hostStep{ctx: ctx, concurrent: true, serial: func(fn func()) { p.serial(i, fn) }}
+		jobs[i] = batch.Job{Name: name, Do: func(ctx context.Context) (res batch.Result) {
+			defer func() {
+				if v := recover(); v != nil {
+					r.panics[i] = fmt.Sprint(v)
+					r.failed[i], r.errs[i] = true, nil
+					p.bufs[i].output().ErrorE(name + ": stopped by an internal error: " + r.panics[i])
+					res = batch.Result{Status: batch.StatusFailed, Reason: "internal error"}
+				}
+			}()
+			if m := targets[keys[i]]; keys[i] != "" {
+				m.Lock()
+				defer m.Unlock()
+			}
+			st := &hostStep{ctx: execx.EndOnCancel(ctx), concurrent: true, serial: func(fn func()) { p.serial(i, fn) }}
 			f, err := job(st, i)
-			failed[i], errs[i] = f, err
+			r.failed[i], r.errs[i] = f, err
 			switch {
 			case err != nil:
 				return batch.Result{Status: batch.StatusFailed, Reason: strings.Join(msgs(err), " "), Err: err}
@@ -152,11 +202,8 @@ func (inv *invocation) runHostPool(names []string, concurrency int, job hostJob)
 			return batch.Result{}
 		}}
 	}
-	ctx, interrupts, stop := inv.batchInterrupts()
-	defer stop()
-	sum = batch.Run(ctx, batch.Options{Concurrency: concurrency, Interrupts: interrupts, Clock: inv.app.Knobs.Now},
-		jobs, &orderedView{p: p})
-	return sum, failed, errs
+	r.sum = batch.Run(inv.ctx, batch.Options{Concurrency: concurrency, Clock: inv.app.Knobs.Now}, jobs, &orderedView{p: p})
+	return r
 }
 
 // serial runs fn with the invocation to itself and its output the host i's.
@@ -171,10 +218,11 @@ func (p *hostPool) serial(i int, fn func()) {
 }
 
 // firstError is the error that ends the command: the first host's, in the
-// order typed, that is not an interrupt.
+// order typed, that is not an interrupt (a cancelled context in a step that
+// was under way when the run was interrupted is one).
 func firstError(errs []error) error {
 	for _, err := range errs {
-		if err != nil && !errors.Is(err, ui.ErrInterrupted) {
+		if err != nil && !errors.Is(err, ui.ErrInterrupted) && !errors.Is(err, context.Canceled) {
 			return err
 		}
 	}

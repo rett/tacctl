@@ -32,3 +32,14 @@ func TestAttachedEndOnDeadline(t *testing.T) {
 		t.Errorf("a cancel is not a deadline: code %d after %v", code, d)
 	}
 }
+
+// A program run with EndOnCancel ends when ctx is cancelled, by any cause.
+func TestAttachedEndOnCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(200*time.Millisecond, cancel)
+	start := time.Now()
+	code, interrupted, _ := Attached(EndOnCancel(ctx), Real{}, Cmd{Name: "sh", Args: []string{"-c", "exec sleep 2"}}, nil, io.Discard, io.Discard)
+	if d := time.Since(start); code == 0 || !interrupted || d > time.Second {
+		t.Errorf("cancel: code %d interrupted %v after %v", code, interrupted, d)
+	}
+}

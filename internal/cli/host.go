@@ -1717,19 +1717,27 @@ func (inv *invocation) hostSyncPool(reg *hosts.Registry, names []string, pool in
 	// The start line of the audit is written here, on the command's own
 	// goroutine (as the device pulls do): the workers write the records.
 	inv.app.Audit().Touch()
-	sum, failed, errs := inv.runHostPool(names, pool, func(st *hostStep, i int) (bool, error) {
+	keys := make([]string, len(names))
+	for i, n := range names {
+		if e, ok := reg.Find(n); ok {
+			keys[i] = hostTargetKey(e)
+		}
+	}
+	run := inv.runHostPool(names, keys, pool, func(st *hostStep, i int) (bool, error) {
 		var he *hosts.Env
 		st.serial(func() { he = inv.syncEnv(st) })
 		r := reg
 		return inv.syncHost(st, he, &r, names[i], scriptArgs, removeHome)
 	})
-	if err := firstError(errs); err != nil {
-		return err
-	}
-	if sum.Interrupted {
+	// An interrupt ends the command as it ends a run one host after the
+	// other; the hosts under way were interrupted, the others not started.
+	if run.sum.Interrupted {
 		return ui.ErrInterrupted
 	}
-	if slices.Contains(failed, true) {
+	if err := firstError(run.errs); err != nil {
+		return err
+	}
+	if slices.Contains(run.failed, true) {
 		return exit(1)
 	}
 	return nil
@@ -1831,7 +1839,7 @@ func (inv *invocation) provisioningLogin(target string) (login string, explicit,
 func (inv *invocation) syncOne(st *hostStep, he *hosts.Env, e hosts.Entry, method string, scriptArgs []string, removeHome bool) (bool, error) {
 	ok, reason, ran, err := inv.syncRun(st, he, e, method, scriptArgs, removeHome)
 	switch {
-	case errors.Is(err, ui.ErrInterrupted):
+	case errors.Is(err, ui.ErrInterrupted), st.concurrent && errors.Is(err, context.Canceled):
 		reason = "interrupted"
 	case err != nil:
 		reason = strings.Join(msgs(err), " ")

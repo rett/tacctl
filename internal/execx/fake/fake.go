@@ -68,6 +68,10 @@ type Runner struct {
 	signals []os.Signal
 	// ExecErr, when set, is returned by Exec (as a failed execve would be).
 	ExecErr error
+	// Async makes Start run the call in the background and Wait wait for it,
+	// so that a rule which blocks can be signalled (Process.Signal, Signals)
+	// meanwhile. Run is not affected.
+	Async bool
 	// Strict makes a call that no rule matches fail with ErrUnscripted
 	// (Result.Code 127, as for a program that is not there) instead of
 	// succeeding silently. Use it where a test must account for every
@@ -319,6 +323,14 @@ func (f *Runner) Run(ctx context.Context, c execx.Cmd) (execx.Result, error) {
 
 // Start is Run, answered when the process is waited for.
 func (f *Runner) Start(ctx context.Context, c execx.Cmd) (execx.Process, error) {
+	if f.Async {
+		p := &process{f: f, done: make(chan struct{})}
+		go func() {
+			p.res, p.err = f.Run(ctx, c)
+			close(p.done)
+		}()
+		return p, nil
+	}
 	res, err := f.Run(ctx, c)
 	if errors.Is(err, ErrNotFound) || errors.Is(err, ErrUnscripted) {
 		return nil, err
@@ -343,9 +355,16 @@ type process struct {
 	f   *Runner
 	res execx.Result
 	err error
+	// done, when set, is closed when res and err are known (Async).
+	done chan struct{}
 }
 
-func (p *process) Wait() (execx.Result, error) { return p.res, p.err }
+func (p *process) Wait() (execx.Result, error) {
+	if p.done != nil {
+		<-p.done
+	}
+	return p.res, p.err
+}
 func (p *process) Signal(sig os.Signal) error {
 	p.f.mu.Lock()
 	defer p.f.mu.Unlock()
