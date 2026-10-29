@@ -266,7 +266,7 @@ func TestCollectRefusedPassword(t *testing.T) {
 
 // Without a terminal the identity is --host-key's (one address) or nothing;
 // a wrong key sends nothing; a registered address, an address no scope
-// answers and the registration without -y are refused.
+// answers and the registration without --yes are refused.
 func TestCollectRefusalsSendNothing(t *testing.T) {
 	b := newCollectBox(t)
 	fp := b.key().Fingerprint()
@@ -281,7 +281,7 @@ func TestCollectRefusalsSendNothing(t *testing.T) {
 		{"-", []string{onboardAddr}, 2, "No terminal to answer the host-key question on"},
 		{"-", []string{onboardAddr, "192.168.1.32", "--host-key", fp}, 2, "--host-key names the key of ONE device"},
 		{"-", []string{"--discovered", "--host-key", fp}, 2, "--host-key names the key of ONE device"},
-		{"-", []string{onboardAddr, "--host-key", fp, "--register"}, 2, "--register without one needs -y"},
+		{"-", []string{onboardAddr, "--host-key", fp, "--register"}, 2, "--register without one needs --yes"},
 		{"-", []string{}, 2, "Name the addresses to collect from"},
 		{"-", []string{onboardAddr, "--discovered", "--host-key", fp}, 2, "not both"},
 		{"-", []string{"bad name", "--host-key", fp}, 2, ""},
@@ -311,7 +311,7 @@ func TestCollectNotJunos(t *testing.T) {
 	}
 	b := newPullBoxIn(t, dir)
 	b.pw.pw = testPassword
-	out := b.collect("-", onboardAddr, "--host-key", b.key().Fingerprint(), "--register", "-y")
+	out := b.collect("-", onboardAddr, "--host-key", b.key().Fingerprint(), "--register", "--yes")
 	if b.sb.code != 1 {
 		t.Fatalf("exit %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
 	}

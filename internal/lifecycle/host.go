@@ -77,7 +77,7 @@ type OwnLoginOptions struct {
 	// reads the answer from standard input as the install's own do. An
 	// upgrade asks only when standard input is a terminal.
 	Install bool
-	// Yes is 'install -y': the consent is given, nothing is asked.
+	// Yes is 'install --yes': the consent is given, nothing is asked.
 	Yes bool
 	// Server is 'install --server <ip>': the address devices and hosts reach
 	// this server at ("": the recorded one, else the detected one).

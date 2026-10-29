@@ -312,8 +312,8 @@ var manFlagOverrides = map[string]string{
 	"device config apply --json":         "One object per device and phase, then the summary; the review goes to standard error.",
 	"device config apply --exit-code":    "With --check: exit 2 when a device needs a change (and none failed).",
 	"device config apply --pull":         "Read the devices first, as 'device config pull' does (over device.config.transport), with the same password; a device whose pull fails is not checked, and --stale and --differs select from the fresh records.",
-	"device config apply -y":             "Answer the review (only with --confirmed: every shape is one an earlier apply confirmed; no terminal needed).",
-	"device config shapes -y":            "(seed) Answer the question: file the shapes as confirmed on your word.",
+	"device config apply --yes":          "Answer the review (only with --confirmed: every shape is one an earlier apply confirmed; no terminal needed).",
+	"device config shapes --yes":         "(seed) Answer the question: file the shapes as confirmed on your word.",
 	"device config shapes --json":        "(list) One object per shape: its state, devices, confirmations and the nearest confirmed shape.",
 	"device list --name":                 "Only names that contain the text (a comma list: any of them).",
 	"device list --ip":                   "Only addresses equal to, inside, or containing it (an address, a CIDR or a text; a comma list).",
@@ -323,8 +323,8 @@ var manFlagOverrides = map[string]string{
 	"device ssh -Y":                      "Forward X11 to this server's display (trusted, as ssh -Y).",
 	"ssh -X":                             "Forward X11 to this server's display (untrusted, as ssh -X).",
 	"ssh -Y":                             "Forward X11 to this server's display (trusted, as ssh -Y).",
-	"host forget -y":                     "(forget) Forget the host without asking.",
-	"host rename -y":                     "(rename) Answer both questions yes: replace what an earlier host of the new name left, and rename the host's own linux-<name> scope.",
+	"host forget --yes":                  "(forget) Forget the host without asking.",
+	"host rename --yes":                  "(rename) Answer both questions yes: replace what an earlier host of the new name left, and rename the host's own linux-<name> scope.",
 }
 
 // capitalizeDesc starts the sentence of a description with a capital: the

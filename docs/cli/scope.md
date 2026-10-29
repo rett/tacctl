@@ -209,30 +209,30 @@ scope block <name> cisco|juniper check <block> [--file <path>|-] [--against <dev
     device of the scope with the text in force and prints the statements of the block's section,
     from its last pull (nothing is written, no device is reached). Exit 1 on an error
 
-scope block <name> cisco|juniper set <block> (--file <path>|-) [-y]
+scope block <name> cisco|juniper set <block> (--file <path>|-) [--yes]
 
     Superuser. Check the text, show the objects and the diff, ask, take a snapshot, write the file
-    (0600, atomically) and name it in `tacctl.yaml`. A block read from standard input needs `-y`
+    (0600, atomically) and name it in `tacctl.yaml`. A block read from standard input needs `--yes`
     unless standard input is a terminal; a text that states nothing is refused (use `remove`);
     nothing is restarted
 
-scope block <name> cisco|juniper remove <block> [-y]
+scope block <name> cisco|juniper remove <block> [--yes]
 
     Superuser. Take the block out of force and delete its file (asks, takes a snapshot first).
     Nothing is deleted from a device: what the block set is no longer rendered, and the next compare
     lists those statements as the device's own
 
-scope block <name> cisco|juniper edit <block> [-y]
+scope block <name> cisco|juniper edit <block> [--yes]
 
     Superuser, at a terminal. Open the block in your editor (`VISUAL`, else `EDITOR`, else `editor`,
     else `vi`), run as you, never as root, on a private 0600 copy in a 0700 directory under
-    `/var/tmp` that is removed afterwards; then check, show the diff, ask (`-y` answers) and install
-    as `set` does. A new block opens as its grammar in `#` lines. A text that fails the check is
-    offered back with the errors at the top as `# tacctl:` lines. Opening a block in force (or, on a
-    device, the scope's objects as comments) is logged before the editor starts: `secret-read
-    kind=block`
+    `/var/tmp` that is removed afterwards; then check, show the diff, ask (`--yes` answers) and
+    install as `set` does. A new block opens as its grammar in `#` lines. A text that fails the
+    check is offered back with the errors at the top as `# tacctl:` lines. Opening a block in force
+    (or, on a device, the scope's objects as comments) is logged before the editor starts:
+    `secret-read kind=block`
 
-scope block <name> cisco|juniper adopt <device> <block> [-y]
+scope block <name> cisco|juniper adopt <device> <block> [--yes]
 
     Superuser, at a terminal. Read the device's own statements of the block's hierarchy with your
     login (the password as `device config pull` asks it; nothing is stored) and open them in your

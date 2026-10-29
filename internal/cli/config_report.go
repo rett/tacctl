@@ -241,8 +241,8 @@ func (inv *invocation) configValidate(args []string) error {
 	switch {
 	case fix && p.Has("--json"):
 		return inv.usageErr("--fix-names asks questions and renames; it does not go with --json.", configValidateUsage)
-	case p.Has("-y") && !fix:
-		return inv.usageErr("-y goes with --fix-names.", configValidateUsage)
+	case p.Has("--yes") && !fix:
+		return inv.usageErr("--yes goes with --fix-names.", configValidateUsage)
 	}
 	if fix {
 		if err := inv.fixNamesAllowed(); err != nil {
@@ -260,7 +260,7 @@ func (inv *invocation) configValidate(args []string) error {
 	inv.printValidateTextEnd(r)
 	failed := r.textErrors() > 0
 	if fix {
-		left, err := inv.fixNames(p.Has("-y"))
+		left, err := inv.fixNames(p.Has("--yes"))
 		if err != nil {
 			return err
 		}
@@ -273,7 +273,7 @@ func (inv *invocation) configValidate(args []string) error {
 }
 
 // configValidateUsage is the usage line of 'config validate'.
-const configValidateUsage = "Usage: tacctl config validate [--json | --fix-names [-y]]"
+const configValidateUsage = "Usage: tacctl config validate [--json | --fix-names [--yes]]"
 
 // collectValidate runs the checks of 'config validate' and adds what they
 // print, and the findings that are, to r in the order the text report has

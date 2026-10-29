@@ -254,7 +254,7 @@ func TestFixNamesDoesNotProposeAPeriod(t *testing.T) {
 	sb := newSandbox(t, true)
 	sb.legacyStoreCase("  bob:", "  Bob.Jones:")
 	before := sb.store()
-	sb.run("", []string{"config", "validate", "--fix-names", "-y"})
+	sb.run("", []string{"config", "validate", "--fix-names", "--yes"})
 	out := plain(sb.out.String() + sb.err.String())
 	if sb.code != 1 {
 		t.Errorf("exit %d, want 1:\n%s", sb.code, out)

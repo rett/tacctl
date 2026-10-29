@@ -142,6 +142,24 @@ current behaviour; this file is where history lives.
    for `--stale` and `--unconfigured` over a registry with devices). The usage
    of `device list`, its Tab completion and the manual page show the option.
 
+8. **`--yes` has no `-y` shorthand.** `-y` looked out of place and was too
+   easy to type without thinking, so every command that took it takes `--yes`
+   only: `install`, `uninstall`, `backend enable|disable`, `log clear` (which
+   also takes `--force`), `config validate --fix-names`, `host enroll`, `host
+   move`, `host rename`, `host forget`, `scope block` and `device block`
+   (`set`, `remove`, `edit`, `adopt`), `device remove`, `device import`,
+   `device address`, `device vendor`, `device location`, `device hostkey
+   accept`, `device collect --register`, `device sync`, `device config apply`
+   (with `--confirmed`) and `device config shapes seed`. A script that passes
+   `-y` now fails with the usual refusal of an argument the command does not
+   know (`Unknown option: '-y'`, `Unknown argument: '-y'` or `Unknown flag:
+   '-y'`, with the usage line) and changes nothing: change `-y` to `--yes`.
+   `log clear -y` is refused the same way, as is any word but `--force` and
+   `--yes` (it was passed on and left the question asked). The usage lines,
+   `help`, the shell, the completion scripts, the manual page and the docs
+   name `--yes` only. The older entries of this file stay as they were
+   written.
+
 ## 0.2.21 (2026-10-28)
 
 1. **`user rename` to a name with a period says what to do.** The refusal of

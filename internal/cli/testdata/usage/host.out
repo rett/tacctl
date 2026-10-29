@@ -27,7 +27,7 @@ Usage: tacctl host <subcommand> [arguments]
       --name <name>                    Registry name (default: short hostname, lowercased; lower case, not a tacctl word)
       --port <n>, --identity <file>    SSH port and key
       --build-on-host                  (tacplus) Compile pam_tacplus on the host instead of in a container here
-      -y, --yes                        (enroll and move) Move a registered host to another scope even when that deletes accounts
+      --yes                            (enroll and move) Move a registered host to another scope even when that deletes accounts
       --staging                        (enroll, with --scope) Provisioned off-site: the host's bench address joins the scope as a
                                        /32 (its secret and users) until the host is seen in place (tacctl scope staging)
   sync <name>... | --all               Push account adds, renames, deletions, expiries and tier changes
@@ -56,16 +56,16 @@ Usage: tacctl host <subcommand> [arguments]
                                        out of reach unless --remove-home. Needs a registry target with an explicit user@
       --remove-home                    (provisioner) With --remove-old: also delete the old account's home directory, without asking
                                        (otherwise it is moved out of reach, made root's)
-      -y, --yes                        (provisioner) Rotate without asking, and continue with the host keys shown when none is pinned
+      --yes                            (provisioner) Rotate without asking, and continue with the host keys shown when none is pinned
       --dry-run                        (provisioner) Print the plan and test the current login; change nothing
   rename <old> <new>                   Give an enrolled host another name: registry line, pinned keys, record, staging
                                        addresses and break-glass hold follow; nothing is sent to the host. When the host
                                        is the only user of scope linux-<old>, asks whether to rename that scope too
-      -y, --yes                        (rename) Replace what an earlier host of the new name left, and rename the scope
+      --yes                            (rename) Replace what an earlier host of the new name left, and rename the scope
   forget <name>                        Drop the host's registration from this server (registry line, pinned keys,
                                        record, staging addresses) and run nothing on the host; also what a registry
                                        line no longer has. Refused for a held host
-      -y, --yes                        (forget) Forget the host without asking
+      --yes                            (forget) Forget the host without asking
   unenroll <name> [--force]            Remove the login method from the host (accounts and homes are kept)
       --force                          Forget the host even when the removal there failed
   default-method [tacplus|radius]      Show or set the method for hosts enrolled without --method

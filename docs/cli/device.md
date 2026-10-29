@@ -88,7 +88,7 @@ device onboard <address> --login <local-user> [--name <name>] [--host-key SHA256
     device")
 
 device collect <address>... | --discovered [--login <local-user>] [--host-key SHA256:<fp>]
-               [--register [-y]] [--json]
+               [--register [--yes]] [--json]
 
     Engineers, Junos devices: log in once to each address nobody registered and read what it is:
     address by address and before any login, the one host key that would be pinned (ed25519 first,
@@ -101,7 +101,7 @@ device collect <address>... | --discovered [--login <local-user>] [--host-key SH
     authentication order, servers, EN-CLASS, NETCONF, lo0 filter, legacy ssh); your own password,
     or with `--login` a local account's, asked once and never kept or cached; the first refusal
     ends the run; `--register` registers each through `device add` under the name it reports, with
-    the key accepted pinned (one question, `-y` without a terminal; `-y` answers only that
+    the key accepted pinned (one question, `--yes` without a terminal; `--yes` answers only that
     question, never a key's) and keeps the read as its first pull record; `--json` lists under
     `host_keys` only the key accepted (none for a skipped or refused address); a registered address
     is refused; see Collecting from addresses nobody registered (devices/planning.md, "Collecting
@@ -152,13 +152,13 @@ device enroll <address>... | --discovered [--host-key SHA256:<fp>]
         the questions, the progress and the table on standard error
 
 device sync <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> [--apply] [--overwrite]
-            [--json] [-y]
+            [--json] [--yes]
 
     Engineers: fill the registry's empty hostname, location and description from what each Junos
     device's last pull record says of itself (no login; a reported host name is filled only when it
     resolves to the device's registered address and no other): the preview first, `--apply` writes
-    in one registry write after one question (`-y`), `--overwrite` also replaces a field that is set
-    and shows the old value; control characters and values the registry would not accept are
+    in one registry write after one question (`--yes`), `--overwrite` also replaces a field that is
+    set and shows the old value; control characters and values the registry would not accept are
     refused; see Filling the registry from the records (devices/planning.md, "Filling the registry
     from the records")
 
@@ -172,7 +172,7 @@ device support-bundle <name> [--vendor cisco|juniper|wti] [--login <local-user>]
     `--vendor` reads the device as another vendor for this run only; `--login` is a Junos local
     account's one-shot password, as for a pull; see Support bundles (devices/support-bundle.md)
 
-device remove <name>[,<name>...] | --all [-y]
+device remove <name>[,<name>...] | --all [--yes]
 
     Remove from the registry (confirms; hosts, scopes and vendor tags are not touched)
 
@@ -188,10 +188,10 @@ device address|hostname|vendor|port|description|location <name> [<value>|clear]
     clears it too). A vendor change marks the last pull `needs pull (vendor changed)`: `config
     diff`, `plan` and `sync` say to pull again instead of reading it in the new vendor's shape
 
-device vendor <name> --from-device [-y]
+device vendor <name> --from-device [--yes]
 
     Read the vendor the device names by SNMP now (as `device add` does), show it beside the
-    registered one and set it after a `y` at a terminal, or with `-y`; a read that names no
+    registered one and set it after a `y` at a terminal, or with `--yes`; a read that names no
     vendor, no answer and SNMP not set up are refused with the reason and change nothing
 
 device address|description|location <name> <value> --apply
@@ -201,22 +201,22 @@ device address|description|location <name> <value> --apply
     Junos devices, at a terminal (anything else is refused before the registry changes); a value
     that is already set applies nothing; the exit status is the apply's
 
-device address <name> <address> [-y]
+device address <name> <address> [--yes]
 
     On a device with a break-glass hold the hold moves with the address (superuser; an engineer
     is refused). The new address must pass what a new hold passes: not a loopback address, not
     one a listener of either backend binds, not an enrolled host's, not held by another record,
-    covered by a scope. One line names both addresses and asks to confirm (`-y` skips it); the
+    covered by a scope. One line names both addresses and asks to confirm (`--yes` skips it); the
     registry and the record are written together, rendered once, and each backend whose file
     changed is restarted once (a restart that fails is reported as `NOT restarted`, exit 1; both
     stay on the new address). A refused address changes nothing. `--apply` is refused for a held
     device. `device remove` and `device import` of a held device are still refused
 
-device location <name> --from-device [-y]
+device location <name> --from-device [--yes]
 
     Read the device's own location (SNMP sysLocation) now and store it; an empty answer is refused;
     a different registered one is shown beside it and replaced after a `y` at a terminal, or with
-    `-y`
+    `--yes`
 
 device legacy-ssh <name> [enable|disable]
 
@@ -259,7 +259,7 @@ device notice <name> ack|unack <kind>
     Acknowledge or reopen a notice; the superuser's (three words are this form, so a device named
     `list` takes it too)
 
-device import [--check] [--replace] [--allow-generic] [-y] <file|->
+device import [--check] [--replace] [--allow-generic] [--yes] <file|->
 
     CSV (name,address[,vendor[,port[,description]]]) or the registry's YAML; a file is existing
     data (so is the CSV of `device export --csv`) and loads its names as they are (a line says how
@@ -277,7 +277,7 @@ device hostkey <name> [show]
 
     The pinned ssh host-key fingerprints of a device or enrolled host (administrators)
 
-device hostkey <name> accept [-y]
+device hostkey <name> accept [--yes]
 
     Re-scan and pin every key it offers, after confirmation (verify on the console first)
 
@@ -402,20 +402,20 @@ device block <name> check <block> [--file <path>|-] [--against]
     As `scope block ... check`, for the device's own block; `--against` plans this device with the
     text in force
 
-device block <name> set <block> (--file <path>|-) [-y]
+device block <name> set <block> (--file <path>|-) [--yes]
 
     Superuser; as `scope block ... set`. Only a Junos or an IOS device in a scope has blocks
 
-device block <name> remove <block> [-y]
+device block <name> remove <block> [--yes]
 
     Superuser; as `scope block ... remove` (also for a device that has left every scope)
 
-device block <name> edit <block> [-y]
+device block <name> edit <block> [--yes]
 
     Superuser, at a terminal; as `scope block ... edit`. A new block opens with the scope's objects
     as `# set ...` lines to uncomment where the device differs
 
-device block <name> adopt <block> [-y]
+device block <name> adopt <block> [--yes]
 
     Superuser, at a terminal; as `scope block ... adopt`, from this device, minus what the scope's
     block states with the same statements
@@ -537,14 +537,15 @@ device config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <ven
     interrupted (a Ctrl-C at a question of the review, or before the first commit, applies
     nothing). The audit lines of the
     review, the approval and each device's apply carry `mode=attended`, or `mode=scripted` for
-    `--confirmed -y`
+    `--confirmed --yes`
 
     --check
         Stop after the device's own commit check: nothing is committed, the shape is recorded
         (`--exit-code`: exit 2 when a device needs a change)
     --confirmed
-        Apply only shapes an earlier apply confirmed and skip the others; the one form `-y` answers
-        the review of (every device's question, no terminal needed; the lines say `mode=scripted`)
+        Apply only shapes an earlier apply confirmed and skip the others; the one form `--yes`
+        answers the review of (every device's question, no terminal needed; the lines say
+        `mode=scripted`)
     --max <n>, --pause <seconds>, --no-canary
         At most n devices of a run (default 5); wait between devices after each shape's first
         (0-3600, default `device.apply.pause`); start a shape's devices together instead of its
@@ -578,20 +579,20 @@ device config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <ven
                   --source <address>
         As for `pull` (an apply runs one device at a time unless `--concurrency`; `--max-failures`
         defaults to 1)
-    --json -y
+    --json --yes
         One object per device and phase, then the summary (the review goes to standard error; each
         device's answer is an object with `"phase":"review"`, `"status":"approved"|"declined"` and
         `"mode":"attended"|"scripted"`; a declined device has only that object, no `"phase":"apply"`
         one; a review cut short by Ctrl-C ends with `"phase":"review","status":"interrupted"`);
         answer the review (with `--confirmed`)
 
-device config shapes [list [--show <hash>] [--json] | seed <name>[,<name>...] [-y]]
+device config shapes [list [--show <hash>] [--json] | seed <name>[,<name>...] [--yes]]
 
     Superusers: the shapes of the changes `apply` has seen (the same change on two devices is one
     shape), which a verified apply confirmed, the devices at each now and, for a new one, the
     nearest confirmed shape; `--show` prints one shape's statements. `seed` files the shape of a
     device's last check or apply as confirmed on your word, for a device applied and verified by
-    hand (one question; `-y` answers it). Contacts no device
+    hand (one question; `--yes` answers it). Contacts no device
 
 device config list [--stale] [--never] [--failed] [--differs] [--name <text>]
                    [--ip <addr|cidr|text>] [--transport netconf|ssh|none]

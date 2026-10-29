@@ -94,8 +94,8 @@ var hostVerbs = [][2]string{
 	{"move <name> [<scope>] | --all [options]", "Move an enrolled host to another scope (default: the scope answering its address)"},
 	{"target <name> [<[user@]host>] [options]", "Show or change how tacctl reaches an enrolled host over ssh"},
 	{"provisioner <name> rotate <user> [options]", "Switch the account tacctl logs in to the host with, proving the new one before the registry changes"},
-	{"rename <old> <new> [-y]", "Give an enrolled host another name; its own linux-<name> scope can follow"},
-	{"forget <name> [-y]", "Drop a host's registration from this server without contacting the host"},
+	{"rename <old> <new> [--yes]", "Give an enrolled host another name; its own linux-<name> scope can follow"},
+	{"forget <name> [--yes]", "Drop a host's registration from this server without contacting the host"},
 	{"unenroll <name> [--force]", "Remove the login method from the host (accounts and homes are kept)"},
 	{"default-method [tacplus|radius]", "Show or set the method for hosts enrolled without --method"},
 }
@@ -520,7 +520,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 		case "--remove-home":
 			o.removeHome = true
 			i++
-		case "-y", "--yes":
+		case "--yes":
 			o.yes = true
 			i++
 		case "--staging":
@@ -1394,20 +1394,20 @@ func (inv *invocation) hostMove(args []string) error {
 		switch {
 		case w == "--all":
 			all = true
-		case w == "-y" || w == "--yes" || w == "--remove-home" || w == "--allow-uid-mismatch":
+		case w == "--yes" || w == "--remove-home" || w == "--allow-uid-mismatch":
 			pass = append(pass, w)
 		case strings.HasPrefix(w, "-"):
-			return inv.usageErr("Unknown option: '"+w+"'", "Usage: tacctl host move <name> [<scope>] | --all  [-y] [--remove-home] [--allow-uid-mismatch]")
+			return inv.usageErr("Unknown option: '"+w+"'", "Usage: tacctl host move <name> [<scope>] | --all  [--yes] [--remove-home] [--allow-uid-mismatch]")
 		case name == "":
 			name = w
 		case scope == "":
 			scope = w
 		default:
-			return inv.usageErr("Usage: tacctl host move <name> [<scope>] | --all  [-y] [--remove-home] [--allow-uid-mismatch]")
+			return inv.usageErr("Usage: tacctl host move <name> [<scope>] | --all  [--yes] [--remove-home] [--allow-uid-mismatch]")
 		}
 	}
 	if all == (name != "") {
-		return inv.usageErr("Usage: tacctl host move <name> [<scope>] | --all  [-y] [--remove-home] [--allow-uid-mismatch]")
+		return inv.usageErr("Usage: tacctl host move <name> [<scope>] | --all  [--yes] [--remove-home] [--allow-uid-mismatch]")
 	}
 	reg, err := inv.registry()
 	if err != nil {

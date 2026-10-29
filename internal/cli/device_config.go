@@ -101,7 +101,7 @@ var deviceConfigSpecs = func() map[string]Spec {
 		// 'shapes' (0.2.9, D135): 'list' (the default) and 'seed'.
 		"shapes": {MaxArgs: -1, Args: []string{"list|seed", KindDevices + KindList}, Flags: []Flag{
 			{Names: []string{"--show"}, Value: true, Only: "list", Kind: KindShapes},
-			{Names: []string{"--json"}, Only: "list"}, {Names: []string{"-y", "--yes"}, Only: "seed"}}},
+			{Names: []string{"--json"}, Only: "list"}, {Names: []string{"--yes"}, Only: "seed"}}},
 	}
 }()
 
@@ -361,7 +361,7 @@ Ctrl-C starts no more devices, the second cancels the running ones).
 'shapes' lists the shapes seen and which were confirmed by an apply, with
 --show <hash> one shape's statements; 'shapes seed <name>' files the shape of
 the device's last check or apply as confirmed on your word (one question,
--y answers it), for a device that was applied and verified by hand.
+--yes answers it), for a device that was applied and verified by hand.
 
 'list' shows each device's state: ok (every managed section agrees), differs,
 never (not pulled), failed (the last pull failed) or pull (a Cisco device whose

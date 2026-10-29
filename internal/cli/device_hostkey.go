@@ -427,7 +427,7 @@ func (inv *invocation) deviceHostkey(args []string) error {
 	if len(p.Args) > 1 {
 		action = p.Args[1]
 	}
-	usage := "Usage: tacctl device hostkey <name> [show|accept [-y]|set SHA256:<fingerprint>]"
+	usage := "Usage: tacctl device hostkey <name> [show|accept [--yes]|set SHA256:<fingerprint>]"
 	switch {
 	case action == "set" && len(p.Args) != 3:
 		return inv.usageErr("'set' needs the fingerprint to pin: SHA256:<fingerprint> as ssh prints it.", usage)
@@ -505,7 +505,7 @@ func (inv *invocation) deviceHostkey(args []string) error {
 	inv.echoKeys("    ", want)
 	inv.echo("  On the device: " + devreg.VerifyHint(e.Vendor) + ".")
 	inv.echo("")
-	if action == "accept" && !p.Has("-y") &&
+	if action == "accept" && !p.Has("--yes") &&
 		!a.Prompter().ConfirmPrefix("  Pin these keys? Only if they match the device console. [y/N]: ") {
 		a.Out.Info("Aborted; the pin was not changed.")
 		return nil

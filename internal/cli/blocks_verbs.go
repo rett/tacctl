@@ -1156,8 +1156,8 @@ func (c *blockCtx) set(block string, p Parsed, usage string) error {
 		return inv.usageErr("Give the block's text with --file <path>, or - for standard input.", "Usage: "+usage)
 	}
 	// Standard input is the block: it cannot also answer the question.
-	if stdin && !p.Has("-y") && !a.Prompter().Interactive() {
-		return inv.usageErr("The block comes on standard input, so there is nothing to answer the question with: add -y to set it. Nothing was changed.")
+	if stdin && !p.Has("--yes") && !a.Prompter().Interactive() {
+		return inv.usageErr("The block comes on standard input, so there is nothing to answer the question with: add --yes to set it. Nothing was changed.")
 	}
 	text, source, err := c.readInput(p, usage)
 	if err != nil {
@@ -1192,7 +1192,7 @@ func (c *blockCtx) set(block string, p Parsed, usage string) error {
 		a.Out.Info("The " + block + " block of " + c.what() + " is this text already; nothing was changed.")
 		return nil
 	}
-	if !c.review(block, bc, p.Has("-y")) {
+	if !c.review(block, bc, p.Has("--yes")) {
 		return nil
 	}
 	return c.install(block, text, bc, cur, "set")
@@ -1278,7 +1278,7 @@ func (c *blockCtx) remove(block string, p Parsed) error {
 	a.Out.Warn("About to remove the " + block + " block of " + c.what() + " (" + c.vendor + "), its file and its entry in tacctl.yaml.")
 	inv.echo("  What the block set is no longer rendered: nothing is deleted from a device, and the next compare lists those statements as the device's own, kept (unmanaged).")
 	inv.echo("  The snapshot taken first holds the block (it may hold community strings).")
-	if !p.Has("-y") && !a.Prompter().ConfirmPrefix("  Confirm removal? [y/N]: ") {
+	if !p.Has("--yes") && !a.Prompter().ConfirmPrefix("  Confirm removal? [y/N]: ") {
 		a.Out.Info("Aborted.")
 		return nil
 	}

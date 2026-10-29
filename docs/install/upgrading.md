@@ -61,7 +61,7 @@ command to rebuild, move or repair a server. An upgrade, at its end:
   too stays for them and the server gets its own);
 - sets a server with no entry up only when the question is answered `y` on a
   terminal: `Set up this machine's own login now, with <address> as the server
-  address? [y/N]`. An upgrade has no `-y` and does not read a pipe: without a
+  address? [y/N]`. An upgrade has no `--yes` and does not read a pipe: without a
   terminal it prints one line, `This machine's own login was not set up (an
   upgrade does not ask without a terminal); to set it up: tacctl host enroll
   --local`, and goes on.

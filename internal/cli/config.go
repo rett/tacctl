@@ -105,7 +105,7 @@ func configCmd(inv *invocation) *cobra.Command {
 		})),
 		withRun(verb("get <path> [<fallback>]", "Read a dotted-path value from the merged config"), n(inv.configGet)),
 		withRun(verb("get-list <path>", "Read a list value (one item per line)"), n(inv.configGetList)),
-		withRun(verb("validate [--json | --fix-names [-y]]", "Validate config syntax and structure"), n(inv.configValidate)),
+		withRun(verb("validate [--json | --fix-names [--yes]]", "Validate config syntax and structure"), n(inv.configValidate)),
 		// 'config render' rebuilds the artifacts from the store: with a
 		// store it runs no preflight, which would warn that the file it is
 		// about to write is missing (bin/tacctl.sh).

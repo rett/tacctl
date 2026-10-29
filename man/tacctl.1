@@ -47,7 +47,7 @@ are deliberate exceptions: they run as the invoking user.
 .SH COMMANDS
 .SS System lifecycle
 .TP
-.BI "install [--branch " name "] [--server " ip "] [-y|--yes]"
+.BI "install [--branch " name "] [--server " ip "] [--yes]"
 Install tacctl and the TACACS+ backend. Builds the tacquito binary with the
 Go toolchain (installed by
 .I /opt/tacctl/bin/tacctl.sh
@@ -83,7 +83,7 @@ this server's registry entry, the PAM client and sshd's drop-in, and the
 accounts, so that every user can log in to this server and its console. It
 asks once
 .RB ( "Set up this machine's own login now, with <address> as the server address? [y/N]" ;
-.B \-y
+.B \-\-yes
 answers it) and prints nothing more when the login is there already. The
 server address is
 .BR \-\-server ,
@@ -144,7 +144,7 @@ The tacctl repo branch to install or upgrade from (default: the current one).
 \fB\-\-server\fR \fI<ip>\fR
 The address devices and hosts reach this server at.
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 Answer yes to the confirmations.
 .RE
 .\" END GENERATED: command install
@@ -734,7 +734,7 @@ Accepted; the hosts need nothing for this target (no host is synced).
 .RE
 .\" END GENERATED: command rollback
 .TP
-.BR "uninstall " [ -y | --yes ]
+.BR "uninstall " [ --yes ]
 Remove tacctl and every backend that is enabled or installed: the tacquito
 service, units, binaries, configuration and logs; tacctl's FreeRADIUS
 configuration, unit drop-in and logs (the FreeRADIUS package stays, with its
@@ -742,9 +742,7 @@ own configuration as shipped); the state directory, sudoers rules,
 completion, man page and management repository. Offers to preserve backups
 and each backend's logs by archiving them to
 .IR /root/ .
-.B -y
-(or
-.BR --yes )
+.B --yes
 skips the confirmation and answers
 .B no
 to both offers: nothing is preserved.
@@ -755,7 +753,7 @@ Requires: \fBsuperuser\fR.
 .PP
 Options:
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 Answer yes to the confirmations.
 .RE
 .\" END GENERATED: command uninstall
@@ -2294,7 +2292,7 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config get-list
 .TP
-.B "config validate [ \-\-json | \-\-fix\-names [ \-y ] ]"
+.B "config validate [ \-\-json | \-\-fix\-names [ \-\-yes ] ]"
 Validate the store
 .RI ( store.yaml :
 names, every user's group and scopes exist, each prefix owned by one scope),
@@ -2466,7 +2464,7 @@ or
 renames, a piped
 .B y
 works and no terminal is required, and
-.B \-y
+.B \-\-yes
 answers yes to every question. On yes the verb that renames that kind of name
 runs as when typed
 .RB ( "device rename" ,
@@ -2475,7 +2473,7 @@ runs as when typed
 and
 .BR "scope rename" ),
 prints what it prints and takes its own snapshot, one undo point per rename.
-.B \-y
+.B \-\-yes
 is passed on to
 .B "host rename"
 only when it was given here; without it that verb asks its own questions
@@ -2517,7 +2515,7 @@ Print the findings as one JSON object and nothing else on standard output; exit 
 \fB\-\-fix\-names\fR
 After the report, offer to rename each device, host, user and scope that has upper case in its name to its lower\-case spelling (superuser; needs the store).
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 With \-\-fix\-names: answer yes to every rename.
 .RE
 .\" END GENERATED: command config validate
@@ -2957,7 +2955,7 @@ address to a scope or give the host a scope of its own
 Naming another scope for a registered host moves it: enroll names the users
 whose accounts the move deletes and asks on a terminal; without one it stops
 unless given
-.BR \-y .
+.BR \-\-yes .
 tacctl never moves a host itself:
 .BR "host sync" ,
 .B "host list"
@@ -3208,7 +3206,7 @@ pam_tacplus against the TACACS+ backend, or the host's pam_radius_auth package a
 \fB\-\-build\-on\-host\fR
 (tacplus) Compile pam_tacplus on the host instead of in a container here.
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (enroll and move) Move a registered host to another scope even when that deletes accounts.
 .TP
 \fB\-\-staging\fR
@@ -3222,14 +3220,14 @@ pam_tacplus against the TACACS+ backend, or the host's pam_radius_auth package a
 .RE
 .\" END GENERATED: command host enroll
 .TP
-.B "host move " "{ " name " [ " scope " ] | \-\-all } [ \-y ] [ \-\-remove\-home ] [ \-\-allow\-uid\-mismatch ]"
+.B "host move " "{ " name " [ " scope " ] | \-\-all } [ \-\-yes ] [ \-\-remove\-home ] [ \-\-allow\-uid\-mismatch ]"
 Move an enrolled host to another scope: an enroll with its registered
 target, port, identity, server and method, into
 .I scope
 or, without one, the scope that answers its address. As an enroll that names
 a scope does, it names the users whose accounts the move deletes and asks
 first (without a terminal it stops unless given
-.BR \-y ).
+.BR \-\-yes ).
 With
 .B \-\-all
 one snapshot is taken before the first move and none per host, so a long batch
@@ -3244,7 +3242,7 @@ Options:
 \fB\-\-all\fR
 (move) Every host that another scope answers; asks before deleting accounts.
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (enroll and move) Move a registered host to another scope even when that deletes accounts.
 .TP
 \fB\-\-allow\-uid\-mismatch\fR
@@ -3741,7 +3739,7 @@ Options:
 .RE
 .\" END GENERATED: command host provisioner
 .TP
-.B "host rename " old " " new " [ \-y ]"
+.B "host rename " old " " new " [ \-\-yes ]"
 Give the enrolled host
 .I old
 the name
@@ -3776,7 +3774,7 @@ removes a hold.
 What an earlier host of the new name left (a pin and address in
 .IR devices.yaml ,
 a record, staging addresses) is listed and replaced after a confirmation
-.RB ( \-y
+.RB ( \-\-yes
 skips it); declining changes nothing.
 .IP
 After every refusal and the questions, a snapshot is taken
@@ -3816,7 +3814,7 @@ exists and
 would accept the new name, both questions come first and
 .RI "\(lqScope 'linux\-" old "' is this host's own (no other host uses it). Rename it to 'linux\-" new "' too? [y/N]\(rq"
 is asked.
-.B \-y
+.B \-\-yes
 answers both questions yes. The host rename runs whole; then the scope is
 renamed as
 .B "scope rename"
@@ -3838,12 +3836,12 @@ Requires: \fBsuperuser\fR.
 .PP
 Options:
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (rename) Answer both questions yes: replace what an earlier host of the new name left, and rename the host's own linux\-<name> scope.
 .RE
 .\" END GENERATED: command host rename
 .TP
-.B "host forget " name " [ \-y ]"
+.B "host forget " name " [ \-\-yes ]"
 Drop the registration of the host
 .I name
 from this server, and nothing else. It is local: nothing is sent to the host and
@@ -3856,7 +3854,7 @@ the host's entries in the
 .I staging
 file and the host\-key scan result of the seen cache. It lists what it would drop
 and asks; the question is skipped with
-.BR \-y .
+.BR \-\-yes .
 The host itself is not touched: its accounts, secrets and PAM setup stay
 .RB ( "host unenroll"
 cleans a host that can be reached, and drops its staging entries and record
@@ -3906,7 +3904,7 @@ Requires: \fBsuperuser\fR.
 .PP
 Options:
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (forget) Forget the host without asking.
 .RE
 .\" END GENERATED: command host forget
@@ -5512,8 +5510,8 @@ Requires: \fBreadonly\fR.
 .RE
 .\" END GENERATED: command backend status
 .TP
-.BI "backend enable " "id " [ \-y ]
-Enable a backend. If it is not installed, confirms (\fB\-y\fR skips) and runs its
+.BI "backend enable " "id " [ \-\-yes ]
+Enable a backend. If it is not installed, confirms (\fB\-\-yes\fR skips) and runs its
 install steps (packages, service account, unit). Then, as one step: every
 backend that will be enabled has its gate checked (a hand-edited rendered file
 refuses the command, exit 3), a snapshot is taken, the id is added to
@@ -5533,15 +5531,15 @@ Requires: \fBsuperuser\fR.
 .PP
 Options:
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command backend enable
 .TP
-.BI "backend disable " "id " [ \-y ]
+.BI "backend disable " "id " [ \-\-yes ]
 Take a backend out of
 .BR backends.enabled ,
-stop its service and disable it at boot. Asks for confirmation (\fB\-y\fR
+stop its service and disable it at boot. Asks for confirmation (\fB\-\-yes\fR
 skips) because clients of that protocol stop authenticating. Its package and
 the files it rendered stay where they are (and are no longer rendered or
 reported as drift);
@@ -5578,7 +5576,7 @@ Requires: \fBsuperuser\fR.
 .PP
 Options:
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command backend disable
@@ -5770,7 +5768,7 @@ accounting and daemon logs.
 Prompts for confirmation;
 .B --force
 (or
-.BR -y )
+.BR --yes )
 skips the prompt for scripted use. Destructive: cleared auth and
 accounting records are irrecoverable.
 .\" BEGIN GENERATED: command log clear
@@ -5783,7 +5781,7 @@ Options:
 \fB\-\-backend\fR \fI<id>\fR
 Only that backend's log (every subcommand).
 .TP
-\fB\-\-force\fR, \fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-force\fR, \fB\-\-yes\fR
 (clear) Purge without asking.
 .RE
 .\" END GENERATED: command log clear
@@ -6275,7 +6273,7 @@ history, and stops at the first line that ends with a non-zero status,
 exiting with that status. The commands of such a batch get no standard input
 (it is the script), so a command that asks a question cannot be answered
 from it: use its
-.B \-y
+.B \-\-yes
 flag where it has one.
 Over ssh, ask for a terminal to get the interactive shell:
 .BR "ssh \-t " "host tacctl shell" ;
@@ -7400,7 +7398,7 @@ Print the strings (an engineer: their own scopes; logged).
 \fB\-\-against\fR \fI<device>\fR
 Plan the device of this scope with this text in force and print the statements of its section (from its last pull; nothing is written and no device is reached).
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (set, remove, edit, adopt) Answer yes to the question (a block read from standard input needs it).
 .RE
 .\" END GENERATED: command scope block
@@ -7431,11 +7429,11 @@ pull: nothing is written, no back\-out is kept and no device is reached. A
 device that has not been pulled is told to be pulled first, and a system block
 that was not in force at the last pull is told to be set and pulled.
 .TP
-.BI "scope block " scope " cisco|juniper set " block " { \-\-file " path " | \- } [ \-y ]"
+.BI "scope block " scope " cisco|juniper set " block " { \-\-file " path " | \- } [ \-\-yes ]"
 Superuser only. Check the text as
 .B check
 does (an error refuses it and nothing is written), show the owned objects and
-the difference, ask (\fB\-y\fR, \fB\-\-yes\fR, answers yes; a text read from
+the difference, ask (\fB\-\-yes\fR answers yes; a text read from
 standard input needs it unless standard input is a terminal), take the
 configuration snapshot, write the file (0600, atomically) and put the block in
 force in
@@ -7448,15 +7446,15 @@ as the file in force is no change. A change that cannot be made because
 cannot be read or written is refused before anything is. Logged as
 .BR "block\-set name=" \fIscope\fR/\fIvendor\fR/\fIblock\fR .
 .TP
-.BI "scope block " scope " cisco|juniper remove " block " [ \-y ]"
+.BI "scope block " scope " cisco|juniper remove " block " [ \-\-yes ]"
 Superuser only. Take the block out of force and delete its file (a file no list
-names is removable too), after a question (\fB\-y\fR answers it) and a
+names is removable too), after a question (\fB\-\-yes\fR answers it) and a
 snapshot. Nothing is deleted from a device: what the block set is no longer
 rendered, and the next compare lists those statements as the device's own,
 kept. Logged as
 .BR block\-remove .
 .TP
-.BI "scope block " scope " cisco|juniper edit " block " [ \-y ]"
+.BI "scope block " scope " cisco|juniper edit " block " [ \-\-yes ]"
 Superuser only, and only at a terminal (a refusal without one changes nothing).
 Open the block in the editor of the invoking user, as
 .BR visudo (8)
@@ -7504,7 +7502,7 @@ ignored), checked as
 checks it, and installed as
 .B set
 installs it: the owned objects and the difference, the question
-(\fB\-y\fR answers it), the snapshot, one atomic write and the entry in
+(\fB\-\-yes\fR answers it), the snapshot, one atomic write and the entry in
 .IR tacctl.yaml .
 A text that fails the check is offered back to the editor, up to five times,
 with the errors as
@@ -7528,7 +7526,7 @@ opening a block in force, or a device's new block with the scope's objects,
 is logged before the editor starts as
 .BR "secret\-read kind=block" .
 .TP
-.BI "scope block " scope " cisco|juniper adopt " device " " block " [ \-y ]"
+.BI "scope block " scope " cisco|juniper adopt " device " " block " [ \-\-yes ]"
 Superuser only, at a terminal, with the rules of
 .BR edit .
 Read the registered
@@ -8462,7 +8460,7 @@ question asks for the name to register it as, checked as every new name
 (lower case, not taken, not generic), and the name typed is the name it is
 registered under. Enter, the end of input or any other answer sends nothing,
 with no second try (exit 1). There is no
-.B \-y
+.B \-\-yes
 and no trust on first use. A device an earlier onboard registered is asked
 for its registered name; nothing new is pinned: its pinned keys are listed and
 the key is shown under
@@ -8621,7 +8619,7 @@ One object at the end (the progress goes to standard error).
 .RE
 .\" END GENERATED: command device onboard
 .TP
-.BI "device collect " "address... | \-\-discovered " "[ \-\-login " "local-user " "] [ \-\-host\-key SHA256:" fingerprint " ] [ \-\-register [ \-y ] ] [ \-\-json ]"
+.BI "device collect " "address... | \-\-discovered " "[ \-\-login " "local-user " "] [ \-\-host\-key SHA256:" fingerprint " ] [ \-\-register [ \-\-yes ] ] [ \-\-json ]"
 Superusers, Junos devices: read what an address nobody registered is, with one
 login. For each address that no registry entry holds (a registered one is
 refused before anything is sent, with the normal flow named; so is an address
@@ -8705,7 +8703,7 @@ and
 .B "device config plan"
 have one at once; no plain view was read, so a plan says the groups'
 inheritance was not checked until a pull reads it.
-.B \-y
+.B \-\-yes
 answers the question of
 .BR \-\-register ,
 which without a terminal it needs, and never a key's question.
@@ -8745,7 +8743,7 @@ Accept only this key, read on the device's console (no question; needed without 
 \fB\-\-register\fR
 After the table, register each collected device through 'device add' with the key accepted pinned (one question) and keep the read as its first pull record; the key's question takes the device's SNMP sysName when it gives one that is not taken.
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (collect) Answer yes to the registration question of \-\-register (needed without a terminal); never a host key's question.
 .TP
 \fB\-\-json\fR
@@ -8780,7 +8778,7 @@ is the device's SNMP sysName (lower case); when SNMP gives none, the name
 typed is the name the device is registered as, checked as every new name
 (lower case, not taken, not generic). Enter, or the end of input, skips the
 device; any other answer refuses it, with no second try. There is no
-.BR \-y ,
+.BR \-\-yes ,
 no answer for several devices and no trust on first use.
 .BI "\-\-host\-key SHA256:" fingerprint
 (one address; the fingerprint read on the console) answers it instead and is
@@ -8888,7 +8886,7 @@ The pull's lines and the plan's objects, then one object of the run; the questio
 .RE
 .\" END GENERATED: command device enroll
 .TP
-.BI "device sync " "name[,name...] | \-\-all | \-\-scope " "scope " "| \-\-vendor " "vendor " "[ \-\-apply ] [ \-\-overwrite ] [ \-\-json ] [ \-y ]"
+.BI "device sync " "name[,name...] | \-\-all | \-\-scope " "scope " "| \-\-vendor " "vendor " "[ \-\-apply ] [ \-\-overwrite ] [ \-\-json ] [ \-\-yes ]"
 Superusers: fill the registry's empty
 .BR hostname ,
 .B location
@@ -8915,7 +8913,7 @@ and one of the facts of the records (model, release and serial number: the
 record's, never written to the registry).
 .B \-\-apply
 writes, after one question
-.RB ( \-y
+.RB ( \-\-yes
 answers it; without a terminal it is needed), in ONE registry write under the
 registry's lock, each field checked again against the live file: a value set
 since the preview is left as it is.
@@ -8964,7 +8962,7 @@ Only that vendor's devices (only Junos records are read).
 \fB\-\-overwrite\fR
 Also replace a field that is set, showing the old value.
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (sync) Answer yes to the question of \-\-apply (needed without a terminal).
 .TP
 \fB\-\-json\fR
@@ -9011,9 +9009,9 @@ Options:
 .RE
 .\" END GENERATED: command device support-bundle
 .TP
-.BI "device remove " "name[,name...] | \-\-all " [ \-y ]
+.BI "device remove " "name[,name...] | \-\-all " [ \-\-yes ]
 Remove devices from the registry, after confirmation (\c
-.B \-y
+.B \-\-yes
 skips it; a closed stdin cancels). Enrolled hosts, scopes and vendor tags are
 not touched.
 .\" BEGIN GENERATED: command device remove
@@ -9026,7 +9024,7 @@ Options:
 \fB\-\-all\fR
 Remove every device (an engineer: those of their own scopes).
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device remove
@@ -9049,7 +9047,7 @@ Options:
 .RE
 .\" END GENERATED: command device rename
 .TP
-.BI "device address " "name " [ address " [" \-\-apply "] [" \-y ] ]
+.BI "device address " "name " [ address " [" \-\-apply "] [" \-\-yes ] ]
 Show or set the address, the AAA identity of the device, stored canonically. It
 cannot be cleared or be one another device holds. Pinned host keys belong
 to the old address and are dropped. The address decides which scope covers the
@@ -9059,7 +9057,7 @@ superuser (an engineer is refused): the new address must pass what a new hold
 passes (not a loopback address, not an address a listener of either backend
 binds, not the address of an enrolled host, not held by another record, covered
 by a scope), and one line names both addresses and asks to confirm
-.RB ( \-y
+.RB ( \-\-yes
 skips the question); the registry and the record are then written together,
 rendered once and each backend whose rendered file changed restarted once (a
 restart that failed is reported as
@@ -9098,7 +9096,7 @@ Options:
 \fB\-\-apply\fR
 (address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; engineers, Junos devices; (sync) write the fields, after one question.
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device address
@@ -9112,7 +9110,7 @@ Requires: \fBengineer\fR.
 .RE
 .\" END GENERATED: command device hostname
 .TP
-.BI "device vendor " "name " [ cisco | juniper | wti | other " | " "\-\-from\-device " [ \-y ] ]
+.BI "device vendor " "name " [ cisco | juniper | wti | other " | " "\-\-from\-device " [ \-\-yes ] ]
 Show or set the vendor;
 .B clear
 sets
@@ -9127,7 +9125,7 @@ with the credentials of its scope, as
 does), shows it beside the registered one and sets it after a
 .B y
 at a terminal, or with
-.BR \-y ", " \-\-yes ;
+.B \-\-yes ;
 without either it is refused. A read that names no vendor, no answer and SNMP
 not set up are refused with the reason and change nothing. The set is the
 setter's: a device that stops being Cisco loses its configuration syntax, one
@@ -9151,7 +9149,7 @@ Options:
 \fB\-\-from\-device\fR
 (location, vendor) Read the location (SNMP sysLocation) or the vendor (sysObjectID and sysDescr) from the device and store it.
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device vendor
@@ -9190,7 +9188,7 @@ Options:
 .RE
 .\" END GENERATED: command device description
 .TP
-.BI "device location " "name " [ text | clear " [" \-\-apply "] | " "\-\-from\-device " [ \-y ] ]
+.BI "device location " "name " [ text | clear " [" \-\-apply "] | " "\-\-from\-device " [ \-\-yes ] ]
 Show, set or clear the place of the device (up to 120 characters, no control
 characters, no
 .BR ? ),
@@ -9214,7 +9212,7 @@ and change nothing. When the registry holds a different location, both are
 shown and the device's replaces it after a
 .B y
 at a terminal, or with
-.BR \-y ", " \-\-yes ;
+.B \-\-yes ;
 without either it is refused. The name is the only argument.
 A setter that changes what is rendered says, when the stored pull would now
 change, how to look at it (see
@@ -9234,7 +9232,7 @@ Options:
 \fB\-\-from\-device\fR
 (location, vendor) Read the location (SNMP sysLocation) or the vendor (sysObjectID and sysDescr) from the device and store it.
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .TP
 \fB\-\-apply\fR
@@ -9498,7 +9496,7 @@ Options:
 .RE
 .\" END GENERATED: command device snmp
 .TP
-.BI "device block " "name " "{ list | show " "block " "[ \-\-effective ] [ \-\-reveal ] | check " "block " "[ \-\-file " "path " "| \- ] [ \-\-against ] | set " "block " "{ \-\-file " "path " "| \- } [ \-y ] | remove " "block " "[ \-y ] | edit " "block " "[ \-y ] | adopt " "block " "[ \-y ] }"
+.BI "device block " "name " "{ list | show " "block " "[ \-\-effective ] [ \-\-reveal ] | check " "block " "[ \-\-file " "path " "| \- ] [ \-\-against ] | set " "block " "{ \-\-file " "path " "| \- } [ \-\-yes ] | remove " "block " "[ \-\-yes ] | edit " "block " "[ \-\-yes ] | adopt " "block " "[ \-\-yes ] }"
 One registered Junos or IOS device's own configuration blocks, laid over its scope's
 (see
 .BR "Per\-scope configuration blocks" ):
@@ -9558,7 +9556,7 @@ The block as rendered for the device, with the layer of each object.
 \fB\-\-against\fR
 Plan the device with this text in force and print the statements of its section (from its last pull; nothing is written and no device is reached).
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (set, remove, edit, adopt) Answer yes to the question (a block read from standard input needs it).
 .RE
 .\" END GENERATED: command device block
@@ -9624,7 +9622,7 @@ The acknowledged notices too.
 .RE
 .\" END GENERATED: command device notice
 .TP
-.BI "device import " "[ \-\-check ] [ \-\-replace ] [ \-\-allow\-generic ] [ \-y ] " "file|\-"
+.BI "device import " "[ \-\-check ] [ \-\-replace ] [ \-\-allow\-generic ] [ \-\-yes ] " "file|\-"
 Import devices from CSV
 .RB ( name,address[,vendor[,port[,description]]] ;
 blank lines, lines starting with
@@ -9648,7 +9646,7 @@ leaves the registered configuration syntax alone; a changed address
 drops the pinned host keys); the rest stay. With
 .B \-\-replace
 the registry becomes exactly the file, after confirmation (\c
-.B \-y
+.B \-\-yes
 skips it), and the devices it removes lose their configuration records and SNMP
 credentials, as with
 .BR remove .
@@ -9674,7 +9672,7 @@ Replace the registry instead of merging into it.
 \fB\-\-allow\-generic\fR
 (add, rename, import) Allow a generic name such as 'switch'.
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device import
@@ -9699,7 +9697,7 @@ Print CSV instead of YAML.
 .RE
 .\" END GENERATED: command device export
 .TP
-.BI "device hostkey " name " [ show | accept [ \-y ] | set SHA256:" fingerprint " ]"
+.BI "device hostkey " name " [ show | accept [ \-\-yes ] | set SHA256:" fingerprint " ]"
 The pinned ssh host keys of a device or an enrolled host, and the only way to
 change them. With no action (or
 .BR show )
@@ -9708,7 +9706,7 @@ console command that shows them on the device.
 .B accept
 reads the keys the device offers now, prints them beside the pinned ones, and
 pins them all after confirmation (\c
-.B \-y
+.B \-\-yes
 skips it; a closed stdin cancels): run it only after comparing them with the
 device console.
 .BI "set SHA256:" fingerprint
@@ -9722,7 +9720,7 @@ Requires: \fBengineer\fR.
 .PP
 Options:
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device hostkey
@@ -11393,7 +11391,7 @@ Exit 2 when a device needs a change (and none could not be planned).
 .RE
 .\" END GENERATED: command device config plan
 .TP
-.BI "device config apply " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor juniper | \-\-stale | \-\-differs | \-\-name " text " | \-\-ip " addr|cidr|text " [ \-\-check ] [ \-\-confirmed ] [ \-\-max " n " ] [ \-\-pause " seconds " ] [ \-\-hold ] [ \-\-no\-canary ] [ \-\-section " list " ] [ \-\-pull ] [ \-\-transport " auto | cli | netconf " ] [ \-\-concurrency " n " ] [ \-\-timeout " seconds " ] [ \-\-max\-failures " n " ] [ \-\-server " address " ] [ \-\-source " address " ] [ \-\-exit\-code ] [ \-\-json ] [ \-y ]"
+.BI "device config apply " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor juniper | \-\-stale | \-\-differs | \-\-name " text " | \-\-ip " addr|cidr|text " [ \-\-check ] [ \-\-confirmed ] [ \-\-max " n " ] [ \-\-pause " seconds " ] [ \-\-hold ] [ \-\-no\-canary ] [ \-\-section " list " ] [ \-\-pull ] [ \-\-transport " auto | cli | netconf " ] [ \-\-concurrency " n " ] [ \-\-timeout " seconds " ] [ \-\-max\-failures " n " ] [ \-\-server " address " ] [ \-\-source " address " ] [ \-\-exit\-code ] [ \-\-json ] [ \-\-yes ]"
 Write the plan to Junos devices: what
 .B "device config plan"
 would have a person paste, typed by tacctl, under a confirmed commit and
@@ -11622,9 +11620,9 @@ exit 2 when a device needs a change).
 applies only shapes an earlier apply confirmed and skips the others
 .RB ( "unknown shape <hash>: review and apply it by hand first" ),
 and is the one form
-.B \-y
+.B \-\-yes
 answers the review for (every device's question, with no terminal);
-.B \-y
+.B \-\-yes
 without it is refused (exit 2).
 .B \-\-max
 (default 5) caps the devices of every apply run. The first device of every shape is
@@ -11847,12 +11845,12 @@ One object per device and phase, then the summary; the review goes to standard e
 \fB\-\-exit\-code\fR
 With \-\-check: exit 2 when a device needs a change (and none failed).
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 Answer the review (only with \-\-confirmed: every shape is one an earlier apply confirmed; no terminal needed).
 .RE
 .\" END GENERATED: command device config apply
 .TP
-.BI "device config shapes " "[ list [ \-\-show " hash " ] [ \-\-json ] | seed " name "[," name "...] [ \-y ] ]"
+.BI "device config shapes " "[ list [ \-\-show " hash " ] [ \-\-json ] | seed " name "[," name "...] [ \-\-yes ] ]"
 The shapes of the changes
 .B "device config apply"
 has seen: two devices that need the same change have one shape, a hash of
@@ -11873,7 +11871,7 @@ prints one shape's statements. It contacts no device; the store is
 files the shape of each named device's last check or apply as confirmed on
 your word, for a device that was applied and verified by hand: it shows the
 shapes, asks once
-.RB ( \-y
+.RB ( \-\-yes
 answers it) and logs
 .BR "auth.notice device config shapes seed user= device= shape=" .
 It refuses a device with nothing checked.
@@ -11890,7 +11888,7 @@ Options:
 \fB\-\-json\fR
 (list) One object per shape: its state, devices, confirmations and the nearest confirmed shape.
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (seed) Answer the question: file the shapes as confirmed on your word.
 .RE
 .\" END GENERATED: command device config shapes
@@ -12381,7 +12379,7 @@ of the device is refused,
 moves the record to the new address (the registry and the record in one write,
 one render, one restart of each backend that changed; the new address passes
 the checks a new hold passes, and one question names both addresses unless
-.B \-y
+.B \-\-yes
 is given),
 .B "device rename"
 and
@@ -14636,9 +14634,8 @@ restart nothing.
 .B Prompts
 Every confirmation prompt cancels, with a message, when standard input is
 closed.
-.B \-y
+.B \-\-yes
 (or
-.BR \-\-yes ,
 .B \-\-force
 where documented) answers yes.
 .TP
@@ -14678,7 +14675,7 @@ take a single argument;
 .IR --hosts ,
 .I --remove-home
 and
-.I -y
+.I --yes
 take none. Required positional arguments come before flags.
 .TP
 .B Audit lines

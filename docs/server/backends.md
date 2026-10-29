@@ -15,14 +15,15 @@ TACACS+ over TLS is reserved, not implemented: a listener's `tls` block is part 
 tacctl backend list             # protocol, implementation, installed, enabled, service state
 tacctl backend status [<id>]    # state, uptime, PID, and each listener: unit state, whether
                                 # something listens
-tacctl backend enable <id> [-y] # install if needed, render, enable at boot, start
-tacctl backend disable <id> [-y]
+tacctl backend enable <id> [--yes]
+                                # install if needed, render, enable at boot, start
+tacctl backend disable <id> [--yes]
 ```
 
 Which backends are enabled is `backends.enabled` in `tacctl.yaml` (default: `[tacacs]`). Every command that changes users, groups, scopes or filters renders the config of **every** enabled backend from the store, all of them or none, and restarts only the backends whose files changed.
 
-- `backend enable <id>` installs the backend if it is not installed (asking first; `-y` skips), checks every backend's rendered files for hand edits, takes a snapshot, adds the id to `backends.enabled`, renders, then enables and starts the service, which must come up. Any failure puts `tacctl.yaml`, the store and every rendered file back and stops the service; software the install step put on the machine stays.
-- `backend disable <id>` stops the service and disables it at boot (asking first; `-y` skips). Its package and rendered files stay, and are no longer rendered or reported as drift; `backend enable` brings it back. Disabling the last enabled backend is refused, and so is disabling `tacacs` in legacy read-only mode.
+- `backend enable <id>` installs the backend if it is not installed (asking first; `--yes` skips), checks every backend's rendered files for hand edits, takes a snapshot, adds the id to `backends.enabled`, renders, then enables and starts the service, which must come up. Any failure puts `tacctl.yaml`, the store and every rendered file back and stops the service; software the install step put on the machine stays.
+- `backend disable <id>` stops the service and disables it at boot (asking first; `--yes` skips). Its package and rendered files stay, and are no longer rendered or reported as drift; `backend enable` brings it back. Disabling the last enabled backend is refused, and so is disabling `tacacs` in legacy read-only mode.
 - Commands need the store (`/etc/tacctl/store.yaml`), or, on a legacy install with no store yet, its `tacquito.yaml`; with neither they stop with `Config not found … Is tacctl installed?`. `tacquito.yaml` is the `tacacs` backend's file, rendered from the store: a RADIUS-only install has none and runs every command without it. With `tacacs` enabled and `tacquito.yaml` missing, commands run and warn; `tacctl config render` (or any change) writes it again.
 - With more than one backend enabled, `tacctl status`, `tacctl config validate`, `tacctl config show` and `tacctl log …` print one labelled section per backend (`== Backend: radius (radius, freeradius) ==`); `log` takes `--backend <id>` to show one. With only `tacacs` enabled the output has no backend sections.
 - `backend list` and `backend status` are open to the read-only and operator tiers; `enable` and `disable` are superuser-only.

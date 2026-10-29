@@ -19,12 +19,12 @@ Copyright (c) 2026 Everett C. Haimes III · MIT License · https://github.com/re
 Usage: tacctl <command> [arguments]
 
 Commands:
-  <b>install</b> [<o>--branch <name></o>] [<o>-y</o>|<o>--yes</o>]  Install tacctl and the TACACS+ backend (tacquito) from scratch
+  <b>install</b> [<o>--branch <name></o>] [<o>--yes</o>]     Install tacctl and the TACACS+ backend (tacquito) from scratch
       <o>--branch <name></o>                   The tacctl repo branch to install or upgrade from (default: the current one)
       <o>--server <ip></o>                     The address devices and hosts reach this server at
-      <o>-y</o>, <o>--yes</o>                         Answer yes to the confirmations
+      <o>--yes</o>                             Answer yes to the confirmations
   <b>upgrade</b> [<o>--branch <name></o>]             Pull latest source, rebuild, update scripts and every enabled backend
-  <b>uninstall</b> [<o>-y</o>|<o>--yes</o>]                  Remove tacctl, its backends' services and all associated files
+  <b>uninstall</b> [<o>--yes</o>]                     Remove tacctl, its backends' services and all associated files
   <b>rollback</b> <o><version></o> [options]          Prepare the state for the release before this one (0.2.19), for 0.2.18, 0.2.17, 0.2.16, 0.2.9 or 0.2.3: a dry run unless <o>--apply</o>
       <o>--apply</o>                           Take a snapshot, then convert the files the target cannot read (tacctl.yaml, sudoers; for 0.2.3 also console.yaml, devices.yaml)
       <o>--yes</o>                             Acknowledge the warnings that <o>--apply</o> refuses to go on without
@@ -413,10 +413,10 @@ Subcommands:
   <b>defaults</b>                             Print canonical tacctl defaults (shipped)
   <b>get</b> <o><path></o> [<o><fallback></o>]              Read a dotted-path value from the merged config
   <b>get-list</b> <o><path></o>                      Read a list value (one item per line)
-  <b>validate</b> [<o>--json</o> | <o>--fix-names</o> [<o>-y</o>]]  Validate config syntax and structure
+  <b>validate</b> [<o>--json</o> | <o>--fix-names</o> [<o>--yes</o>]]  Validate config syntax and structure
       <o>--json</o>                           Print the findings as one JSON object and nothing else on standard output; exit 1 when one is an error
       <o>--fix-names</o>                      After the report, offer to rename each device, host, user and scope that has upper case in its name to its lower-case spelling (superuser; needs the store)
-      -y, --yes                        With <o>--fix-names</o>: answer yes to every rename
+      --yes                            With <o>--fix-names</o>: answer yes to every rename
   <b>render</b> [<o>--force</o>]                     Regenerate every enabled backend's config from the store (<o>--force</o> overwrites hand edits)
       <o>--force</o>                          Overwrite a generated file that was edited by hand
   <b>render</b> <o>--dry-run</o> <o>--out <dir></o>         Render into a new, empty directory at the live paths; nothing live is written
@@ -566,7 +566,7 @@ Usage: tacctl host <subcommand> [arguments]
       --name <name>                    Registry name (default: short hostname, lowercased; lower case, not a tacctl word)
       --port <n>, --identity <file>    SSH port and key
       --build-on-host                  (tacplus) Compile pam_tacplus on the host instead of in a container here
-      -y, --yes                        (enroll and move) Move a registered host to another scope even when that deletes accounts
+      --yes                            (enroll and move) Move a registered host to another scope even when that deletes accounts
       --staging                        (enroll, with --scope) Provisioned off-site: the host's bench address joins the scope as a
                                        /32 (its secret and users) until the host is seen in place (tacctl scope staging)
   sync <name>... | --all               Push account adds, renames, deletions, expiries and tier changes
@@ -595,16 +595,16 @@ Usage: tacctl host <subcommand> [arguments]
                                        out of reach unless --remove-home. Needs a registry target with an explicit user@
       --remove-home                    (provisioner) With --remove-old: also delete the old account's home directory, without asking
                                        (otherwise it is moved out of reach, made root's)
-      -y, --yes                        (provisioner) Rotate without asking, and continue with the host keys shown when none is pinned
+      --yes                            (provisioner) Rotate without asking, and continue with the host keys shown when none is pinned
       --dry-run                        (provisioner) Print the plan and test the current login; change nothing
   rename <old> <new>                   Give an enrolled host another name: registry line, pinned keys, record, staging
                                        addresses and break-glass hold follow; nothing is sent to the host. When the host
                                        is the only user of scope linux-<old>, asks whether to rename that scope too
-      -y, --yes                        (rename) Replace what an earlier host of the new name left, and rename the scope
+      --yes                            (rename) Replace what an earlier host of the new name left, and rename the scope
   forget <name>                        Drop the host's registration from this server (registry line, pinned keys,
                                        record, staging addresses) and run nothing on the host; also what a registry
                                        line no longer has. Refused for a held host
-      -y, --yes                        (forget) Forget the host without asking
+      --yes                            (forget) Forget the host without asking
   unenroll <name> [--force]            Remove the login method from the host (accounts and homes are kept)
       --force                          Forget the host even when the removal there failed
   default-method [tacplus|radius]      Show or set the method for hosts enrolled without --method
@@ -622,10 +622,10 @@ Usage: tacctl backend <subcommand> [arguments]
 Subcommands:
   <b>list</b>                    Every backend: protocol, implementation, installed, enabled, service
   <b>status</b> [<o><id></o>]           Service and listener state of every backend (or one)
-  <b>enable</b> <o><id></o> [<o>-y</o>]        Install the backend if needed, enable it, render its config, start it
-  <b>disable</b> <o><id></o> [<o>-y</o>]       Stop and disable it, take it out of backends.enabled (confirms);
+  <b>enable</b> <o><id></o> [<o>--yes</o>]     Install the backend if needed, enable it, render its config, start it
+  <b>disable</b> <o><id></o> [<o>--yes</o>]    Stop and disable it, take it out of backends.enabled (confirms);
                           its package and rendered files stay
-      <o>-y</o>, <o>--yes</o>           Answer yes to the confirmation
+      <o>--yes</o>               Answer yes to the confirmation
 
 Backends: {{backends}}
 
@@ -658,9 +658,9 @@ Subcommands:
   <b>search</b> <o><term></o>         Search the logs for a username or keyword
   <b>failures</b>              Show auth failures from the last 24 hours
   <b>accounting</b> [<o><n></o>]      Show the last <n> accounting log entries
-  <b>clear</b> [<o>--force</o>|<o>-y</o>]    Purge each backend's logs: journal or auth log, accounting log (confirms)
+  <b>clear</b> [<o>--force</o>|<o>--yes</o>]  Purge each backend's logs: journal or auth log, accounting log (confirms)
       <o>--backend <id></o>    Only that backend's log (every subcommand)
-      <o>--force</o>, <o>-y</o>       (clear) Purge without asking
+      <o>--force</o>, <o>--yes</o>    (clear) Purge without asking
 
 With more than one backend enabled each subcommand shows every backend's log in a
 section of its own; --backend <id> shows only that backend's.

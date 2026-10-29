@@ -66,7 +66,7 @@ config render --dry-run --out <dir>
     Render every enabled backend into a new, empty directory at the live paths; nothing live is
     written, no restart
 
-config validate [--json | --fix-names [-y]]
+config validate [--json | --fix-names [--yes]]
 
     Validate the store, tacctl.yaml (schema walk, incl. commands.<group> / privileges.<group> /
     mgmt_acl.* / listeners) and the server-config structure (orphan scope refs, scope.default
@@ -277,7 +277,7 @@ config branch [<name>]
 
 ## `config validate --fix-names`
 
-`config validate --fix-names [-y]` prints the usual report, then offers
+`config validate --fix-names [--yes]` prints the usual report, then offers
 every `Names:` finding whose lower-case spelling is free, one at a time:
 devices first, then hosts, users and scopes, each kind in alphabetical
 order.
@@ -288,14 +288,14 @@ Rename device 'Core-SW1' to 'core-sw1'? [y/N]:
 
 Only `y` or `Y` renames; anything else, and a closed standard input, is a
 no. A piped `y` works as for every other question, and no terminal is
-required. `-y` (`--yes`) answers yes to every question.
+required. `--yes` answers yes to every question.
 
 On yes the verb that renames that kind of name runs as when typed
 (`device rename`, `host rename`, `user rename`, `scope rename`) and prints
 what it prints. Each rename takes its own snapshot, so each has its own undo
 point, and carries what its verb carries (a host's pins, record, staging and
 hold and the offer of its own `linux-<name>` scope; a user's UID line; a
-scope's keys, hosts and staging). `-y` is passed on to `host rename` only
+scope's keys, hosts and staging). `--yes` is passed on to `host rename` only
 when it was given here: without it the verb asks its own questions (a
 leftover under the new name, the scope) after this one. The findings are
 read again after each rename, so a scope that a host rename carried is not
@@ -336,7 +336,7 @@ Names: renamed 3, declined 1, not offered 1, failed 0.
 ```
 
 The exit status is 1 when the report had errors, a rename failed or a name
-was not offered, so that a script with `-y` learns that names remain; a
+was not offered, so that a script with `--yes` learns that names remain; a
 decline does not fail the run. `--fix-names` renames, so it is the
 superuser's: an operator or an engineer is refused. It needs the store and
 does not go with `--json`.

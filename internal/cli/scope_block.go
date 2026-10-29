@@ -50,17 +50,17 @@ var scopeBlockCompletion = Spec{MinArgs: 1, MaxArgs: -1,
 	Args: []string{KindScopes, "cisco|juniper", blockSubs, Cond("adopt", KindDevices, blockWords), Cond("adopt", blockWords, "")},
 	Flags: []Flag{{Names: []string{"--reveal"}, Only: "show"}, {Names: []string{"--file"}, Value: true, Only: "check|set", Kind: KindFile},
 		{Names: []string{"--against"}, Value: true, Only: "check", Kind: KindDevices},
-		{Names: []string{"-y", "--yes"}, Only: "set|remove|edit|adopt"}}}
+		{Names: []string{"--yes"}, Only: "set|remove|edit|adopt"}}}
 
 // scopeBlockVerbs are the verbs ({Use, Short}), in usage order.
 var scopeBlockVerbs = [][2]string{
 	{"list", "The blocks of the scope: whether each is in force, its size and what it states, and the findings (a file tacctl.yaml does not name, a name with no file)"},
 	{"show <block> [--reveal]", "The block as it is in force, elided (marks for community strings, trap group names, NTP keys and the login message); --reveal prints it as stored"},
 	{"check <block> [--file <path>|-] [--against <device>]", "Lint the file in force, a file or standard input: every finding with its line, the objects that become owned, the statements that carry a secret and the diff against the file in force"},
-	{"set <block> (--file <path>|-) [-y]", "Check a file or standard input, show the diff, ask, take a snapshot and put the block in force"},
-	{"remove <block> [-y]", "Take the block out of force and delete its file (asks)"},
-	{"edit <block> [-y]", "Open the block in your editor (VISUAL, EDITOR, else editor, else vi, run as you on a private copy), check what comes back and, after the diff and the question, put it in force"},
-	{"adopt <device> <block> [-y]", "Read the device's own statements of the hierarchy with your login (nothing is stored), open them in your editor as the draft to prune, then check, diff, ask and put the block in force"},
+	{"set <block> (--file <path>|-) [--yes]", "Check a file or standard input, show the diff, ask, take a snapshot and put the block in force"},
+	{"remove <block> [--yes]", "Take the block out of force and delete its file (asks)"},
+	{"edit <block> [--yes]", "Open the block in your editor (VISUAL, EDITOR, else editor, else vi, run as you on a private copy), check what comes back and, after the diff and the question, put it in force"},
+	{"adopt <device> <block> [--yes]", "Read the device's own statements of the hierarchy with your login (nothing is stored), open them in your editor as the draft to prune, then check, diff, ask and put the block in force"},
 }
 
 // scopeBlockVendors are the vendor words after the scope ({word,
@@ -80,7 +80,7 @@ var scopeBlockOptions = map[string][][2]string{
 		{"--against <device>", "Plan the device of this scope with this text in force and print the statements of its section (from its last pull; nothing is written and no device is reached)"},
 	},
 	"set": {
-		{"-y, --yes", "(set, remove, edit, adopt) Answer yes to the question (a block read from standard input needs it)"},
+		{"--yes", "(set, remove, edit, adopt) Answer yes to the question (a block read from standard input needs it)"},
 	},
 }
 

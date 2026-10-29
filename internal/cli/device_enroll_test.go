@@ -235,7 +235,7 @@ func TestEnrollOfferRunsTheReview(t *testing.T) {
 	}
 	// enrolled again once the device agrees with tacctl: nothing to apply,
 	// so no review is offered, and the row says why
-	b.run("device", "remove", "example-sw1", "-y")
+	b.run("device", "remove", "example-sw1", "--yes")
 	code, out, errs = b.enroll("example-sw1\ny\n", enrollAddr, "--json")
 	if code != 0 || strings.Contains(errs, "Run the apply review") || strings.Contains(errs, "not offered") ||
 		!strings.Contains(errs, enrollAddr+": planned: nothing to apply: the plan has no change") {

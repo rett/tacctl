@@ -82,7 +82,7 @@ func TestLogArgumentsAndHeadings(t *testing.T) {
 		stdout, err string
 	}{
 		{[]string{"log"}, 1, "Usage: tacctl log <subcommand> [--backend <id>] [arguments]", ""},
-		{[]string{"log", "--backend", "tacacs", "tail"}, 1, "clear [--force|-y]", ""},
+		{[]string{"log", "--backend", "tacacs", "tail"}, 1, "clear [--force|--yes]", ""},
 		{[]string{"log", "tail", "--backend"}, 1, "", "--backend needs a backend id. Usage: tacctl log tail [--backend <id>] ..."},
 		{[]string{"log", "tail", "--backend", "nope"}, 1, "", "Unknown backend 'nope' (known: tacacs radius)."},
 		{[]string{"log", "accounting", "--backend=radius"}, 0, "Recent RADIUS Accounting Records", ""},

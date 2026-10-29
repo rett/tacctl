@@ -165,7 +165,7 @@ func TestUsageRowsIgnoreMarkup(t *testing.T) {
 		}
 	}
 	rows := topRows()
-	if len(rows) == 0 || rows[0].Name != "install" || rows[0].Left != "install [--branch <name>] [-y|--yes]" {
+	if len(rows) == 0 || rows[0].Name != "install" || rows[0].Left != "install [--branch <name>] [--yes]" {
 		t.Errorf("topRows %+v", rows)
 	}
 }

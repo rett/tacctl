@@ -40,7 +40,7 @@ func TestDeviceBlockSetShowListRemove(t *testing.T) {
 		t.Errorf("list: %d\n%s", sb.code, out)
 	}
 	n := sb.snapshots()
-	out = sb.devb("", "JSW1.lab.example.net", "set", "snmp", "--file", f, "-y")
+	out = sb.devb("", "JSW1.lab.example.net", "set", "snmp", "--file", f, "--yes")
 	if sb.code != 0 || !strings.Contains(out, "The snmp block of device 'jsw1.lab.example.net' is set (") {
 		t.Fatalf("set: %d\n%s%s", sb.code, out, sb.stderr())
 	}
@@ -121,14 +121,14 @@ func TestDeviceBlockRefusals(t *testing.T) {
 	}{
 		{"unknown device", []string{"nosuch", "list"}, "Device 'nosuch' not found."},
 		{"a host", []string{"web1", "list"}, "is an enrolled Linux host"},
-		{"cisco takes IOS syntax only", []string{"sw-c", "set", "snmp", "--file", good, "-y"}, "a block holds 'snmp-server', 'ip access-list standard' and 'no' statements only"},
+		{"cisco takes IOS syntax only", []string{"sw-c", "set", "snmp", "--file", good, "--yes"}, "a block holds 'snmp-server', 'ip access-list standard' and 'no' statements only"},
 		{"wti", []string{"ts-1", "list"}, "configuration blocks are for Junos and IOS devices"},
-		{"no scope", []string{"stray-j", "set", "snmp", "--file", good, "-y"}, "is in no scope"},
+		{"no scope", []string{"stray-j", "set", "snmp", "--file", good, "--yes"}, "is in no scope"},
 		{"no scope list", []string{"stray-j", "list"}, "is in no scope"},
 		{"unknown block", []string{"sw-j", "show", "banner"}, "Unknown block 'banner'"},
 		{"unknown verb", []string{"sw-j", "frobnicate", "snmp"}, "Unknown subcommand: 'frobnicate'"},
-		{"no source", []string{"sw-j", "set", "snmp", "-y"}, "Give the block's text with --file <path>, or - for standard input."},
-		{"a bad block", []string{"sw-j", "set", "snmp", "--file", sb.blockFile("bad", "set snmp community aa authorization read-only\n"), "-y"}, "Nothing was written."},
+		{"no source", []string{"sw-j", "set", "snmp", "--yes"}, "Give the block's text with --file <path>, or - for standard input."},
+		{"a bad block", []string{"sw-j", "set", "snmp", "--file", sb.blockFile("bad", "set snmp community aa authorization read-only\n"), "--yes"}, "Nothing was written."},
 		{"effective of set", []string{"sw-j", "set", "snmp", "--effective", "--file", good}, "Unknown option: '--effective'"},
 		{"reveal of list", []string{"sw-j", "list", "--reveal"}, "Unknown option: '--reveal'"},
 	} {
@@ -142,12 +142,12 @@ func TestDeviceBlockRefusals(t *testing.T) {
 	}
 	// a device that left every scope can have its blocks taken away
 	sb.dev("", "add", "moved-j", "192.168.1.30", "--vendor", "juniper", "--no-host-key", "--no-lookup")
-	sb.devb("", "moved-j", "set", "snmp", "--file", good, "-y")
+	sb.devb("", "moved-j", "set", "snmp", "--file", good, "--yes")
 	sb.expect(0, "is set", "")
 	sb.dev("", "address", "moved-j", "100.64.0.30")
 	sb.devb("", "moved-j", "show", "snmp")
 	sb.expect(1, "", "is in no scope")
-	sb.devb("", "moved-j", "remove", "snmp", "-y")
+	sb.devb("", "moved-j", "remove", "snmp", "--yes")
 	sb.expect(0, "is removed", "")
 }
 
@@ -165,7 +165,7 @@ func TestDeviceBlockEffective(t *testing.T) {
 	sb.expect(1, "", "Sw-j has no snmp block."[:0]+"has no snmp block.")
 
 	f := sb.blockFile("dev.txt", deviceLevelSNMP)
-	sb.devb("", "sw-j", "set", "snmp", "--file", f, "-y")
+	sb.devb("", "sw-j", "set", "snmp", "--file", f, "--yes")
 	sb.expect(0, "is set", "")
 	out = sb.devb("", "sw-j", "show", "snmp", "--effective")
 	want := "# from device block sw-j snmp\nset snmp community <secret:1> authorization read-write\nset snmp community <secret:1> clients 198.51.100.0/24\n" +
@@ -400,14 +400,14 @@ func TestDeviceBlockEngineer(t *testing.T) {
 	}
 	f := sb.blockFile("e.txt", verbSNMPFile)
 	for _, args := range [][]string{
-		{"lab-j", "set", "snmp", "--file", f, "-y"}, {"lab-j", "set", "snmp", "-", "-y"}, {"lab-j", "remove", "snmp", "-y"},
+		{"lab-j", "set", "snmp", "--file", f, "--yes"}, {"lab-j", "set", "snmp", "-", "--yes"}, {"lab-j", "remove", "snmp", "--yes"},
 	} {
 		sb.asEngineer(verbSNMPFile, append([]string{"device", "block"}, args...)...)
 		if sb.code != 1 || !strings.Contains(sb.stderr(), "The engineer tier reads the configuration blocks of device 'lab-j' (list, show, check); ") {
 			t.Errorf("%v: %d %q", args, sb.code, sb.stderr())
 		}
 	}
-	for _, args := range [][]string{{"prod-j", "list"}, {"prod-j", "show", "snmp", "--reveal"}, {"prod-j", "check", "snmp"}, {"prod-j", "remove", "snmp", "-y"}} {
+	for _, args := range [][]string{{"prod-j", "list"}, {"prod-j", "show", "snmp", "--reveal"}, {"prod-j", "check", "snmp"}, {"prod-j", "remove", "snmp", "--yes"}} {
 		sb.asEngineer("", append([]string{"device", "block"}, args...)...)
 		if sb.code != 1 || !strings.Contains(sb.stderr(), "Device 'prod-j' not found.") {
 			t.Errorf("%v: %d %q", args, sb.code, sb.stderr())
@@ -496,7 +496,7 @@ func TestBlockCheckAgainstSystemNeedsAPullWithTheBlock(t *testing.T) {
 
 	// once the block is in force and the device pulled, the plan names the
 	// section's statements, the message as its size
-	b.run("scope", "block", "lab", "juniper", "set", "system", "--file", f, "-y")
+	b.run("scope", "block", "lab", "juniper", "set", "system", "--file", f, "--yes")
 	b.run("device", "config", "pull", "lab-j")
 	out = b.run("scope", "block", "lab", "juniper", "check", "system", "--against", "lab-j")
 	if b.sb.code != 0 || !strings.Contains(out, "Section system: planned") {

@@ -217,7 +217,7 @@ func TestEditNewBlockFromTheTemplate(t *testing.T) {
 
 func TestEditExistingBlockSeedsTheFileAndShowsTheDiff(t *testing.T) {
 	b := newEditBox(t)
-	b.sb.blk("", "lab", "juniper", "set", "snmp", "--file", b.sb.blockFile("snmp.txt", verbSNMPFile), "-y")
+	b.sb.blk("", "lab", "juniper", "set", "snmp", "--file", b.sb.blockFile("snmp.txt", verbSNMPFile), "--yes")
 	if b.sb.code != 0 {
 		t.Fatal(b.sb.stderr())
 	}
@@ -246,7 +246,7 @@ func TestEditExistingBlockSeedsTheFileAndShowsTheDiff(t *testing.T) {
 
 func TestEditUnchangedWritesNothing(t *testing.T) {
 	b := newEditBox(t)
-	b.sb.blk("", "lab", "juniper", "set", "snmp", "--file", b.sb.blockFile("snmp.txt", verbSNMPFile), "-y")
+	b.sb.blk("", "lab", "juniper", "set", "snmp", "--file", b.sb.blockFile("snmp.txt", verbSNMPFile), "--yes")
 	ed := b.editor("ed-noop", "true")
 	n := b.sb.snapshots()
 	before := b.sb.read("state/blocks/lab/juniper/snmp")
@@ -394,10 +394,10 @@ func TestEditAnswerNoLeavesEverythingAsItWas(t *testing.T) {
 	if len(b.leftover()) != 0 {
 		t.Errorf("private directory left: %v", b.leftover())
 	}
-	// -y answers it
-	out = b.edit("", ed, "snmp", "-y")
+	// --yes answers it
+	out = b.edit("", ed, "snmp", "--yes")
 	if b.sb.code != 0 || !strings.Contains(out, "is set (") {
-		t.Errorf("-y: %d\n%s%s", b.sb.code, out, b.sb.stderr())
+		t.Errorf("--yes: %d\n%s%s", b.sb.code, out, b.sb.stderr())
 	}
 }
 
@@ -419,7 +419,7 @@ func TestEditRefusals(t *testing.T) {
 
 	// usage and the block name
 	b.edit("", ed)
-	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "Usage: tacctl scope block lab juniper edit <block> [-y]") {
+	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "Usage: tacctl scope block lab juniper edit <block> [--yes]") {
 		t.Errorf("no block: %d %q", b.sb.code, b.sb.stderr())
 	}
 	b.edit("", ed, "firewall")
@@ -473,9 +473,9 @@ func TestEditIsTheSuperusersOnly(t *testing.T) {
 func TestEditInTheConsoleFollowsTheSystemShellRule(t *testing.T) {
 	b := newEditBox(t)
 	ed := b.editor("ed-noop", "true")
-	b.sb.blk("", "lab", "juniper", "set", "snmp", "--file", b.sb.blockFile("snmp.txt", verbSNMPFile), "-y")
+	b.sb.blk("", "lab", "juniper", "set", "snmp", "--file", b.sb.blockFile("snmp.txt", verbSNMPFile), "--yes")
 	runAs := func(extra ...string) {
-		b.sb.cfgRun("", []string{"scope", "block", "lab", "juniper", "edit", "snmp", "-y"}, func(r *fake.Runner) {
+		b.sb.cfgRun("", []string{"scope", "block", "lab", "juniper", "edit", "snmp", "--yes"}, func(r *fake.Runner) {
 			route(r)
 			// alice is a tacctl user of the superuser group, as a person on
 			// this server is: a caller outside the groups has no tier
@@ -517,7 +517,7 @@ func TestEditChoosesTheEditor(t *testing.T) {
 	visual := b.editor("visual", editSNMPAdd)
 	other := b.editor("other", "exit 9")
 	run := func(env []string, script func(*fake.Runner)) string {
-		return plain(b.sb.cfgRun("y\n", []string{"scope", "block", "lab", "juniper", "edit", "snmp", "-y"}, func(r *fake.Runner) {
+		return plain(b.sb.cfgRun("y\n", []string{"scope", "block", "lab", "juniper", "edit", "snmp", "--yes"}, func(r *fake.Runner) {
 			route(r)
 			for _, p := range []string{visual, other} {
 				r.OnFunc([]string{p}, realRun)
@@ -533,13 +533,13 @@ func TestEditChoosesTheEditor(t *testing.T) {
 		t.Errorf("VISUAL: %d %q", b.sb.code, b.sb.stderr())
 	}
 	// EDITOR alone, with an argument of its own
-	b.sb.blk("", "lab", "juniper", "remove", "snmp", "-y")
+	b.sb.blk("", "lab", "juniper", "remove", "snmp", "--yes")
 	run([]string{"EDITOR=" + visual + " -nw"}, nil)
 	if b.sb.code != 0 || !strings.Contains(b.recorded("args"), "-nw") {
 		t.Errorf("EDITOR with an argument: %d %q\n%s", b.sb.code, b.sb.stderr(), b.recorded("args"))
 	}
 	// neither: the system's 'editor', then 'vi'
-	b.sb.blk("", "lab", "juniper", "remove", "snmp", "-y")
+	b.sb.blk("", "lab", "juniper", "remove", "snmp", "--yes")
 	var started []string
 	run(nil, func(r *fake.Runner) {
 		r.OnFunc([]string{"/fake/bin/editor"}, func(c execx.Cmd) (execx.Result, error) {
@@ -628,7 +628,7 @@ func TestEditInterruptedRemovesTheDirectory(t *testing.T) {
 	b := newEditBox(t)
 	ed := b.editor("ed-add", editSNMPAdd)
 	n := b.sb.snapshots()
-	out := plain(b.sb.cfgRun("y\n", []string{"scope", "block", "lab", "juniper", "edit", "snmp", "-y"}, func(r *fake.Runner) {
+	out := plain(b.sb.cfgRun("y\n", []string{"scope", "block", "lab", "juniper", "edit", "snmp", "--yes"}, func(r *fake.Runner) {
 		route(r)
 		r.OnFunc([]string{ed}, func(c execx.Cmd) (execx.Result, error) {
 			res, err := realRun(c)
@@ -665,7 +665,7 @@ func TestEditRunsAsTheInvokingUser(t *testing.T) {
 	}
 	run := func(name string) string {
 		b.cmds = nil
-		return plain(b.sb.cfgRun("y\n", []string{"scope", "block", "lab", "juniper", "edit", "snmp", "-y"}, func(r *fake.Runner) {
+		return plain(b.sb.cfgRun("y\n", []string{"scope", "block", "lab", "juniper", "edit", "snmp", "--yes"}, func(r *fake.Runner) {
 			route(r)
 			// the passwd entry of the uid of this process is alice's
 			r.OnFunc([]string{"getent", "passwd", strconv.Itoa(uid)}, func(execx.Cmd) (execx.Result, error) {
@@ -694,7 +694,7 @@ func TestEditRunsAsTheInvokingUser(t *testing.T) {
 	}
 	noneOf(t, "env", env, "SUDO_", "TACCTL_")
 	// a SUDO_USER that is not SUDO_UID's account is refused: nothing runs
-	b.sb.blk("", "lab", "juniper", "remove", "snmp", "-y")
+	b.sb.blk("", "lab", "juniper", "remove", "snmp", "--yes")
 	run("bob")
 	if b.sb.code != 1 || len(b.cmds) != 0 {
 		t.Errorf("spoofed pair: %d, %d cmds, %q", b.sb.code, len(b.cmds), b.sb.stderr())
@@ -738,7 +738,7 @@ func TestCaptureEditorTakesTheVariablesOffTheRootSide(t *testing.T) {
 func TestEditDeviceBlockSeedHasTheScopesObjectsAsComments(t *testing.T) {
 	b := newEditBox(t)
 	b.sb.dev("", "add", "jsw1.lab.example.net", "192.168.1.20", "--vendor", "juniper", "--no-host-key", "--no-lookup")
-	b.sb.blk("", "lab", "juniper", "set", "snmp", "--file", b.sb.blockFile("snmp.txt", scopeLevelSNMP), "-y")
+	b.sb.blk("", "lab", "juniper", "set", "snmp", "--file", b.sb.blockFile("snmp.txt", scopeLevelSNMP), "--yes")
 	if b.sb.code != 0 {
 		t.Fatal(b.sb.stderr())
 	}

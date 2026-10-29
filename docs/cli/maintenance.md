@@ -13,11 +13,11 @@ backend status [<id>]
 
     Service and listener state of every backend (or one)
 
-backend enable <id> [-y]
+backend enable <id> [--yes]
 
     Install the backend if needed, enable it, render its config, start it
 
-backend disable <id> [-y]
+backend disable <id> [--yes]
 
     Stop and disable it, take it out of backends.enabled (confirms); its package and rendered files
     stay
@@ -59,7 +59,7 @@ log accounting [<n>] [--backend <id>]
 
     Last <n> accounting records
 
-log clear [--force|-y] [--backend <id>]
+log clear [--force|--yes] [--backend <id>]
 
     Purge the TACACS+ journal and truncate the accounting logs; truncate the RADIUS auth, accounting
     and daemon logs (prompts)

@@ -136,7 +136,7 @@ func readHierarchyText(ctx context.Context, c *devssh.Client, vendor, hierarchy,
 	return text, transportSSH, err
 }
 
-// adopt is 'adopt [<device>] <block> [-y]'; device is "" at the device
+// adopt is 'adopt [<device>] <block> [--yes]'; device is "" at the device
 // level, where the device is the level's own.
 func (c *blockCtx) adopt(block, device string, p Parsed) error {
 	inv := c.inv
@@ -334,5 +334,5 @@ func (c *blockCtx) adopt(block, device string, p Parsed) error {
 		seed.WriteString("# " + h + "\n")
 	}
 	seed.WriteString(res.Text)
-	return c.editFlow(block, seed.String(), cur, "adopt", "the text adopted from "+e.Name+" and edited", p.Has("-y"))
+	return c.editFlow(block, seed.String(), cur, "adopt", "the text adopted from "+e.Name+" and edited", p.Has("--yes"))
 }

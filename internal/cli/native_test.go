@@ -462,8 +462,8 @@ func TestNativePrelude(t *testing.T) {
 	// install, upgrade and uninstall are superuser commands (and native
 	// since WP3.3d): denied before anything runs.
 	for _, c := range []string{"install", "upgrade", "uninstall"} {
-		ro(c, "-y")
-		sb.expect(1, "", "[ERROR] 'tacctl "+c+" -y' is not permitted for the readonly tier.")
+		ro(c, "--yes")
+		sb.expect(1, "", "[ERROR] 'tacctl "+c+" --yes' is not permitted for the readonly tier.")
 		if len(sb.runner.Execs()) != 0 || sb.runner.Called("git") || sb.runner.Called("systemctl") {
 			t.Errorf("%s: ran %q", c, sb.runner.Argvs())
 		}

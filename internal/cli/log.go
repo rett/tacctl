@@ -27,7 +27,7 @@ var logSpecs = map[string]Spec{
 	"search":     {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}, Flags: []Flag{logBackendFlag}},
 	"failures":   {Flags: []Flag{logBackendFlag}},
 	"accounting": {MaxArgs: 1, Flags: []Flag{logBackendFlag}},
-	"clear":      {Flags: []Flag{logBackendFlag, {Names: []string{"--force", "-y", "--yes"}}}},
+	"clear":      {Flags: []Flag{logBackendFlag, {Names: []string{"--force", "--yes"}}}},
 }
 
 var logBackendFlag = Flag{Names: []string{"--backend"}, Value: true, Kind: KindBackends}
@@ -77,6 +77,15 @@ func (inv *invocation) logRun(sub string, args []string) error {
 			hasOnly = only != ""
 		default:
 			rest = append(rest, a)
+		}
+	}
+	if sub == "clear" {
+		// The purge is confirmed by --yes or --force only: any other word
+		// is refused, not passed on as a flag that does not confirm.
+		for _, a := range rest {
+			if a != "--force" && a != "--yes" {
+				return inv.usageErr("Unknown option: '"+a+"'", "Usage: tacctl log clear [--backend <id>] [--force|--yes]")
+			}
 		}
 	}
 	ids, err := inv.enabledOrFail()

@@ -36,7 +36,7 @@ tacctl breakglass release sw-lab-1,sw-lab-2
 A per-name reason ends at the next comma: a reason that holds a comma is given
 with `--reason`, which every name without its own reason takes.
 
-A hold follows its device: `tacctl device address <device> <address> [-y]`
+A hold follows its device: `tacctl device address <device> <address> [--yes]`
 moves the hold to the new address after one question that names both
 addresses. The new address passes the checks of a new hold, the registry and
 the record are written together, and the backends are rendered and restarted

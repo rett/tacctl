@@ -133,7 +133,7 @@ func TestSectionsValidateEachBackendsRenderState(t *testing.T) {
 func TestSectionsValidateDisabledBackendsLeftovers(t *testing.T) {
 	s := newSectionsSandbox(t, true)
 	s.fakeUp()
-	s.run("", "backend", "disable", "fake", "-y")
+	s.run("", "backend", "disable", "fake", "--yes")
 	s.expect(0, "", "")
 	appendFile(t, s.path("etc", "fake.conf"), "intruder\n")
 	s.run("", "config", "validate")
@@ -289,20 +289,20 @@ func TestSectionsLogEveryEnabledBackend(t *testing.T) {
 }
 
 // backend_cli.bats #59: 'log clear' clears every enabled backend, each
-// with its own confirmation; -y goes to each.
+// with its own confirmation; --yes goes to each.
 func TestSectionsLogClearEveryBackend(t *testing.T) {
 	s := newSectionsSandbox(t, true)
 	s.fakeUp()
-	out := s.run("", "log", "clear", "-y")
+	out := s.run("", "log", "clear", "--yes")
 	s.expect(0, "", "")
-	mustMatch(t, "log clear -y", out, `^fake log clear -y$`)
-	mustContain(t, "log clear -y", s.all(), "Clear tacquito logs", "[INFO] Logs cleared (journal + accounting).")
+	mustMatch(t, "log clear --yes", out, `^fake log clear --yes$`)
+	mustContain(t, "log clear --yes", s.all(), "Clear tacquito logs", "[INFO] Logs cleared (journal + accounting).")
 	if !s.runner.CalledRegexp(`^journalctl .*--vacuum`) {
 		t.Errorf("tacquito's journal not vacuumed: %q", s.runner.Argvs())
 	}
-	// Without -y each backend asks for itself: 'no' to tacquito's question
+	// Without --yes each backend asks for itself: 'no' to tacquito's question
 	// leaves its logs, and the next backend is still asked (the stand-in
-	// asks nothing and is called without -y).
+	// asks nothing and is called without --yes).
 	out = s.run("n\n", "log", "clear")
 	s.expect(0, "", "")
 	mustContain(t, "log clear, no", s.all(), "Clear tacquito logs", "[INFO] Cancelled.")
@@ -317,6 +317,19 @@ func TestSectionsLogClearEveryBackend(t *testing.T) {
 	s.expect(0, "", "")
 	mustMatch(t, "log clear --backend fake", out, `^fake log clear$`)
 	mustNotContain(t, "log clear --backend fake", s.all(), "tacquito")
+}
+
+// 'log clear' is confirmed by --yes or --force only: -y is refused like any
+// other word, before a backend is asked anything.
+func TestSectionsLogClearRefusesTheOldShorthand(t *testing.T) {
+	s := newSectionsSandbox(t, true)
+	s.fakeUp()
+	for _, w := range []string{"-y", "--bogus"} {
+		s.run("y\n", "log", "clear", w)
+		s.expect(1, "", "Unknown option: '"+w+"'")
+		mustContain(t, "log clear "+w, s.all(), "Usage: tacctl log clear [--backend <id>] [--force|--yes]")
+		mustNotContain(t, "log clear "+w, s.all(), "Clear tacquito logs")
+	}
 }
 
 // --- backup restore -----------------------------------------------------------------------

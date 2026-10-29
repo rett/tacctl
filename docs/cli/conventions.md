@@ -16,14 +16,14 @@ These patterns apply across every subcommand family:
 - **Scope prefix invariants** — every CIDR belongs to **exactly one** scope after canonicalization. Adding a prefix already claimed by a different scope is rejected with a message naming the owner; you must `tacctl scope prefixes <owner> remove <cidr>` before re-adding it elsewhere. Overlapping prefixes *across* scopes are allowed and routed correctly (e.g. `10.5.0.0/16` in `staging` coexists with `10.0.0.0/8` in `lab`). In the rendered `tacquito.yaml` a scope with N prefixes becomes N `secrets:` entries sharing the same `name:` and `secret.key`, sorted globally by prefix specificity (v4 before v6, smaller broadcast first), so tacquito's slice-ordered walk picks the narrowest scope. The CLI shows the logical one-bundle-per-scope view.
 - **`clear` and `remove --all`** — `clear` and `remove --all` subcommands always prompt with `[y/N]` and print a warning describing the resulting posture (e.g. "no clients can connect" or "fails open"). Every prompt cancels, with a message, when standard input is closed.
 - **Service restart** — changes to the store, and to the `tacctl.yaml` settings a backend renders (command rules, listeners, `backends.*`), re-render every enabled backend and restart the ones whose files changed. Settings only device configs read (mgmt-acl permits + names, priv-exec mappings, per-scope AAA order, exec timeout, group labels) and tacctl's own tunables (bcrypt cost, password age, …) restart nothing.
-- **Flags** — long-form flags (`--hash`, `--scopes`, `--scope`, `--prefixes`, `--secret`, `--protocols`, `--vendor-attrs`, `--match`, `--action`, `--branch`, `--protocol`, `--method`, `--backend`, `--listener`, `--out`) take a single argument; `--default`, `--force`, `--legacy`, `--check`, `--replace`, `--json`, `--local`, `--all`, `--dry-run`, `--long`, `--apply`, `--hosts` and `-y`/`--yes` take none. Required positional args come before flags.
+- **Flags** — long-form flags (`--hash`, `--scopes`, `--scope`, `--prefixes`, `--secret`, `--protocols`, `--vendor-attrs`, `--match`, `--action`, `--branch`, `--protocol`, `--method`, `--backend`, `--listener`, `--out`) take a single argument; `--default`, `--force`, `--legacy`, `--check`, `--replace`, `--json`, `--local`, `--all`, `--dry-run`, `--long`, `--apply`, `--hosts` and `--yes` take none. Required positional args come before flags.
 
 ## Top-Level Commands
 
 ```
-tacctl install [--branch name] [--server ip] [-y|--yes]
+tacctl install [--branch name] [--server ip] [--yes]
 
-    Install tacctl and the TACACS+ backend from scratch (-y: no confirmation), and set up this
+    Install tacctl and the TACACS+ backend from scratch (--yes: no confirmation), and set up this
     machine's own login, so that every user can log in to the server and its console (--server:
     the address devices and hosts reach this server at); see install/installing.md
 
@@ -32,9 +32,9 @@ tacctl upgrade [--branch name]
     Pull latest source, rebuild, update system files and every enabled backend, and repair this
     machine's own login (set it up when it is asked for on a terminal); see install/upgrading.md
 
-tacctl uninstall [-y|--yes]
+tacctl uninstall [--yes]
 
-    Remove tacctl, its backends' services and all associated files (-y: no confirmation, keeps no
+    Remove tacctl, its backends' services and all associated files (--yes: no confirmation, keeps no
     archive)
 
 tacctl rollback <version> [--apply] [--yes] [--hosts]

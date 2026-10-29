@@ -100,7 +100,7 @@ func (inv *invocation) applyArgsOf(p Parsed) (applyArgs, error) {
 	}
 	a.pull = pa
 	a.check, a.confirmed, a.hold = p.Has("--check"), p.Has("--confirmed"), p.Has("--hold")
-	a.noCanary, a.yes, a.exitCode = p.Has("--no-canary"), p.Has("-y"), p.Has("--exit-code")
+	a.noCanary, a.yes, a.exitCode = p.Has("--no-canary"), p.Has("--yes"), p.Has("--exit-code")
 	a.pullFirst = p.Has("--pull")
 	a.mode = "attended"
 	if a.yes {

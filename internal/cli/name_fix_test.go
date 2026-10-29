@@ -45,13 +45,13 @@ func upperCase(out string) []string {
 	return left
 }
 
-// Every kind is renamed with -y: the device, the host (which carries its own
+// Every kind is renamed with --yes: the device, the host (which carries its own
 // scope, so the scope is not offered a second time), the user (whose ledger
 // line moves) and the scopes. Each rename has its own undo point.
 func TestFixNamesRenamesEveryKindWithYes(t *testing.T) {
 	sb := nameFixLab(t)
 	snaps := len(sb.snapshotDirs())
-	sb.run("", []string{"config", "validate", "--fix-names", "-y"})
+	sb.run("", []string{"config", "validate", "--fix-names", "--yes"})
 	out := plain(sb.out.String())
 	sb.expect(0, "Names: renamed 5, declined 0, not offered 0, failed 0.", "")
 	// The report comes first, with the findings it lists.
@@ -108,7 +108,7 @@ func TestFixNamesRenamesEveryKindWithYes(t *testing.T) {
 		t.Errorf("names are left:\n%s", strings.Join(left, "\n"))
 	}
 	// A second run has nothing to offer.
-	sb.run("", []string{"config", "validate", "--fix-names", "-y"})
+	sb.run("", []string{"config", "validate", "--fix-names", "--yes"})
 	sb.expect(0, "Names: renamed 0, declined 0, not offered 0, failed 0.", "")
 	if strings.Contains(sb.printed(), "tacctl host sync --all") {
 		t.Errorf("a sync was named without a renamed user:\n%s", sb.printed())
@@ -148,7 +148,7 @@ func TestFixNamesTypedAnswers(t *testing.T) {
 	}
 }
 
-// Without -y, 'host rename' asks its own question about the host's scope
+// Without --yes, 'host rename' asks its own question about the host's scope
 // after ours: the next answer is for it.
 func TestFixNamesHostAsksItsOwnQuestions(t *testing.T) {
 	sb := nameFixLab(t)
@@ -175,7 +175,7 @@ func TestFixNamesHostAsksItsOwnQuestions(t *testing.T) {
 }
 
 // A name whose lower-case spelling is another name's is not offered, and the
-// run exits 1 even with -y: a script learns that names remain.
+// run exits 1 even with --yes: a script learns that names remain.
 func TestFixNamesConflictIsNotOffered(t *testing.T) {
 	sb := newSandbox(t, true)
 	sb.legacyStoreCase("  carol:", "  Carol:")
@@ -184,7 +184,7 @@ func TestFixNamesConflictIsNotOffered(t *testing.T) {
 	sb.write("state/linux-hosts", "Web1|root@198.51.100.10||lab|192.0.2.1|\nweb1|root@198.51.100.11||lab|192.0.2.1|\n", 0o600)
 	before := sb.store()
 	snaps := len(sb.snapshotDirs())
-	sb.run("", []string{"config", "validate", "--fix-names", "-y"})
+	sb.run("", []string{"config", "validate", "--fix-names", "--yes"})
 	sb.expect(1, "Names: renamed 0, declined 0, not offered 2, failed 0.", "")
 	out := plain(sb.out.String())
 	for _, want := range []string{
@@ -210,7 +210,7 @@ func TestFixNamesRefusedRenameCountsAndGoesOn(t *testing.T) {
 	sb := nameFixLab(t)
 	sb.write("state/snmp/Dmz.yaml", "community: dmz-comm\n", 0o600)
 	sb.write("state/snmp/dmz.yaml", "community: stray\n", 0o600)
-	sb.run("", []string{"config", "validate", "--fix-names", "-y"})
+	sb.run("", []string{"config", "validate", "--fix-names", "--yes"})
 	sb.expect(1, "Names: renamed 4, declined 0, not offered 0, failed 1.",
 		"SNMP credentials for a scope named 'dmz' are already on disk")
 	// The rename after the refused one was made.
@@ -266,10 +266,10 @@ func TestFixNamesHostScopeRefusedCountsAsRenamed(t *testing.T) {
 		t.Errorf("the scope was renamed:\n%s", sb.store())
 	}
 
-	// With -y the same line once, the other renames made.
+	// With --yes the same line once, the other renames made.
 	sb = nameFixLab(t)
 	refuseHostScope(sb)
-	sb.run("", []string{"config", "validate", "--fix-names", "-y"})
+	sb.run("", []string{"config", "validate", "--fix-names", "--yes"})
 	out = plain(sb.out.String())
 	sb.expect(1, "Names: renamed 5, declined 0, not offered 1, failed 0.", "")
 	if n := strings.Count(out, line); n != 1 || !strings.Contains(out, retry) {
@@ -278,12 +278,12 @@ func TestFixNamesHostScopeRefusedCountsAsRenamed(t *testing.T) {
 	// Left out of this run only: the next run offers the scope again, and
 	// once the file is gone it is renamed.
 	sb.hooks.hostRenameStep = nil
-	sb.run("", []string{"config", "validate", "--fix-names", "-y"})
+	sb.run("", []string{"config", "validate", "--fix-names", "--yes"})
 	sb.expect(1, "Names: renamed 0, declined 0, not offered 0, failed 1.", "are already on disk")
 	if err := os.Remove(sb.path("state", "snmp", "linux-web1.yaml")); err != nil {
 		t.Fatal(err)
 	}
-	sb.run("", []string{"config", "validate", "--fix-names", "-y"})
+	sb.run("", []string{"config", "validate", "--fix-names", "--yes"})
 	sb.expect(0, "Names: renamed 1, declined 0, not offered 0, failed 0.", "")
 	if st := sb.store(); strings.Contains(st, "linux-Web1") {
 		t.Errorf("the scope was not renamed:\n%s", st)
@@ -295,7 +295,7 @@ func TestFixNamesHostScopeRefusedCountsAsRenamed(t *testing.T) {
 func TestFixNamesSharedScopeIsOfferedOnItsOwn(t *testing.T) {
 	sb := nameFixLab(t)
 	sb.write("state/linux-hosts", "Web1|root@198.51.100.10||linux-Web1|192.0.2.1|\nweb2|root@198.51.100.11||linux-Web1|192.0.2.1|\n", 0o600)
-	sb.run("", []string{"config", "validate", "--fix-names", "-y"})
+	sb.run("", []string{"config", "validate", "--fix-names", "--yes"})
 	out := plain(sb.out.String())
 	sb.expect(0, "Names: renamed 6, declined 0, not offered 0, failed 0.", "")
 	if strings.Contains(out, "is not offered") {
@@ -313,7 +313,7 @@ func TestFixNamesIsTheSuperusers(t *testing.T) {
 	sb := engineerSandbox(t)
 	sb.legacyStoreCase("  carol:", "  Carol:")
 	before := sb.store()
-	got := sb.asEngineer("y\ny\n", "config", "validate", "--fix-names", "-y")
+	got := sb.asEngineer("y\ny\n", "config", "validate", "--fix-names", "--yes")
 	if sb.code != 1 || !strings.Contains(sb.stderr(), denied) || strings.Contains(got, "Configuration") || sb.store() != before {
 		t.Errorf("engineer: %d %q %q", sb.code, got, sb.stderr())
 	}
@@ -322,7 +322,7 @@ func TestFixNamesIsTheSuperusers(t *testing.T) {
 	op.legacyStoreCase("  carol:", "  Carol:")
 	op.write("state/tacctl.yaml", "{}\n", 0o600)
 	before = op.store()
-	got = op.asUser("bob", "tac-operator", "config", "validate", "--fix-names", "-y")
+	got = op.asUser("bob", "tac-operator", "config", "validate", "--fix-names", "--yes")
 	if op.code != 1 || !strings.Contains(op.stderr(), denied) || strings.Contains(got, "Configuration") || op.store() != before {
 		t.Errorf("operator: %d %q %q", op.code, got, op.stderr())
 	}
@@ -338,14 +338,14 @@ func TestFixNamesIsTheSuperusers(t *testing.T) {
 		t.Fatal(err)
 	}
 	none.write("etc/tacquito.yaml", string(legacy), 0o600)
-	none.run("", []string{"config", "validate", "--fix-names", "-y"})
+	none.run("", []string{"config", "validate", "--fix-names", "--yes"})
 	none.expect(1, "", store.NotInitialisedMsg)
 	if strings.Contains(none.printed(), "Configuration is valid") {
 		t.Errorf("a report was printed:\n%s", none.printed())
 	}
 }
 
-// --fix-names asks and renames, so it does not go with --json, and -y goes
+// --fix-names asks and renames, so it does not go with --json, and --yes goes
 // with --fix-names only.
 func TestFixNamesUsage(t *testing.T) {
 	sb := nameFixLab(t)
@@ -355,12 +355,12 @@ func TestFixNamesUsage(t *testing.T) {
 		err  string
 	}{
 		{[]string{"config", "validate", "--json", "--fix-names"}, "--fix-names asks questions and renames; it does not go with --json."},
-		{[]string{"config", "validate", "--fix-names", "--json", "-y"}, "does not go with --json"},
-		{[]string{"config", "validate", "-y"}, "-y goes with --fix-names."},
+		{[]string{"config", "validate", "--fix-names", "--json", "--yes"}, "does not go with --json"},
+		{[]string{"config", "validate", "--yes"}, "--yes goes with --fix-names."},
 		{[]string{"config", "validate", "--fix-name"}, "Unknown option: '--fix-name'"},
 	} {
 		out := sb.run("y\n", c.args)
-		if sb.code != 1 || out != "" || !strings.Contains(sb.stderr(), c.err) || !strings.Contains(sb.stderr(), "Usage: tacctl config validate [--json | --fix-names [-y]]") {
+		if sb.code != 1 || out != "" || !strings.Contains(sb.stderr(), c.err) || !strings.Contains(sb.stderr(), "Usage: tacctl config validate [--json | --fix-names [--yes]]") {
 			t.Errorf("%v: exit %d, stdout %q, stderr %q", c.args, sb.code, out, sb.stderr())
 		}
 	}

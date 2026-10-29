@@ -320,10 +320,10 @@ func TestDeviceRemove(t *testing.T) {
 		t.Errorf("remove: %d %q\n%s", sb.code, out, sb.devices())
 	}
 	sb.dev("", "add", "a1", "10.99.0.5", "--no-host-key")
-	if out = sb.dev("", "remove", "--all", "-y"); !strings.Contains(out, "Removed 2 device(s).") || strings.Contains(sb.devices(), "core-sw1: ") {
+	if out = sb.dev("", "remove", "--all", "--yes"); !strings.Contains(out, "Removed 2 device(s).") || strings.Contains(sb.devices(), "core-sw1: ") {
 		t.Errorf("--all: %q\n%s", out, sb.devices())
 	}
-	if out = sb.dev("", "remove", "--all", "-y"); !strings.Contains(out, "The registry is empty.") {
+	if out = sb.dev("", "remove", "--all", "--yes"); !strings.Contains(out, "The registry is empty.") {
 		t.Errorf("--all on nothing: %q", out)
 	}
 	sb.dev("", "remove")
@@ -567,16 +567,16 @@ func TestDeviceImportExport(t *testing.T) {
 	one := "name,address\nonly-one,10.99.0.77\n"
 	out = sb.dev(one, "import", "--replace", "-")
 	if !strings.Contains(out, "--replace removes 2 device(s)") || !strings.Contains(out, "Aborted.") || !strings.Contains(sb.devices(), "core-sw1") {
-		t.Errorf("replace without -y: %q", out)
+		t.Errorf("replace without --yes: %q", out)
 	}
-	sb.dev(one, "import", "--replace", "-y", "-")
+	sb.dev(one, "import", "--replace", "--yes", "-")
 	if d := sb.devices(); strings.Contains(d, "core-sw1") || !strings.Contains(d, "only-one") {
 		t.Errorf("replace:\n%s", d)
 	}
 	// A file path; YAML in.
 	p := filepath.Join(t.TempDir(), "in.yaml")
 	_ = os.WriteFile(p, []byte(yml), 0o600)
-	if sb.dev("", "import", "--replace", "-y", p); sb.code != 0 || !strings.Contains(sb.devices(), "core-sw1: {address: 10.99.0.1, vendor: cisco, hostname: core.example.net, legacy_ssh: true") {
+	if sb.dev("", "import", "--replace", "--yes", p); sb.code != 0 || !strings.Contains(sb.devices(), "core-sw1: {address: 10.99.0.1, vendor: cisco, hostname: core.example.net, legacy_ssh: true") {
 		t.Errorf("yaml import: %d %q\n%s", sb.code, sb.stderr(), sb.devices())
 	}
 	// Errors: nothing written, every problem named.
@@ -633,7 +633,7 @@ func TestDeviceTierFilteringAndGate(t *testing.T) {
 		t.Errorf("carol show by address: %d %q", sb.code, out)
 	}
 	// Registry writes and the operator-level verbs are superuser-only for her.
-	for _, args := range [][]string{{"add", "x1", "10.99.0.5"}, {"remove", "lab-sw", "-y"}, {"rename", "lab-sw", "x1"}, {"port", "lab-sw", "22"},
+	for _, args := range [][]string{{"add", "x1", "10.99.0.5"}, {"remove", "lab-sw", "--yes"}, {"rename", "lab-sw", "x1"}, {"port", "lab-sw", "22"},
 		{"import", "-"}, {"export"}, {"stale-days"}} {
 		asUser("carol", "tac-readonly", args...)
 		if sb.code != 1 || !strings.Contains(sb.stderr(), "is not permitted for the readonly tier") {
@@ -766,7 +766,7 @@ func TestDeviceListShowsDevicesOnly(t *testing.T) {
 		}
 	}
 	// Read-only through device.
-	for _, args := range [][]string{{"remove", "web1", "-y"}, {"port", "web1", "22"}, {"rename", "web1", "x1"}, {"notice", "ubuntu", "ack", "generic-name"}} {
+	for _, args := range [][]string{{"remove", "web1", "--yes"}, {"port", "web1", "22"}, {"rename", "web1", "x1"}, {"notice", "ubuntu", "ack", "generic-name"}} {
 		sb.dev("", args...)
 		sb.expect(1, "", "is an enrolled host")
 	}

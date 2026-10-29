@@ -554,7 +554,7 @@ func paintUsage(left string) string {
 }
 
 // paintOptions is the left column of an option row: its spellings and
-// teal, the value it takes as it is ('-y, --yes', '--hash <hash>').
+// teal, the value it takes as it is ('--yes', '--hash <hash>').
 func paintOptions(left string) string {
 	toks := strings.Split(left, " ")
 	for i, t := range toks {
@@ -566,7 +566,7 @@ func paintOptions(left string) string {
 }
 
 // isOptionWord reports whether a word of a usage row is a flag
-// ('--hash', '-y', '[--long]').
+// ('--hash', '--yes', '[--long]').
 func isOptionWord(t string) bool {
 	return strings.HasPrefix(t, "-") || strings.HasPrefix(t, "[-")
 }

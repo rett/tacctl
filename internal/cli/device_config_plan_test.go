@@ -697,9 +697,9 @@ func TestPlanNamesTheBlockEachStatementComesFrom(t *testing.T) {
 	base := b.expected("lab-j")
 	b.serve("juniper", base)
 	b.servePlain(base)
-	b.sb.blk("set system time-zone UTC\nset system domain-name lab.example.net\nset system name-server 192.0.2.53\n", "lab", "juniper", "set", "system", "-", "-y")
+	b.sb.blk("set system time-zone UTC\nset system domain-name lab.example.net\nset system name-server 192.0.2.53\n", "lab", "juniper", "set", "system", "-", "--yes")
 	b.sb.expect(0, "", "")
-	b.sb.devb("set system domain-name sw.example.net\nset system name-server 192.0.2.54\n", "lab-j", "set", "system", "-", "-y")
+	b.sb.devb("set system domain-name sw.example.net\nset system name-server 192.0.2.54\n", "lab-j", "set", "system", "-", "--yes")
 	b.sb.expect(0, "", "")
 	if out := b.run("device", "config", "pull", "lab-j"); b.sb.code != 0 {
 		t.Fatalf("pull: %d %s %s", b.sb.code, out, b.sb.stderr())
@@ -739,9 +739,9 @@ func TestPlanFindingsNameTheLayerOfEachBlockObject(t *testing.T) {
 	base := b.expected("lab-j")
 	b.serve("juniper", base)
 	b.servePlain(base)
-	b.sb.blk("set snmp community scope-ro-string authorization read-only\nset snmp community scope-ro-string clients 192.0.2.0/24\n", "lab", "juniper", "set", "snmp", "-", "-y")
+	b.sb.blk("set snmp community scope-ro-string authorization read-only\nset snmp community scope-ro-string clients 192.0.2.0/24\n", "lab", "juniper", "set", "snmp", "-", "--yes")
 	b.sb.expect(0, "", "")
-	b.sb.devb("set snmp community device-ro-string authorization read-only\nset snmp community device-ro-string clients 192.0.2.8/32\n", "lab-j", "set", "snmp", "-", "-y")
+	b.sb.devb("set snmp community device-ro-string authorization read-only\nset snmp community device-ro-string clients 192.0.2.8/32\n", "lab-j", "set", "snmp", "-", "--yes")
 	b.sb.expect(0, "", "")
 	if out := b.run("device", "config", "pull", "lab-j"); b.sb.code != 0 {
 		t.Fatalf("pull: %d %s %s", b.sb.code, out, b.sb.stderr())
@@ -762,9 +762,9 @@ func TestPlanFindingsNameTheLayerOfEachBlockObject(t *testing.T) {
 // IOS: the same comments, led by '!'.
 func TestPlanNamesTheBlockOfAnIOSStatement(t *testing.T) {
 	b := planCiscoBox(t, "", ciscoVersionModern)
-	b.sb.blk("clock timezone UTC 0\nip domain name lab.example.net\nip name-server 192.0.2.53\n", "lab", "cisco", "set", "system", "-", "-y")
+	b.sb.blk("clock timezone UTC 0\nip domain name lab.example.net\nip name-server 192.0.2.53\n", "lab", "cisco", "set", "system", "-", "--yes")
 	b.sb.expect(0, "", "")
-	b.sb.devb("ip domain name sw.example.net\nip name-server 192.0.2.54\n", "lab-c", "set", "system", "-", "-y")
+	b.sb.devb("ip domain name sw.example.net\nip name-server 192.0.2.54\n", "lab-c", "set", "system", "-", "--yes")
 	b.sb.expect(0, "", "")
 	b.run("device", "config", "pull", "lab-c")
 	if b.sb.code != 0 {
@@ -797,7 +797,7 @@ func TestPlanSyslogAndLoginPolicyFromTheBlock(t *testing.T) {
 	b.servePlain(base)
 	b.sb.blk("set system syslog host 192.0.2.50 any warning\nset system syslog host 192.0.2.51 authorization info\n"+
 		"set system login retry-options tries-before-disconnect 4\nset system login password minimum-length 12\n"+
-		"set system login announcement <<'EOF'\nNotice.\nEOF\n", "lab", "juniper", "set", "system", "-", "-y")
+		"set system login announcement <<'EOF'\nNotice.\nEOF\n", "lab", "juniper", "set", "system", "-", "--yes")
 	b.sb.expect(0, "", "")
 	if out := b.run("device", "config", "pull", "lab-j"); b.sb.code != 0 {
 		t.Fatalf("pull: %d %s %s", b.sb.code, out, b.sb.stderr())
@@ -840,7 +840,7 @@ func TestPlanAbsentServicesFromTheBlock(t *testing.T) {
 	base := b.expected("lab-j") + "set system services telnet\nset system services telnet connection-limit 5\nset system services ssh\nset system services ftp\n"
 	b.serve("juniper", base)
 	b.servePlain(base)
-	b.sb.blk("absent system services telnet\nabsent system services web-management\nset system time-zone UTC\n", "lab", "juniper", "set", "system", "-", "-y")
+	b.sb.blk("absent system services telnet\nabsent system services web-management\nset system time-zone UTC\n", "lab", "juniper", "set", "system", "-", "--yes")
 	b.sb.expect(0, "", "")
 	if out := b.run("device", "config", "pull", "lab-j"); b.sb.code != 0 {
 		t.Fatalf("pull: %d %s %s", b.sb.code, out, b.sb.stderr())

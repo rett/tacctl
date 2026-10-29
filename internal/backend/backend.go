@@ -314,7 +314,7 @@ type Backend interface {
 	// part the backend does not have.
 	Status(ctx context.Context, part StatusPart, w io.Writer) error
 	// Log is 'tacctl log <sub> [args]' for this daemon (tail [n], search
-	// <term>, failures, clear [-y]); ErrUnsupported for another sub.
+	// <term>, failures, clear [--yes]); ErrUnsupported for another sub.
 	Log(ctx context.Context, sub string, args []string, w io.Writer) error
 	// Accounting is 'tacctl log accounting' (sub tail [n]); ErrUnsupported
 	// for another sub.
