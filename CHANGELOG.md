@@ -160,6 +160,29 @@ current behaviour; this file is where history lives.
    name `--yes` only. The older entries of this file stay as they were
    written.
 
+9. **`host sync --concurrency <n>` syncs several hosts at once.** `host sync`
+   took its hosts one after the other. `--concurrency <n>` (1 or more, the
+   default 1 is as before, byte for byte) runs n hosts side by side with the
+   runner `device config pull` uses. Each host's output is held and printed
+   whole in the order the hosts were typed, so lines never mix; the lines,
+   the final status (1 when a host failed, the others still run) and each
+   host's audit line are those of a sequential run. What the hosts write on the
+   server (the UID ledger, the host records, the device registry, the staging
+   addresses) is written one host at a time. Nothing is asked and no terminal
+   is used with more than one host at once: ssh runs in BatchMode (a key or the
+   agent; no password or passphrase) and the remote sudo is `sudo -n`, so the
+   login must be root or have passwordless sudo, and the questions about the
+   home directories of removed users are not asked. Those homes are kept, as
+   with no terminal, and the host says so after the line that names the
+   removed users (`web1: the home directories of removed users are kept, as no
+   questions are asked with --concurrency above 1: add --remove-home to delete
+   them, or sync web1 alone to be asked.`); `--remove-home` deletes them. The
+   first Ctrl-C starts no further host and lets the hosts under way finish
+   (the others are named, status 130), a second cancels them. With one host
+   `--concurrency` changes nothing. There is no `--timeout` and no
+   `--max-failures`: a time limit would cut a script off in the middle of its
+   account changes.
+
 ## 0.2.21 (2026-10-28)
 
 1. **`user rename` to a name with a period says what to do.** The refusal of

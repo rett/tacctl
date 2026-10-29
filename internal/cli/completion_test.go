@@ -204,8 +204,8 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"host", "forget", ""}, []string{"web1", "web2"}},
 		{[]string{"host", "forget", "web1", ""}, []string{"--yes"}},
 		// host sync: hosts at every position, then the flags.
-		{[]string{"host", "sync", ""}, []string{"web1", "web2", "--all", "--allow-uid-mismatch", "--remove-home"}},
-		{[]string{"host", "sync", "web1", ""}, []string{"web1", "web2", "--all", "--allow-uid-mismatch", "--remove-home"}},
+		{[]string{"host", "sync", ""}, []string{"web1", "web2", "--all", "--allow-uid-mismatch", "--remove-home", "--concurrency"}},
+		{[]string{"host", "sync", "web1", ""}, []string{"web1", "web2", "--all", "--allow-uid-mismatch", "--remove-home", "--concurrency"}},
 		{[]string{"host", "sync", "web1", "web2", "w"}, []string{"web1", "web2"}},
 		// host check: hosts at every position, then the flags.
 		{[]string{"host", "check", ""}, []string{"web1", "web2", "--all", "--json"}},

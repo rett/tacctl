@@ -225,6 +225,26 @@ _own_scope() {
     if stub_called '^ssh '; then stub_calls; return 1; fi
 }
 
+@test "host sync --concurrency: hosts at once print in the order typed, a failure is counted, a bad number is refused" {
+    "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab > /dev/null
+    "$TACCTL_BIN_SCRIPT" host enroll web2 --scope lab > /dev/null
+    : > "$CALLS_LOG"
+    run "$TACCTL_BIN_SCRIPT" host sync web2 web1 --concurrency 2
+    assert_success
+    [[ "$output" == *"web2: synced"*"web1: synced"* ]]
+    [[ "$(grep -c 'rm -f /tmp/tacctl.AbCd1234' "$CALLS_LOG")" -eq 2 ]]
+    stub_called "ssh .*BatchMode=yes .*rm -f /tmp/tacctl.AbCd1234"
+    SSH_RUN_FAILS=1 run "$TACCTL_BIN_SCRIPT" host sync web1 web2 --concurrency=2
+    assert_failure
+    assert_output --partial "web1: sync failed"
+    assert_output --partial "web2: sync failed"
+    : > "$CALLS_LOG"
+    run "$TACCTL_BIN_SCRIPT" host sync web1 --concurrency 0
+    assert_failure
+    assert_output --partial "--concurrency takes a number of hosts, 1 or more: '0'"
+    if stub_called '^ssh '; then stub_calls; return 1; fi
+}
+
 @test "host enroll/sync: --allow-uid-mismatch is passed through to the host" {
     run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --allow-uid-mismatch
     assert_success

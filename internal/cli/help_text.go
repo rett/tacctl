@@ -574,6 +574,7 @@ Usage: tacctl host <subcommand> [arguments]
       --allow-uid-mismatch             (enroll, sync and move) Accept a UID conflict on the host instead of stopping
       --remove-home                    (enroll, sync and move) Delete removed users' home directories without asking
                                        (on a terminal each one is asked; without one they are kept)
+      --concurrency <n>                Sync n hosts at once; no home question is asked then (default 1)
   check <name>... | --all [--json]     Compare hosts with what tacctl would make them, read-only: one line per
                                        difference with the command that fixes it; exit 1 when any differs or
                                        cannot be checked. A held host is skipped (superuser only)

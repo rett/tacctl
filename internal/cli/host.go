@@ -10,6 +10,7 @@ package cli
 // able to sudo.
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -63,7 +64,7 @@ var hostSpecs = map[string]Spec{
 		flagYes,
 		{Names: []string{"--staging"}},
 		flagAllowUIDMismatch, flagRemoveHome}},
-	"sync":  {MaxArgs: -1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--all"}}, flagAllowUIDMismatch, flagRemoveHome}},
+	"sync":  {MaxArgs: -1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--all"}}, flagAllowUIDMismatch, flagRemoveHome, hostConcurrencyFlag}},
 	"check": {MaxArgs: -1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--all"}}, flagJSON}},
 	"move": {MaxArgs: 2, Args: []string{KindHosts, KindScopes}, Flags: []Flag{{Names: []string{"--all"}, Alone: true},
 		flagYes, flagAllowUIDMismatch, flagRemoveHome}},
@@ -1592,6 +1593,7 @@ func (inv *invocation) hostSync(args []string) error {
 	a := inv.app
 	var typed []string
 	all, removeHome := false, false
+	concurrency := 1
 	scriptArgs := []string{"--accounts-only"}
 	for i := 0; i < len(args); {
 		switch w := args[i]; {
@@ -1604,6 +1606,21 @@ func (inv *invocation) hostSync(args []string) error {
 		case w == "--all":
 			all = true
 			i++
+		case w == "--concurrency" || strings.HasPrefix(w, "--concurrency="):
+			value, ok := strings.CutPrefix(w, "--concurrency=")
+			i++
+			if !ok {
+				if i >= len(args) {
+					return inv.usageErr(hostSyncUsage)
+				}
+				value = args[i]
+				i++
+			}
+			n, err := inv.hostConcurrency(value, hostSyncUsage)
+			if err != nil {
+				return err
+			}
+			concurrency = n
 		case strings.HasPrefix(w, "-"):
 			return inv.usageErr("Unknown option: '" + w + "'")
 		default:
@@ -1614,7 +1631,7 @@ func (inv *invocation) hostSync(args []string) error {
 		}
 	}
 	if !all && len(typed) == 0 {
-		return inv.usageErr("Usage: tacctl host sync <name>... | --all  [--allow-uid-mismatch] [--remove-home]")
+		return inv.usageErr(hostSyncUsage)
 	}
 	if all && len(typed) > 0 {
 		return inv.usageErr("Give names or --all, not both.")
@@ -1664,65 +1681,132 @@ func (inv *invocation) hostSync(args []string) error {
 	if err := inv.renumberUIDs(true); err != nil {
 		return err
 	}
-	he := inv.hostsEnv()
-	he.ReadKeys = true
+	if pool := min(concurrency, len(names)); pool > 1 {
+		return inv.hostSyncPool(reg, names, pool, scriptArgs, removeHome)
+	}
+	st := inv.sequentialStep()
+	he := inv.syncEnv(st)
 	failed := false
 	for _, name := range names {
-		e, _ := reg.Find(name)
-		method := reg.Method(name)
+		f, err := inv.syncHost(st, he, &reg, name, scriptArgs, removeHome)
+		if err != nil {
+			return err
+		}
+		failed = failed || f
+	}
+	if failed {
+		return exit(1)
+	}
+	return nil
+}
+
+// hostSyncUsage is the usage line of 'host sync'.
+const hostSyncUsage = "Usage: tacctl host sync <name>... | --all  [--allow-uid-mismatch] [--remove-home] [--concurrency <n>]"
+
+// syncEnv is the environment of one host's sync: the host's public keys and
+// facts are read over its session.
+func (inv *invocation) syncEnv(st *hostStep) *hosts.Env {
+	he := inv.hostsEnv()
+	he.ReadKeys = true
+	st.quiet(he)
+	return he
+}
+
+// hostSyncPool syncs names, pool hosts at once (host_batch.go). A host's
+// output is printed in the order typed; none is asked a question; the exit
+// status is the one of a sequential run: 1 when a host failed.
+func (inv *invocation) hostSyncPool(reg *hosts.Registry, names []string, pool int, scriptArgs []string, removeHome bool) error {
+	// The start line of the audit is written here, on the command's own
+	// goroutine (as the device pulls do): the workers write the records.
+	inv.app.Audit().Touch()
+	sum, failed, errs := inv.runHostPool(names, pool, func(st *hostStep, i int) (bool, error) {
+		var he *hosts.Env
+		st.serial(func() { he = inv.syncEnv(st) })
+		r := reg
+		return inv.syncHost(st, he, &r, names[i], scriptArgs, removeHome)
+	})
+	if err := firstError(errs); err != nil {
+		return err
+	}
+	if sum.Interrupted {
+		return ui.ErrInterrupted
+	}
+	if slices.Contains(failed, true) {
+		return exit(1)
+	}
+	return nil
+}
+
+// syncHost is the sync of one enrolled host of 'host sync'. failed says it
+// did not succeed (it has said why); err ends the command. reg is the
+// registry as read, replaced when this server's own registration is set up.
+func (inv *invocation) syncHost(st *hostStep, he *hosts.Env, regp **hosts.Registry, name string, scriptArgs []string, removeHome bool) (failed bool, err error) {
+	a := inv.app
+	reg := *regp
+	e, _ := reg.Find(name)
+	method := reg.Method(name)
+	proceed := false
+	st.serial(func() {
 		if e.Target == hosts.Local {
 			// this server's own login: the scope tacctl manages is taken over
 			// or repaired first (managed_scope.go); a new one needs a new
 			// client setup, which only the enrolment writes
-			switch _, err := inv.managedSetup(reg, inv.localServer(e).Address, false); {
-			case errors.Is(err, errManagedNeedsEnroll):
+			switch _, merr := inv.managedSetup(reg, inv.localServer(e).Address, false); {
+			case errors.Is(merr, errManagedNeedsEnroll):
 				a.Out.InfoE(name + ": to set up this server's own login for every user: tacctl host enroll --local")
-			case errors.Is(err, errManagedClash):
+			case errors.Is(merr, errManagedClash):
 				// this server only: the other hosts are synced
 				a.Out.ErrorE(name + ": " + managedClashText)
 				inv.recordRun(name, "sync", "a scope of the operator's has the reserved name 'tacctl'", nil)
 				inv.hostSyncLine(e, nil, removeHome, "a scope of the operator's has the reserved name")
 				failed = true
-				continue
-			case err != nil:
-				return err
+				return
+			case merr != nil:
+				err = merr
+				return
 			}
 			if reg, err = inv.registry(); err != nil {
-				return err
+				return
 			}
+			*regp = reg
 			e, _ = reg.Find(name)
 		}
-		exists, err := inv.scopeExists(e.Scope)
-		if err != nil {
-			return err
+		exists, serr := inv.scopeExists(e.Scope)
+		if serr != nil {
+			err = serr
+			return
 		}
 		if !exists {
 			a.Out.ErrorE(name + ": scope '" + e.Scope + "' no longer exists; skipped.")
 			inv.recordRun(name, "sync", "its scope '"+e.Scope+"' no longer exists", nil)
 			inv.hostSyncLine(e, nil, removeHome, "its scope '"+e.Scope+"' no longer exists")
 			failed = true
-			continue
+			return
 		}
 		if e.Target != hosts.Local {
-			if login, _, isUser, err := inv.provisioningLogin(e.Target); err != nil {
-				return err
+			if login, _, isUser, perr := inv.provisioningLogin(e.Target); perr != nil {
+				err = perr
+				return
 			} else if isUser {
 				a.Out.Warn(name + ": the provisioning account '" + login + "' is a tacctl user; re-enrol with a local account that does not authenticate through tacctl: tacctl host enroll <account>@<host> --name " + name)
 			}
 		}
-		ok, err := inv.syncOne(he, e, method, scriptArgs, removeHome)
-		if err != nil {
-			return err
-		}
-		if !ok {
+		proceed = true
+	})
+	if !proceed {
+		return failed, err
+	}
+	ok, err := inv.syncOne(st, he, e, method, scriptArgs, removeHome)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		st.serial(func() {
 			a.Out.ErrorE(name + ": sync failed (see the host's output above; nothing was changed there if it reported a conflict).")
-			failed = true
-		}
+		})
+		failed = true
 	}
-	if failed {
-		return exit(1)
-	}
-	return nil
+	return failed, nil
 }
 
 // provisioningLogin is the account 'host' logs in to target with: the
@@ -1746,8 +1830,8 @@ func (inv *invocation) provisioningLogin(target string) (login string, explicit,
 // syncOne pushes an accounts-only script to one host and runs it; ok is
 // false when the script could not be written or failed there. The run is
 // recorded for 'host show', failed or not.
-func (inv *invocation) syncOne(he *hosts.Env, e hosts.Entry, method string, scriptArgs []string, removeHome bool) (bool, error) {
-	ok, reason, ran, err := inv.syncRun(he, e, method, scriptArgs, removeHome)
+func (inv *invocation) syncOne(st *hostStep, he *hosts.Env, e hosts.Entry, method string, scriptArgs []string, removeHome bool) (bool, error) {
+	ok, reason, ran, err := inv.syncRun(st, he, e, method, scriptArgs, removeHome)
 	switch {
 	case errors.Is(err, ui.ErrInterrupted):
 		reason = "interrupted"
@@ -1758,8 +1842,10 @@ func (inv *invocation) syncOne(he *hosts.Env, e hosts.Entry, method string, scri
 	if ran {
 		run = he
 	}
-	inv.recordRun(e.Name, "sync", reason, run)
-	inv.hostSyncLine(e, run, removeHome, reason)
+	st.serial(func() {
+		inv.recordRun(e.Name, "sync", reason, run)
+		inv.hostSyncLine(e, run, removeHome, reason)
+	})
 	return ok, err
 }
 
@@ -1801,72 +1887,92 @@ func runReasonWord(reason string) string {
 }
 
 // syncRun is syncOne's run: reason says why it failed, ran whether the
-// client script ran on the host.
-func (inv *invocation) syncRun(he *hosts.Env, e hosts.Entry, method string, scriptArgs []string, removeHome bool) (ok bool, reason string, ran bool, err error) {
+// client script ran on the host. What it does on this server runs through
+// st.serial; what it does on the host does not, so hosts run side by side.
+func (inv *invocation) syncRun(st *hostStep, he *hosts.Env, e hosts.Entry, method string, scriptArgs []string, removeHome bool) (ok bool, reason string, ran bool, err error) {
 	// A host that cannot hold the range gets no account changes.
-	if err := he.CheckIDMap(inv.ctx, e.Name, e.Target, e.Port, e.Identity); errors.Is(err, hosts.ErrFailed) {
+	if err := he.CheckIDMap(st.ctx, e.Name, e.Target, e.Port, e.Identity); errors.Is(err, hosts.ErrFailed) {
 		return false, "the host cannot hold the UID range " + he.UIDRange().String(), false, nil
 	} else if err != nil {
 		return false, "", false, err
 	}
-	script, err := hosts.TempFile(inv.app.Paths.TempDir)
+	var script string
+	var req hosts.ScriptRequest
+	st.serial(func() {
+		if script, err = hosts.TempFile(inv.app.Paths.TempDir); err != nil {
+			return
+		}
+		if req, err = inv.scriptRequest(e.Scope, e.Server, method, script, e.Target == hosts.Local); err != nil {
+			return
+		}
+		req.Temp, req.AccountsOnly = true, true
+		req.Local = e.Target == hosts.Local
+	})
+	if script != "" {
+		defer func() { _ = os.Remove(script) }()
+	}
 	if err != nil {
 		return false, "", false, err
 	}
-	defer func() { _ = os.Remove(script) }()
-	req, err := inv.scriptRequest(e.Scope, e.Server, method, script, e.Target == hosts.Local)
+	skipped, err := inv.homesQuestions(st.ctx, he, &req, e.Name, e.Target, e.Port, e.Identity, removeHome, st.concurrent)
 	if err != nil {
 		return false, "", false, err
 	}
-	req.Temp, req.AccountsOnly = true, true
-	req.Local = e.Target == hosts.Local
-	if err := inv.homesToDelete(he, &req, e.Name, e.Target, e.Port, e.Identity, removeHome); err != nil {
-		return false, "", false, err
+	if skipped {
+		st.serial(func() {
+			inv.app.Out.WarnE(e.Name + ": the home directories of removed users are kept, as no questions are asked with --concurrency above 1: " +
+				"add --remove-home to delete them, or sync " + e.Name + " alone to be asked.")
+		})
 	}
 	consoleCheck := false
-	if e.Target == hosts.Local {
-		inv.localScopeWarning(e)
-		if consoleCheck, err = inv.consoleForLocal(&req); err != nil {
-			return false, "", false, err
+	var res hosts.ScriptResult
+	st.serial(func() {
+		if e.Target == hosts.Local {
+			inv.localScopeWarning(e)
+			if consoleCheck, err = inv.consoleForLocal(&req); err != nil {
+				return
+			}
 		}
-	}
-	res, err := he.WriteScript(req)
+		res, err = he.WriteScript(req)
+	})
 	if errors.Is(err, hosts.ErrFailed) {
 		return false, "the client script could not be written", false, nil
 	}
 	if err != nil {
 		return false, "", false, err
 	}
-	code, err := he.RunScript(inv.ctx, e.Target, e.Port, e.Identity, script, scriptArgs)
+	code, err := he.RunScript(st.ctx, e.Target, e.Port, e.Identity, script, scriptArgs)
 	if err != nil {
 		return false, "", true, err
 	}
 	if code != 0 {
 		return false, "the client script failed on the host (exit status " + strconv.Itoa(code) + ")", true, nil
 	}
-	counts := hosts.UsersText(hosts.CountLines(res.Users))
-	if he.Summary != nil {
-		counts = he.Summary.Counts()
-	}
-	inv.app.Out.InfoE(e.Name + ": synced (" + counts + ").")
-	he.PinKeys(inv.ctx, e)
-	resolved := "127.0.0.1"
-	if host, _, ok := hosts.ScanTarget(e.Target, e.Port); ok {
-		resolved = inv.resolveV4(host)
-	}
-	inv.hostFacts(he, e.Name, e.Target, resolved)
-	if e.Target != hosts.Local {
-		addr := inv.hostAddress(e)
-		if addr == "" {
-			addr = resolved
+	st.serial(func() {
+		counts := hosts.UsersText(hosts.CountLines(res.Users))
+		if he.Summary != nil {
+			counts = he.Summary.Counts()
 		}
-		if msg := inv.hostScopeDrift(e, addr); msg != "" {
-			inv.app.Out.WarnE(msg)
+		inv.app.Out.InfoE(e.Name + ": synced (" + counts + ").")
+		he.PinKeys(st.ctx, e)
+		resolved := "127.0.0.1"
+		if host, _, ok := hosts.ScanTarget(e.Target, e.Port); ok {
+			resolved = inv.resolveV4(host)
 		}
-	}
-	if consoleCheck {
-		inv.consoleAfterLocal()
-	}
+		inv.hostFacts(he, e.Name, e.Target, resolved)
+		if e.Target != hosts.Local {
+			addr := inv.hostAddress(e)
+			if addr == "" {
+				addr = resolved
+			}
+			if msg := inv.hostScopeDrift(e, addr); msg != "" {
+				inv.app.Out.WarnE(msg)
+			}
+		}
+		if consoleCheck {
+			inv.consoleAfterLocal()
+		}
+	})
 	return true, "", true, nil
 }
 
@@ -1875,13 +1981,30 @@ func (inv *invocation) syncRun(he *hosts.Env, e hosts.Entry, method string, scri
 // yes for on the terminal (stdin), one question per removed user of the
 // host; with no terminal none (the script keeps them and says so).
 func (inv *invocation) homesToDelete(he *hosts.Env, req *hosts.ScriptRequest, name, target, port, identity string, removeHome bool) error {
+	_, err := inv.homesQuestions(inv.ctx, he, req, name, target, port, identity, removeHome, false)
+	return err
+}
+
+// homesQuestions is homesToDelete; with noAsk (hosts side by side, where no
+// terminal can answer one host's question among the others') nothing is
+// asked and every home is kept, and skipped says the host has removed users
+// whose homes would have been asked about.
+func (inv *invocation) homesQuestions(ctx context.Context, he *hosts.Env, req *hosts.ScriptRequest, name, target, port, identity string, removeHome, noAsk bool) (skipped bool, err error) {
 	if removeHome {
 		req.RemoveAllHomes = true
-		return nil
+		return false, nil
 	}
 	var ask func(string) string
-	if p := inv.app.Prompter(); p.Interactive() {
-		ask = p.Ask
+	switch {
+	case noAsk:
+		ask = func(string) string {
+			skipped = true
+			return ""
+		}
+	default:
+		if p := inv.app.Prompter(); p.Interactive() {
+			ask = p.Ask
+		}
 	}
 	current := map[string]bool{}
 	for _, r := range req.Rows {
@@ -1891,9 +2014,9 @@ func (inv *invocation) homesToDelete(he *hosts.Env, req *hosts.ScriptRequest, na
 	for _, n := range req.Inactive {
 		current[n] = true
 	}
-	homes, err := he.HomesToDelete(inv.ctx, name, target, port, identity, current, ask)
+	homes, err := he.HomesToDelete(ctx, name, target, port, identity, current, ask)
 	req.RemoveHomes = homes
-	return err
+	return skipped, err
 }
 
 // --- unenroll ------------------------------------------------------------------------

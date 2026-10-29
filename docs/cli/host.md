@@ -73,6 +73,19 @@ host sync <name>... | --all
     --remove-home
         (enroll, sync and move) delete removed users' home directories without asking
         (on a terminal each is asked; without one they are kept)
+    --concurrency <n>
+        Sync n hosts at once (1 or more; the default, 1, is one after the other). Each host's
+        output is held and printed whole, in the order typed, so lines never mix; the lines and
+        the exit status are those of a sequential run. What the hosts write here (UID ledger, host
+        records, device registry, staging addresses) is written one host at a time. No terminal is
+        used: ssh runs in BatchMode (a key or the agent; no password is asked) and the remote sudo
+        is `sudo -n`, so the login must be root or have passwordless sudo. The questions about
+        removed users' home directories are not asked and the homes are kept; a host with removed
+        users says so after the line that names them, and `--remove-home` deletes them (or sync
+        the host alone to be asked). The first Ctrl-C starts no further host and lets the hosts
+        under way finish, a second cancels them; the hosts not started are named and the status
+        is 130. With one host it changes nothing. There is no per-host time limit and no limit on
+        failures
 
 host check <name>... | --all [--json]
 
