@@ -12,6 +12,11 @@
 // progress goes to a View, which is only ever called from the goroutine
 // that called Run, so a view needs no locking and workers never write
 // anywhere.
+//
+// A job may also Mark the phases it passes (connect, login, read, ...): the
+// dispatcher stamps each with the injected clock, keeps it in the job's
+// Entry and shows nothing, and Summary.Timings turns the marks into the
+// time of each phase (timing.go).
 package batch
 
 import (

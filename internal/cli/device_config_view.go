@@ -59,6 +59,8 @@ type pullView struct {
 	// audit logs the audit line of each device (false for 'diff --pull',
 	// which is a pull all the same: it logs).
 	audit bool
+	// timing: each device's JSON object carries its timings (--timing).
+	timing bool
 	// jsonMode lines.
 	enc *json.Encoder
 	// phase is the "phase" of each JSON object ("" none): "pull" for the
@@ -251,6 +253,8 @@ type pullJSON struct {
 	DiffersIn  []string          `json:"differs_in,omitempty"`
 	Secrets    *bool             `json:"secrets_visible,omitempty"`
 	Sections   []pullSectionJSON `json:"sections,omitempty"`
+	// Timings is the time of each phase of the device, with --timing.
+	Timings *timingsJSON `json:"timings,omitempty"`
 }
 
 // pullUnitJSON is the facts of a WTI unit's read in --json: the command
@@ -279,6 +283,9 @@ func (v *pullView) deviceJSON(i int, withLines bool) pullJSON {
 		j.Netconf = o.Netconf
 	}
 	j.DurationMS = o.Duration.Milliseconds()
+	if tm, ok := r.Timing(); ok && v.timing {
+		j.Timings = timingsOf(tm)
+	}
 	j.Reason = cleanLine(o.Reason)
 	j.Syntax, j.OS = o.Syntax, cleanLine(o.OS)
 	j.SyntaxConflict, j.ImageSyntax = o.ImageSyntax != "", o.ImageSyntax
@@ -320,6 +327,11 @@ func (v *pullView) printSummaryJSON(s batch.Summary, c *chosenDevices, code int)
 	}
 	if c != nil && c.skipped.any() {
 		sum["skipped"] = c.skipped.jsonMap()
+	}
+	if v.timing {
+		if m := timingSummaryJSON(s.Timings()); m != nil {
+			sum["timings"] = m
+		}
 	}
 	_ = v.enc.Encode(map[string]any{"summary": sum})
 }

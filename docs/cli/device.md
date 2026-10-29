@@ -448,6 +448,14 @@ device config pull <name>[,<name>...] | --all | --scope <scope> | --vendor <vend
     --concurrency <n>, --timeout <seconds>, --max-failures <n>
         At most n devices at once (never above `device.config.max_concurrency`), the time one may
         take (10-600, default `device.config.timeout`), stop starting devices after n failures
+    --timing
+        After the summary, where each device's time went: its phases in the order they happened
+        (`connect`, `login`, `session`, `read`, `compare`, `record`), each with its time, and the
+        total, then the slowest device; a phase the device did not reach is left out, and a device
+        that failed shows the time it was in when it did. With `--json`, each device's line has a
+        `timings` object (`total_ms` and `steps`, each `step` with its `ms`) and the summary names
+        the slowest device (`timings.slowest`, `timings.slowest_ms`). Nothing is stored (see
+        Where the time goes (devices/configuration.md, "Where the time goes"))
     --diff --json
         Print the differences after the summary; one JSON line per device, then the summary
     --server <address|name>, --source <address>
@@ -471,7 +479,9 @@ device config diff <name>[,<name>...] | --all | --scope <scope> | --vendor <vend
     the device's own, kept by rule, reads `ok (+N unmanaged)`
 
     --pull
-        Read the devices first (with the options of `pull`)
+        Read the devices first (with the options of `pull`, `--timing` included: the timing of the
+        pull follows the summary, and with `--json` each device's object has `timings`, the
+        slowest device's saying `"slowest": true`)
     --section <list>, --json, --exit-code
         Only those sections; JSON; exit 2 when a device differs (none failed)
 
@@ -491,7 +501,9 @@ device config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vend
     own scopes' devices
 
     --pull
-        Read the devices first (with the options of `pull`)
+        Read the devices first (with the options of `pull`; with `--timing` its timing goes to
+        standard error, standard output staying the plan: with `--json` one `{"timings": ...}` line
+        there, with every device and the slowest)
     --section <list>
         Only aaa, roles, mgmt-acl, snmp, system, netconf (the report still names the others)
     --converge
@@ -581,6 +593,13 @@ device config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <ven
                   --source <address>
         As for `pull` (an apply runs one device at a time unless `--concurrency`; `--max-failures`
         defaults to 1)
+    --timing
+        After the summary, where each device's time went over the whole run (the pull of `--pull`,
+        the check and the apply added up): `connect`, `login`, `session`, `preflight`, `read`,
+        `load`, `check`, `commit`, `verify`, `confirm` and `record`, those the device reached, each
+        with its time, and the total, then the slowest device. With `--json`, each device's object
+        of a phase has a `timings` object and the summary names the slowest device
+        (`timings.slowest`). Nothing is stored (devices/configuration.md, "Where the time goes")
     --json --yes
         One object per device and phase, then the summary (the review goes to standard error; each
         device's answer is an object with `"phase":"review"`, `"status":"approved"|"declined"` and

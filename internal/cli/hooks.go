@@ -31,6 +31,9 @@ type hooks struct {
 	// delivers them without a signal that any other code of the process
 	// could see.
 	interruptSource func() <-chan struct{}
+	// batchClock replaces the clock the batch runner stamps its events with
+	// (nil: the invocation's), so the timing of a run is deterministic.
+	batchClock func() time.Time
 	// deviceDial replaces the TCP dial of every device (the in-process fake
 	// device); nil dials the device's own address.
 	deviceDial devssh.Dialer

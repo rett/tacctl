@@ -38,6 +38,8 @@ type applyView struct {
 	// mode is how the review of the apply phase was answered (attended or
 	// scripted, 0.2.17 D266), on each device's apply line.
 	mode string
+	// timing: each device's JSON object carries its timings (--timing).
+	timing bool
 }
 
 // newApplyView is the view of a phase over entries.
@@ -76,7 +78,11 @@ func (v *applyView) Update(e batch.Event) {
 		v.audit(o)
 	}
 	if v.json {
-		_ = v.enc.Encode(v.deviceJSON(e.Index, o, e.Result))
+		j := v.deviceJSON(e.Index, o, e.Result)
+		if tm, ok := v.Row(e.Index).Timing(); ok && v.timing {
+			j.Timings = timingsOf(tm)
+		}
+		_ = v.enc.Encode(j)
 		return
 	}
 	if o != nil && o.Settled != nil && o.Settled.Line != "" {
@@ -253,6 +259,9 @@ type applyJSON struct {
 	// Lines are the statements of the change, a secret's value elided.
 	Lines      []string `json:"lines,omitempty"`
 	DurationMS int64    `json:"duration_ms"`
+	// Timings is the time of each phase of the device in this phase of the
+	// run, with --timing.
+	Timings *timingsJSON `json:"timings,omitempty"`
 	// Mode is how a review object's answer was given: attended or
 	// scripted (0.2.17 D266).
 	Mode string `json:"mode,omitempty"`
@@ -865,6 +874,9 @@ func (c *applyCtl) finish(sum batch.Summary, declined bool) error {
 		if c.chosen != nil && c.chosen.skipped.any() {
 			s["left_out"] = c.chosen.skipped.jsonMap()
 		}
+		if m := timingSummaryJSON(c.timings); m != nil {
+			s["timings"] = m
+		}
 		b, _ := json.Marshal(map[string]any{"summary": s})
 		inv.write(string(b) + "\n")
 	} else {
@@ -873,6 +885,7 @@ func (c *applyCtl) finish(sum batch.Summary, declined bool) error {
 		if l := sum.StopLine(); l != "" {
 			inv.echo("  " + l)
 		}
+		inv.printTiming(c.timings, false, false)
 		// a rolled-back or failed device says what to do next when it has a hint
 		for _, o := range c.rows {
 			if o.Hint != "" && o.Status == "" && o.Out == nil {

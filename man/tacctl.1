@@ -10421,6 +10421,9 @@ Per device, connect included (10\-600; default device.config.timeout).
 \fB\-\-max\-failures\fR \fI<n>\fR
 Stop starting devices after n failures.
 .TP
+\fB\-\-timing\fR
+After the summary, print how long each phase took for each device (connect, login, session, read, compare, record: a phase the device did not reach is left out; one that failed shows the time it was in) and its total, then the slowest device. With \-\-json each device's object has a "timings" object (the steps in order with their milliseconds, and the total) and the summary object names the slowest device. Nothing is stored.
+.TP
 \fB\-\-server\fR \fI<address|name>\fR
 The address the devices are told to authenticate against, for devices behind a translating firewall (not stored).
 .TP
@@ -10638,6 +10641,9 @@ Per device, connect included (10\-600; default device.config.timeout).
 .TP
 \fB\-\-max\-failures\fR \fI<n>\fR
 Stop starting devices after n failures.
+.TP
+\fB\-\-timing\fR
+With \-\-pull: after the summary, print how long each phase of the pull took for each device, as 'device config pull \-\-timing' does; with \-\-json each device's object has the "timings" object, and the slowest device's says so ("slowest": true).
 .TP
 \fB\-\-server\fR \fI<address|name>\fR
 The address the devices are told to authenticate against (with \-\-pull; not stored).
@@ -11320,6 +11326,9 @@ Per device, connect included (10\-600; default device.config.timeout).
 \fB\-\-max\-failures\fR \fI<n>\fR
 Stop starting devices after n failures.
 .TP
+\fB\-\-timing\fR
+With \-\-pull: print how long each phase of the pull took for each device, as 'device config pull \-\-timing' does, on standard error (with \-\-json one "timings" object there, with the devices and the slowest); standard output stays the plan.
+.TP
 \fB\-\-server\fR \fI<address|name>\fR
 The address the devices are told to authenticate against, for devices behind a translating firewall (not stored).
 .TP
@@ -11790,6 +11799,9 @@ Per device check, connect included (10\-600; default device.config.timeout); an 
 .TP
 \fB\-\-max\-failures\fR \fI<n>\fR
 Stop starting devices after n failures (an apply: default 1).
+.TP
+\fB\-\-timing\fR
+After the summary, print how long each phase took for each device over the whole run (the pull of \-\-pull, the check and the apply: connect, login, session, preflight, read, load, check, commit, verify, confirm, record; a phase that was not reached is left out, and one that failed shows the time it was in) and its total, then the slowest device. With \-\-json each device's object of a phase has a "timings" object and the summary object names the slowest device. Nothing is stored.
 .TP
 \fB\-\-server\fR \fI<address|name>\fR
 The address the devices are told to authenticate against, for devices behind a translating firewall (not stored).

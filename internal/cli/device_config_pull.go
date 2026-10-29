@@ -63,7 +63,10 @@ type pullArgs struct {
 	maxFailures int
 	showDiff    bool
 	json        bool
-	render      managedOptions
+	// timing is --timing: the time of each phase per device and the slowest
+	// device.
+	timing bool
+	render managedOptions
 }
 
 // deviceSettings are the device.config.* settings in force.
@@ -153,7 +156,7 @@ func differingSections(rs []devconf.SectionResult) []string {
 func (inv *invocation) pullArgsOf(p Parsed, verb string) (pullArgs, error) {
 	st := inv.deviceConfigSettings()
 	usage := "Usage: tacctl device config " + deviceConfigUse(verb)
-	a := pullArgs{transport: st.transport, timeout: st.timeout, showDiff: p.Has("--diff"), json: p.Has("--json")}
+	a := pullArgs{transport: st.transport, timeout: st.timeout, showDiff: p.Has("--diff"), json: p.Has("--json"), timing: p.Has("--timing")}
 	// 'apply' has a --transport of its own (auto, cli or netconf: how it
 	// writes, D150); the reads of a pull are the settings'.
 	if p.Has("--transport") && verb != "apply" {
@@ -1207,7 +1210,7 @@ func (inv *invocation) runPull(b pullBatch) (batch.Summary, []*pullOutcome, erro
 	defer stop()
 	sum := batch.Run(ctx, batch.Options{
 		Concurrency: b.args.concurrency, Cap: settings.maxConcurrency, Timeout: b.args.timeout,
-		MaxFailures: b.args.maxFailures, StopOnAuthFailure: true, Interrupts: interrupts, Clock: inv.app.Knobs.Now,
+		MaxFailures: b.args.maxFailures, StopOnAuthFailure: true, Interrupts: interrupts, Clock: inv.batchClock(),
 	}, jobs, b.view)
 	run.password = ""
 	if d, ok := run.passwd.(interface{ Done() }); ok && b.pass == nil {
@@ -1329,6 +1332,7 @@ func (inv *invocation) deviceConfigPull(args []string) error {
 		return err
 	}
 	view := inv.newPullView(chosen.entries, pa.json, user, false)
+	view.timing = pa.timing
 	sum, outs, err := inv.runPull(pullBatch{entries: chosen.entries, render: chosen.render, args: pa, user: user, view: view, local: local})
 	if err != nil {
 		return err
@@ -1347,6 +1351,9 @@ func (inv *invocation) finishPull(sum batch.Summary, outs []*pullOutcome, chosen
 		inv.echo("  " + sum.Line())
 		if l := sum.StopLine(); l != "" {
 			inv.echo("  " + l)
+		}
+		if pa.timing {
+			inv.printTiming(sum.Timings(), false, false)
 		}
 		for i, o := range outs {
 			if o != nil && o.Hint != "" && sum.Entries[i].Result.Status.Failure() {

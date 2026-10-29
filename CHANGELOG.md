@@ -360,6 +360,36 @@ current behaviour; this file is where history lives.
    config out of date until its first render writes its own comment, which
    restarts tacquito once; the rollback itself renders and restarts nothing.
 
+20. **`--timing` shows where the time of each device went.** `device config
+   pull`, `device config diff --pull`, `device config plan --pull` and
+   `device config apply` take `--timing`, for a run over many devices of which
+   some are slow (one may need seconds for the ssh connection alone). After the
+   summary it prints, per device, the phases it went through in order with
+   their time and its total, and names the slowest device:
+   ```
+     timing:
+       sw1   connect 4.0s  login 900ms  session 1.2s  read 2.1s  compare 40ms  record 12ms  total 8.3s
+       jsw1  connect 210ms  login 180ms  session 95ms  read 1.4s  compare 33ms  record 10ms  total 2.0s
+     slowest: sw1 (8.3s)
+   ```
+   The phases are `connect` (the TCP connect and the ssh key exchange up to
+   the device's pinned host key), `login` (the authentication), `session`
+   (opening the command line, NETCONF or terminal session), `read`, `compare`
+   and `record` for a pull, and, for an apply, `preflight`, `read`, `load`
+   (opening the candidate and loading the plan), `check`, `commit`, `verify`
+   (the fresh login and what it proves), `confirm` and `record`, the pull of
+   `--pull`, the check and the apply of a device added up. A phase the device
+   did not reach is absent, not zero (a pull has no `commit`); a device that
+   failed shows the phases it reached and, under the word of its status
+   (`failed`, `auth-failed`, `timeout`), the time it spent in the one it
+   failed in. With `--json` each device's line has a `timings` object (the
+   `steps` in order, each with its `ms`, and `total_ms`) and the summary line
+   has `timings.slowest` and `timings.slowest_ms`; `diff --pull --json`, which
+   prints the array of devices only, marks the slowest device's `timings` with
+   `"slowest": true`, and `plan --pull` prints the timing on standard error,
+   standard output staying the plan. Nothing is stored, no timeout changes,
+   and without the option every output is as it was.
+
 ## 0.2.21 (2026-10-28)
 
 1. **`user rename` to a name with a period says what to do.** The refusal of

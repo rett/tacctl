@@ -43,6 +43,7 @@ var deviceConfigSpecs = func() map[string]Spec {
 		{Names: []string{"--concurrency"}, Value: true},
 		{Names: []string{"--timeout"}, Value: true},
 		{Names: []string{"--max-failures"}, Value: true},
+		{Names: []string{"--timing"}},
 		{Names: []string{"--server"}, Value: true},
 		{Names: []string{"--source"}, Value: true},
 		// the one-shot local login (0.2.9, D136): engineers, one device
@@ -88,7 +89,8 @@ var deviceConfigSpecs = func() map[string]Spec {
 			Flags: join(selectors, []Flag{
 				{Names: []string{"--transport"}, Value: true, Kind: "auto|cli|netconf"},
 				{Names: []string{"--concurrency"}, Value: true}, {Names: []string{"--timeout"}, Value: true},
-				{Names: []string{"--max-failures"}, Value: true}, {Names: []string{"--server"}, Value: true},
+				{Names: []string{"--max-failures"}, Value: true}, {Names: []string{"--timing"}},
+				{Names: []string{"--server"}, Value: true},
 				{Names: []string{"--source"}, Value: true},
 				{Names: []string{"--check"}}, {Names: []string{"--confirmed"}},
 				{Names: []string{"--max"}, Value: true}, {Names: []string{"--pause"}, Value: true},

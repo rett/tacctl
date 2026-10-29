@@ -1,0 +1,9 @@
+  lab-j  ok via netconf
+  lab-c  ok via ssh
+
+  2 ok
+  timing:
+    lab-j  connect 200ms  login 300ms  session 400ms  read 500ms  compare 600ms  record 700ms  total 3.5s
+    lab-c  connect 1.0s  login 1.1s  session 1.2s  read 1.3s  compare 1.4s  record 1.5s  total 9.1s
+  slowest: lab-c (9.1s)
+
