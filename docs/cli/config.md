@@ -108,17 +108,6 @@ config loglevel [debug|info|error]
 
     Show or change the TACACS+ log level
 
-config listen [--backend <id>] [--listener <name>] [show|tcp|tcp6|udp|udp6|reset] [<addr>]
-
-    Show, change, or reset a listen address (default: the TACACS+ listener 'default'; see
-    server/backends.md, "Listeners")
-
-config metrics show|enable|disable|reset|address <host:port>
-
-    Prometheus exporter control (TACACS+). Default: loopback-only 127.0.0.1:8080. `disable` sinks to
-    127.0.0.1:0 (unreachable ephemeral port) since tacquito's own disable flag would crash the
-    server.
-
 config linux build|script|remove-script|uid|uid-range|engineer-sudo|builds
 
     Login for Linux hosts (cli/host.md)

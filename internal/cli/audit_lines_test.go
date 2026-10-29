@@ -151,7 +151,7 @@ var mixedCases = []mixedCase{
 	{"config allow", []string{"config", "allow", "list"}, []string{"config", "allow", "add", "10.9.0.0/16"}},
 	{"config mgmt-acl", []string{"config", "mgmt-acl", "list"}, []string{"config", "mgmt-acl", "add", "10.7.0.0/16"}},
 	{"config password-age", []string{"config", "password-age"}, []string{"config", "password-age", "100"}},
-	{"config metrics", []string{"config", "metrics", "show"}, []string{"config", "metrics", "address", "127.0.0.1:9100"}},
+	{"server metrics", []string{"server", "metrics", "show"}, []string{"server", "metrics", "address", "127.0.0.1:9100"}},
 	{"config snmp", []string{"config", "snmp", "show"}, []string{"config", "snmp", "port", "1161"}},
 	{"config cisco", []string{"config", "cisco", "--scope", "lab"}, []string{"config", "cisco", "source-interface", "lab", "Loopback0"}},
 	{"console system-shell", []string{"console", "system-shell"}, []string{"console", "system-shell", "operator", "enable"}},

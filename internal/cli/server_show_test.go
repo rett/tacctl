@@ -67,7 +67,7 @@ func TestServerShowSettingsAndListeners(t *testing.T) {
 	hs.installTacquito()
 	hs.run(nil, "server", "addresses", "add", "203.0.113.9")
 	hs.run(nil, "host", "default-method", "radius")
-	hs.run(nil, "config", "metrics", "address", ":9090")
+	hs.run(nil, "server", "metrics", "address", ":9090")
 	hs.showRun("active", "server", "show")
 	out := plain(hs.out.String())
 	for _, want := range []string{
@@ -86,7 +86,7 @@ func TestServerShowSettingsAndListeners(t *testing.T) {
 	if !containsRow(rows, "tacacs", "default", "tcp", ":49", "49", "active") {
 		t.Errorf("listeners table:\n%s", out)
 	}
-	hs.run(nil, "config", "metrics", "disable")
+	hs.run(nil, "server", "metrics", "disable")
 	hs.showRun("active", "server", "show")
 	if got := plain(hs.out.String()); !strings.Contains(got, "  Metrics:         disabled  (127.0.0.1:0, a port no scraper can reach)\n") {
 		t.Errorf("disabled:\n%s", got)

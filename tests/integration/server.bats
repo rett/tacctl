@@ -37,6 +37,8 @@ registry() { cat "${TACCTL_STATE_DIR}/linux-hosts" 2> /dev/null || true; }
     assert_success
     assert_output --partial "Usage: tacctl server <subcommand>"
     assert_output --partial "addresses add <ip>[,<ip>...]"
+    assert_output --partial "listen [show|reset|<network> <address>]"
+    assert_output --partial "metrics [show|enable|disable|reset|address <host:port>]"
     run "$TACCTL_BIN_SCRIPT" server bogus
     assert_failure 1
     assert_output --partial "Unknown subcommand: 'bogus'"

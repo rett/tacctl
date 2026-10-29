@@ -70,8 +70,8 @@ func TestConfigVerbsAllNative(t *testing.T) {
 		}
 		native[c.Name()] = true
 	}
-	for _, w := range []string{"show", "validate", "render", "dump", "defaults", "get", "get-list", "loglevel", "listen",
-		"metrics", "sudoers", "password-age", "bcrypt-cost", "password-min-length", "secret-min-length", "branch",
+	for _, w := range []string{"show", "validate", "render", "dump", "defaults", "get", "get-list", "loglevel",
+		"sudoers", "password-age", "bcrypt-cost", "password-min-length", "secret-min-length", "branch",
 		"diff", "restore", "allow", "deny", "mgmt-acl", "cisco", "juniper", "wti", "linux"} {
 		if !native[w] {
 			t.Errorf("config %s is missing", w)
@@ -82,6 +82,21 @@ func TestConfigVerbsAllNative(t *testing.T) {
 		sb := newSandbox(t, true)
 		if out := plain(sb.run("", args)); !strings.HasPrefix(out, "Possible completions:\n") || sb.code != 0 {
 			t.Errorf("%q: exit %d %q", args, sb.code, out)
+		}
+	}
+	// 'config listen' and 'config metrics' moved under 'server' (0.2.22) with no
+	// alias: they are words 'config' does not have, answered as any other.
+	for _, w := range []string{"listen", "metrics"} {
+		if native[w] {
+			t.Errorf("config %s is still a verb", w)
+		}
+	}
+	for _, args := range [][]string{{"config", "listen"}, {"config", "listen", "tcp", ":49"}, {"config", "metrics"}, {"config", "metrics", "address", ":9090"}} {
+		sb := newSandbox(t, true)
+		sb.run("", args)
+		sb.expect(1, "", "Unknown subcommand: '"+args[1]+"'")
+		if !strings.Contains(sb.err.String(), "Run 'tacctl config -h' for usage.") || strings.Contains(sb.out.String(), "Usage:") {
+			t.Errorf("%q: %q %q", args, sb.err.String(), sb.out.String())
 		}
 	}
 	for _, args := range [][]string{{"config"}, {"config", "help"}, {"config", "--bogus", "x"}} {
@@ -234,29 +249,29 @@ func TestConfigLoglevelMetricsListen(t *testing.T) {
 	if sb.code != 1 || !strings.Contains(sb.err.String(), "Invalid level: tr\tace.") {
 		t.Errorf("bad level: %d %q (%q)", sb.code, sb.err.String(), out)
 	}
-	sb.run("", []string{"config", "metrics", "bogus"})
-	sb.expect(1, "", "Unknown subcommand: 'bogus'\nRun 'tacctl config metrics -h' for usage.")
-	sb.run("", []string{"config", "metrics", "address", "10.1.0.1:9090"})
+	sb.run("", []string{"server", "metrics", "bogus"})
+	sb.expect(1, "", "Unknown subcommand: 'bogus'\nRun 'tacctl server metrics -h' for usage.")
+	sb.run("", []string{"server", "metrics", "address", "10.1.0.1:9090"})
 	sb.expect(0, "Metrics listen address set to 10.1.0.1:9090.", "")
-	sb.run("", []string{"config", "metrics"})
+	sb.run("", []string{"server", "metrics"})
 	sb.expect(0, "10.1.0.1:9090  (override)", "")
 
-	sb.run("", []string{"config", "listen"})
+	sb.run("", []string{"server", "listen"})
 	sb.expect(0, "Current listener: tcp :49", "")
 	for _, c := range []struct {
 		args []string
 		err  string
 	}{
-		{[]string{"config", "listen", "--backend"}, "--backend needs a value. Usage:"},
-		{[]string{"config", "listen", "--listener", ""}, "--listener needs a value."},
-		{[]string{"config", "listen", "--backend=ldap"}, "Unknown backend 'ldap' (known: tacacs radius)."},
-		{[]string{"config", "listen", "--listener=Bad"}, "Invalid listener name 'Bad'"},
-		{[]string{"config", "listen", "--bogus"}, "Invalid subcommand: '--bogus'. Use: show, tcp, tcp6, or reset"},
+		{[]string{"server", "listen", "--backend"}, "--backend needs a value. Usage:"},
+		{[]string{"server", "listen", "--listener", ""}, "--listener needs a value."},
+		{[]string{"server", "listen", "--backend=ldap"}, "Unknown backend 'ldap' (known: tacacs radius)."},
+		{[]string{"server", "listen", "--listener=Bad"}, "Invalid listener name 'Bad'"},
+		{[]string{"server", "listen", "--bogus"}, "Invalid subcommand: '--bogus'. Use: show, tcp, tcp6, or reset"},
 	} {
 		sb.run("", c.args)
 		sb.expect(1, "", c.err)
 	}
-	sb.run("", []string{"config", "listen", "--listener", "mgmt", "tcp", "127.0.0.1:4949"})
+	sb.run("", []string{"server", "listen", "--listener", "mgmt", "tcp", "127.0.0.1:4949"})
 	sb.expect(0, "", "")
 	if got := sb.run("", []string{"_completion-names", "listeners", "tacacs"}); got != "default\nmgmt\n" || sb.code != 0 {
 		t.Errorf("listener names: %d %q", sb.code, got)
@@ -268,8 +283,8 @@ func TestConfigLoglevelMetricsListen(t *testing.T) {
 	if got := sb.run("", []string{"_completion-names", "listeners", "ldap"}); got != "" || sb.code != 0 {
 		t.Errorf("unknown backend: %d %q", sb.code, got)
 	}
-	sb.run("", []string{"config", "listen", "--backend=radius", "--listener=auth"})
-	sb.expect(0, "Usage: tacctl config listen --backend radius --listener <name> <network> <address>", "")
+	sb.run("", []string{"server", "listen", "--backend=radius", "--listener=auth"})
+	sb.expect(0, "Usage: tacctl server listen --backend radius --listener <name> <network> <address>", "")
 }
 
 func TestConfigSudoers(t *testing.T) {

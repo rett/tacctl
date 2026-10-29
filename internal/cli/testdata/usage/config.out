@@ -21,10 +21,6 @@ Subcommands:
       --legacy                         The timestamp names an old-style backup (backups/legacy)
       --keep-uids                      Leave the UID ledger (linux-uids) as it is; the registry, records and staging come back
   loglevel [debug|info|error]          Show or change log level
-  listen [show|tcp|tcp6|reset] [<addr>]  Show, change, or reset a listen address (default: tacacs, listener 'default')
-      --listener <name>                Act on another listener than 'default' (its own tacquito@<name> unit; reset removes it)
-      --backend <id>                   Act on another backend (see 'tacctl backend list'); radius: --listener auth|acct udp|udp6 <addr>
-  metrics show|enable|disable|reset|address <host:port>    Prometheus exporter control
   sudoers [show|install|remove] [<group>]  Manage NOPASSWD sudoers drop-in for tacctl
   sudoers tiers [show|install|remove]  Manage per-tier (RO/OP/SU) sudoers rules for tacctl users with local accounts
   password-age [<days>]                Show or set password age warning threshold
@@ -63,7 +59,6 @@ Examples:
   tacctl config show
   tacctl config validate
   tacctl config loglevel debug
-  tacctl config listen tcp6 [::]:49
   tacctl config sudoers install adm
   tacctl config cisco --scope prod
   tacctl config cisco --scope prod --legacy   # legacy IOS 12.x syntax

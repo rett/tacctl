@@ -60,43 +60,53 @@ config bcrypt-cost 10 ;; config dump
 @known 0.2.3 item 78: config validate warns about a scope without a break-glass user
 config bcrypt-cost 10 ;; config validate
 
-# loglevel, listen, metrics
+# loglevel, listen, metrics (listen and metrics are server verbs since 0.2.22)
 config loglevel
 @known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config loglevel debug ;; config loglevel
 config loglevel info ;; config loglevel
 config loglevel trace
-@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows; 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen
-@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows; 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen show
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen tcp
-@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen tcp 10.1.0.1:49 ;; config listen show
-@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows; 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen tcp6 [::]:49 ;; config listen show
-@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen tcp 10.1.0.1:49 ;; config listen reset ;; config listen show
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen bogus
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen tcp notanaddress
-@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows; 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen tcp 10.1.0.1:49 --listener mgmt ;; config listen show
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen show --listener nosuch
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen --backend nosuch
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics show
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics enable ;; config metrics show
-@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics disable ;; config metrics show
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics address
-@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics address 10.1.0.1:9090 ;; config metrics show
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics address 127.0.0.1
-@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics address :9090
-@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics address 127.0.0.1:8080 ;; config metrics reset ;; config metrics show
-@known 0.2.22 item 11: an unknown sub-command is one error line, the closest verbs and a pointer to the help (-h), not the usage
+@known 0.2.22 item 11: an unknown sub-command is one error line, the closest verbs and a pointer to the help (-h), not the usage; 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics bogus
 
 # connection and management ACLs
@@ -203,14 +213,19 @@ config secret-min-length 0
 @known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config loglevel debug info
 config loglevel ''
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen tcp6
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen tcp6 10.1.0.1:49
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen tcp ''
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen reset extra
-@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics address 127.0.0.1:99999
-@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics address 127.0.0.1:0
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics enable extra
 config allow add ''
 config allow add 10.0.0.0/8,notacidr
@@ -251,9 +266,13 @@ config deny bogus
 config allow bogus x
 @known 0.2.22 item 11: an unknown sub-command is one error line, the closest verbs and a pointer to the help (-h), not the usage
 config mgmt-acl bogus x
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics address bad
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics address ''
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen tcp 1.2.3.4
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen tcp6 1.2.3.4:49
 config get-list a b c
 @known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
@@ -272,31 +291,48 @@ _completion-names listeners tacacs
 _completion-names listeners radius
 _completion-names listeners ldap
 _completion-names listeners 'tacacs radius'
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen tcp 10.1.0.1:49 --listener mgmt ;; _completion-names listeners tacacs ;; _completion-names listeners
 
 # listen: the RADIUS backend and the flag forms
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen --backend radius
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen --backend=radius --listener=auth
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen --backend radius --listener acct show
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen --backend radius --listener default
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen --backend radius --listener auth reset
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen --backend radius --listener auth tcp 10.1.0.1:1812
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen --backend ''
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen --backend
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen --listener ''
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen --listener=Bad_Name show
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen --listener=
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen --backend=ldap
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen --bogus
-@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows; 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen show extra
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen --listener mgmt show
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen --listener mgmt reset
-@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows; 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen tcp 10.1.0.1:49 --listener mgmt ;; config listen --listener=mgmt show ;; config listen --listener mgmt reset ;; config listen show
 
 # values with backslash escapes reach info/warn/error through echo -e
 config loglevel 'de\tbug'
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics 'sh\tow'
 config password-age '4\t5'
 config get 'a\tb' 'fall\tback'
@@ -326,7 +362,7 @@ config password-age ''
 config secret-min-length 20 ;; config password-min-length 9 ;; config password-age 30 ;; config dump
 @known 0.2.3 item 78: config validate warns about a scope without a break-glass user; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config loglevel debug ;; config loglevel debug ;; config validate ;; config show
-@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics disable ;; config metrics enable ;; config metrics address 10.1.0.1:9090 ;; config metrics reset ;; config metrics
 
 # render --dry-run is new in 0.2.0 (docs/plans/go-rewrite.md 3.9 item 8)
@@ -357,7 +393,7 @@ config show
 @known 0.2.3 item 78: config validate warns about a scope without a break-glass user
 config validate
 config render
-@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows
+@known 0.2.18 item 7: a usage line writes a choice as a|b and placeholders as <name>, and repeats the command's rows; 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config listen
 @fixture legacy.unrepresentable.yaml
 @known 0.2.3 item 78: config validate warns about a scope without a break-glass user

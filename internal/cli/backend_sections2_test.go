@@ -64,7 +64,7 @@ func TestSectionsStatusDriftInItsBackendsSectionOnce(t *testing.T) {
 // backend.
 func TestSectionsStatusOneBackendIPv6ParityWording(t *testing.T) {
 	s := newSectionsSandbox(t, true)
-	s.run("y\n", "config", "listen", "tcp6", "[::]:49")
+	s.run("y\n", "server", "listen", "tcp6", "[::]:49")
 	s.expect(0, "", "")
 	out := s.run("", "status")
 	s.expect(0, "", "")
@@ -209,7 +209,7 @@ func TestSectionsShowOneBackend(t *testing.T) {
 // backend_cli.bats #53: the listener's own port is probed and named, not 49.
 func TestSectionsShowProbesTheListenersOwnPort(t *testing.T) {
 	s := newSectionsSandbox(t, true)
-	s.run("y\n", "config", "listen", "tcp", "10.1.0.1:4901")
+	s.run("y\n", "server", "listen", "tcp", "10.1.0.1:4901")
 	s.expect(0, "", "")
 	s.tcp = "LISTEN 0 128 10.1.0.1:4901 *:*\n"
 	out := s.run("", "config", "show")

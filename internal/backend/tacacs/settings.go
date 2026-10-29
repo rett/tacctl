@@ -406,7 +406,7 @@ func scrapeURL(addr string) string {
 	return "http://" + addr + "/metrics"
 }
 
-// Metrics is 'tacctl config metrics [show|enable|disable|address
+// Metrics is 'tacctl server metrics [show|enable|disable|address
 // <host:port>|reset]' (cmd_config_metrics): the default listener's
 // Prometheus exporter. 'disable' binds it to 127.0.0.1:0, a loopback port
 // no scraper can know: tacquito's -export-promhttp=false would tear down
@@ -441,11 +441,11 @@ func (b *Backend) Metrics(ctx context.Context, sub, arg string) error {
 			s.WriteString("\n  Scrape URL: " + scrapeURL(cur) + "\n")
 		}
 		s.WriteString("\nUsage:\n")
-		s.WriteString("  tacctl config metrics                      Show current state\n")
-		s.WriteString("  tacctl config metrics enable               Revert to default (" + def + ")\n")
-		s.WriteString("  tacctl config metrics disable              Sink to " + sink + " (no scraper can reach)\n")
-		s.WriteString("  tacctl config metrics address <host:port>  Explicit bind (e.g. 10.1.0.1:8080 for external)\n")
-		s.WriteString("  tacctl config metrics reset                Clear override (revert to unit default)\n\n")
+		s.WriteString("  tacctl server metrics                      Show current state\n")
+		s.WriteString("  tacctl server metrics enable               Revert to default (" + def + ")\n")
+		s.WriteString("  tacctl server metrics disable              Sink to " + sink + " (no scraper can reach)\n")
+		s.WriteString("  tacctl server metrics address <host:port>  Explicit bind (e.g. 10.1.0.1:8080 for external)\n")
+		s.WriteString("  tacctl server metrics reset                Clear override (revert to unit default)\n\n")
 		if state == "disabled" {
 			s.WriteString("  Note: tacquito still runs the exporter goroutine, bound to an\n")
 			s.WriteString("        ephemeral loopback port unknown to any scraper. This is the\n")
@@ -475,7 +475,7 @@ func (b *Backend) Metrics(ctx context.Context, sub, arg string) error {
 		out.Warn("closest 'off' state tacquito supports without an upstream patch.")
 	case "address":
 		if arg == "" {
-			out.Error("Usage: tacctl config metrics address <host:port>")
+			out.Error("Usage: tacctl server metrics address <host:port>")
 			out.Error("Examples:  127.0.0.1:8080  (loopback only — default)")
 			out.Error("           :8080           (all interfaces — external scrapers can reach)")
 			out.Error("           10.1.0.1:9090   (specific mgmt IP + custom port)")
@@ -501,7 +501,7 @@ func (b *Backend) Metrics(ctx context.Context, sub, arg string) error {
 		out.Info("Metrics override cleared. Using unit default (" + def + ").")
 	default:
 		out.Error("Unknown subcommand: '" + sub + "'")
-		out.Error("Run 'tacctl config metrics' with no arguments for usage.")
+		out.Error("Run 'tacctl server metrics' with no arguments for usage.")
 		return backend.ErrFailed
 	}
 	writeString(w, "\n")

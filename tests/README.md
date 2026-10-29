@@ -344,7 +344,7 @@ setup() {
   effort; unprivileged it cannot be checked, so tests assert mode and content.
 - Every scratch directory goes under `TMPDIR`; tests that care set `TMPDIR`
   to a directory of their own and assert it is empty afterwards.
-- `config listen|loglevel|metrics` restart a unit and check that it stayed
+- `config loglevel` and `server listen|metrics` restart a unit and check that it stayed
   up after `TACCTL_SETTLE_SECONDS` (default 0.5): export
   `TACCTL_SETTLE_SECONDS=0` in a file that runs many of them.
 - `TACCTL_SYSTEMD_DIR` (unit files and the instances' drop-in directories)

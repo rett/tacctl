@@ -114,8 +114,8 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `secret-read` | `kind` `name`: a secret shown (`scope`, `snmp`, `snmp-device`, `snmp-default`, `block`, `block-adopt`, `store`, `config`, `snapshot`, `backup`); written for every caller, a superuser's too |
 | `secret-export` | `scope` `file`: `config linux script` writes a file that holds the scope's secret (the line comes before the file) |
 | `config allow`, `config deny`, `config mgmt-acl` | `op=add\|remove\|clear\|cisco-name\|juniper-name` `value` |
-| `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config loglevel`, `config metrics`, `config branch` | `from` `to` |
-| `config listen` | `backend` `listener` `from` `to` |
+| `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config loglevel`, `server metrics`, `config branch` | `from` `to` |
+| `server listen` | `backend` `listener` `from` `to` |
 | `config devices` | `key` `from` `to` |
 | `config audit-strict` | `from` `to` (`on` or `off`); `auth.notice` |
 | `config cisco source-interface` | `scope` `from` `to` |

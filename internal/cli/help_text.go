@@ -38,7 +38,7 @@ Commands:
   <b>device</b> <o><subcommand></o>                   Device registry: list, add, enroll, scan, discover, check, host keys (client-config)
   <b>breakglass</b> <o><subcommand></o>               Break-glass hold: make the server stop answering one device or host (hold, release, list)
   <b>emergency</b> <o><subcommand></o>                Emergency measures (lockdown: refuse the logins of groups on a scope)
-  <b>server</b> <o><subcommand></o>                   This server's settings (show, addresses)
+  <b>server</b> <o><subcommand></o>                   This server's settings (show, addresses, listen, metrics)
   <b>ssh</b> <o><name|address></o> [<o>-p <port></o>]        Open an ssh session to a registered device or enrolled host, as you
       <o>-p <port></o>                         Connect to this port (default: the device's port, else 22)
   <b>shell</b> [<o>--idle <min></o>] [<o>-c <line></o>]      An interactive tacctl prompt with history and completion
@@ -425,10 +425,6 @@ Subcommands:
       <o>--legacy</o>                         The timestamp names an old-style backup (backups/legacy)
       <o>--keep-uids</o>                      Leave the UID ledger (linux-uids) as it is; the registry, records and staging come back
   <b>loglevel</b> [debug|info|error]          Show or change log level
-  <b>listen</b> [show|tcp|tcp6|reset] [<o><addr></o>]  Show, change, or reset a listen address (default: tacacs, listener 'default')
-      <o>--listener <name></o>                Act on another listener than 'default' (its own tacquito@<name> unit; reset removes it)
-      <o>--backend <id></o>                   Act on another backend (see 'tacctl backend list'); radius: <o>--listener</o> auth|acct udp|udp6 <o><addr></o>
-  <b>metrics</b> show|enable|disable|reset|address <o><host:port></o>    Prometheus exporter control
   <b>sudoers</b> [show|install|remove] [<o><group></o>]  Manage NOPASSWD sudoers drop-in for tacctl
   <b>sudoers</b> tiers [show|install|remove]  Manage per-tier (RO/OP/SU) sudoers rules for tacctl users with local accounts
   <b>password-age</b> [<o><days></o>]                Show or set password age warning threshold
@@ -467,7 +463,6 @@ Examples:
   tacctl config show
   tacctl config validate
   tacctl config loglevel debug
-  tacctl config listen tcp6 [::]:49
   tacctl config sudoers install adm
   tacctl config cisco --scope prod
   tacctl config cisco --scope prod --legacy   # legacy IOS 12.x syntax

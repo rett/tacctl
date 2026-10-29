@@ -14,7 +14,7 @@ WTI units are configured through numbered text menus on the serial SetUp port, s
 **Key points:**
 - WTI authenticates with **PAP**; tacquito's bcrypt authenticator handles PAP, nothing to change server-side
 - **Account Management Module = Enabled** is the authorization request that carries `priv-lvl`; **Session Management Module = Enabled** is accounting (the unit's client uses PAM terminology). Accounting needs tacquito built with `patches/0002` (empty `server_msg` on accounting success): given upstream's `success, logging started` message, the unit drops the SSH session right after login. `tacctl install` / `tacctl upgrade` apply the patch overlay
-- **Authentication Port** (item 7) is the TACACS+ listener's port, 49 unless `tacctl config listen` moved it; the Step 4 note names it too, and the comparison with a pulled unit follows it (see [The server's port](walkthroughs.md#the-servers-port)).
+- **Authentication Port** (item 7) is the TACACS+ listener's port, 49 unless `tacctl server listen` moved it; the Step 4 note names it too, and the comparison with a pulled unit follows it (see [The server's port](walkthroughs.md#the-servers-port)).
 - **Service Name** stays at the factory `wti`, which per-group WTI levels need. A unit whose Service Name is `shell` still logs every group in at its priv-lvl band, but ignores the WTI levels set on groups until its Service Name is set back to `wti`
 - The summary shows each group's level: its priv-lvl band, or the level set on it (`engineer: priv-lvl 15 → SuperUser (wti-level override; auto: Administrator)`)
 - **Fallback Local** follows the scope's `aaa-order`: `tacacs-first` → `On (Transport Failure)`, `local-first` → `On (All Failures)`. Keep a local Administrator account on the unit as break-glass

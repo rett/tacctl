@@ -350,9 +350,7 @@ var auditTable = map[string]auditEntry{
 	"config cisco":               mixed(),
 	"config devices":             mixed(),
 	"config linux":               mixed(),
-	"config listen":              mixed(),
 	"config loglevel":            mixed(),
-	"config metrics":             mixed(),
 	"config password-age":        mixed(),
 	"config password-min-length": mixed(),
 	"config secret-min-length":   mixed(),
@@ -408,6 +406,8 @@ var auditTable = map[string]auditEntry{
 	// the list form changes nothing; add, remove and replace write their own line
 	"server addresses": action().readWhen(serverAddressesReadForm),
 	"server show":      read(),
+	"server listen":    mixed(),
+	"server metrics":   mixed(),
 }
 
 // notStrict is e exempt from audit.strict (auditEntry.NotStrict).

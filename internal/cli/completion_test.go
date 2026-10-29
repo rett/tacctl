@@ -82,10 +82,10 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"config", "ren"}, []string{"render"}},
 		{[]string{"config", "render", ""}, []string{"--force", "--dry-run", "--out"}},
 		{[]string{"config", "render", "--dry-run", ""}, []string{"--force", "--out"}},
-		{[]string{"config", "listen", "--backend", ""}, []string{"tacacs", "radius"}},
-		{[]string{"config", "listen", "--backend", "radius", "--listener", ""}, []string{"auth", "acct"}},
-		{[]string{"config", "listen", "--listener", ""}, []string{"default"}},
-		{[]string{"config", "listen", "--backend", "radius", ""}, []string{"show", "reset", "tcp", "tcp6", "udp", "udp6", "--listener"}},
+		{[]string{"server", "listen", "--backend", ""}, []string{"tacacs", "radius"}},
+		{[]string{"server", "listen", "--backend", "radius", "--listener", ""}, []string{"auth", "acct"}},
+		{[]string{"server", "listen", "--listener", ""}, []string{"default"}},
+		{[]string{"server", "listen", "--backend", "radius", ""}, []string{"show", "reset", "tcp", "tcp6", "udp", "udp6", "--listener"}},
 		{[]string{"config", "cisco", ""}, []string{"--scope", "--protocol", "--staging", "--name", "--server", "--source", "--snmp-location", "--legacy"}},
 		{[]string{"config", "juniper", ""}, []string{"--scope", "--protocol", "--staging", "--name", "--server", "--source", "--snmp-location"}},
 		{[]string{"config", "cisco", "--protocol", ""}, []string{"tacacs", "radius"}},
@@ -301,7 +301,7 @@ func TestCompleteWithoutTheBridge(t *testing.T) {
 
 // The listeners of the backend named on the line, else every backend's.
 func TestCompleteAsksForTheListenersOfTheBackendOnTheLine(t *testing.T) {
-	h := newHarness(t, []string{"__completeNoDesc", "config", "listen", "--backend", "radius", "--listener", ""})
+	h := newHarness(t, []string{"__completeNoDesc", "server", "listen", "--backend", "radius", "--listener", ""})
 	if err := h.run(); err != nil {
 		t.Fatal(err)
 	}

@@ -322,7 +322,7 @@ func (e *Env) WriteScript(req ScriptRequest) (ScriptResult, error) {
 		return ScriptResult{}, ErrFailed
 	}
 	if !reServer.MatchString(req.Server) {
-		e.Out.ErrorE("Invalid server address '" + req.Server + "'. Give a bare IPv4/IPv6 address or hostname (the port comes from 'tacctl config listen').")
+		e.Out.ErrorE("Invalid server address '" + req.Server + "'. Give a bare IPv4/IPv6 address or hostname (the port comes from 'tacctl server listen').")
 		return ScriptResult{}, ErrFailed
 	}
 

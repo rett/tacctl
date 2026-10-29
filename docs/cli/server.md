@@ -28,10 +28,23 @@ server addresses replace <ip>[,<ip>...]
     release lifts the limit. An address is an IP address, which may be behind NAT or a VPN and need
     not be on this machine; a host name, `0.0.0.0`, `::`, a loopback and a link-local address are
     refused. Superuser only
+
+server listen [--backend <id>] [--listener <name>] [show|tcp|tcp6|udp|udp6|reset] [<addr>]
+
+    Show, change, or reset a listen address (default: the TACACS+ listener 'default'; see
+    server/backends.md, "Listeners"). Superuser only
+
+server metrics show|enable|disable|reset|address <host:port>
+
+    Prometheus exporter control (TACACS+). Default: loopback-only 127.0.0.1:8080. `disable` sinks to
+    127.0.0.1:0 (unreachable ephemeral port) since tacquito's own disable flag would crash the
+    server. Superuser only
 ```
 
 ```
 tacctl server show
+tacctl server listen tcp 10.1.0.1:49
+tacctl server metrics address 10.1.0.1:8080
 tacctl server addresses
 tacctl server addresses replace 192.0.2.10
 ```
@@ -68,6 +81,11 @@ that is not installed shows `-`. `--json` has `addresses`, `address_source`
 (`setting`, `registry` or empty), `default_method`, `metrics` (`address`,
 `state`, `reach`) and `backends` (`id`, `protocol`, `installed`, `enabled`,
 `service` and `listeners` with `name`, `network`, `address`, `port`, `unit`).
+
+**`server listen` and `server metrics`** write `listeners.<backend>.<name>` and
+`backends.tacacs.metrics_address` of `tacctl.yaml`, and the log lines are `server listen backend=
+listener= from= to=` and `server metrics from= to=`. [Listeners](../server/backends.md#listeners)
+and [Metrics](../server/metrics-and-retention.md) have the details.
 
 **What a change does.** `server addresses add` and `replace` run in one apply,
 after a snapshot (`tacctl backup list`): the setting, this server's registry

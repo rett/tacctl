@@ -137,13 +137,13 @@ check "unset and disable: Service-Type only again" is "$(rqa alice Correct-Horse
 check "store.yaml has no vendor field of lab left" bash -c "! sed -n '/^  lab:/,/^  [a-z]/p' /etc/tacctl/store.yaml | grep -qE 'vendor_attrs|devices: .*127.0.0.1/'"
 
 section "listeners"
-tacctl config listen --backend radius --listener auth6 udp6 '[::]:1812' 2>&1 | tail -2
+tacctl server listen --backend radius --listener auth6 udp6 '[::]:1812' 2>&1 | tail -2
 check "udp6 listener bound next to the udp one" bash -c "ss -uln | grep -q '\[::\]:1812' && ss -uln | grep -q '0.0.0.0:1812'"
 "${HERE}/cases.sh" "$DATA" | grep -E 'IPv6|^cases'
 check "IPv6 client case passes" bash -c "'${HERE}/cases.sh' '$DATA' | grep -q '^PASS  IPv6'"
-tacctl config listen --backend radius --listener auth udp 192.0.2.99:1812 > /tmp/out 2>&1; rc=$?
+tacctl server listen --backend radius --listener auth udp 192.0.2.99:1812 > /tmp/out 2>&1; rc=$?
 check "an address the daemon cannot bind is rolled back (exit 1), unit active on the old listener" bash -c "[[ $rc == 1 ]] && systemctl is-active --quiet $UNIT && ss -uln | grep -q '0.0.0.0:1812' && ! grep -q 192.0.2.99 ${RADDB}/tacctl-radius.conf"
-tacctl config listen --backend radius --listener auth6 reset > /dev/null 2>&1
+tacctl server listen --backend radius --listener auth6 reset > /dev/null 2>&1
 check "listener reset removes the udp6 listener" bash -c "! ss -uln | grep -q '\[::\]:1812'"
 
 section "drift"

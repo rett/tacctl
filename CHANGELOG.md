@@ -271,6 +271,34 @@ current behaviour; this file is where history lives.
    tier table has no row for `server`, so the sudoers rules of the tiers are
    unchanged.
 
+14. **`config listen` is `server listen`.** The listeners of the backends are
+   a setting of this server, and `tacctl server` is where its settings are:
+   `tacctl server listen [--backend <id>] [--listener <name>] [show|reset|<network>
+   <address>]` does what `config listen` did, with the same options, the same
+   confirmation for `tcp6` and `udp6`, the same restart of the unit and the same
+   stored keys (`listeners.<backend>.<name>` of `tacctl.yaml`). The old form is
+   gone, with no alias: `tacctl config listen ...` is answered as any word
+   `config` does not have (`Unknown subcommand: 'listen'`, the closest verbs,
+   `Run 'tacctl config -h' for usage.`, exit 1), so a script, a runbook or a
+   note that uses it must change to `server listen`. The log line of a change is `server listen backend=
+   listener= from= to=` (it was `config listen`), the command line in the
+   central audit lines is `server listen`, and the messages that name the
+   command (a listener that does not exist, a missing address, the install
+   plan's next steps) name the new one. The descriptions of `--listener` and
+   `--backend` are shorter.
+15. **`config metrics` is `server metrics`.** `tacctl server metrics
+   [show|enable|disable|reset|address <host:port>]` does what `config metrics`
+   did (the Prometheus exporter of the TACACS+ backend, stored as
+   `backends.tacacs.metrics_address`, unchanged). The old form is gone, with no
+   alias: `tacctl config metrics ...` is answered as any word `config` does not
+   have (`Unknown subcommand: 'metrics'`, the closest verbs, `Run 'tacctl
+   config -h' for usage.`, exit 1), so a script that uses it must change to
+   `server metrics`. The log line of a
+   change is `server metrics from= to=` (it was `config metrics`) and
+   `tacctl status` and the scrape hints name the new command. The tier table
+   has no row for `config listen`, `config metrics` or `server`: both are still
+   the superuser's, and the sudoers rules of the tiers are unchanged.
+
 ## 0.2.21 (2026-10-28)
 
 1. **`user rename` to a name with a period says what to do.** The refusal of

@@ -12,9 +12,9 @@ import (
 	"github.com/rett/tacctl/internal/backend"
 )
 
-// The listeners verb and 'tacctl config listen' below its argument parsing
+// The listeners verb and 'tacctl server listen' below its argument parsing
 // (tests/integration/listeners.bats, tests/unit/backend.bats "tacacs
-// listeners", tests/integration/config_setters.bats "config listen"), with
+// listeners", tests/integration/config_setters.bats "server listen"), with
 // systemctl scripted as the bats stub does. The flag parsing, the usage
 // block and the backend/listener-name checks are internal/cli's (WP2.4c).
 
@@ -77,7 +77,7 @@ func TestListenersListNotConverted(t *testing.T) {
 	mustLine(t, s, "  (override in "+e.b.overrideFile()+")")
 }
 
-// "config listen: show prints what it always printed for the default
+// "server listen: show prints what it always printed for the default
 // listener" (the backend's part: the lines between the blank line and the
 // usage).
 func TestListenersShowDefault(t *testing.T) {
@@ -90,7 +90,7 @@ func TestListenersShowDefault(t *testing.T) {
 	}
 }
 
-// "config listen: a change restarts tacquito after a reload, and show
+// "server listen: a change restarts tacquito after a reload, and show
 // names tacctl.yaml"; "drop-in: one settings change renders every flag of
 // the default listener".
 func TestListenerSetDefault(t *testing.T) {
@@ -129,7 +129,7 @@ func TestListenerSetDefault(t *testing.T) {
 	s := show(t, e, "")
 	mustLine(t, s, "  Current listener: tcp 10.1.0.1:49")
 	mustLine(t, s, "  (override in "+e.p.Overrides+")")
-	// "config listen: with a store the change is snapshotted first".
+	// "server listen: with a store the change is snapshotted first".
 	mustContain(t, e.stdout.String(), "Config snapshot saved to")
 	if len(e.snapshots()) != 1 {
 		t.Fatal(e.snapshots())
@@ -145,8 +145,8 @@ func TestListenerSetDefault(t *testing.T) {
 	e.noKeep()
 }
 
-// "config listen: a bad address is refused before anything is written",
-// "config listen: rejects unknown subcommand", and the listeners verb
+// "server listen: a bad address is refused before anything is written",
+// "server listen: rejects unknown subcommand", and the listeners verb
 // growing no 'list' (tests/unit/backend.bats).
 func TestListenerSetRefusesBadInput(t *testing.T) {
 	e := newTenv(t).withStore("store.multiscope.yaml")
@@ -157,7 +157,7 @@ func TestListenerSetRefusesBadInput(t *testing.T) {
 		{"tcp6", "10.1.0.1:49", "Invalid tcp6 address"},
 		{"tcp", ":0", "Invalid tcp address"},
 		{"tcp", "example.net:49", "Invalid tcp address"},
-		{"tcp", "", "Missing address. Example: tacctl config listen tcp :49"},
+		{"tcp", "", "Missing address. Example: tacctl server listen tcp :49"},
 		{"udp", ":49", "Invalid subcommand: 'udp'. Use: show, tcp, tcp6, or reset"},
 		{"list", "", "Invalid subcommand: 'list'. Use: show, tcp, tcp6, or reset"},
 		{"bogus", "", "Invalid subcommand: 'bogus'"},
@@ -172,7 +172,7 @@ func TestListenerSetRefusesBadInput(t *testing.T) {
 	}
 }
 
-// "config listen: tcp6 asks first, and 'n' changes nothing".
+// "server listen: tcp6 asks first, and 'n' changes nothing".
 func TestListenerSetTCP6Asks(t *testing.T) {
 	e := newTenv(t).withStore("store.multiscope.yaml")
 	ctx := context.Background()
@@ -203,8 +203,8 @@ func TestListenerSetTCP6Asks(t *testing.T) {
 	mustNotContain(t, e.stdout.String(), "dual-stack")
 }
 
-// "config listen: reset says what it always said, and goes back to the
-// default"; config_setters.bats "config listen reset: clears override".
+// "server listen: reset says what it always said, and goes back to the
+// default"; config_setters.bats "server listen reset: clears override".
 func TestListenerResetDefault(t *testing.T) {
 	e := newTenv(t).withStore("store.multiscope.yaml")
 	ctx := context.Background()
@@ -235,7 +235,7 @@ func TestListenerResetDefault(t *testing.T) {
 	mustContain(t, e.stderr.String(), "tacquito failed to start after reset.")
 }
 
-// "config listen: a unit that does not come up gets the previous settings
+// "server listen: a unit that does not come up gets the previous settings
 // back".
 func TestListenerSetUnitThatDoesNotComeUpIsPutBack(t *testing.T) {
 	e := newTenv(t).withStore("store.multiscope.yaml")
@@ -265,7 +265,7 @@ func TestListenerSetUnitThatDoesNotComeUpIsPutBack(t *testing.T) {
 	e.noKeep()
 }
 
-// "config listen: the first failure leaves no tacctl.yaml and no drop-in
+// "server listen: the first failure leaves no tacctl.yaml and no drop-in
 // behind".
 func TestListenerSetFirstFailureLeavesNothing(t *testing.T) {
 	e := newTenv(t).withStore("store.multiscope.yaml")
@@ -280,7 +280,7 @@ func TestListenerSetFirstFailureLeavesNothing(t *testing.T) {
 	}
 }
 
-// "config listen: works without a store (legacy mode), as it always did".
+// "server listen: works without a store (legacy mode), as it always did".
 func TestListenerSetWithoutStore(t *testing.T) {
 	e := newTenv(t)
 	ctx := context.Background()
@@ -305,7 +305,7 @@ func TestListenerSetWithoutStore(t *testing.T) {
 	}
 }
 
-// "config listen: a hand-edited tacquito.yaml does not stand in the way".
+// "server listen: a hand-edited tacquito.yaml does not stand in the way".
 func TestListenerSetIgnoresAHandEditedConfig(t *testing.T) {
 	e := newTenv(t).withStore("store.multiscope.yaml")
 	e.render(true)
@@ -322,7 +322,7 @@ func TestListenerSetIgnoresAHandEditedConfig(t *testing.T) {
 	mustContain(t, readFile(t, e.p.Config), "# edited")
 }
 
-// "config listen --listener: adds a listener as its own instance,
+// "server listen --listener: adds a listener as its own instance,
 // restarting nothing else"; "drop-in: an instance gets its own address,
 // accounting log and no reachable metrics".
 func TestListenerAddInstance(t *testing.T) {
@@ -359,7 +359,7 @@ func TestListenerAddInstance(t *testing.T) {
 		t.Fatal(readFile(t, d))
 	}
 
-	// "config listen --listener: show, change and the flag forms".
+	// "server listen --listener: show, change and the flag forms".
 	s := show(t, e, "mgmt")
 	if s != "  Listener 'mgmt': tcp 127.0.0.1:4949\n  (tacquito@mgmt.service; set in "+e.p.Overrides+")" {
 		t.Fatalf("%q", s)
@@ -380,7 +380,7 @@ func TestListenerAddInstance(t *testing.T) {
 	mustContain(t, e.stdout.String(), "Already listening on tcp 127.0.0.1:4950.")
 }
 
-// "config listen --listener: an address another listener has is refused
+// "server listen --listener: an address another listener has is refused
 // before anything is written".
 func TestListenerCollisionsAreRefused(t *testing.T) {
 	e := newTenv(t).withStore("store.multiscope.yaml")
@@ -403,7 +403,7 @@ func TestListenerCollisionsAreRefused(t *testing.T) {
 	mustContain(t, e.stderr.String(), "already used by listeners.tacacs.mgmt")
 }
 
-// "config listen --listener: reset removes the listener, its drop-in and
+// "server listen --listener: reset removes the listener, its drop-in and
 // its instance".
 func TestListenerResetInstance(t *testing.T) {
 	e := newTenv(t).withStore("store.multiscope.yaml")
@@ -430,10 +430,10 @@ func TestListenerResetInstance(t *testing.T) {
 	e.reset()
 	_, err := e.b.Listeners().Show(ctx, "mgmt")
 	wantCode(t, err, 1)
-	mustContain(t, e.stderr.String(), "No listener 'mgmt'. Create it: tacctl config listen --listener mgmt tcp <address>")
+	mustContain(t, e.stderr.String(), "No listener 'mgmt'. Create it: tacctl server listen --listener mgmt tcp <address>")
 }
 
-// "config listen --listener: an instance that does not come up is taken
+// "server listen --listener: an instance that does not come up is taken
 // back out".
 func TestListenerInstanceThatDoesNotComeUp(t *testing.T) {
 	e := newTenv(t).withStore("store.multiscope.yaml")

@@ -476,18 +476,18 @@ PY
 
 # --- listeners ---------------------------------------------------------------
 
-@test "config listen --backend radius: shows both built-in listeners" {
-    tacctl config listen --backend radius
+@test "server listen --backend radius: shows both built-in listeners" {
+    tacctl server listen --backend radius
     assert_success
     assert_output --partial "RADIUS listener 'auth' (auth): udp :1812   (built-in default)"
     assert_output --partial "RADIUS listener 'acct' (acct): udp :1813   (built-in default)"
-    assert_output --partial "tacctl config listen --backend radius --listener <name> <network> <address>"
+    assert_output --partial "tacctl server listen --backend radius --listener <name> <network> <address>"
     refute_output --partial "tcp6"
 }
 
-@test "config listen --backend radius: a change is written, rendered into a listen section, and the unit restarted" {
+@test "server listen --backend radius: a change is written, rendered into a listen section, and the unit restarted" {
     radius_up
-    tacctl config listen --backend radius --listener auth udp 10.1.1.1:11812
+    tacctl server listen --backend radius --listener auth udp 10.1.1.1:11812
     assert_success
     assert_output --partial "RADIUS listener 'auth' changed to udp 10.1.1.1:11812."
     run grep -A4 'listeners.radius.auth$' "$RCONF"
@@ -498,48 +498,48 @@ PY
     stub_called '^systemctl restart freeradius.service$'
     ! stub_called '^systemctl restart tacquito$'
     # The accounting listener keeps its role when moved.
-    tacctl config listen --backend radius --listener acct udp :11813
+    tacctl server listen --backend radius --listener acct udp :11813
     assert_success
     run grep -A4 'listeners.radius.acct$' "$RCONF"
     assert_line --index 2 "		type = acct"
     assert_line --index 4 "		port = 11813"
     # reset puts a built-in one back, and removes any other.
-    tacctl config listen --backend radius --listener auth reset
+    tacctl server listen --backend radius --listener auth reset
     assert_success
     assert_output --partial "back on its default"
-    tacctl config listen --backend radius --listener auth6 udp6 '[::]:1812'
+    tacctl server listen --backend radius --listener auth6 udp6 '[::]:1812'
     assert_success
     assert_output --partial "RADIUS listener 'auth6' (auth) added on udp6 [::]:1812."
     grep -q 'ipv6addr = ::$' "$RCONF"
-    tacctl config listen --backend radius --listener auth6 reset
+    tacctl server listen --backend radius --listener auth6 reset
     assert_success
     assert_output --partial "RADIUS listener 'auth6' removed."
     refute grep -q 'ipv6addr = ::$' "$RCONF"
     no_leftovers
 }
 
-@test "config listen --backend radius: tcp, a taken port and a missing listener name are refused before anything is written" {
+@test "server listen --backend radius: tcp, a taken port and a missing listener name are refused before anything is written" {
     radius_up
     local before
     before=$(state)
-    tacctl config listen --backend radius --listener auth tcp :1812
+    tacctl server listen --backend radius --listener auth tcp :1812
     assert_failure
     assert_output --partial "the RADIUS backend listens on udp or udp6"
-    tacctl config listen --backend radius --listener auth udp :1813
+    tacctl server listen --backend radius --listener auth udp :1813
     assert_failure
     assert_output --partial "already used by listeners.radius.acct"
-    tacctl config listen --backend radius udp :1900
+    tacctl server listen --backend radius udp :1900
     assert_failure
     assert_output --partial "--listener auth"
     [[ "$(state)" == "$before" ]]
 }
 
-@test "config listen --backend radius: a daemon that does not stay up gets the previous listener back" {
+@test "server listen --backend radius: a daemon that does not stay up gets the previous listener back" {
     radius_up
     local before
     before=$(state)
     : > "${SD}/fail-start"
-    tacctl config listen --backend radius --listener auth udp 192.0.2.99:1812
+    tacctl server listen --backend radius --listener auth udp 192.0.2.99:1812
     assert_failure
     assert_output --partial "did not stay up with the new listener"
     [[ "$(sha256sum < "$RCONF")" == "$(grep '^tacctl-radius.conf' <<< "$before" | cut -d' ' -f2-)" ]]
@@ -549,8 +549,8 @@ PY
     no_leftovers
 }
 
-@test "config listen without --backend is still the TACACS+ default listener" {
-    tacctl config listen
+@test "server listen without --backend is still the TACACS+ default listener" {
+    tacctl server listen
     assert_success
     assert_output --partial "Current listener: tcp :49"
 }

@@ -20,8 +20,6 @@ config linux remove-script --output
 config linux script --method
 config linux script --output
 config linux script --scope
-config listen --backend
-config listen --listener
 config render --dry-run
 config render --out
 config restore --keep-uids

@@ -45,7 +45,7 @@ func TestListenersDefault(t *testing.T) {
 	}
 }
 
-// "config listen --backend radius: shows both built-in listeners".
+// "server listen --backend radius: shows both built-in listeners".
 func TestListenersShow(t *testing.T) {
 	r := newEnv(t)
 	got, err := r.m.Listeners().Show(context.Background(), "default")
@@ -73,10 +73,10 @@ func TestListenersShow(t *testing.T) {
 	// An unknown name is an error, with how to create one.
 	_, err = r.m.Listeners().Show(context.Background(), "nope")
 	wantCode(t, err, 1)
-	contains(t, r.out(), "No RADIUS listener 'nope'. Create it: tacctl config listen --backend radius --listener nope udp <address>")
+	contains(t, r.out(), "No RADIUS listener 'nope'. Create it: tacctl server listen --backend radius --listener nope udp <address>")
 }
 
-// "config listen --backend radius: a change is written, rendered into a
+// "server listen --backend radius: a change is written, rendered into a
 // listen section, and the unit restarted".
 func TestListenerSetRendersAndRestarts(t *testing.T) {
 	r := newEnv(t)
@@ -163,7 +163,7 @@ func TestListenerRolesAndNoOps(t *testing.T) {
 	}
 }
 
-// "config listen --backend radius: tcp, a taken port and a missing listener
+// "server listen --backend radius: tcp, a taken port and a missing listener
 // name are refused before anything is written".
 func TestListenerRefusalsWriteNothing(t *testing.T) {
 	r := newEnv(t)
@@ -177,7 +177,7 @@ func TestListenerRefusalsWriteNothing(t *testing.T) {
 		{"auth", "tcp", ":1812", "the RADIUS backend listens on udp or udp6"},
 		{"auth", "udp", ":1813", "already used by listeners.radius.acct"},
 		{"default", "udp", ":1900", "--listener auth"},
-		{"auth", "udp", "", "Missing address. Example: tacctl config listen --backend radius --listener auth udp :1812"},
+		{"auth", "udp", "", "Missing address. Example: tacctl server listen --backend radius --listener auth udp :1812"},
 		{"auth", "udp", "nonsense", "Invalid udp address: 'nonsense'"},
 		{"auth", "udp", "[::1]:1812", "Invalid udp address: '[::1]:1812'"},
 	} {
@@ -205,7 +205,7 @@ func TestListenerRefusalsWriteNothing(t *testing.T) {
 	r.noLeftovers()
 }
 
-// "config listen --backend radius: a daemon that does not stay up gets the
+// "server listen --backend radius: a daemon that does not stay up gets the
 // previous listener back".
 func TestListenerDaemonDoesNotStayUp(t *testing.T) {
 	r := newEnv(t)

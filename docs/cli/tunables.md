@@ -65,7 +65,7 @@ Keys without a shipped default (`backends.*`, `listeners.*`, `snmp.*`, `device.c
 | `audit.strict` | `true` or `false` (`false`) | `config audit-strict` |
 | `backends.enabled` | non-empty list of `tacacs`, `radius` (`[tacacs]`) | `backend enable`, `backend disable` |
 | `backends.tacacs.level` | 0 to 100 (20) | `config loglevel` |
-| `backends.tacacs.metrics_address` | host:port (127.0.0.1:8080) | `config metrics address` |
+| `backends.tacacs.metrics_address` | host:port (127.0.0.1:8080) | `server metrics address` |
 | `bcrypt.cost` | 10 to 14 (12) | `config bcrypt-cost` |
 | `host.default_method` | `tacplus` or `radius` (`tacplus`) | `host default-method` |
 | `server.addresses` | list of one IP address, the address devices and hosts reach this server at, not a host name, loopback, link-local, multicast, broadcast or IPv4-mapped (a list that holds one address for now) | `server addresses` |
@@ -91,7 +91,7 @@ Keys without a shipped default (`backends.*`, `listeners.*`, `snmp.*`, `device.c
 | `scope_auth_method.<scope>` | `tacacs` or `radius` (unset) | `scope auth-method` |
 | `scope_mgmt_acl.names.cisco.<scope>`, `scope_mgmt_acl.names.juniper.<scope>`, `scope_mgmt_acl.permits.<scope>` | the scope's own ACL name, filter name and permitted entries (CIDRs, each with optional services), in place of `mgmt_acl.*` | `scope mgmt-acl` |
 | `scope_mgmt_acl.mode.<scope>` | `strict`: the scope's Junos filter is deny by default; unset is `ssh-only` | `scope mgmt-acl <scope> mode` |
-| `listeners.<backend>.<name>` | network, address, role, metrics_address (`tacacs.default` tcp :49, `radius.auth` udp :1812, `radius.acct` udp :1813) | `config listen` |
+| `listeners.<backend>.<name>` | network, address, role, metrics_address (`tacacs.default` tcp :49, `radius.auth` udp :1812, `radius.acct` udp :1813) | `server listen` |
 | `junos.<group>.deny_commands`, `junos.<group>.deny_configuration` | list of POSIX extended regular expressions (unset) | `group junos` |
 | `wti_level.<group>` | `viewonly`, `user`, `superuser` or `administrator` (unset: the priv-lvl band) | `group add`, `group edit` |
 | `tier.<group>` | `readonly`, `operator`, `engineer` or `superuser` (unset: the priv-lvl band) | `group add`, `group edit` |

@@ -30,7 +30,7 @@ Which backends are enabled is `backends.enabled` in `tacctl.yaml` (default: `[ta
 
 ## Listeners
 
-How each backend listens is `listeners.<backend>.<name>` in `tacctl.yaml` (`network`, `address`, and for RADIUS `role: auth|acct`), set with `tacctl config listen`:
+How each backend listens is `listeners.<backend>.<name>` in `tacctl.yaml` (`network`, `address`, and for RADIUS `role: auth|acct`), set with `tacctl server listen`:
 
 | Backend | Built-in listeners | Networks |
 |---|---|---|
@@ -38,13 +38,13 @@ How each backend listens is `listeners.<backend>.<name>` in `tacctl.yaml` (`netw
 | `radius` | `auth`: `udp :1812`, `acct`: `udp :1813` | `udp`, `udp6` |
 
 ```
-tacctl config listen tcp 10.1.0.1:49                                     # TACACS+ default listener
-tacctl config listen --listener mgmt tcp 10.1.0.1:4949                   # a second TACACS+ listener
-tacctl config listen --listener mgmt reset                               # remove it
-tacctl config listen --backend radius show
-tacctl config listen --backend radius --listener auth udp 10.1.0.1:1812
+tacctl server listen tcp 10.1.0.1:49                                     # TACACS+ default listener
+tacctl server listen --listener mgmt tcp 10.1.0.1:4949                   # a second TACACS+ listener
+tacctl server listen --listener mgmt reset                               # remove it
+tacctl server listen --backend radius show
+tacctl server listen --backend radius --listener auth udp 10.1.0.1:1812
 ```
 
-**Which listener the clients are configured for.** Everything tacctl renders for a client that names the server's port follows `tacctl config listen`, so a listener that moved is what the devices and hosts are told, and a plan or `device config diff` compares against it: the TACACS+ port is the `default` listener's, the RADIUS authentication port the `auth` listener's and the accounting port the `acct` listener's (they keep their roles, and come first in the list). Any further listener (`--listener mgmt`) is an extra one for other clients and is never what a walkthrough or a host script names. The ports are 49, 1812 and 1813 until a listener says otherwise, and with the built-in listeners nothing in any output differs. The places are the [walkthroughs](../devices/walkthroughs.md#the-servers-port) (`config cisco|juniper|wti`, their pull, diff and plan) and the [Linux host script](../hosts/README.md) (`config linux script`, `host enroll`).
+**Which listener the clients are configured for.** Everything tacctl renders for a client that names the server's port follows `tacctl server listen`, so a listener that moved is what the devices and hosts are told, and a plan or `device config diff` compares against it: the TACACS+ port is the `default` listener's, the RADIUS authentication port the `auth` listener's and the accounting port the `acct` listener's (they keep their roles, and come first in the list). Any further listener (`--listener mgmt`) is an extra one for other clients and is never what a walkthrough or a host script names. The ports are 49, 1812 and 1813 until a listener says otherwise, and with the built-in listeners nothing in any output differs. The places are the [walkthroughs](../devices/walkthroughs.md#the-servers-port) (`config cisco|juniper|wti`, their pull, diff and plan) and the [Linux host script](../hosts/README.md) (`config linux script`, `host enroll`).
 
-The TACACS+ default listener stays in `tacquito.service`; every further one is an instance `tacquito@<name>.service` of the template `tacquito@.service`, `PartOf=` and `WantedBy=` `tacquito.service`, so `systemctl stop|start|restart tacquito` covers them all and `journalctl -u tacquito` shows the default one. Each unit gets a rendered drop-in `<unit>.d/tacctl.conf` (listen address, log level, metrics address, accounting log); a listener's accounting goes to `/var/log/tacquito/accounting-<name>.log`. RADIUS listeners become `listen {}` sections of tacctl's FreeRADIUS configuration. `listen`, `loglevel` and `metrics` restart the unit and put `tacctl.yaml` and the drop-ins back if it does not stay up. `config loglevel` and `config metrics` are TACACS+ settings (`backends.tacacs.level`, `backends.tacacs.metrics_address`).
+The TACACS+ default listener stays in `tacquito.service`; every further one is an instance `tacquito@<name>.service` of the template `tacquito@.service`, `PartOf=` and `WantedBy=` `tacquito.service`, so `systemctl stop|start|restart tacquito` covers them all and `journalctl -u tacquito` shows the default one. Each unit gets a rendered drop-in `<unit>.d/tacctl.conf` (listen address, log level, metrics address, accounting log); a listener's accounting goes to `/var/log/tacquito/accounting-<name>.log`. RADIUS listeners become `listen {}` sections of tacctl's FreeRADIUS configuration. `listen`, `loglevel` and `metrics` restart the unit and put `tacctl.yaml` and the drop-ins back if it does not stay up. `config loglevel` and `server metrics` are TACACS+ settings (`backends.tacacs.level`, `backends.tacacs.metrics_address`).

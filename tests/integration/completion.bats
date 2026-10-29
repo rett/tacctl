@@ -149,26 +149,35 @@ complete_words() {
     assert_output "$(printf 'sha\nsha256')"
 }
 
-@test "completion: config offers render with --dry-run and --out, and listen takes --backend and --listener" {
+@test "completion: config offers render with --dry-run and --out, and server listen takes --backend and --listener" {
     complete_words tacctl config ren
     assert_output "render"
     complete_words tacctl config render ""
     assert_output "$(printf -- '--force\n--dry-run\n--out')"
     complete_words tacctl config render --dry-run ""
     assert_output "$(printf -- '--force\n--out')"
-    complete_words tacctl config listen ""
+    complete_words tacctl server listen ""
     assert_line "--backend"
     assert_line "--listener"
     assert_line "reset"
-    complete_words tacctl config listen --backend ""
+    complete_words tacctl server listen --backend ""
     assert_output "$(printf 'tacacs\nradius')"
-    complete_words tacctl config listen --backend radius --listener ""
+    complete_words tacctl server listen --backend radius --listener ""
     assert_output "$(printf 'auth\nacct')"
-    complete_words tacctl config listen --listener ""
+    complete_words tacctl server listen --listener ""
     assert_output "default"
-    complete_words tacctl config listen --backend radius ""
+    complete_words tacctl server listen --backend radius ""
     assert_line "--listener"
     refute_line "--backend"
+    complete_words tacctl server ""
+    assert_line "show"
+    assert_line "listen"
+    assert_line "metrics"
+    complete_words tacctl server metrics ""
+    for w in show enable disable address reset; do assert_line "$w"; done
+    complete_words tacctl config ""
+    refute_line "listen"
+    refute_line "metrics"
 }
 
 @test "completion: config cisco and juniper take --protocol, and its value is tacacs or radius" {
@@ -383,7 +392,7 @@ esac'
     assert_output "$(printf 'acct\nauth\ndefault')"
     run "$TACCTL_BIN_SCRIPT" _completion-names listeners radius
     assert_output "$(printf 'acct\nauth')"
-    "$TACCTL_BIN_SCRIPT" config listen --listener mgmt tcp 127.0.0.1:4949 > /dev/null
+    "$TACCTL_BIN_SCRIPT" server listen --listener mgmt tcp 127.0.0.1:4949 > /dev/null
     run "$TACCTL_BIN_SCRIPT" _completion-names listeners tacacs
     assert_output "$(printf 'default\nmgmt')"
     run "$TACCTL_BIN_SCRIPT" _completion-names listeners nope

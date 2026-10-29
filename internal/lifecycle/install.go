@@ -309,7 +309,7 @@ func (h *Host) installSummary(seed SeedResult) {
 	h.echo("    6. RADIUS as well (optional): tacctl backend enable radius")
 	h.echo("")
 	h.echo("  Security hardening:")
-	h.echo("    7. Bind to a specific IP:  tacctl config listen tcp <mgmt-ip>:49")
+	h.echo("    7. Bind to a specific IP:  tacctl server listen tcp <mgmt-ip>:49")
 	h.echo("    8. Add connection ACL:     tacctl config allow add <cidr>")
 	h.echo("    9. Review config:          tacctl config show")
 	h.echo("")

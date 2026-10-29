@@ -53,22 +53,22 @@ log clear --backend radius --yes
 log clear --backend radius --yes ;; log tail --backend radius
 
 # status
-@known 0.2.5 item 72: status has a Break-glass line in its Security Posture; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.5 item 72: status has a Break-glass line in its Security Posture; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics disable ;; status
-@known 0.2.5 item 72: status has a Break-glass line in its Security Posture; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.5 item 72: status has a Break-glass line in its Security Posture; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics disable ;; status extra words
-@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.5 item 72: status has a Break-glass line in its Security Posture; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.5 item 72: status has a Break-glass line in its Security Posture; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics disable ;; user add alice superuser --hash {HASH} --scopes lab ;; status
-@known 0.2.5 item 72: status has a Break-glass line in its Security Posture; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.5 item 72: status has a Break-glass line in its Security Posture; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics disable ;; config password-age 1 ;; status
-@known 0.2.5 item 72: status has a Break-glass line in its Security Posture; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.5 item 72: status has a Break-glass line in its Security Posture; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics disable ;; config password-age 0 ;; status
-@known 0.2.5 item 72: status has a Break-glass line in its Security Posture; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.5 item 72: status has a Break-glass line in its Security Posture; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics disable ;; config mgmt-acl add 10.0.0.0/8 <<< y ;; status
-@known 0.2.5 item 72: status has a Break-glass line in its Security Posture; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.5 item 72: status has a Break-glass line in its Security Posture; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics disable ;; config listen tcp6 [::]:49 <<< y ;; status
 @fixture tacquito.multiscope.yaml
-@known 0.2.5 item 72: status has a Break-glass line in its Security Posture; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.5 item 72: status has a Break-glass line in its Security Posture; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics disable ;; status
 @fixture tacquito.minimal.yaml
 
@@ -114,6 +114,7 @@ log clear --yes --backend
 
 # legacy read-only mode: no store yet
 @fixture legacy.fresh-install.yaml
+@known 0.2.22 items 14 and 15: config listen and config metrics are server listen and server metrics, with no alias
 config metrics disable ;; status
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 backend list

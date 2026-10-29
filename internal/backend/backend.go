@@ -236,11 +236,11 @@ type Listener struct {
 }
 
 // ListenerOps is a backend's listeners.<id>.<name> of tacctl.yaml ('tacctl
-// config listen' is their CLI).
+// server listen' is their CLI).
 type ListenerOps interface {
 	// List is the listeners in effect, the built-in ones first.
 	List() ([]Listener, error)
-	// Show is one listener as 'tacctl config listen' prints it.
+	// Show is one listener as 'tacctl server listen' prints it.
 	Show(ctx context.Context, name string) (string, error)
 	// Set creates or changes a listener, makes the daemon follow and
 	// reports; when the daemon does not come up everything is as it was

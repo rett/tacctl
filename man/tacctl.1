@@ -2604,127 +2604,6 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config loglevel
 .TP
-.B "config listen " "[ \-\-backend \fIid\fR ] [ \-\-listener \fIname\fR ] { show | tcp | tcp6 | udp | udp6 | reset } " [ address ]
-Show, change, or reset a listen address (default: the
-.B tacacs
-backend's listener
-.BR default ;
-the backend ids are listed by
-.BR "backend list" ).
-Stored in
-.I tacctl.yaml
-.RB ( listeners. \fIbackend\fB. \fIname\fR),
-from which tacctl renders the TACACS+ units' systemd drop-ins and the
-RADIUS
-.B listen
-sections.
-.B reset
-clears the override and falls back to the built-in default.
-A TACACS+ listener named with
-.BI \-\-listener " name"
-runs as its own unit
-.BI tacquito@ name .service
-with its own accounting log; for such a listener
-.B reset
-removes it. TACACS+ listeners take
-.B tcp
-or
-.BR tcp6 ;
-RADIUS ones
-.RB ( "\-\-backend radius" )
-take
-.B udp
-or
-.B udp6
-and are named: the built-in
-.B auth
-(udp :1812) and
-.B acct
-(udp :1813); a further name is an authentication listener. The unit is
-restarted and must stay up, or
-.I tacctl.yaml
-and the drop-ins are put back. A listener's
-.B tls
-block in
-.I tacctl.yaml
-is reserved:
-.B "tls.enabled: true"
-is rejected (TACACS+ over TLS is not implemented).
-.B
-Switching to tcp6
-prompts for confirmation because dual-stack sockets accept IPv4
-clients via mapped addresses
-.RB ( ::ffff:x.x.x.x )
-that silently bypass IPv4 prefix ACLs; see
-.B NOTES.
-.\" BEGIN GENERATED: command config listen
-.RS
-.PP
-Requires: \fBsuperuser\fR.
-.PP
-Options:
-.TP
-\fB\-\-backend\fR \fI<id>\fR
-Act on another backend (see 'tacctl backend list'); radius: \-\-listener auth|acct udp|udp6 <addr>.
-.TP
-\fB\-\-listener\fR \fI<name>\fR
-Act on another listener than 'default' (its own tacquito@<name> unit; reset removes it).
-.RE
-.\" END GENERATED: command config listen
-.TP
-.B "config metrics " "{ show | enable | disable | address " \fIhost:port\fR " | reset }"
-Control tacquito's prometheus HTTP exporter's listen address (TACACS+ only;
-FreeRADIUS has no exporter). Stored as
-.BR backends.tacacs.metrics_address .
-.B show
-(no arg) prints current state and address.
-.B enable
-clears the override and reverts to the unit default
-.RB ( 127.0.0.1:8080 ,
-loopback-only).
-.B disable
-sinks the exporter to
-.BR 127.0.0.1:0 ,
-an ephemeral loopback port that no scraper can discover (tacquito's
-.B -export-promhttp=false
-would stop the whole daemon, so it is not used).
-.B "address " \fIhost:port\fR
-binds explicitly (e.g.
-.B 10.1.0.1:8080
-to expose to external scrapers); non-loopback binds print a warning.
-.B reset
-clears the override and falls back to the unit default.
-.\" BEGIN GENERATED: command config metrics address
-.RS
-.PP
-Requires: \fBsuperuser\fR.
-.RE
-.\" END GENERATED: command config metrics address
-.\" BEGIN GENERATED: command config metrics disable
-.RS
-.PP
-Requires: \fBsuperuser\fR.
-.RE
-.\" END GENERATED: command config metrics disable
-.\" BEGIN GENERATED: command config metrics enable
-.RS
-.PP
-Requires: \fBsuperuser\fR.
-.RE
-.\" END GENERATED: command config metrics enable
-.\" BEGIN GENERATED: command config metrics reset
-.RS
-.PP
-Requires: \fBsuperuser\fR.
-.RE
-.\" END GENERATED: command config metrics reset
-.\" BEGIN GENERATED: command config metrics show
-.RS
-.PP
-Requires: \fBsuperuser\fR.
-.RE
-.\" END GENERATED: command config metrics show
-.TP
 .BI "host list [ \-\-name " text " ] [ \-\-ip " address|cidr|text " ] [ \-\-scope " scope " ] [ \-\-stale ] [ \-\-json ]"
 Show enrolled Linux hosts, sorted by name, as
 .B "device list"
@@ -4054,7 +3933,7 @@ that user gets no account. It refuses
 to run when no local administrator with a usable password exists outside
 the TACACS+ user list, and puts the PAM files back if any step fails.
 The server's port in it is the configured listener's
-.RB ( "config listen" ):
+.RB ( "server listen" ):
 the TACACS+
 .B default
 listener for tacplus (the
@@ -5057,7 +4936,7 @@ server IP, shared secret, current group-to-privilege mappings, and
 the VTY-ACL built from
 .B config mgmt-acl
 pre-filled. Over TACACS+ the server's port is the configured listener's
-.RB ( "config listen" ;
+.RB ( "server listen" ;
 default 49): a
 .B tacacs server
 block of a listener that is not on 49 has a
@@ -12700,9 +12579,12 @@ Options:
 The lockdowns that stand: scope, groups, since, how long, by whom, why, the users locked out, the superusers who keep access and the ways a device's local accounts stay usable. \fB\-\-json\fR prints an array with \fBlocked_users\fR and \fBexempt\fR.
 .SS Server settings \fB(tacctl server)\fR
 This server's own settings: an overview
-.RB ( "server show" )
-and the addresses devices and hosts reach it at. The family is the
-superuser's alone (the tier table has no row for it).
+.RB ( "server show" ),
+the addresses devices and hosts reach it at, where its backends listen
+.RB ( "server listen" )
+and the Prometheus exporter
+.RB ( "server metrics" ).
+The family is the superuser's alone (the tier table has no row for it).
 .TP
 .BI "server show [\-\-json]"
 Show this server in one place, and change nothing: the address devices and
@@ -12799,6 +12681,127 @@ beside the command's own pair of lines.
 Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command server addresses
+.TP
+.B "server listen " "[ \-\-backend \fIid\fR ] [ \-\-listener \fIname\fR ] { show | tcp | tcp6 | udp | udp6 | reset } " [ address ]
+Show, change, or reset a listen address (default: the
+.B tacacs
+backend's listener
+.BR default ;
+the backend ids are listed by
+.BR "backend list" ).
+Stored in
+.I tacctl.yaml
+.RB ( listeners. \fIbackend\fB. \fIname\fR),
+from which tacctl renders the TACACS+ units' systemd drop-ins and the
+RADIUS
+.B listen
+sections.
+.B reset
+clears the override and falls back to the built-in default.
+A TACACS+ listener named with
+.BI \-\-listener " name"
+runs as its own unit
+.BI tacquito@ name .service
+with its own accounting log; for such a listener
+.B reset
+removes it. TACACS+ listeners take
+.B tcp
+or
+.BR tcp6 ;
+RADIUS ones
+.RB ( "\-\-backend radius" )
+take
+.B udp
+or
+.B udp6
+and are named: the built-in
+.B auth
+(udp :1812) and
+.B acct
+(udp :1813); a further name is an authentication listener. The unit is
+restarted and must stay up, or
+.I tacctl.yaml
+and the drop-ins are put back. A listener's
+.B tls
+block in
+.I tacctl.yaml
+is reserved:
+.B "tls.enabled: true"
+is rejected (TACACS+ over TLS is not implemented).
+.B
+Switching to tcp6
+prompts for confirmation because dual-stack sockets accept IPv4
+clients via mapped addresses
+.RB ( ::ffff:x.x.x.x )
+that silently bypass IPv4 prefix ACLs; see
+.B NOTES.
+.\" BEGIN GENERATED: command server listen
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-backend\fR \fI<id>\fR
+Act on another backend (tacctl backend list).
+.TP
+\fB\-\-listener\fR \fI<name>\fR
+Act on another listener than 'default' (reset removes it).
+.RE
+.\" END GENERATED: command server listen
+.TP
+.B "server metrics " "{ show | enable | disable | address " \fIhost:port\fR " | reset }"
+Control tacquito's prometheus HTTP exporter's listen address (TACACS+ only;
+FreeRADIUS has no exporter). Stored as
+.BR backends.tacacs.metrics_address .
+.B show
+(no arg) prints current state and address.
+.B enable
+clears the override and reverts to the unit default
+.RB ( 127.0.0.1:8080 ,
+loopback-only).
+.B disable
+sinks the exporter to
+.BR 127.0.0.1:0 ,
+an ephemeral loopback port that no scraper can discover (tacquito's
+.B -export-promhttp=false
+would stop the whole daemon, so it is not used).
+.B "address " \fIhost:port\fR
+binds explicitly (e.g.
+.B 10.1.0.1:8080
+to expose to external scrapers); non-loopback binds print a warning.
+.B reset
+clears the override and falls back to the unit default.
+.\" BEGIN GENERATED: command server metrics address
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command server metrics address
+.\" BEGIN GENERATED: command server metrics disable
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command server metrics disable
+.\" BEGIN GENERATED: command server metrics enable
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command server metrics enable
+.\" BEGIN GENERATED: command server metrics reset
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command server metrics reset
+.\" BEGIN GENERATED: command server metrics show
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command server metrics show
 .SS Login console \fB(tacctl console)\fR
 The login console
 .RB ( tacctl\-console )
@@ -13536,7 +13539,7 @@ The server address, the authentication and accounting ports (the
 and
 .B acct
 listeners shown by
-.BR "config listen --backend radius show" )
+.BR "server listen --backend radius show" )
 and the scope's shared secret are filled in; the management ACL, the
 exec timeout, the scope's
 .B aaa-order
@@ -13810,8 +13813,8 @@ store rollback, uninstall, upgrade
 .B "mixed"
 config allow, config bcrypt\-cost, config branch, config cisco,
 config deny, config devices, config juniper, config linux,
-config listen, config loglevel, config metrics, config mgmt\-acl,
-config password\-age, config password\-min\-length, config render,
+config loglevel, config mgmt\-acl, config password\-age,
+config password\-min\-length, config render,
 config secret\-min\-length, config snmp, config validate, config wti,
 console agent\-forwarding, console color, console forwarding,
 console idle\-timeout, console list\-max, console password\-cache,
@@ -13826,7 +13829,8 @@ host target, scope aaa\-order, scope auth\-method, scope block,
 scope breakglass, scope default, scope devices, scope exec\-timeout,
 scope mgmt\-acl, scope netconf, scope prefixes, scope protocols,
 scope radius\-group, scope secret, scope snmp, scope staging,
-scope tacacs\-group, scope vendor\-attrs, user scope
+scope tacacs\-group, scope vendor\-attrs, server listen,
+server metrics, user scope
 .TP
 .B "mixed, auth.notice"
 config audit\-strict, config sudoers, console system\-shell, rollback,
@@ -14058,10 +14062,10 @@ scope, file. config linux script wrote a file that holds the scope's secret.
 .B "config allow, config deny, config mgmt\-acl"
 op (add, remove, clear, cisco\-name or juniper\-name), value.
 .TP
-.B "config password\-age, config bcrypt\-cost, config password\-min\-length, config secret\-min\-length, config loglevel, config metrics, config branch"
+.B "config password\-age, config bcrypt\-cost, config password\-min\-length, config secret\-min\-length, config loglevel, config branch, server metrics"
 from, to.
 .TP
-.B "config listen"
+.B "server listen"
 backend, listener, from, to.
 .TP
 .B "config devices"
@@ -14555,8 +14559,8 @@ or
 print their own usage and return without side effects.
 Scalar getter/setters
 .RB ( "config loglevel" ,
-.BR "config listen" ,
-.BR "config metrics" ,
+.BR "server listen" ,
+.BR "server metrics" ,
 .BR "config password-age" ,
 .BR "config bcrypt-cost" ,
 .BR "config password-min-length" ,
@@ -14799,7 +14803,7 @@ are
 .BI listeners. backend . name
 in
 .I tacctl.yaml
-.RB ( "config listen" ).
+.RB ( "server listen" ).
 The TACACS+ listener
 .B default
 (tcp :49; the port the device walkthroughs and the Linux host scripts name for TACACS+, and the pulls and plans compare, is its
@@ -14900,7 +14904,8 @@ and the services were not changed and to run the command again). Every write of
 .IR tacctl.yaml ,
 the store commands,
 .BR "config render" ,
-.BR "config listen|loglevel|metrics" ,
+.BR "config loglevel" ,
+.BR "server listen|metrics" ,
 the RADIUS listener changes,
 .BR "backend enable|disable" ,
 .BR "store import" ,
@@ -15157,7 +15162,7 @@ Log level of tacquito. Set with \fBtacctl config loglevel\fR.
 .TP
 .B backends.tacacs.metrics_address
 host:port. Default: 127.0.0.1:8080.
-Where tacquito's Prometheus exporter listens. Set with \fBtacctl config metrics address\fR.
+Where tacquito's Prometheus exporter listens. Set with \fBtacctl server metrics address\fR.
 .TP
 .B bcrypt.cost
 integer, 10 to 14. Default: 12.
@@ -15309,7 +15314,7 @@ The mode of the scope's Junos management filter: strict accepts every protocol f
 .TP
 .B listeners.<backend>.<name>
 mapping with network, address, role, metrics_address, tls (tls is reserved). Default: tacacs.default is tcp :49; radius.auth is udp :1812; radius.acct is udp :1813.
-Where a backend's daemon listens; the built-in listeners can be changed and reset, not removed. Set with \fBtacctl config listen\fR.
+Where a backend's daemon listens; the built-in listeners can be changed and reset, not removed. Set with \fBtacctl server listen\fR.
 .TP
 .B junos.<group>.deny_commands
 list of regular expressions. Default: none (unset).
@@ -16303,9 +16308,9 @@ Template unit, one instance per further listener.
 Systemd drop-in holding the listen address, log level, metrics address
 and accounting log of the unit. Rendered by tacctl from
 .I tacctl.yaml
-.RB ( "tacctl config listen" ,
+.RB ( "tacctl server listen" ,
 .BR "tacctl config loglevel" ,
-.BR "tacctl config metrics" );
+.BR "tacctl server metrics" );
 edits are overwritten. Instances have
 .IR tacquito@<name>.service.d/tacctl.conf .
 .TP
@@ -16427,15 +16432,15 @@ Enroll a Linux host with pam_radius_auth, then switch it to pam_tacplus:
 .TP
 Bind the listeners to a specific management IP:
 .nf
-.B "  tacctl config listen tcp 10.1.0.1:49"
-.B "  tacctl config listen --backend radius --listener auth udp 10.1.0.1:1812"
+.B "  tacctl server listen tcp 10.1.0.1:49"
+.B "  tacctl server listen --backend radius --listener auth udp 10.1.0.1:1812"
 .fi
 .TP
 Check, without writing anything, whether a tacquito.yaml can move into the store:
 .B tacctl store import --check
 .TP
 Expose the Prometheus exporter to an external scraper (default is loopback-only):
-.B tacctl config metrics address 10.1.0.1:8080
+.B tacctl server metrics address 10.1.0.1:8080
 .TP
 Enable passwordless invocation for members of the adm group:
 .B tacctl config sudoers install adm

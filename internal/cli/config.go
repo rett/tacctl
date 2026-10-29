@@ -3,7 +3,7 @@ package cli
 // The 'config' family (lib/dispatch.sh cmd_config at 0.1.16). Native since
 // WP2.4c: show, validate, render (and the new 'render --dry-run --out',
 // docs/plans/go-rewrite.md 3.9 item 8), dump, defaults, get, get-list,
-// loglevel, listen, metrics, sudoers [tiers], password-age, bcrypt-cost,
+// loglevel, sudoers [tiers], password-age, bcrypt-cost,
 // password-min-length, secret-min-length, audit-strict and branch
 // (config_report.go: show and validate; config_admin.go: sudoers, branch,
 // render --dry-run).
@@ -16,7 +16,6 @@ package cli
 
 import (
 	"context"
-	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -57,15 +56,11 @@ var configSpecs = map[string]Spec{
 	"validate": {MaxArgs: 0, Flags: []Flag{flagJSON, {Names: []string{"--fix-names"}}, flagYes}},
 	"render": {MaxArgs: 0, Flags: []Flag{
 		{Names: []string{"--force"}}, {Names: []string{"--dry-run"}}, {Names: []string{"--out"}, Value: true, Kind: KindFile}}},
-	"dump":     {MaxArgs: -1},
-	"defaults": {MaxArgs: -1},
-	"get":      {MinArgs: 1, MaxArgs: 2, Args: []string{configPaths}},
-	"get-list": {MinArgs: 1, MaxArgs: 1, Args: []string{configPaths}},
-	"loglevel": {MaxArgs: 1, Args: []string{"debug|info|error"}},
-	"listen": {MaxArgs: 2, Args: []string{"show|reset|tcp|tcp6|udp|udp6", ""}, Flags: []Flag{
-		{Names: []string{"--backend"}, Value: true, Kind: "backends"},
-		{Names: []string{"--listener"}, Value: true, Kind: KindListeners}}},
-	"metrics":             {MaxArgs: 2, Args: []string{"show|enable|disable|address|reset", ""}},
+	"dump":                {MaxArgs: -1},
+	"defaults":            {MaxArgs: -1},
+	"get":                 {MinArgs: 1, MaxArgs: 2, Args: []string{configPaths}},
+	"get-list":            {MinArgs: 1, MaxArgs: 1, Args: []string{configPaths}},
+	"loglevel":            {MaxArgs: 1, Args: []string{"debug|info|error"}},
 	"sudoers":             {MaxArgs: 2, Args: []string{"show|install|remove|tiers", ""}},
 	"password-age":        {MaxArgs: 1},
 	"bcrypt-cost":         {MaxArgs: 1, Args: []string{"10|11|12|13|14"}},
@@ -94,7 +89,6 @@ func configCmd(inv *invocation) *cobra.Command {
 			verb("clear", "Wipe all (confirms)"),
 		)
 	}
-	metrics := inv.configMetrics
 	tiers := func(args []string) error { return inv.configSudoers(append([]string{"tiers"}, args...)) }
 	c := verb("config <subcommand>", "Configuration (show, render, cisco, juniper, wti, validate, ...)",
 		withRun(verb("show", "Show current configuration"), n(inv.configShow)),
@@ -121,15 +115,6 @@ func configCmd(inv *invocation) *cobra.Command {
 		verb("diff", "Diff store.yaml and tacctl.yaml vs the last snapshot (or named one)"),
 		verb("restore", "Restore a snapshot (prompts for confirmation)"),
 		withRun(verb("loglevel [debug|info|error]", "Show or change log level"), n(inv.configLoglevel)),
-		withRun(verb("listen [--backend <id>] [--listener <name>] [show|reset|<network> <address>]",
-			"Show, change, or reset a listen address"), n(inv.configListen)),
-		withRun(verb("metrics [show|enable|disable|reset|address <host:port>]", "Prometheus exporter control",
-			sub("show", "Show the exporter's state", metrics),
-			sub("enable", "Enable the exporter", metrics),
-			sub("disable", "Disable the exporter", metrics),
-			sub("address", "Set the exporter's address", metrics),
-			sub("reset", "Reset the exporter's address", metrics),
-		), n(metrics)),
 		withRun(verb("sudoers [show|install [group]|remove|tiers ...]", "Manage NOPASSWD sudoers drop-in for tacctl",
 			sub("show", "Show the drop-in", inv.configSudoers),
 			sub("install", "Install the drop-in (confirms)", inv.configSudoers),
@@ -364,7 +349,7 @@ func (inv *invocation) configAuditStrict(args []string) error {
 // --- loglevel and metrics (the TACACS+ backend's settings) ------------------
 
 // tacacsSettings is what the TACACS+ module offers for 'config loglevel'
-// and 'config metrics' (internal/backend/tacacs).
+// and 'server metrics' (internal/backend/tacacs).
 type tacacsSettings interface {
 	LogLevel(ctx context.Context, level string) error
 	Metrics(ctx context.Context, sub, arg string) error
@@ -430,125 +415,6 @@ func (inv *invocation) settingChange(event, path, fallback string, set func() er
 			before, after = word(before), word(after)
 		}
 		inv.detail(event, kvp("from", before), kvp("to", after))
-	}
-	return err
-}
-
-// configMetrics is cmd_config_metrics. An unknown subcommand is refused
-// here, through 'error' (echo -e), before the module is asked.
-func (inv *invocation) configMetrics(args []string) error {
-	sub := arg(args, 0)
-	switch sub {
-	case "", "show", "-h", "--help", "help", "enable", "disable", "address", "reset":
-	default:
-		return inv.unknownSub(sub)
-	}
-	b, err := inv.tacacsBackend()
-	if err != nil {
-		return err
-	}
-	switch sub {
-	case "enable", "disable", "address", "reset":
-		return inv.settingChange("config metrics", "backends.tacacs.metrics_address", "127.0.0.1:8080",
-			func() error { return b.Metrics(inv.ctx, sub, arg(args, 1)) }, nil)
-	}
-	return b.Metrics(inv.ctx, sub, arg(args, 1))
-}
-
-// --- listen (lib/backend.sh cmd_config_listen) ------------------------------
-
-var reListenerName = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
-
-// configListen is cmd_config_listen: [--backend <id>] [--listener <name>]
-// [show|reset|<network> <address>], the TACACS+ default listener without
-// flags. Any other word, a dash-word included, is a positional.
-func (inv *invocation) configListen(args []string) error {
-	a := inv.app
-	id, listener := backend.TACACS, "default"
-	var rest []string
-	for i := 0; i < len(args); i++ {
-		w := args[i]
-		switch {
-		case w == "--backend" || w == "--listener":
-			if arg(args, i+1) == "" {
-				return inv.usageErr(w + " needs a value. Usage: tacctl config listen [--backend <id>] [--listener <name>] <show|<network> <address>|reset>")
-			}
-			if w == "--backend" {
-				id = args[i+1]
-			} else {
-				listener = args[i+1]
-			}
-			i++
-		case strings.HasPrefix(w, "--backend="):
-			id = strings.TrimPrefix(w, "--backend=")
-		case strings.HasPrefix(w, "--listener="):
-			listener = strings.TrimPrefix(w, "--listener=")
-		default:
-			rest = append(rest, w)
-		}
-	}
-	set := a.Backends()
-	if !slices.Contains(set.IDs(), id) {
-		return inv.usageErr("Unknown backend '" + id + "' (known: " + strings.Join(set.IDs(), " ") + ").")
-	}
-	if !reListenerName.MatchString(listener) {
-		return inv.usageErr("Invalid listener name '" + listener + "': a lowercase letter, then up to 31 of [a-z0-9_-].")
-	}
-	b, err := set.Get(id)
-	if err != nil {
-		return err
-	}
-	ops := b.Listeners()
-	switch sub := arg(rest, 0); sub {
-	case "", "show":
-		shown, err := ops.Show(inv.ctx, listener)
-		if err != nil {
-			return err
-		}
-		inv.echo("")
-		inv.echo(strings.TrimRight(shown, "\n"))
-		inv.echo("")
-		if id != backend.TACACS {
-			// Another backend's networks and listener names are its own.
-			inv.echo("  Usage: tacctl config listen --backend " + id + " --listener <name> <network> <address>")
-			inv.echo("         tacctl config listen --backend " + id + " --listener <name> reset")
-			inv.echo("")
-			return nil
-		}
-		inv.write(`  Usage: tacctl config listen [show|tcp|tcp6|reset] [<addr>]
-  Examples:
-    tacctl config listen tcp :49
-    tacctl config listen tcp 10.1.0.1:49
-    tacctl config listen tcp6 [::]:49
-    tacctl config listen reset       # drop override, use template default
-
-`)
-		return nil
-	case "reset":
-		return inv.listenerChange(ops, id, listener, func() error { return ops.Reset(inv.ctx, listener) })
-	default:
-		// A network and an address; the backend says which networks it has.
-		return inv.listenerChange(ops, id, listener, func() error { return ops.Set(inv.ctx, listener, sub, arg(rest, 1)) })
-	}
-}
-
-// listenerChange runs set and writes 'config listen backend= listener= from=
-// to=' (each "<network> <address>", '-' for none) when the listener is not
-// what it was.
-func (inv *invocation) listenerChange(ops backend.ListenerOps, id, name string, set func() error) error {
-	text := func() string {
-		ls, _ := ops.List()
-		for _, l := range ls {
-			if l.Name == name {
-				return l.Network + " " + l.Address
-			}
-		}
-		return ""
-	}
-	before := text()
-	err := set()
-	if after := text(); err == nil && before != after {
-		inv.detail("config listen", kvp("backend", id), kvp("listener", name), kvp("from", before), kvp("to", after))
 	}
 	return err
 }
