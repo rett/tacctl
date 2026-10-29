@@ -9,7 +9,7 @@ doctype: explanation
 
 # Vendor Notes
 
-*What differs between Cisco, Junos and WTI for operations staff · Checked against tacctl 0.2.21*
+*What differs between Cisco, Junos and WTI for operations staff · Checked against tacctl 0.2.22*
 
 [Printable PDF](../pdf/tacctl-vendor-notes.pdf){: .pdf-link }
 
@@ -92,7 +92,7 @@ A new IOS 15.6 router may need `--legacy-ssh` and still speak `modern`.
 - **Restore point.** `tacctl device config plan sw1 --restore-point=flash:`
   adds a block to paste first; `configure replace` with that file backs out.
 - **Server port.** When the TACACS+ listener is not on 49
-  (`tacctl config listen`), the walkthrough adds `port <n>` under
+  (`tacctl server listen`), the walkthrough adds `port <n>` under
   `tacacs server TACACS`, after `address ipv4` (with `--legacy`, after
   `single-connection` on the `tacacs-server host` line). On 49 it adds
   nothing.
@@ -128,9 +128,9 @@ default); you type `commit` yourself after the check.
 
 On a virtual chassis, two routing engines or a cluster, the apply expects
 the check and the commits to answer for every member `show version` lists,
-and fails the step when one does not; a chassis of one member is applied to
-like a single device ([Engineer Guide](engineer-guide-device-changes.md)
-§5.1).
+and fails the step when one does not. The master of a virtual chassis
+answers without a label, and a chassis of one member is applied to like a
+single device ([Engineer Guide](engineer-guide-device-changes.md) §5.1).
 
 ### 3.3 Other Junos points
 
@@ -139,7 +139,7 @@ like a single device ([Engineer Guide](engineer-guide-device-changes.md)
 | Apply `failed: other editors or staged changes` | Someone has uncommitted configuration on the device. Coordinate; commit or discard on the device. |
 | `bad secret` continues on a Junos device after a re-paste | Delete the secret and set it again, to avoid hidden characters |
 | A blank device with only a local account | `tacctl device onboard` (Engineer Guide §2.3) |
-| The TACACS+ listener is not on 49 (`tacctl config listen`) | The walkthrough adds `set system tacplus-server <address> port <n>` |
+| The TACACS+ listener is not on 49 (`tacctl server listen`) | The walkthrough adds `set system tacplus-server <address> port <n>` |
 | Break-glass | A local `system login user` works after the tacplus timeout; `root` on the console is always local. Over ssh, `root` needs the scope to record it and `root-login allow` on the device ([Break Glass](break-glass.md) §1.1) |
 
 ### 3.4 The management filter: `ssh-only` or `strict`
@@ -255,7 +255,7 @@ The unit asks for the `wti` service and reads the standard `priv-lvl`:
 | Usernames | WTI's limit is 32 characters |
 | Service Name | Must be `wti`, not `shell` |
 | Fallback Local | Must be `On` for break-glass to work. With `Off`, nobody gets in until the hold is released. |
-| Authentication Port | The TACACS+ listener's (49 by default; `tacctl config listen`) |
+| Authentication Port | The TACACS+ listener's (49 by default; `tacctl server listen`) |
 | Multiple Logins | `On`, or pulls and second sessions are refused |
 
 WTI symptoms and fixes are in [Troubleshooting](troubleshooting.md) §6.
