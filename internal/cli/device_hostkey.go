@@ -41,8 +41,7 @@ func scanTarget(e devreg.Entry) (addr string, port int, legacy, ok bool) {
 // dial override applies.
 func realKeyFallback(inv *invocation) devreg.KeyFallback {
 	dial := inv.deviceDialer()
-	tm := inv.scanTiming()
-	return func(ctx context.Context, address string, port int, quick bool) ([]devreg.HostKey, error) {
+	return func(ctx context.Context, address string, port int, quick bool, tm devssh.ScanTiming) ([]devreg.HostKey, error) {
 		texts, err := devssh.ScanHostKeysTiming(ctx, address, port, tm, quick, dial)
 		if err != nil {
 			return nil, err
@@ -51,16 +50,11 @@ func realKeyFallback(inv *invocation) devreg.KeyFallback {
 	}
 }
 
-// scanTiming is the timing of every host-key read of an invocation: the
-// one place a scale for a slow link (per device, per scope) is plugged in
-// later. ssh-keyscan's two -T, the built-in client's connect, handshake and
-// per-type attempt all come from it (devssh.ScanTiming).
-func (inv *invocation) scanTiming() devssh.ScanTiming { return devssh.DefaultScanTiming() }
-
 // scanDevice reads the host keys of a device or host at addr: ssh-keyscan,
-// then the built-in client when that reads nothing (devreg.ScanWith).
+// then the built-in client when that reads nothing (devreg.ScanWith), with
+// the timing of the scale in force for the device at addr (scanTimingAt).
 func (inv *invocation) scanDevice(addr string, port int, legacy bool) ([]devreg.HostKey, error) {
-	return devreg.ScanWithTiming(inv.ctx, inv.app.Runner, addr, port, legacy, inv.hooks.scanFallback(inv), inv.scanTiming())
+	return devreg.ScanWithTiming(inv.ctx, inv.app.Runner, addr, port, legacy, inv.hooks.scanFallback(inv), inv.scanTimingAt(addr))
 }
 
 // scanDeviceAnswered is scanDevice without the read of a device that
@@ -68,7 +62,7 @@ func (inv *invocation) scanDevice(addr string, port int, legacy bool) ([]devreg.
 // failed ssh, which must not wait longer than ssh-keyscan and a device that
 // answered.
 func (inv *invocation) scanDeviceAnswered(addr string, port int, legacy bool) ([]devreg.HostKey, error) {
-	return devreg.ScanWithAnswered(inv.ctx, inv.app.Runner, addr, port, legacy, inv.hooks.scanFallback(inv), inv.scanTiming())
+	return devreg.ScanWithAnswered(inv.ctx, inv.app.Runner, addr, port, legacy, inv.hooks.scanFallback(inv), inv.scanTimingAt(addr))
 }
 
 // scanLearningLegacy is the scan of 'device enroll' and 'device collect', which
@@ -78,7 +72,7 @@ func (inv *invocation) scanDeviceAnswered(addr string, port int, legacy bool) ([
 // scan (the built-in client among it). legacy is whether the keys came from
 // the legacy scan; a device neither reads is the first scan's error.
 func (inv *invocation) scanLearningLegacy(addr string, port int) (keys []devreg.HostKey, legacy bool, err error) {
-	keys, err = devreg.ScanWithTiming(inv.ctx, inv.app.Runner, addr, port, false, nil, inv.scanTiming())
+	keys, err = devreg.ScanWithTiming(inv.ctx, inv.app.Runner, addr, port, false, nil, inv.scanTimingAt(addr))
 	if errors.Is(err, devreg.ErrNoAnswer) && inv.ctx.Err() == nil {
 		if k2, err2 := inv.scanDevice(addr, port, true); err2 == nil && len(k2) > 0 {
 			return k2, true, nil

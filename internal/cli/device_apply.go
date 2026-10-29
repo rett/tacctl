@@ -1218,11 +1218,13 @@ func (c *applyCtl) run2(junos []devreg.Entry) error {
 	for i, e := range junos {
 		jobs[i] = run.jobOf(e, nil, "")
 	}
+	// The time of a device is the setting scaled for it unless one was typed.
+	timeoutA, jobs := inv.scaleJobTimeouts(junos, jobs, aa.pull.timeout, aa.pull.timeoutTyped)
 	ctx, interrupts, stop := inv.batchInterrupts()
 	view := inv.newApplyView(junos, "check", aa.pull.json, c.user)
 	view.timing = aa.pull.timing
 	sumA := batch.Run(ctx, batch.Options{
-		Concurrency: aa.pull.concurrency, Cap: c.settings.maxConcurrency, Timeout: aa.pull.timeout,
+		Concurrency: aa.pull.concurrency, Cap: c.settings.maxConcurrency, Timeout: timeoutA,
 		MaxFailures: aa.pull.maxFailures, StopOnAuthFailure: true, Interrupts: interrupts, Clock: inv.batchClock(),
 	}, jobs, view)
 	stop()

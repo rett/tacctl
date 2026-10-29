@@ -37,7 +37,7 @@ type recordingFallback struct {
 }
 
 func (f *recordingFallback) fn() KeyFallback {
-	return func(_ context.Context, address string, port int, quick bool) ([]HostKey, error) {
+	return func(_ context.Context, address string, port int, quick bool, _ devssh.ScanTiming) ([]HostKey, error) {
 		f.mu.Lock()
 		f.calls = append(f.calls, address+" "+strconv.Itoa(port))
 		f.quick = append(f.quick, quick)
@@ -164,7 +164,7 @@ func TestScanWithSilentDeviceCancelled(t *testing.T) {
 // context's, not a NoAnswerError.
 func TestScanWithSilentDeviceCancelledInFallback(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	fb := func(ctx context.Context, _ string, _ int, _ bool) ([]HostKey, error) {
+	fb := func(ctx context.Context, _ string, _ int, _ bool, _ devssh.ScanTiming) ([]HostKey, error) {
 		cancel()
 		return nil, ctx.Err()
 	}
@@ -283,5 +283,39 @@ func TestScanWithTimingSetsTheKeyscanTimeouts(t *testing.T) {
 	}
 	if seconds(0) != 1 || seconds(time.Millisecond) != 1 || seconds(2*time.Second) != 2 {
 		t.Errorf("seconds: %d %d %d", seconds(0), seconds(time.Millisecond), seconds(2*time.Second))
+	}
+}
+
+// A scaled timing reaches every read of a scan: ssh-keyscan's two -T (the
+// combined scan and the one-type retries) and the fallback, which is handed
+// the timing with no zero field. Scale 3 is 15 s and 9 s; scale 1 the
+// defaults, and the fallback of a zero timing gets the defaults.
+func TestScanWithTimingScaledReachesEveryRead(t *testing.T) {
+	ctx := context.Background()
+	var got []devssh.ScanTiming
+	fb := func(_ context.Context, _ string, _ int, _ bool, tm devssh.ScanTiming) ([]HostKey, error) {
+		got = append(got, tm)
+		return nil, nil
+	}
+	r := keyscanSaying(banner)
+	tm := devssh.ScanTiming{}.Scaled(3)
+	_, _ = ScanWithTiming(ctx, r, "192.0.2.7", 22, false, fb, tm)
+	if !r.Called("ssh-keyscan", "-T", "15", "-p", "22", "-t", "ed25519,ecdsa,rsa", "192.0.2.7") || !r.Called("ssh-keyscan", "-T", "9", "-p", "22", "-t", "rsa", "192.0.2.7") {
+		t.Errorf("scale 3: %q", r.Argvs())
+	}
+	if len(got) != 1 || got[0] != tm {
+		t.Errorf("the fallback was given %+v, want %+v", got, tm)
+	}
+	got = nil
+	_, _ = ScanWithTiming(ctx, keyscanSaying(banner), "192.0.2.7", 22, false, fb, devssh.ScanTiming{})
+	if len(got) != 1 || got[0] != devssh.DefaultScanTiming() {
+		t.Errorf("a zero timing: the fallback was given %+v", got)
+	}
+	// RescanKeys reads each target with the timing it carries
+	got = nil
+	r = keyscanSaying(banner)
+	RescanKeys(ctx, r, []KeyTarget{{Name: "a", Address: "192.0.2.7", Port: 22, Timing: tm}}, fb)
+	if !r.Called("ssh-keyscan", "-T", "15") || len(got) != 1 || got[0] != tm {
+		t.Errorf("RescanKeys: %q, fallback %+v", r.Argvs(), got)
 	}
 }

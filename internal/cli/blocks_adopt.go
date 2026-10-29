@@ -71,7 +71,7 @@ func (inv *invocation) readHierarchy(e devreg.Entry, user, hierarchy string) (ad
 	password := string(secret)
 	askpass.Zero(secret)
 
-	ctx, cancel := context.WithTimeout(inv.ctx, st.timeout)
+	ctx, cancel := context.WithTimeout(inv.ctx, scaledDeviceTimeout(st.timeout, inv.scaleOfEntry(e)))
 	defer cancel()
 	fail := func(err error) (adoptRead, error) {
 		result, reason, hint := resultOf(ctx, e.Name, err)

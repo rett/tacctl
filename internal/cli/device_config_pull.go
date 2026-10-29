@@ -60,9 +60,11 @@ type pullArgs struct {
 	transport   string
 	concurrency int
 	timeout     time.Duration
-	maxFailures int
-	showDiff    bool
-	json        bool
+	// timeoutTyped: --timeout was given, and wins over the timing scale.
+	timeoutTyped bool
+	maxFailures  int
+	showDiff     bool
+	json         bool
 	// timing is --timing: the time of each phase per device and the slowest
 	// device.
 	timing bool
@@ -183,7 +185,7 @@ func (inv *invocation) pullArgsOf(p Parsed, verb string) (pullArgs, error) {
 		if err != nil {
 			return a, inv.argErr("--timeout takes seconds per device, 10 to 600: '"+p.Value("--timeout")+"'", usage)
 		}
-		a.timeout = time.Duration(n) * time.Second
+		a.timeout, a.timeoutTyped = time.Duration(n)*time.Second, true
 	}
 	if p.Has("--max-failures") {
 		n, err := atoiIn(p.Value("--max-failures"), 1, 1<<20)
@@ -455,7 +457,7 @@ func (inv *invocation) deviceTarget(e devreg.Entry, user string, pw devssh.Passw
 	host, _ := devreg.SSHTarget(e)
 	return devssh.Target{
 		Host: host, Port: e.SSHPort(), User: user, HostKeys: e.HostKeys, Legacy: e.LegacySSH,
-		Password: pw, ConnectTimeout: devssh.DefaultConnectTimeout, Dialer: inv.deviceDialer(),
+		Password: pw, ConnectTimeout: devssh.ConnectTimeoutFor(inv.scaleOfEntry(e)), Dialer: inv.deviceDialer(),
 	}
 }
 
@@ -1202,6 +1204,8 @@ func (inv *invocation) runPull(b pullBatch) (batch.Summary, []*pullOutcome, erro
 	for i, e := range b.entries {
 		jobs[i] = run.pullJob(e)
 	}
+	// The time of a device is the setting scaled for it unless one was typed.
+	timeout, jobs := inv.scaleJobTimeouts(b.entries, jobs, b.args.timeout, b.args.timeoutTyped)
 	// The start line of the audit is written here, on the command's own
 	// goroutine: the workers write the records, and audit.strict refuses by
 	// a panic that only this goroutine recovers (audit.Writer.Touch).
@@ -1209,7 +1213,7 @@ func (inv *invocation) runPull(b pullBatch) (batch.Summary, []*pullOutcome, erro
 	ctx, interrupts, stop := inv.batchInterrupts()
 	defer stop()
 	sum := batch.Run(ctx, batch.Options{
-		Concurrency: b.args.concurrency, Cap: settings.maxConcurrency, Timeout: b.args.timeout,
+		Concurrency: b.args.concurrency, Cap: settings.maxConcurrency, Timeout: timeout,
 		MaxFailures: b.args.maxFailures, StopOnAuthFailure: true, Interrupts: interrupts, Clock: inv.batchClock(),
 	}, jobs, b.view)
 	run.password = ""

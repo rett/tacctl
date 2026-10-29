@@ -395,6 +395,26 @@ current behaviour; this file is where history lives.
    lists the keys other releases added (the server address and name) as
    NETCONF settings in its warning.
 
+20. **The timing scale multiplies the host-key scans, the sessions, the SNMP
+   timeout and the per-device time of a pull.** At a scale above 1: the
+   connect and handshake budget of every ssh and NETCONF session to a device
+   (10 s: `device config pull`, `diff --pull`, `plan --pull`, `apply`,
+   `enroll`, `onboard`, `collect`, `support-bundle`) and the `ConnectTimeout`
+   of `tacctl ssh` (10 s); the host-key scans (ssh-keyscan's `-T` of 5 s and
+   3 s, and the built-in client's connect of 3 s, handshake of 10 s and
+   per-type attempt of 5 s), for `device add`, `hostkey`, `scan`, `check`,
+   `enroll`, `collect`, `onboard` and the diagnosis after a failed `ssh`; the
+   SNMP timeout (`snmp.timeout`, `scope snmp timeout`, `device snmp timeout`,
+   2 s by default), never above its maximum of 10 s, which the scale's read
+   says; and the per-device time of a pull or an apply
+   (`device.config.timeout`, 90 s by default), kept between 10 s and 600 s.
+   The confirmed-commit windows (`device.config.confirm_timeout`,
+   `device.apply.confirm_timeout`) are timers on the device and are never
+   scaled. An option typed on the command line wins over the scale:
+   `--timeout` of a pull or an apply is the time of every device of that run,
+   as typed; the scale replaces only the default, `device.config.timeout`. Where one run covers devices with different scales, each device has
+   the time its own scale gives.
+
 21. **`--timing` shows where the time of each device went.** `device config
    pull`, `device config diff --pull`, `device config plan --pull` and
    `device config apply` take `--timing`, for a run over many devices of which

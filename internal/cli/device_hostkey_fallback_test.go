@@ -29,7 +29,7 @@ func TestDeviceAddLegacyFallsBackToBuiltinScan(t *testing.T) {
 	rsa := hkKey(t, "rsa")
 	var calls []string
 	sb.hooks.keyFallback = func(*invocation) devreg.KeyFallback {
-		return func(_ context.Context, address string, port int, _ bool) ([]devreg.HostKey, error) {
+		return func(_ context.Context, address string, port int, _ bool, _ devssh.ScanTiming) ([]devreg.HostKey, error) {
 			calls = append(calls, address+":"+strconv.Itoa(port))
 			return []devreg.HostKey{rsa}, nil
 		}
@@ -74,7 +74,7 @@ func TestDeviceAddFallsBackToBuiltinScanWithoutLegacy(t *testing.T) {
 	ed := hkKey(t, "ed25519")
 	var calls []string
 	sb.hooks.keyFallback = func(*invocation) devreg.KeyFallback {
-		return func(_ context.Context, address string, port int, _ bool) ([]devreg.HostKey, error) {
+		return func(_ context.Context, address string, port int, _ bool, _ devssh.ScanTiming) ([]devreg.HostKey, error) {
 			calls = append(calls, address+":"+strconv.Itoa(port))
 			return []devreg.HostKey{ed}, nil
 		}
@@ -99,7 +99,7 @@ func TestScanLearningLegacy(t *testing.T) {
 	rsa, ed := hkKey(t, "rsa"), hkKey(t, "ed25519")
 	var fallbackCalls int
 	sb.hooks.keyFallback = func(*invocation) devreg.KeyFallback {
-		return func(context.Context, string, int, bool) ([]devreg.HostKey, error) {
+		return func(context.Context, string, int, bool, devssh.ScanTiming) ([]devreg.HostKey, error) {
 			fallbackCalls++
 			return []devreg.HostKey{rsa}, nil
 		}
@@ -128,7 +128,7 @@ func TestScanLearningLegacy(t *testing.T) {
 	// algorithms as before, neither): the first scan's error.
 	fallbackCalls = 0
 	sb.hooks.keyFallback = func(*invocation) devreg.KeyFallback {
-		return func(context.Context, string, int, bool) ([]devreg.HostKey, error) {
+		return func(context.Context, string, int, bool, devssh.ScanTiming) ([]devreg.HostKey, error) {
 			fallbackCalls++
 			return nil, devssh.ErrUnreachable
 		}
@@ -147,7 +147,7 @@ func TestDeviceAddLegacyBothScansFail(t *testing.T) {
 	sb := newSandbox(t, true)
 	called := 0
 	sb.hooks.keyFallback = func(*invocation) devreg.KeyFallback {
-		return func(context.Context, string, int, bool) ([]devreg.HostKey, error) {
+		return func(context.Context, string, int, bool, devssh.ScanTiming) ([]devreg.HostKey, error) {
 			called++
 			return nil, devssh.ErrHandshake
 		}
@@ -204,7 +204,7 @@ func TestDeviceAddSilentDeviceFallsBackToBuiltinScan(t *testing.T) {
 	var fbKeys []devreg.HostKey
 	var fbErr error
 	sb.hooks.keyFallback = func(*invocation) devreg.KeyFallback {
-		return func(_ context.Context, address string, port int, _ bool) ([]devreg.HostKey, error) {
+		return func(_ context.Context, address string, port int, _ bool, _ devssh.ScanTiming) ([]devreg.HostKey, error) {
 			calls = append(calls, address+":"+strconv.Itoa(port))
 			return fbKeys, fbErr
 		}
@@ -255,7 +255,7 @@ func TestRealKeyFallbackQuickBoundsTheConnect(t *testing.T) {
 	quickConnect := devssh.DefaultScanTiming().Connect
 
 	start := time.Now()
-	_, err := fb(inv.ctx, "192.0.2.1", 22, true)
+	_, err := fb(inv.ctx, "192.0.2.1", 22, true, devssh.DefaultScanTiming())
 	d := time.Since(start)
 	if !errors.Is(err, devssh.ErrTimeout) || dials != 1 || d < quickConnect-time.Second/2 || d > quickConnect+2*time.Second {
 		t.Errorf("quick: err %v, %d dials, took %v; want ErrTimeout after about %v", err, dials, d, quickConnect)
@@ -266,7 +266,7 @@ func TestRealKeyFallbackQuickBoundsTheConnect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), quickConnect+time.Second)
 	defer cancel()
 	start = time.Now()
-	_, err = fb(ctx, "192.0.2.1", 22, false)
+	_, err = fb(ctx, "192.0.2.1", 22, false, devssh.DefaultScanTiming())
 	if err == nil || time.Since(start) < quickConnect+time.Second/2 {
 		t.Errorf("not quick: err %v after %v, want the connect to outlast the quick budget", err, time.Since(start))
 	}

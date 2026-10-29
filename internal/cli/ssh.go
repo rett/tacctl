@@ -375,7 +375,7 @@ func (inv *invocation) sshResolve(p Parsed, caller string, extra, fwd []string) 
 	}
 	// No agent socket and no identity (an enrolled host's is the
 	// provisioning account's): the session is the caller's, by password.
-	opts := devreg.OptionArgs(devreg.SSHOptions(e, a.Paths.KnownHosts))
+	opts := devreg.OptionArgs(devreg.SSHOptionsScaled(e, a.Paths.KnownHosts, inv.scaleOfEntry(e)))
 	plan.args = append(append(plan.args, fwd...), "-l", caller)
 	if inConsole {
 		opts = append(sshConsoleOptions(inv.sshEscape(), len(fwd) > 0), opts...)

@@ -350,8 +350,11 @@ func Down(stderr []byte) bool { return reDown.Match(stderr) }
 // connect shortly, so that a filtered or powered-off address does not cost
 // the whole handshake budget. It is a parameter (the cli hands in the real
 // one, a test its own) so that this package never dials. Keys it returns are
-// ordinary HostKeys; an error, or none, leaves the ssh-keyscan outcome.
-type KeyFallback func(ctx context.Context, address string, port int, quick bool) ([]HostKey, error)
+// ordinary HostKeys; an error, or none, leaves the ssh-keyscan outcome. tm is
+// the timing of the scan (no zero field; a scaled one for a slow or distant
+// device, devssh.ScanTiming.Scaled): the fallback reads with it, so that its
+// connect, handshake and per-type attempt are the scan's, not a default.
+type KeyFallback func(ctx context.Context, address string, port int, quick bool, tm devssh.ScanTiming) ([]HostKey, error)
 
 // Scan reads the host keys address offers on port with ssh-keyscan. A
 // device that does not answer is ErrNoAnswer; ssh-keyscan missing is an
@@ -390,8 +393,8 @@ func ScanWith(ctx context.Context, r execx.Runner, address string, port int, leg
 
 // ScanWithTiming is ScanWith with the timing tm of ssh-keyscan's two -T and
 // of the built-in client's reads (its zero fields are the defaults of
-// devssh.DefaultScanTiming). The fallback is built with the same timing by
-// the caller: this package never dials.
+// devssh.DefaultScanTiming); the fallback is handed the same timing, and this
+// package never dials.
 func ScanWithTiming(ctx context.Context, r execx.Runner, address string, port int, legacy bool, fallback KeyFallback, tm devssh.ScanTiming) ([]HostKey, error) {
 	return scanWith(ctx, r, address, port, legacy, fallback, true, tm)
 }
@@ -433,7 +436,7 @@ func scanWith(ctx context.Context, r execx.Runner, address string, port int, leg
 		return nil, scanFailure(err, tried)
 	}
 	tried.Silent = silent && !legacy
-	fk, ferr := fallback(ctx, address, port, silent && !legacy)
+	fk, ferr := fallback(ctx, address, port, silent && !legacy, tm)
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}

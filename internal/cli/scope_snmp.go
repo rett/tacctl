@@ -247,6 +247,9 @@ func (inv *invocation) scopeSNMPShow(scope string, reveal bool) error {
 	}
 	inv.echo("  port:       " + strconv.Itoa(e.Port) + "  " + from(e.PortFrom))
 	inv.echo("  timeout:    " + strconv.Itoa(e.Timeout) + " s, one retry  " + from(e.TimeoutFrom))
+	if note := snmpScaleNote(e.Timeout, inv.timeoutScaleOf(scope, 0).N); note != "" {
+		inv.echo(note)
+	}
 	secret := func(set bool, value string) string {
 		switch {
 		case !set:

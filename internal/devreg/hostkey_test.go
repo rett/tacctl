@@ -16,6 +16,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/rett/tacctl/internal/devssh"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
 )
@@ -177,7 +178,7 @@ func TestScanWithFallback(t *testing.T) {
 		calls   []string
 	)
 	answer := func(keys []HostKey, err error) KeyFallback {
-		return func(_ context.Context, address string, port int, _ bool) ([]HostKey, error) {
+		return func(_ context.Context, address string, port int, _ bool, _ devssh.ScanTiming) ([]HostKey, error) {
 			callsMu.Lock()
 			calls = append(calls, address+" "+strconv.Itoa(port))
 			callsMu.Unlock()

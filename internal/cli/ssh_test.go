@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/rett/tacctl/internal/devreg"
+	"github.com/rett/tacctl/internal/devssh"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
 )
@@ -299,7 +300,7 @@ func TestSSHHostKeyDiagnosisDoesNotReadASilentDevice(t *testing.T) {
 	sb, _, _ := sshSandbox(t)
 	var calls []string
 	sb.hooks.keyFallback = func(*invocation) devreg.KeyFallback {
-		return func(_ context.Context, address string, port int, _ bool) ([]devreg.HostKey, error) {
+		return func(_ context.Context, address string, port int, _ bool, _ devssh.ScanTiming) ([]devreg.HostKey, error) {
 			calls = append(calls, address+":"+strconv.Itoa(port))
 			return []devreg.HostKey{hkKey(t, "ecdsa")}, nil
 		}
