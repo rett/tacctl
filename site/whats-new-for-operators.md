@@ -10,7 +10,7 @@ commands: historical
 
 # What's New for Operators
 
-*The changes in each tacctl release that people on shift will notice · Checked against tacctl 0.2.20*
+*The changes in each tacctl release that people on shift will notice · Checked against tacctl 0.2.21*
 
 [Printable PDF](../pdf/tacctl-whats-new-for-operators.pdf){: .pdf-link }
 
@@ -24,7 +24,29 @@ first.
 
 ---
 
-## 1. tacctl 0.2.20
+## 1. tacctl 0.2.21
+
+Released 2026-10-28 ·
+[Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.21.md)
+
+| Change | What it means on shift | Page |
+|---|---|---|
+| **Every user logs in to the server** | Every user can log in to the tacctl server and its console, whatever their scopes, unless disabled or in a group of tier none. The login is a scope called `tacctl` that tacctl manages: reserved, in no listing, edited by no command. Device logins keep the user's own scopes. | [Superuser Daily Operations](superuser-daily-operations.md) §10, §11.1 |
+| `install` and `upgrade` set the login up | `install` asks once (`--yes` answers, `--server <ip>` sets the address); `upgrade` asks on a terminal only. `host enroll --local` stays the way to rebuild, move or repair it. | [Superuser Daily Operations](superuser-daily-operations.md) §11.1 |
+| `tacctl server addresses` | The address devices and hosts reach the server at is a setting of its own. The device walkthroughs, `config linux script` and `host enroll` default to it. | [Superuser Daily Operations](superuser-daily-operations.md) §11.2 |
+| `ssh` asks for the password first | With the password cache on and empty, `ssh` and `device ssh` ask for the password once, before they connect; the next `ssh` asks nothing. | [Getting Started](getting-started.md) §1.3 |
+| Walkthroughs follow the listener port | A TACACS+ listener that is not on 49 adds its `port` to the Cisco and Junos walkthroughs and the WTI Authentication Port item. | [Engineer Guide](engineer-guide-device-changes.md) §4.1 |
+| Junos chassis of one member | `device config apply` treats it like a single device | [Engineer Guide](engineer-guide-device-changes.md) §5.1 |
+| `tacctl rollback 0.2.20` | The release before this one is a target; every target keeps the users' server login | [Backups and Undo](backups-and-undo.md) §5 |
+| `user rename` to a name with a period | The refusal names the two ways forward | [Access Lifecycle](access-lifecycle.md) §3 |
+
+> **Before the upgrade,** rename a scope of your own that is called `tacctl`
+> (`tacctl scope rename tacctl <new-name>`): it is never taken over, and
+> while it exists `host enroll --local`, the sync of the server and
+> `config validate` stop with one line. **After it,** check the line about
+> the machine's own login, and run `tacctl host sync <server>` as before.
+
+## 2. tacctl 0.2.20
 
 Released 2026-10-28 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.20.md)
@@ -57,7 +79,7 @@ sub-commands:
 > and not before. No existing user must change their password until a
 > superuser says so.
 
-## 2. tacctl 0.2.19
+## 3. tacctl 0.2.19
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.19.md)
 
@@ -70,7 +92,7 @@ sub-commands:
 | Host names may contain dots | `tacctl host rename web1 web1.example.net` works | [Linux Host Operations](linux-host-operations.md) |
 | Unknown commands answered first | A mistyped command is answered before `sudo` asks for a password | — |
 
-## 3. tacctl 0.2.18
+## 4. tacctl 0.2.18
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.18.md)
 
@@ -89,7 +111,7 @@ you may have meant (`tacctl enroll` suggests `device enroll` and
 `host enroll`). Every tier can run `device notice list` and
 `device client-config`.
 
-## 4. tacctl 0.2.17
+## 5. tacctl 0.2.17
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.17.md)
 
@@ -105,7 +127,7 @@ you may have meant (`tacctl enroll` suggests `device enroll` and
 
 ---
 
-## 5. Older releases
+## 6. Older releases
 
 Releases 0.2.0 to 0.2.16 are listed on the
 [releases page](https://github.com/rett/tacctl/releases), and every change is
