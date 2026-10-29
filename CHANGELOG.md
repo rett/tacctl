@@ -76,6 +76,15 @@ current behaviour; this file is where history lives.
    The refusal of a rename to a name with a period and its notes are gone, as
    that name can no longer be made. The older entries of this file stay as
    they were written.
+4. **The command names of the top-level list are teal.** The `?` list of the
+   shell and the console, Tab's columns, the `Usage:` rows and `-h` /
+   `--help` showed the command names (`device`, `user`, `scope`) in bright
+   white, while the sub-commands, fixed words and options were teal, so the
+   list at `tacctl>` looked unlike the one after a sub-command. Command
+   names, sub-commands, fixed words and options are now all teal, and the
+   live names (users, groups, devices, hosts) stay bold. The colour is
+   emitted where it was: on a terminal, off in a pipe, with `NO_COLOR` and
+   `TACCTL_COLOR=never`, and in the console as `console color` says.
 
 ## 0.2.21 (2026-10-28)
 

@@ -31,9 +31,9 @@ type Candidate struct {
 	Unlisted   bool
 	Fixed      bool
 	// Command: the word is the name of a command (the first word at the top
-	// level); Live: it is a live name (a user, a group, a device). They
-	// choose the colour of the word in the lists (style); neither: a
-	// sub-command, a fixed word or an option.
+	// level); Live: it is a live name (a user, a group, a device). Live
+	// makes the word bold in the lists (style); any other word, command
+	// names included, is teal.
 	Command, Live bool
 	// Kind is what the word is, plural ('devices', 'commands'), for the
 	// question before a long list; empty: 'choices'.
@@ -516,13 +516,9 @@ func listed(cands []Candidate) []Candidate {
 }
 
 // style is the colour of the word of a candidate in the lists: a command
-// name bright white, a live name bold, any other word (a sub-command, a
-// fixed word, an option) teal.
+// name, a sub-command, a fixed word or an option teal, a live name bold.
 func (c Candidate) style() string {
-	switch {
-	case c.Command:
-		return ui.BrightWhite
-	case c.Live:
+	if c.Live {
 		return ui.Bold
 	}
 	return ui.Teal
@@ -644,8 +640,8 @@ func wrapWords(s string, w int) []string {
 func listing(cands []Candidate) string { return listingStyled(cands, false) }
 
 // listingStyled is listing with the words in their colours when styled
-// (style): a command name bright white, a sub-command, a fixed word and an
-// option teal, a live name bold; the descriptions are plain. The padding is
+// (style): a command name, a sub-command, a fixed word and an option teal, a
+// live name bold; the descriptions are plain. The padding is
 // counted on the plain label, so the columns are the same either way.
 func listingStyled(cands []Candidate, styled bool) string { return listingWidth(cands, styled, 0) }
 

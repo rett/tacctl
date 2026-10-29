@@ -20,8 +20,8 @@ func stripped(t *testing.T, s string) string {
 
 // The styled list is the plain one with the words in the palette: the same
 // bytes once the escapes are gone, the padding counted on the plain label. A
-// command name is bright white, a sub-command, a fixed word and an option
-// teal, a live name bold; the description is plain.
+// command name, a sub-command, a fixed word and an option are teal, a live
+// name bold; the description is plain.
 func TestListingStyled(t *testing.T) {
 	cands := []Candidate{
 		{Word: "device", Label: "device [<name>]", Desc: "x", Command: true, Fixed: true},
@@ -42,7 +42,7 @@ func TestListingStyled(t *testing.T) {
 		t.Errorf("plain text of the styled list %q, want %q", s, plain)
 	}
 	for _, want := range []string{
-		"  " + ui.BrightWhite + "device" + ui.NC + " [<name>]",
+		"  " + ui.Teal + "device" + ui.NC + " [<name>]",
 		"  " + ui.Teal + "bbb" + ui.NC + " " + ui.Teal + "[--long]" + ui.NC,
 		"  " + ui.Teal + "--all" + ui.NC,
 		"  " + ui.Bold + "alice" + ui.NC,
@@ -79,7 +79,7 @@ func TestColumnsStyled(t *testing.T) {
 		}
 	}
 	got := columnsStyled(cands, 80, true)
-	for _, want := range []string{ui.BrightWhite + "device" + ui.NC, ui.Bold + "alice" + ui.NC, ui.Teal + "list" + ui.NC, ui.Bold + "bob" + ui.NC} {
+	for _, want := range []string{ui.Teal + "device" + ui.NC, ui.Bold + "alice" + ui.NC, ui.Teal + "list" + ui.NC, ui.Bold + "bob" + ui.NC} {
 		if !strings.Contains(got, want) {
 			t.Errorf("no %q in %q", want, got)
 		}
@@ -336,6 +336,36 @@ func TestWrapWordsKeepsTheBlanks(t *testing.T) {
 	} {
 		if got := wrapWords(c.in, c.w); strings.Join(got, "|") != strings.Join(c.want, "|") {
 			t.Errorf("wrapWords(%q, %d) = %q, want %q", c.in, c.w, got, c.want)
+		}
+	}
+}
+
+// A command name of the top level and a sub-command are painted alike, in
+// the list of '?' and in Tab's columns: the same sequence, teal; only a live
+// name differs.
+func TestCommandNameAndSubCommandSameStyle(t *testing.T) {
+	root := Candidate{Word: "device", Label: "device [<name>]", Desc: "x", Command: true, Fixed: true}
+	sub := Candidate{Word: "list", Label: "list [<name>]", Desc: "x", Fixed: true}
+	live := Candidate{Word: "alice", Desc: "x", Live: true}
+	if root.style() != sub.style() || root.style() != ui.Teal {
+		t.Errorf("command name %q, sub-command %q, want both %q", root.style(), sub.style(), ui.Teal)
+	}
+	if live.style() == root.style() || live.style() != ui.Bold {
+		t.Errorf("live name %q, want %q", live.style(), ui.Bold)
+	}
+	first := func(s string) string {
+		i := strings.Index(s, "\x1b[")
+		if i < 0 {
+			return ""
+		}
+		return s[i : i+strings.IndexByte(s[i:], 'm')+1]
+	}
+	for _, render := range []func([]Candidate) string{
+		func(c []Candidate) string { return listingStyled(c, true) },
+		func(c []Candidate) string { return columnsStyled(c, 80, true) },
+	} {
+		if a, b := first(render([]Candidate{root})), first(render([]Candidate{sub})); a != b || a != "\x1b[36m" {
+			t.Errorf("the command name starts with %q, the sub-command with %q, want both SGR 36", a, b)
 		}
 	}
 }

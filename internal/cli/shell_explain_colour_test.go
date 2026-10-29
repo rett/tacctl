@@ -24,9 +24,9 @@ func (inv *invocation) plainExplain(root *cobra.Command) func([]string) (string,
 var reColour = regexp.MustCompile("\x1b\\[[0-9;]*m")
 
 // The usage, option and Next: lines are in the palette: the name of a
-// command of the top level bright white, sub-commands, fixed words and
-// options teal, placeholders and descriptions as they are; with the colour
-// taken out the text is the plain one, column for column.
+// command of the top level, sub-commands, fixed words and options teal,
+// placeholders and descriptions as they are; with the colour taken out the
+// text is the plain one, column for column.
 func TestExplainPalette(t *testing.T) {
 	inv, root, _ := shellTestInv(t)
 	explain := inv.shellExplain(root)
@@ -35,7 +35,7 @@ func TestExplainPalette(t *testing.T) {
 		want  []string
 	}{
 		{[]string{"version"}, []string{
-			"  " + ui.BrightWhite + "version" + ui.NC + " " + ui.Teal + "[--long]" + ui.NC + "  Print tacctl version",
+			"  " + ui.Teal + "version" + ui.NC + " " + ui.Teal + "[--long]" + ui.NC + "  Print tacctl version",
 			"  " + ui.Teal + "--long" + ui.NC + "  Also the commit",
 			"Next: <Enter> to run\n"}},
 		{[]string{"user", "add"}, []string{
@@ -82,7 +82,7 @@ func TestExplainPalette(t *testing.T) {
 				t.Errorf("%v: line %d differs", p, i)
 			}
 		}
-		if strings.Count(got, ui.NC) != strings.Count(got, "\x1b[36m")+strings.Count(got, "\x1b[97m") {
+		if strings.Count(got, ui.NC) != strings.Count(got, "\x1b[36m") {
 			t.Errorf("%v: a style is not closed:\n%q", p, got)
 		}
 	}
