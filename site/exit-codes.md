@@ -9,7 +9,7 @@ doctype: reference
 
 # Exit Codes
 
-*What each tacctl exit status means on shift and in scripts · Checked against tacctl 0.2.21*
+*What each tacctl exit status means on shift and in scripts · Checked against tacctl 0.2.22*
 
 [Printable PDF](../pdf/tacctl-exit-codes.pdf){: .pdf-link }
 
@@ -25,7 +25,7 @@ change is needed" apart.
 | Code | Meaning | What to do |
 |---|---|---|
 | **0** | Done, or nothing to do. Answering *no* to a removal's confirmation also cancels with nothing changed and exits 0. | Nothing |
-| **1** | Refused or failed. The reason is on standard error. Nothing changed unless the message says so. Includes a check that found a problem (`config validate`, `device check`, `host check`), a device that could not be read or planned, and a Junos apply that failed, rolled back or was left pending. | Read the message. For an apply, read each device's row. |
+| **1** | Refused or failed. The reason is on standard error. Nothing changed unless the message says so. Includes a check that found a problem (`config validate`, `device check`, `host check`), a device that could not be read or planned, and a Junos apply that failed, rolled back or was left pending. A command or sub-command that does not exist ends with 1 as well, after one error line and a `Run ... -h` pointer. | Read the message. For an apply, read each device's row. |
 | **2** | Wrong arguments. Also, with `--exit-code`: `device config diff` found a difference, or `device config plan` / `apply --check` found a change is needed. | Fix the command, or act on the device that needs a change |
 | **3** | A backend command was refused because a rendered file holds a hand edit it would discard. Nothing was written. | `tacctl config validate` names both ways out (keep or discard the edit). Usually a superuser task. |
 | **126** | sudo could not be run to re-run tacctl as root | Check sudo on the server; escalate to the server owner |

@@ -91,7 +91,9 @@ For each address:
    console command that displays it (Cisco `show ip ssh`, Junos
    `file show /etc/ssh/ssh_host_ed25519_key.pub`). Compare them.
 2. **Accept the key by typing the device's name.** Enter skips the device.
-   Any other answer refuses it, with no second try. There is no `-y`.
+   Any other answer refuses it, with no second try. There is no `--yes` for
+   the key: `--host-key SHA256:<fp>` (one address, the fingerprint you read on
+   the console) answers it instead.
 3. **Confirm the registration**, then give your password once for the
    pulls.
 4. **Review the result.** tacctl reads the device, plans what needs
