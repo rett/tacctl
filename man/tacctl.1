@@ -1212,7 +1212,17 @@ Rename a user. The user's
 .B "console system\-shell user"
 setting moves to the new name, and the command says so. The new name is lower case and follows the rules of
 .BR "user add" ;
-the old name may be one with a period, which 0.2.20 and 0.2.21 allowed.
+the old name may be one with a period, which 0.2.20 and 0.2.21 allowed. Until
+it is renamed, such a user is refused by
+.BR passwd ,
+.B "user passwd"
+and
+.B "user require\-password\-change"
+(with the line
+.BR "rename it first: tacctl user rename <name> <new\-name>" ),
+and
+.B "host sync"
+skips it with a warning, since it has no account on the hosts.
 Changing only the spelling
 .RB ( "user rename Alice alice" )
 is how a name from before is fixed. A device matches the typed login name
