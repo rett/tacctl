@@ -144,11 +144,12 @@ by device name.
 ### 4.1 Find what you have
 
 ```bash
-tacctl device list                     # every device and host, with scope, state, last seen, CONFIG
+tacctl device list                     # every registered device: scope, state, last seen, CONFIG
 tacctl device list --scope site-a --vendor juniper
 tacctl device list --ip 10.10.0.0/16
 tacctl device list --stale             # not seen for stale-days (default 30)
 tacctl device list --unconfigured      # registered, but no scope covers the address
+tacctl device list --differs           # last pull differs from what is rendered now (no login)
 tacctl device list --probe             # adds REACH: TCP connect to the ssh port
 
 tacctl device show sw1                 # one device in full
@@ -157,7 +158,14 @@ tacctl device check --all
 ```
 
 A `STATE` of `configured` means a scope's prefixes cover the device's
-address. Only configured devices can authenticate users.
+address. Only configured devices can authenticate users. The enrolled Linux
+hosts are not in this list: `tacctl host list` shows them (§5).
+
+After a change of users, scopes or settings, `tacctl device list --differs`
+names the devices to pull or plan. It computes this from the pull records with
+no login, as `device config list --differs` does, and it counts as a filter:
+the heading reads `Registered devices (1), of 5`, and an empty result says
+`None match.`
 
 > `device check` and `--probe` connect from the tacctl server. If the server
 > has no route to the management ports, a timeout here may be a false alarm.
@@ -269,7 +277,8 @@ Superusers follow the same steps, for every scope.
 ## 5. Linux hosts
 
 ```bash
-tacctl host list                    # target, address, scope, server, method, users
+tacctl host list                    # target, address, scope, state, last seen, by, notices
+tacctl host list --scope site-a --stale     # filters: --name, --ip, --scope, --stale
 tacctl host check --all             # read-only: does every host match what tacctl would make it?
 tacctl host sync --all              # push user changes to every enrolled host
 ```
