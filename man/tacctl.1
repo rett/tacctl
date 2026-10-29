@@ -176,6 +176,18 @@ Listener, log-level and metrics settings in
 .I tacctl.yaml
 survive.
 .IP
+The upgrade is refused while the store has a user whose name has a period
+(0.2.20 and 0.2.21 allowed one; a user name is letters, digits, \&'_' and \&'\-'):
+the refusal lists each, with
+.B "user rename <name> <new\-name>"
+as the way out. Rename such a user before upgrading from 0.2.20 or 0.2.21: the
+upgrade of those releases has already replaced tacctl and the tacquito build
+when the new tacctl refuses, and the refusal says so (the store, the
+configuration and the services are not changed); run
+.B "tacctl upgrade"
+again after the rename to finish. Run on 0.2.22 itself, the refusal comes before
+anything is changed. A store that cannot be read does not hold it up.
+.IP
 The shell completion is rewritten only when its content changed (the output
 says
 .B Updated
@@ -2362,8 +2374,13 @@ case) is a warning under
 naming the rename that fixes it
 .RB ( "tacctl user rename Alice alice" ,
 and the like); the one for a user adds that devices match the typed login name
-exactly, so the rename changes what the person types at the device. Only the
-superuser's view has these warnings.
+exactly, so the rename changes what the person types at the device. A user whose
+name has a period (a leftover of 0.2.20 or 0.2.21; a user name is letters, digits,
+\&'_' and \&'\-') is an error under
+.BR "Names:" ,
+naming
+.BR "tacctl user rename <name> <new\-name>" ;
+\fB\-\-fix\-names\fR does not offer it. Only the superuser's view has these findings.
 .IP
 Then, for every enabled backend, whether its rendered config is up to date
 with the store and whether any of its files was edited by hand (drift). With

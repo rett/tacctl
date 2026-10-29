@@ -62,11 +62,20 @@ current behaviour; this file is where history lives.
    that user until it is renamed (a user that stands gets the line `rename it
    first: tacctl user rename <name> <new-name>`), `config linux uid <user>`
    prints its number if the ledger has one but `config linux uid <user> <uid>`
-   is refused, and `host sync` still skips it. `tacctl rollback` keeps
-   refusing them for every target but 0.2.20, which reads them (a restored
-   snapshot of 0.2.20 or 0.2.21 can bring one back). The refusal of a rename
-   to a name with a period and its notes are gone, as that name can no longer
-   be made. The older entries of this file stay as they were written.
+   is refused, and `host sync` still skips it. `config validate` reports each
+   such user as an error with the ready command `tacctl user rename <name>
+   <new-name>` (also in `--json`, section `names`), and `config validate
+   --fix-names` does not offer one. `tacctl upgrade` refuses while the store
+   has one, listing each user with that command. Rename such a user before
+   upgrading from 0.2.20 or 0.2.21: the upgrade of those releases has already
+   replaced `tacctl` and the tacquito build when the new `tacctl` refuses (the
+   store, the configuration and the services are not changed, and the refusal
+   says so), and `tacctl upgrade` run again after the rename finishes it.
+   `tacctl rollback` keeps refusing them for every target but 0.2.20, which
+   reads them (a restored snapshot of 0.2.20 or 0.2.21 can bring one back).
+   The refusal of a rename to a name with a period and its notes are gone, as
+   that name can no longer be made. The older entries of this file stay as
+   they were written.
 
 ## 0.2.21 (2026-10-28)
 

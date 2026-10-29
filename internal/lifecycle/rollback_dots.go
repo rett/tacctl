@@ -31,8 +31,7 @@ func DottedUsers(pa paths.Paths, hasStore bool) (inStore []string, err error) {
 	}
 	raw, err := store.LoadRaw(pa.StoreFile)
 	if err != nil {
-		return nil, fmt.Errorf("%s cannot be read, so a user name with a period cannot be ruled out (%s); fix it first (tacctl config validate)",
-			pa.StoreFile, strings.TrimSuffix(err.Error(), "."))
+		return nil, &UnreadableStoreError{Path: pa.StoreFile, Cause: strings.TrimSuffix(err.Error(), ".")}
 	}
 	if root, ok := raw.(*yamlpy.Map); ok {
 		if users, ok := root.Get("users"); ok {
@@ -42,6 +41,15 @@ func DottedUsers(pa paths.Paths, hasStore bool) (inStore []string, err error) {
 		}
 	}
 	return inStore, nil
+}
+
+// UnreadableStoreError is DottedUsers' error for a store that cannot be
+// read: the rollback stops on it, the upgrade says it and goes on.
+type UnreadableStoreError struct{ Path, Cause string }
+
+func (e *UnreadableStoreError) Error() string {
+	return fmt.Sprintf("%s cannot be read, so a user name with a period cannot be ruled out (%s); fix it first (tacctl config validate)",
+		e.Path, e.Cause)
 }
 
 func dotted(names []string) []string {

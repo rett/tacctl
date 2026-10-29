@@ -433,6 +433,13 @@ func (inv *invocation) collectValidate(r *validateReport) {
 			Kind: fnd.Kind, Name: fnd.Name, To: fnd.To, Verb: fnd.Verb})
 	}
 
+	// A user whose name has a period (0.2.20 and 0.2.21 allowed it): an
+	// error with the verb that renames it. `tacctl upgrade` refuses while
+	// one stands.
+	for _, fnd := range inv.dottedUserFindings() {
+		r.found(howEchoE, "  "+R+"Names:"+NC+"                "+fnd.Text+" ("+fnd.Fix+")", fnd)
+	}
+
 	// Break-glass local users (D55): a scope without one is a lockout risk
 	// when the server is unreachable, and a name that is also a tacctl user
 	// of its scope is shadowed on the device. Warnings, never errors.

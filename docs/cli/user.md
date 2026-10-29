@@ -135,6 +135,14 @@ can still hold a name with periods; it keeps loading, so the user can be shown, 
 moved, given scopes, removed and renamed. `user rename <old> <new>` is the way out, and the new name
 has no period. Meanwhile:
 
+- `config validate` reports each such user as an error with the command that renames it
+  (`tacctl user rename alice.smith <new-name>`), and `config validate --fix-names` does not offer a
+  name with a period.
+- `tacctl upgrade` refuses and names each user with the rename command. Rename such a user
+  *before* upgrading from 0.2.20 or 0.2.21 (`user rename` works there): the old release's upgrade
+  has already replaced `tacctl` and the tacquito build when the new `tacctl` refuses, and says so
+  (the store, the configuration and the services are not changed); after the rename, `tacctl
+  upgrade` finishes it.
 - `tacctl rollback` to any target but 0.2.20 (which reads such a name) is refused (the dry run too),
   since the releases it goes to refuse the name; the refusal lists each user with the rename
   command.

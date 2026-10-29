@@ -99,6 +99,11 @@ func Upgrade(ctx context.Context, h *Host, args []string) error {
 	if err := h.upgrade(ctx, ids, backend.PhasePreflight, ""); err != nil {
 		return err
 	}
+	// A user name with a period (0.2.20, 0.2.21) is no account name on this
+	// server: renamed first, nothing changed until then.
+	if err := h.dottedUsersGate(); err != nil {
+		return err
+	}
 	h.ensureSafeDirectory(ctx, p.Deploy)
 	tree := p.Tree
 

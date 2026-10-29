@@ -9,7 +9,8 @@ import (
 // A user name is letters, digits, '_' and '-' (0.2.22): every user has an
 // account on the tacctl server, and a name with a period cannot be a Linux
 // account name. 0.2.20 and 0.2.21 allowed periods, so a store can still hold
-// such a name; it is read, shown, listed, removed and renamed from.
+// such a name; it is read, shown, listed, removed and renamed from, and
+// 'config validate' and 'upgrade' name it with the command that renames it.
 
 const noDotsWant = "Username must contain only letters, numbers, underscores and hyphens (a period cannot be part of a Linux account name)."
 
@@ -199,6 +200,80 @@ func TestDottedUserRenameFrom(t *testing.T) {
 	}
 	sb.run("", []string{"config", "validate"})
 	sb.expect(0, "", "")
+}
+
+// 'config validate' names every user with a period as an error, with the
+// command that renames it, in the text report, in the JSON and in the exit
+// status; the dotted user is the only finding.
+func TestConfigValidateNamesDottedUsers(t *testing.T) {
+	sb := dottedSandbox(t)
+	sb.legacyStoreCase("  carol:", "  carol.lee:")
+	sb.run("", []string{"config", "validate"})
+	out := plain(sb.out.String() + sb.err.String())
+	if sb.code != 1 {
+		t.Errorf("exit %d, want 1:\n%s", sb.code, out)
+	}
+	for _, name := range []string{"bob.jones", "carol.lee"} {
+		want := "the user '" + name + "' has a period in its name; a user name is letters, digits, '_' and '-' (tacctl user rename " + name + " <new-name>)"
+		if !strings.Contains(out, want) {
+			t.Errorf("the report lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "Store:                valid") == false {
+		t.Errorf("the store itself is valid:\n%s", out)
+	}
+
+	v := validateJSONOf(t, sb.run("", []string{"config", "validate", "--json"}))
+	if sb.code != 1 {
+		t.Errorf("--json exit %d, want 1", sb.code)
+	}
+	var found []string
+	for _, f := range v.Findings {
+		if f.Section == "names" {
+			if f.Level != "error" {
+				t.Errorf("level %q: %+v", f.Level, f)
+			}
+			found = append(found, f.Fix)
+		}
+	}
+	if strings.Join(found, "|") != "tacctl user rename bob.jones <new-name>|tacctl user rename carol.lee <new-name>" {
+		t.Errorf("fixes %q", found)
+	}
+
+	// Renamed, the report is clean.
+	sb.run("", []string{"user", "rename", "bob.jones", "bob"})
+	sb.run("", []string{"user", "rename", "carol.lee", "carol"})
+	sb.run("", []string{"config", "validate"})
+	sb.expect(0, "", "")
+}
+
+// 'config validate --fix-names' does not offer a name with a period: not as
+// the lower-case spelling of a name with upper case either (the error names
+// the rename to pick a new name).
+func TestFixNamesDoesNotProposeAPeriod(t *testing.T) {
+	sb := newSandbox(t, true)
+	sb.legacyStoreCase("  bob:", "  Bob.Jones:")
+	before := sb.store()
+	sb.run("", []string{"config", "validate", "--fix-names", "-y"})
+	out := plain(sb.out.String() + sb.err.String())
+	if sb.code != 1 {
+		t.Errorf("exit %d, want 1:\n%s", sb.code, out)
+	}
+	if sb.store() != before {
+		t.Errorf("the store changed:\n%s", sb.store())
+	}
+	if strings.Contains(out, "rename Bob.Jones bob.jones") {
+		t.Errorf("a name with a period was proposed:\n%s", out)
+	}
+	if !strings.Contains(out, "tacctl user rename Bob.Jones <new-name>") {
+		t.Errorf("no rename command:\n%s", out)
+	}
+	if strings.Contains(out, "has upper case in its name") {
+		t.Errorf("a dotted user is offered the lower-case rename:\n%s", out)
+	}
+	if !strings.Contains(out, "Names: renamed 0, declined 0, not offered 0, failed 0.") {
+		t.Errorf("the summary:\n%s", out)
+	}
 }
 
 // uidLines are the entries of linux-uids, without its comment lines.
