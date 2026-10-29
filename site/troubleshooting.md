@@ -140,6 +140,7 @@ retry, run `tacctl log tail 50`, then set the log level back.
 | `store not initialised` | Legacy read-only mode (after `store rollback` or a stopped upgrade). See the upgrading docs. |
 | `is locked by another tacctl command` | Wait, then retry |
 | `not permitted` in the shell | Your tier doesn't allow the command. `?` shows the tier it needs. |
+| `[ERROR] Unknown subcommand: '<word>'`, then `Run 'tacctl <command> -h' for usage.` | The word is none of that command's sub-commands. The `Did you mean` line, when there is one, names the commands that have it; `<command> -h` lists the sub-commands. In the shell and the console a verb your tier cannot run is refused as not permitted, not as unknown. |
 | `A password change is required of '<user>'` | Only `passwd`, `version` and `help` run until you change your password: `tacctl passwd` |
 | A user cannot log in to the tacctl server or its console | Every user can, unless disabled or in a group of tier none (`tacctl user show <name>`). The account exists after the next `tacctl host sync <server>`. A name with a period (stored by 0.2.20 or 0.2.21) has no Linux account: `tacctl user rename <name> <new-name>`. |
 | `Username must contain only letters, numbers, underscores and hyphens (a period cannot be part of a Linux account name).` | `user add` or `user rename` was given a name with a period. Use `-` or `_`. |

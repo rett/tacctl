@@ -118,7 +118,7 @@ you may have meant (`tacctl enroll` suggests `device enroll` and
 | Change | What it means on shift | Page |
 |---|---|---|
 | **`tacctl device enroll`** | One attended command from a new address to its plan: key, vendor, registration, pull, plan | [Engineer Guide](engineer-guide-device-changes.md) §2.2 |
-| **Apply review asks per device** | Approve each Junos device by typing its name. Typing a count no longer works; scripts use `--confirmed -y`. | [Engineer Guide](engineer-guide-device-changes.md) §5.1 |
+| **Apply review asks per device** | Approve each Junos device by typing its name. Typing a count no longer works; scripts use `--confirmed --yes`. | [Engineer Guide](engineer-guide-device-changes.md) §5.1 |
 | **Host keys accepted one device at a time** | `enroll`, `collect` and `onboard` show the one key they will pin; you accept it by typing the name back | [Connecting to Devices](connecting-to-devices.md) §6 |
 | **Audit session id** | Every audit line ends in `sid=<id>`, so one `grep` finds a whole command. Log filters that anchor the end of a line (`$`) need updating. | [Audit and Compliance](audit-and-compliance.md) §2 |
 | `cmd start` / `cmd end` lines | Every change writes a start and an end line, with the result and the snapshot taken | [Audit and Compliance](audit-and-compliance.md) |

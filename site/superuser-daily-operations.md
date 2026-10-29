@@ -455,7 +455,9 @@ tacctl console list-max 100                             # the longest list shown
   `console password-cache on`, and it is off until they do
   ([Getting Started](getting-started.md) §1.3).
 - `console color` decides whether Tab's lists, `?`, `-h` and `--help` are in
-  colour in the console. `auto`, the default, lets the terminal decide.
+  colour in the console: command names, sub-commands, fixed words and options
+  in teal, live names (users, groups, devices, hosts) in bold. `auto`, the
+  default, lets the terminal decide.
 - `console list-max` is the longest list the console shows before it asks
   `Show all N?` (default 40, at most 1000; a negative number never asks).
 - Both are server-wide, and each console session reads them when it starts.
