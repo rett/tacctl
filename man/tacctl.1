@@ -14146,11 +14146,14 @@ scope, file. config linux script wrote a file that holds the scope's secret.
 .B "config allow, config deny, config mgmt\-acl"
 op (add, remove, clear, cisco\-name or juniper\-name), value.
 .TP
-.B "config password\-age, config bcrypt\-cost, config password\-min\-length, config secret\-min\-length, config loglevel, config branch, server metrics"
+.B "config password\-age, config bcrypt\-cost, config password\-min\-length, config secret\-min\-length, config loglevel, config branch, server metrics, server name"
 from, to.
 .TP
 .B "server listen"
 backend, listener, from, to.
+.TP
+.B "server addresses"
+op (add or replace), address.
 .TP
 .B "config devices"
 key, from, to.
