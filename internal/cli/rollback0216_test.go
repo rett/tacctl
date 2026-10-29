@@ -135,6 +135,14 @@ func TestRollbackRealOldBinary0216(t *testing.T) {
 	}
 	hs.run(hs.runner(), "rollback", "0.2.16", "--apply", "--yes")
 	hs.expect(0, "Applying.", "")
+	// the drop-in this release rendered carries a newer comment than the one the
+	// older release renders: it says so until its first render rewrites it
+	if out, code = run("config", "validate"); code != 1 || !strings.Contains(out, "is out of date with the store") {
+		t.Errorf("0.2.16 config validate before its first render: %d\n%s", code, out)
+	}
+	if out, code = run("config", "render"); code != 0 {
+		t.Errorf("0.2.16 config render after: %d\n%s", code, out)
+	}
 	out, code = run("config", "validate")
 	if code != 0 || strings.Contains(out, "unknown config key") || !strings.Contains(out, "Configuration is valid.") {
 		t.Errorf("0.2.16 config validate after: %d\n%s", code, out)

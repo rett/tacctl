@@ -20,6 +20,8 @@ The upgrade command:
 8. Restarts tacquito only if what it reads changed (its binary, a unit or drop-in, or `tacquito.yaml`), and rolls the binary and unit files back if it does not come up. A new README, logrotate file, completion or template restarts nothing, and neither does an upgrade with nothing new
 9. Sets up this machine's own login, or repairs it (see **This machine's own login (0.2.21)** below)
 
+**The unit comments name the current commands (0.2.22).** The shipped unit files and the comment at the top of the generated drop-in (`tacquito.service.d/tacctl.conf`) name `tacctl server listen` and `tacctl server metrics` where they named `config listen` and `config metrics`. The first render after the upgrade rewrites the drop-in, reloads systemd and restarts tacquito once, a brief TACACS+ interruption (the upgrade's own restart for the changed unit files is that one); nothing else in them changes.
+
 **A user name with a period stops the upgrade.** User names are letters, digits, `_` and `-`, and 0.2.20 and 0.2.21 allowed periods. **On 0.2.20 or 0.2.21, rename such a user before upgrading** (`tacctl user rename <name> <new-name>` works there; `tacctl config validate` lists them on 0.2.22). If one is left, the release you upgrade from has already replaced `tacctl` and the tacquito build when the new `tacctl` refuses, and the refusal says so: the store, the configuration and the services are not changed. It names each user with the rename command; do that, then run `tacctl upgrade` again to finish. A `tacctl upgrade` run on 0.2.22 itself refuses before anything is changed. An install that cannot read its store is not held up by this check; the warning says so.
 
 The upgrade changes an override only when it is exactly a value an earlier release shipped (the 0.2.3 rules of `operator` and `readonly` and the `operator` privileges list, which `group commands add` and `group privilege add` copy into `tacctl.yaml`): that one is dropped, with an info line, and the shipped value applies. Every other override stays as it is. An install that ran `tacctl group preset roles` on 0.2.2 carries that preset's engineer rules as overrides. Their Cisco denies did not hold (tacquito matches the whole arguments string, so `no aaa new-model`, `enable secret ...`, `ip ssh ...` and `do reload in 5` were permitted), so while `engineer` still has exactly those values the upgrade ends with a red notice that names `tacctl group reset engineer` (look first with `--dry-run`).
@@ -97,6 +99,8 @@ releases it knows. `0.2.4` to `0.2.8` and `0.2.2` and older are refused with
 the way there (one release at a time, or `tacctl backup restore` of a snapshot
 of the time); `0.2.10` to `0.2.15`, this release and any other word are
 refused with the targets named.
+
+**The drop-in comment (0.2.22).** The comment at the top of the generated tacquito drop-in names this release's commands. An older release's `config validate` reports the rendered config out of date until its first render rewrites the drop-in, which restarts tacquito once; a rollback converts and restarts nothing.
 
 **Every user's login to this server (0.2.21).** This release lets every user
 log in to the tacctl server and its console, unless disabled or of tier none,

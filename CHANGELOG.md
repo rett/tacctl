@@ -339,6 +339,26 @@ current behaviour; this file is where history lives.
    `config validate` before and after, its render, `user show` of a user with a
    period, `server addresses` and `host list`.
 
+18. **The generated drop-in and the shipped unit comments name the current
+   commands.** The comment at the top of every rendered tacquito drop-in
+   (`tacquito.service.d/tacctl.conf`, `tacquito@<name>.service.d/tacctl.conf`)
+   and the comments of the shipped `tacquito.service` and `tacquito@.service`
+   said `tacctl config listen` and `tacctl config metrics`, which are
+   `tacctl server listen` and `tacctl server metrics` since item 14 and 15; they
+   say so now (`tacctl config loglevel` is unchanged). Nothing else in them
+   changes: the settings, the units and the other comments are as they were.
+   The text is part of the file, so the first render after the upgrade (the
+   upgrade's own, or the first `config render` or change of a listener,
+   `loglevel` or exporter) rewrites each drop-in, reloads systemd
+   (`daemon-reload`) and restarts tacquito once: a brief interruption of
+   TACACS+ (RADIUS is not touched). The upgrade itself restarts tacquito once
+   at its end for the changed unit files and drop-ins, as it does for any
+   changed unit or drop-in. A drop-in you edited by hand is saved aside
+   before it is replaced, as before.
+   After a rollback the older release's `config validate` reports the rendered
+   config out of date until its first render writes its own comment, which
+   restarts tacquito once; the rollback itself renders and restarts nothing.
+
 ## 0.2.21 (2026-10-28)
 
 1. **`user rename` to a name with a period says what to do.** The refusal of

@@ -9,13 +9,13 @@ import (
 	"github.com/rett/tacctl/internal/rendered"
 )
 
-// Why the comment of the generated drop-in (rtacacs.DropInHeader) is not
-// reworded: a drop-in that differs from a fresh render only in its comment is
-// not drift (it is the recorded text, so it reads ok), but the render writes
-// it again, the backend counts as changed, and RestartChanged restarts
-// tacquito. An upgrade would then restart the daemon for a comment, which
-// operators must not be exposed to. The text of the header and of the unit
-// templates stays until a release restarts the daemon anyway.
+// A drop-in that differs from a fresh render only in its comment (an older
+// release's header, which named config listen and config metrics) is not
+// drift: it is the recorded text, so it reads ok. The render writes it again,
+// the backend counts as changed (RenderCommit) and RestartChanged restarts
+// tacquito once, after a daemon-reload. That is the cost of the first render
+// after the upgrade of 0.2.22, which rewords the header (CHANGELOG 18); a
+// render of an unchanged tree restarts nothing.
 func TestADropInThatDiffersOnlyInItsCommentIsRewrittenAndRestartsTheDaemon(t *testing.T) {
 	hs := newHostSandbox(t)
 	hs.installTacquito()
@@ -45,8 +45,9 @@ func TestADropInThatDiffersOnlyInItsCommentIsRewrittenAndRestartsTheDaemon(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	old := strings.Replace(string(text), "# unit settings of your own", "# (an older comment) unit settings of your own", 1)
-	if old == string(text) {
+	old := strings.Replace(string(text), "'tacctl server listen'", "'tacctl config listen'", 1)
+	old = strings.Replace(old, "'tacctl server metrics'", "'tacctl config metrics'", 1)
+	if old == string(text) || !strings.Contains(old, "tacctl config listen") {
 		t.Fatalf("the header changed:\n%s", text)
 	}
 	if err := os.WriteFile(live, []byte(old), 0o644); err != nil {
