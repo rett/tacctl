@@ -18,6 +18,8 @@ type Row struct {
 	Result   Result
 	Started  time.Time
 	Finished time.Time
+	// Marks are the phases the job marked (Mark), set once it is done.
+	Marks []StepMark
 }
 
 // Duration is how long the job ran, by the clock the events carried; zero
@@ -70,6 +72,7 @@ func (b *Board) Update(e Event) {
 		r.Settled = true
 		r.Result = e.Result
 		r.Finished = e.At
+		r.Marks = e.Marks
 	case PhaseSkipped:
 		r.Text = e.Result.Text()
 		r.Settled = true
