@@ -3429,8 +3429,8 @@ there is nothing to refuse), or
 with the reason. What a host prints besides the check goes to standard error.
 With more than one host a last line counts the hosts in each state. The exit
 status is 1 when a host has a difference or could not be checked, else 0 (a
-skipped host is not a failure); an interrupt ends the run after the host in
-progress.
+skipped host is not a failure); an interrupt ends the run (status 130) with the
+read under way ended.
 .B \-\-concurrency
 .I n
 checks n hosts at once (a whole number, 1 or more; the default, 1, is one host

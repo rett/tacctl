@@ -57,7 +57,7 @@ host enroll <[user@]host>|--local [opts]
         (with --scope) Provisioned off-site: the bench address joins the scope as a /32 until the
         host is seen in place
 
-host sync <name>... | --all
+host sync <name>... | --all [--allow-uid-mismatch] [--remove-home] [--concurrency <n>]
 
     Push account adds, renames, deletions, expiries and tier changes (a renamed user's account is
     renamed, keeping its UID and home); pins the host's ssh keys if none are (enroll pins them too).
@@ -93,7 +93,7 @@ host sync <name>... | --all
         running on a host may finish. With one host `--concurrency` changes nothing. There is no
         per-host time limit and no limit on failures
 
-host check <name>... | --all [--json]
+host check <name>... | --all [--json] [--concurrency <n>]
 
     Compare each host with what tacctl would make it, read-only, as `host show <name> --check`
     does (superuser only: it logs in); nothing is changed on a host or here. Every name is checked
