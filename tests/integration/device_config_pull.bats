@@ -415,6 +415,20 @@ add_pull() {
     plain
 }
 
+@test "device add: a device ssh-keyscan reads nothing from is read by the built-in client" {
+    # ssh-keyscan prints nothing at all, as the real one does for a server
+    # that is slow to greet (and for a refused or filtered address); the
+    # built-in client reaches the fake device through TACCTL_TEST_DEVICE_DIAL.
+    stub_cmd ssh-keyscan
+    fakedev_start "$JDIR"
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device add slow-j 192.0.2.30 --vendor juniper --no-lookup
+    assert_success
+    plain
+    assert_output --partial "Host keys pinned (1)"
+    run grep -F "$FAKEDEV_KEY" "${TACCTL_STATE_DIR}/devices.yaml"
+    assert_success
+}
+
 @test "device add --pull: registers, then pulls the one device as the caller" {
     fakedev_start "$JDIR"
     fakedev_serve "$JDIR" juniper lab

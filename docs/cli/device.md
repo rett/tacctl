@@ -286,7 +286,15 @@ device hostkey <name> set SHA256:<fp>
     `--legacy-ssh`), each with `-T 3`; the keys of every type that answers are returned, and a
     type that fails does not fail the scan. If that reads nothing either, tacctl's own ssh client
     reads the keys (any device, not only `--legacy-ssh` ones; no credential is sent). A device
-    that refuses the connection or does not answer is not asked again.
+    whose name does not resolve is not asked again (ssh-keyscan prints that failure and no other: a
+    refused connection, a filtered address and a server slow to greet all print nothing). A
+    device it reads nothing from and prints nothing about (ssh-keyscan gives up after 5 seconds,
+    plain `ssh` waits longer) goes straight to tacctl's own ssh client, once and without the
+    one-type retry; the connect is bounded by 3 seconds, so that a refused device costs nothing
+    more and a filtered or powered-off address 3 seconds, and the handshake by 10. The keys are
+    read one type after the other, so a device that is slow to greet can take several seconds.
+    `device enroll`, `device collect`, a `--legacy-ssh` device and the diagnosis after a failed
+    `tacctl ssh` are as before.
 
     When no read gives a key from a device that accepted the connection, the refusal names the
     reads that were made ("ssh-keyscan, then one key type at a time (ed25519, ecdsa, rsa), and
@@ -294,7 +302,10 @@ device hostkey <name> set SHA256:<fp>
     `ssh-keyscan -t ed25519 <address>` (with `-p <port>` for another port; also `-t ecdsa`,
     `-t rsa`), and the ways to accept a key by its fingerprint: `--host-key SHA256:<fp>` for
     `device add`, `enroll`, `collect` and `onboard`, `device hostkey <name> set SHA256:<fp>` for a
-    registered device. Nothing is written; `--no-host-key` registers the device unpinned.
+    registered device. For a device ssh-keyscan printed nothing about, the refusal names
+    "ssh-keyscan, and tacctl's own ssh client" and gives the same command with `-T 30` (more
+    time to greet) and the same two ways to accept a key. Nothing is written;
+    `--no-host-key` registers the device unpinned.
 
 device ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]
 

@@ -3,6 +3,32 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.22 (unreleased)
+
+1. **A device `ssh-keyscan` reads nothing from, but plain `ssh` reaches, gets
+   its host key read.** `device hostkey <name> accept|set`, `device add`,
+   `device onboard` and the host-key re-scan of `device scan` and `device
+   check` refused such a device with `(ssh-keyscan)` only. `ssh-keyscan` gives
+   up after 5 seconds and prints nothing for a server that is slow to greet,
+   and it prints nothing for a refused connection or an address nobody
+   answers at either; only a name that does not resolve produces a message
+   (`getaddrinfo <host>: Name or service not known`). When `ssh-keyscan` reads
+   no key and prints nothing, tacctl's own ssh client (no password sent) now
+   reads the keys once, without the one-type retry, as nothing shows the
+   device accepted a connection. Its TCP connect is bounded by 3 seconds and
+   its handshake by 10 as before, so a refused device costs nothing more,
+   and a filtered or powered-off address costs 3 seconds more per scan. The
+   keys are read one type after the other, so a device that is slow to greet
+   can take several seconds. A name that does not resolve costs one
+   `ssh-keyscan`. When the built-in client reads nothing either, the refusal
+   reads `(ssh-keyscan, and tacctl's own ssh client)`, with a line to see the
+   key by hand, `ssh-keyscan -T 30 [-p <port>] -t ed25519 <address>` (also
+   `-t ecdsa`, `-t rsa`), and the two ways to accept a key by its
+   fingerprint, `--host-key SHA256:<fp>` and `device hostkey <name> set
+   SHA256:<fp>`. A `legacy-ssh` device, a device that
+   answered, `device enroll` and `device collect` are scanned as before, and
+   so is the diagnosis `tacctl ssh` prints after an ssh that ended with 255.
+
 ## 0.2.21 (2026-10-28)
 
 1. **`user rename` to a name with a period says what to do.** The refusal of

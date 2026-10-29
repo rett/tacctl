@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"context"
 	"os"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -286,6 +288,28 @@ func TestSSHExitStatusAndHostKeyDiagnosis(t *testing.T) {
 	sb.sshRun("alice", func(r *fake.Runner) { r.Missing("sudo") }, "ssh", "core-sw1")
 	if sb.code != 127 || !strings.Contains(sb.stderr(), "ssh could not be run") {
 		t.Errorf("missing: %d %q", sb.code, sb.stderr())
+	}
+}
+
+// After an ssh that ended with 255 on a pinned device that ssh-keyscan reads
+// nothing from (and says nothing about), the diagnosis stops at ssh-keyscan:
+// the built-in client is not dialled, so that the user waits no longer than
+// ssh-keyscan's own timeout.
+func TestSSHHostKeyDiagnosisDoesNotReadASilentDevice(t *testing.T) {
+	sb, _, _ := sshSandbox(t)
+	var calls []string
+	sb.hooks.keyFallback = func(*invocation) devreg.KeyFallback {
+		return func(_ context.Context, address string, port int, _ bool) ([]devreg.HostKey, error) {
+			calls = append(calls, address+":"+strconv.Itoa(port))
+			return []devreg.HostKey{hkKey(t, "ecdsa")}, nil
+		}
+	}
+	sb.sshRun("alice", func(r *fake.Runner) {
+		r.On([]string{"sudo", "-u", "alice"}, execx.Result{Code: 255})
+		r.On([]string{"ssh-keyscan"}, execx.Result{})
+	}, "ssh", "lab-rtr2", "-p", "2200")
+	if sb.code != 255 || strings.Contains(sb.stderr(), "pinned") || len(calls) != 0 || sb.runner.Count("ssh-keyscan") != 1 {
+		t.Errorf("silent: %d %q, fallback calls %q, %d ssh-keyscan runs", sb.code, sb.stderr(), calls, sb.runner.Count("ssh-keyscan"))
 	}
 }
 

@@ -44,8 +44,8 @@ type hooks struct {
 	passwordPrompt func(tty *os.File, prompt string) ([]byte, error)
 	// factsTimeout bounds the fact commands of a pull (0: 15 seconds).
 	factsTimeout time.Duration
-	// keyFallback is the host-key scan of a legacy-ssh device that
-	// ssh-keyscan read nothing from.
+	// keyFallback is the host-key read with the built-in client, for a
+	// device that ssh-keyscan read nothing from.
 	keyFallback func(inv *invocation) devreg.KeyFallback
 	// applyHoldWait is how long --hold waits for the word.
 	applyHoldWait func(until, now time.Time) time.Duration

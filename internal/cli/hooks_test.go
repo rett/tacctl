@@ -21,7 +21,7 @@ func newTestHooks() *hooks {
 	return &hooks{
 		askpassFromApp: true,
 		keyFallback: func(*invocation) devreg.KeyFallback {
-			return func(_ context.Context, address string, port int) ([]devreg.HostKey, error) {
+			return func(_ context.Context, address string, port int, _ bool) ([]devreg.HostKey, error) {
 				return nil, errors.New("tests do not dial " + address + ":" + strconv.Itoa(port))
 			}
 		},

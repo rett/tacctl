@@ -30,16 +30,20 @@ func scanTarget(e devreg.Entry) (addr string, port int, legacy, ok bool) {
 	return e.Address, e.SSHPort(), e.LegacySSH, true
 }
 
-// realKeyFallback is the host-key scan of a legacy-ssh device that
-// ssh-keyscan read nothing from (hooks.keyFallback replaces it in tests):
-// tacctl's own ssh client, which negotiates the SHA-1 key exchange and CBC
-// ciphers old IOS needs and stops at the host key, before any authentication
+// realKeyFallback is the host-key read with tacctl's own ssh client, for a
+// device ssh-keyscan read nothing from (hooks.keyFallback replaces it in
+// tests): a legacy-ssh device, whose SHA-1 key exchange and CBC ciphers old
+// IOS needs it negotiates; a device that answered ssh-keyscan with no key;
+// and one ssh-keyscan printed nothing about, for which quick bounds the TCP
+// connect shortly (devssh.ScanTiming.Connect) and the handshake keeps its
+// budget. It stops at the host key, before any authentication
 // (devssh.ScanHostKeys). It dials as the device sessions do, so the tests'
 // dial override applies.
 func realKeyFallback(inv *invocation) devreg.KeyFallback {
 	dial := inv.deviceDialer()
-	return func(ctx context.Context, address string, port int) ([]devreg.HostKey, error) {
-		texts, err := devssh.ScanHostKeys(ctx, address, port, devssh.DefaultConnectTimeout, dial)
+	tm := inv.scanTiming()
+	return func(ctx context.Context, address string, port int, quick bool) ([]devreg.HostKey, error) {
+		texts, err := devssh.ScanHostKeysTiming(ctx, address, port, tm, quick, dial)
 		if err != nil {
 			return nil, err
 		}
@@ -47,10 +51,24 @@ func realKeyFallback(inv *invocation) devreg.KeyFallback {
 	}
 }
 
+// scanTiming is the timing of every host-key read of an invocation: the
+// one place a scale for a slow link (per device, per scope) is plugged in
+// later. ssh-keyscan's two -T, the built-in client's connect, handshake and
+// per-type attempt all come from it (devssh.ScanTiming).
+func (inv *invocation) scanTiming() devssh.ScanTiming { return devssh.DefaultScanTiming() }
+
 // scanDevice reads the host keys of a device or host at addr: ssh-keyscan,
-// and for a legacy-ssh device the built-in client when that reads nothing.
+// then the built-in client when that reads nothing (devreg.ScanWith).
 func (inv *invocation) scanDevice(addr string, port int, legacy bool) ([]devreg.HostKey, error) {
-	return devreg.ScanWith(inv.ctx, inv.app.Runner, addr, port, legacy, inv.hooks.scanFallback(inv))
+	return devreg.ScanWithTiming(inv.ctx, inv.app.Runner, addr, port, legacy, inv.hooks.scanFallback(inv), inv.scanTiming())
+}
+
+// scanDeviceAnswered is scanDevice without the read of a device that
+// answered nothing (devreg.ScanWithAnswered), for the diagnosis after a
+// failed ssh, which must not wait longer than ssh-keyscan and a device that
+// answered.
+func (inv *invocation) scanDeviceAnswered(addr string, port int, legacy bool) ([]devreg.HostKey, error) {
+	return devreg.ScanWithAnswered(inv.ctx, inv.app.Runner, addr, port, legacy, inv.hooks.scanFallback(inv), inv.scanTiming())
 }
 
 // scanLearningLegacy is the scan of 'device enroll' and 'device collect', which
@@ -60,7 +78,7 @@ func (inv *invocation) scanDevice(addr string, port int, legacy bool) ([]devreg.
 // scan (the built-in client among it). legacy is whether the keys came from
 // the legacy scan; a device neither reads is the first scan's error.
 func (inv *invocation) scanLearningLegacy(addr string, port int) (keys []devreg.HostKey, legacy bool, err error) {
-	keys, err = devreg.ScanWith(inv.ctx, inv.app.Runner, addr, port, false, nil)
+	keys, err = devreg.ScanWithTiming(inv.ctx, inv.app.Runner, addr, port, false, nil, inv.scanTiming())
 	if errors.Is(err, devreg.ErrNoAnswer) && inv.ctx.Err() == nil {
 		if k2, err2 := inv.scanDevice(addr, port, true); err2 == nil && len(k2) > 0 {
 			return k2, true, nil
@@ -109,22 +127,33 @@ func noAnswerTried(err error, legacy bool) string {
 	return tried
 }
 
-// noAnswerHelp is what a person can do when a device accepted the connection
-// but gave no key to the one-type retry either: read the key by hand, and
-// accept it by its fingerprint. A device that did not answer at all gets
-// no such lines (the address and the port are what to check).
+// noAnswerHelp is what a person can do when a device gave no key to the
+// reads that were tried: read the key by hand, and accept it by its
+// fingerprint. For a device that accepted the connection but gave the
+// one-type retry no key that is said as it is; for one that ssh-keyscan
+// read nothing from without saying why (devreg.NoAnswerError.Silent: not
+// known to have accepted anything, perhaps slow to greet) the by-hand line
+// asks for more time. A device that did not answer at all gets no such
+// lines (the address and the port are what to check).
 func noAnswerHelp(err error, addr string, port int) []string {
 	var na *devreg.NoAnswerError
-	if !errors.As(err, &na) || len(na.OneByOne) == 0 {
+	if !errors.As(err, &na) || (len(na.OneByOne) == 0 && !na.Silent) {
 		return nil
 	}
 	by := "ssh-keyscan "
+	if na.Silent {
+		by += "-T 30 "
+	}
 	if port != devssh.DefaultPort {
 		by += "-p " + strconv.Itoa(port) + " "
 	}
 	by += "-t ed25519 " + addr
+	first := "The device accepted the connection but showed no key. See what it offers by hand: " + by + " (also -t ecdsa, -t rsa)."
+	if na.Silent {
+		first = "No key came from the device; it may be slow to answer. See what it offers by hand: " + by + " (also -t ecdsa, -t rsa)."
+	}
 	return []string{
-		"The device accepted the connection but showed no key. See what it offers by hand: " + by + " (also -t ecdsa, -t rsa).",
+		first,
 		"Accept a key by its fingerprint with --host-key SHA256:<fp> (device add, enroll, collect, onboard) or, for a registered device, tacctl device hostkey <name> set SHA256:<fp>.",
 	}
 }

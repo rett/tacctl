@@ -733,7 +733,7 @@ func (inv *invocation) sshKeyMismatch(plan sshPlan, caller string) {
 	if plan.port != 0 {
 		port = plan.port
 	}
-	offered, err := inv.scanDevice(addr, port, legacy)
+	offered, err := inv.scanDeviceAnswered(addr, port, legacy)
 	if err != nil {
 		return
 	}

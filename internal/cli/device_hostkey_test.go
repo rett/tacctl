@@ -43,12 +43,19 @@ func keyscanOut(addr string, keys ...devreg.HostKey) []byte {
 	return []byte(b.String())
 }
 
-// scan scripts ssh-keyscan to offer keys (none: no answer, as from a device
-// that timed out).
+// unresolvable is what OpenSSH's ssh-keyscan prints for a name that does not
+// resolve.
+func unresolvable(host string) string {
+	return "getaddrinfo " + host + ": Name or service not known\n"
+}
+
+// scan scripts ssh-keyscan to offer keys (none: no answer, as from a name
+// that does not resolve, the one failure ssh-keyscan reports on standard
+// error; a refused connection prints nothing, like a silent device).
 func scan(addr string, keys ...devreg.HostKey) func(*fake.Runner) {
 	if len(keys) == 0 {
 		return func(r *fake.Runner) {
-			r.On([]string{"ssh-keyscan"}, execx.Result{Stderr: []byte(addr + ": Connection timed out\n")})
+			r.On([]string{"ssh-keyscan"}, execx.Result{Stderr: []byte(unresolvable(addr))})
 		}
 	}
 	return func(r *fake.Runner) {
