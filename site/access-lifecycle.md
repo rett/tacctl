@@ -9,7 +9,7 @@ doctype: how-to
 
 # Access Lifecycle
 
-*Joiners, movers and leavers · Checked against tacctl 0.2.21*
+*Joiners, movers and leavers · Checked against tacctl 0.2.22*
 
 [Printable PDF](../pdf/tacctl-access-lifecycle.pdf){: .pdf-link }
 
@@ -58,12 +58,25 @@ account expired. Her account on the server exists only after the sync of
 step 2, so run it before she logs in. The requirement and what to check
 are in §5.1.
 
-Names are lower case: letters, digits, `_` and `-`, and a period between
-two parts (`alice.smith`; never first, last or twice in a row). `root` and
-`tacquito` are reserved. A name with a period is no Linux account name:
-`host sync` skips that user with a warning, so they log in at devices only,
-with no account on any host and no console login on the tacctl server, and
-`tacctl rollback` is refused while such a name exists.
+Names are lower case: letters, digits, `_` and `-` (`alice-smith`). A period
+is refused, because every user has an account on the tacctl server and a
+period cannot be part of a Linux account name. `root` and `tacquito` are
+reserved.
+
+**A user stored with a period.** 0.2.20 and 0.2.21 accepted a period, so a
+store can still hold a name with one. The user stays readable (show, list,
+disable, move, scopes, remove) and has no Linux account on any host, so no
+console login. Rename it:
+
+```bash
+tacctl user rename <name> <new-name>
+```
+
+Until then `config validate` reports it as an error with that command (also
+in `--json`; `--fix-names` does not offer it), `passwd`, `user passwd` and
+`user require-password-change` refuse it with `rename it first`, `host sync`
+skips it with a warning, and `tacctl upgrade` refuses and lists each such
+user. Rename them before upgrading from 0.2.20 or 0.2.21.
 
 **Password without you seeing it.** The person creates a bcrypt hash on
 their own machine (`tacctl hash commands` prints the recipes for Linux,
@@ -103,12 +116,6 @@ tacctl host sync --all
 
 > **After a rename,** sync **all** hosts before you give the old name to a
 > new person. Otherwise a host's UID check will refuse the sync.
-
-A rename to a name with a period is refused for a user who has a UID or an
-account on a host, since the next sync would remove the account. The refusal
-names the two ways forward: a name without a period, or a new user (`user
-remove`, `host sync --all`, then `user add` under the new name with the group
-and scopes the refusal prints), who gets a new password and no UID.
 
 A name may also clash with a scope's break-glass local account. tacctl
 refuses that and names the command that resolves it.
