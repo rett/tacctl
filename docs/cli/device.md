@@ -8,14 +8,15 @@ The device registry gives names to the network devices that authenticate here. I
 device list [<word>] [--name <text>] [--ip <addr|cidr|text>] [--vendor <v>] [--scope <s>] [--stale]
             [--unconfigured] [--scan] [--probe] [--json]
 
-    Registered devices, then enrolled hosts, sorted by name; `--name` (names containing the text),
-    `--ip` (an address, a CIDR or a text the address contains), `--vendor` and `--scope` narrow the
-    list (one value or a comma list, any of them; the options must all match) and a bare word
-    matches a name, an address, a vendor or a scope. Scope, STATE (configured: a scope's prefixes
-    cover the address; unconfigured; stale), last seen / by / via from the seen cache, CONFIG (the
-    state of the last configuration pull: `ok`, `differs`, `never`, `failed`, `pull` for a Cisco
-    device whose syntax is unknown; `-` for a host, a vendor `other` and a device in no scope; the
-    operator tier's: a read-only user's list has no such column), open notices; --scan scans first,
+    Registered devices sorted by name (the enrolled hosts are listed by `host list`); `--name`
+    (names containing the text), `--ip` (an address, a CIDR or a text the address contains),
+    `--vendor` and `--scope` narrow the list (one value or a comma list, any of them; the options
+    must all match) and a bare word matches a name, an address, a vendor or a scope. Scope, STATE
+    (configured: a scope's prefixes cover the address; unconfigured; stale), last seen / by / via
+    from the seen cache, CONFIG (the state of the last configuration pull: `ok`, `differs`,
+    `never`, `failed`, `pull` for a Cisco device whose syntax is unknown; `-` for a vendor `other`
+    and a device in no scope; the operator tier's: a read-only user's list has no such column),
+    open notices; --scan scans first,
     --probe adds REACH (TCP connect to the ssh port, 3 s)
 
 device show <name|address> [--all] [--json]
@@ -622,7 +623,7 @@ export. A name that exists with upper case keeps working, is found in any
 case, and is listed by `tacctl config validate` with the `device rename` that
 fixes it.
 
-A device is found by name (any case) or by its registered address; an unregistered address is not found, even when a scope covers it. An address is registered once. A device name is letters, digits, `.`, `_` and `-`, starting with a letter or digit, at most 253 characters with each dotted part at most 63, so a fully qualified host name (`sw1.site-a.example`) is one. An enrolled host's name is the same, starting with a letter; `host enroll` borrows the short name from the target (`alice@sw1.example.net` is `sw1`), and a fully qualified name is given with `--name` or `host rename`. Enrolled Linux hosts share the namespace and appear in `list` and `show` as `linux` entries, read-only. `list`, `show`, `notice list`, `client-config` and `tacctl ssh` are open to the read-only and operator tiers, limited to the entries of their own scopes (`tacctl ssh` is limited so for every tier); `export` is operator-level, filtered the same way.
+A device is found by name (any case) or by its registered address; an unregistered address is not found, even when a scope covers it. An address is registered once. A device name is letters, digits, `.`, `_` and `-`, starting with a letter or digit, at most 253 characters with each dotted part at most 63, so a fully qualified host name (`sw1.site-a.example`) is one. An enrolled host's name is the same, starting with a letter; `host enroll` borrows the short name from the target (`alice@sw1.example.net` is `sw1`), and a fully qualified name is given with `--name` or `host rename`. Enrolled Linux hosts share the namespace and `show` (and the other verbs that take a device, which do not change a host) takes one by name, as a `linux` entry, read-only; `list` shows devices only, and `host list` the hosts. `list`, `show`, `notice list`, `client-config` and `tacctl ssh` are open to the read-only and operator tiers, limited to the entries of their own scopes (`tacctl ssh` is limited so for every tier); `export` is operator-level, filtered the same way.
 
 A name that is a factory or image default is refused with the command that names the device on the device itself (`hostname`, `set system host-name`, ...); a host already enrolled under such a name is not refused and carries a `generic-name` notice. `host enroll --name` follows the same rules. Add your own patterns with `generic_names:` (regular expressions, whole-name, case-insensitive) in `devices.yaml`.
 

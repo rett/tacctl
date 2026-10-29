@@ -8019,6 +8019,7 @@ it.
 Notices appear in the scan output,
 .BR "tacctl status" ,
 .BR "device list" ,
+.BR "host list" ,
 .B "device notice list"
 and
 .B "device show"
@@ -8053,9 +8054,13 @@ With no subcommand (or with
 prints a usage summary and exits 0.
 .TP
 .BI "device list " "[ word ] [ \-\-name " text " ] [ \-\-ip " address|cidr|text " ] [ \-\-vendor " vendor " ] [ \-\-scope " scope " ] [ \-\-stale ] [ \-\-unconfigured ] [ \-\-scan ] [ \-\-probe ] [ \-\-json ]"
-One row per registered device, then per enrolled host, sorted by name
+One row per registered device, sorted by name
 (upper and lower case alike): name, address, vendor,
-scope, state, last seen, by, via, config, and the open notices.
+scope, state, last seen, by, via, config, and the open notices. The enrolled
+Linux hosts are not listed here but by
+.BR "host list" ;
+.B device show
+and the other verbs that take a device still take a host by name.
 .B \-\-name
 keeps the names that contain the text,
 .B \-\-ip
@@ -8067,8 +8072,8 @@ the vendors named, and
 the devices that scope answers; each takes one value or a comma list (any of
 them matches), and different options must all match. A
 .I word
-alone keeps the entries whose name or address contains it or whose vendor or
-scope it is. The heading says how many of the visible entries are shown. The config
+alone keeps the devices whose name or address contains it or whose vendor or
+scope it is. The heading says how many of the visible devices are shown. The config
 column (the operator tier's: a read-only user's list has none, in the table
 or in the JSON) is the state of the device's last configuration pull
 .RB ( "device config pull" ):
@@ -8079,11 +8084,11 @@ or
 .BR failed ,
 from the pull's record without rendering; it is
 .B \-
-for a host, a vendor
+for a vendor
 .B other
 and a device no scope covers. The state is
 .B configured
-when a scope's prefixes cover the address (a host: when its scope exists) and
+when a scope's prefixes cover the address and
 .B unconfigured
 otherwise.
 .B \-\-unconfigured
@@ -8138,7 +8143,7 @@ Only names that contain the text (a comma list: any of them).
 Only addresses equal to, inside, or containing it (an address, a CIDR or a text; a comma list).
 .TP
 \fB\-\-vendor\fR \fI<vendor>\fR
-Only that vendor: cisco, juniper, wti, other or linux (a comma list).
+Only that vendor: cisco, juniper, wti or other (a comma list).
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
 Only the devices that scope answers (a comma list).

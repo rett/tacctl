@@ -31,7 +31,7 @@ snapshot_count() { find "${TACCTL_STATE_DIR}/backups" -mindepth 1 -maxdepth 1 -n
     run "$TACCTL_BIN_SCRIPT" device list
     assert_success
     plain
-    assert_output --partial "Registered devices (1) and enrolled hosts (0)"
+    assert_output --partial "Registered devices (1)"
     assert_output --regexp "core-sw1 +10\.99\.0\.1 +cisco +- +unconfigured"
     assert_output --partial "seen data: none (tacctl device scan)"
 
@@ -389,14 +389,25 @@ CSV
     [[ ! -e "${TACCTL_STATE_DIR}/linux-hosts" ]]
 }
 
-@test "enrolled hosts appear in device list and show, read-only" {
+@test "enrolled hosts appear in host list, not in device list, and in device show, read-only" {
     printf 'web1|root@192.0.2.10|2222|lab|192.0.2.1|\nubuntu|root@192.0.2.11||lab|192.0.2.1|\n' > "${TACCTL_STATE_DIR}/linux-hosts"
     run "$TACCTL_BIN_SCRIPT" device list
     assert_success
     plain
-    assert_output --partial "Registered devices (0) and enrolled hosts (2)"
-    assert_output --regexp "web1 +- +linux +lab +configured"
+    assert_output --partial "Registered devices (0)"
+    refute_output --partial "enrolled hosts"
+    refute_output --partial "web1"
+    run "$TACCTL_BIN_SCRIPT" device list --json
+    assert_output "[]"
+    run "$TACCTL_BIN_SCRIPT" host list
+    assert_success
+    plain
+    assert_output --regexp "web1 +root@192\.0\.2\.10:2222 +.* lab +configured"
     assert_output --regexp "ubuntu .*generic-name"
+    run "$TACCTL_BIN_SCRIPT" device show web1
+    assert_success
+    plain
+    assert_output --partial "Enrolled host web1"
     run "$TACCTL_BIN_SCRIPT" device add web1 10.99.0.5
     assert_failure 1
     plain

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -109,7 +110,7 @@ func TestDeviceAddListShow(t *testing.T) {
 	sb := newSandbox(t, true)
 	storeBefore := sb.store()
 	out := sb.dev("", "list")
-	if sb.code != 0 || !strings.Contains(out, "Registered devices (0) and enrolled hosts (0)") || !strings.Contains(out, "None. Register one with: tacctl device add") {
+	if sb.code != 0 || !strings.Contains(out, "Registered devices (0)\n") || !strings.Contains(out, "None. Register one with: tacctl device add") {
 		t.Errorf("empty list: %d %q", sb.code, out)
 	}
 	out = sb.dev("", "add", "core-sw1", "10.99.0.1", "--vendor", "cisco", "--no-host-key", "--description", "DC1 core")
@@ -120,7 +121,7 @@ func TestDeviceAddListShow(t *testing.T) {
 	// A device no scope answers for.
 	sb.dev("", "add", "lab-rtr2", "100.64.0.7", "--vendor", "juniper", "--hostname", "lab-rtr2.lab.example.net", "--port", "830", "--no-host-key")
 	out = sb.dev("", "list")
-	for _, want := range []string{"Registered devices (2) and enrolled hosts (0)", "core-sw1", "10.99.0.1", "prod", "configured",
+	for _, want := range []string{"Registered devices (2)\n", "core-sw1", "10.99.0.1", "prod", "configured",
 		"lab-rtr2", "100.64.0.7", "unconfigured", "hostkey-unpinned", "seen data: none (tacctl device scan)", "2 open notice(s)"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("list lacks %q:\n%s", want, out)
@@ -135,7 +136,7 @@ func TestDeviceAddListShow(t *testing.T) {
 		}
 	}
 	out = sb.dev("", "list", "--unconfigured")
-	if strings.Contains(out, "core-sw1") || !strings.Contains(out, "lab-rtr2") || !strings.Contains(out, "(1) and") {
+	if strings.Contains(out, "core-sw1") || !strings.Contains(out, "lab-rtr2") || !strings.Contains(out, "Registered devices (1), of 1\n") {
 		t.Errorf("--unconfigured:\n%s", out)
 	}
 	// Sorted by name, and narrowed by vendor, scope, address, name or a word.
@@ -167,7 +168,7 @@ func TestDeviceAddListShow(t *testing.T) {
 	if out = sb.dev("", "list", "--json", "--vendor", "juniper"); !strings.Contains(out, "lab-rtr2") || strings.Contains(out, "core-sw1") {
 		t.Errorf("--json narrowed:\n%s", out)
 	}
-	if out = sb.dev("", "list", "--stale"); strings.Contains(out, "core-sw1") || !strings.Contains(out, "None.") {
+	if out = sb.dev("", "list", "--stale"); strings.Contains(out, "core-sw1") || !strings.Contains(out, "None match.") {
 		t.Errorf("--stale (no seen data):\n%s", out)
 	}
 	out = sb.dev("", "show", "10.99.0.1")
@@ -611,12 +612,13 @@ func TestDeviceTierFilteringAndGate(t *testing.T) {
 	}
 	// carol (readonly; lab and dmz) sees her own scopes only.
 	out := asUser("carol", "tac-readonly", "list")
-	for _, want := range []string{"lab-sw", "dmz-fw", "web1", "(2) and enrolled hosts (1)"} {
+	for _, want := range []string{"lab-sw", "dmz-fw", "Registered devices (2)\n"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("carol's list lacks %q:\n%s", want, out)
 		}
 	}
-	for _, hidden := range []string{"prod-sw", "stray", "db1"} {
+	// no host: those are 'host list''s
+	for _, hidden := range []string{"prod-sw", "stray", "db1", "web1", "enrolled hosts"} {
 		if strings.Contains(out, hidden) {
 			t.Errorf("carol sees %s:\n%s", hidden, out)
 		}
@@ -717,15 +719,45 @@ func TestDeviceTierFilteringAndGate(t *testing.T) {
 	}
 }
 
-func TestDeviceListShowsEnrolledHosts(t *testing.T) {
+// The enrolled hosts are listed by 'host list': 'device list' shows devices
+// only, in the table and in the JSON, and '--vendor linux' is a vendor no
+// device has. The other device verbs still take a host by name.
+func TestDeviceListShowsDevicesOnly(t *testing.T) {
 	sb := newSandbox(t, true)
 	sb.write("state/linux-hosts", "web1|root@192.0.2.10|2222|lab|192.0.2.1|/k/id\nubuntu|dba@h.example.net||prod|192.0.2.1|\n", 0o600)
 	out := sb.dev("", "list")
-	if !strings.Contains(out, "Registered devices (0) and enrolled hosts (2)") || !strings.Contains(out, "linux") {
+	if !strings.Contains(out, "Registered devices (0)\n") || strings.Contains(out, "enrolled hosts") || strings.Contains(out, "web1") || strings.Contains(out, "ubuntu") {
+		t.Errorf("list with hosts only:\n%s", out)
+	}
+	if !strings.Contains(out, "None. Register one with: tacctl device add <name> <address>") {
+		t.Errorf("list with hosts only lacks the empty line:\n%s", out)
+	}
+	if got := strings.TrimSpace(sb.dev("", "list", "--json")); got != "[]" {
+		t.Errorf("JSON with hosts only: %s", got)
+	}
+	sb.dev("", "add", "core-sw1", "10.99.0.1", "--vendor", "cisco", "--no-host-key")
+	out = sb.dev("", "list")
+	if !strings.Contains(out, "Registered devices (1)\n") || !strings.Contains(out, "core-sw1") || strings.Contains(out, "web1") || strings.Contains(out, "linux") {
 		t.Errorf("list:\n%s", out)
 	}
-	if !strings.Contains(out, "ubuntu") || !strings.Contains(out, "generic-name") {
-		t.Errorf("a host enrolled under a generic name carries the notice:\n%s", out)
+	if out = sb.dev("", "list", "--name", "web"); !strings.Contains(out, "Registered devices (0), of 1\n") || !strings.Contains(out, "None match.") {
+		t.Errorf("a host's name matches nothing:\n%s", out)
+	}
+	for _, args := range [][]string{{"--vendor", "linux"}, {"web1"}, {"--scope", "lab"}, {"--ip", "192.0.2.10"}} {
+		if out = sb.dev("", append([]string{"list"}, args...)...); strings.Contains(out, "web1") || !strings.Contains(out, "None match.") {
+			t.Errorf("list %v:\n%s", args, out)
+		}
+	}
+	var js []deviceJSON
+	if err := json.Unmarshal([]byte(sb.dev("", "list", "--json")), &js); err != nil || len(js) != 1 || js[0].Name != "core-sw1" {
+		t.Errorf("JSON: %v %+v", err, js)
+	}
+	// The hosts' notices stay on 'device notice list' and 'device show'.
+	if out = sb.dev("", "notice", "list"); !strings.Contains(out, "ubuntu  generic-name") {
+		t.Errorf("notice list:\n%s", out)
+	}
+	if out = sb.dev("", "show", "ubuntu"); !strings.Contains(out, "generic-name") {
+		t.Errorf("show ubuntu:\n%s", out)
 	}
 	out = sb.dev("", "show", "web1")
 	for _, want := range []string{"Enrolled host web1", "Vendor:       linux", "Port:         2222", "Target:       root@192.0.2.10", "Identity:     /k/id", "Scope:        lab"} {
@@ -741,8 +773,25 @@ func TestDeviceListShowsEnrolledHosts(t *testing.T) {
 	if sb.dev("", "add", "WEB1", "10.99.0.1", "--no-host-key"); sb.code != 1 || !strings.Contains(sb.stderr(), "'WEB1' is an enrolled host") {
 		t.Errorf("add over a host name: %d %q", sb.code, sb.stderr())
 	}
-	if sb.devices() != "" {
-		t.Error("devices.yaml written")
+	if strings.Contains(sb.devices(), "web1") {
+		t.Error("devices.yaml written for a host")
+	}
+}
+
+// An engineer's 'device list' holds the devices of their scopes and no host,
+// and 'host list' their hosts.
+func TestDeviceListEngineerHasNoHosts(t *testing.T) {
+	sb := engineerSandbox(t)
+	out := sb.asEngineer("", "device", "list")
+	if sb.code != 0 || !strings.Contains(out, "Registered devices (") || strings.Contains(out, "web1") || strings.Contains(out, "db1") ||
+		strings.Contains(out, "enrolled hosts") {
+		t.Errorf("engineer's device list:\n%s", out)
+	}
+	if js := sb.asEngineer("", "device", "list", "--json"); strings.Contains(js, `"source": "host"`) || strings.Contains(js, "web1") {
+		t.Errorf("engineer's device list --json:\n%s", js)
+	}
+	if out = sb.asEngineer("", "host", "list"); !strings.Contains(out, "web1") || strings.Contains(out, "db1") {
+		t.Errorf("engineer's host list:\n%s", out)
 	}
 }
 

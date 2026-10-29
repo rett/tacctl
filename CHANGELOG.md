@@ -107,6 +107,22 @@ current behaviour; this file is where history lives.
    --json`, absent when the address was never seen) and `notices`, and its
    `address` follows the rule above; the fields it had are unchanged.
 
+6. **`device list` lists network devices only; the hosts are in `host list`.**
+   `device list` showed the registered devices and the enrolled Linux hosts
+   in one table (heading `Registered devices (n) and enrolled hosts (m)`, a
+   `linux` vendor), the tacctl server's own entry among them. It now lists
+   the registered devices alone, heading `Registered devices (n)`, in the
+   table and in `--json`, which loses the rows with `"source": "host"`. A
+   script that read the hosts from `device list` or `device list --json`
+   breaks and reads them from `host list` or `host list --json` (item 5: the
+   same fields and filters). `--vendor linux` is a vendor no device has,
+   like any other unknown name (it matches nothing), and there is no
+   `--hosts` option and no alias. The word, `--name`, `--ip`, `--scope` and
+   `--stale` no longer match a host, and the counts of the heading leave
+   them out. `device show`, `check`, `hostkey`, `notice` and the other verbs
+   that take a name still take a host's, and `device notice list` still lists
+   the hosts' notices; their behaviour does not change.
+
 ## 0.2.21 (2026-10-28)
 
 1. **`user rename` to a name with a period says what to do.** The refusal of

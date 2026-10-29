@@ -168,7 +168,7 @@ var deviceSpecs = map[string]Spec{
 
 // deviceVerbs are the verbs ({Use, Short}), in usage order.
 var deviceVerbs = [][2]string{
-	{"list [<word>] [--name <text>] [--ip <addr|cidr|text>] [--vendor <vendor>] [--scope <scope>] [--stale] [--unconfigured] [--scan] [--probe] [--json]", "Registered devices and enrolled hosts, by name: scope, state, last seen, notices; the options narrow the list"},
+	{"list [<word>] [--name <text>] [--ip <addr|cidr|text>] [--vendor <vendor>] [--scope <scope>] [--stale] [--unconfigured] [--scan] [--probe] [--json]", "Registered devices, by name: scope, state, last seen, notices; the options narrow the list"},
 	{"show <name|address> [--all] [--json]", "One device or host in full (--all: the acknowledged notices too)"},
 	{"add [<name>] <address> [options]", "Register a device (no name: offer the one it gives itself by SNMP); the vendor the device names by SNMP is shown, and offered at a terminal"},
 	{"onboard <address> --login <local-user> [--name <name>] [--host-key SHA256:<fp>] [--legacy-ssh] [--check] [--section <list>] [--json]", "Engineers, Junos devices: register a blank device reached with one of its local accounts (its host key accepted first by typing its name) and commit its first configuration as that account, kept only after your own TACACS+ login proves it"},
@@ -226,7 +226,7 @@ var deviceOptions = map[string][][2]string{
 		{"--unconfigured", "Only the devices no scope's prefixes cover"},
 		{"--name <text>", "Only names containing the text (a comma list: any of them)"},
 		{"--ip <addr|cidr|text>", "Only an address equal to, inside, or containing it (a comma list)"},
-		{"--vendor <vendor>", "Only that vendor: cisco, juniper, wti, other or linux (a comma list)"},
+		{"--vendor <vendor>", "Only that vendor: cisco, juniper, wti or other (a comma list)"},
 		{"--scope <scope>", "Only the devices that scope answers (a comma list)"},
 		{"--scan", "Scan the logs first (as 'device scan')"},
 		{"--probe", "Add REACH: a TCP connect to each ssh port (3 s)"},
@@ -1061,6 +1061,10 @@ func (inv *invocation) deviceList(args []string) error {
 	narrow := newListFilter(p)
 	total := 0
 	for _, e := range res.Visible(inv.deviceFilter()) {
+		// The enrolled hosts are listed by 'host list'.
+		if e.Source != devreg.SourceDevice {
+			continue
+		}
 		_, _, _, stale := deviceSeenCols(inv, res, e)
 		if (p.Has("--unconfigured") && e.Configured) || (p.Has("--stale") && !stale) {
 			continue
@@ -1085,18 +1089,7 @@ func (inv *invocation) deviceList(args []string) error {
 		}
 		return inv.printJSON(out)
 	}
-	nd, nh := 0, 0
-	for _, e := range shown {
-		if e.Source == devreg.SourceHost {
-			nh++
-		} else {
-			nd++
-		}
-	}
-	head := fmt.Sprintf("Registered devices (%d) and enrolled hosts (%d)", nd, nh)
-	if !narrow.empty() {
-		head += fmt.Sprintf(", of %d", total)
-	}
+	head := listHead("Registered devices", len(shown), total, !narrow.empty())
 	inv.echo("")
 	if len(shown) == 0 {
 		inv.listNone(head, !narrow.empty(), "None. Register one with: tacctl device add <name> <address>")
@@ -1115,12 +1108,9 @@ func (inv *invocation) deviceList(args []string) error {
 	open, heldCount := 0, 0
 	for i, e := range shown {
 		last, by, via, stale := deviceSeenCols(inv, res, e)
-		held := false
-		if e.Source == devreg.SourceDevice {
-			_, held = inv.holdOf(e.Name, e.Address)
-			if held {
-				heldCount++
-			}
+		_, held := inv.holdOf(e.Name, e.Address)
+		if held {
+			heldCount++
 		}
 		state := listStateCell(e.State(), stale, held)
 		ns := res.NoticesFor(e)
