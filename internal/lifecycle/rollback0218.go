@@ -121,6 +121,8 @@ func (p *RollbackPlan) lockdownKeysStep(target string) RollbackStep {
 			s.Lines = []string{"nothing to remove (no scope has a management filter mode)"}
 		case RollbackTarget0220:
 			s.Lines = []string{"nothing to remove (no server address or server name is set)"}
+		case RollbackTarget0221:
+			s.Lines = []string{"nothing to remove (no server name is set)"}
 		}
 		return s
 	}

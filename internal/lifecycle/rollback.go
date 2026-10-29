@@ -6,7 +6,10 @@ package lifecycle
 // one. The command (internal/cli/rollback.go) adds what needs the
 // invocation: the snapshot and the sudoers installer.
 //
-// The targets are 0.2.19 (the release before this one: RollbackTarget0219;
+// The targets are 0.2.21 (the release before this one: RollbackTarget0221;
+// rollback0221.go: the server name), 0.2.20 (RollbackTarget0220;
+// rollback_managed.go: the server address and the managed scope of the server's
+// own login), 0.2.19 (RollbackTarget0219;
 // rollback0219.go: the tiers drop-in and the management filter mode), 0.2.18
 // (RollbackTarget0218; rollback0218.go: the tiers drop-in, the lockdown record
 // and a warning for the system blocks that hold 0.2.19's statements), 0.2.17
@@ -113,8 +116,8 @@ package lifecycle
 // changed reaches them), the sshd drop-ins, the tier-pin marker and the host
 // records (all as 0.2.3 has them).
 //
-// Every target but 0.2.20, which reads such a name, is refused while the store
-// has a user name with a period (0.2.20 and 0.2.21 allowed one;
+// Every target but 0.2.21 and 0.2.20, which read such a name, is refused while
+// the store has a user name with a period (0.2.20 and 0.2.21 allowed one;
 // DottedUsersRefusal): the targets read letters, digits, '_' and '-' only, and fail on every store command with "user '<name>': invalid name".
 // An override under such a name in console.yaml (the console switches of a
 // user, ignored since 0.2.20) is taken out of the file by the plan; the other
@@ -169,8 +172,10 @@ import (
 // RollbackTarget029 is the one before the NETCONF service setting,
 // RollbackTarget0216 the one before audit.strict, RollbackTarget0217 the
 // one before the renamed verbs, RollbackTarget0218 the one before the
-// emergency lockdown and RollbackTarget0219 the release before this one
-// (0.2.10 to 0.2.16 changed no format 0.2.9 reads strictly, so 0.2.9 stays a
+// emergency lockdown, RollbackTarget0219 the one before the management filter
+// mode and the required password change, RollbackTarget0220 the one before
+// the managed scope of the server's own login and RollbackTarget0221 the
+// release before this one (0.2.10 to 0.2.16 changed no format 0.2.9 reads strictly, so 0.2.9 stays a
 // target; 0.2.18 changed none 0.2.16 or 0.2.17 reads, so 0.2.16 stays one
 // too).
 const (
@@ -181,6 +186,7 @@ const (
 	RollbackTarget0218 = "0.2.18"
 	RollbackTarget0219 = "0.2.19"
 	RollbackTarget0220 = "0.2.20"
+	RollbackTarget0221 = "0.2.21"
 )
 
 // RollbackRefusal is a version the command does not take: Lines say why.
@@ -264,10 +270,10 @@ func pluralWord(n int, one, many string) string {
 
 var reVersion = regexp.MustCompile(`^v?([0-9]+)\.([0-9]+)\.([0-9]+)$`)
 
-const rollbackUsage = "Usage: tacctl rollback " + RollbackTarget0220 + "|" + RollbackTarget0219 + "|" + RollbackTarget0218 + "|" + RollbackTarget0217 + "|" + RollbackTarget0216 + "|" + RollbackTarget029 + "|" + RollbackTarget + " [--apply] [--yes] [--hosts]"
+const rollbackUsage = "Usage: tacctl rollback " + RollbackTarget0221 + "|" + RollbackTarget0220 + "|" + RollbackTarget0219 + "|" + RollbackTarget0218 + "|" + RollbackTarget0217 + "|" + RollbackTarget0216 + "|" + RollbackTarget029 + "|" + RollbackTarget + " [--apply] [--yes] [--hosts]"
 
-// CheckRollbackVersion is the version a rollback is asked for ("0.2.19",
-// "0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3" or any with a "v"), or a *RollbackRefusal: 0.2.4
+// CheckRollbackVersion is the version a rollback is asked for ("0.2.21",
+// "0.2.20", "0.2.19", "0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3" or any with a "v"), or a *RollbackRefusal: 0.2.4
 // to 0.2.8 and older than 0.2.3 (a release's tool prepares the state for the
 // releases it knows, so the way back is one release at a time), 0.2.10 to
 // 0.2.15, this
@@ -281,11 +287,11 @@ func CheckRollbackVersion(arg string) (string, error) {
 			rollbackUsage}}
 	}
 	v := strings.TrimPrefix(arg, "v")
-	if v == RollbackTarget || v == RollbackTarget029 || v == RollbackTarget0216 || v == RollbackTarget0217 || v == RollbackTarget0218 || v == RollbackTarget0219 || v == RollbackTarget0220 {
+	if v == RollbackTarget || v == RollbackTarget029 || v == RollbackTarget0216 || v == RollbackTarget0217 || v == RollbackTarget0218 || v == RollbackTarget0219 || v == RollbackTarget0220 || v == RollbackTarget0221 {
 		return v, nil
 	}
 	n := func(i int) int { x, _ := strconv.Atoi(m[i]); return x }
-	both := "'tacctl rollback' prepares the state for " + RollbackTarget0220 + " (the release before this one), " + RollbackTarget0219 + ", " + RollbackTarget0218 + ", " + RollbackTarget0217 + ", " + RollbackTarget0216 + ", " + RollbackTarget029 + " and " + RollbackTarget + " only"
+	both := "'tacctl rollback' prepares the state for " + RollbackTarget0221 + " (the release before this one), " + RollbackTarget0220 + ", " + RollbackTarget0219 + ", " + RollbackTarget0218 + ", " + RollbackTarget0217 + ", " + RollbackTarget0216 + ", " + RollbackTarget029 + " and " + RollbackTarget + " only"
 	fallback := "The fallback that needs no tool is 'tacctl backup restore' of a snapshot of the time (see 'tacctl backup list')."
 	switch {
 	case n(1) == 0 && n(2) == 2 && n(3) > 3 && n(3) < 9:
@@ -535,6 +541,12 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 	if len(pend) > 0 {
 		return nil, PendingRefusal(pend)
 	}
+	// 0.2.21 reads every file this release writes but the server's name, and
+	// has the managed scope of the server's own login itself: nothing is
+	// added to the users (rollback0221.go).
+	if in.Target == RollbackTarget0221 {
+		return planRollback0221(p)
+	}
 	// Every target keeps the users' login to this server: the scope of it,
 	// which this release lets every user use, goes into their own scopes
 	// (rollback_managed.go).
@@ -559,7 +571,7 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 		return nil, LockdownRefusal(ls)
 	}
 	// A store user name with a period (0.2.20, 0.2.21) is refused for every
-	// target but 0.2.20 (handled above): no other release reads it (DottedUsersRefusal). An
+	// target but 0.2.21 and 0.2.20 (handled above): no other release reads it (DottedUsersRefusal). An
 	// override of such a name in console.yaml is taken out by the plan.
 	if inStore, err := DottedUsers(pa, in.HasStore); err != nil {
 		return nil, err

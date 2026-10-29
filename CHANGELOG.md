@@ -316,6 +316,29 @@ current behaviour; this file is where history lives.
    it. An older release refuses the key, so `tacctl rollback` removes
    `server.name` for every target.
 
+17. **`tacctl rollback 0.2.21`, the release before this one, is a target.**
+   0.2.21 reads every file this release writes but one key of `tacctl.yaml`,
+   the new `server.name` (`tacctl server name`), which its schema refuses: its
+   `config validate` says `unknown config key` and its `backup restore` refuses
+   a snapshot that has it. The new target removes that key after a snapshot and
+   converts nothing else. It does not add the scope of this server's own login
+   to the users' scopes (0.2.21 has the login itself, which the older targets
+   need it for), and it is not refused for a user whose name has a period or for
+   an emergency lockdown (0.2.21 reads both); it needs no `--yes` (it has no
+   warning). The other targets (`0.2.20`, `0.2.19`, `0.2.18`, `0.2.17`,
+   `0.2.16`, `0.2.9`, `0.2.3`) remove `server.name` too, with `server.addresses`
+   and the other keys they removed before. Nothing else this release changes
+   needs a conversion for 0.2.21: the user name rule (0.2.21 reads a name with a
+   period as it reads any), the `server listen` and `server metrics` verbs (they
+   write the keys `config listen` and `config metrics` wrote, so 0.2.21's
+   scripts keep working against the same `tacctl.yaml`), the host-key scan, the
+   Junos virtual chassis apply and the checks of this release store nothing
+   0.2.21 would not read. The per-tier sudoers drop-in is the one 0.2.21
+   writes (the `server` family has no tier row), so no drop-in is rewritten.
+   `TestRollbackRealOldBinary0221` builds 0.2.21 from its tag and runs its
+   `config validate` before and after, its render, `user show` of a user with a
+   period, `server addresses` and `host list`.
+
 ## 0.2.21 (2026-10-28)
 
 1. **`user rename` to a name with a period says what to do.** The refusal of

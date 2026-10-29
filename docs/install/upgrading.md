@@ -87,11 +87,11 @@ the other hosts. Before upgrading, rename it (`tacctl scope rename tacctl
 
 ## Rolling back
 
-`tacctl rollback` takes seven targets: `0.2.20`, the release before this
-one, `0.2.19`, `0.2.18`, `0.2.17`, `0.2.16`, `0.2.9` and `0.2.3`. All are the
+`tacctl rollback` takes eight targets: `0.2.21`, the release before this
+one, `0.2.20`, `0.2.19`, `0.2.18`, `0.2.17`, `0.2.16`, `0.2.9` and `0.2.3`. All are the
 dry run described below until `--apply` is given, all refuse while an apply
-is not settled, all but `0.2.20` while a user name has a period, all but
-`0.2.20` and `0.2.19` while an emergency
+is not settled, all but `0.2.21` and `0.2.20` while a user name has a period, all but
+`0.2.21`, `0.2.20` and `0.2.19` while an emergency
 lockdown locks a group, and each release's tool prepares the state for the
 releases it knows. `0.2.4` to `0.2.8` and `0.2.2` and older are refused with
 the way there (one release at a time, or `tacctl backup restore` of a snapshot
@@ -101,7 +101,7 @@ refused with the targets named.
 **Every user's login to this server (0.2.21).** This release lets every user
 log in to the tacctl server and its console, unless disabled or of tier none,
 without the server's scope in the user's own scopes. Every older release
-needs it there, so every target adds the scope of this server's own login
+needs it there (0.2.21 has it itself), so every target but `0.2.21` adds the scope of this server's own login
 (`tacctl`) to the scopes of each user who logs in to the server and lacks it
 (the plan counts and names them; a warning, so `--apply` needs `--yes`), after
 a snapshot. Every target also removes the server address `server.addresses`
@@ -118,7 +118,7 @@ it, so the rollback to 0.2.19 keeps it. The refusal lists each lockdown and the 
 rollback again. A record that locks nothing (a hand-edited, partial one) is
 removed by the rollback, because the older schemas refuse its keys.
 
-**A user name with a period stops every rollback but the one to 0.2.20** (the dry run too): 0.2.20
+**A user name with a period stops every rollback but the ones to 0.2.21 and 0.2.20** (the dry run too): 0.2.20
 and 0.2.21 allowed periods (a restored snapshot of either can bring such a user back), and no other
 target reads one (it fails with `user '<name>': invalid name` on every store command). The refusal
 lists each such user of the store with the command that fixes it
@@ -220,6 +220,27 @@ and the plain view of each pull), under the records' lock, and leaves every
 other line; the dry run lists each file. The files are derived and never in a
 snapshot; this release, if it stays, reads the two as missing until its next
 `device config pull`.
+
+### To 0.2.21
+
+0.2.21 reads every file this release writes but `server.name`
+(`tacctl server name`), so the rollback removes that key, after a snapshot, and
+converts nothing else: no scope is added to the users (0.2.21 has the login to
+this server itself), a user name with a period and an emergency lockdown stay
+(0.2.21 reads both), and the new `server show`, `server listen` and `server
+metrics` write the keys that `config listen` and `config metrics` wrote.
+`--hosts` is accepted and does nothing.
+
+```bash
+tacctl rollback 0.2.21          # the dry run: steps, writes nothing
+tacctl rollback 0.2.21 --apply
+tacctl upgrade --branch 0.2.21  # install 0.2.21
+```
+
+Until 0.2.21 is installed, do not run `tacctl server name <label>`; if it ran,
+run `tacctl rollback 0.2.21 --apply` again. The scripts that call `config
+listen` or `config metrics` are the ones of 0.2.21; the ones that call `server
+listen` or `server metrics` do not run there.
 
 ### To 0.2.20
 

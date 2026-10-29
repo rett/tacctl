@@ -16,7 +16,8 @@ import (
 
 // rollback0221State is rollbackState with this server enrolled in the scope
 // tacctl manages: every user logs in to it without the scope in their own
-// list, and tacctl.yaml holds the server address.
+// list, and tacctl.yaml holds the server address (also the state of the
+// rollback to 0.2.21).
 func rollback0221State(t *testing.T) *hostSandbox {
 	t.Helper()
 	hs := rollbackState(t)
