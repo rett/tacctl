@@ -279,6 +279,34 @@ The full change workflow (plans, Cisco paste, Junos apply, WTI checklist,
 back-out) is in [Engineer Guide: Device Changes](engineer-guide-device-changes.md).
 Superusers follow the same steps, for every scope.
 
+### 4.9 Slow or distant devices
+
+A device behind a satellite circuit (a round trip of about 600 ms) or with a
+slow CPU can miss the timings tacctl uses to reach it. The timing scale is one
+whole number from 1 to 10 that multiplies them all (1, the default, changes
+nothing). Only a superuser sets it:
+
+```bash
+tacctl device timeout-scale rtr1 3         # one device
+tacctl scope timeout-scale site-a 3        # every device of a scope
+tacctl config devices timeout-scale 2      # every device of the server
+tacctl device timeout-scale rtr1           # the scale in force and where it comes from
+tacctl device timeout-scale rtr1 clear     # remove the device's own
+```
+
+The scale in force is the device's own, else its scope's, else the server's,
+else 1. `clear` removes a device's or a scope's own. A scope's scale follows
+`scope rename` and goes with `scope remove`. `device show` and `scope show`
+have a `Timeout scale` row (and `device show --json` a `timeout_scale` object
+with `scale` and `from`) when the scale in force is not 1; engineers read it
+there. The scale multiplies the connect and handshake of the ssh and NETCONF
+sessions and of `tacctl ssh`, the host-key scans, the SNMP timeout (never above
+10 s) and the default time of one device in a pull or an apply (kept between
+10 s and 600 s); a typed `--timeout` wins, and the confirmed-commit windows
+are never scaled. [Connecting to Devices](connecting-to-devices.md) §7 has the
+table. `config validate` checks all three stored values, and `rollback`
+removes them ([Backups and Undo](backups-and-undo.md) §5).
+
 ---
 
 ## 5. Linux hosts
@@ -609,6 +637,7 @@ ports ([Engineer Guide](engineer-guide-device-changes.md) §4.1).
 | This server at a glance | `tacctl server show` |
 | Server address: show / change | `tacctl server addresses` · `tacctl server addresses replace <ip>` |
 | Name of the server in the console | `tacctl server name [<label>\|unset]` |
+| Timing scale for a slow or distant device / scope / server | `tacctl device timeout-scale <name> [<n>\|clear]` · `scope timeout-scale <scope> [<n>\|clear]` · `config devices timeout-scale [<n>]` |
 | Rebuild, move or repair the server's own login | `tacctl host enroll --local` |
 
 See [Exit Codes](exit-codes.md) for exit statuses.

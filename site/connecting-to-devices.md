@@ -172,7 +172,8 @@ password. Its connect waits 3 seconds and its handshake 10, so a refused
 device costs nothing more, a filtered or powered-off address costs 3 seconds
 more per scan, and a device that is slow to greet can take several seconds
 because the key types are read one after the other. A `legacy-ssh` device,
-`device enroll` and `device collect` are read as before.
+`device enroll` and `device collect` are read as before. For a slow or
+distant device the timing scale (§7) multiplies these waits.
 
 When no read gives a key, the command changes nothing. The refusal names the
 reads that were made, then the command that shows a key by hand and the ways
@@ -191,7 +192,49 @@ tacctl device hostkey rtr1 set SHA256:<fp>
 
 ---
 
-## 7. Quick reference
+## 7. Slow or distant devices
+
+A device behind a satellite circuit (a round trip of about 600 ms) or with a
+slow CPU (one measured needs about 4 s for each ssh connection) can miss the
+timings tacctl uses to reach a device. One whole number from 1 to 10, the
+**timing scale**, multiplies all of them. 1, the default, is every timing as
+it has always been.
+
+A superuser sets it, for one device, for a scope or for the whole server:
+
+```bash
+tacctl device timeout-scale sw1 3          # this device
+tacctl scope timeout-scale site-a 3        # every device of the scope
+tacctl config devices timeout-scale 2      # every device of the server
+tacctl device timeout-scale sw1 clear      # back to the scope's, then the server's
+tacctl device timeout-scale sw1            # the scale in force and where it comes from
+```
+
+The scale in force for a device is its own, else its scope's, else the
+server's, else 1. A verb with no value prints the scale in force, where it
+comes from (the device, the scope, the server or built in) and, above 1, what
+it makes of each timing. Engineers read the scale in `tacctl device show` (a
+`Timeout scale` row) and `tacctl scope show`; both show it only when it is
+not 1.
+
+| What | At scale 1 | Multiplied |
+|---|---|---|
+| Connect, handshake and first prompt of an ssh or NETCONF session (`device config pull`, `diff --pull`, `plan --pull`, `apply`, `enroll`, `onboard`, `collect`, `support-bundle`) | 10 s | Yes |
+| The ConnectTimeout of `tacctl ssh` | 10 s | Yes |
+| The host-key scans (`device add`, `hostkey`, `scan`, `check`, `enroll`, `collect`, `onboard`, and the diagnosis after a failed `ssh`) | 5 s and 3 s for ssh-keyscan; 3 s, 10 s and 5 s for tacctl's own client | Yes |
+| The SNMP timeout (`snmp.timeout`, `scope snmp timeout`, `device snmp timeout`) | 2 s | Yes, never above 10 s |
+| The time one device may take in a pull or an apply (`device.config.timeout`) | 90 s | Yes, kept between 10 s and 600 s |
+| The confirmed-commit windows (`device.config.confirm_timeout`, `device.apply.confirm_timeout`) | Minutes | No: they are timers on the device |
+
+An option typed on the command line wins: `--timeout` of a pull or an apply is
+the time of every device of that run, as typed, and the scale replaces only
+the default. When one run covers devices with different scales, each device
+has the time its own scale gives. A scale cannot make a lost packet arrive: a
+device that is down is still found out, only later.
+
+---
+
+## 8. Quick reference
 
 | Task | Command | Who |
 |---|---|---|
@@ -202,6 +245,7 @@ tacctl device hostkey rtr1 set SHA256:<fp>
 | Show pinned keys | `tacctl device hostkey <name>` | Engineer |
 | Re-pin a verified key | `tacctl device hostkey <name> set SHA256:<fp>` | Engineer |
 | Legacy IOS ssh | `tacctl device legacy-ssh <name> enable` | Engineer |
+| Slow or distant device | `tacctl device timeout-scale <name> <1-10>` | Superuser |
 
 ---
 

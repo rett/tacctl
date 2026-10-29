@@ -50,6 +50,7 @@ usage. In the console and `tacctl shell`, `?` shows help.
 | Read config | `tacctl device config pull <n>\|--scope s` | E |
 | Diff / plan | `tacctl device config diff <n>` · `device config plan <n>` | E |
 | Junos apply | `tacctl device config apply <n> [--check]` | E |
+| Timing scale of a slow or distant device | `tacctl device timeout-scale <n> [<1-10>\|clear]` (the scale is in `device show`) | S |
 | Back-out | `tacctl device config plan <n> --backout` | E |
 
 ## 3. Users
@@ -84,6 +85,7 @@ usage. In the console and `tacctl shell`, `?` shows help.
 | Who owns an IP | `tacctl scope lookup <ip>` | S |
 | Prefixes | `tacctl scope prefixes <s> add\|remove <cidr>` | S |
 | Rotate secret | `tacctl scope secret <s> generate` | S |
+| Timing scale of a scope | `tacctl scope timeout-scale <s> [<1-10>\|clear]` (the scale is in `scope show`) | S |
 | Break-glass accounts | `tacctl scope breakglass <s> add <user>` | S |
 | Junos filter mode: show | `tacctl scope mgmt-acl <s> mode` | E |
 | Junos filter mode: set | `tacctl scope mgmt-acl <s> mode ssh-only\|strict` | S |
@@ -108,6 +110,7 @@ usage. In the console and `tacctl shell`, `?` shows help.
 | Show the server address | `tacctl server addresses` | S |
 | Change it | `tacctl server addresses replace <ip>` | S |
 | Name shown in the console | `tacctl server name [<label>\|unset]` | S |
+| Timing scale of every device | `tacctl config devices timeout-scale [<1-10>]` | S |
 | Where a backend listens | `tacctl server listen [show]` | S |
 | Prometheus exporter | `tacctl server metrics [show]` | S |
 | Rebuild or repair the server's own login | `tacctl host enroll --local` | S |
