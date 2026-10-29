@@ -37,7 +37,8 @@ tacacs>
 ```
 
 At the console prompt, type commands **without** the `tacctl` prefix, for
-example `device list` or `ssh sw1`.
+example `device list` or `ssh sw1`. The prompt shows the server's name: its
+host name, unless a superuser set another with `tacctl server name`.
 
 | Key or command | What it does |
 |---|---|

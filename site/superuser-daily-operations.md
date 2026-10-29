@@ -466,6 +466,10 @@ tacctl console list-max 100                             # the longest list shown
 
 ## 11. This server
 
+`tacctl server` holds this server's own settings and is the superuser's alone:
+`server show` (an overview), `server name`, `server addresses`, `server listen`
+and `server metrics`.
+
 ### 11.1 The server's own login
 
 Every user logs in to the tacctl server and its console through a login that
@@ -522,6 +526,42 @@ walkthroughs (`config cisco|juniper|wti`, and so `device config show`,
 was. A host that is already enrolled keeps the address it has, and
 `host enroll --server` changes it.
 
+### 11.3 The overview, the name, the listeners and the metrics exporter
+
+```bash
+tacctl server show               # this server at a glance; --json for a script
+tacctl server name tacacs-a      # the name the console shows for this server
+tacctl server listen             # where the TACACS+ listener binds
+tacctl server metrics            # the Prometheus exporter
+```
+
+`server show` changes nothing and writes no audit line. It prints the server
+address (the setting, else the copy in this server's registry entry), the
+name, the default method of `host enroll`, the metrics exporter (its address,
+`enabled` or `disabled`, `loopback only` or `externally reachable`), each
+backend with whether it is installed and enabled and the state of its
+service, and each listener of the installed or enabled backends with its
+network, address, port and unit state.
+
+`server name [<label>|unset]` sets the name the console shows in its prompt
+(`<name>> `) and its notices (the banner of a session, `tacctl console on
+<name>`, the header of `device client-config`) in place of the host name. With
+no word it shows the name in effect and whether it is the setting or the host
+name; `unset` removes the setting. A name is 1 to 63 lower-case letters,
+digits and hyphens, a letter first and no hyphen last. Nothing else is
+renamed: the host name, this server's registry entry and the accounts stay. A
+console session reads the name once, when it starts.
+
+`server listen [--backend <id>] [--listener <name>] [show|reset|<network>
+<address>]` shows, changes or resets where a backend listens. It asks for
+confirmation before `tcp6` or `udp6`, restarts the unit, and puts the old
+setting back if the unit does not stay up. `server metrics
+[show|enable|disable|reset|address <host:port>]` controls the Prometheus
+exporter of the TACACS+ backend (loopback only, 127.0.0.1:8080, by default;
+`disable` moves it to a port no scraper can reach; an address that is not
+loopback prints a warning). The device walkthroughs follow the listeners'
+ports ([Engineer Guide](engineer-guide-device-changes.md) §4.1).
+
 ---
 
 ## 12. Quick reference
@@ -555,7 +595,9 @@ was. A host that is already enrolled keeps the address it has, and
 | Watch logins live | `tacctl log tail -f` |
 | Console settings and each user's shell | `tacctl console show` |
 | System shell for a tier / a user | `tacctl console system-shell <tier> enable` · `console system-shell user <name> enable\|disable\|clear` |
+| This server at a glance | `tacctl server show` |
 | Server address: show / change | `tacctl server addresses` · `tacctl server addresses replace <ip>` |
+| Name of the server in the console | `tacctl server name [<label>\|unset]` |
 | Rebuild, move or repair the server's own login | `tacctl host enroll --local` |
 
 See [Exit Codes](exit-codes.md) for exit statuses.

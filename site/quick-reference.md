@@ -104,8 +104,12 @@ usage. In the console and `tacctl shell`, `?` shows help.
 
 | Task | Command | Tier |
 |---|---|---|
+| This server at a glance | `tacctl server show` | S |
 | Show the server address | `tacctl server addresses` | S |
 | Change it | `tacctl server addresses replace <ip>` | S |
+| Name shown in the console | `tacctl server name [<label>\|unset]` | S |
+| Where a backend listens | `tacctl server listen [show]` | S |
+| Prometheus exporter | `tacctl server metrics [show]` | S |
 | Rebuild or repair the server's own login | `tacctl host enroll --local` | S |
 
 ## 8. Logs and recovery
