@@ -19,6 +19,7 @@ setup() {
     tacctl_tmpenv_init
     tacctl_mocks_init
     export TACCTL_LINUX_DIR="${BATS_TEST_TMPDIR}/linux"
+    export TACCTL_TIER_SUDOERS_FILE="${BATS_TEST_TMPDIR}/sudoers.d/tacctl-tiers"
     stub_cmd chown
     stub_cmd systemctl
     stub_cmd logger
