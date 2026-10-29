@@ -305,7 +305,9 @@ sessions and of `tacctl ssh`, the host-key scans, the SNMP timeout (never above
 10 s and 600 s); a typed `--timeout` wins, and the confirmed-commit windows
 are never scaled. [Connecting to Devices](connecting-to-devices.md) §7 has the
 table. `config validate` checks all three stored values, and `rollback`
-removes them ([Backups and Undo](backups-and-undo.md) §5).
+removes them ([Backups and Undo](backups-and-undo.md) §5). To find the slow
+device of a run, use `--timing`
+([Engineer Guide](engineer-guide-device-changes.md) §3).
 
 ---
 

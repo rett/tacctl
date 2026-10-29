@@ -230,7 +230,9 @@ An option typed on the command line wins: `--timeout` of a pull or an apply is
 the time of every device of that run, as typed, and the scale replaces only
 the default. When one run covers devices with different scales, each device
 has the time its own scale gives. A scale cannot make a lost packet arrive: a
-device that is down is still found out, only later.
+device that is down is still found out, only later. To see where the time of a
+run goes, use `--timing`
+([Engineer Guide](engineer-guide-device-changes.md) §3).
 
 ---
 
