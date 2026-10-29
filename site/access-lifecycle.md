@@ -197,9 +197,18 @@ What the requirement does, until the user changes the password:
 
 A superuser is never held to it: the tier of the user's group decides each
 time. The requirement is set only for a user who can log in to the server to
-make the change (the server's own login set up, the user enabled, with no
-period in the name); otherwise the command says why and sets nothing.
-`require-password-change --all` ends with
+make the change; otherwise the command says why and sets nothing. A user
+cannot when:
+
+- the server is not enrolled (`tacctl host enroll --local`);
+- the name has a period (a leftover; rename it);
+- the user is disabled;
+- the user's group has no privilege level;
+- the server is still registered in a scope it shares with devices (an
+  install from before 0.2.21) and the user is not in that scope.
+
+`require-password-change --all` skips each such user and a superuser, names
+the reason, and ends with
 `Flagged N, skipped M, already required K.`
 
 Who is waiting: `user list` marks the date with `(change required)`,

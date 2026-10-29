@@ -158,13 +158,20 @@ tacctl device check --all
 ```
 
 A `STATE` of `configured` means a scope's prefixes cover the device's
-address. Only configured devices can authenticate users. The enrolled Linux
-hosts are not in this list: `tacctl host list` shows them (§5).
+address; `unconfigured` means none does, and only configured devices can
+authenticate users. `stale` marks a device not seen for stale-days, and
+`BREAK-GLASS` shows while the device is held back from the server
+([Break Glass](break-glass.md)). The `CONFIG` column is the state of the last
+pull: `ok`, `differs`, `never`, `failed`, or `pull` for a Cisco device whose
+configuration syntax is unknown, or whose vendor changed since its last pull
+(pull it again); `-` for a vendor `other` and a device no scope covers. The
+enrolled Linux hosts are not in this list: `tacctl host list` shows them (§5).
 
 After a change of users, scopes or settings, `tacctl device list --differs`
 names the devices to pull or plan. It computes this from the pull records with
 no login, as `device config list --differs` does, and it counts as a filter:
-the heading reads `Registered devices (1), of 5`, and an empty result says
+the heading reads `Registered devices (1), of 5` (the second number appears
+when the list is narrowed by an option or a word), and an empty result says
 `None match.`
 
 > `device check` and `--probe` connect from the tacctl server. If the server
