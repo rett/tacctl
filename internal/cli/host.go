@@ -556,6 +556,10 @@ func (inv *invocation) hostEnrollRun(o enrollOpts) error {
 		if name == "" {
 			name = lowerDerived(reg, shortHostname())
 		}
+		// a refused option is said before an address is detected and printed
+		if port != "" && !rePort.MatchString(port) {
+			return inv.usageErr("Invalid --port '" + port + "'.")
+		}
 		addr, err := inv.localServerAddress(reg, server)
 		if err != nil {
 			return err
