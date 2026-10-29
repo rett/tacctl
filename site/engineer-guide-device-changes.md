@@ -158,6 +158,44 @@ The managed sections are `aaa`, `roles`, `mgmt-acl`, `snmp`, `netconf`, and
 > `--max-failures <n>` and `--transport auto|netconf|ssh`. A first Ctrl-C
 > starts no new devices. A second one stops the devices that are running.
 
+**Where the time goes.** For a run over many devices of which some are slow,
+add `--timing` to `device config pull`, `device config diff --pull`, `device
+config plan --pull` or `device config apply`. After the summary it prints, per
+device, the phases it went through in order with their time and its total, and
+names the slowest device:
+
+```text
+  timing:
+    sw1   connect 4.0s  login 900ms  session 1.2s  read 2.1s  compare 40ms  record 12ms  total 8.3s
+    jsw1  connect 210ms  login 180ms  session 95ms  read 1.4s  compare 33ms  record 10ms  total 2.0s
+  slowest: sw1 (8.3s)
+```
+
+The phases of a pull are `connect` (the TCP connect and the ssh key exchange up
+to the device's pinned host key), `login`, `session`, `read`, `compare` and
+`record`. An apply adds `preflight`, `load`, `check`, `commit`, `verify` (the
+fresh login and what it proves) and `confirm`; with `--pull`, the pull, the
+check and the apply of a device are added up. A phase the device did not reach
+is left out, not shown as zero, and a device that failed shows the phases it
+reached and, under the word of its status (`failed`, `auth-failed`,
+`timeout`), the time it spent in the one it failed in. Nothing is stored, and
+without `--timing` the output is as it was.
+
+- With `--json` each device's line has a `timings` object (the `steps` in
+  order, each with its `ms`, and `total_ms`), and the summary line has
+  `timings.slowest` and `timings.slowest_ms`.
+- `diff --pull --json` prints the array of devices only: the slowest device's
+  `timings` carries `"slowest": true`.
+- `plan --pull` prints the timing on standard error, so standard output stays
+  the plan.
+
+A device that is slow for a reason of its own, such as a long round trip or a
+slow CPU, is a case for a timing scale, which a superuser sets
+([Connecting to Devices](connecting-to-devices.md) §7). You read the scale in
+force in `tacctl device show <name>` and `tacctl scope show <scope>`. A
+`--timeout` you type on a pull or an apply is the time of every device of that
+run, as typed, and wins over the scale.
+
 ---
 
 ## 4. Planning the change
@@ -340,6 +378,9 @@ What happens during an apply:
 - The first device of each new shape goes alone (canary). By default at most
   5 devices are changed per run (`--max`), with a pause between devices
   (`--pause`).
+- The time of the apply is not scaled where it is a timer on the device: the
+  confirmed-commit window (10 minutes by default) is never multiplied by a
+  timing scale. `--timing` shows where the time of each device went (§3).
 
 > **`PENDING until <time>`** means tacctl could not read the device's
 > state after the commit. **Type nothing on that device until the time
@@ -411,6 +452,8 @@ tacctl device config plan sw1 --converge  # optional: remove old servers and sim
 | Register + read | `tacctl device add <n> <ip> --vendor <v> --pull` |
 | Enroll discovered | `tacctl device enroll --discovered` |
 | Read a scope | `tacctl device config pull --scope <s>` |
+| Where the time of a run goes | add `--timing` to `pull`, `diff --pull`, `plan --pull` or `apply` |
+| Scale in force for a slow device | `tacctl device show <n>` (`Timeout scale` row) |
 | What differs | `tacctl device config list --differs` |
 | Line-level diff | `tacctl device config diff <n>` |
 | Paste plan | `tacctl device config plan <n>` |

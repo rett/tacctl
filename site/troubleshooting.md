@@ -82,6 +82,7 @@ its own procedure in §5 of that page.
 | Pull refused: break-glass held | The device does not authenticate you | Release the hold first ([Break Glass](break-glass.md)) |
 | Plan says `Not fixable by this login` | Your class can't commit that section | Ask a superuser |
 | A pull or an apply of one device ends `timeout`, or the host-key read finds no key, for a device behind a long round trip or with a slow CPU | The device misses the connect, handshake or per-device times | Ask a superuser for a timing scale: `tacctl device timeout-scale <name> 3` ([Connecting to Devices](connecting-to-devices.md) §7). A `--timeout` you type wins over it. |
+| A run over many devices is slow, and you do not know which device holds it up | Some devices take much longer than others | Add `--timing` to `device config pull`, `diff --pull`, `plan --pull` or `apply`: it prints each device's phases and names the slowest ([Engineer Guide](engineer-guide-device-changes.md) §3) |
 
 ---
 
