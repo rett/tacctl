@@ -247,6 +247,20 @@ device netconf <name> [show|enable|disable|leave|clear] [--connection-limit <n>|
     setting, and a registry file or an import that gives one to another vendor is refused; `--apply`
     as for the fields above; Tab offers the Junos devices
 
+device timeout-scale <name> [<n>|clear]
+
+    Superuser. The device's own timing scale, 1 to 10: it multiplies each network timing used to
+    reach the device (the connect and handshake of the sessions and of `tacctl ssh`, the host-key
+    scans, the SNMP timeout up to its maximum, the per-device time of a pull or an apply within its
+    bounds), for a device behind a long round trip or with a slow CPU. `<n>` sets it, `clear`
+    removes it (its scope's, `scope timeout-scale`, then the server's, `config devices
+    timeout-scale`, applies again). With no value it prints the scale in force, where it comes from
+    and what it makes of each timing. `device show` has a `Timeout scale` row, and `--json` a
+    `timeout_scale` object (`scale` and `from`: `device`, `scope` or `global`), when the scale in
+    force is not 1. An enrolled Linux host has none of its own. See "Slow or distant devices" in the
+    connecting page. Stored as `timeout_scale` in `devices.yaml`, only when set; Tab offers the
+    devices
+
 device stale-days [<n>]
 
     Days without a sighting after which a device is stale (default 30)

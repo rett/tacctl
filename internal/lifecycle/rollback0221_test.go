@@ -59,7 +59,7 @@ func TestPlanRollback0221WithNoServerName(t *testing.T) {
 	s.write(s.p.Overrides, rbConf+"server:\n  addresses: [192.0.2.10]\n", 0o640)
 	s.reload()
 	p := plan0221(t, s)
-	if len(p.Keys()) != 0 || p.Pending() || !strings.Contains(stepText(p), "nothing to remove (no server name is set)") {
+	if len(p.Keys()) != 0 || p.Pending() || !strings.Contains(stepText(p), "nothing to remove (no server name or timeout scale is set)") {
 		t.Errorf("keys %q pending %v:\n%s", p.Keys(), p.Pending(), stepText(p))
 	}
 }

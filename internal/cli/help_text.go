@@ -337,6 +337,7 @@ Usage:
                                                            NETCONF service of the scope's Junos devices (default leave: nothing is planned or compared; a device's own setting wins)
       <o>--connection-limit <n>|none</o>                          (enable) The connection limit of the service, 1 to 250; none removes it
       <o>--rate-limit <n>|none</o>                                (enable) The rate limit of the service, 1 to 250; none removes it
+  <b>tacctl scope timeout-scale</b> <o><scope></o> [<o><n></o>|clear]           Timing scale of the scope's devices, 1 to 10, for slow or distant devices (default: the server's; a device's own wins)
   <b>tacctl scope block</b> <o><scope></o> cisco|juniper list|show|check|set|remove|edit|adopt [<o><block></o>]
                                                            Configuration blocks of a scope (snmp and system, for Junos and IOS): community strings, trap groups and hosts, access lists, login message, domain, time zone, name servers, NTP
 
@@ -456,7 +457,7 @@ Subcommands:
       <o>--snmp-location <text></o>           (cisco, juniper, wti) The SNMP location for this paste; not stored (a device's own: tacctl device location)
   <b>linux</b>   build|script|remove-script|uid|builds  TACACS+ or RADIUS login for Linux hosts (install/removal scripts)
   <b>snmp</b>    show|community|v3-user|port|timeout|clear|test  SNMP for the name hint of 'device add' (sysName)
-  <b>devices</b> [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause|apply-transport] [<o><value></o>]  How 'device config pull' reads the devices (default 8 at once, auto, 90 s), the confirm timeout of 'plan' (5 min) and how 'device config apply' runs (confirm 10 min, pause 60 s, transport cli)
+  <b>devices</b> [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause|apply-transport|timeout-scale] [<o><value></o>]  How 'device config pull' reads the devices (default 8 at once, auto, 90 s), the confirm timeout of 'plan' (5 min), how 'device config apply' runs (confirm 10 min, pause 60 s, transport cli) and the timing scale (1)
   <b>branch</b> [<o><name></o>]                      Show or change the tacctl repo branch
 
 Examples:

@@ -64,7 +64,7 @@ func TestRollback0221RemovesTheServerNameOnly(t *testing.T) {
 func TestRollback0221WithNoServerName(t *testing.T) {
 	hs := rollback0221State(t)
 	hs.run(hs.runner(), "rollback", "0.2.21")
-	hs.expect(0, "nothing to remove (no server name is set)", "")
+	hs.expect(0, "nothing to remove (no server name or timeout scale is set)", "")
 	hs.run(hs.runner(), "rollback", "0.2.21", "--apply")
 	hs.expect(0, "Nothing to convert: every file is one 0.2.21 can read.", "")
 }
@@ -111,6 +111,10 @@ func TestRollbackRealOldBinary0221(t *testing.T) {
 	hs := rollback0221State(t)
 	hs.write("state/store.yaml", strings.Replace(hs.store(), "\n  erin:", "\n  erin.smith:", 1), 0o600)
 	hs.step("", "server", "name", "core-1")
+	// the timing scale of 0.2.22, in the three places 0.2.21 refuses it
+	hs.step("", "config", "devices", "timeout-scale", "3")
+	hs.step("", "scope", "timeout-scale", "lab", "2")
+	hs.step("", "device", "timeout-scale", "sw1", "4")
 	stubs := t.TempDir()
 	for _, name := range []string{"systemctl", "logger", "chown"} {
 		if err := os.WriteFile(filepath.Join(stubs, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
@@ -125,8 +129,12 @@ func TestRollbackRealOldBinary0221(t *testing.T) {
 		}
 		return plain(string(res.Stdout) + string(res.Stderr)), res.Code
 	}
-	if out, code := run("config", "validate"); code != 1 || !strings.Contains(out, "server.name: unknown config key") {
+	if out, code := run("config", "validate"); code != 1 || !strings.Contains(out, "server.name: unknown config key") ||
+		!strings.Contains(out, "device.timeout_scale: unknown config key") || !strings.Contains(out, "timeout_scale_scope.lab: unknown config key") {
 		t.Errorf("0.2.21 config validate before: %d\n%s", code, out)
+	}
+	if out, code := run("device", "list"); code == 0 || !strings.Contains(out, "unknown key 'timeout_scale'") {
+		t.Errorf("0.2.21 device list before: %d\n%s", code, out)
 	}
 	hs.run(hs.runner(), "rollback", "0.2.21", "--apply")
 	hs.expect(0, "Applying.", "")
@@ -135,6 +143,12 @@ func TestRollbackRealOldBinary0221(t *testing.T) {
 	}
 	if out, code := run("config", "validate"); code != 0 || !strings.Contains(out, "Configuration is valid.") {
 		t.Errorf("0.2.21 config validate after: %d\n%s", code, out)
+	}
+	if out, code := run("device", "show", "sw1"); code != 0 || !strings.Contains(out, "10.99.0.1") {
+		t.Errorf("0.2.21 device show after: %d\n%s", code, out)
+	}
+	if out, code := run("device", "list"); code != 0 || !strings.Contains(out, "sw2") {
+		t.Errorf("0.2.21 device list after: %d\n%s", code, out)
 	}
 	if out, code := run("user", "show", "erin.smith"); code != 0 || !strings.Contains(out, "erin.smith") {
 		t.Errorf("0.2.21 user show of the dotted name after: %d\n%s", code, out)

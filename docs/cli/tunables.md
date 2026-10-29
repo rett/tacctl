@@ -83,6 +83,8 @@ Keys without a shipped default (`backends.*`, `listeners.*`, `snmp.*`, `device.c
 | `device.config.max_concurrency`, `device.config.transport`, `device.config.timeout`, `device.config.confirm_timeout` | 1 to 64 (8); `auto`, `netconf` or `ssh` (`auto`); 10 to 600 seconds (90); 1 to 60 minutes (5) | `config devices` |
 | `device.apply.confirm_timeout`, `device.apply.pause` | 3 to 60 minutes (10); 0 to 3600 seconds (60) | `config devices apply-confirm-timeout`, `apply-pause` |
 | `device.apply.transport` | `cli`, `auto` or `netconf` (cli) | `config devices apply-transport` |
+| `device.timeout_scale` | 1 to 10 (1): multiplies every network timing used to reach a device; see [Slow or distant devices](../devices/connecting.md#slow-or-distant-devices) | `config devices timeout-scale` |
+| `timeout_scale_scope.<scope>` | 1 to 10: the scope's own scale, in place of `device.timeout_scale`; a device's own (`devices.yaml`) wins; unset: follows the server's | `scope timeout-scale` |
 | `privileges.<group>` | list of Cisco priv-exec commands (the shipped list of a built-in group) | `group privilege` |
 | `commands.<group>` | ordered `{name, action, match}` rules ending in the `*` catch-all (shipped) | `group commands` |
 | `aaa.order.<scope>` | `tacacs-first` or `local-first` (`tacacs-first`) | `scope aaa-order` |

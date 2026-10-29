@@ -186,6 +186,17 @@ scope netconf <name> [show|enable|disable|leave] [--connection-limit <n>|none]
     (830); tacctl reaches NETCONF through the SSH subsystem, which they do not bound on Junos 25.4.
     `show` prints the setting. Stored as `netconf_scope.<name>.*`, only when set
 
+scope timeout-scale <name> [<n>|clear]
+
+    Superuser. The timing scale of the scope's devices, 1 to 10: it multiplies each network timing
+    used to reach them (the sessions' connect and handshake, the host-key scans, the SNMP timeout up
+    to its maximum, the per-device time of a pull or an apply within its bounds), for devices behind
+    a long round trip or with a slow CPU. `<n>` sets it, `clear` removes it (the server's, `config
+    devices timeout-scale`, applies again); a device's own scale (`device timeout-scale`) wins. With
+    no value it prints the scale in force, where it comes from and what it makes of each timing.
+    `scope show` has a `Timeout scale` row when the scale in force is not 1. See "Slow or distant
+    devices" in the connecting page. Stored as `timeout_scale_scope.<name>`, only when set
+
 scope block <name> cisco|juniper list
 
     The scope's configuration blocks: each block's state (in force, no file, or a file `tacctl.yaml`
@@ -323,8 +334,8 @@ runs every line through sudo.
 
 **Connection filters:** `deny` takes precedence over `allow`. Both empty = all connections accepted.
 
-**Settings stored under a scope's name** in `tacctl.yaml` (`aaa.order`, `exec_timeout`, `tacacs_group`, `radius_group`, `scope_auth_method`, `scope_mgmt_acl.names.cisco|juniper`, `scope_mgmt_acl.permits`, `breakglass_scope.<scope>.users`, `snmp_scope.<scope>.*`, `netconf_scope.<scope>.*`, and the scope's credentials file `snmp/<scope>.yaml`) follow the scope on `scope rename` and are removed with it by `scope remove` (and `scope prefixes remove --all`), so a new scope of the same name starts from the defaults. Its `protocols`, `vendor-attrs` and `devices` are part of its entry in `store.yaml` and do the same.
+**Settings stored under a scope's name** in `tacctl.yaml` (`aaa.order`, `exec_timeout`, `tacacs_group`, `radius_group`, `scope_auth_method`, `scope_mgmt_acl.names.cisco|juniper`, `scope_mgmt_acl.permits`, `breakglass_scope.<scope>.users`, `snmp_scope.<scope>.*`, `netconf_scope.<scope>.*`, `timeout_scale_scope.<scope>`, and the scope's credentials file `snmp/<scope>.yaml`) follow the scope on `scope rename` and are removed with it by `scope remove` (and `scope prefixes remove --all`), so a new scope of the same name starts from the defaults. Its `protocols`, `vendor-attrs` and `devices` are part of its entry in `store.yaml` and do the same.
 
 **After a change to what the devices are rendered from** (`prefixes`, `secret`, `mgmt-acl`, `snmp`, `netconf`, `block`, and the protocol, AAA order, timeout and group settings), the verb says, in one line, when at least one device of the scope has a stored pull that `device config plan` would now change: `tacctl device config apply --scope <name> --check` (`device config plan --scope <name>` for a caller who is not a superuser). It reads the stored pulls only: no login, no network.
 
-Each change also writes a line of its own to the audit log, beside the `cmd start` and `cmd end` pair: `scope add`, `scope remove`, `scope rename`, `scope default`, `scope prefixes op= scope= cidr=`, `scope protocols|vendor-attrs|auth-method|aaa-order|exec-timeout|tacacs-group|radius-group|netconf scope= from= to=`, `scope mgmt-acl`, `scope secret set scope= source=`, `snmp set kind= scope=` and the lines of `config allow|deny` and `config mgmt-acl`, never a secret or a community; a shown secret is `secret-read kind= name=` for every caller ([Audit log](../security/audit.md#detail-lines)).
+Each change also writes a line of its own to the audit log, beside the `cmd start` and `cmd end` pair: `scope add`, `scope remove`, `scope rename`, `scope default`, `scope prefixes op= scope= cidr=`, `scope protocols|vendor-attrs|auth-method|aaa-order|exec-timeout|tacacs-group|radius-group|netconf|timeout-scale scope= from= to=`, `scope mgmt-acl`, `scope secret set scope= source=`, `snmp set kind= scope=` and the lines of `config allow|deny` and `config mgmt-acl`, never a secret or a community; a shown secret is `secret-read kind= name=` for every caller ([Audit log](../security/audit.md#detail-lines)).

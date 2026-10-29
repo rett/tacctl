@@ -444,6 +444,10 @@ type RollbackPlan struct {
 	// netconfDev are the devices with a NETCONF service setting of their
 	// own (0.2.10, D145): removed like the syntax setting is.
 	netconfDev []devNetconf
+	// timeoutDev are the devices with a timing scale of their own (0.2.22,
+	// 'device timeout-scale'): every target's parser refuses the key, so it
+	// is removed for every target (rollback_timeoutscale.go).
+	timeoutDev []devTimeoutScale
 	// syntaxKeyDev are the devices whose configuration syntax setting is
 	// written back under the key 0.2.5 to 0.2.17 read, config_syntax
 	// (0.2.18, D273; the targets 0.2.17, 0.2.16 and 0.2.9).
@@ -487,7 +491,7 @@ func (p *RollbackPlan) Pending() bool {
 // PendingFiles: there is a file of tacctl's own to convert (the snapshot
 // holds those; the sudoers drop-ins and the stored pulls are not in it).
 func (p *RollbackPlan) PendingFiles() bool {
-	return len(p.keys) > 0 || len(p.pwStore) > 0 || len(p.managedUsers) > 0 || p.console.Text != nil || len(p.snmpDev) > 0 || len(p.syntaxDev) > 0 || len(p.netconfDev) > 0 || len(p.syntaxKeyDev) > 0
+	return len(p.keys) > 0 || len(p.pwStore) > 0 || len(p.managedUsers) > 0 || p.console.Text != nil || len(p.snmpDev) > 0 || len(p.syntaxDev) > 0 || len(p.netconfDev) > 0 || len(p.syntaxKeyDev) > 0 || len(p.timeoutDev) > 0
 }
 
 func (p *RollbackPlan) todoSudoers() []sudoersPlan {
@@ -522,6 +526,21 @@ func (p *RollbackPlan) NotWritten() []string { return slices.Clone(p.notWritten)
 // a human. It writes nothing. A file this tacctl cannot read is an error
 // naming it: the rollback is refused before it changes anything.
 func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
+	p, err := planRollback(in)
+	if err != nil {
+		return nil, err
+	}
+	// The timing scale of 0.2.22 is one more thing every target lacks: the
+	// devices' own scales are taken out of devices.yaml for every target.
+	if err := p.planTimeoutScale(); err != nil {
+		return nil, err
+	}
+	p.addTimeoutScale()
+	return p, nil
+}
+
+// planRollback is PlanRollback of the target's own steps.
+func planRollback(in RollbackInput) (*RollbackPlan, error) {
 	if in.Target == "" {
 		in.Target = RollbackTarget
 	}
@@ -1129,6 +1148,15 @@ func ApplyRollback(p *RollbackPlan) ([]string, error) {
 		}
 		if len(cleared) > 0 {
 			done = append(done, fmt.Sprintf("%s: removed the NETCONF service setting of %d %s", pt.DevicesFile, len(cleared), plural(len(cleared), "device", "devices")))
+		}
+	}
+	if len(p.timeoutDev) > 0 {
+		cleared, err := devreg.RollbackTimeoutScale(pt.DevicesFile, nil)
+		if err != nil {
+			return done, err
+		}
+		if len(cleared) > 0 {
+			done = append(done, fmt.Sprintf("%s: removed the timeout scale of %d %s", pt.DevicesFile, len(cleared), plural(len(cleared), "device", "devices")))
 		}
 	}
 	// Last of the writes of devices.yaml: every other one writes the key

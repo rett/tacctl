@@ -424,7 +424,7 @@ var configFamilies = map[string]string{
 	"cisco.source_interface.": KindScopes, "scope_auth_method.": KindScopes,
 	"scope_mgmt_acl.names.cisco.": KindScopes, "scope_mgmt_acl.names.juniper.": KindScopes,
 	"scope_mgmt_acl.permits.": KindScopes, "scope_mgmt_acl.mode.": KindScopes, "breakglass_scope.": KindScopes, "blocks.": KindScopes,
-	"snmp_scope.": KindScopes, "netconf_scope.": KindScopes,
+	"snmp_scope.": KindScopes, "netconf_scope.": KindScopes, "timeout_scale_scope.": KindScopes,
 	"listeners.": "", "blocks_device.": "", "breakglass_hold.": "", "emergency.lockdown.": "",
 }
 

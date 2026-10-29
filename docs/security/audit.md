@@ -106,7 +106,7 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `scope rename` | `from` `to` `users` `hosts` |
 | `scope default` | `from` `to` |
 | `scope prefixes` | `op=add\|remove\|move\|remove-all` `scope` `cidr`, and `to` for a move |
-| `scope protocols`, `scope vendor-attrs`, `scope auth-method`, `scope aaa-order`, `scope exec-timeout`, `scope tacacs-group`, `scope radius-group`, `scope netconf` | `scope` `from` `to` |
+| `scope protocols`, `scope vendor-attrs`, `scope auth-method`, `scope aaa-order`, `scope exec-timeout`, `scope tacacs-group`, `scope radius-group`, `scope netconf`, `scope timeout-scale` | `scope` `from` `to` |
 | `scope devices` | `scope` `cidr` `from` `to` (the vendor tag) |
 | `scope mgmt-acl` | `scope` `op=add\|remove\|clear\|cisco-name\|juniper-name\|mode` `value` (the mode, for `op=mode`) |
 | `scope secret set` | `scope` `source=set\|generate` |
@@ -131,7 +131,7 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `device enroll hostkey`, `device collect hostkey`, `device onboard hostkey` | `user` `addr` `device` `alg` `fp` `result=accepted\|skipped\|refused` `source=confirmed\|flag`; every answer to a host key's question, before the key is pinned or used; `auth.notice` |
 | `device enroll` | `user` `addr` `device` `vendor` `source=snmp\|given\|asked` `result`; one line per address at the end of the run |
 | `device import` | `source` `added` `updated` `removed` `count` |
-| `device set` | `name` `field` `from` `to`: `address`, `hostname`, `vendor`, `port`, `description`, `location`, `legacy-ssh`, `ios-syntax`, `netconf`, `stale-days` (no `name`) and `notice:<kind>` |
+| `device set` | `name` `field` `from` `to`: `address`, `hostname`, `vendor`, `port`, `description`, `location`, `legacy-ssh`, `ios-syntax`, `netconf`, `timeout-scale`, `stale-days` (no `name`) and `notice:<kind>` |
 
 The verbs that logged before 0.2.17 keep their lines (`host enroll`, `host
 unenroll`, `host rename`, `host forget`, `host target`, `breakglass hold`,

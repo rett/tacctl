@@ -178,6 +178,8 @@ func (inv *invocation) printRollbackPlan(version string, plan *lifecycle.Rollbac
 
 // rollbackNextSteps tells the operator what to do next, exactly.
 func (inv *invocation) rollbackNextSteps(version string) {
+	// every target refuses the timing scale (0.2.22)
+	defer inv.rollbackTimeoutScaleNote(version)
 	switch version {
 	case lifecycle.RollbackTarget0221:
 		inv.rollbackNextSteps0221(version)
@@ -212,6 +214,14 @@ func (inv *invocation) rollbackNextSteps(version string) {
 	inv.echo("")
 	inv.echo("The snapshot taken first (the newest entry of 'tacctl backup list') holds the 0.2.5 state. Restore it with 0.2.5 only: 'tacctl backup restore <id>' of this release brings that")
 	inv.echo("state back and loses what changed since; " + version + "'s restore refuses a tacctl.yaml with a key it does not know.")
+}
+
+// rollbackTimeoutScaleNote says, after any rollback, that the commands of the
+// timing scale write what the older release refuses until it is installed.
+func (inv *invocation) rollbackTimeoutScaleNote(version string) {
+	inv.echo("")
+	inv.echo("Until the upgrade, do not run 'tacctl device timeout-scale', 'tacctl scope timeout-scale' or 'tacctl config devices timeout-scale': they write the timing scale again, which " + version + " refuses.")
+	inv.echo("If one did, run 'tacctl rollback " + version + " --apply' again (it removes it).")
 }
 
 // rollbackNextSteps0221 is the next steps of the rollback to 0.2.21: the

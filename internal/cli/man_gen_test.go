@@ -415,6 +415,7 @@ var manKeyDocs = map[string]struct{ verb, desc string }{
 	"device.apply.confirm_timeout":           {setWith("config devices apply-confirm-timeout"), "Minutes of the commit confirmed of every device config apply: the device undoes the change by itself after that long unless the confirming commit is typed."},
 	"device.apply.pause":                     {setWith("config devices apply-pause"), "Seconds device config apply waits between the devices of a batch after the canary; 0: none."},
 	"device.apply.transport":                 {setWith("config devices apply-transport"), "How device config apply reaches a Junos device: NETCONF where the last read found it answering and the login may commit, else the command line (auto), the command line only (cli), or NETCONF only (netconf)."},
+	"device.timeout_scale":                   {setWith("config devices timeout-scale"), "The timing scale of every device: a whole number from 1 to 10 that multiplies each network timing used to reach a device (the connect and handshake of the sessions, the host-key scans, the SNMP timeout up to its maximum, the per-device time of a pull or an apply within its bounds); a scope's and a device's own win."},
 	"privileges.<group>":                     {setWith("group privilege"), "The Cisco priv-exec commands the group's level may run; unset: the shipped list."},
 	"commands.<group>":                       {setWith("group commands"), "The group's command rules, in order, ending in the catch-all; unset: the shipped rules."},
 	"aaa.order.<scope>":                      {setWith("scope aaa-order"), "Order of the methods in the Cisco aaa lines and the Junos authentication-order the scope's configurations emit."},
@@ -452,6 +453,7 @@ var manKeyDocs = map[string]struct{ verb, desc string }{
 	"netconf_scope.<scope>.state":            {setWith("scope netconf"), "The NETCONF service of the scope's Junos devices: enable or disable (unset: leave, nothing is planned or compared)."},
 	"netconf_scope.<scope>.connection_limit": {setWith("scope netconf"), "The connection limit of an enabled NETCONF service (1 to 250); unset: none stated."},
 	"netconf_scope.<scope>.rate_limit":       {setWith("scope netconf"), "The rate limit of an enabled NETCONF service (1 to 250); unset: none stated."},
+	"timeout_scale_scope.<scope>":            {setWith("scope timeout-scale"), "The timing scale of the scope's devices, 1 to 10, in place of device.timeout_scale; a device's own wins."},
 	"snmp_scope.<scope>.clients":             {setWith("scope snmp"), "The SNMP clients the scope's walkthroughs allow (the server's own address first and a final deny are added when rendered, not stored)."},
 }
 
@@ -469,6 +471,7 @@ var manPlaceholders = map[string]string{
 	"cisco.source_interface.": "<scope>",
 	"scope_auth_method.":      "<scope>", "scope_mgmt_acl.names.cisco.": "<scope>",
 	"scope_mgmt_acl.names.juniper.": "<scope>", "scope_mgmt_acl.permits.": "<scope>", "scope_mgmt_acl.mode.": "<scope>",
+	"timeout_scale_scope.": "<scope>",
 }
 
 // manTypeText is how the page names a rule's type.

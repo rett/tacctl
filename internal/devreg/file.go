@@ -490,6 +490,12 @@ func parseDevice(name string, v any) (*Device, string, error) {
 				return nil, "", err
 			}
 			d.Netconf = nc
+		case "timeout_scale":
+			n, ok := val.(int)
+			if !ok || n == 0 {
+				return nil, "", bad(k)
+			}
+			d.TimeoutScale = n
 		case "host_keys", "ack":
 			l, ok := strList(val)
 			if !ok {
@@ -656,6 +662,9 @@ func (f *File) docWith(syntaxKey string) *yamlpy.Map {
 		}
 		if !d.Netconf.Empty() {
 			m.Set("netconf", netconfDoc(d.Netconf))
+		}
+		if d.TimeoutScale != 0 {
+			m.Set("timeout_scale", d.TimeoutScale)
 		}
 		if len(d.HostKeys) > 0 {
 			m.Set("host_keys", slices.Clone(d.HostKeys))

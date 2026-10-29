@@ -289,3 +289,52 @@ func RollbackNetconf(path string, before func() error) ([]string, error) {
 	}
 	return cleared, nil
 }
+
+// The per-device timing scale of 0.2.22 (devreg.Device.TimeoutScale,
+// 'tacctl device timeout-scale'): every older release's parser refuses a
+// device with a key it does not know (device 'x': unknown key
+// 'timeout_scale'), so the key goes before an older release is installed,
+// as the NETCONF setting does: a rollback plans with TimeoutScaleSet and
+// applies with RollbackTimeoutScale.
+
+// TimeoutScaleSet are the devices that have a timing scale of their own, in
+// file order, of the registry at path (none when the file is missing).
+func TimeoutScaleSet(path string) ([]Device, error) {
+	f, err := Load(path)
+	if err != nil {
+		return nil, err
+	}
+	var out []Device
+	for _, d := range f.Devices {
+		if d.TimeoutScale != 0 {
+			out = append(out, d.Clone())
+		}
+	}
+	return out, nil
+}
+
+// RollbackTimeoutScale removes the timing scale of every device, under the
+// registry's lock, in one write; before runs first (a snapshot). It returns
+// the names it cleared, in file order. A registry without any is not written
+// (before does not run), and a missing file is not created.
+func RollbackTimeoutScale(path string, before func() error) ([]string, error) {
+	set, err := TimeoutScaleSet(path)
+	if err != nil || len(set) == 0 {
+		return nil, err
+	}
+	var cleared []string
+	_, err = Mutate(path, "", before, func(f *File) error {
+		cleared = cleared[:0]
+		for _, d := range f.Devices {
+			if d.TimeoutScale != 0 {
+				cleared = append(cleared, d.Name)
+				d.TimeoutScale = 0
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return cleared, nil
+}

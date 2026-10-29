@@ -27,6 +27,7 @@ import (
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devreg"
+	"github.com/rett/tacctl/internal/devssh"
 	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/shellquote"
 	"github.com/rett/tacctl/internal/tier"
@@ -136,6 +137,8 @@ var deviceSpecs = map[string]Spec{
 	// The NETCONF service of a Junos device (0.2.10, D145).
 	"netconf":    {MinArgs: 1, MaxArgs: 2, Args: []string{KindJuniperDevices, "show|enable|disable|leave|clear"}, Flags: deviceNetconfFlags},
 	"stale-days": {MaxArgs: 1, Args: []string{""}},
+	// The timing scale of a device (0.2.22).
+	"timeout-scale": {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, timeoutScaleWords}},
 	// 'notice list [<name>] [--all]' and 'notice <name> ack|unack <kind>'
 	// (0.2.18, D274): three words are the second form, so a device named
 	// 'list' still takes ack and unack.
@@ -194,6 +197,7 @@ var deviceVerbs = [][2]string{
 	{"export [--csv|--json]", "Print the registry (YAML by default)"},
 	{"hostkey <name> [show|accept [--yes]|set SHA256:<fp>]", "Show the pinned ssh host keys, or re-pin them after a verified change"},
 	{deviceNetconfUse, deviceNetconfShort},
+	{deviceTimeoutScaleUse, deviceTimeoutScaleShort},
 	// 'device snmp': one row for each verb.
 	{"snmp <name> show [--reveal]", "A device's own SNMP settings over its scope's: version, port, timeout, allowed clients and credentials, and where each comes from"},
 	{"snmp <name> version [v2c|v3]", "Show or set the device's own SNMP version"},
@@ -574,7 +578,7 @@ func (inv *invocation) device(args []string) error {
 	}
 	run := map[string]func([]string) error{
 		"list": inv.deviceList, "show": inv.deviceShow, "add": inv.deviceAdd, "remove": inv.deviceRemove,
-		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "ios-syntax": inv.deviceIOSSyntax, "netconf": inv.deviceNetconf, "stale-days": inv.deviceStaleDays,
+		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "ios-syntax": inv.deviceIOSSyntax, "netconf": inv.deviceNetconf, "timeout-scale": inv.deviceTimeoutScale, "stale-days": inv.deviceStaleDays,
 		"notice": inv.deviceNotice, "import": inv.deviceImport, "export": inv.deviceExport,
 		"hostkey": inv.deviceHostkey, "onboard": inv.deviceOnboard, "collect": inv.deviceCollect, "enroll": inv.deviceEnroll, "sync": inv.deviceSync, "support-bundle": inv.deviceSupportBundle, "snmp": inv.deviceSNMP, "block": inv.deviceBlock, "ssh": inv.ssh, "client-config": inv.deviceClientConfig, "config": inv.deviceConfig,
 		"scan": inv.deviceScan, "discover": inv.deviceDiscover, "check": inv.deviceCheck,
@@ -895,6 +899,9 @@ type deviceJSON struct {
 	// Netconf is a Junos device's NETCONF service setting (0.2.10), only
 	// when it is not the default.
 	Netconf *netconfJSON `json:"netconf,omitempty"`
+	// TimeoutScale is the timing scale in force for the device and where it
+	// comes from (0.2.22), only when it is not 1.
+	TimeoutScale *timeoutScaleJSON `json:"timeout_scale,omitempty"`
 	// Applied is what 'device config apply' last did to the device (a
 	// check or an apply), for the tiers that see the configuration state.
 	Applied        *appliedJSON       `json:"applied,omitempty"`
@@ -988,6 +995,9 @@ func deviceJSONOf(inv *invocation, res *devreg.Resolver, e devreg.Entry, recs *d
 		if eff := inv.netconfOf(e.Scope, e.Netconf); eff.shown(e.Netconf) {
 			j.Netconf = eff.json()
 		}
+	}
+	if ts := inv.timeoutScaleOf(e.Scope, e.TimeoutScale); ts.N != devssh.MinTimeoutScale {
+		j.TimeoutScale = ts.json()
 	}
 	if e.Source == devreg.SourceDevice && (e.Vendor == "cisco" || e.IOSSyntax != "") {
 		j.IOSSyntax = devreg.SyntaxAuto
@@ -1230,6 +1240,10 @@ func (inv *invocation) deviceShow(args []string) error {
 		}
 		row("Description", dash(e.Description))
 		row("Location", dash(e.Location))
+	}
+	// the timing scale, when it is not 1 (0.2.22)
+	if ts := inv.timeoutScaleOf(e.Scope, e.TimeoutScale); ts.N != devssh.MinTimeoutScale {
+		row("Timeout scale", ts.text(e.Scope))
 	}
 	switch {
 	case e.Source == devreg.SourceHost && e.Configured:

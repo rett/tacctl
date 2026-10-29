@@ -28,6 +28,7 @@ import (
 	"github.com/rett/tacctl/internal/blocks"
 	"github.com/rett/tacctl/internal/cidr"
 	"github.com/rett/tacctl/internal/conf"
+	"github.com/rett/tacctl/internal/devssh"
 	"github.com/rett/tacctl/internal/mgmtacl"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/names"
@@ -72,6 +73,8 @@ var scopeSpecs = map[string]Spec{
 	"block": scopeBlockCompletion,
 	// The NETCONF service of the scope's Junos devices (0.2.10, D145).
 	"netconf": {MinArgs: 1, MaxArgs: 2, Args: []string{KindScopes, scopeNetconfWords}, Flags: scopeNetconfFlags},
+	// The timing scale of the scope's devices (0.2.22).
+	"timeout-scale": {MinArgs: 1, MaxArgs: 2, Args: []string{KindScopes, timeoutScaleWords}},
 	"snmp": {MinArgs: 1, MaxArgs: -1, Args: []string{KindScopes, "show|version|community|v3-user|clients|contact|port|timeout|clear|test",
 		After("clients", "list|add|remove"), ""}, Flags: []Flag{
 		{Names: []string{"--reveal"}, Only: "show"}, {Names: []string{"--clear"}, Only: "contact"},
@@ -140,6 +143,7 @@ func scopeCmd(inv *invocation) *cobra.Command {
 			"Per-scope break-glass local users (names and roles; no credential is stored): the accounts a breakglass hold makes usable"), r(inv.scopeBreakGlass)),
 		withRun(verb(scopeSNMPUse, scopeSNMPShort), nn("snmp", inv.scopeSNMP)),
 		withRun(verb(scopeNetconfUse, scopeNetconfShort), nn("netconf", inv.scopeNetconf)),
+		withRun(verb(scopeTimeoutScaleUse, scopeTimeoutScaleShort), r(inv.scopeTimeoutScale)),
 		withRun(verb(scopeBlockUse, scopeBlockShort), nn("block", inv.scopeBlock)),
 	)
 	// No sub-command, help, -h, --help: the usage, exit 0; anything else:
@@ -166,7 +170,8 @@ var (
 // scope's name (<key>.<scope>). 'scope rename' moves them and 'scope
 // remove' drops them (scopeConfKeysMove).
 var scopeConfKeys = []string{"aaa.order", "exec_timeout", "tacacs_group", "radius_group", "scope_auth_method",
-	"scope_mgmt_acl.names.cisco", "scope_mgmt_acl.names.juniper", "scope_mgmt_acl.permits", "scope_mgmt_acl.mode", "cisco.source_interface"}
+	"scope_mgmt_acl.names.cisco", "scope_mgmt_acl.names.juniper", "scope_mgmt_acl.permits", "scope_mgmt_acl.mode", "cisco.source_interface",
+	conf.TimeoutScaleScopeFamily}
 
 // The ACL / filter names the device configs use when none is set
 // (CISCO_ACL_NAME_DEFAULT, JUNIPER_ACL_NAME_DEFAULT).
@@ -810,6 +815,10 @@ func (inv *invocation) scopeShow(args []string) error {
 	inv.echoE("  " + b + "Vendor attributes:" + nc + " " + vendorAttrs + "   (RADIUS; tacctl scope vendor-attrs " + name + ")")
 	inv.echoE("  " + b + "AAA order:" + nc + "     " + aaaOrder)
 	inv.echoE("  " + b + "Exec timeout:" + nc + "  " + execDisplay)
+	// the timing scale of the scope's devices, when it is not 1 (0.2.22)
+	if ts := inv.timeoutScaleOf(name, 0); ts.N != devssh.MinTimeoutScale {
+		inv.echoE("  " + b + "Timeout scale:" + nc + "  " + ts.text("") + "   (tacctl scope timeout-scale " + name + ")")
+	}
 	inv.echoE("  " + b + "TACACS group:" + nc + "  " + tacacsGroup)
 	inv.echoE("  " + b + "RADIUS group:" + nc + "  " + radiusGroup)
 	inv.echoE("  " + b + "Cisco ACL:" + nc + "     " + ciscoACL)

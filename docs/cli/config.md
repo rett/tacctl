@@ -207,6 +207,14 @@ config devices apply-transport [cli|auto|netconf]
     default), NETCONF where the device answers and can confirm, else the command line (auto), or
     NETCONF only (netconf); `--transport` of one run replaces it
 
+config devices timeout-scale [<n>]
+
+    Show or set the timing scale of every device, 1 to 10 (default 1, every timing as it has always
+    been): it multiplies each network timing used to reach a device, for devices behind a long round
+    trip or with a slow CPU. A scope's (`scope timeout-scale`) and a device's own (`device
+    timeout-scale`) win, in that order; see "Slow or distant devices" in the connecting page.
+    Stored as `device.timeout_scale`
+
 config sudoers [show|install|remove] [<group>]
 
     Manage NOPASSWD sudoers drop-in for tacctl
@@ -386,7 +394,8 @@ The sections are `store`, `yaml` (without a store: `tacquito.yaml` does not
 parse), `overrides` (`tacctl.yaml`), `command_rules`, `structure` (users,
 groups and scopes), `scope_default`, `linux_hosts`, `names`, `breakglass`,
 `breakglass_hold`, `emergency_lockdown`, `config_blocks`, `operator_policy`, `group_settings`,
-`orphan_settings`, `orphan_files`, `leftovers`, `backends` (the enabled list
+`orphan_settings`, `orphan_files`, `leftovers`, `devices` (`devices.yaml` does not
+load, a device's `timeout_scale` outside 1 to 10 among the reasons), `backends` (the enabled list
 cannot be read), `rendered`, `drift` and `vendor_attrs`. A line of the text
 report that says all is well (`valid`, `up to date`, `no overrides`) has no
 finding.

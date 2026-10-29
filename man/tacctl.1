@@ -354,27 +354,44 @@ and every target but 0.2.21
 as well, from
 .IR tacctl.yaml ,
 which no older release knows; the host registry keeps the address in this
-server's entry.
+server's entry. Every target also removes the timing scale:
+.B device.timeout_scale
+and
+.B timeout_scale_scope.\fIscope\fR
+from
+.I tacctl.yaml
+and the
+.B timeout_scale
+of each device from
+.IR devices.yaml ,
+because no older release knows the keys (an older parser refuses a device with a
+key it does not know). It is a note in the plan, not a warning: the older
+release connects to every device with its fixed timings again, which a slow or
+distant device may not meet, and the values stay in the snapshot.
 .IP
 .B "rollback 0.2.21"
 removes
 .B server.name
-and converts nothing else: no scope is added to the users, and a user name with
+and the timing scale and converts nothing else: no scope is added to the users, and a user name with
 a period and an emergency lockdown stay, as 0.2.21 reads both. It needs no
 .B \-\-yes
 (it has no warning), and
 .B \-\-hosts
 is accepted and does nothing. The command ends with the next step,
 .BR "tacctl upgrade \-\-branch 0.2.21" ,
-and names the one verb that writes a key 0.2.21 refuses until then
-.RB ( "server name" ).
+and names the verbs that write a key 0.2.21 refuses until then
+.RB ( "server name" ,
+.BR "device timeout\-scale" ,
+.B "scope timeout\-scale"
+and
+.BR "config devices timeout\-scale" ).
 .IP
 .B "rollback 0.2.20"
 removes
 .B server.addresses
 and
 .B server.name
-and adds the scope to the users (above); 0.2.20 reads every other file this
+and the timing scale, and adds the scope to the users (above); 0.2.20 reads every other file this
 release writes, so nothing else is converted, and
 .B \-\-hosts
 is accepted and does nothing. The command ends with the next step,
@@ -2389,7 +2406,13 @@ or
 older than ten minutes, with no command holding the apply lock) is a warning
 as well, a
 .B Leftovers:
-line naming it. Registrations of Linux hosts that cannot all be right are
+line naming it. A
+.I devices.yaml
+that does not load, a device's
+.B timeout_scale
+outside 1 to 10 among the reasons, is an error, a
+.B devices.yaml:
+line. Registrations of Linux hosts that cannot all be right are
 warnings under
 .BR "Linux hosts:" ,
 each naming its fix: two enrolled names equal ignoring case
@@ -2452,7 +2475,7 @@ has a
 .BR store ", " yaml ", " overrides ", " command_rules ", " structure ", "
 .BR scope_default ", " linux_hosts ", " names ", " breakglass ", " breakglass_hold ", "
 .BR emergency_lockdown ", " config_blocks ", " operator_policy ", " group_settings ", " orphan_settings ", "
-.BR orphan_files ", " leftovers ", " backends ", " rendered ", " drift " and "
+.BR orphan_files ", " leftovers ", " devices ", " backends ", " rendered ", " drift " and "
 .BR vendor_attrs ),
 a
 .B level
@@ -4441,6 +4464,26 @@ A change to the NETCONF service is always made over the command line.
 Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config devices apply-transport
+.TP
+.BI "config devices timeout\-scale " "[ n ]"
+Show or set the timing scale of every device, a whole number from 1 to 10 (default 1,
+every timing as it has always been). It multiplies each network timing used to reach a device, for
+devices behind a long round trip or with a slow CPU; a scope's
+.RB ( "scope timeout\-scale" )
+and a device's own
+.RB ( "device timeout\-scale" )
+win, in that order. See
+.B Timing scale
+below for what it multiplies. The value is
+.B device.timeout_scale
+in
+.IR tacctl.yaml .
+.\" BEGIN GENERATED: command config devices timeout-scale
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config devices timeout-scale
 .TP
 .B "config devices show"
 Show the settings.
@@ -6928,6 +6971,94 @@ Options:
 (enable) The rate limit of the service, 1 to 250; none removes it.
 .RE
 .\" END GENERATED: command scope netconf
+.SS Timing scale \fB(tacctl scope timeout\-scale)\fR
+.TP
+.BI "scope timeout\-scale " scope " [ " n " | clear ]"
+The timing scale of the devices of a scope: a whole number from 1 to 10 that
+multiplies every network timing used to reach a device, for devices behind a long
+round trip (a satellite circuit) or with a slow CPU. 1, the default, is every
+timing as it has always been. The scale in force for a device is its own
+.RB ( "device timeout\-scale" ),
+else its scope's, else the server's
+.RB ( "config devices timeout\-scale" ),
+else 1; the same order as the NETCONF service setting. With no value the verb
+prints the scale in force for the scope and where it comes from, and, for a scale
+above 1, what it makes of each timing.
+.I n
+sets the scope's own scale and
+.B clear
+removes it, so the server's applies again. The scale multiplies:
+.IP \(bu 2
+the connect and handshake budget of every ssh and NETCONF session to a device
+(10 s), as
+.BR "device config pull" ,
+.BR "device config apply" ,
+.BR "device onboard" ,
+.BR "device collect"
+and
+.B "device support\-bundle"
+use it, and of
+.B "tacctl ssh"
+(its
+.B ConnectTimeout
+of 10 s);
+.IP \(bu 2
+the host\-key scans of
+.BR "device add" ,
+.BR "device hostkey" ,
+.BR "device scan" ,
+.BR "device check" ,
+.B "device enroll"
+and the others: ssh\-keyscan's
+.B \-T
+(5 s and 3 s) and the built\-in client's connect (3 s), handshake (10 s) and
+per\-type attempt (5 s);
+.IP \(bu 2
+the SNMP timeout
+.RB ( snmp.timeout ,
+.BR "device snmp timeout" ,
+.BR "scope snmp timeout" ,
+default 2 s), but never above its maximum of 10 s;
+.IP \(bu 2
+the per\-device time of a pull and of an apply (the default
+.BR device.config.timeout ,
+90 s), kept between 10 and 600 s.
+.PP
+An option typed on the command line wins over the scale:
+.B \-\-timeout
+of a pull or an apply is the time of every device of that run, as typed; the
+scale replaces only the default,
+.BR device.config.timeout .
+The confirmed\-commit windows
+.RB ( device.config.confirm_timeout ,
+.BR device.apply.confirm_timeout )
+are timers on the device and are never scaled. The scale is
+.B timeout_scale_scope.\fIscope\fR
+in
+.IR tacctl.yaml ,
+written only when set; a rename moves it, a removal deletes it. A scale above 1 is
+shown by
+.B "device show"
+(a
+.B "Timeout scale"
+row, and
+.B timeout_scale
+in
+.BR \-\-json ,
+with where it comes from) and by
+.BR "scope show" ;
+.B "config validate"
+checks the stored values. The verb is the superuser's; an engineer reads the
+scale in
+.B "device show"
+and
+.BR "scope show" .
+.\" BEGIN GENERATED: command scope timeout-scale
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command scope timeout-scale
 .SS Per-scope SNMP \fB(tacctl scope snmp)\fR
 .PP
 The SNMP settings of the devices of a scope. A setting the scope does not set
@@ -9377,6 +9508,39 @@ Options:
 (address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; engineers, Junos devices; (sync) write the fields, after one question.
 .RE
 .\" END GENERATED: command device netconf
+.TP
+.BI "device timeout\-scale " name " [ " n " | clear ]"
+The timing scale of one registered device: a whole number from 1 to 10 that
+multiplies every network timing used to reach it, for a device behind a long
+round trip or with a slow CPU (see
+.B "scope timeout\-scale"
+for what it multiplies, and for the order: the device's own, its scope's, the
+server's, 1).
+.I n
+sets the device's own scale and
+.B clear
+removes it, so its scope's applies again. With no value the verb prints the scale
+in force and where it comes from. The value is the device's
+.B timeout_scale
+key in
+.IR devices.yaml ,
+written only when set; an enrolled Linux host has none, its scope's applies.
+.B "device show"
+has a
+.B "Timeout scale"
+row and
+.B \-\-json
+a
+.B timeout_scale
+object (the scale and where it comes from), when the scale in force is not 1.
+Tab completion offers the devices of the caller's scopes. The verb is the
+superuser's.
+.\" BEGIN GENERATED: command device timeout-scale
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command device timeout-scale
 .TP
 .BI "device snmp " "name " "[ show [ \-\-reveal ] | version v2c|v3 | port " n " | timeout " seconds " | clients { list | add | remove } " "[ cidr [ , cidr ...]] | community [ \-\-stdin ] | v3\-user " "user [ \-\-stdin ] | clear ]"
 The SNMP settings of one registered device, over its scope's and the default's:
@@ -13919,14 +14083,15 @@ device block, device collect, device config, device description,
 device hostkey, device hostname, device import, device ios\-syntax,
 device legacy\-ssh, device location, device netconf, device onboard,
 device port, device snmp, device stale\-days, device sync,
-device vendor, group commands, group junos, group preset,
-group privilege, group reset, host default\-method, host provisioner,
-host target, scope aaa\-order, scope auth\-method, scope block,
-scope breakglass, scope default, scope devices, scope exec\-timeout,
-scope mgmt\-acl, scope netconf, scope prefixes, scope protocols,
-scope radius\-group, scope secret, scope snmp, scope staging,
-scope tacacs\-group, scope vendor\-attrs, server listen,
-server metrics, server name, user scope
+device timeout\-scale, device vendor, group commands, group junos,
+group preset, group privilege, group reset, host default\-method,
+host provisioner, host target, scope aaa\-order, scope auth\-method,
+scope block, scope breakglass, scope default, scope devices,
+scope exec\-timeout, scope mgmt\-acl, scope netconf, scope prefixes,
+scope protocols, scope radius\-group, scope secret, scope snmp,
+scope staging, scope tacacs\-group, scope timeout\-scale,
+scope vendor\-attrs, server listen, server metrics, server name,
+user scope
 .TP
 .B "mixed, auth.notice"
 config audit\-strict, config sudoers, console system\-shell, rollback,
@@ -15295,6 +15460,10 @@ Seconds one device may take in a pull, connect included. Set with \fBtacctl conf
 one of auto, netconf, ssh. Default: auto.
 How device config pull reads a device: NETCONF where it answers and the ssh command line otherwise (auto), NETCONF only, or ssh only. Set with \fBtacctl config devices transport\fR.
 .TP
+.B device.timeout_scale
+integer, 1 to 10. Default: 1.
+The timing scale of every device: a whole number from 1 to 10 that multiplies each network timing used to reach a device (the connect and handshake of the sessions, the host-key scans, the SNMP timeout up to its maximum, the per-device time of a pull or an apply within its bounds); a scope's and a device's own win. Set with \fBtacctl config devices timeout\-scale\fR.
+.TP
 .B host.default_method
 one of tacplus, radius. Default: tacplus.
 The method a Linux host is enrolled with when its scope decides none. Set with \fBtacctl host default\-method\fR.
@@ -15518,6 +15687,10 @@ The connection limit of an enabled NETCONF service (1 to 250); unset: none state
 .B netconf_scope.<scope>.rate_limit
 integer, 1 to 250. Default: none (unset).
 The rate limit of an enabled NETCONF service (1 to 250); unset: none stated. Set with \fBtacctl scope netconf\fR.
+.TP
+.B timeout_scale_scope.<scope>
+integer, 1 to 10. Default: none (unset).
+The timing scale of the scope's devices, 1 to 10, in place of device.timeout_scale; a device's own wins. Set with \fBtacctl scope timeout\-scale\fR.
 .\" END GENERATED: config-keys
 .SS console.yaml
 .I /etc/tacctl/console.yaml

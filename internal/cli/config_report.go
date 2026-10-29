@@ -15,6 +15,7 @@ import (
 
 	"github.com/rett/tacctl/internal/applylock"
 	"github.com/rett/tacctl/internal/backend"
+	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/policy"
@@ -350,6 +351,15 @@ func (inv *invocation) collectValidate(r *validateReport) {
 			why += ": " + first
 		}
 		r.found(howEchoE, "  "+R+"tacctl.yaml:"+NC+"          INVALID — "+first, validateFinding{Section: "overrides", Level: levelError, Text: why})
+	}
+
+	// devices.yaml: does it load (a device's timing scale, 0.2.22, among the
+	// rest). Nothing is printed for a registry that loads.
+	if cfgIsFile(a.Paths.DevicesFile) {
+		if _, err := devreg.Load(a.Paths.DevicesFile); err != nil {
+			text := strings.Join(msgs(err), " ")
+			r.found(howEchoE, "  "+R+"devices.yaml:"+NC+"         "+text, validateFinding{Section: "devices", Level: levelError, Text: text})
+		}
 	}
 
 	// Command rules that cannot work as written (an empty or invalid match,

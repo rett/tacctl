@@ -51,6 +51,7 @@ Usage:
                                                            NETCONF service of the scope's Junos devices (default leave: nothing is planned or compared; a device's own setting wins)
       --connection-limit <n>|none                          (enable) The connection limit of the service, 1 to 250; none removes it
       --rate-limit <n>|none                                (enable) The rate limit of the service, 1 to 250; none removes it
+  tacctl scope timeout-scale <scope> [<n>|clear]           Timing scale of the scope's devices, 1 to 10, for slow or distant devices (default: the server's; a device's own wins)
   tacctl scope block <scope> cisco|juniper list|show|check|set|remove|edit|adopt [<block>]
                                                            Configuration blocks of a scope (snmp and system, for Junos and IOS): community strings, trap groups and hosts, access lists, login message, domain, time zone, name servers, NTP
 

@@ -175,12 +175,17 @@ var Added0221 = []Family{
 func Added0221Key(path string) bool { return inFamilies(Added0221, path) }
 
 // Added0222 are the key families 0.2.22 added: the name of this server in the
-// console prompt and its notices (server.name). A 0.2.21 or older binary does
-// not know it (its schema refuses the key, so its 'config validate' reports
-// it and its 'backup restore' refuses a snapshot that has it), so every
-// rollback removes it.
+// console prompt and its notices (server.name) and the timing scale for slow
+// or distant devices (device.timeout_scale, and timeout_scale_scope.<scope>
+// for a scope). A 0.2.21 or older binary does not know them (its schema
+// refuses the keys, so its 'config validate' reports them and its 'backup
+// restore' refuses a snapshot that has them), so every rollback removes
+// them; the device's own scale in devices.yaml goes with them
+// (devreg.RollbackTimeoutScale).
 var Added0222 = []Family{
 	{"server.name", false},
+	{TimeoutScaleKey, false},
+	{TimeoutScaleScopePrefix, true},
 }
 
 // Added0222Key reports whether path is a key 0.2.22 added.

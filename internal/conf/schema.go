@@ -172,6 +172,12 @@ func NewSchema(backends []string) *Schema {
 			// audit line cannot be written (0.2.17, D257). A 0.2.16 binary
 			// does not know the key (Added0217, rollback.go).
 			"audit.strict": {Type: TypeBool, Default: false, HasDefault: true},
+			// The timing scale of the whole server (0.2.22): every network
+			// timing used to reach a device is multiplied by it; a scope's
+			// (timeout_scale_scope.<scope>) and a device's own win. A
+			// 0.2.21 binary does not know the key (Added0222, rollback.go).
+			TimeoutScaleKey: {Type: TypeInt, Min: intp(TimeoutScaleMin), Max: intp(TimeoutScaleMax),
+				Default: TimeoutScaleMin, HasDefault: true},
 		},
 		wildcards: append([]wildcard{
 			{"privileges.", Rule{Type: TypeCiscoCmdList}},
@@ -209,7 +215,7 @@ func NewSchema(backends []string) *Schema {
 			{BlocksPrefix, Rule{Type: TypeBlockList, Depth: 2}},
 			// And one device's own, under its name written with '~' for '.'.
 			{BlocksDevicePrefix, Rule{Type: TypeBlockList, Depth: 2}},
-		}, slices.Concat(snmpScopeWildcards(), holdWildcards(), lockdownWildcards(), netconfScopeWildcards())...),
+		}, slices.Concat(snmpScopeWildcards(), holdWildcards(), lockdownWildcards(), netconfScopeWildcards(), timeoutScaleScopeWildcards())...),
 	}
 }
 

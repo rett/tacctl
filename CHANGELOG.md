@@ -318,11 +318,13 @@ current behaviour; this file is where history lives.
    `server.name` for every target.
 
 17. **`tacctl rollback 0.2.21`, the release before this one, is a target.**
-   0.2.21 reads every file this release writes but one key of `tacctl.yaml`,
-   the new `server.name` (`tacctl server name`), which its schema refuses: its
-   `config validate` says `unknown config key` and its `backup restore` refuses
-   a snapshot that has it. The new target removes that key after a snapshot and
-   converts nothing else. It does not add the scope of this server's own login
+   0.2.21 reads every file this release writes but the new keys of
+   `tacctl.yaml`, `server.name` (`tacctl server name`) and the timing scale
+   (`device.timeout_scale`, `timeout_scale_scope.<scope>`), which its schema
+   refuses: its `config validate` says `unknown config key` and its `backup
+   restore` refuses a snapshot that has them, and the `timeout_scale` of a
+   device in `devices.yaml`, which its parser refuses. The new target removes
+   those keys after a snapshot and converts nothing else. It does not add the scope of this server's own login
    to the users' scopes (0.2.21 has the login itself, which the older targets
    need it for), and it is not refused for a user whose name has a period or for
    an emergency lockdown (0.2.21 reads both); it needs no `--yes` (it has no
@@ -360,7 +362,40 @@ current behaviour; this file is where history lives.
    config out of date until its first render writes its own comment, which
    restarts tacquito once; the rollback itself renders and restarts nothing.
 
-20. **`--timing` shows where the time of each device went.** `device config
+19. **A timing scale for slow or distant devices.** Every network timing
+   tacctl uses to reach a device was a constant or a global setting, which a
+   device behind a satellite circuit (a round trip of about 600 ms) or with a
+   slow CPU (one measured needs about 4 s for each ssh connection) can miss.
+   One whole number from 1 to 10, `timeout_scale`, now multiplies them all; 1,
+   the default, is every timing as it has always been, byte for byte.
+   `tacctl device timeout-scale <name> [<n>|clear]` sets a device's own,
+   `tacctl scope timeout-scale <scope> [<n>|clear]` a scope's, and `tacctl
+   config devices timeout-scale [<n>]` the default of the whole server
+   (`device.timeout_scale`). The scale in force is the device's own, else its
+   scope's, else the server's, else 1, the order of the NETCONF service
+   setting. With no value a verb prints the scale in force and where it comes
+   from (the device, the scope, the server or built in) and, above 1, what it
+   makes of each timing, with the SNMP maximum and the bounds of a pull's time
+   said. `clear` removes a device's or a scope's own. `device show` has a
+   `Timeout scale` row and `--json` a `timeout_scale` object (`scale` and
+   `from`), and `scope show` a row, when the scale in force is not 1. The
+   verbs are the superuser's, as the NETCONF service setting's are; an
+   engineer reads the scale in `device show` and `scope show`. A scope's
+   scale follows `scope rename` and goes with `scope remove`. The values are
+   `device.timeout_scale` and `timeout_scale_scope.<scope>` in `tacctl.yaml`
+   and the device's `timeout_scale` in `devices.yaml`, each written only when
+   set; `config validate` checks all three (a new `devices` finding reports a
+   `devices.yaml` that does not load). Older releases refuse the new keys, so
+   every `tacctl rollback` target removes them after a snapshot: the two
+   `tacctl.yaml` keys with the other keys it removes, and each device's
+   `timeout_scale` from `devices.yaml`, listed in the plan with a note (not a
+   warning: the older release connects with its fixed timings again) and
+   named in the command's last lines with the three verbs not to run until the
+   older release is installed. The plan of the rollback to 0.2.9 no longer
+   lists the keys other releases added (the server address and name) as
+   NETCONF settings in its warning.
+
+21. **`--timing` shows where the time of each device went.** `device config
    pull`, `device config diff --pull`, `device config plan --pull` and
    `device config apply` take `--timing`, for a run over many devices of which
    some are slow (one may need seconds for the ssh connection alone). After the

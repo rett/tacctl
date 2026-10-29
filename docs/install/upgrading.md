@@ -114,6 +114,16 @@ server address `server.addresses` too; no older release knows them. The host
 registry keeps the address in this server's entry, which the older release
 reads, and the console shows the host name again.
 
+**The timing scale (0.2.22).** Every target also removes the timing scale
+(`tacctl device timeout-scale`, `scope timeout-scale`, `config devices
+timeout-scale`): `device.timeout_scale` and `timeout_scale_scope.<scope>` from
+`tacctl.yaml`, and the `timeout_scale` of each device from `devices.yaml`,
+because no older release knows the keys (an older parser refuses a device with
+a key it does not know). The plan lists each key and each device and says so in
+a note, not a warning: the older release connects to every device with its
+fixed timings again, which a slow or distant device may not meet. The values
+stay in the snapshot `--apply` takes first.
+
 **An emergency lockdown stops every rollback to a release before 0.2.19**
 (the dry run too): such a release has no such record and would render every
 locked user back into the scope. 0.2.19 has the record as this release writes
@@ -228,8 +238,8 @@ snapshot; this release, if it stays, reads the two as missing until its next
 ### To 0.2.21
 
 0.2.21 reads every file this release writes but `server.name`
-(`tacctl server name`), so the rollback removes that key, after a snapshot, and
-converts nothing else: no scope is added to the users (0.2.21 has the login to
+(`tacctl server name`) and the timing scale, so the rollback removes those
+keys, after a snapshot, and converts nothing else: no scope is added to the users (0.2.21 has the login to
 this server itself), a user name with a period and an emergency lockdown stay
 (0.2.21 reads both), and the new `server show`, `server listen` and `server
 metrics` write the keys that `config listen` and `config metrics` wrote.
@@ -241,15 +251,16 @@ tacctl rollback 0.2.21 --apply
 tacctl upgrade --branch 0.2.21  # install 0.2.21
 ```
 
-Until 0.2.21 is installed, do not run `tacctl server name <label>`; if it ran,
-run `tacctl rollback 0.2.21 --apply` again. The scripts that call `config
+Until 0.2.21 is installed, do not run `tacctl server name <label>`, `tacctl
+device timeout-scale`, `tacctl scope timeout-scale` or `tacctl config devices
+timeout-scale`; if one ran, run `tacctl rollback 0.2.21 --apply` again. The scripts that call `config
 listen` or `config metrics` are the ones of 0.2.21; the ones that call `server
 listen` or `server metrics` do not run there.
 
 ### To 0.2.20
 
-0.2.20 reads every file this release writes but `server.addresses` and
-`server.name`, so the rollback removes those keys and adds the scope of this server's own login to the
+0.2.20 reads every file this release writes but `server.addresses`,
+`server.name` and the timing scale, so the rollback removes those keys and adds the scope of this server's own login to the
 users' scopes (above), after a snapshot. Nothing else is converted, and
 `--hosts` is accepted and does nothing.
 

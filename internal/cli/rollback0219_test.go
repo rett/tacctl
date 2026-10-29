@@ -164,6 +164,7 @@ func TestRollback0219RemovesThe0220Keys(t *testing.T) {
 func TestRollbackRealOldBinary0219(t *testing.T) {
 	bin := oldBinaryOf(t, "0.2.19", old0219Flag)
 	hs := rollback0220State(t)
+	hs.withTimeoutScale()
 	stubs := t.TempDir()
 	for _, name := range []string{"systemctl", "logger", "chown"} {
 		if err := os.WriteFile(filepath.Join(stubs, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
@@ -189,6 +190,9 @@ func TestRollbackRealOldBinary0219(t *testing.T) {
 	sudoersInstall(r)
 	hs.run(r, "rollback", "0.2.19", "--apply", "--yes")
 	hs.expect(0, "Applying.", "")
+	if out, code := run("device", "list"); code != 0 || !strings.Contains(out, "sw1") {
+		t.Errorf("0.2.19 device list after: %d\n%s", code, out)
+	}
 	// The rendered files are this release's (they keep erin off the devices,
 	// the warning says so) until 0.2.19 renders them.
 	out, _ = run("config", "validate")
