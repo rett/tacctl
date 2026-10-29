@@ -1179,19 +1179,22 @@ _container_ssh() {
     mkdir -p "$BATS_TEST_TMPDIR/proc"
     echo "0 100000 65536" > "$BATS_TEST_TMPDIR/proc/uid_map"
     echo "0 100000 65536" > "$BATS_TEST_TMPDIR/proc/gid_map"
-    "$TACCTL_BIN_SCRIPT" scope prefixes lab add 127.0.0.1/32 > /dev/null
-    TACCTL_TEST_PROC="$BATS_TEST_TMPDIR/proc" run "$TACCTL_BIN_SCRIPT" host enroll --local --name authsrv --scope lab
+    TACCTL_TEST_PROC="$BATS_TEST_TMPDIR/proc" run "$TACCTL_BIN_SCRIPT" host enroll --local --name authsrv --server 192.0.2.10
     assert_failure 1
     assert_output --partial "'authsrv' cannot hold UIDs 80000-89999: its user namespace maps only 0-65535"
     [[ -z "$(_hosts)" ]]
 }
 
-@test "host enroll --local: a scope that does not cover 127.0.0.1 is refused before anything changes" {
+@test "host enroll --local: tacctl sets up this server's own login; --scope and a bad --server are refused before anything changes" {
     run "$TACCTL_BIN_SCRIPT" host enroll --local --name authsrv --scope lab
     assert_failure 1
-    assert_output --partial "Scope 'lab' does not cover 127.0.0.1, the address this server's own logins reach TACACS+ and RADIUS from"
-    assert_output --partial "tacctl scope prefixes lab add 127.0.0.1/32"
-    assert_output --partial "Nothing was changed."
+    assert_output --partial "--local takes no --scope: tacctl sets up this server's own login itself."
+    for bad in authsrv.example.net 0.0.0.0 127.0.0.1; do
+        run "$TACCTL_BIN_SCRIPT" host enroll --local --name authsrv --server "$bad"
+        assert_failure 1
+        assert_output --partial "--server '$bad' "
+        assert_output --partial "Nothing was changed."
+    done
     [[ -z "$(_hosts)" ]]
     if stub_called '^bash '; then stub_calls; return 1; fi
 }

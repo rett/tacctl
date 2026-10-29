@@ -18,18 +18,21 @@ package cli
 // ssh_escape, the target after '--' (so no word after it is an option), and
 // an entry with no pinned host key is refused.
 //
-// When the session's password cache holds the caller's password (D70,
-// password_cache.go) and the entry's host key is pinned, ssh gets the cached
-// password from the user's own shell without a prompt: SSH_ASKPASS names this
-// binary (askpass_cmd.go), SSH_ASKPASS_REQUIRE=force, and ssh asks once
-// (NumberOfPasswordPrompts=1), reads no configuration file and checks the
-// pinned host key strictly, so a redirected or substituted hop is never
-// handed the password. In that case ssh is started as the user directly
-// (uid, gid and groups set in the child; no sudo, whose log lines would
-// carry the variable), with TACCTL_ASKPASS, a token made for this line, in
-// its environment and nowhere else. The cache forgets the password when ssh
-// ends with status 255 (a refusal cannot be told from other failures of the
-// connection).
+// When the session's password cache is on and the entry's host key is pinned
+// (D70, password_cache.go), ssh gets the cached password from the user's own
+// shell without a prompt: SSH_ASKPASS names this binary (askpass_cmd.go),
+// SSH_ASKPASS_REQUIRE=force, and ssh asks once (NumberOfPasswordPrompts=1),
+// reads no configuration file and checks the pinned host key strictly, so a
+// redirected or substituted hop is never handed the password. When the cache
+// is on but empty, the first such ssh asks for the password itself, on the
+// terminal and before any connection (sshAskAndStore), stores it in the
+// cache, and then takes the same path: the password is typed once, before the
+// device banner, and the next ssh needs none. In that case ssh is started as
+// the user directly (uid, gid and groups set in the child; no sudo, whose log
+// lines would carry the variable), with TACCTL_ASKPASS, a token made for this
+// line, in its environment and nowhere else. The cache forgets the password
+// when ssh ends with status 255 (a refusal cannot be told from other failures
+// of the connection).
 
 import (
 	"context"
@@ -96,6 +99,11 @@ keys and the agent are not used). The device's vendor profile applies
 (legacy-ssh: the SHA-1 key exchange, CBC ciphers and ssh-rsa), and a device
 with pinned host keys is held to them: a key that changed is refused, with the
 fingerprints to compare and the command that re-pins it.
+
+In a shell or console session whose password cache is on ('tacctl console
+password-cache'), the first ssh to a device with a pinned host key asks for
+your password itself, before it connects, and keeps it for the session: the
+next ssh asks nothing. A refused password is forgotten.
 
   -p <port>        Connect to this port (default: the device's port, else 22)
   -X, -Y           Forward X11 (untrusted, trusted) to this server's display
@@ -204,24 +212,26 @@ func (inv *invocation) ssh(args []string) error {
 	// A cached password is used only for a pinned entry (the host key is
 	// then checked strictly against the pin) and when ssh's own options
 	// are not user words (an option after the target would be ssh's).
-	cached := false
+	// With the cache on and empty, the password is asked for here, before
+	// any connection, and stored (sshAskAndStore) after the held-device
+	// warning below; the cached path then carries it to ssh.
+	cached, ask := false, false
 	optionAfterTarget := len(extra) > 0 && strings.HasPrefix(extra[0], "-")
-	if cacheClient != nil && devreg.Pinned(e) && !optionAfterTarget {
-		if have, err := cacheClient.Have(inv.ctx); err == nil && have {
-			cached = true
-		}
-	}
 	cmd := plan.cmd.Cmd(plan.args...)
 	cacheNote := ""
-	if cached {
-		// Started as the user directly, not through sudo, so that the
-		// token is never a sudo variable or argument. An account that
-		// cannot be looked up locally (a directory service the static
-		// binary does not read) keeps the old path and the prompt.
-		if c, ok := inv.sshCachedCommand(plan, caller, cacheClient); ok {
-			cmd, cacheNote = c, " password=cached"
-		} else {
-			cached = false
+	var cachedCmd execx.Cmd
+	if cacheClient != nil && devreg.Pinned(e) && !optionAfterTarget {
+		if have, err := cacheClient.Have(inv.ctx); err == nil {
+			// Started as the user directly, not through sudo, so that the
+			// token is never a sudo variable or argument. An account that
+			// cannot be looked up locally (a directory service the static
+			// binary does not read) keeps the old path and the prompt.
+			if c, ok := inv.sshCachedCommand(plan, caller, cacheClient); ok {
+				cachedCmd, ask = c, !have
+				if have {
+					cmd, cached, cacheNote = c, true, " password=cached"
+				}
+			}
 		}
 	}
 	// A held device or host takes local accounts only; the session goes on
@@ -238,6 +248,17 @@ func (inv *invocation) ssh(args []string) error {
 					a.Out.Warn("break-glass is held on " + e.Name + ": it takes local accounts only")
 				}
 			}
+		}
+	}
+	if ask {
+		// Nothing is started, logged as a session or stored unless the
+		// person answers: Ctrl-C or an unusable answer ends the line here.
+		stored, err := inv.sshAskAndStore(cacheClient, caller)
+		if err != nil {
+			return err
+		}
+		if stored {
+			cmd, cached, cacheNote = cachedCmd, true, " password=asked"
 		}
 	}
 	a.Audit().Raw("auth.info", "ssh user="+caller+" device="+e.Name+" addr="+addr+forward+cacheNote+inv.originFields())
@@ -264,6 +285,44 @@ func (inv *invocation) ssh(args []string) error {
 		return exit(code)
 	}
 	return nil
+}
+
+// sshAskAndStore asks for the caller's password on the terminal, once and
+// before ssh is started, and hands it to the session's password cache: the
+// prompt and the reader are those of the logins tacctl makes itself (no
+// echo, Ctrl-C ends it). stored is false, with no error, when there is no
+// terminal to ask on or the cache cannot take the password: ssh then asks
+// for it itself, as it always did. A cancelled or unusable answer is an
+// error and nothing is started (Ctrl-C is ui.ErrInterrupted, status 130).
+// The process is marked not dumpable before the prompt, the password is
+// in no argument, variable, file or log line, and the buffer is zeroed
+// when the store is over. A wrong password stays only until ssh ends with
+// status 255, which forgets it.
+func (inv *invocation) sshAskAndStore(c *askpass.Client, caller string) (stored bool, err error) {
+	tty, closeTTY := inv.passwordTerminal()
+	if tty == nil {
+		return false, nil
+	}
+	defer closeTTY()
+	_ = inv.hooks.markNotDumpable()
+	pw, err := inv.hooks.prompt(tty, "Password for "+caller+" (device login): ")
+	if err != nil {
+		switch {
+		case errors.Is(err, askpass.ErrCancelled):
+			return false, ui.ErrInterrupted
+		case errors.Is(err, askpass.ErrNoTerminal):
+			return false, nil
+		case errors.Is(err, askpass.ErrBadSecret):
+			return false, errors.New("the password is empty or has a line break or is too long; nothing was tried")
+		}
+		return false, err
+	}
+	defer askpass.Zero(pw)
+	if err := c.Store(inv.ctx, pw); err != nil {
+		inv.app.Out.Warn("the password could not be cached (" + shortReason(err) + "); ssh will ask for it")
+		return false, nil
+	}
+	return true, nil
 }
 
 // sshResolve finds the entry (by name or registered address, devices and

@@ -87,7 +87,12 @@ console password-cache [on|off]
     turn it on (operator tier and up, and the tier must be allowed by the line below). With no
     argument it prints the permission, your setting and the limits. At the prompt of the shell
     and the console it is a word: on saves the choice and starts the cache in that session at
-    once, off saves it, forgets a cached password and stops caching. It sets only your own value
+    once, off saves it, forgets a cached password and stops caching. It sets only your own value.
+    With the cache on, ssh and device ssh ask for your password themselves the first time,
+    before they connect, and keep it; the logins tacctl makes itself (device config pull,
+    diff --pull, plan --pull, block ... adopt, device config apply, device onboard, device
+    collect, device enroll) keep the password a device accepted, and every one of these lines
+    uses a cached password (details: shell.md, Password cache)
 
 console password-cache tiers [<csv>|none]
 

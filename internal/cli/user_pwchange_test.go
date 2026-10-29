@@ -16,6 +16,7 @@ import (
 func pwSandbox(t *testing.T) *sandbox {
 	t.Helper()
 	sb := newSandbox(t, true)
+	linuxDirStandIn(t, sb)
 	sb.run("", []string{"scope", "add", "srv", "--prefixes", "127.0.0.1/32"})
 	sb.expect(0, "", "")
 	sb.run("", []string{"user", "scope", "bob", "add", "srv"})

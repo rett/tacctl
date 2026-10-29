@@ -10,7 +10,7 @@ tacctl config listen --backend radius --listener auth udp 10.1.0.1:1812    # and
                                                                            # where enabled
 tacctl config listen --backend radius --listener acct udp 10.1.0.1:1813
 ```
-The settings live in `tacctl.yaml` (`listeners.<backend>.<name>`), from which tacctl renders the units' systemd drop-ins, so they survive `tacctl upgrade`. Use `tacctl config listen show` to inspect, or `tacctl config listen reset` to revert to the default. More listeners: [Listeners](../server/backends.md#listeners).
+The device walkthroughs and the Linux host scripts name the port of the listener (`default` for TACACS+, `auth` and `acct` for RADIUS), so a listener on another port is what clients are told. The settings live in `tacctl.yaml` (`listeners.<backend>.<name>`), from which tacctl renders the units' systemd drop-ins, so they survive `tacctl upgrade`. Use `tacctl config listen show` to inspect, or `tacctl config listen reset` to revert to the default. More listeners: [Listeners](../server/backends.md#listeners).
 
 ## Configure connection filters
 Use allow/deny lists for additional IP-level filtering (enforced by every backend; a filtered client gets no answer):

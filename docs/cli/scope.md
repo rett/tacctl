@@ -19,7 +19,11 @@ scope show <name>
 scope add <name> --prefixes <cidrs>
 
     Create a new scope; the name is lower case (`Names are lower case: use 'lab'.`): a letter, then
-    up to 31 lower-case letters, digits, `_` or `-`
+    up to 31 lower-case letters, digits, `_` or `-`. The name `tacctl` is reserved (this server's
+    own login, which every user has; no listing shows it, and `scope lookup` finds no scope for an
+    address only it answers). A scope of that name from an earlier release that answers other
+    addresses is yours: it is listed and edited like any other, and is renamed before `host enroll
+    --local` can set the server's login up
 
     [--secret <value>|--secret generate] [--protocols <csv>] [--vendor-attrs <csv>] [--default]
 
@@ -260,8 +264,10 @@ scope mgmt-acl <name> mode [ssh-only|strict]
     keeps the SNMP client terms and has no `default-accept` term, so the implicit discard at the end
     of the filter drops the rest. The walkthrough has a second server address only when the device
     authenticates against another address than the one tacctl reaches it from: `--server` (unless it
-    is the detected address or `--source`), `--source` alone (the device is still told the address
-    detected for the server), or a RADIUS listener bound to another address; with neither flag, with
+    is the detected address or `--source`), the recorded server address (`server.addresses`, the
+    default of `--server`, unless it is the detected address or `--source`), `--source` alone (the
+    device is still told the address detected for the server), or a RADIUS listener bound to
+    another address; with neither flag and nothing recorded, with
     `--server` equal to the detected address or to `--source`, or with the address inside a plain
     entry of the permit list, there is one address and one source /32 is rendered. The second
     address is not a source of `permit-mgmt`: a term of its own, `permit-auth-replies`, after the

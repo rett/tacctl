@@ -221,6 +221,9 @@ func (inv *invocation) hostForget(args []string) error {
 		}
 	}
 	inv.hostForgetSeen(reg, f, name)
+	if isLocal {
+		inv.managedRemove(entry)
+	}
 
 	inv.verbResult(audit.Info, forgetBase, "")
 	a.Out.InfoE("Host '" + name + "' forgotten. Nothing was sent to the host.")
@@ -367,7 +370,8 @@ func (f hostFinding) String() string { return f.Text + " (" + f.Fix + ")" }
 // hostFindings are the findings of the superuser's view of the hosts (a
 // restricted caller is told nothing: what they would name is not theirs): two
 // registry names equal ignoring case, a host named like a device, two hosts
-// with one recorded address (the recorded one: nothing is resolved), and a
+// with one recorded address (the recorded one: nothing is resolved), a scope
+// of the operator's called like this server's own login scope, and a
 // pin, record or staging entry that no registry line has. A break-glass hold
 // with no host is the hold's own orphan line, in 'config validate' and
 // 'breakglass list'.
@@ -406,6 +410,11 @@ func (inv *invocation) hostFindings() []hostFinding {
 				Hosts: names,
 			})
 		}
+	}
+
+	// An operator's scope that has the name of this server's own login scope.
+	if fd, ok := inv.managedClashFinding(entries); ok {
+		out = append(out, fd)
 	}
 
 	if f != nil {

@@ -20,7 +20,8 @@ import (
 // (docs/plans/go-rewrite.md 3.9 item 6).
 var installPrereqs = []string{"git", "wget"}
 
-// Install is 'tacctl install [--branch <name>] [-y|--yes]' (cmd_install):
+// Install is 'tacctl install [--branch <name>] [--server <ip>] [-y|--yes]'
+// (cmd_install):
 // the plan and a confirmation ([y/N]; -y answers it, new in 0.2.0), then
 // in 0.1.16's order: every enabled backend's 'install build' (tacquito:
 // Go checked, source, build), the deploy clone (cloned, or pulled), the
@@ -29,15 +30,18 @@ var installPrereqs = []string{"git", "wget"}
 // the device templates, the backends' 'install files', the completion and
 // the man page, the packages, the backends' 'install account', the
 // configuration (InstallSeed: an existing store or tacquito.yaml is kept),
-// the backends' 'install start', and the summary (the new shared secret,
-// shown once, on a fresh install).
+// the backends' 'install start', this machine's own login (the managed
+// server login, when the Host has the hook: asked once, set up with the
+// machinery of 'host enroll --local', skipped with one line when it cannot
+// be), and the summary (the new shared secret, shown once, on a fresh
+// install).
 //
 // The files shipped with the tree (completion, man page; the backends'
 // units and logrotate) come from paths.Tree, the checkout this
 // binary belongs to, as 0.1.16 takes them from its own PROJECT_DIR.
 func Install(ctx context.Context, h *Host, args []string) error {
-	yes, branch := false, ""
-	if err := parseLifecycleArgs(h, args, &branch, &yes, installUsage); err != nil {
+	yes, branch, server := false, "", ""
+	if err := parseLifecycleArgs(h, args, &branch, &server, &yes, installUsage); err != nil {
 		return err
 	}
 	out, p := h.Out, h.Paths
@@ -60,6 +64,10 @@ func Install(ctx context.Context, h *Host, args []string) error {
 	h.echo("    source, a 'tacquito' service user, the service on port 49/tcp")
 	h.echo("  - Seed the store: scope '" + DefaultScopeFresh + "' with a generated shared secret, built-in")
 	h.echo("    users created disabled (an existing configuration is kept instead)")
+	if h.OwnLogin != nil {
+		h.echo("  - Offer to set up this machine's own login, so that every user can log in to this")
+		h.echo("    server and its console (the same as 'tacctl host enroll --local')")
+	}
 	h.echo("")
 	h.echo("RADIUS (FreeRADIUS) is not installed; add it later with: tacctl backend enable radius")
 	h.echo("")
@@ -170,6 +178,8 @@ func Install(ctx context.Context, h *Host, args []string) error {
 	if err := h.install(ctx, ids, backend.PhaseStart, tree); err != nil {
 		return err
 	}
+	// This machine's own login: every user can log in to this server.
+	h.ownLogin(ctx, OwnLoginOptions{Install: true, Yes: yes, Server: server})
 	h.auditLine("install", audit.Pair("branch", branch))
 	h.installSummary(seed)
 	return nil

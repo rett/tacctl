@@ -62,6 +62,33 @@ type Host struct {
 	// Audit, when set, writes the command's own line beside the central
 	// pair (D253): 'install', 'upgrade' and 'uninstall' with what they did.
 	Audit func(event string, kv ...audit.KV)
+	// OwnLogin, when set, sets up this machine's own login, the managed
+	// server login: install calls it once the services are in place and
+	// upgrade once the configuration is current. It never fails the
+	// command: what it cannot do it says in one line, with the command to
+	// run (internal/cli/own_login.go). Nil: nothing is set up.
+	OwnLogin func(ctx context.Context, o OwnLoginOptions)
+}
+
+// OwnLoginOptions say how install or upgrade asks for this machine's own
+// login to be set up.
+type OwnLoginOptions struct {
+	// Install is true for 'tacctl install': the question (when it is asked)
+	// reads the answer from standard input as the install's own do. An
+	// upgrade asks only when standard input is a terminal.
+	Install bool
+	// Yes is 'install -y': the consent is given, nothing is asked.
+	Yes bool
+	// Server is 'install --server <ip>': the address devices and hosts reach
+	// this server at ("": the recorded one, else the detected one).
+	Server string
+}
+
+// ownLogin is the OwnLogin hook, when there is one.
+func (h *Host) ownLogin(ctx context.Context, o OwnLoginOptions) {
+	if h.OwnLogin != nil {
+		h.OwnLogin(ctx, o)
+	}
 }
 
 // auditLine writes a line of the command when the host has a writer.

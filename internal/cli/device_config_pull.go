@@ -416,6 +416,9 @@ func (t *terminalPasswords) Done() {
 // is one, else the controlling terminal; nil when there is none. The close
 // function releases a terminal it opened.
 func (inv *invocation) passwordTerminal() (*os.File, func()) {
+	if h := inv.hooks; h != nil && h.passwordTTY != nil {
+		return h.passwordTTY()
+	}
 	if f, ok := inv.app.Stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
 		return f, func() {}
 	}

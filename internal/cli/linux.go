@@ -568,6 +568,12 @@ func (inv *invocation) linuxScopeServes(scope, method string) (bool, error) {
 // account of a user who must change the password (linuxAccounts).
 func (inv *invocation) scriptRequest(scope, server, method, output string, local bool) (hosts.ScriptRequest, error) {
 	req := hosts.ScriptRequest{Scope: scope, Server: server, Method: method, Output: output}
+	if local && scope == pwchange.ManagedScope {
+		// this server's own PAM client connects to itself: server is the
+		// address devices and other hosts reach it at (it may be behind NAT,
+		// where a connection to it from here would not arrive from it)
+		req.Server = pwchange.ServerAddress
+	}
 	if err := inv.confReadable(); err != nil {
 		return req, err
 	}
@@ -578,7 +584,7 @@ func (inv *invocation) scriptRequest(scope, server, method, output string, local
 	if m.Exists("scopes", scope) {
 		req.Secret = m.Scope(scope).Secret
 	}
-	req.Rows, req.Inactive = inv.linuxAccounts(m, scope, local)
+	req.Rows, req.Inactive = inv.linuxAccounts(m, scope, server, local)
 	req.GroupTier = inv.syncGroupTier
 	req.EngineerSudo = strings.Join(inv.app.Conf().GetList(engineerSudoKey), ",")
 	id := backend.TACACS
@@ -597,7 +603,11 @@ func (inv *invocation) scriptRequest(scope, server, method, output string, local
 // the account there (an SSH key fails as the password does) and the sync after
 // the change opens it again; on the server the account stays open, since that
 // is where the password is changed (pwchange.HostHeld).
-func (inv *invocation) linuxAccounts(m *model.Model, scope string, local bool) (rows, inactive []string) {
+func (inv *invocation) linuxAccounts(m *model.Model, scope, server string, local bool) (rows, inactive []string) {
+	// on this server every user is in the managed scope (managed_scope.go)
+	if local {
+		m = inv.serverModel(m, pwchange.Server{Scope: scope, Address: server})
+	}
 	held := pwchange.HostHeld(inv.app.Conf(), m, local)
 	return m.LinuxUsersHeld(scope, held), m.LinuxInactiveHeld(scope, held)
 }
@@ -821,6 +831,10 @@ func (inv *invocation) configLinuxScript(args []string) error {
 		return err
 	} else if !ok {
 		return exit(1)
+	}
+	// the recorded server address is the default of --server (0.2.21)
+	if server == "" {
+		server = a.Conf().ServerAddress()
 	}
 	if server == "" {
 		res, err := a.Runner.Run(inv.ctx, execx.Cmd{Name: "ip", Args: []string{"-4", "route", "get", "1.0.0.0"}, Stderr: io.Discard})

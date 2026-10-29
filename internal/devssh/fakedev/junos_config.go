@@ -66,7 +66,10 @@ package fakedev
 //	                    a commit is answered as a single device answers it
 //	                    (two routing engines without 'commit synchronize'):
 //	                    the plain lines over the command line, one
-//	                    <routing-engine> element (re0) over NETCONF
+//	                    <routing-engine> element (re0, or the one member of
+//	                    a chassis of one) over NETCONF. One member with this
+//	                    knob is a virtual chassis of one [C: 'show version'
+//	                    prints 'fpc0:', the commits print no label]
 //	chassis.check       '<label> => <text>' lines: that member fails its check
 //	                    with the text (a NETCONF reply holds an <rpc-error>
 //	                    in its element): 'commit check' and 'commit' report it

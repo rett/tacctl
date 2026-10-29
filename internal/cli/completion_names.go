@@ -378,7 +378,8 @@ func completionNamesCmd(inv *invocation) *cobra.Command {
 			}
 			// 'model_users 2>/dev/null': a model that cannot be read is
 			// exit 1 with nothing printed (set -e).
-			m, err := inv.model()
+			// the listings' model: the managed scope is never offered
+			m, err := inv.shownModel()
 			if err != nil {
 				return exit(1)
 			}

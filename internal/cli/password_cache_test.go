@@ -14,6 +14,7 @@ import (
 	"github.com/rett/tacctl/internal/app"
 	"github.com/rett/tacctl/internal/askpass"
 	"github.com/rett/tacctl/internal/console"
+	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
 	"github.com/rett/tacctl/internal/paths"
@@ -422,7 +423,9 @@ func TestSSHUsesTheCachedPassword(t *testing.T) {
 			t.Errorf("%s: the cached path was taken: %s", name, got)
 		}
 	}
-	// Nothing cached: ssh is as it always was.
+	// Nothing cached and no terminal to ask on: ssh is as it always was
+	// (the hook keeps a developer's own terminal out of the test).
+	sb.hooks.passwordTTY = func() (*os.File, func()) { return nil, func() {} }
 	c.ag.Forget(askpass.WhyCommand)
 	run(nil, nil, "ssh", "core-sw1")
 	if got := strings.Join(sshCall().Argv(), " "); strings.Contains(got, "SSH_ASKPASS") || !strings.HasPrefix(got, "sudo -u alice -H ssh ") {
@@ -1034,5 +1037,339 @@ func TestSSHCachedPathRequiresTheSudoAccount(t *testing.T) {
 		if b, err := cl.Get(context.Background()); err != nil || string(b) != "secret-pw-17" {
 			t.Errorf("%s: the line's get was spent: %q %v", name, b, err)
 		}
+	}
+}
+
+// askedBox is the cached-ssh sandbox of the tests that follow: alice's
+// account, a listening agent (the session's cache, on), and a terminal whose
+// password prompt a test answers; prompts counts what was asked and shows
+// the prompt texts.
+type askedBox struct {
+	sb      *sandbox
+	c       *cacheAgent
+	rsa     devreg.HostKey
+	prompts []string
+	dumpOff int
+	// answer is what the person types for the next prompt.
+	answer func(prompt string) ([]byte, error)
+	// seen is what the runner had been asked to run when the prompt came.
+	seen [][]string
+}
+
+const askedPassword = "typed-pw-31"
+
+func newAskedBox(t *testing.T) *askedBox {
+	t.Helper()
+	serial(t) // the cache reads and clears the process environment
+	if os.Geteuid() == 0 {
+		t.Skip("the agent's user must not be root")
+	}
+	sb, rsa, _ := sshSandbox(t)
+	sb.withAccount(testAccount())
+	c := newCacheAgent(t)
+	withPasswd(t, c.uid, "alice")
+	b := &askedBox{sb: sb, c: c, rsa: rsa}
+	tty, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tty.Close() })
+	sb.hooks.passwordTTY = func() (*os.File, func()) { return tty, func() {} }
+	sb.hooks.setNotDumpable = func() error { b.dumpOff++; return nil }
+	b.answer = func(string) ([]byte, error) { return []byte(askedPassword), nil }
+	sb.hooks.passwordPrompt = func(_ *os.File, prompt string) ([]byte, error) {
+		b.prompts = append(b.prompts, prompt)
+		b.seen = append(b.seen, sb.runner.Argvs())
+		return b.answer(prompt)
+	}
+	return b
+}
+
+// ssh runs one line of the session: a new token, the cache's variable in the
+// environment (unless env is false), ssh ending with code.
+func (b *askedBox) ssh(code int, env bool, args ...string) {
+	b.sb.t.Helper()
+	b.c.begin(b.sb.t)
+	e := []string{"SUDO_USER=alice", "SUDO_UID=" + strconv.Itoa(b.c.uid), "TERM=xterm"}
+	if env {
+		e = append(e, askpass.EnvVar+"="+b.c.ag.Env())
+	}
+	b.sb.cfgRun("", args, func(r *fake.Runner) {
+		r.On([]string{"ssh", "-F"}, execx.Result{Code: code})
+		r.On([]string{"ssh-keyscan"}, execx.Result{Stdout: keyscanOut("x", b.rsa)})
+	}, e...)
+}
+
+// call is the ssh the last line started, or the zero Cmd.
+func (b *askedBox) call() (execx.Cmd, bool) {
+	for _, call := range b.sb.runner.Calls() {
+		if slices.Contains(call.Argv(), "ssh") && slices.Contains(call.Argv(), "-l") {
+			return call, true
+		}
+	}
+	return execx.Cmd{}, false
+}
+
+// cachedPath reports whether the last line started ssh as the user with the
+// askpass helper (the cached path) rather than through sudo.
+func (b *askedBox) cachedPath(t *testing.T) bool {
+	t.Helper()
+	call, ok := b.call()
+	if !ok {
+		t.Fatalf("no ssh call: %q", b.sb.runner.Argvs())
+	}
+	got := strings.Join(call.Argv(), " ")
+	cached := call.Credential != nil && slices.Contains(call.Env, "SSH_ASKPASS_REQUIRE=force") && strings.Contains(got, "NumberOfPasswordPrompts=1")
+	if !cached && (!strings.HasPrefix(got, "sudo -u alice -H ssh ") || strings.Contains(got, "SSH_ASKPASS") || countPrefix(call.Env, askpass.EnvVar+"=") != 0) {
+		t.Errorf("neither path: %s", got)
+	}
+	return cached
+}
+
+// noLeak fails when the typed password is anywhere a line could have left
+// it: an argument or environment of any command run, an audit line, the
+// output.
+func (b *askedBox) noLeak(t *testing.T, secret string) {
+	t.Helper()
+	for _, l := range b.sb.runner.Argvs() {
+		if strings.Contains(l, secret) {
+			t.Errorf("the password is on a command line (or in a log line): %s", l)
+		}
+	}
+	for _, call := range b.sb.runner.Calls() {
+		for _, kv := range call.Env {
+			if strings.Contains(kv, secret) {
+				t.Errorf("the password is in the environment of %s", call.Name)
+			}
+		}
+	}
+	if strings.Contains(b.sb.out.String(), secret) || strings.Contains(b.sb.err.String(), secret) {
+		t.Error("the password is in the output")
+	}
+}
+
+// The first ssh of a session whose cache is on and empty asks for the
+// password itself, before anything is started, stores it, and goes on by the
+// cached path: ssh gets it from the helper and never asks. The second ssh
+// asks nothing.
+func TestSSHFirstAsksThenStoresAndTheSecondDoesNot(t *testing.T) {
+	b := newAskedBox(t)
+	b.ssh(0, true, "ssh", "core-sw1")
+	if b.sb.code != 0 {
+		t.Fatalf("exit %d %q", b.sb.code, b.sb.stderr())
+	}
+	if len(b.prompts) != 1 || b.prompts[0] != "Password for alice (device login): " {
+		t.Fatalf("prompts %q", b.prompts)
+	}
+	// Before the connection: neither ssh nor its key scan had been run.
+	for _, l := range b.seen[0] {
+		if strings.Contains(l, "ssh ") && strings.Contains(l, " -l ") {
+			t.Errorf("ssh was started before the prompt: %s", l)
+		}
+	}
+	if b.dumpOff != 1 {
+		t.Errorf("marked not dumpable %d times, want once before the prompt", b.dumpOff)
+	}
+	if !b.cachedPath(t) {
+		t.Error("the line did not take the cached path")
+	}
+	call, _ := b.call()
+	if !slices.Contains(call.Env, "SSH_ASKPASS=/opt/x/dist/tacctl") || !slices.Contains(call.Env, askpass.EnvVar+"="+b.c.ag.Env()) {
+		t.Errorf("environment %q", call.Env)
+	}
+	if !hasAudit(b.sb.runner, "auth.info", "ssh user=alice device=core-sw1 addr=10.99.0.1 password=asked") {
+		t.Errorf("no 'password=asked' audit line: %q", b.sb.runner.Argvs())
+	}
+	b.noLeak(t, askedPassword)
+	if n := b.c.stored(); n != 1 {
+		t.Errorf("%d stores, want 1 (the notice 'password cached for this session' comes from it)", n)
+	}
+	if got := b.c.peek(t); got != askedPassword {
+		t.Error("the cache does not hold what was typed")
+	}
+
+	// The second ssh, to another device: no prompt, the cached path.
+	b.ssh(0, true, "ssh", "lab-rtr2")
+	if b.sb.code != 0 || len(b.prompts) != 1 {
+		t.Fatalf("second ssh: exit %d, %d prompts", b.sb.code, len(b.prompts))
+	}
+	if !b.cachedPath(t) {
+		t.Error("the second ssh did not use the cache")
+	}
+	if !hasAudit(b.sb.runner, "auth.info", "ssh user=alice device=lab-rtr2 addr=192.168.5.1 password=cached") {
+		t.Errorf("no 'password=cached' audit line: %q", b.sb.runner.Argvs())
+	}
+	// 'device ssh' is the same command.
+	b.ssh(0, true, "device", "ssh", "core-sw1")
+	if len(b.prompts) != 1 || !b.cachedPath(t) {
+		t.Errorf("device ssh: %d prompts", len(b.prompts))
+	}
+}
+
+// 'device ssh' asks too when the cache is empty.
+func TestDeviceSSHAsksFirstToo(t *testing.T) {
+	b := newAskedBox(t)
+	b.ssh(0, true, "device", "ssh", "core-sw1")
+	if b.sb.code != 0 || len(b.prompts) != 1 || !b.cachedPath(t) {
+		t.Fatalf("exit %d, %d prompts, cached path %v", b.sb.code, len(b.prompts), b.cachedPath(t))
+	}
+	if got := b.c.peek(t); got != askedPassword {
+		t.Error("the cache does not hold what was typed")
+	}
+}
+
+// A refusal (status 255) forgets the typed password, so the next line asks
+// again; a status of the remote session keeps it.
+func TestSSHAskedPasswordIsForgottenOn255(t *testing.T) {
+	b := newAskedBox(t)
+	b.ssh(255, true, "ssh", "core-sw1")
+	if b.sb.code != 255 || len(b.prompts) != 1 {
+		t.Fatalf("exit %d, %d prompts", b.sb.code, len(b.prompts))
+	}
+	if b.c.ag.Cached() {
+		t.Error("a password the device refused is still cached")
+	}
+	b.ssh(0, true, "ssh", "core-sw1")
+	if len(b.prompts) != 2 || b.sb.code != 0 || !b.c.ag.Cached() {
+		t.Errorf("after the refusal: %d prompts, exit %d, cached %v", len(b.prompts), b.sb.code, b.c.ag.Cached())
+	}
+	b.ssh(3, true, "ssh", "core-sw1") // the session ran and ended with 3
+	if b.sb.code != 3 || len(b.prompts) != 2 || !b.c.ag.Cached() {
+		t.Errorf("remote status 3: exit %d, %d prompts, cached %v", b.sb.code, len(b.prompts), b.c.ag.Cached())
+	}
+}
+
+// Ctrl-C at the prompt starts nothing (status 130, no session line), and an
+// empty or unusable answer stores nothing and starts nothing either.
+func TestSSHPromptCancelledOrUnusableStartsNothing(t *testing.T) {
+	for name, tc := range map[string]struct {
+		err  error
+		code int
+	}{
+		"Ctrl-C": {askpass.ErrCancelled, 130},
+		"empty":  {askpass.ErrBadSecret, 1},
+	} {
+		b := newAskedBox(t)
+		b.answer = func(string) ([]byte, error) { return nil, tc.err }
+		b.ssh(0, true, "ssh", "core-sw1")
+		if b.sb.code != tc.code || len(b.prompts) != 1 {
+			t.Errorf("%s: exit %d, %d prompts", name, b.sb.code, len(b.prompts))
+		}
+		if _, started := b.call(); started {
+			t.Errorf("%s: ssh was started", name)
+		}
+		if hasAuditPrefix(b.sb.runner, "", "ssh user=") || hasAuditPrefix(b.sb.runner, "", "ssh end") {
+			t.Errorf("%s: a session was logged", name)
+		}
+		if b.c.ag.Cached() || b.c.stored() != 0 {
+			t.Errorf("%s: something was stored", name)
+		}
+	}
+}
+
+// Without a terminal to ask on, or when the prompt says there is none, ssh
+// is as it always was: through sudo, asking for the password itself.
+func TestSSHNoTerminalKeepsSSHsOwnPrompt(t *testing.T) {
+	b := newAskedBox(t)
+	b.sb.hooks.passwordTTY = func() (*os.File, func()) { return nil, func() {} }
+	b.ssh(0, true, "ssh", "core-sw1")
+	if len(b.prompts) != 0 || b.sb.code != 0 || b.cachedPath(t) {
+		t.Errorf("no terminal: %d prompts, exit %d", len(b.prompts), b.sb.code)
+	}
+	b = newAskedBox(t)
+	b.answer = func(string) ([]byte, error) { return nil, askpass.ErrNoTerminal }
+	b.ssh(0, true, "ssh", "core-sw1")
+	if len(b.prompts) != 1 || b.sb.code != 0 || b.cachedPath(t) || b.c.ag.Cached() {
+		t.Errorf("prompt without a terminal: %d prompts, exit %d", len(b.prompts), b.sb.code)
+	}
+}
+
+// The prompt is for a pinned entry, a line with no option of ssh's own after
+// the target, and a session with the cache on and reachable; every other line
+// is as it always was.
+func TestSSHDoesNotAskWhenTheCachedPathIsNotUsed(t *testing.T) {
+	b := newAskedBox(t)
+	for name, tc := range map[string]struct {
+		args []string
+		env  bool
+	}{
+		"unpinned device":         {[]string{"ssh", "oob-con1"}, true},
+		"unpinned host":           {[]string{"ssh", "web1"}, true},
+		"option after target":     {[]string{"ssh", "core-sw1", "--", "-o", "ProxyJump=x"}, true},
+		"cache off (no variable)": {[]string{"ssh", "core-sw1"}, false},
+	} {
+		b.ssh(0, tc.env, tc.args...)
+		if len(b.prompts) != 0 || b.sb.code != 0 || b.cachedPath(t) || b.c.ag.Cached() {
+			t.Errorf("%s: %d prompts, exit %d, cached %v", name, len(b.prompts), b.sb.code, b.c.ag.Cached())
+		}
+	}
+	// A cache that does not answer (a malformed value, a dead token).
+	b.c.begin(t)
+	b.sb.cfgRun("", []string{"ssh", "core-sw1"}, func(r *fake.Runner) {
+		r.On([]string{"ssh", "-F"}, execx.Result{})
+	}, "SUDO_USER=alice", "SUDO_UID="+strconv.Itoa(b.c.uid), askpass.EnvVar+"=/tmp/x:nottoken")
+	if len(b.prompts) != 0 || b.sb.code != 0 || b.cachedPath(t) {
+		t.Errorf("malformed variable: %d prompts, exit %d", len(b.prompts), b.sb.code)
+	}
+	// An account this process cannot look up: no prompt for a password the
+	// cached path could not carry.
+	b.sb.hooks.sshAccountOf = func(string) (sshAccount, error) { return sshAccount{}, errors.New("not in the local database") }
+	b.ssh(0, true, "ssh", "core-sw1")
+	if len(b.prompts) != 0 || b.sb.code != 0 || b.cachedPath(t) {
+		t.Errorf("no local account: %d prompts, exit %d", len(b.prompts), b.sb.code)
+	}
+}
+
+// A password the cache cannot take (the agent stopped answering between the
+// prompt and the store) is not lost silently and not kept: the person is
+// told, and ssh asks for it itself.
+func TestSSHAskedPasswordTheCacheCannotTakeFallsBack(t *testing.T) {
+	b := newAskedBox(t)
+	b.answer = func(string) ([]byte, error) {
+		b.c.ag.EndLine() // the line's token dies: the store is refused
+		return []byte(askedPassword), nil
+	}
+	b.ssh(0, true, "ssh", "core-sw1")
+	if b.sb.code != 0 || len(b.prompts) != 1 || b.cachedPath(t) {
+		t.Fatalf("exit %d, %d prompts", b.sb.code, len(b.prompts))
+	}
+	if !strings.Contains(plain(b.sb.out.String()), "the password could not be cached") {
+		t.Errorf("no warning: %q", b.sb.out.String())
+	}
+	if hasAuditMatch(b.sb.runner, "auth.info", `password=(asked|cached)`) {
+		t.Error("the audit line says the password was cached")
+	}
+	b.noLeak(t, askedPassword)
+}
+
+// A device cannot make the session store anything: the helper ssh runs only
+// hands out what the cache holds, so an empty cache stays empty however a
+// device words its prompts, and the first question a device asks of a cached
+// password is the only one answered.
+func TestAskpassHelperNeverStores(t *testing.T) {
+	c := newCacheAgent(t)
+	run := func(prompt string) (string, int) {
+		var out, errb strings.Builder
+		a := app.New([]string{"_askpass", prompt}, paths.NewEnv([]string{askpass.EnvVar + "=" + c.ag.Env()}), "/opt/x/dist/tacctl", os.Geteuid(),
+			app.Stdio{Stdin: strings.NewReader("typed-by-a-hostile-device\n"), Stdout: &out, Stderr: &errb}, &fake.Runner{})
+		code := exitCode(Run(context.Background(), a, BuildInfo{}), a.Out)
+		return out.String(), code
+	}
+	for _, p := range []string{"Password: ", "Verification code: ", "Second password: ", "alice@10.99.0.1's password: "} {
+		if out, code := run(p); out != "" || code != 1 {
+			t.Errorf("%q on an empty cache: %q %d", p, out, code)
+		}
+	}
+	if c.ag.Cached() || c.stored() != 0 {
+		t.Error("the helper stored something")
+	}
+	if err := c.ag.Store([]byte("secret-pw-17")); err != nil {
+		t.Fatal(err)
+	}
+	if out, code := run("Password: "); out != "secret-pw-17\n" || code != 0 {
+		t.Errorf("first prompt: %q %d", out, code)
+	}
+	if out, code := run("Password again: "); out != "" || code != 1 {
+		t.Errorf("a second prompt of the line: %q %d", out, code)
 	}
 }

@@ -280,6 +280,10 @@ type ImportOptions struct {
 	// Render renders the imported store as a tacquito.yaml for --check
 	// (store_render_hook). nil, or ErrNoRenderer, means no renderer.
 	Render func(s *Store) ([]byte, error)
+	// Adjust, when not nil, changes the imported store before it is checked
+	// or written and returns a line that says what it changed ("" for
+	// none): the callers' rules for what a file from elsewhere may bring.
+	Adjust func(s *Store) (string, error)
 	// Equiv compares the source with the render (store_equiv_check).
 	// Required when Render is set.
 	Equiv EquivFunc
@@ -348,6 +352,19 @@ func Import(out ui.Output, opts ImportOptions) error {
 	if n := s.mixedCaseNote(); n != "" {
 		say("")
 		say("  " + n)
+	}
+	if opts.Adjust != nil {
+		note, err := opts.Adjust(s)
+		if err != nil {
+			report(err)
+			say("")
+			out.Error("Import failed. Nothing was written.")
+			return ImportFailed
+		}
+		if note != "" {
+			say("")
+			say("  " + note)
+		}
 	}
 	say("")
 

@@ -467,7 +467,7 @@ func TestHostEnrollSyncPinHostKeys(t *testing.T) {
 	// --local: no session, no scan, nothing pinned.
 	r = hostKeys(both(ed), ed)
 	hs.loopback()
-	hs.run(r, "host", "enroll", "--local", "--scope", "lab", "--build-on-host")
+	hs.run(r, "host", "enroll", "--local", "--build-on-host")
 	if r.Called("ssh-keyscan") || r.CalledRegexp(`cat /etc/ssh`) || strings.Contains(hs.devices(), "host_keys") {
 		t.Errorf("--local: %d %q", hs.code, r.Argvs())
 	}

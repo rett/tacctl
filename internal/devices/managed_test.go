@@ -345,15 +345,18 @@ func TestManagedStatementsAreInTheWalkthrough(t *testing.T) {
 	m, c := managedWorld(t)
 	for _, v := range managedVariants() {
 		for _, p := range managedProfiles() {
-			req, d := p.input(m, c, v)
-			live, commented := walkBody(t, renderText(t, req, d))
-			for _, s := range mustManaged(t, req, d) {
-				for _, l := range s.Lines {
-					switch {
-					case s.Name == "breakglass" && !commented[l]:
-						t.Errorf("%s/%s: %q is not a commented line of the walkthrough", v.name, p.scope, l)
-					case s.Name != "breakglass" && !live[l]:
-						t.Errorf("%s/%s/%s: %q is not a live line of the walkthrough", v.name, p.scope, s.Name, l)
+			for _, moved := range []bool{false, true} {
+				req, d := p.input(m, c, v)
+				d.moveListeners(moved)
+				live, commented := walkBody(t, renderText(t, req, d))
+				for _, s := range mustManaged(t, req, d) {
+					for _, l := range s.Lines {
+						switch {
+						case s.Name == "breakglass" && !commented[l]:
+							t.Errorf("%s/%s moved=%v: %q is not a commented line of the walkthrough", v.name, p.scope, moved, l)
+						case s.Name != "breakglass" && !live[l]:
+							t.Errorf("%s/%s/%s moved=%v: %q is not a live line of the walkthrough", v.name, p.scope, s.Name, moved, l)
+						}
 					}
 				}
 			}
@@ -382,17 +385,20 @@ func TestManagedLeavesOutOnlyWhatItSays(t *testing.T) {
 	m, c := managedWorld(t)
 	for _, v := range managedVariants() {
 		for _, p := range managedProfiles() {
-			req, d := p.input(m, c, v)
-			live, _ := walkBody(t, renderText(t, req, d))
-			managed := map[string]bool{}
-			for _, s := range mustManaged(t, req, d) {
-				for _, l := range s.Lines {
-					managed[l] = true
+			for _, moved := range []bool{false, true} {
+				req, d := p.input(m, c, v)
+				d.moveListeners(moved)
+				live, _ := walkBody(t, renderText(t, req, d))
+				managed := map[string]bool{}
+				for _, s := range mustManaged(t, req, d) {
+					for _, l := range s.Lines {
+						managed[l] = true
+					}
 				}
-			}
-			for l := range live {
-				if !managed[l] && !managedLeftOut.MatchString(l) {
-					t.Errorf("%s/%s: live statement %q of the walkthrough is not managed", v.name, p.scope, l)
+				for l := range live {
+					if !managed[l] && !managedLeftOut.MatchString(l) {
+						t.Errorf("%s/%s moved=%v: live statement %q of the walkthrough is not managed", v.name, p.scope, moved, l)
+					}
 				}
 			}
 		}

@@ -369,7 +369,12 @@ func (ns *nsession) commit(op xnode) (string, int) {
 		return "<ok/>", d.commitDrop(confirmed && !check)
 	}
 	if !chassis {
+		// the one that ran it: re0 for a single device and for two routing
+		// engines, the member of a chassis of one
 		members = []jmember{{label: "re0"}}
+		if ms := d.members(); len(ms) == 1 {
+			members = ms
+		}
 	}
 	// a member's element holds its success, or its <rpc-error> when it fails
 	// its check; a commit's reply has the check's elements and then the

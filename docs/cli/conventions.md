@@ -21,13 +21,16 @@ These patterns apply across every subcommand family:
 ## Top-Level Commands
 
 ```
-tacctl install [--branch name] [-y|--yes]
+tacctl install [--branch name] [--server ip] [-y|--yes]
 
-    Install tacctl and the TACACS+ backend from scratch (-y: no confirmation)
+    Install tacctl and the TACACS+ backend from scratch (-y: no confirmation), and set up this
+    machine's own login, so that every user can log in to the server and its console (--server:
+    the address devices and hosts reach this server at); see install/installing.md
 
 tacctl upgrade [--branch name]
 
-    Pull latest source, rebuild, update system files and every enabled backend
+    Pull latest source, rebuild, update system files and every enabled backend, and repair this
+    machine's own login (set it up when it is asked for on a terminal); see install/upgrading.md
 
 tacctl uninstall [-y|--yes]
 
@@ -75,6 +78,10 @@ tacctl breakglass <subcommand>
 tacctl emergency <subcommand>
 
     Emergency measures (lockdown: refuse the logins of groups on a scope); see emergency.md
+
+tacctl server <subcommand>
+
+    This server's settings (addresses: where devices and hosts reach it); see server.md
 
 tacctl ssh <name|address> [-p port] [-X|-Y] [-g] [-L|-R|-D spec]... [-- ssh args]
 

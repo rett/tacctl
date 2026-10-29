@@ -811,15 +811,17 @@ func (j *JunosNetconf) rpcHeld(ctx context.Context, body, shown string) (rpcRepl
 // The members named are exactly the ones the pre-flight listed. The shape is
 // inferred (no capture of a device with members over NETCONF, and the
 // listed members come from the text of the 'show version' reply): a reply
-// that names no member is refused when the pre-flight listed a chassis (the
-// command line, the default, answers with a block for each member), and read
-// as it always was for a single device and for two routing engines, which
-// answer a plain commit with the single device's reply or one element
-// (setKind). nil for a reply that is whole.
+// that names no member is refused when the pre-flight listed a chassis of two
+// or more members (the command line, the default, answers with a block for
+// each member), and read as it always was for a single device, for a chassis
+// of exactly one member (which answers like a single device: no element, or
+// one named by that member) and for two routing engines, which answer a
+// plain commit with the single device's reply or one element (plainOK). nil
+// for a reply that is whole.
 func (j *JunosNetconf) memberRefusal(cmd string, r rpcReply, commit bool) error {
 	set := j.memberSet()
 	if len(r.Members) == 0 {
-		if len(set) == 0 || setKind(set) == "re" {
+		if plainOK(set) {
 			return nil
 		}
 		why := "the chassis' NETCONF answer names no member: nothing proves that " + strings.Join(set, ", ") + " checked it; use the command line transport (the default)"

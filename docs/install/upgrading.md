@@ -18,6 +18,7 @@ The upgrade command:
 6. Updates system files (unit files and drop-ins, logrotate, the tiers sudoers rules and the group drop-in `config sudoers install <group>` wrote, if those files are installed, the completion `tacctl completion bash` generates, the man page, templates you have not customized) if changed, and reports each one as `Updated:` or `Unchanged:`; a template you customized is kept, with the new release's version beside it as `<name>.template.new` (see [Custom Templates](../devices/templates.md#custom-templates))
 7. For an install without a store: moves it into the store once the store gate (`tacctl store import --check`) passes
 8. Restarts tacquito only if what it reads changed (its binary, a unit or drop-in, or `tacquito.yaml`), and rolls the binary and unit files back if it does not come up. A new README, logrotate file, completion or template restarts nothing, and neither does an upgrade with nothing new
+9. Sets up this machine's own login, or repairs it (see **This machine's own login (0.2.21)** below)
 
 The upgrade changes an override only when it is exactly a value an earlier release shipped (the 0.2.3 rules of `operator` and `readonly` and the `operator` privileges list, which `group commands add` and `group privilege add` copy into `tacctl.yaml`): that one is dropped, with an info line, and the shipped value applies. Every other override stays as it is. An install that ran `tacctl group preset roles` on 0.2.2 carries that preset's engineer rules as overrides. Their Cisco denies did not hold (tacquito matches the whole arguments string, so `no aaa new-model`, `enable secret ...`, `ip ssh ...` and `do reload in 5` were permitted), so while `engineer` still has exactly those values the upgrade ends with a red notice that names `tacctl group reset engineer` (look first with `--dry-run`).
 
@@ -37,19 +38,73 @@ Running `tacctl upgrade` again right after an upgrade changes nothing. `--branch
 
 After an upgrade: `tacctl status`, `tacctl config validate` (store, rendered config, drift), and `tacctl backup list` (the pre-store file is under the old-style backups).
 
+**This machine's own login (0.2.21).** Every user can log in to the tacctl
+server and its console, and `install` and `upgrade` set that login up with the
+machinery of `tacctl host enroll --local` (see [Installing](installing.md)),
+so that command is no longer a step of an install or an upgrade: it is the
+command to rebuild, move or repair a server. An upgrade, at its end:
+
+- does nothing and prints nothing when the login is there: the server is
+  registered in the scope tacctl manages, the scope's prefixes are the
+  server's login addresses, its secret is usable, the PAM files are in
+  `/etc/pam.d` and the address is recorded in `server.addresses` (an entry
+  from before that records the address in `tacctl.yaml`, in one line);
+- repairs a managed scope whose prefixes drifted, in one line
+  (`Repaired the managed server login.`), after a snapshot;
+- runs the enrolment again, with no question, when the server was enrolled
+  before and the login is gone or stale: a rebuilt server that has the registry
+  entry but no PAM files, or an entry that is registered in a scope of the
+  operator's, as an install from before 0.2.21 has it (the scope the server
+  alone used is taken over, its secret kept; one that serves hosts or devices
+  too stays for them and the server gets its own);
+- sets a server with no entry up only when the question is answered `y` on a
+  terminal: `Set up this machine's own login now, with <address> as the server
+  address? [y/N]`. An upgrade has no `-y` and does not read a pipe: without a
+  terminal it prints one line, `This machine's own login was not set up (an
+  upgrade does not ask without a terminal); to set it up: tacctl host enroll
+  --local`, and goes on.
+
+A step that cannot be done safely is a line (a warning, with the command to
+run), never a failed upgrade: the upgrade completes and exits as it always
+does, and nothing is left half applied (sshd is checked before it is reloaded
+and the change undone when it refuses it).
+
 **The login console on every account (0.2.20).** The console is the login shell of every managed user of every tier on the tacctl server, and there is no switch for it. The `tiers` and `users` mappings of `/etc/tacctl/console.yaml` (the per-tier and per-user switches of earlier releases) are ignored, never written again and left in the file; every managed user gets the console at the next `tacctl host sync <name of this server>`, which also puts sshd's drop-in in force for all of them. Local accounts that are not tacctl users are not touched.
+
+**A scope called `tacctl` (0.2.21).** The name is the scope of this server's
+own login, which tacctl manages from this release on. A scope of that name
+that an earlier release has, and that answers an address other than this
+server's own (`127.0.0.1` and the server address), is yours: tacctl does not
+take it over or give it members, and it stays listed and editable. But the
+server cannot get its own login while it exists: `host enroll --local`,
+`host sync` of the server and `config validate` say `Scope 'tacctl' is
+reserved. Rename the scope of that name first`, and `host sync --all` syncs
+the other hosts. Before upgrading, rename it (`tacctl scope rename tacctl
+<new-name>`; the hosts registered in it follow), then run `tacctl host enroll
+--local`.
 
 ## Rolling back
 
-`tacctl rollback` takes six targets: `0.2.19`, the release before this
-one, `0.2.18`, `0.2.17`, `0.2.16`, `0.2.9` and `0.2.3`. All are the dry run
-described below until `--apply` is given, all refuse while an apply is not
-settled or a user name has a period, all but `0.2.19` while an emergency
+`tacctl rollback` takes seven targets: `0.2.20`, the release before this
+one, `0.2.19`, `0.2.18`, `0.2.17`, `0.2.16`, `0.2.9` and `0.2.3`. All are the
+dry run described below until `--apply` is given, all refuse while an apply
+is not settled, all but `0.2.20` while a user name has a period, all but
+`0.2.20` and `0.2.19` while an emergency
 lockdown locks a group, and each release's tool prepares the state for the
 releases it knows. `0.2.4` to `0.2.8` and `0.2.2` and older are refused with
 the way there (one release at a time, or `tacctl backup restore` of a snapshot
 of the time); `0.2.10` to `0.2.15`, this release and any other word are
-refused with the six targets named.
+refused with the targets named.
+
+**Every user's login to this server (0.2.21).** This release lets every user
+log in to the tacctl server and its console, unless disabled or of tier none,
+without the server's scope in the user's own scopes. Every older release
+needs it there, so every target adds the scope of this server's own login
+(`tacctl`) to the scopes of each user who logs in to the server and lacks it
+(the plan counts and names them; a warning, so `--apply` needs `--yes`), after
+a snapshot. Every target also removes the server address `server.addresses`
+from `tacctl.yaml`, which no older release knows; the host registry keeps the
+address in this server's entry, which the older release reads.
 
 **An emergency lockdown stops every rollback to a release before 0.2.19**
 (the dry run too): such a release has no such record and would render every
@@ -160,6 +215,24 @@ and the plain view of each pull), under the records' lock, and leaves every
 other line; the dry run lists each file. The files are derived and never in a
 snapshot; this release, if it stays, reads the two as missing until its next
 `device config pull`.
+
+### To 0.2.20
+
+0.2.20 reads every file this release writes but `server.addresses`, so the
+rollback removes that key and adds the scope of this server's own login to the
+users' scopes (above), after a snapshot. Nothing else is converted, and
+`--hosts` is accepted and does nothing.
+
+```bash
+tacctl rollback 0.2.20          # the dry run: steps, warnings, writes nothing
+tacctl rollback 0.2.20 --apply --yes
+tacctl upgrade --branch 0.2.20  # install 0.2.20
+```
+
+Until 0.2.20 is installed, a user added or given other scopes logs in to this
+server only with that scope in the user's own scopes: run
+`tacctl rollback 0.2.20 --apply --yes` again (its plan warns of the users it
+adds, so it needs `--yes`).
 
 ### To 0.2.19
 

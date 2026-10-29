@@ -73,10 +73,10 @@ func (c *pwCtx) barrier(name, group string, scopes []string, disabled bool) pwBa
 		return pwBarrier{why: "this server is not enrolled (tacctl host enroll --local), so no user has a login on it to change the password at"}
 	case !hosts.LinuxName(name):
 		return pwBarrier{why: "its name is no Linux account name (a period), so it has no login on this server"}
-	case !slices.Contains(scopes, e.Scope):
+	case !slices.Contains(scopes, e.Scope) && (!pwchange.ServerOf(e).ManagedIn(c.m) || !c.implicit(name, group)):
 		return pwBarrier{why: "it is not in scope '" + e.Scope + "', the scope of this server, so it has no login on it"}
 	}
-	srv := pwchange.ServerOf(e)
+	srv := c.inv.localServer(e)
 	for _, addr := range srv.LoginAddresses() {
 		if got := c.m.ScopeOf(addr, srv.Protocol); got != e.Scope {
 			return pwBarrier{why: "scope '" + e.Scope + "' does not answer " + addr + " for " + hosts.MethodLabel(e.EffectiveMethod()) + ", where this server's own logins come from, so nobody logs in to it"}
@@ -86,6 +86,16 @@ func (c *pwCtx) barrier(name, group string, scopes []string, disabled bool) pwBa
 		return pwBarrier{why: "backend '" + srv.Protocol + "', which answers this server's own " + hosts.MethodLabel(e.EffectiveMethod()) + " logins, is not enabled, so nobody logs in to it"}
 	}
 	return pwBarrier{}
+}
+
+// implicit reports whether a user of that name and group is a member of the
+// managed scope without having it (pwchange.Implicit; an existing accounting
+// sink is not).
+func (c *pwCtx) implicit(name, group string) bool {
+	if u := c.m.User(name); u != nil && u.AccountingSink {
+		return false
+	}
+	return hosts.LinuxName(name) && pwchange.GroupTier(c.inv.app.Conf(), c.m, group) != tier.None
 }
 
 // pwBarrier is the barrier of a user, existing or about to be.
@@ -110,7 +120,7 @@ func (c *pwCtx) sharedPrefixes() []string {
 	if s == nil {
 		return nil
 	}
-	return pwchange.ServerOf(c.entry).SharedPrefixes(s)
+	return c.inv.localServer(c.entry).SharedPrefixes(s)
 }
 
 // sharedNote is the warning for a scope that has such prefixes, "" otherwise.
@@ -120,7 +130,7 @@ func (c *pwCtx) sharedNote() string {
 		return ""
 	}
 	return "Scope '" + c.entry.Scope + "', this server's, also answers " + strings.Join(shared, ", ") + ": a device there still accepts a user who must change the password, " +
-		"because the user stays in the scope the server's own logins use. Give the server a scope of its own to keep the devices out."
+		"because the user stays in the scope the server's own logins use. Give the server's login a scope of its own to keep the devices out: tacctl host enroll --local"
 }
 
 // sharedScopeNote is the warning that this server's scope answers more than

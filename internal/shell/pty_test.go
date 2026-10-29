@@ -186,7 +186,15 @@ func (p *ptySession) send(s string) {
 
 func (p *ptySession) expect(re string) {
 	p.t.Helper()
-	if err := p.Expect(re, 5*time.Second); err != nil {
+	p.expectWithin(re, 5*time.Second)
+}
+
+// expectWithin is expect with a deadline of its own, for a step whose output
+// takes long on a loaded runner (a paste of thousands of characters, each
+// echoed by the editor).
+func (p *ptySession) expectWithin(re string, d time.Duration) {
+	p.t.Helper()
+	if err := p.Expect(re, d); err != nil {
 		p.t.Fatal(err)
 	}
 }
@@ -651,10 +659,18 @@ func TestPtyPaste(t *testing.T) {
 	}
 	p.send("\r")
 	p.output("pasted line end")
+	// A paste over PasteMax is cut there, and Ctrl-U drops it: the line that
+	// follows is 'exit' alone (with the text left, it would run as a program
+	// and the shell would not end). The editor echoes every character it
+	// takes, which on a loaded runner takes seconds, so the end is waited for
+	// with a deadline of its own.
 	p.send("\x1b[200~" + strings.Repeat("x", PasteMax+100) + "\x1b[201~")
 	p.send("\x15") // Ctrl-U: drop the pasted text
-	p.line("exit")
-	p.exits(0)
+	p.send("exit\r")
+	p.expectWithin(`STATUS 0 REASON exit LINES \d+\r\n`, 60*time.Second)
+	if _, err := p.Wait(5 * time.Second); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestPtyTerminate(t *testing.T) {
@@ -742,7 +758,7 @@ func TestPtySystemShell(t *testing.T) {
 	p.expect(`system-shell takes no arguments`)
 	p.expect(`tacctl> `)
 	p.line("system-shell")
-	p.Settle(300 * time.Millisecond)
+	p.expect(`\$ `) // bash's prompt: it has the terminal
 	p.line("echo inside-$((6*7))")
 	p.expect(`inside-42\r\n`)
 	p.line("exit 5")
@@ -751,7 +767,7 @@ func TestPtySystemShell(t *testing.T) {
 	p.expect(`tacctl> `)
 	// Killed: bash cannot give the terminal back; the shell takes it.
 	p.line("system-shell")
-	p.Settle(300 * time.Millisecond)
+	p.expect(`\$ `)
 	p.line("kill -9 $$")
 	p.expect(`SYSTEM-SHELL 137\r\n`)
 	p.expect(`tacctl> `)

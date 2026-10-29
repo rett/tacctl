@@ -807,3 +807,22 @@ func TestNetconfChassisMembers(t *testing.T) {
 		t.Errorf("single device: %s", got)
 	}
 }
+
+// A chassis of one member with 'chassis.plain' answers a NETCONF commit as a
+// single device does: a plain <ok/> for <commit/>, and one element for the
+// commit-configuration, named by the member.
+func TestNetconfChassisOfOne(t *testing.T) {
+	srv, _, _ := newJunos(t, map[string]string{"chassis": "fpc0 ex4600-40f 18.1R3-S6.1\n", "chassis.plain": ""})
+	c := netconfLogin(t, srv, DefaultUser, DefaultPassword)
+	c.rpc("<lock-configuration/>")
+	c.load("set system login idle-timeout 30")
+	if got := c.rpc("<commit-configuration><check/></commit-configuration>"); !strings.Contains(got, "<commit-results><routing-engine><name>fpc0</name><commit-check-success/></routing-engine></commit-results>") {
+		t.Errorf("check: %s", got)
+	}
+	if got := c.rpc("<commit-configuration><log>x</log></commit-configuration>"); !strings.Contains(got, "<commit-results><routing-engine><name>fpc0</name><commit-success/></routing-engine></commit-results>") {
+		t.Errorf("commit: %s", got)
+	}
+	if !strings.Contains(srv.Committed(), "idle-timeout 30") {
+		t.Error("not committed")
+	}
+}

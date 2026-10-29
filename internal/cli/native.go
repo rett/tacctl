@@ -178,11 +178,17 @@ func (inv *invocation) storeApply(fn func(*store.Store) error) error {
 // rendered, as the caller says what is left undone).
 func (inv *invocation) storeApplyThen(fn func(*store.Store) error, after func()) error {
 	a := inv.app
+	// a user the change writes loses a stored copy of the managed scope, in
+	// the same mutation (managed_scope.go)
+	fn = inv.managedCleanup(fn)
 	// a change that would leave a user who must change the password without a
 	// login on this server is refused before anything is written
-	warn, err := inv.pwGuard(fn)
-	if err != nil {
-		return err
+	var warn func()
+	var err error
+	if !inv.pwGuardOff {
+		if warn, err = inv.pwGuard(fn); err != nil {
+			return err
+		}
 	}
 	a.Audit().Touch()
 	_, err = a.Backends().StoreApply(inv.ctx, backend.ApplyOptions{}, func() error {

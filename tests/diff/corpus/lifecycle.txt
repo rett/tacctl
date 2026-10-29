@@ -68,13 +68,17 @@ backend disable bogus
 @fixture tacquito.minimal.yaml
 
 # --- install: up to the confirmation ---------------------------------------------
+@known 0.2.21 item 4: the install plan has a line for this machine's own login
 install
+@known 0.2.21 item 4: the install plan has a line for this machine's own login
 install <<< n
+@known 0.2.21 item 4: the install plan has a line for this machine's own login
 install <<< no
+@known 0.2.21 item 4: the install plan has a line for this machine's own login
 install --branch develop <<< n
-@known 0.2.1 item 3: an unknown argument is refused with the usage, exit 1
+@known 0.2.1 item 3: an unknown argument is refused with the usage, exit 1; 0.2.21 item 4: the install usage names --server
 install --branch develop extra <<< n
-@known 0.2.1 item 3: an unknown argument is refused with the usage, exit 1
+@known 0.2.1 item 3: an unknown argument is refused with the usage, exit 1; 0.2.21 item 4: the install usage names --server
 install bogus <<< n
 
 # --- uninstall: up to the confirmation -------------------------------------------

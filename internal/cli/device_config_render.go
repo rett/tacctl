@@ -72,7 +72,10 @@ func (inv *invocation) deviceRenderInput(p renderParams) (devices.Request, devic
 		ServerIP:    devices.ServerIP(inv.ctx, a.Runner),
 		Restricted:  p.Restricted,
 		AuthServer:  p.AuthServer, AuthName: p.AuthName, SourceIP: p.SourceIP,
+		// the recorded server address is the default of --server (0.2.21)
+		DefaultServer: a.Conf().ServerAddress(),
 	}
+	d.TACACSPort = inv.tacacsPort(p.Vendor, p.Scope)
 	d.Release = inv.recordedRelease(p.Device.DeviceName, p.Vendor)
 	// The NETCONF service setting of a Junos device (0.2.10, D145): its own
 	// over its scope's; leave renders the commented step, as before.

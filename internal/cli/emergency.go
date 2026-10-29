@@ -213,9 +213,52 @@ func (inv *invocation) lockdownGroups(m *model.Model, list, tierName string) ([]
 
 // --- the message ---------------------------------------------------------------
 
+// lockdownModel is the model a lockdown is planned and shown from: with this
+// server's own login in the managed scope every user is a member of it, as
+// the backends render it (managed_scope.go).
+func (inv *invocation) lockdownModel() (*model.Model, error) {
+	m, err := inv.model()
+	if err != nil {
+		return nil, err
+	}
+	if e, ok, _ := inv.localHost(); ok {
+		m = inv.serverModel(m, serverOfEntry(e))
+	}
+	return m, nil
+}
+
+// lockdownWhere is the words that name the place of a lockdown: the scope,
+// or this server's own login for the scope tacctl manages (it has no name an
+// operator uses: every command that names it is refused, and --all-scopes,
+// which includes it, is how a lockdown on it is made and lifted).
+func (inv *invocation) lockdownWhere(scope string) string {
+	if scope != "" && scope == inv.managedScope() {
+		return managedOwnerText
+	}
+	return "scope '" + scope + "'"
+}
+
+// lockdownBare is lockdownWhere as the status and validate lines word it
+// ("scope lab", no quotes).
+func (inv *invocation) lockdownBare(scope string) string {
+	if scope != "" && scope == inv.managedScope() {
+		return managedOwnerText
+	}
+	return "scope " + scope
+}
+
+// lockdownTargetOf is the word 'emergency lockdown' takes for scope in a
+// command that is advised: the scope, or --all-scopes for the managed one.
+func (inv *invocation) lockdownTargetOf(scope string) string {
+	if scope != "" && scope == inv.managedScope() {
+		return "--all-scopes"
+	}
+	return scope
+}
+
 // lockdownLine is the one line that says a lockdown stands.
 func (inv *invocation) lockdownLine(l conf.Lockdown) string {
-	s := "EMERGENCY LOCKDOWN on scope '" + l.Scope + "' since " + lockdownTime(l) + " by " + l.By + " (" + lockdownAge(l, inv.app.Knobs.Now()) +
+	s := "EMERGENCY LOCKDOWN on " + inv.lockdownWhere(l.Scope) + " since " + lockdownTime(l) + " by " + l.By + " (" + lockdownAge(l, inv.app.Knobs.Now()) +
 		"): logins of groups " + strings.Join(l.Groups, ", ") + " are refused; superusers keep access."
 	if l.Reason != "" {
 		s += " Reason: " + l.Reason
@@ -359,9 +402,12 @@ func (inv *invocation) emergencyLockdown(args []string) error {
 		if len(pos) > 2 {
 			return inv.usageErr("Unknown argument: '"+pos[2]+"'", emergencyUsage)
 		}
+		if err := inv.reservedScope(arg(pos, 1)); err != nil {
+			return err
+		}
 		return inv.lockdownStatus(arg(pos, 1), p.Has("--json"))
 	}
-	m, err := inv.model()
+	m, err := inv.lockdownModel()
 	if err != nil {
 		return err
 	}
@@ -381,8 +427,14 @@ func (inv *invocation) emergencyLockdown(args []string) error {
 	case len(pos) == 0:
 		return inv.usageErr(emergencyUsage)
 	case len(pos) == 1:
+		if err := inv.reservedScope(pos[0]); err != nil {
+			return err
+		}
 		return inv.lockdownStatus(pos[0], p.Has("--json"))
 	default:
+		if err := inv.reservedScope(pos[0]); err != nil {
+			return err
+		}
 		if m.Scope(pos[0]) == nil {
 			return inv.usageErr("There is no scope '"+pos[0]+"'.", emergencyUsage)
 		}
@@ -594,7 +646,7 @@ func (inv *invocation) lockdownDisable(m *model.Model, scopes []string, list str
 	}
 	if dry {
 		for _, pl := range plans {
-			inv.echo("Would lift " + strings.Join(liftedGroups(pl), ", ") + " on scope '" + pl.scope + "'.")
+			inv.echo("Would lift " + strings.Join(liftedGroups(pl), ", ") + " on " + inv.lockdownWhere(pl.scope) + ".")
 		}
 		inv.echo("Dry run: nothing was changed.")
 		return nil
@@ -634,9 +686,9 @@ func (inv *invocation) lockdownDisable(m *model.Model, scopes []string, list str
 		inv.app.Audit().Raw("auth.notice", "emergency lockdown disable scope="+pl.scope+" groups="+strings.Join(liftedGroups(pl), ",")+
 			" held="+strings.ReplaceAll(lockdownAge(*pl.before, now), " ", "")+" by="+by+" result=ok")
 		if len(pl.groups) == 0 {
-			inv.echo(ui.Green + "Emergency lockdown LIFTED" + ui.NC + " on scope '" + pl.scope + "' (it stood " + lockdownAge(*pl.before, now) + ").")
+			inv.echo(ui.Green + "Emergency lockdown LIFTED" + ui.NC + " on " + inv.lockdownWhere(pl.scope) + " (it stood " + lockdownAge(*pl.before, now) + ").")
 		} else {
-			inv.echo(ui.Yellow + "Emergency lockdown narrowed" + ui.NC + " on scope '" + pl.scope + "': " + strings.Join(liftedGroups(pl), ", ") + " lifted, " + strings.Join(pl.groups, ", ") + " still locked.")
+			inv.echo(ui.Yellow + "Emergency lockdown narrowed" + ui.NC + " on " + inv.lockdownWhere(pl.scope) + ": " + strings.Join(liftedGroups(pl), ", ") + " lifted, " + strings.Join(pl.groups, ", ") + " still locked.")
 		}
 	}
 	inv.echo("  Rendered: " + lockdownRendered(res))
@@ -684,7 +736,7 @@ func (inv *invocation) lockdownExempt(m *model.Model, scope string) []string {
 // lockdownPreview prints who loses access on a scope and who keeps it.
 func (inv *invocation) lockdownPreview(m *model.Model, pl lockdownPlan, enable bool) {
 	s := m.Scope(pl.scope)
-	inv.echo("Lock the logins of " + strings.Join(pl.groups, ", ") + " on scope '" + pl.scope + "'?")
+	inv.echo("Lock the logins of " + strings.Join(pl.groups, ", ") + " on " + inv.lockdownWhere(pl.scope) + "?")
 	out := inv.lockedOutNames(m, pl.scope, pl.groups)
 	if len(out) == 0 {
 		inv.echo("  No user of the scope is in those groups.")
@@ -736,7 +788,7 @@ type lockdownJSON struct {
 }
 
 func (inv *invocation) lockdownStatus(scope string, asJSON bool) error {
-	m, err := inv.model()
+	m, err := inv.lockdownModel()
 	if err != nil {
 		return err
 	}
@@ -795,7 +847,7 @@ func (inv *invocation) lockdownStatus(scope string, asJSON bool) error {
 		for _, r := range lockdownResidual {
 			inv.echo("  " + r + ".")
 		}
-		inv.echo("  Lift it with: tacctl emergency lockdown " + l.Scope + " disable")
+		inv.echo("  Lift it with: tacctl emergency lockdown " + inv.lockdownTargetOf(l.Scope) + " disable")
 	}
 	return nil
 }
@@ -892,7 +944,7 @@ func (inv *invocation) statusLockdowns() {
 		return
 	}
 	for _, l := range rows {
-		inv.echoE("    " + ui.Red + "Emergency lockdown: scope " + l.Scope + " since " + lockdownTime(l) + " by " + l.By + " (" + lockdownAge(l, inv.app.Knobs.Now()) +
+		inv.echoE("    " + ui.Red + "Emergency lockdown: " + inv.lockdownBare(l.Scope) + " since " + lockdownTime(l) + " by " + l.By + " (" + lockdownAge(l, inv.app.Knobs.Now()) +
 			"): groups " + strings.Join(l.Groups, ", ") + " are refused (tacctl emergency lockdown status)" + ui.NC)
 	}
 }
@@ -907,25 +959,26 @@ func (inv *invocation) lockdownFindings(m *model.Model) []validateFinding {
 	}
 	now := inv.app.Knobs.Now()
 	for _, l := range inv.app.Conf().Lockdowns() {
-		fix := "tacctl emergency lockdown " + l.Scope + " disable"
-		add(levelWarning, "scope "+l.Scope+" is locked down since "+lockdownTime(l)+" by "+l.By+" ("+lockdownAge(l, now)+"): groups "+strings.Join(l.Groups, ", ")+" are refused", fix)
+		target := inv.lockdownTargetOf(l.Scope)
+		fix := "tacctl emergency lockdown " + target + " disable"
+		add(levelWarning, inv.lockdownBare(l.Scope)+" is locked down since "+lockdownTime(l)+" by "+l.By+" ("+lockdownAge(l, now)+"): groups "+strings.Join(l.Groups, ", ")+" are refused", fix)
 		if m == nil {
 			continue
 		}
 		if m.Scope(l.Scope) == nil {
-			add(levelError, "the lockdown of scope "+l.Scope+" names a scope that does not exist", fix)
+			add(levelError, "the lockdown of "+inv.lockdownBare(l.Scope)+" names a scope that does not exist", fix)
 		}
 		for _, g := range l.Groups {
 			switch {
 			case m.Group(g) == nil:
-				add(levelError, "the lockdown of scope "+l.Scope+" names the group "+g+", which does not exist", "tacctl emergency lockdown "+l.Scope+" disable "+g)
+				add(levelError, "the lockdown of "+inv.lockdownBare(l.Scope)+" names the group "+g+", which does not exist", "tacctl emergency lockdown "+target+" disable "+g)
 			case inv.groupIsSuperuser(m, g):
-				add(levelError, "the lockdown of scope "+l.Scope+" locks the group "+g+", which is a superuser group now", "tacctl emergency lockdown "+l.Scope+" disable "+g)
+				add(levelError, "the lockdown of "+inv.lockdownBare(l.Scope)+" locks the group "+g+", which is a superuser group now", "tacctl emergency lockdown "+target+" disable "+g)
 			}
 		}
 	}
 	for _, d := range inv.app.Conf().LockdownDefects() {
-		add(levelError, "emergency.lockdown."+d.Scope+" "+d.Defect, "tacctl emergency lockdown "+d.Scope+" disable")
+		add(levelError, "emergency.lockdown."+d.Scope+" "+d.Defect, "tacctl emergency lockdown "+inv.lockdownTargetOf(d.Scope)+" disable")
 	}
 	return out
 }
@@ -956,7 +1009,7 @@ func (inv *invocation) lockdownPromotionRefusal(group string) error {
 	}
 	cmds := make([]string, len(scopes))
 	for i, s := range scopes {
-		cmds[i] = "tacctl emergency lockdown " + s + " disable " + group
+		cmds[i] = "tacctl emergency lockdown " + inv.lockdownTargetOf(s) + " disable " + group
 	}
 	return inv.usageErr("Group '" + group + "' is locked by an emergency lockdown on scope(s) " + strings.Join(scopes, ", ") +
 		", and a superuser group is never locked: lift it for the group first (" + strings.Join(cmds, "; ") + "). Nothing was changed.")

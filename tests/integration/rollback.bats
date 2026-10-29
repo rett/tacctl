@@ -423,7 +423,7 @@ _overrides() { cat "${TACCTL_STATE_DIR}/tacctl.yaml" 2>/dev/null; }
 JSON
     before=$(_sums)
     n=$(_snapshots)
-    for target in 0.2.19 0.2.9 0.2.3; do
+    for target in 0.2.20 0.2.19 0.2.9 0.2.3; do
         for args in "" "--apply --yes"; do
             # shellcheck disable=SC2086
             run "$TACCTL_BIN_SCRIPT" rollback "$target" $args
@@ -439,21 +439,26 @@ JSON
     [[ "$(_snapshots)" == "$n" ]]
 }
 
-@test "rollback 0.2.19: the dry run names the release before this one and writes nothing; this release is no target" {
+@test "rollback 0.2.20: the dry run names the release before this one and writes nothing; this release is no target" {
     _state_024
     before=$(_sums)
     n=$(_snapshots)
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.20 --hosts
+    assert_success
+    assert_output --partial "Roll back to 0.2.20 (dry run)"
+    assert_output --partial "nothing to do for 0.2.20: this release changed nothing on the enrolled hosts"
+    assert_output --partial "This was a dry run: nothing was changed."
+    [[ "$(_sums)" == "$before" ]]
+    [[ "$(_snapshots)" == "$n" ]]
     run "$TACCTL_BIN_SCRIPT" rollback 0.2.19 --hosts
     assert_success
     assert_output --partial "Roll back to 0.2.19 (dry run)"
     assert_output --partial "put back the per-tier sudoers drop-in 0.2.19 writes"
-    assert_output --partial "This was a dry run: nothing was changed."
     [[ "$(_sums)" == "$before" ]]
-    [[ "$(_snapshots)" == "$n" ]]
-    run "$TACCTL_BIN_SCRIPT" rollback 0.2.20
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.21
     assert_failure 1
-    assert_output --partial "'0.2.20' is not a release to roll back to"
-    assert_output --partial "prepares the state for 0.2.19 (the release before this one)"
+    assert_output --partial "'0.2.21' is not a release to roll back to"
+    assert_output --partial "prepares the state for 0.2.20 (the release before this one)"
 }
 
 @test "rollback 0.2.9 is the superuser's alone" {

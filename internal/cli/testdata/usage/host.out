@@ -11,14 +11,15 @@ Usage: tacctl host <subcommand> [arguments]
       --check                          (show) Log in read-only and compare the host with what tacctl would make it:
                                        one line per difference with the command that fixes it; exit 1 when there is one (superuser only)
   enroll <[user@]host> [options]       Install TACACS+ or RADIUS login on a host over SSH and register it
-  enroll --local [options]             Same, for this machine (its tacctl users get the login console)
+  enroll --local [options]             This machine's own login, for every user (with the login console)
       --method tacplus|radius          pam_tacplus against the TACACS+ backend, or the host's pam_radius_auth
                                        package against the RADIUS backend (default: the host's current
                                        method, else the scope's auth-method, else its only protocol,
                                        else 'host default-method').
                                        Re-enroll with the other to switch
-      --scope <name>                   The host's scope (default: its registered one, else the scope covering its address)
-      --server <address>               Address the host should use for this server (default: detected)
+      --scope <name>                   The host's scope (default: its registered one, else the scope covering its address;
+                                       not with --local)
+      --server <address>               Address the host uses for this server (default: recorded, else detected)
       --name <name>                    Registry name (default: short hostname, lowercased; lower case, not a tacctl word)
       --port <n>, --identity <file>    SSH port and key
       --build-on-host                  (tacplus) Compile pam_tacplus on the host instead of in a container here

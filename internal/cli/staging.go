@@ -111,7 +111,7 @@ func (inv *invocation) stagingAdd(scope, addr, kind, name string) error {
 		return err
 	}
 	if len(collisions) > 0 {
-		return inv.usageErr(append([]string{"Cannot stage " + cidr + " in scope '" + scope + "':"}, collisions...)...)
+		return inv.usageErr(append(append([]string{"Cannot stage " + cidr + " in scope '" + scope + "':"}, collisions...), collisionAdvice(collisions)...)...)
 	}
 	current := m.ScopePrefixes(scope)
 	csv := joinNonEmpty(append(append([]string(nil), current...), cidr), ",")

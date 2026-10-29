@@ -621,12 +621,17 @@ func Render(st *store.Store, view *yamlpy.Map, hostNames map[string]bool, server
 	return []byte(w.String()), nil
 }
 
-// Carved is the model without the addresses of the holds of the merged
+// Carved is the model with every user in the scope of this server's own
+// logins when tacctl manages it (pwchange.WithServerScope), without the
+// addresses of the holds of the merged
 // view (model.WithoutAddresses), without the members of a locked group in
 // the scope that locks them, and with a user who must change the password
 // in this server's own scope only (pwchange.Carve): the model the renderer
 // writes and the read-back compares the file with.
 func Carved(m *model.Model, view *yamlpy.Map, server pwchange.Server) *model.Model {
+	// every user is in the scope tacctl manages for this server's own logins
+	// (0.2.21), before the lockdown and the password change cut scopes out
+	m = pwchange.WithServerScopeView(view, m, server)
 	// the members of a locked group are taken out of the scope that locks it
 	// (0.2.19, the emergency lockdown)
 	m = m.WithoutAddresses(conf.HeldAddresses(view)).WithoutMembers(conf.LockedGroups(view))
@@ -642,7 +647,7 @@ func Carved(m *model.Model, view *yamlpy.Map, server pwchange.Server) *model.Mod
 // requirement. A user counts when the scopes this file shows for the user
 // changed, so one cut only in scopes of the other protocol is not named.
 func carvedLines(m *model.Model, view *yamlpy.Map, server pwchange.Server) []string {
-	base := m.WithoutAddresses(conf.HeldAddresses(view))
+	base := pwchange.WithServerScopeView(view, m, server).WithoutAddresses(conf.HeldAddresses(view))
 	locked := base.WithoutMembers(conf.LockedGroups(view))
 	final := pwchange.Carve(locked, view, Protocol, server)
 	shown := func(mm *model.Model, u *model.User) []string {

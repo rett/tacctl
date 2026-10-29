@@ -16,9 +16,11 @@ import (
 	"io"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/cidr"
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/mgmtacl"
@@ -113,6 +115,13 @@ type Data struct {
 	ACL MgmtACL
 	// Radius is Prepare's result; required when Protocol is radius.
 	Radius *Radius
+	// TACACSPort is the port the TACACS+ server listens on, as the default
+	// listener of 'tacctl config listen' has it (the tacacs backend's
+	// TACACS_PORT device variable); "" is the default, 49. The TACACS+
+	// walkthroughs state it where the device's configuration takes a port
+	// (and only then: 49 is what a device uses when none is written), and
+	// the RADIUS ones name it where they contrast the two protocols.
+	TACACSPort string
 
 	// SNMP is the scope's SNMP settings with the device's values, as the CLI
 	// resolved them (D41, D46); Scope and Server are filled in here. The
@@ -138,6 +147,35 @@ type Data struct {
 	// devices from, which the SNMP client list (and the ssh permits) use
 	// instead of ServerIP. Neither is stored.
 	AuthServer, AuthName, SourceIP string
+	// DefaultServer is the address recorded for this server
+	// (server.addresses, 0.2.21), the default of --server: a device is told
+	// to authenticate against it unless --server names another or a RADIUS
+	// listener is bound to an address ("" when nothing is recorded: the
+	// detected address, as before). tacctl's own source address is still the
+	// detected one.
+	DefaultServer string
+}
+
+// defaultTACACSPort is the port a TACACS+ client uses when none is written.
+var defaultTACACSPort = strconv.Itoa(backend.DefaultTACACSPort)
+
+// tacacsPort is the TACACS+ port the devices are told to connect to (the
+// default listener's; 49 when none is given or it cannot be read).
+func (d Data) tacacsPort() string {
+	if n, err := strconv.Atoi(d.TACACSPort); err == nil && n > 0 && n < 65536 {
+		return strconv.Itoa(n)
+	}
+	return defaultTACACSPort
+}
+
+// tacacsPortSet is the TACACS+ port when it is not the default, else "": the
+// statements of a walkthrough that set a port are written only for a moved
+// listener, so that a server on the default one renders what it always did.
+func (d Data) tacacsPortSet() string {
+	if p := d.tacacsPort(); p != defaultTACACSPort {
+		return p
+	}
+	return ""
 }
 
 // source is the address tacctl reaches devices from: --source, else the
@@ -230,13 +268,15 @@ func (d Data) mgmtSkipped(where string) []string {
 
 // authIP is the address a device is told to authenticate against:
 // --server, else the address a RADIUS listener is bound to (bound), else
-// the detected one.
+// the recorded one (DefaultServer), else the detected one.
 func (d Data) authIP(bound string) string {
 	switch {
 	case d.AuthServer != "":
 		return d.AuthServer
 	case bound != "":
 		return bound
+	case d.DefaultServer != "":
+		return d.DefaultServer
 	}
 	return d.ServerIP
 }
@@ -455,10 +495,11 @@ func (o *out) header(title, scope, note, other, instruction string) {
 // addressRoles says which server address plays which role when --server or
 // --source makes them differ (D43): nothing otherwise.
 func (o *out) addressRoles(d Data, protocol string) {
-	if d.AuthServer == "" && d.SourceIP == "" {
+	if d.AuthServer == "" && d.SourceIP == "" && d.DefaultServer == "" {
 		return
 	}
-	auth, src := d.authIP(d.boundAddr(protocol)), d.source()
+	bound := d.boundAddr(protocol)
+	auth, src := d.authIP(bound), d.source()
 	if auth == src {
 		return
 	}
@@ -467,11 +508,14 @@ func (o *out) addressRoles(d Data, protocol string) {
 		how = "--source"
 	}
 	told := "detected"
-	if d.AuthServer != "" {
+	switch {
+	case d.AuthServer != "":
 		told = "--server"
 		if d.AuthName != "" {
 			told += ": resolved from " + d.AuthName
 		}
+	case bound == "" && d.DefaultServer != "":
+		told = "server.addresses"
 	}
 	o.heading(ui.Yellow, "Two server addresses:")
 	o.echo("  - The device is told to authenticate against " + auth + " (" + told + ")")

@@ -44,24 +44,28 @@ func TestScopeAddThatTakesTheServerAddressIsRefused(t *testing.T) {
 }
 
 // A tier change of a group is a tacctl.yaml write: lowering a superuser group
-// newly holds a flagged member, who has no login on the server, and is
-// refused; tacctl.yaml keeps the tier.
-func TestGroupTierThatHoldsAMemberWithoutALoginIsRefused(t *testing.T) {
+// newly holds a flagged member. The member has the server's own login all the
+// same (every user is in the scope tacctl manages for it, which the sync of
+// the server that the group's new tier starts takes over), so the change is
+// made and the member can change the password there.
+func TestGroupTierOfAFlaggedMemberKeepsTheServerLogin(t *testing.T) {
 	sb := pwSandbox(t)
 	sb.run("", []string{"group", "add", "admins", "15", "ADMIN-CLASS", "--tier", "superuser"})
 	sb.expect(0, "", "")
 	sb.asAlice("", "user", "require-password-change", "bob")
 	sb.expect(0, "Flagged 1", "")
-	// a superuser is exempt, so it may leave the server's scope
 	sb.run("", []string{"user", "move", "bob", "admins"})
 	sb.expect(0, "", "")
 	sb.run("", []string{"user", "scope", "bob", "replace", "lab"})
 	sb.expect(0, "", "")
-	conf := sb.read("state/tacctl.yaml")
+	if got := sb.read("state/linux-hosts"); !strings.HasPrefix(got, "authsrv|local|22|tacctl|") {
+		t.Fatalf("the server's scope was not taken over: %q", got)
+	}
 	sb.run("y\n", []string{"group", "edit", "admins", "tier", "operator"})
-	refusedStranding(t, sb, "This change", "bob")
-	if sb.read("state/tacctl.yaml") != conf {
-		t.Errorf("tacctl.yaml changed:\n%s", sb.read("state/tacctl.yaml"))
+	sb.expect(0, "", "")
+	sb.run("", []string{"user", "show", "bob"})
+	if out := plain(sb.out.String()); strings.Contains(out, pwTextStranded) || !strings.Contains(out, "required (no device accepts the user until it is changed at this server)") {
+		t.Errorf("user show:\n%s", out)
 	}
 }
 
@@ -90,21 +94,29 @@ func TestBackendOfTheServerLoginsCountsForTheStanding(t *testing.T) {
 	}
 }
 
-// 'host enroll --local' with the same scope and method and another --server
-// moves where the server's own logins come from; a scope that does not answer
-// that address leaves a flagged user without a login, so it is refused before
-// anything runs.
-func TestHostEnrollLocalWithAServerAddressTheScopeDoesNotAnswerIsRefused(t *testing.T) {
+// 'host enroll --local' with another --server moves where the server's own
+// logins come from: the managed scope follows (its prefixes are the login
+// addresses), so a flagged user keeps the login, and the setting holds the
+// new address, as the registry entry does.
+func TestHostEnrollLocalWithAnotherServerAddressMovesTheScope(t *testing.T) {
 	sb := pwSandbox(t)
 	sb.asAlice("", "user", "require-password-change", "bob")
 	sb.expect(0, "Flagged 1", "")
-	reg := sb.read("state/linux-hosts")
-	sb.run("", []string{"host", "enroll", "--local", "--name", "authsrv", "--scope", "srv", "--server", "192.0.2.10", "--build-on-host"})
-	refusedStranding(t, sb, "Enrolling this server in scope 'srv' with the TACACS+ method", "bob")
-	if sb.read("state/linux-hosts") != reg {
-		t.Error("the registry changed")
+	sb.run("", []string{"host", "enroll", "--local", "--name", "authsrv", "--server", "192.0.2.10", "--build-on-host"})
+	if sb.code != 0 {
+		t.Fatalf("exit %d\n%s", sb.code, sb.err.String())
 	}
-	if n := len(sb.runner.Execs()); n != 0 {
-		t.Errorf("ran %d commands", n)
+	if got := sb.read("state/linux-hosts"); !strings.HasPrefix(got, "authsrv|local||tacctl|192.0.2.10|") {
+		t.Errorf("registry: %q", got)
+	}
+	if st := sb.store(); !strings.Contains(st, "tacctl:\n    prefixes: [127.0.0.1/32, 192.0.2.10/32]") || strings.Contains(st, "\n  srv:") {
+		t.Errorf("store:\n%s", st)
+	}
+	if got := sb.read("state/tacctl.yaml"); !strings.Contains(got, "server:\n  addresses:\n  - 192.0.2.10\n") {
+		t.Errorf("tacctl.yaml:\n%s", got)
+	}
+	sb.run("", []string{"user", "show", "bob"})
+	if strings.Contains(plain(sb.out.String()), pwTextStranded) {
+		t.Errorf("bob is stranded:\n%s", plain(sb.out.String()))
 	}
 }

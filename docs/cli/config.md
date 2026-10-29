@@ -32,7 +32,9 @@ config cisco [--scope <name>] [--legacy] [--protocol tacacs|radius] [--name <dev
     syntax (tacacs-server host / aaa group server ... / server <ip>) for devices that use the older
     'tacacs-server host' form. --protocol radius (default: the scope's `auth-method`, else the one
     protocol its `protocols` filter names, else tacacs) renders the RADIUS configuration instead
-    (devices/radius.md)
+    (devices/radius.md). --server is the address the device is told to authenticate against: the
+    recorded server address (server.addresses; `tacctl server addresses`) when not given, else the
+    address detected from the route to the Internet; juniper and wti as for cisco
 
 config cisco source-interface [<scope> [<interface>|none]]
 
@@ -122,7 +124,9 @@ config linux build|script|remove-script|uid|uid-range|engineer-sudo|builds
 config linux script [--scope <name>] [--server <address>] [--method tacplus|radius]
                     [--output <file>]
 
-    Write the install script for hosts in a scope (contains the secret)
+    Write the install script for hosts in a scope (contains the secret). --server is the address
+    the hosts use for this server: the recorded one (server.addresses) when not given, else the
+    source address of the route to the Internet
 
 config linux remove-script [--output <file>]
 

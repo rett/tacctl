@@ -85,7 +85,11 @@ func wtiAAA(radius bool, v map[string]string) []string {
 	add("tacacs secret", v["SECRET"])
 	add("tacacs fallback-timer", "15")
 	add("tacacs fallback-local", fallback)
-	add("tacacs port", "49")
+	port := v["TACACS_PORT"]
+	if port == "" {
+		port = defaultTACACSPort
+	}
+	add("tacacs port", port)
 	// Item 8, Default User Access: its page's level and services.
 	add("tacacs default-access", "on")
 	add("tacacs default-level", "viewonly")

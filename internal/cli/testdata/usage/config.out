@@ -49,7 +49,8 @@ Subcommands:
       --name <device>                  (cisco, juniper, wti) A registered device of the scope: its location, description and sysName fill the SNMP step;
                                        with --staging it is also the device whose move ends the staging (default: the one at the bench address)
       --server <address|name>          (cisco, juniper, wti) The address the devices are told to authenticate against, for devices behind a
-                                       translating firewall (a name must resolve to an IPv4 address); not stored
+                                       translating firewall (a name must resolve to an IPv4 address); not stored; without it the recorded server
+                                       address (tacctl server addresses), else the detected one
       --source <address>               (cisco, juniper, wti) The address tacctl itself reaches the devices from: the first SNMP client (default: the
                                        address of the route to the Internet); not stored
       --snmp-location <text>           (cisco, juniper, wti) The SNMP location for this paste; not stored (a device's own: tacctl device location)

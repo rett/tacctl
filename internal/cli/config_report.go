@@ -379,7 +379,10 @@ func (inv *invocation) collectValidate(r *validateReport) {
 				structure++
 			}
 		}
-		scopeNames = m.ScopeNames()
+		// the count and the names leave out the managed scope
+		shown := m.WithoutScope(inv.managedScope())
+		counts["scopes"] = strconv.Itoa(len(shown.Scopes))
+		scopeNames = shown.ScopeNames()
 	} else {
 		// The model's own complaint, once, then the line that points at it.
 		r.modelErr(merr)

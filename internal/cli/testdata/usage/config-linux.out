@@ -7,7 +7,7 @@ Usage: tacctl config linux <subcommand>
   script [--scope <name>] [--server <address>] [--method tacplus|radius] [--output <file>]
                                           Write the install script for hosts in a scope (contains the secret)
       --scope <name>                      (script) The scope whose users and secret it carries (default: the default scope)
-      --server <address>                  (script) The address hosts use for this server (default: detected)
+      --server <address>                  (script) The server address hosts use (default: recorded, else detected)
       --method tacplus|radius             (script) pam_tacplus, or the host's pam_radius_auth (default: host default-method)
       --output, -o <file>                 Where the script goes (default: tacctl-linux-<scope>.sh, remove-script: tacctl-linux-remove.sh)
   remove-script [--output <file>]         Write the removal script (no secrets; accounts are left in place)

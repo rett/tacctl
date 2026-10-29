@@ -262,7 +262,7 @@ var manEnvExempt = func() map[string]string {
 	}
 	add("relocates a path for the test sandbox (paths.Resolve; tests/README.md), not an operator interface",
 		"TACCTL_ETC", "TACCTL_STATE_DIR", "TACCTL_LOG", "TACCTL_BIN", "TACCTL_CONFIG", "TACCTL_SSHD_DROPIN",
-		"TACCTL_SSHD_ENGINEER_DROPIN", "TACCTL_SSH_DIR", "TACCTL_SHELLS_FILE", "TACCTL_VAR_LIB", "TACCTL_SUDOERS_FILE",
+		"TACCTL_SSHD_ENGINEER_DROPIN", "TACCTL_SSH_DIR", "TACCTL_CLIENT_PAM_DIR", "TACCTL_SHELLS_FILE", "TACCTL_VAR_LIB", "TACCTL_SUDOERS_FILE",
 		"TACCTL_TIER_SUDOERS_FILE", "TACCTL_OVERRIDE_DIR", "TACCTL_SYSTEMD_DIR", "TACCTL_LOGROTATE_DIR",
 		"TACCTL_LINUX_DIR", "TACCTL_LOGIN_DEFS", "TACCTL_PATCH_DIR", "TACCTL_TREE")
 	add("forces the FreeRADIUS layout or one of its paths in the test sandbox (paths.Radius), not an operator interface",
@@ -506,6 +506,9 @@ var manPathExempt = map[string]string{
 	"/etc/tacctl/backups/password-dates":          "a directory inside backups/, which FILES lists",
 	"/opt/tacctl/patches":                         "the tacquito patches inside the checkout, which FILES lists as /opt/tacctl/",
 	"<raddb>/tacctl-radius-dictionary":            "the directory of the dictionary file, which FILES lists",
+
+	// the PAM directory of the client script (TACCTL_CLIENT_PAM_DIR)
+	"/etc/pam.d": "PAM's own directory; the client script writes tacctl-auth, tacctl-account and tacctl-session in it, which the host entries describe",
 }
 
 // pathValues are the paths internal/paths resolves with no override, the

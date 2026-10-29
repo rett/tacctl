@@ -146,15 +146,12 @@ func (m *Module) SecretConstraints() backend.Constraints {
 // here.
 func (m *Module) DeviceVars(_ context.Context, _, scope string) (map[string]string, error) {
 	vars := map[string]string{}
+	var ls []backend.Listener
 	for _, l := range m.effectiveListeners() {
-		port := l.Address[strings.LastIndexByte(l.Address, ':')+1:]
-		switch l.Name {
-		case "auth":
-			vars["AUTH_PORT"] = port
-		case "acct":
-			vars["ACCT_PORT"] = port
-		}
+		ls = append(ls, backend.Listener{Name: l.Name, Network: l.Network, Address: l.Address})
 	}
+	vars["AUTH_PORT"] = strconv.Itoa(backend.ServerPort(ls, backend.RADIUS, backend.RoleAuth))
+	vars["ACCT_PORT"] = strconv.Itoa(backend.ServerPort(ls, backend.RADIUS, backend.RoleAcct))
 	if scope != "" {
 		if secret, ok := m.scopeSecret(scope); ok {
 			vars["SECRET"] = secret

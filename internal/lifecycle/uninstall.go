@@ -32,7 +32,7 @@ import (
 // Go, tacquito's source and the Go build cache stay.
 func Uninstall(ctx context.Context, h *Host, args []string) error {
 	yes := false
-	if err := parseLifecycleArgs(h, args, nil, &yes, uninstallUsage); err != nil {
+	if err := parseLifecycleArgs(h, args, nil, nil, &yes, uninstallUsage); err != nil {
 		return err
 	}
 	out, p := h.Out, h.Paths

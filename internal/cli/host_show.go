@@ -94,6 +94,9 @@ type hostConnJSON struct {
 type hostScopeJSON struct {
 	Registered string `json:"registered"`
 	Exists     bool   `json:"exists"`
+	// managed is this server in the scope tacctl manages (managed_scope.go):
+	// no scope of the operator's is named, in the view or in the JSON.
+	managed bool
 	// Answering is the scope that answers Address (the address the host's
 	// logins come from), via Prefix; "" when none does or it is unknown.
 	Address   string            `json:"address"`
@@ -251,8 +254,11 @@ func (inv *invocation) hostView(e hosts.Entry) (*hostShowJSON, error) {
 
 	// Scope.
 	s := hostScopeJSON{Registered: e.Scope, Exists: m.Exists("scopes", e.Scope), Staging: []hostStagingJSON{}}
+	if inv.entryManaged(e) {
+		s.managed, s.Registered, s.Exists = true, "", false
+	}
 	s.Address = inv.hostAddress(e)
-	if s.Address != "" {
+	if s.Address != "" && !s.managed {
 		if info, found := m.LookupAddr(s.Address); found {
 			s.Answering, s.Prefix = info.Scope, info.Prefix
 		}
@@ -315,7 +321,7 @@ func (inv *invocation) hostAccounts(e hosts.Entry, rng hosts.Range) (hostAccount
 		}
 	}
 	uids := hosts.UIDs{Path: inv.app.Paths.LinuxUIDs, Range: rng}
-	rows, inactive := inv.linuxAccounts(m, e.Scope, local)
+	rows, inactive := inv.linuxAccounts(m, e.Scope, e.Server, local)
 	for _, r := range rows {
 		name, lvl, _ := strings.Cut(r, "|")
 		if name == "" || name == "root" {
@@ -408,32 +414,34 @@ func (inv *invocation) hostShowText(v *hostShowJSON, all bool) {
 	row("Method", c.Method+" ("+hosts.ModuleOf(c.Method)+")")
 	end()
 
-	// Scope.
-	s := v.Scope
-	section("Scope")
-	reg := s.Registered
-	if !s.Exists {
-		reg += "  (no such scope)"
+	// Scope (none for this server in the scope tacctl manages: its own login
+	// is no scope of the operator's).
+	if s := v.Scope; !s.managed {
+		section("Scope")
+		reg := s.Registered
+		if !s.Exists {
+			reg += "  (no such scope)"
+		}
+		row("Registered", reg)
+		switch {
+		case s.Address == "":
+			row("Answering", "unknown: no address is recorded or resolves for the host")
+		case s.Answering == "":
+			row("Answering", "no scope covers "+s.Address)
+		default:
+			row("Answering", s.Answering+" (prefix "+s.Prefix+") for "+s.Address)
+		}
+		if s.Drift != "" {
+			inv.app.Out.WarnE(s.Drift)
+		}
+		if len(s.Staging) == 0 {
+			row("Staging", "none")
+		}
+		for i, st := range s.Staging {
+			row(map[bool]string{true: "Staging", false: ""}[i == 0], st.CIDR+" in scope '"+st.Scope+"' since "+st.Since+" (tacctl scope staging)")
+		}
+		end()
 	}
-	row("Registered", reg)
-	switch {
-	case s.Address == "":
-		row("Answering", "unknown: no address is recorded or resolves for the host")
-	case s.Answering == "":
-		row("Answering", "no scope covers "+s.Address)
-	default:
-		row("Answering", s.Answering+" (prefix "+s.Prefix+") for "+s.Address)
-	}
-	if s.Drift != "" {
-		inv.app.Out.WarnE(s.Drift)
-	}
-	if len(s.Staging) == 0 {
-		row("Staging", "none")
-	}
-	for i, st := range s.Staging {
-		row(map[bool]string{true: "Staging", false: ""}[i == 0], st.CIDR+" in scope '"+st.Scope+"' since "+st.Since+" (tacctl scope staging)")
-	}
-	end()
 
 	// Address.
 	section("Address")

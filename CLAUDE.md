@@ -12,6 +12,8 @@ Start with `docs/development/README.md` (working rules, examples), then
 - Go tests: `LANG=C.UTF-8 go test ./internal/...`
   Two tests need the 0.2.2 tag (the rollback build, the 0.2.2 schema); without it they skip and say so, so CI must fetch the tags.
 - Gate run of the Go tests: `make gate-go` (`tests/tools/gate-go.sh`). Start it with Bash `run_in_background`, never with a trailing `&`, never wait for it with `pgrep -f`; only its final `GATE-GO PASS` line counts as a pass. `GATE_TMPFS=1 make gate-go` runs the tests' sandboxes on `/dev/shm`, about three times faster.
+- CI-equivalent run of the Go tests: `make gate-ci` (`tests/tools/gate-ci.sh`).
+  `make gate-go` runs neither the race detector nor `-tags testknobs`; CI runs both (the packages but `internal/cli` with `-race`, the two `internal/cli` shards), so run this before a pull request or a release PR. Same rules as `gate-go` (`run_in_background`, no `&`, no `pgrep -f`, `GATE_TMPFS=1`); only its final `GATE-CI PASS` line counts, a `GATE-CI FAIL` line names the failing tests, and it takes several times as long as `gate-go`.
 - Lint: `make lint GOLANGCI_LINT=<path to golangci-lint>` (includes `tests/tools/no-private.sh`)
 - Bats: `make build`, then as user `tester`: `tests/bats/bats-core/bin/bats tests/integration/<file>.bats`
 - Diff corpus: `tests/diff/run.sh --all --against <previous release tag>`

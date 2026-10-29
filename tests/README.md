@@ -51,7 +51,23 @@ that ends with a single `GATE-GO PASS|FAIL` line, a FAIL for a run that was
 killed or lost a package: start it with a tool that notices the process
 ending (an agent: Bash `run_in_background`), never with a trailing `&` and
 never wait for it with `pgrep -f`; `GATE_TMPFS=1 make gate-go` keeps the tests' sandboxes on `/dev/shm` (the fsync calls cost nothing there: the run takes about a third of the time; the log and `GOCACHE` stay on disk); the bats suite, the diff corpus and the container
-matrix stay on the maintainer's machine. The temporary directory is
+matrix stay on the maintainer's machine.
+`make gate-go` runs neither the race detector nor the test knobs, which CI
+does (a data race, or a test that exists only with `-tags testknobs`, passes
+it and fails the pull request): `make gate-ci` (`tests/tools/gate-ci.sh`,
+which `tests/integration/gate_ci.bats` pins) runs what the workflow runs,
+as one tracked run. It checks the shards first (`go-test-shard.sh --check
+2`), then, for each tag set, every package but `internal/cli` with `-race`
+and the two shards of `internal/cli` (the run without tags with `-race`, the
+one with the test knobs without it, as the workflow has them; the script
+stops with status 2 when the workflow's shard or tag matrix changes). Every
+job runs, and the run ends with a single `GATE-CI PASS rc=0 jobs=6/6 ...`
+line, or `GATE-CI FAIL ...` with `failed=<job>:<test>,...` naming each
+failing test (a package when no test failed) and `races=` counting the data
+races; it needs cgo, takes several times as long as `gate-go`, and is
+started, read and sped up (`GATE_TMPFS=1`) like it.
+
+The temporary directory is
 `Paths.TempDir`, the `TMPDIR` of the environment a test gives the
 invocation, and the code never reads the process's
 (`tests/tools/no-os-tempdir.sh`, part of `make lint`).
@@ -97,7 +113,7 @@ tests/
 ├── integration/         # the command line against real files in the test's tmpdir
 ├── e2e/                 # whole command flows with stubbed system commands
 ├── diff/                # the differential runner, its corpora, stubs and state roots
-├── tools/               # no-private.sh and no-os-tempdir.sh (lint), gate-go.sh (the Go tests as one run with a verdict line), pyyaml-corpus.py, usage-goldens.sh, permcheck.py and permcheck-baseline.txt (the lab permission check, below), pre-push, release-preflight.sh, release-stamps.sh and release-reproduce.sh (the release checks, docs/releasing.md)
+├── tools/               # no-private.sh and no-os-tempdir.sh (lint), gate-go.sh and gate-ci.sh (the Go tests as one run with a verdict line, the second as CI runs them), pyyaml-corpus.py, usage-goldens.sh, permcheck.py and permcheck-baseline.txt (the lab permission check, below), pre-push, release-preflight.sh, release-stamps.sh and release-reproduce.sh (the release checks, docs/releasing.md)
 ├── containers/radius/   # real FreeRADIUS in podman
 ├── containers/hosts/    # 'host enroll|sync|unenroll' for real, server and client containers
 ├── containers/crossover/ # the upgrade from the bash release to the Go binary, and back
@@ -135,6 +151,7 @@ argv, so nothing leaves the machine and no secret may appear in one.
 | `integration/host_provisioner.bats` | `tacctl host provisioner <name> rotate`: an `ssh` stub keeps each script copied to the host (numbered, in order), answers the proof with the id and the host keys it is told to (`PROOF_UID`, `PROOF_KEYS`, `PROOF_FAILS`) and fails a create or remove run on request (`FAIL_CREATE`, `FAIL_REMOVE`); keys are real ones made by `ssh-keygen` in the test directory. The order of the steps (create over the login in use, proof in a new connection with its options, registry, audit line, then the removal over the new account), a failed proof that removes the account and leaves the registry, one that never deletes an adopted account (only the line it added), a second run while the host's lock is held, the proof's ssh with the pinned-keys known_hosts options, a failed creation or removal, the refusals, `--dry-run`, and with `script` as the terminal that a typed `--password` reaches no call, script, state file or log |
 | `integration/scope_breakglass.bats` | `tacctl scope breakglass` (D55): add/list/remove and the default role, `tacctl.yaml` holding names and roles only (written only when set, byte-identical after the last removal), the refused names (shape, reserved, the Junos `remote`, a tacctl user of the scope, a template-user or class name, a name differing only in case), the user verbs refusing a break-glass name (`user add`, `user scope add\|replace`, `user rename`), per-scope isolation, rename and remove, the `scope show` line, the one-line `config validate` warning, and the placeholder (`secret 9 <TYPE9-HASH>`, never `algorithm-type scrypt secret`) and `Unfilled` line in `config cisco\|juniper\|wti` |
 | `integration/breakglass.bats` | `tacctl breakglass hold\|release\|list` (D121-D126), `hold` under `script` as the terminal: `--reason` and the terminal required, the name typed back (a wrong one changes nothing), one restart at the hold and one at the release, the carved `tacquito.yaml` (the /16 gone, a comment naming the device, never the reason, `store.yaml` unchanged), the original bytes after the release, `list` and `--json`, the rows of `device show\|list`, `status` and `scope lookup`, `device address\|remove` refused while held and `rename` following, the refusals (unknown device, loopback, no scope covers it), `device config pull` refused and `plan` marking the cover page, and `rollback` refused in the dry run and with `--apply` while a hold stands |
+| `integration/server.bats` | `tacctl server addresses` (0.2.21) with the real binary: the usage, `add` setting the one address and saying what is left to do, the refusals of the one-address limit (`add` while one is set, `remove` of the only one, a list of more than one, a host name, loopback, unspecified and link-local addresses), an entry that is at the address already (the move of the login runs the client script here, so the Go tests have it), the walkthroughs and `config linux script` taking the recorded address with `--server` winning, the audit lines, and no tier row (the tiers sudoers text is as 0.2.20 wrote it) |
 | `integration/group_reset.bats` | `tacctl group reset` (D51): the diff of each built-in (default and `--preset`) and of `engineer`, `already canonical` without a prompt, `--dry-run` writing nothing (the store and `tacctl.yaml` byte-identical), the refusals (a custom group, no terminal without `--yes`), `--only`, `--yes`, the prompt answered `y` and `n` with `script` as the terminal, the audit line (`logger` stub), the sibling catchall of the lockout guard, and that a lower tier, the engineer included, is refused by the gate; the Go tests (`internal/cli/group_reset_test.go`, `internal/policy/canonical_test.go`) hold the golden diffs in `internal/cli/testdata/reset/` (`go test ./internal/cli -run TestGroupResetGoldenDiffs -update-reset` rewrites them) |
 | `integration/group_privilege_reset.bats` | `tacctl group privilege reset <group> [--dry-run] [--yes]` (WP10.5h): `already canonical` without a prompt, `--dry-run` writing nothing (the store and `tacctl.yaml` byte-identical, no audit line), the diff with the `no privilege exec level N ...` lines for the entries removed, the refusal without a terminal and without `--yes`, `--yes` with the audit line and a second run changing nothing, the prompt answered `y` and `n` with `script` as the terminal, the empty list an old `clear` stored shown as a change to the shipped default, a custom group's override removed (nothing stored empty), the same diff and result as `group reset --only privileges`, and the removed `clear` answering as an unknown subcommand; the Go tests (`internal/cli/group_section_reset_test.go`) hold the golden diffs in `internal/cli/testdata/reset/` (`privilege_*.golden`) |
 | `integration/group_commands_reset.bats` | `tacctl group commands reset <group> [--dry-run] [--yes]` (WP10.5h): the same cases for the command rules (the diff of rules and the default action, a custom group's override removed with the warning for a group left without rules, the sibling catchall of the lockout guard as in `group reset`, the same diff and result as `group reset --only commands`, the removed `clear`); the Go tests hold `commands_*.golden` and that no tier below the superuser, the engineer included, may run either reset |
@@ -186,7 +203,10 @@ release download URL) is read by the shim only, for these tests;
 `sshd_config` beside its directory; the engineer tier's drop-in,
 `00-tacctl-engineer.conf`, is written beside it; the earlier `tacctl-engineer.conf` is
 removed), **`TACCTL_SSH_DIR`**
-(`/etc/ssh`, where this machine's `ssh_host_*_key.pub` are read) and
+(`/etc/ssh`, where this machine's `ssh_host_*_key.pub` are read),
+**`TACCTL_CLIENT_PAM_DIR`** (`/etc/pam.d`, where the client script writes
+tacctl's PAM files, which `install` and `upgrade` look for to tell whether this
+machine's own login is set up; the variable the script reads) and
 **`TACCTL_SHELLS_FILE`** (`/etc/shells`) are pointed into the test's tmpdir by `tmpenv.bash`, the Go
 sandboxes and the lifecycle tests alike; `sshd` and `systemctl` are always
 stubs. The console's own path (`/usr/local/bin/tacctl-console`) moves only
@@ -920,6 +940,15 @@ tests/diff/run.sh --self-test                # the runner against itself and aga
   `docs/plans/go-rewrite.md` 3.9, or a numbered item of the CHANGELOG's 0.2.1
   list) is reported as `known`, not a failure; the
   runner says so when the marked line no longer differs.
+- **A marker that no longer differs** is a notice (`ok ... marked @known, but
+  no difference: drop the marker`), not a failure: the run still exits 0. The
+  markers are a record, never pruned, of the intended changes of every
+  release since the parity baseline, and each names the item that made the
+  change. Against `--against 0.1.18` every marker still differs; against a
+  later tag, the markers of the releases before it report the notice (against
+  0.2.19, the markers written for 0.2.1 to 0.2.18: most of the corpus). So
+  do not drop a marker because a run against the previous release reports
+  it; drop one only when no tag the corpus is run with differs from it.
 
 ## Characterisation tests: `tests/integration/characterisation.bats`
 

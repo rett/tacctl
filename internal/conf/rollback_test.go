@@ -32,9 +32,9 @@ func TestRollbackTablesMatchTheSchema(t *testing.T) {
 		}
 	}
 	for _, f := range schema {
-		in022, in023, in024, in025, in027, in029, in0210, in0217, in0219, in0220 := slices.Contains(Known022, f), slices.Contains(Added023, f), slices.Contains(Added024, f), slices.Contains(Added025, f), slices.Contains(Added027, f), slices.Contains(Added029, f), slices.Contains(Added0210, f), slices.Contains(Added0217, f), slices.Contains(Added0219, f), slices.Contains(Added0220, f)
+		in022, in023, in024, in025, in027, in029, in0210, in0217, in0219, in0220, in0221 := slices.Contains(Known022, f), slices.Contains(Added023, f), slices.Contains(Added024, f), slices.Contains(Added025, f), slices.Contains(Added027, f), slices.Contains(Added029, f), slices.Contains(Added0210, f), slices.Contains(Added0217, f), slices.Contains(Added0219, f), slices.Contains(Added0220, f), slices.Contains(Added0221, f)
 		n := 0
-		for _, in := range []bool{in022, in023, in024, in025, in027, in029, in0210, in0217, in0219, in0220} {
+		for _, in := range []bool{in022, in023, in024, in025, in027, in029, in0210, in0217, in0219, in0220, in0221} {
 			if in {
 				n++
 			}
@@ -43,13 +43,13 @@ func TestRollbackTablesMatchTheSchema(t *testing.T) {
 		case n > 1:
 			t.Errorf("%+v is in more than one of Known022, Added023, Added024, Added025, Added027, Added029, Added0210, Added0217, Added0219 and Added0220", f)
 		case n == 0:
-			t.Errorf("schema.go has the key family %+v, which rollback.go lists in none of Known022 (0.2.2 has it), Added023 (0.2.3 added it), Added024 (0.2.4 added it), Added025 (0.2.5 added it), Added027 (0.2.7 added it), Added029 (0.2.9 added it) and Added0210 (0.2.10 added it), Added0217 (0.2.17 added it), Added0219 (0.2.19 added it) and Added0220 (0.2.20 added it): decide, so a rollback knows what to remove", f)
+			t.Errorf("schema.go has the key family %+v, which rollback.go lists in none of Known022 (0.2.2 has it), Added023 (0.2.3 added it), Added024 (0.2.4 added it), Added025 (0.2.5 added it), Added027 (0.2.7 added it), Added029 (0.2.9 added it) and Added0210 (0.2.10 added it), Added0217 (0.2.17 added it), Added0219 (0.2.19 added it), Added0220 (0.2.20 added it) and Added0221 (0.2.21 added it): decide, so a rollback knows what to remove", f)
 		}
 	}
 	for _, tbl := range []struct {
 		name string
 		list []Family
-	}{{"Known022", Known022}, {"Added023", Added023}, {"Added024", Added024}, {"Added025", Added025}, {"Added027", Added027}, {"Added029", Added029}, {"Added0210", Added0210}, {"Added0217", Added0217}, {"Added0219", Added0219}, {"Added0220", Added0220}} {
+	}{{"Known022", Known022}, {"Added023", Added023}, {"Added024", Added024}, {"Added025", Added025}, {"Added027", Added027}, {"Added029", Added029}, {"Added0210", Added0210}, {"Added0217", Added0217}, {"Added0219", Added0219}, {"Added0220", Added0220}, {"Added0221", Added0221}} {
 		for _, f := range tbl.list {
 			if !slices.Contains(schema, f) {
 				t.Errorf("%s lists %+v, which schema.go no longer has", tbl.name, f)

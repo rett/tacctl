@@ -34,6 +34,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -189,10 +190,12 @@ func (b *Backend) Artifacts() []string {
 func (b *Backend) SecretConstraints() backend.Constraints { return backend.Constraints{} }
 
 // DeviceVars is backend_tacacs_device_vars: the TACACS+ device templates
-// take everything from the model and tacctl.yaml; nothing comes from the
-// daemon.
+// take everything from the model and tacctl.yaml but the port the clients
+// connect to, TACACS_PORT: the default listener's, as 'tacctl config listen'
+// has it (backend.ServerPort).
 func (b *Backend) DeviceVars(context.Context, string, string) (map[string]string, error) {
-	return map[string]string{}, nil
+	port := backend.ServerPort(b.listenerLines(), backend.TACACS, backend.RoleDefault)
+	return map[string]string{"TACACS_PORT": strconv.Itoa(port)}, nil
 }
 
 var loginStamp = regexp.MustCompile(`[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}`)

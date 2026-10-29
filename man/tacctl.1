@@ -47,7 +47,7 @@ are deliberate exceptions: they run as the invoking user.
 .SH COMMANDS
 .SS System lifecycle
 .TP
-.BI "install [--branch " name "] [-y|--yes]"
+.BI "install [--branch " name "] [--server " ip "] [-y|--yes]"
 Install tacctl and the TACACS+ backend. Builds the tacquito binary with the
 Go toolchain (installed by
 .I /opt/tacctl/bin/tacctl.sh
@@ -73,6 +73,32 @@ is not installed: see
 .BR "backend enable" .
 The plan is shown and confirmed
 .RB ( [y/N] ).
+.IP
+Then it sets up this machine's own login, the managed server login, with the
+machinery of
+.BR "host enroll \-\-local" :
+the scope
+.BR tacctl ,
+this server's registry entry, the PAM client and sshd's drop-in, and the
+accounts, so that every user can log in to this server and its console. It
+asks once
+.RB ( "Set up this machine's own login now, with <address> as the server address? [y/N]" ;
+.B \-y
+answers it) and prints nothing more when the login is there already. The
+server address is
+.BR \-\-server ,
+else the recorded one
+.RB ( server.addresses ),
+else the address of the interface with the default route, said in one line.
+Everything
+.B "host enroll \-\-local"
+does to stay safe is done here: sshd is checked with
+.B "sshd \-t"
+before it is reloaded and the change is undone when it refuses, root and the
+local administrators are not touched, the PAM files are backed up, and a
+snapshot is taken first. A step that cannot be done safely does not stop the
+install: one line says what was skipped and the command to run
+.RB ( "tacctl host enroll \-\-local" ).
 .IP
 Four built-in users are seeded:
 .B engineer
@@ -114,6 +140,9 @@ Options:
 .TP
 \fB\-\-branch\fR \fI<name>\fR
 The tacctl repo branch to install or upgrade from (default: the current one).
+.TP
+\fB\-\-server\fR \fI<ip>\fR
+The address devices and hosts reach this server at.
 .TP
 \fB\-y\fR, \fB\-\-yes\fR
 Answer yes to the confirmations.
@@ -193,6 +222,21 @@ form that keeps ssh only. It is recorded in
 .B "config validate"
 say nothing of it.
 .IP
+The upgrade also sets up this machine's own login (see
+.BR install ):
+a server registered by
+.B "host enroll \-\-local"
+is repaired when it drifted (a managed scope whose prefixes are not the
+server's login addresses:
+.BR "Repaired the managed server login." ;
+its PAM files gone, as on a rebuilt server: the enrolment runs again) and is
+otherwise left alone, with nothing printed. A server with no entry is set up
+only when the operator answers the question on a terminal
+.RB ( [y/N] );
+without a terminal one line says that it was not set up and names
+.BR "tacctl host enroll \-\-local" ,
+which stays the command to rebuild, move or repair a server.
+.IP
 The upgrade never changes an override, except an operator or readonly list
 that is exactly what 0.2.3 shipped, which it drops (on a RADIUS-only install
 too). See
@@ -213,8 +257,9 @@ The tacctl repo branch to install or upgrade from (default: the current one).
 Prepare tacctl's state for the release before this one; run on the newer
 release, before the older one is installed. A dry run by default: it lists
 every step and every warning and changes nothing. The versions it takes are
-.B 0.2.19
+.B 0.2.20
 (the release before this one),
+.BR 0.2.19 ,
 .BR 0.2.18 ,
 .BR 0.2.17 ,
 .BR 0.2.16 ,
@@ -228,8 +273,8 @@ and older are refused, with the way there (one release at a time: this
 rollback,
 .BR "tacctl upgrade \-\-branch 0.2.9" ,
 then the rollback of that release), and so is any other word (0.2.10 to
-0.2.15 included: the refusal names the six targets). Every target but 0.2.19
-is refused while an emergency lockdown locks a group (the refusal lists each
+0.2.15 included: the refusal names the targets). Every target but 0.2.20 and
+0.2.19 is refused while an emergency lockdown locks a group (the refusal lists each
 one and
 .B "emergency lockdown <scope> disable"
 lifts it; a release before 0.2.19 would render the locked users back into the
@@ -243,8 +288,8 @@ or
 .B "device config apply <name> \-\-check"
 or
 .B "device config forget <name>"
-settles it) and while the store has a user whose name has a period (no
-target reads such a name: the refusal lists each, with
+settles it), and every target but 0.2.20 while the store has a user whose name
+has a period (no other target reads such a name: the refusal lists each, with
 .B "user rename <name> <new\-name>"
 as the way out, and changes nothing; an override under such a name in the
 ignored
@@ -277,6 +322,30 @@ stay, for the releases that have them) are removed and a
 .B settings.list_max
 of \-1 (never ask) is written as 1000, with every other setting kept and a
 snapshot first.
+.IP
+Every target keeps every user's login to this server: an older release answers
+it only for the users that have the server's scope
+.RB ( tacctl )
+in their own scopes, so the plan adds it to the scopes of each user who logs in
+to the server and lacks it (it counts and names them; a warning, so
+.B \-\-apply
+needs
+.BR \-\-yes ),
+after a snapshot. Every target removes
+.B server.addresses
+from
+.IR tacctl.yaml ,
+which no older release knows; the host registry keeps the address in this
+server's entry.
+.IP
+.B "rollback 0.2.20"
+removes
+.B server.addresses
+and adds the scope to the users (above); 0.2.20 reads every other file this
+release writes, so nothing else is converted, and
+.B \-\-hosts
+is accepted and does nothing. The command ends with the next step,
+.BR "tacctl upgrade \-\-branch 0.2.20" .
 .IP
 .B "rollback 0.2.19"
 .B \-\-apply
@@ -1100,7 +1169,7 @@ Do not require the user to change the password at the next login to this server.
 .TP
 .BI "user disable " name
 Disable a user while preserving the password hash for later re-enable. On
-the tacctl server the account is synced at once, as for a lowered tier (see
+this server the account is synced at once, as for a lowered tier (see
 .BR "group edit" ).
 .\" BEGIN GENERATED: command user disable
 .RS
@@ -1150,7 +1219,12 @@ the lock for 30 seconds the rename stops at the pre\-change snapshot, which
 copies the ledger under it, with nothing changed. A user that has a UID in the
 ledger, or an account on an enrolled host, is not renamed to a name with a
 period, which is no Linux account name: the next sync would remove the account.
-The command says so and changes nothing.
+The command says so, changes nothing and names the two ways forward: a name
+without a period, or a new user (\fBuser remove\fR, \fBhost sync \-\-all\fR,
+which removes the accounts, then \fBuser add\fR under the new name with the
+group and scopes it prints), which gets a new password and no UID (the old
+number stays reserved). A user whose name has a period has no Linux account on
+any host, this server included, so no console login.
 .\" BEGIN GENERATED: command user rename
 .RS
 .PP
@@ -1160,7 +1234,7 @@ Requires: \fBsuperuser\fR.
 .TP
 .BI "user move " "name group"
 Move a user to a different group without changing the password. A move
-that lowers the user's tier syncs the accounts of this tacctl server at once
+that lowers the user's tier syncs the accounts of this server at once
 (see
 .BR "group edit" ).
 .\" BEGIN GENERATED: command user move
@@ -1186,7 +1260,7 @@ Requires: \fBsuperuser\fR.
 Require (\fBon\fR, the default) or lift (\fBoff\fR) a password change, for one
 user or for every user with
 .BR \-\-all .
-A user who must change the password can log in to this tacctl server only:
+A user who must change the password can log in to this server only:
 every device refuses the user, as it refuses an unknown user, and every other
 enrolled Linux host has the account expired from its next
 .BR "host sync" ,
@@ -1202,19 +1276,15 @@ password can be changed at the server and nowhere else is the user let in; a
 change of the requirement therefore restarts the backend whose file changed,
 and none when the user has no other scope. This server's logins come from
 127.0.0.1, and from the address of
-.B \-\-server
-when that is another one, which the enrolled scope must answer too. A scope that holds the server together with
-devices cannot be cut apart: those devices still authenticate the user, and
-the commands say so, naming the prefixes (the ones that flag, a prefix added to
-the server's scope later, and
+.B server.addresses
+(set by
 .BR "host enroll \-\-local" ),
-as do
-.BR "user list" ,
-.B "user show"
-and
-.BR status ;
-give the server a scope of its own. A user who must change the password and has
-no login on the server (not in its scope, the scope does not answer the
+and the server's own login answers both. An install from before 0.2.21 whose
+server is still registered in a scope it shares with devices (until
+.BR "host enroll \-\-local" )
+keeps those devices accepting the user, and the commands that flag say so,
+naming the prefixes. A user who must change the password and has
+no login on the server (the server's own login does not answer the
 server's addresses, the backend of the server's own logins is not enabled, the
 server not enrolled) could change nothing, so a change that would leave one is
 refused with nothing changed, with
@@ -1237,14 +1307,18 @@ that newly holds a member with no login on the server, and
 .B "backend disable"
 of the backend of the server's own logins after the pre\-change snapshot, put
 back before anything is rendered; and
-.BR "host forget" ,
-.B "host unenroll"
+.B "host forget"
 and
+.B "host unenroll"
+of this server, and
 .B "host enroll \-\-local"
-with another scope or method, while any user is flagged (the backends' files are
-rendered from the server's registration), or with a
-.B \-\-server
-address its scope does not answer.
+with another method than the registered one, while any user is flagged (the
+backends' files are rendered from the server's registration).
+.B "host enroll \-\-local"
+with the registered method is not refused, also for a server registered in a
+scope it shares with devices: the managed scope keeps a flagged user a login on
+the server and the devices of the old scope stop accepting the password; it is
+refused only when it would leave a flagged user with no login on the server.
 On every enrolled Linux host but this server
 .RB ( "host enroll \-\-local" ),
 the next
@@ -1491,7 +1565,7 @@ or
 change that takes this server's scope away
 .RB ( remove ", " replace ", " "remove \-\-all" ),
 .BR "group preset roles --force" ", and " "group reset" )
-that lowers the tier of a user who has an account on the tacctl server
+that lowers the tier of a user who has an account on this server
 syncs those accounts at once, as
 .B "host sync"
 of the host enrolled with
@@ -2802,7 +2876,12 @@ as by
 .B "host sync"
 (including the question about removed users' homes, and
 .BR \-\-remove\-home ).
-The server address defaults to the source address of the route to the host.
+The server address defaults to the one a host enrolled already has, else the
+recorded server address
+.RB ( "tacctl server addresses" ),
+else the source address of the route to the host;
+.B \-\-server
+wins for that run.
 .IP
 The method is
 .B tacplus
@@ -2848,12 +2927,68 @@ and
 warn, with the enroll that moves it, when another scope answers the
 address recorded for a host. The scope must be the one that answers the host's
 requests (the first prefix that holds the address they come from): for
+another host, a scope that does not cover the address its name resolves to is
+a warning (NAT may change it).
+.IP
 .B \-\-local
-that address is 127.0.0.1, and a scope that does not cover it is refused
-before anything changes; for another host, a scope that does not cover the
-address its name resolves to is a warning (NAT may change it).
+sets up this machine's own login: every user can log in to it and to its
+console unless disabled or of tier none, whatever their scopes, and it takes
+no
+.BR \-\-scope .
+.B \-\-server
+is the address devices and hosts reach this server at (an address behind NAT or
+a VPN that is not on this machine is taken; a host name,
+.BR 0.0.0.0 ,
+.BR :: ,
+a loopback, link\-local, multicast or broadcast address, or an IPv4\-mapped IPv6
+address is not); without it the recorded address is
+used, else the address of the interface with the default route, said in one
+line; this machine's own PAM client always connects to
+.BR 127.0.0.1 ,
+the address is what devices and other hosts use. It is recorded as
+.B server.addresses
+in
+.I tacctl.yaml
+(a list that holds one address for now), and
+.B "host enroll \-\-local \-\-server"
+.I address
+changes it. An install from before whose server is registered in a scope that
+serves the server alone is taken over by the next
 .B "host sync"
-of this machine warns when its scope no longer covers 127.0.0.1.
+of the server or
+.BR "host enroll \-\-local" ,
+its secret kept (a default\-scope marker on it is cleared); one that also serves hosts or devices is left to them, and
+.B "host enroll \-\-local"
+sets the server's login up apart from it; an enrolment that fails or is
+interrupted puts the prefixes back and takes the new scope out again. A
+.B "host sync"
+of the server repairs its login when it was changed by hand
+.RB ( "Repaired the managed server login." ).
+.B "host move"
+of this server is not a move: its login is set up by
+.BR "host enroll \-\-local" .
+.B "host forget"
+and
+.B "host unenroll"
+of the server take the scope with the registration, its
+.I tacctl.yaml
+keys too, as
+.B "scope remove"
+does. The scope name
+.B tacctl
+is reserved: no command creates, edits, looks up or lists it (the JSON of
+.B "host list"
+and
+.B "host show"
+has no scope for the server), and the refusal of a prefix its login holds names
+no command. A scope of that name from
+an earlier release that answers an address other than this server's own login
+addresses is the operator's: it is listed and edited like any other, and
+.BR "host enroll \-\-local" ,
+the sync of the server and
+.B "config validate"
+stop with one line until it is renamed
+.RB ( "scope rename tacctl" " " "new\-name" ).
 .IP
 ssh runs as the user who invoked
 .BR sudo (8),
@@ -3014,10 +3149,10 @@ Options:
 Enroll this machine itself instead of a remote host (its tacctl users get the login console).
 .TP
 \fB\-\-scope\fR \fI<name>\fR
-The host's scope (default: its registered one, else the scope covering its address).
+The host's scope (default: its registered one, else the scope covering its address; not with \-\-local).
 .TP
 \fB\-\-server\fR \fI<address>\fR
-Address the host should use for this server (default: detected).
+Address the host uses for this server (default: recorded, else detected).
 .TP
 \fB\-\-name\fR \fI<name>\fR
 Registry name (default: short hostname, lowercased; lower case, not a tacctl word).
@@ -3114,13 +3249,13 @@ tacctl's groups have fixed GIDs, the first numbers of the range:
 .B tac\-users
 (+0, every host: every managed account's primary group and the PAM gate),
 .B tac\-console
-(+1, the tacctl server only: sshd's console drop-in),
+(+1, this server only: sshd's console drop-in),
 .B tac\-superuser
 (+2, every host: sudo),
 .B tac\-operator
 (+3) and
 .B tac\-readonly
-(+4) (the tacctl server only: its tiers sudoers). Accounts have no group
+(+4) (this server only: its tiers sudoers). Accounts have no group
 of their own and get a 0700 home. A sync also moves primary groups to
 .BR tac\-users ,
 removes own groups when empty, moves groups to their fixed GIDs
@@ -3828,9 +3963,20 @@ a local account named like a user that it did not create is left alone and
 that user gets no account. It refuses
 to run when no local administrator with a usable password exists outside
 the TACACS+ user list, and puts the PAM files back if any step fails.
-Re-run it with
+The server's port in it is the configured listener's
+.RB ( "config listen" ):
+the TACACS+
+.B default
+listener for tacplus (the
+.B server=<address>:<port>
+of pam_tacplus), the RADIUS
+.B auth
+listener for radius (and
+.B acct
+for the accounting port); 49, 1812 and 1813 by default. Re-run it with
 .B \-\-accounts\-only
-to sync users after changes on the server.
+to sync users after changes on the server (this leaves the PAM files, and so
+the port, as they were).
 .\" BEGIN GENERATED: command config linux script
 .RS
 .PP
@@ -3842,7 +3988,7 @@ Options:
 (script) The scope whose users and secret it carries (default: the default scope).
 .TP
 \fB\-\-server\fR \fI<address>\fR
-(script) The address hosts use for this server (default: detected).
+(script) The server address hosts use (default: recorded, else detected).
 .TP
 \fB\-\-method\fR \fItacplus|radius\fR
 (script) pam_tacplus, or the host's pam_radius_auth (default: host default\-method).
@@ -3956,7 +4102,7 @@ each host gets it at its next sync. A command that gives root a shell (a
 shell, an interpreter, an editor,
 .BR su ", " sudo ", " find ", " env
 and the like) is accepted with a warning: engineers on those hosts are then
-superusers in all but name. The tacctl server itself never gives
+superusers in all but name. This server itself never gives
 engineers more than tacctl's own verbs, and neither does a machine that runs
 tacctl but was not enrolled as the server (its sync writes no
 .B tac\-engineer
@@ -4819,7 +4965,21 @@ Print a ready-to-paste Cisco IOS/IOS-XE configuration with the
 server IP, shared secret, current group-to-privilege mappings, and
 the VTY-ACL built from
 .B config mgmt-acl
-pre-filled. Over TACACS+ it has one
+pre-filled. Over TACACS+ the server's port is the configured listener's
+.RB ( "config listen" ;
+default 49): a
+.B tacacs server
+block of a listener that is not on 49 has a
+.BI "port " n
+line after
+.BR "address ipv4" ,
+and the
+.B \-\-legacy
+host line has
+.BI "port " n
+after
+.BR single\-connection ;
+a listener on 49 adds nothing. It has one
 .B aaa accounting commands
 line per privilege level a group uses and, once any group has command
 rules, the per-level
@@ -5068,7 +5228,7 @@ Options:
 (cisco, juniper, wti) A registered device of the scope: its location, description and sysName fill the SNMP step; with \-\-staging it is also the device whose move ends the staging (default: the one at the bench address).
 .TP
 \fB\-\-server\fR \fI<address|name>\fR
-(cisco, juniper, wti) The address the devices are told to authenticate against, for devices behind a translating firewall (a name must resolve to an IPv4 address); not stored.
+(cisco, juniper, wti) The address the devices are told to authenticate against, for devices behind a translating firewall (a name must resolve to an IPv4 address); not stored; without it the recorded server address (tacctl server addresses), else the detected one.
 .TP
 \fB\-\-source\fR \fI<address>\fR
 (cisco, juniper, wti) The address tacctl itself reaches the devices from: the first SNMP client (default: the address of the route to the Internet); not stored.
@@ -5107,7 +5267,10 @@ removed with the scope, shown by
 .TP
 .BI "config juniper " [ "--scope " name "] [--protocol " tacacs | radius "] [--name " device "] [--server " address|name "] [--source " address "] [--snmp-location " text ]
 Print a ready-to-paste Juniper Junos configuration with template
-users, TACACS+ server setup, verification commands, and a commented
+users, TACACS+ server setup (a listener that is not on 49,
+the configured one, adds
+.BI "set system tacplus-server " "address " "port " n ),
+verification commands, and a commented
 lo0 firewall-filter example built from
 .B config mgmt-acl
 pre-filled. The classes carry permission bits only (a class named
@@ -5147,7 +5310,7 @@ Options:
 (cisco, juniper, wti) A registered device of the scope: its location, description and sysName fill the SNMP step; with \-\-staging it is also the device whose move ends the staging (default: the one at the bench address).
 .TP
 \fB\-\-server\fR \fI<address|name>\fR
-(cisco, juniper, wti) The address the devices are told to authenticate against, for devices behind a translating firewall (a name must resolve to an IPv4 address); not stored.
+(cisco, juniper, wti) The address the devices are told to authenticate against, for devices behind a translating firewall (a name must resolve to an IPv4 address); not stored; without it the recorded server address (tacctl server addresses), else the detected one.
 .TP
 \fB\-\-source\fR \fI<address>\fR
 (cisco, juniper, wti) The address tacctl itself reaches the devices from: the first SNMP client (default: the address of the route to the Internet); not stored.
@@ -5162,7 +5325,7 @@ Print a step-by-step procedure for the serial text interface of a WTI
 console server (DSM/CPM/REM/TSM/RSM, firmware v8.x): the
 .B /N
 Network Parameters menu, the TACACS Parameters item, and the value to
-key in for every field: server IP, Secret Word, port 49, Fallback Local
+key in for every field: server IP, Secret Word, port (the TACACS+ listener's, default 49), Fallback Local
 (from the scope's
 .BR aaa-order ),
 Default User Access
@@ -5178,7 +5341,7 @@ setting
 (item 31 of /N: the Step 8 check and the pull need a second session while one
 is open).
 The IP Tables step renders the unit's whole list for the scope, numbered in
-the unit's order: loopback, established, ssh for the tacctl server and each
+the unit's order: loopback, established, ssh for this server and each
 permitted range of
 .B "scope mgmt-acl"
 (every protocol and port for a plain entry, one rule for each service
@@ -5253,7 +5416,7 @@ Options:
 (cisco, juniper, wti) A registered device of the scope: its location, description and sysName fill the SNMP step; with \-\-staging it is also the device whose move ends the staging (default: the one at the bench address).
 .TP
 \fB\-\-server\fR \fI<address|name>\fR
-(cisco, juniper, wti) The address the devices are told to authenticate against, for devices behind a translating firewall (a name must resolve to an IPv4 address); not stored.
+(cisco, juniper, wti) The address the devices are told to authenticate against, for devices behind a translating firewall (a name must resolve to an IPv4 address); not stored; without it the recorded server address (tacctl server addresses), else the detected one.
 .TP
 \fB\-\-source\fR \fI<address>\fR
 (cisco, juniper, wti) The address tacctl itself reaches the devices from: the first SNMP client (default: the address of the route to the Internet); not stored.
@@ -5413,7 +5576,7 @@ recorded in
 .I tacctl.yaml
 (a line each; the same step as
 .BR upgrade ),
-and when the tacctl server is enrolled a red line says that users whose tier
+and when this server is enrolled a red line says that users whose tier
 fell keep their old groups until
 .BR "host sync" .
 A rendered file whose users section names users it cut out of their scopes (a
@@ -5427,7 +5590,11 @@ fails unless
 is given. A required password change, which no rendered file holds, is carried
 over from the existing store
 .RB ( \-\-replace ),
-as the password dates are: an import never lifts it.
+as the password dates are: an import never lifts it. The scope
+.B tacctl
+of a rendered file (the login of the server it came from, which every user is
+in) is not imported and is taken out of the users' scopes, in one line; a
+server registered in its own keeps it.
 .\" BEGIN GENERATED: command store import
 .RS
 .PP
@@ -5450,7 +5617,7 @@ Overwrite an existing store.
 Restore the pre-store
 .IR tacquito.yaml ,
 remove the store, restart. The install is back in legacy read-only mode.
-When the tacctl server is enrolled a red line says that users whose tier fell
+When this server is enrolled a red line says that users whose tier fell
 keep their old groups until
 .BR "host sync" .
 .\" BEGIN GENERATED: command store rollback
@@ -5636,7 +5803,7 @@ the argument names an old-style
 .I tacquito.yaml.<timestamp>
 file, which goes through
 .B store import \-\-check
-before it is imported. When the tacctl server is enrolled a red line says that
+before it is imported. When this server is enrolled a red line says that
 users whose tier fell keep their old groups until
 .BR "host sync" .
 .PP
@@ -6032,7 +6199,12 @@ is a space.
 .B \-\-password\-cache
 keeps your network password in the memory of this shell for the session (see
 .B "console password\-cache"
-for the policy and the lifetimes): the first device pull asks for it once and
+for the policy and the lifetimes): the first device pull asks for it once (a
+pull stores the password a device accepted;
+.B ssh
+and
+.B "device ssh"
+ask for it themselves the first time, before they connect, and keep it) and
 later pulls, diffs and
 .B ssh
 lines use it. It needs an interactive shell, and for a member of
@@ -6616,9 +6788,16 @@ against another address than the one tacctl reaches it from:
 .B \-\-server
 (unless it is the detected address or
 .BR \-\-source ),
+the recorded server address
+.RB ( server.addresses ,
+the default of
+.BR \-\-server ,
+unless it is the detected address or
+.BR \-\-source ),
 .B \-\-source
 alone (the device is still told the address detected for the server), or a
-RADIUS listener bound to another address. With neither flag, with
+RADIUS listener bound to another address. With neither flag and nothing
+recorded, with
 .B \-\-server
 equal to the detected address or to
 .BR \-\-source ,
@@ -6823,7 +7002,7 @@ form, kept in the order given, at most 32, never
 (the final refusal of everything else is always rendered and never stored)
 and no IPv6. The tacctl server's own address is always the first client and is
 not listed. An overlap of two ranges is a note, not an error. A scope without
-ranges allows the tacctl server only.
+ranges allows this server only.
 .TP
 .BI "scope snmp " scope " contact [ " text " | \-\-clear ]"
 Show, set or remove the scope's SNMP contact (up to 120 characters, no control
@@ -11220,17 +11399,26 @@ and the answers of
 .B "commit check"
 and of the commits must name exactly those, each with its own success; a member
 that is missing, unexpected or answers otherwise fails the step, and the error
-names the member and its text. Two routing engines that commit without
+names the member and its text. A chassis of one member answers like a single
+device:
+.B "show version"
+prints its header
+.RB ( fpc0: )
+and the answers carry no member label, which is read, as is a block labelled
+with that one member; a block of any other member, or a label twice, fails the
+step. Two routing engines that commit without
 .B synchronize
 answer as a single device does, which is read as before. Over NETCONF each
 member is a
 .B routing\-engine
-element named by its label; a reply of a virtual chassis or a cluster that
-names no member is refused, because nothing proves the other members
-committed (a confirmed commit rolls back by itself), and the command line
-transport (the default) can be used. The shape of these replies over NETCONF,
-and the commits' replies on the command line, are inferred: no capture of them
-exists. A proof that fails cancels the commit
+element named by its label; a reply of a virtual chassis or a cluster of two or
+more members that names no member is refused, because nothing proves the other
+members committed (a confirmed commit rolls back by itself), and the command
+line transport (the default) can be used; a chassis of one member is read like
+a single device, with no member element or one named by that member, and
+another name is refused. The shape of these replies over NETCONF, and the
+commits' replies of a chassis of several members on the command line, are
+inferred: no capture of them exists. A proof that fails cancels the commit
 .RB ( "rollback 1" ,
 .BR commit )
 and the device is
@@ -11909,6 +12097,26 @@ rules grant
 and
 .BR "tacctl device ssh *" ).
 .IP
+With the session's password cache on
+.RB ( "console password\-cache" )
+and empty, and a device with pinned host keys, ssh and
+.B "device ssh"
+ask for the user's password themselves the first time, before they connect:
+the prompt
+.B "Password for"
+.IR user
+.B "(device login):"
+is on the terminal without echo (Ctrl\-C ends the line with status 130 and
+starts nothing; an empty answer stores nothing), the answer goes into the
+cache, and the session then takes the path below, so the password is typed
+once, before the device banner, and the next ssh to any device asks nothing;
+the log line ends
+.BR password=asked .
+It is stored before the device has seen it, so a wrong one stays only until an
+ssh ends with status 255, which forgets it. A word a device asks for later is
+never stored. Without a terminal to prompt on, ssh asks for the password
+itself, as without the cache.
+.IP
 When the session's password cache holds the user's password
 .RB ( "console password\-cache" )
 and the device has pinned host keys, ssh is not asked for it on the terminal:
@@ -12299,7 +12507,9 @@ Lock the groups named (with no list every group that is not a superuser's; with
 \fB\-\-tier\fR the groups of that tier, readonly, operator or engineer) on the
 scope, or on every scope, added to what is locked already. Shows the users who
 lose access and those who keep it, then asks for the scope's name typed back (the
-word \fBall\fR for \fB\-\-all\-scopes\fR, which includes this server's own logins);
+word \fBall\fR for \fB\-\-all\-scopes\fR, which includes this server's own logins, the scope
+\fBtacctl\fR that tacctl manages for them: no command names it, its lines say
+"this server's own login" and \fB\-\-all\-scopes disable\fR lifts it);
 without a terminal the verb refuses. \fB\-\-dry\-run\fR prints the list and changes
 nothing. A superuser group, or \fB\-\-tier superuser\fR, is refused. The change is one
 write of \fItacctl.yaml\fR, one render and one restart of each backend that changed;
@@ -12338,6 +12548,72 @@ Options:
 .TQ
 .BI "emergency lockdown " scope
 The lockdowns that stand: scope, groups, since, how long, by whom, why, the users locked out, the superusers who keep access and the ways a device's local accounts stay usable. \fB\-\-json\fR prints an array with \fBlocked_users\fR and \fBexempt\fR.
+.SS Server settings \fB(tacctl server)\fR
+The addresses devices and hosts reach this server at. The setting is
+.B server.addresses
+in
+.I tacctl.yaml
+(a list that holds exactly one IP address in this release), written by
+.B "host enroll \-\-local"
+and by
+.BR install ,
+and this server's registry entry keeps a copy, which an older release reads. It
+is the default of
+.B \-\-server
+of the device walkthroughs
+.RB ( "config cisco" ,
+.BR "config juniper" ,
+.BR "config wti" ;
+a RADIUS listener bound to an address keeps that address in a RADIUS
+walkthrough), of
+.B "config linux script"
+and of
+.B "host enroll"
+(a host enrolled already keeps the address it has): an explicit
+.B \-\-server
+wins for that run, and with nothing recorded the address is detected as it was.
+The managed scope's prefixes are derived from it. The
+address is an IP address, behind NAT or a VPN if need be and not necessarily on
+this machine, never a host name, the unspecified address, a loopback address or
+a link\-local address.
+.TP
+.BI "server addresses [list|add " ip "[," ip "...]|remove " ip "[," ip "...]|replace " ip "[," ip "...]]"
+Show or change the address. With no word, or
+.BR list ,
+it shows the recorded address (the one in this server's registry entry when the
+setting does not hold it yet). The list grammar takes
+.IR ip [, ip ...],
+and more than one element is refused with
+.B only one server address is supported yet
+until a release lifts the limit:
+.B add
+sets the address when none is set and is refused while one is
+.RB ( "only one server address is supported yet; use replace" );
+.B remove
+of the only address is refused
+.RB ( "the server needs an address; use replace" ),
+of one that is not set it says so and changes nothing;
+.B replace
+changes it. A change takes a snapshot and then runs in one apply: the setting,
+this server's registry entry, the prefixes of the managed scope
+.RB ( tacctl )
+and the server's own PAM and accounts, by the enrolment of this server with all
+its safeguards, exactly as
+.B "host enroll \-\-local \-\-server"
+with another address does (that command is this change); with no login set up
+yet only the setting changes. It then says what is left to do once:
+.B "Re-point the devices and hosts at the new address: tacctl host sync \-\-all; the device walkthroughs name the new address"
+Only the superuser runs it, the
+.B list
+form changes nothing, and the log has
+.BI "server addresses op=" op " address=" ip
+beside the command's own pair of lines.
+.\" BEGIN GENERATED: command server addresses
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command server addresses
 .SS Login console \fB(tacctl console)\fR
 The login console
 .RB ( tacctl\-console )
@@ -13337,9 +13613,9 @@ device enroll, device notice, device remove, device rename,
 device ssh, device support\-bundle, emergency lockdown, group add,
 group edit, group remove, host enroll, host forget, host move,
 host rename, host sync, host unenroll, passwd, scope add,
-scope remove, scope rename, ssh, user add, user disable, user enable,
-user move, user passwd, user remove, user rename,
-user require\-password\-change
+scope remove, scope rename, server addresses, ssh, user add,
+user disable, user enable, user move, user passwd, user remove,
+user rename, user require\-password\-change
 .TP
 .B "action, auth.notice"
 backup restore, config restore,
@@ -14342,7 +14618,8 @@ in
 .RB ( "config listen" ).
 The TACACS+ listener
 .B default
-(tcp :49) runs in
+(tcp :49; the port the device walkthroughs and the Linux host scripts name for TACACS+, and the pulls and plans compare, is its
+port) runs in
 .BR tacquito.service ;
 every further one is an instance
 .BI tacquito@ name .service
@@ -14360,7 +14637,7 @@ RADIUS listeners
 .RB ( auth ,
 udp :1812;
 .BR acct ,
-udp :1813) are
+udp :1813; their ports are the RADIUS ones the walkthroughs and scripts name) are
 .B listen
 sections of tacctl's FreeRADIUS configuration. TACACS+ over TLS is reserved
 in the schema and not implemented.
@@ -14773,6 +15050,10 @@ The scope new users and devices land in without a choice; null: none. Set with \
 .B secret.min_length
 integer, 16 to 128. Default: 16.
 Shortest shared secret an operator may type. Set with \fBtacctl config secret\-min\-length\fR.
+.TP
+.B server.addresses
+list of one IP address (not a host name, unspecified, loopback, link\-local, broadcast or IPv4\-mapped IPv6). Default: none (unset).
+The address devices and hosts reach this server at, a list that holds one address for now; the enrolment of this server and install record it (detected from the interface with the default route when none is recorded and none is given), and server addresses changes it. Set with \fBtacctl server addresses\fR.
 .TP
 .B snmp.port
 integer, 1 to 65535. Default: 161.
@@ -15503,7 +15784,7 @@ stays locked down. Written at every
 .B host sync
 or
 .B "host enroll \-\-local"
-of the tacctl server and by
+of this server and by
 .BR "console install" ,
 whether or not the console is installed; checked with
 .BR "sshd \-t" ,

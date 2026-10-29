@@ -36,8 +36,8 @@ func TestLifecycleVerbsThroughTheCLI(t *testing.T) {
 		args       []string
 		bad, usage string
 	}{
-		{[]string{"install", "--branch"}, "--branch", "Usage: tacctl install [--branch <name>] [-y|--yes]"},
-		{[]string{"install", "-y", "extra", "--branch", "x"}, "extra", "Usage: tacctl install [--branch <name>] [-y|--yes]"},
+		{[]string{"install", "--branch"}, "--branch", "Usage: tacctl install [--branch <name>] [--server <ip>] [-y|--yes]"},
+		{[]string{"install", "-y", "extra", "--branch", "x"}, "extra", "Usage: tacctl install [--branch <name>] [--server <ip>] [-y|--yes]"},
 		{[]string{"upgrade", "--branch"}, "--branch", "Usage: tacctl upgrade [--branch <name>]"},
 		{[]string{"upgrade", "--branch", "x", "--branch"}, "--branch", "Usage: tacctl upgrade [--branch <name>]"},
 		{[]string{"upgrade", "-y"}, "-y", "Usage: tacctl upgrade [--branch <name>]"},

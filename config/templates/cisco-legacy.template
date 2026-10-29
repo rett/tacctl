@@ -19,7 +19,7 @@ aaa new-model
 !
 ! Legacy global TACACS+ syntax. The structured 'tacacs server <name>' block
 ! (address ipv4 / key / single-connection) is IOS 15.0+ and is NOT available here.
-tacacs-server host ${SERVER_IP} single-connection timeout 5 key ${SECRET}
+tacacs-server host ${SERVER_IP} single-connection${TACACS_HOST_PORT} timeout 5 key ${SECRET}
 !
 aaa group server tacacs+ ${TACACS_GROUP}
   server ${SERVER_IP}
