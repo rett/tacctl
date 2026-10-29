@@ -113,9 +113,9 @@ package lifecycle
 // changed reaches them), the sshd drop-ins, the tier-pin marker and the host
 // records (all as 0.2.3 has them).
 //
-// Every target is refused while the store has a user name with a period
-// (0.2.20; DottedUsersRefusal): the targets read letters, digits, '_' and '-'
-// only, and fail on every store command with "user '<name>': invalid name".
+// Every target but 0.2.20, which reads such a name, is refused while the store
+// has a user name with a period (0.2.20 and 0.2.21 allowed one;
+// DottedUsersRefusal): the targets read letters, digits, '_' and '-' only, and fail on every store command with "user '<name>': invalid name".
 // An override under such a name in console.yaml (the console switches of a
 // user, ignored since 0.2.20) is taken out of the file by the plan; the other
 // 'tiers' and 'users' entries stay, for the older release reads them.
@@ -558,8 +558,8 @@ func PlanRollback(in RollbackInput) (*RollbackPlan, error) {
 	if ls := in.Conf.Lockdowns(); len(ls) > 0 && in.Target != RollbackTarget0219 {
 		return nil, LockdownRefusal(ls)
 	}
-	// A store user name with a period (0.2.20) is refused for every target:
-	// no release a rollback goes to reads it (DottedUsersRefusal). An
+	// A store user name with a period (0.2.20, 0.2.21) is refused for every
+	// target but 0.2.20 (handled above): no other release reads it (DottedUsersRefusal). An
 	// override of such a name in console.yaml is taken out by the plan.
 	if inStore, err := DottedUsers(pa, in.HasStore); err != nil {
 		return nil, err

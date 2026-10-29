@@ -1,14 +1,16 @@
 package lifecycle
 
-// A user name may hold periods from 0.2.20 (names.ValidateUsername). Every
-// release a rollback goes to (0.2.3, 0.2.9, 0.2.16, 0.2.17, 0.2.18 and 0.2.19, whose
-// user-name pattern is verified against each tag) reads letters, digits, '_'
-// and '-' only, so a store that keeps a dotted name fails there with "user
-// '<name>': invalid name" on every store command. The rollback is refused
-// while one stands, for every target, in the dry run and --apply alike, and
-// nothing is changed. A console.yaml override under a dotted name (the
-// ignored 'users' mapping of 0.2.19 and before) is not a reason to refuse:
-// the plan takes that entry out of the file (console.DottedUsersKey).
+// A user name could hold periods in 0.2.20 and 0.2.21 (a new one cannot from
+// 0.2.22: names.ValidateUsername), and a restored snapshot of either can bring
+// one back. Every release a rollback goes to (0.2.3, 0.2.9, 0.2.16, 0.2.17,
+// 0.2.18 and 0.2.19, whose user-name pattern is verified against each tag)
+// reads letters, digits, '_' and '-' only, so a store that keeps a dotted
+// name fails there with "user '<name>': invalid name" on every store command.
+// The rollback is refused while one stands, for every target but 0.2.20 (which
+// reads such a name), in the dry run and --apply alike, and nothing is
+// changed. A console.yaml override under a dotted name (the ignored 'users'
+// mapping of 0.2.19 and before) is not a reason to refuse: the plan takes that
+// entry out of the file (console.DottedUsersKey).
 
 import (
 	"fmt"

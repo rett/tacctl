@@ -521,7 +521,7 @@ EOF
 
     runs "$TACCTL_BIN_SCRIPT" user verify 'bad name'
     assert_failure 1
-    assert_equal "$stderr" "${ESC}[0;31m[ERROR]${ESC}[0m Username must contain only letters, numbers, underscores, hyphens, and periods (not first, not last, not two in a row)."
+    assert_equal "$stderr" "${ESC}[0;31m[ERROR]${ESC}[0m Username must contain only letters, numbers, underscores and hyphens (a period cannot be part of a Linux account name)."
 }
 
 # bats test_tags=cutover:wp2-4a

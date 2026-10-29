@@ -55,7 +55,11 @@ var schema = []sectionSpec{
 		{name: "juniper_class", typ: tString, pattern: names.MatchClass, required: true},
 		{name: "builtin", typ: tBool},
 	}},
-	{key: "users", label: "user", name: names.MatchUser, fields: []fieldSpec{
+	// A user name read from a store may hold periods (0.2.20 and 0.2.21 wrote
+	// them): every store command must keep running so that 'user rename'
+	// can fix it. A new name is refused where it is made (UserSet,
+	// UserRename).
+	{key: "users", label: "user", name: names.MatchExistingUser, fields: []fieldSpec{
 		{name: "group", typ: tString, required: true},
 		{name: "scopes", typ: tStringList, required: true},
 		{name: "hash", typ: tBcryptHex, nullable: true, required: true},

@@ -134,8 +134,8 @@ config linux remove-script [--output <file>]
 
 config linux uid [<user> [<uid>]]
 
-    Show or change the UID a user gets on every host; refused for a user whose
-    name has a period (no Linux account, so the number would never be used)
+    Show or change the UID a user gets on every host. A user whose name has a period (a leftover of
+    0.2.20 or 0.2.21) has no Linux account: its number can be shown, and a new one is refused
 
 config linux uid-range [<min>-<max>]
 

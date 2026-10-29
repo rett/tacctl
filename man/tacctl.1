@@ -1024,24 +1024,12 @@ Requires: \fBreadonly\fR.
 .TP
 .BI "user add " "name group " [ "--hash " hash ] [ "--scopes " name[,name...] ] [ --no\-change\-required ]
 Add a user. The name is lower case (lower\-case letters, digits,
-.BR _ ", " \- " and " .\& ):
+.BR _ " and " \- ):
 a name with upper case is refused with the lower\-case spelling to use, and a
 user that exists with upper case keeps working as it is
 .RB ( "tacctl config validate"
-lists it). A period may join two parts of a name
-.RB ( alice.smith ):
-it is never the first or the last character and never follows another period
-.RB ( .alice ", " alice. ", " alice..smith ", " . " and " ..
-are refused). A name with a period is no Linux account name: a host sync skips
-it with a warning, so the user has no account on enrolled hosts and logs in at
-devices only, and
-.B user rename
-and
-.B config linux uid
-refuse to give one to it. A release before 0.2.20 refuses a store that has such
-a name, so
-.B "tacctl rollback"
-is refused while one stands: rename those users first.
+lists it). A period is refused: it cannot be part of a Linux account name, and
+every user has an account on the tacctl server.
 Prompts for the password with confirmation. If
 .BI --hash " hash"
 is given, the bcrypt hash is used directly and no password is prompted
@@ -1190,9 +1178,10 @@ Requires: \fBsuperuser\fR.
 .BI "user rename " "old new"
 Rename a user. The user's
 .B "console system\-shell user"
-setting moves to the new name, and the command says so. The new name is lower case, and may hold periods as for
-.B user add
-(but see below); changing only the spelling
+setting moves to the new name, and the command says so. The new name is lower case and follows the rules of
+.BR "user add" ;
+the old name may be one with a period, which 0.2.20 and 0.2.21 allowed.
+Changing only the spelling
 .RB ( "user rename Alice alice" )
 is how a name from before is fixed. A device matches the typed login name
 exactly, so the rename changes what the person types at the device. The user
@@ -1216,15 +1205,7 @@ builds its script from the ledger under the same lock, so it sends the names as
 they were before the rename or after it, never a mix; an account created under
 the old name is renamed at that host's next sync. When another command keeps
 the lock for 30 seconds the rename stops at the pre\-change snapshot, which
-copies the ledger under it, with nothing changed. A user that has a UID in the
-ledger, or an account on an enrolled host, is not renamed to a name with a
-period, which is no Linux account name: the next sync would remove the account.
-The command says so, changes nothing and names the two ways forward: a name
-without a period, or a new user (\fBuser remove\fR, \fBhost sync \-\-all\fR,
-which removes the accounts, then \fBuser add\fR under the new name with the
-group and scopes it prints), which gets a new password and no UID (the old
-number stays reserved). A user whose name has a period has no Linux account on
-any host, this server included, so no console login.
+copies the ledger under it, with nothing changed.
 .\" BEGIN GENERATED: command user rename
 .RS
 .PP
@@ -4010,8 +3991,9 @@ after the highest one given, never reused, not even after the user is
 removed), and kept in
 .IR /etc/tacctl/linux\-uids ,
 whose first line records the range it is numbered for.
-A user whose name has a period is refused: it has no Linux account, so a
-number would never be used. A value outside that range is refused; an existing entry outside it is
+A user whose name has a period (a leftover of 0.2.20 or 0.2.21) has no Linux
+account: its number is printed if the ledger has one, and a new one is refused,
+since it would never be used. A value outside that range is refused; an existing entry outside it is
 listed as not used on hosts, and its user gets no account until
 given a number in the range. When the range is used up, the script refuses
 the next user.

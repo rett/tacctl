@@ -114,9 +114,10 @@ it, so the rollback to 0.2.19 keeps it. The refusal lists each lockdown and the 
 rollback again. A record that locks nothing (a hand-edited, partial one) is
 removed by the rollback, because the older schemas refuse its keys.
 
-**A user name with a period stops every rollback** (the dry run too): a user name may hold
-periods from 0.2.20, and no target reads one (it fails with `user '<name>': invalid name` on every
-store command). The refusal lists each such user of the store with the command that fixes it
+**A user name with a period stops every rollback but the one to 0.2.20** (the dry run too): 0.2.20
+and 0.2.21 allowed periods (a restored snapshot of either can bring such a user back), and no other
+target reads one (it fails with `user '<name>': invalid name` on every store command). The refusal
+lists each such user of the store with the command that fixes it
 (`tacctl user rename <name> <new-name>`); do that, then run the rollback again. Nothing is changed
 while it refuses. An override under such a name in the ignored `users` mapping of `console.yaml`
 does not stop it: the rollback takes that entry out of the file.

@@ -885,8 +885,9 @@ func TestPasswordCacheRollback023(t *testing.T) {
 	}
 }
 
-// A user name may hold periods (names.MatchUser): the ignored users mapping
-// of the file writes and reads such a key back, and a bad shape is refused.
+// A user name written by 0.2.20 or 0.2.21 may hold periods
+// (names.MatchExistingUser): the ignored users mapping of the file writes and
+// reads such a key back, and a bad shape is refused.
 func TestUsersWithPeriods(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "console.yaml")
 	if _, err := Mutate(p, nil, func(f *File) error {

@@ -47,6 +47,27 @@ current behaviour; this file is where history lives.
    single member, two routing engines, a cluster and a chassis in which every
    member has a label are read as before.
 
+3. **User names are letters, digits, `_` and `-` again.** Since 0.2.21 every
+   user has an account on the tacctl server, and a name with a period cannot
+   be a Linux account name, so such a user could not be created properly or
+   change a password. `user add` and the new name of `user rename` refuse a
+   period with `Username must contain only letters, numbers, underscores and
+   hyphens (a period cannot be part of a Linux account name).` Device and host
+   names keep their periods (fully qualified names); group, scope and class
+   names never had them. A user already stored with a period (0.2.20 and
+   0.2.21 allowed it) stays readable: every store command still runs, and the
+   user can be shown, listed, disabled, moved, given scopes, removed and
+   renamed, so `user rename alice.smith alice-smith` is the way out. `passwd`,
+   `user passwd` and `user require-password-change` follow the new rule for
+   that user until it is renamed (a user that stands gets the line `rename it
+   first: tacctl user rename <name> <new-name>`), `config linux uid <user>`
+   prints its number if the ledger has one but `config linux uid <user> <uid>`
+   is refused, and `host sync` still skips it. `tacctl rollback` keeps
+   refusing them for every target but 0.2.20, which reads them (a restored
+   snapshot of 0.2.20 or 0.2.21 can bring one back). The refusal of a rename
+   to a name with a period and its notes are gone, as that name can no longer
+   be made. The older entries of this file stay as they were written.
+
 ## 0.2.21 (2026-10-28)
 
 1. **`user rename` to a name with a period says what to do.** The refusal of
