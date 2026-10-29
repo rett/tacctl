@@ -237,6 +237,8 @@ plain command, in `tacctl shell` and at the console. A word that follows a
 name (`scope secret lab shwo`: `lab` is a scope) is left to `sudo` and the
 command, which ask for the password first and then answer the same way. In
 the shell and the console the hint names only commands your tier can run.
+Nothing goes to standard output. No word, `help` and a word that starts with
+`-` still print the usage of a command that has them.
 
 Every change takes a snapshot first and writes an audit line, so a mistake
 can be rolled back ([Backups and Undo](backups-and-undo.md)).

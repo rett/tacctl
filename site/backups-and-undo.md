@@ -151,9 +151,14 @@ tacctl upgrade --branch 0.2.21    # install 0.2.21
   lockdown stands.
 
 The target `0.2.21` only removes the name that `tacctl server name` set
-(`server.name`), after a snapshot: 0.2.21 reads everything else this release
-writes. It has no warning and needs no `--yes`. Every other target removes
-that name too, and the console shows the host name again.
+(`server.name`) and the timing scale (`device timeout-scale`, `scope
+timeout-scale`, `config devices timeout-scale`), after a snapshot: 0.2.21
+reads everything else this release writes. It has no warning and needs no
+`--yes`. Every other target removes them too, and the console shows the host
+name again. The plan names each device and key that loses a scale in a note,
+not a warning: the older release connects to every device with its fixed
+timings again, which a slow or distant device may not meet. The values stay in
+the snapshot.
 
 The conversion takes a snapshot before it changes anything. Read the dry run's warnings before
 you add `--yes`:
@@ -173,8 +178,9 @@ and the per-user system-shell and password-cache choices, and writes a
 > **Until the older release is installed,** do not run
 > `scope mgmt-acl <scope> mode strict`, `user add`, `user passwd <name>`,
 > `user require-password-change`, `console color`, `console list-max`,
-> `console system-shell user`, `console password-cache on` or
-> `server name <label>`, and for a target before 0.2.21 not
+> `console system-shell user`, `console password-cache on`,
+> `server name <label>`, `device timeout-scale`, `scope timeout-scale` or
+> `config devices timeout-scale`, and for a target before 0.2.21 not
 > `server addresses add|replace` or `host enroll --local` either: each writes
 > a setting the older release refuses. If one did, run the rollback with
 > `--apply` again. The same applies, for a target before 0.2.21, to a user

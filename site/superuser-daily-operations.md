@@ -543,12 +543,16 @@ tacctl server metrics            # the Prometheus exporter
 ```
 
 `server show` changes nothing and writes no audit line. It prints the server
-address (the setting, else the copy in this server's registry entry), the
-name, the default method of `host enroll`, the metrics exporter (its address,
+address (the setting, else the copy in this server's registry entry), a `Name`
+line (the name in effect, with `the host name` beside it when none is set),
+the default method of `host enroll`, the metrics exporter (its address,
 `enabled` or `disabled`, `loopback only` or `externally reachable`), each
 backend with whether it is installed and enabled and the state of its
 service, and each listener of the installed or enabled backends with its
-network, address, port and unit state.
+network, address, port and unit state. `--json` has the same data:
+`addresses`, `address_source`, `name` (`value` and `source`, `setting` or
+`host name`), `default_method`, `metrics` and `backends` with their
+`listeners`.
 
 `server name [<label>|unset]` sets the name the console shows in its prompt
 (`<name>> `) and its notices (the banner of a session, `tacctl console on
