@@ -29,6 +29,39 @@ func notACommand(root *cobra.Command, w string) bool {
 	return child(root, w) == nil
 }
 
+// unknownBelow is the check of the whole command line before sudo: it walks
+// the command tree with the words typed, and when a command that has
+// sub-commands is given a word that is none of them it gives the path of
+// that command and the word. It reads the fixed words of the tree only, never
+// a name of the store (no word after a command without sub-commands is looked
+// at, so a device, host or user name, a flag's value and a name that looks
+// like a verb are never taken), and it answers nothing where it could be
+// wrong: a word that starts with '-' (a flag may come before the verb),
+// 'help', an empty word, a hidden command, the first word (notACommand's) and
+// the words that run as the user (noSudo). A verb that exists but that the
+// caller's tier cannot run is a sub-command here: sudo and the tier gate
+// answer it as before.
+func unknownBelow(root *cobra.Command, words []string) (path []string, sub string, ok bool) {
+	if len(words) < 2 || noSudo[words[0]] {
+		return nil, "", false
+	}
+	cmd := root
+	for i, w := range words {
+		if next := child(cmd, w); next != nil {
+			if next.Hidden {
+				return nil, "", false
+			}
+			cmd, path = next, append(path, next.Name())
+			continue
+		}
+		if i == 0 || len(cmd.Commands()) == 0 || !plainWord(w) {
+			return nil, "", false
+		}
+		return path, w, true
+	}
+	return nil, "", false
+}
+
 // unknownSub is the answer of a command to a word sub that is none of its
 // sub-commands, whichever file dispatches it: the error line, the closest
 // verbs of that level, one line that points at the help of the command, exit
@@ -52,7 +85,8 @@ func (inv *invocation) unknownSubNote(note, sub string, verbs ...string) error {
 }
 
 // unknownSubAt is unknownSub for the command at path (the words after
-// 'tacctl'), for a caller that has the path already.
+// 'tacctl'); the sudo re-exec and the shell call it before sudo with the path
+// unknownBelow gives.
 func (inv *invocation) unknownSubAt(root *cobra.Command, path []string, sub string, verbs []string) error {
 	return inv.unknownSubAtNote(root, path, sub, verbs, "")
 }

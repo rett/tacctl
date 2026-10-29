@@ -224,8 +224,32 @@ current behaviour; this file is where history lives.
    `log --backend tacacs tail`), `help` and no word keep printing it; `host`
    has no `help` word, so `host help` is an unknown sub-command, as it was.
    The refusal of `scope mgmt-acl` no longer repeats its verbs in the error
-   line (`tacctl scope mgmt-acl -h` lists them). The pointers `Run 'tacctl scope prefixes <scope>' for usage.`
-   and the like are the `-h` form (`tacctl scope prefixes -h`).
+   line (`tacctl scope mgmt-acl -h` lists them). The pointers `Run 'tacctl scope
+   prefixes <scope>' for usage.` and the like are the `-h` form (`tacctl scope
+   prefixes -h`).
+12. **An unknown sub-command of a command with fixed sub-commands no longer
+   asks for the sudo password first.** Only an unknown first word was
+   answered before `sudo` (0.2.19); `tacctl device config seed jr1` asked for
+   the password (`[sudo] password for ...`) and only then said `Unknown
+   subcommand`. `tacctl` now walks the command tree with the words typed, as
+   the user, before it runs `sudo`, and answers the first command with
+   sub-commands that is given a word that is none of them with the same short
+   answer as any unknown sub-command (error line, hint, pointer, exit 1), in
+   the plain command, in `tacctl shell` and at the console, with no password
+   asked and no process started. It looks at the fixed words of the tree only.
+   A word that follows a name or a value (`scope secret lab shwo`, `user scope
+   alice bogus`, `scope prefixes lab bogus`, `host provisioner web1 bogus
+   rotate`: a scope, a user and a host are root-only data), the words after a
+   command that has no sub-commands, a flag and its value, a verb of another
+   family (`device config shapes seed jr1` is not `device config seed`) and a
+   word that starts with `-` are left to `sudo` and the command, which ask for
+   the password and answer as before; so is a verb that exists but that the
+   caller's tier cannot run (the tier check says so). In a managed shell or
+   console, a mistyped line that `sudo` used to refuse is now reported as
+   `Unknown subcommand` instead of a tier denial. Nothing of tacctl's state is
+   read, so the hint of this answer cannot know the caller's tier outside
+   `tacctl shell` and the console, and may name a verb the tier cannot run;
+   the answer that comes after `sudo` is filtered.
 
 ## 0.2.21 (2026-10-28)
 

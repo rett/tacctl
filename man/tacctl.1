@@ -15473,7 +15473,18 @@ names
 .BR "device config shapes seed" )
 and a pointer
 .RB ( "Run 'tacctl <command> \-h' for usage." ),
-not the usage, and ends with 1 as well. An unknown command
+not the usage, and ends with 1 as well. When the word is a sub-command of a
+command that has fixed sub-commands
+.RB ( "device config seed jr1" )
+it is answered before
+.B sudo
+runs, like an unknown command, so it asks for no password; a word that follows
+a name or a value
+.RB ( "scope secret lab shwo" ),
+a flag and its value, a verb of another family and a verb the tier cannot run
+are left to
+.BR sudo ,
+which asks first. An unknown command
 .RB ( "tacctl enroll" )
 prints on standard error one error line that names it, the commands it
 may have meant (the verbs of that name,

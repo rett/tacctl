@@ -4,7 +4,7 @@ package cli
 // the environment console.Scrub makes, in this test binary started again in
 // helper mode) with a runner that answers the root side's policy and the
 // caller's groups, writes the console's log lines to a file, runs a line
-// 'user slow' as sleep(1) and every other line as echo(1), and starts the
+// 'user show slow' as sleep(1) and every other line as echo(1), and starts the
 // system shell (a stub script) for real. Each session has testpty's hard
 // deadline.
 
@@ -116,7 +116,7 @@ func (r *consolePtyRunner) Start(ctx context.Context, c execx.Cmd) (execx.Proces
 				// a dialog nobody answers
 				c.Args = []string{"-c", "echo RAN-PASSWD; sleep 8"}
 			}
-		case words[0] == "user" && len(words) > 1 && words[1] == "slow":
+		case words[0] == "user" && len(words) > 2 && words[1] == "show" && words[2] == "slow":
 			// (a real first word: a word that is no command never reaches sudo)
 			c.Name, c.Args = "sleep", []string{"8"}
 		case words[0] == "ssh":
@@ -246,7 +246,7 @@ func TestConsolePtyBannerPromptAndExit(t *testing.T) {
 	p.expect(`system-shell +Start your system shell as yourself; superusers only unless enabled for your tier`)
 	p.expect(host + `> `)
 	// Ctrl-C during a line ends the line, not the console.
-	p.send("user slow\r")
+	p.send("user show slow\r")
 	p.Settle(300 * time.Millisecond)
 	p.send("\x03")
 	p.expect(`\[exit 130\]`)
@@ -265,14 +265,14 @@ func TestConsolePtySpaceCompletion(t *testing.T) {
 	host := regexp.QuoteMeta(shortHostname())
 	p := startConsole(t, ptyPolicyRO, "carol,tac-users,tac-readonly")
 	p.expect(host + `> `)
-	p.send("de x\r")
-	p.expect(`RAN sudo -n TACCTL_CONSOLE=[0-9a-f]{12} ` + regexp.QuoteMeta(testExe) + ` device x\r\n`)
+	p.send("de show x\r")
+	p.expect(`RAN sudo -n TACCTL_CONSOLE=[0-9a-f]{12} ` + regexp.QuoteMeta(testExe) + ` device show x\r\n`)
 	p.send("exit\r")
 	p.ends(0)
 
 	p = startConsole(t, ptyPolicyRO+",space_completion=no", "carol,tac-users,tac-readonly")
 	p.expect(host + `> `)
-	p.send("de x\r")
+	p.send("de show x\r")
 	// not completed, so 'de' is no command: answered without sudo
 	p.expect(`Unknown command: 'de'\r\nRun 'tacctl' for the commands\.\r\n`)
 	p.send("exit\r")
@@ -399,7 +399,7 @@ func TestConsolePtyPasswordCache(t *testing.T) {
 		t.Errorf("get with the ended line's token: %v", err)
 	}
 	// A line that does not use the cache opens nothing, whatever token.
-	p.send("user slow\r")
+	p.send("user show slow\r")
 	time.Sleep(300 * time.Millisecond)
 	if err := cl1.Store(ctx, []byte("typed-pw-0")); !errors.Is(err, askpass.ErrDenied) {
 		t.Errorf("store while a line that does not use the cache runs: %v", err)

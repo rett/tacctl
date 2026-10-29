@@ -150,6 +150,11 @@ func runWith(ctx context.Context, a *app.App, build BuildInfo, hk *hooks) (err e
 		if len(a.Args) > 0 && notACommand(root, a.Args[0]) {
 			return inv.unknownCommand(root, a.Args[0])
 		}
+		// So is a word below the first that is none of the sub-commands of
+		// its command (unknownBelow): the fixed words of the tree only.
+		if path, sub, ok := unknownBelow(root, a.Args); ok {
+			return inv.unknownSubAt(root, path, sub, nil)
+		}
 		return reexec(a)
 	}
 	if isComplete(a.Args) {
