@@ -9,7 +9,7 @@ doctype: reference
 
 # Command Reference Map
 
-*From each tacctl command family to its reference page and the task page that uses it · Checked against tacctl 0.2.21*
+*From each tacctl command family to its reference page and the task page that uses it · Checked against tacctl 0.2.22*
 
 [Printable PDF](../pdf/tacctl-command-reference-map.pdf){: .pdf-link }
 
@@ -42,7 +42,7 @@ both.
 | `tacctl backup` | Snapshots, diff, restore | [Maintenance commands](https://github.com/rett/tacctl/blob/master/docs/cli/maintenance.md) | [Backups and Undo](backups-and-undo.md) |
 | `tacctl backend`, `store` | Backends and the store | [Maintenance commands](https://github.com/rett/tacctl/blob/master/docs/cli/maintenance.md) | Out of scope for this documentation |
 | `tacctl config` | Settings and the device configuration walkthroughs | [Config commands](https://github.com/rett/tacctl/blob/master/docs/cli/config.md), [tacctl.yaml settings](https://github.com/rett/tacctl/blob/master/docs/cli/tunables.md) | [Vendor Notes](vendor-notes.md) |
-| `tacctl server` | This server's own settings: the address devices and hosts reach it at | [Server commands](https://github.com/rett/tacctl/blob/master/docs/cli/server.md) | [Superuser Daily Operations](superuser-daily-operations.md) §11 |
+| `tacctl server` | This server's own settings: an overview, its console name, the address devices and hosts reach it at, listeners, the metrics exporter | [Server commands](https://github.com/rett/tacctl/blob/master/docs/cli/server.md) | [Superuser Daily Operations](superuser-daily-operations.md) §11 |
 | Exit codes, environment | — | [Exit status and environment](https://github.com/rett/tacctl/blob/master/docs/cli/exit-status.md) | [Exit Codes](exit-codes.md) |
 
 ---
