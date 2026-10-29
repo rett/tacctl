@@ -140,9 +140,7 @@ func (inv *invocation) scopeSNMP(args []string) error {
 	}
 	spec, ok := scopeSNMPSpecs[sub]
 	if !ok {
-		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-		inv.write(scopeSNMPUsage(scope))
-		return exit(1)
+		return inv.unknownSub(sub, specVerbs(scopeSNMPSpecs)...)
 	}
 	var rest []string
 	if len(args) > 2 {

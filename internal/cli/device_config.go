@@ -433,9 +433,7 @@ func (inv *invocation) deviceConfig(args []string) error {
 				return err
 			}
 		}
-		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-		inv.write(deviceConfigUsage())
-		return exit(1)
+		return inv.unknownSub(sub)
 	}
 }
 

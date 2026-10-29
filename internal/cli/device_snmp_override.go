@@ -439,7 +439,7 @@ func (inv *invocation) deviceSNMP(args []string) error {
 	}
 	spec, ok := deviceSNMPSpecs[sub]
 	if !ok {
-		return inv.usageErr(withUsage("Unknown subcommand: '"+sub+"'", usage)...)
+		return inv.unknownSub(sub, specVerbs(deviceSNMPSpecs)...)
 	}
 	p, err := Parse(spec, rest)
 	if err != nil {

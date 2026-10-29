@@ -136,9 +136,7 @@ func (inv *invocation) deviceBlock(args []string) error {
 	}
 	spec, ok := deviceBlockSpecs[sub]
 	if !ok {
-		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-		inv.write(deviceBlockUsage(key))
-		return exit(1)
+		return inv.unknownSub(sub, specVerbs(deviceBlockSpecs)...)
 	}
 	var rest []string
 	if len(args) > 2 {

@@ -11,7 +11,7 @@
 breakglass
 @known 0.2.14 item 2: breakglass names devices and hosts alike; its usage lines and messages say so; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 breakglass help
-@known 0.2.14 item 2: breakglass names devices and hosts alike; its usage lines and messages say so; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.14 item 2: breakglass names devices and hosts alike; its usage lines and messages say so; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.22 item 11: an unknown sub-command is one error line, the closest verbs and a pointer to the help (-h), not the usage
 breakglass bogus
 @known 0.2.14 item 2: breakglass names devices and hosts alike; its usage lines and messages say so; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 breakglass list

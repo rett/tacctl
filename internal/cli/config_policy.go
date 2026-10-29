@@ -219,6 +219,9 @@ func (inv *invocation) configFilter(label string, args []string) error {
 		a.Out.Info(fmt.Sprintf("Cleared %s list (%d %s removed).", label, n, entries))
 		inv.echo("")
 	default:
+		if plainWord(sub) {
+			return inv.unknownSub(sub)
+		}
 		inv.echo("")
 		inv.echo("Usage: tacctl config " + label + " list|add|remove|clear [<cidr>[,<cidr>...]]")
 		inv.echo("")
@@ -347,7 +350,7 @@ func (inv *invocation) configMgmtACL(args []string) error {
 		a.Out.Info("Re-run 'tacctl config " + which + "' to see the new name in the output.")
 		inv.echo("")
 	default:
-		return inv.usageErr("Unknown subcommand: '"+sub+"'", "Run 'tacctl config mgmt-acl' with no arguments for help.")
+		return inv.unknownSub(sub)
 	}
 	return nil
 }

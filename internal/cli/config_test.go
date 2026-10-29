@@ -84,7 +84,7 @@ func TestConfigVerbsAllNative(t *testing.T) {
 			t.Errorf("%q: exit %d %q", args, sb.code, out)
 		}
 	}
-	for _, args := range [][]string{{"config"}, {"config", "help"}, {"config", "bogus", "x"}} {
+	for _, args := range [][]string{{"config"}, {"config", "help"}, {"config", "--bogus", "x"}} {
 		sb := newSandbox(t, true)
 		// (stderr has preflight's warning that tacquito.yaml is missing)
 		if out := sb.run("", args); out != configUsage() || sb.code != 1 || strings.Contains(sb.err.String(), "[ERROR]") {
@@ -235,7 +235,7 @@ func TestConfigLoglevelMetricsListen(t *testing.T) {
 		t.Errorf("bad level: %d %q (%q)", sb.code, sb.err.String(), out)
 	}
 	sb.run("", []string{"config", "metrics", "bogus"})
-	sb.expect(1, "", "Run 'tacctl config metrics' with no arguments for usage.")
+	sb.expect(1, "", "Unknown subcommand: 'bogus'\nRun 'tacctl config metrics -h' for usage.")
 	sb.run("", []string{"config", "metrics", "address", "10.1.0.1:9090"})
 	sb.expect(0, "Metrics listen address set to 10.1.0.1:9090.", "")
 	sb.run("", []string{"config", "metrics"})
@@ -316,7 +316,7 @@ func TestConfigSudoers(t *testing.T) {
 	sb.cfgRun("", []string{"config", "sudoers", "remove"}, nil, env...)
 	sb.expect(0, "Not installed. Nothing to remove.", "")
 	sb.cfgRun("", []string{"config", "sudoers", "frob"}, nil, env...)
-	sb.expect(1, "", "Invalid subcommand: 'frob'. Use: show, install, or remove")
+	sb.expect(1, "", "Unknown subcommand: 'frob'\nRun 'tacctl config sudoers -h' for usage.")
 
 	out = sb.cfgRun("", []string{"config", "sudoers", "tiers"}, nil, env...)
 	if want := "\n  Status: not installed. 'tacctl config sudoers tiers install' would write:\n\n" + indentLines(tier.Sudoers()) + "\n"; out != want {
@@ -330,7 +330,7 @@ func TestConfigSudoers(t *testing.T) {
 	sb.cfgRun("", []string{"config", "sudoers", "tiers", "remove"}, nil, env...)
 	sb.expect(0, "Removed "+tiers+".", "")
 	sb.cfgRun("", []string{"config", "sudoers", "tiers", "x"}, nil, env...)
-	sb.expect(1, "", "Use: tiers show, tiers install, or tiers remove")
+	sb.expect(1, "", "Unknown subcommand: 'x'\nRun 'tacctl config sudoers tiers -h' for usage.")
 	// A failed install exits with its status; no temp file is left.
 	sb.cfgRun("", []string{"config", "sudoers", "tiers", "install"}, func(r *fake.Runner) {
 		r.On([]string{"install"}, execx.Result{Code: 1})

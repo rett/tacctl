@@ -197,6 +197,36 @@ current behaviour; this file is where history lives.
    named, status 130), a second cancels them. With one host `--concurrency`
    changes nothing. There is no `--timeout` and no `--max-failures`.
 
+11. **An unknown sub-command is one short answer, not the usage.** `tacctl
+   device config seed jr1` (`seed` belongs under `device config shapes`)
+   printed `[ERROR] Unknown subcommand: 'seed'` and then the whole usage page
+   of `device config`. Every command with sub-commands, and every verb that
+   takes a word after a name (`scope secret <scope> <verb>`), now answers a
+   word that is none of them on standard error with the error line, a `Did
+   you mean` line when something fits, and `Run 'tacctl <command> -h' for
+   usage.`, exits 1, and prints nothing on standard output:
+   ```
+   [ERROR] Unknown subcommand: 'seed'
+   Did you mean: tacctl device config shapes seed?
+   Run 'tacctl device config -h' for usage.
+   ```
+   The hint names the sub-commands of that command within two letters of the
+   word (`lst` → `tacctl scope list`, the rule of an unknown first word), or,
+   when the word is a verb further down the command, the commands that have it
+   (`seed` → `device config shapes seed`; `apply` below `device` →
+   `device config apply`); in `tacctl shell` and the console only the commands
+   the tier can run, and for a command run under `sudo` those of the caller's
+   tier. `user`, `group`, `config`, `backend`, `backup`, `log`, `store`,
+   `config allow|deny|linux|sudoers [tiers]` and `group preset` printed their
+   usage (or `Unknown store subcommand`, `Invalid subcommand ... Use: ...`)
+   for such a word and answer the same way now. Where they printed a
+   bare usage, a word that starts with `-` (a flag may come before the verb:
+   `log --backend tacacs tail`), `help` and no word keep printing it; `host`
+   has no `help` word, so `host help` is an unknown sub-command, as it was.
+   The refusal of `scope mgmt-acl` no longer repeats its verbs in the error
+   line (`tacctl scope mgmt-acl -h` lists them). The pointers `Run 'tacctl scope prefixes <scope>' for usage.`
+   and the like are the `-h` form (`tacctl scope prefixes -h`).
+
 ## 0.2.21 (2026-10-28)
 
 1. **`user rename` to a name with a period says what to do.** The refusal of

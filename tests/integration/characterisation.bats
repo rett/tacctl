@@ -234,8 +234,9 @@ usage_case() {
     done
     runs "$TACCTL_BIN_SCRIPT" hash bogus
     assert_failure 1
-    assert_output "$want"
-    assert_equal "$stderr" "${ESC}[0;31m[ERROR]${ESC}[0m Unknown subcommand: 'bogus'"
+    assert_output ""
+    assert_equal "$stderr" "${ESC}[0;31m[ERROR]${ESC}[0m Unknown subcommand: 'bogus'
+Run 'tacctl hash -h' for usage."
 }
 
 # bats test_tags=cutover:wp2-4a

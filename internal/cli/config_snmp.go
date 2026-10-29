@@ -142,9 +142,7 @@ func (inv *invocation) configSNMP(args []string) error {
 			}
 			return f(rest)
 		}
-		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-		inv.write(configSNMPUsage())
-		return exit(1)
+		return inv.unknownSub(sub)
 	}
 }
 

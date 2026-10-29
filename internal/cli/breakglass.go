@@ -166,9 +166,7 @@ func (inv *invocation) breakglass(args []string) error {
 	case "list":
 		return inv.breakglassList(rest)
 	default:
-		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-		inv.write(breakglassUsage())
-		return exit(1)
+		return inv.unknownSub(sub)
 	}
 }
 

@@ -155,9 +155,7 @@ func (inv *invocation) host(args []string) error {
 		inv.write(hostUsage())
 		return nil
 	default:
-		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-		inv.write(hostUsage())
-		return exit(1)
+		return inv.unknownSub(sub)
 	}
 }
 

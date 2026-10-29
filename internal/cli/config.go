@@ -186,7 +186,10 @@ func configCmd(inv *invocation) *cobra.Command {
 	}
 	// No sub-command, or one cmd_config does not have: the usage, exit 1,
 	// with no error line.
-	c.RunE = n(func([]string) error {
+	c.RunE = n(func(args []string) error {
+		if sub := arg(args, 0); plainWord(sub) {
+			return inv.unknownSub(sub)
+		}
 		inv.write(configUsage())
 		return exit(1)
 	})
@@ -438,7 +441,7 @@ func (inv *invocation) configMetrics(args []string) error {
 	switch sub {
 	case "", "show", "-h", "--help", "help", "enable", "disable", "address", "reset":
 	default:
-		return inv.usageErr("Unknown subcommand: '"+sub+"'", "Run 'tacctl config metrics' with no arguments for usage.")
+		return inv.unknownSub(sub)
 	}
 	b, err := inv.tacacsBackend()
 	if err != nil {

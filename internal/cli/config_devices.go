@@ -163,9 +163,7 @@ func (inv *invocation) configDevices(args []string) error {
 		return inv.configDevicesSet(rest, "device.apply.transport", "Apply transport",
 			"  Usage: tacctl config devices apply-transport cli|auto|netconf", "The transport of an apply set to %v.")
 	default:
-		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-		inv.write(configDevicesUsage())
-		return exit(1)
+		return inv.unknownSub(sub)
 	}
 }
 

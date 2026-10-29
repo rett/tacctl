@@ -148,9 +148,14 @@ func TestHostFamilyUsage(t *testing.T) {
 	hs := newHostSandbox(t)
 	hs.run(nil, "host")
 	hs.expect(0, "Host Commands", "")
+	// 'host' has no word 'help': it is an unknown sub-command like any
+	// other, answered without the usage
 	for _, w := range []string{"help", "bogus"} {
 		hs.run(nil, "host", w)
-		hs.expect(1, "Usage: tacctl host <subcommand>", "[ERROR] Unknown subcommand: '"+w+"'")
+		hs.expect(1, "", "[ERROR] Unknown subcommand: '"+w+"'")
+		if hs.out.Len() != 0 {
+			t.Errorf("an unknown sub-command printed the usage: %q", hs.out.String())
+		}
 	}
 	// -h lists the sub-commands as '?' does (help_request.go).
 	hs.run(nil, "host", "-h")
@@ -158,9 +163,9 @@ func TestHostFamilyUsage(t *testing.T) {
 	hs.run(nil, "config", "linux")
 	hs.expect(0, "Linux host TACACS+ or RADIUS login", "")
 	hs.run(nil, "config", "linux", "bogus")
-	hs.expect(1, "Usage: tacctl config linux <subcommand>", "")
-	if hs.err.Len() != 0 {
-		t.Errorf("config linux bogus: stderr %q", hs.err.String())
+	hs.expect(1, "", "[ERROR] Unknown subcommand: 'bogus'\nRun 'tacctl config linux -h' for usage.")
+	if hs.out.Len() != 0 {
+		t.Errorf("config linux bogus: stdout %q", hs.out.String())
 	}
 	hs.run(nil, "config", "linux", "builds", "bogus")
 	hs.expect(1, "", "Usage: tacctl config linux builds [list|clear]")

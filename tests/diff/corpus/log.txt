@@ -12,7 +12,7 @@
 # log: usage and argument errors
 @known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 log
-@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
+@known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital; 0.2.22 item 11: an unknown sub-command is one error line, the closest verbs and a pointer to the help (-h), not the usage
 log bogus
 @known 0.2.1 item 56: the usage has one line per option; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 log help
@@ -75,7 +75,7 @@ config metrics disable ;; status
 # backend list and status
 @known 0.2.1 item 56: the usage has one line per option
 backend
-@known 0.2.1 item 56: the usage has one line per option
+@known 0.2.1 item 56: the usage has one line per option; 0.2.22 item 11: an unknown sub-command is one error line, the closest verbs and a pointer to the help (-h), not the usage
 backend bogus
 @known 0.2.1 item 56: the usage has one line per option
 backend help

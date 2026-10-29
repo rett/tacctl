@@ -151,7 +151,7 @@ on_tty() {
         "web1 rotate carol --key $KEY --yes|'carol' is a tacctl user" \
         "web1 rotate deploy2 --key $KEY --remove-home --yes|--remove-home goes with --remove-old." \
         "web1 rotate deploy2 --key $KEY|Confirm with --yes." \
-        "web1 bogus deploy2 --key $KEY|The only one is 'rotate'." \
+        "web1 bogus deploy2 --key $KEY|Unknown subcommand: 'bogus'" \
         "web1 rotate|Usage: tacctl host provisioner <name> rotate <user>"; do
         run "$TACCTL_BIN_SCRIPT" host provisioner ${c%%|*}
         assert_failure 1

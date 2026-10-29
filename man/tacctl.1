@@ -15465,8 +15465,15 @@ failed, rolled back or left pending (and a review that was not answered, and
 an apply that applied none of its devices and found none already applied:
 .B "\-\-confirmed \-\-yes"
 that skipped them all), a step of a lifecycle phase that failed. An unknown
-sub-command prints the
-usage of its family and ends with 1 as well. An unknown command
+sub-command prints on standard error one error line that names it, the
+sub-commands of that command it may have meant (within two letters of it, or
+the commands that have it as a verb further down:
+.B "device config seed"
+names
+.BR "device config shapes seed" )
+and a pointer
+.RB ( "Run 'tacctl <command> \-h' for usage." ),
+not the usage, and ends with 1 as well. An unknown command
 .RB ( "tacctl enroll" )
 prints on standard error one error line that names it, the commands it
 may have meant (the verbs of that name,

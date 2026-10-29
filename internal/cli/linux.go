@@ -114,6 +114,9 @@ func (inv *invocation) configLinux(args []string) error {
 		inv.write(configLinuxUsage())
 		return nil
 	}
+	if plainWord(arg(args, 0)) {
+		return inv.unknownSub(arg(args, 0))
+	}
 	inv.write(configLinuxUsage())
 	return exit(1)
 }

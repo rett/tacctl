@@ -588,9 +588,7 @@ func (inv *invocation) device(args []string) error {
 		if f, ok := run[sub]; ok {
 			return f(rest)
 		}
-		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-		inv.write(deviceRegUsage())
-		return exit(1)
+		return inv.unknownSub(sub)
 	}
 }
 

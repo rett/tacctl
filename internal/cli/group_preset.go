@@ -49,6 +49,9 @@ func (inv *invocation) groupPreset(args []string) error {
 	a := inv.app
 	const usage = "Usage: tacctl group preset roles [--dry-run] [--force]"
 	if arg(args, 0) != "roles" {
+		if sub := arg(args, 0); plainWord(sub) {
+			return inv.unknownSub(sub)
+		}
 		return inv.usageErr(usage)
 	}
 	p, err := Parse(groupSpecs["preset roles"], args[1:])

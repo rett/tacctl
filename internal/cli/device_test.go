@@ -53,8 +53,10 @@ func TestDeviceUsageAndUnknown(t *testing.T) {
 			t.Errorf("%v: exit %d, %q", args, sb.code, out)
 		}
 	}
-	sb.run("", []string{"device", "frobnicate"})
-	sb.expect(1, "Usage: tacctl device", "Unknown subcommand: 'frobnicate'")
+	if out := sb.run("", []string{"device", "frobnicate"}); out != "" {
+		t.Errorf("an unknown sub-command printed the usage: %q", out)
+	}
+	sb.expect(1, "", "Unknown subcommand: 'frobnicate'")
 	if sb.devices() != "" {
 		t.Error("devices.yaml written by a usage")
 	}

@@ -114,9 +114,7 @@ func (inv *invocation) server(args []string) error {
 	case "addresses":
 		return inv.serverAddresses(rest)
 	default:
-		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-		inv.write(serverHelp())
-		return exit(1)
+		return inv.unknownSub(sub)
 	}
 }
 
@@ -170,7 +168,7 @@ func (inv *invocation) serverAddresses(args []string) error {
 		return nil
 	case "add", "remove", "replace":
 	default:
-		return inv.usageErr("Unknown subcommand: '"+sub+"'", "Run 'tacctl server' for usage.")
+		return inv.unknownSub(sub, "list", "add", "remove", "replace")
 	}
 	if csv == "" {
 		return inv.usageErr("Usage: tacctl server addresses " + sub + " <ip>[,<ip>...]")

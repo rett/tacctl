@@ -446,17 +446,13 @@ func TestUsageErrorRepeatsTheRows(t *testing.T) {
 	sb := newSandbox(t, true)
 	for _, c := range []struct{ path, args []string }{
 		{[]string{"scope", "breakglass"}, nil},
-		{[]string{"scope", "breakglass"}, []string{"lab", "frob"}},
 		{[]string{"scope", "breakglass"}, []string{"lab", "add"}},
 		{[]string{"scope", "breakglass"}, []string{"lab", "remove"}},
 		{[]string{"scope", "protocols"}, nil},
-		{[]string{"scope", "protocols"}, []string{"lab", "frob"}},
 		{[]string{"scope", "protocols"}, []string{"lab", "set"}},
 		{[]string{"scope", "vendor-attrs"}, nil},
-		{[]string{"scope", "vendor-attrs"}, []string{"lab", "frob"}},
 		{[]string{"scope", "vendor-attrs"}, []string{"lab", "enable"}},
 		{[]string{"scope", "devices"}, nil},
-		{[]string{"scope", "devices"}, []string{"lab", "frob"}},
 		{[]string{"scope", "devices"}, []string{"lab", "set"}},
 		{[]string{"scope", "devices"}, []string{"lab", "unset"}},
 		{[]string{"scope", "staging"}, []string{"frob"}},

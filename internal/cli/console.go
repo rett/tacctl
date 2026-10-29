@@ -169,9 +169,7 @@ func (inv *invocation) console(args []string) error {
 		if f, ok := run[sub]; ok {
 			return f(rest)
 		}
-		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-		inv.write(consoleUsage())
-		return exit(1)
+		return inv.unknownSub(sub)
 	}
 }
 

@@ -197,9 +197,7 @@ func (inv *invocation) scopeBlock(args []string) error {
 	}
 	spec, ok := scopeBlockSpecs[sub]
 	if !ok {
-		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-		inv.write(scopeBlockUsage(scope))
-		return exit(1)
+		return inv.unknownSub(sub, specVerbs(scopeBlockSpecs)...)
 	}
 	var rest []string
 	if len(args) > 3 {
@@ -262,5 +260,5 @@ func (inv *invocation) blockRun(c *blockCtx, sub string, p Parsed, usage string)
 	case "adopt":
 		return c.adopt(block, device, p)
 	}
-	return inv.usageErr("Unknown subcommand: '" + sub + "'")
+	return inv.unknownSub(sub, specVerbs(scopeBlockSpecs)...)
 }

@@ -37,7 +37,10 @@ func TestServerAddressesList(t *testing.T) {
 	hs.run(nil, "server")
 	hs.expect(0, "Usage: tacctl server <subcommand>", "")
 	hs.run(nil, "server", "bogus")
-	hs.expect(1, "Usage: tacctl server <subcommand>", "[ERROR] Unknown subcommand: 'bogus'")
+	hs.expect(1, "", "[ERROR] Unknown subcommand: 'bogus'")
+	if hs.out.Len() != 0 {
+		t.Errorf("an unknown sub-command printed the usage: %q", hs.out.String())
+	}
 	hs.run(nil, "server", "addresses", "bogus")
 	hs.expect(1, "", "Unknown subcommand: 'bogus'")
 	hs.run(nil, "server", "addresses", "list", "x")

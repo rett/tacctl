@@ -47,7 +47,10 @@ func logCmd(inv *invocation) *cobra.Command {
 	)
 	// No sub-command or an unknown one (a --backend before the sub-command
 	// included): the usage, exit 1.
-	c.RunE = inv.native(withPreflight, func([]string) error {
+	c.RunE = inv.native(withPreflight, func(args []string) error {
+		if sub := arg(args, 0); plainWord(sub) {
+			return inv.unknownSub(sub)
+		}
 		inv.write(Usage("log", nil))
 		return exit(1)
 	})

@@ -253,5 +253,6 @@ setup() {
 @test "config sudoers: rejects unknown subcommand" {
     run "$TACCTL_BIN_SCRIPT" config sudoers bogus
     assert_failure
-    assert_output --partial "Invalid subcommand"
+    assert_output --partial "Unknown subcommand: 'bogus'"
+    assert_output --partial "Run 'tacctl config sudoers -h' for usage."
 }

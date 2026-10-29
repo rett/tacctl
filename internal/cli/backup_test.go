@@ -414,7 +414,7 @@ func TestStoreShowAndImportArguments(t *testing.T) {
 		{[]string{"store", "import", "/nonexistent"}, 1, "", "Cannot import: /nonexistent not found."},
 		{[]string{"store"}, 0, "show [--json]", ""},
 		{[]string{"store", "-h"}, 0, "Import a legacy tacquito.yaml (default: the live one)", ""},
-		{[]string{"store", "frobnicate"}, 1, "rollback", "Unknown store subcommand 'frobnicate'."},
+		{[]string{"store", "frobnicate"}, 1, "", "Unknown subcommand: 'frobnicate'\nRun 'tacctl store -h' for usage."},
 		{[]string{"store", "show", "--json", "ignored"}, 0, `"version": 1`, ""},
 	} {
 		sb.run("", c.args)

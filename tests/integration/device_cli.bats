@@ -99,7 +99,8 @@ devices:
     run "$TACCTL_BIN_SCRIPT" device frobnicate
     assert_failure 1
     assert_output --partial "Unknown subcommand: 'frobnicate'"
-    assert_output --partial "Usage: tacctl device <subcommand>"
+    assert_output --partial "Run 'tacctl device -h' for usage."
+    refute_output --partial "Usage: tacctl device <subcommand>"
 }
 
 @test "device add: refuses bad input and writes nothing" {

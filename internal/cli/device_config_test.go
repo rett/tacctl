@@ -115,11 +115,10 @@ func TestDeviceConfigUsage(t *testing.T) {
 			}
 		}
 	}
-	out := plain(sb.cfgRun("", []string{"device", "config", "frob"}, route))
-	sb.expect(1, "Usage: tacctl device config <subcommand>", "Unknown subcommand: 'frob'")
-	if out == "" {
-		t.Error("no usage")
+	if out := plain(sb.cfgRun("", []string{"device", "config", "frob"}, route)); out != "" {
+		t.Errorf("an unknown sub-command printed the usage: %q", out)
 	}
+	sb.expect(1, "", "Unknown subcommand: 'frob'")
 	// The family's own usage lists it.
 	if out := sb.dev("", ""); !strings.Contains(out, "config show <name>") {
 		t.Errorf("device usage lacks config show:\n%s", out)

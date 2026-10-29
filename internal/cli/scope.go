@@ -150,11 +150,7 @@ func scopeCmd(inv *invocation) *cobra.Command {
 		case "", "-h", "--help", "help":
 			return inv.scopeUsage()
 		}
-		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-		if err := inv.scopeUsage(); err != nil {
-			return err
-		}
-		return exit(1)
+		return inv.unknownSub(sub)
 	})
 	return c
 }
@@ -1495,7 +1491,7 @@ func (inv *invocation) scopePrefixes(args []string) error {
 	case "move":
 		return inv.scopePrefixesMove(m, scope, argv, arg(args, 3))
 	default:
-		return inv.usageErr("Unknown subcommand: '"+sub+"'", "Run 'tacctl scope prefixes "+scope+"' for usage.")
+		return inv.unknownSub(sub, "list", "add", "remove", "move")
 	}
 
 	if removeAll {
@@ -1921,7 +1917,7 @@ func (inv *invocation) scopeSecret(args []string) error {
 		a.Out.Warn("Update ALL devices in scope '" + scope + "' with the new secret above.")
 		inv.echo("")
 	default:
-		return inv.usageErr("Unknown subcommand: '"+sub+"'", "Run 'tacctl scope secret "+scope+"' for usage.")
+		return inv.unknownSub(sub, "show", "set", "generate")
 	}
 	return nil
 }
@@ -1931,7 +1927,6 @@ func (inv *invocation) scopeSecret(args []string) error {
 func (inv *invocation) scopeProtocols(args []string) error {
 	a := inv.app
 	scope, sub, value := arg(args, 0), arg(args, 1), arg(args, 2)
-	usage := usageLinesOf("scope protocols "+scope, scopeProtocolsRows...)
 	if scope == "" {
 		return inv.usageErr(usageLinesOf("scope protocols <scope>", scopeProtocolsRows...)...)
 	}
@@ -2023,7 +2018,7 @@ func (inv *invocation) scopeProtocols(args []string) error {
 		a.Out.Info("Scope '" + scope + "' protocols filter cleared (every enabled backend serves it).")
 		inv.echo("")
 	default:
-		return inv.usageErr(withUsage("Unknown subcommand: '"+sub+"'", usage)...)
+		return inv.unknownSub(sub, "list", "set", "clear")
 	}
 	return nil
 }
@@ -2096,7 +2091,7 @@ func (inv *invocation) scopeVendorAttrs(args []string) error {
 		return nil
 	case "enable", "disable":
 	default:
-		return inv.usageErr(withUsage("Unknown subcommand: '"+sub+"'. The verbs are enable and disable: nothing is sent until a vendor is enabled.", usage)...)
+		return inv.unknownSubNote(". The verbs are enable and disable: nothing is sent until a vendor is enabled.", sub, "enable", "disable")
 	}
 
 	if value == "" {
@@ -2230,7 +2225,7 @@ func (inv *invocation) scopeDevices(args []string) error {
 		return nil
 	case "set", "unset":
 	default:
-		return inv.usageErr(withUsage("Unknown subcommand: '"+sub+"'", usage)...)
+		return inv.unknownSub(sub, "set", "unset")
 	}
 
 	if addr == "" || (sub == "set" && vendor == "") || (sub == "unset" && vendor != "") {
@@ -2715,7 +2710,7 @@ func (inv *invocation) scopeMgmtACL(args []string) error {
 		}
 		return inv.scopeMgmtACLMode(scope, value)
 	default:
-		return inv.usageErr("Unknown subcommand '" + sub + "'. Use: list | add | remove | clear | cisco-name | juniper-name | mode.")
+		return inv.unknownSub(sub, "list", "add", "remove", "clear", "cisco-name", "juniper-name", "mode")
 	}
 	return nil
 }

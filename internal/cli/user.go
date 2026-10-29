@@ -66,7 +66,10 @@ func userCmd(inv *invocation) *cobra.Command {
 			"Manage which scopes the user can auth from"), n(inv.userScope)),
 	)
 	// No sub-command, 'help' or an unknown word: the usage, exit 1.
-	c.RunE = n(func([]string) error {
+	c.RunE = n(func(args []string) error {
+		if sub := arg(args, 0); plainWord(sub) {
+			return inv.unknownSub(sub)
+		}
 		inv.write(userUsage())
 		return exit(1)
 	})
@@ -1205,7 +1208,7 @@ func (inv *invocation) userScope(args []string) error {
 		return inv.userScopeRemoveAll(username, u.scopes)
 	case mutating:
 	default:
-		return inv.usageErr("Unknown subcommand: '"+sub+"'", "Run 'tacctl user scope "+username+"' for usage.")
+		return inv.unknownSub(sub, "list", "add", "remove", "replace")
 	}
 
 	if csv == "" {
