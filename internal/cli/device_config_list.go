@@ -286,6 +286,58 @@ type listUnitJSON struct {
 	UsersRead     bool   `json:"users_read"`
 }
 
+// configNow is the state of e's last pull against what tacctl renders now
+// (a change of the store makes a device differ without a new pull), computed
+// from the pull records with no login: the state ('ok', 'differs', 'never',
+// 'failed', 'pull' or '-'), the sections that differ and how many statements
+// of its own the device has in each section that is ok. A device that cannot
+// be rendered for shows the state its record holds. render is prepared for e
+// (managedRender.prepare), store and recs are the pull records.
+func (inv *invocation) configNow(store devconf.Store, recs *devconf.Records, render *managedRender, e devreg.Entry, rec *devconf.Record) (state string, differ []string, own map[string]int) {
+	state = inv.configStateOf(e, rec)
+	if !e.Configured {
+		return state, nil, nil
+	}
+	if st, err := inv.staleness(store, recs, render, e); err == nil {
+		state = string(st)
+	}
+	if state == string(devconf.StaleDiffers) || state == string(devconf.StaleOK) {
+		rs := inv.comparedNow(store, rec, render, e)
+		differ = differingSections(rs)
+		own = unmanagedSections(rs)
+	}
+	return state, differ, own
+}
+
+// configNowState is configNow's answer for one device.
+type configNowState struct {
+	state   string
+	differs []string
+}
+
+// configNowStates is configNow for the devices among entries that a pull
+// reads (cisco, juniper, wti), by name; the pull records are read once and
+// each (vendor, scope) rendered once.
+func (inv *invocation) configNowStates(entries []devreg.Entry) map[string]configNowState {
+	var read []devreg.Entry
+	for _, e := range entries {
+		if e.Source == devreg.SourceDevice && slices.Contains(sortedVendors(), e.Vendor) {
+			read = append(read, e)
+		}
+	}
+	render := inv.newManagedRender(managedOptions{}, false)
+	render.prepare(read)
+	store := inv.configStore()
+	recs, _ := store.Load()
+	out := map[string]configNowState{}
+	for _, e := range read {
+		rec, _ := recs.Of(e.Name)
+		state, differ, _ := inv.configNow(store, recs, render, e, rec)
+		out[e.Name] = configNowState{state, differ}
+	}
+	return out
+}
+
 // deviceConfigList is 'device config list'.
 func (inv *invocation) deviceConfigList(args []string) error {
 	p, err := inv.deviceConfigParse("list", args)
@@ -358,19 +410,7 @@ func (inv *invocation) deviceConfigList(args []string) error {
 	var rows []row
 	for _, e := range entries {
 		rec, _ := recs.Of(e.Name)
-		state := inv.configStateOf(e, rec)
-		var differ []string
-		var own map[string]int
-		if e.Configured {
-			if st, err := inv.staleness(store, recs, render, e); err == nil {
-				state = string(st)
-			}
-			if state == string(devconf.StaleDiffers) || state == string(devconf.StaleOK) {
-				rs := inv.comparedNow(store, rec, render, e)
-				differ = differingSections(rs)
-				own = unmanagedSections(rs)
-			}
-		}
+		state, differ, own := inv.configNow(store, recs, render, e, rec)
 		if p.Has("--transport") {
 			tr := ""
 			if rec != nil {

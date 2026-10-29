@@ -8042,7 +8042,7 @@ administrators only.
 .BR discover ,
 .B check
 and
-.B "list \-\-scan" | "\-\-probe"
+.B "list \-\-scan" | "\-\-probe" | "\-\-differs"
 are operator-level (the scan output's notices are filtered the same way;
 .B discover
 lists every address). Everything else needs an administrator.
@@ -8053,7 +8053,7 @@ With no subcommand (or with
 .BR help ),
 prints a usage summary and exits 0.
 .TP
-.BI "device list " "[ word ] [ \-\-name " text " ] [ \-\-ip " address|cidr|text " ] [ \-\-vendor " vendor " ] [ \-\-scope " scope " ] [ \-\-stale ] [ \-\-unconfigured ] [ \-\-scan ] [ \-\-probe ] [ \-\-json ]"
+.BI "device list " "[ word ] [ \-\-name " text " ] [ \-\-ip " address|cidr|text " ] [ \-\-vendor " vendor " ] [ \-\-scope " scope " ] [ \-\-stale ] [ \-\-unconfigured ] [ \-\-differs ] [ \-\-scan ] [ \-\-probe ] [ \-\-json ]"
 One row per registered device, sorted by name
 (upper and lower case alike): name, address, vendor,
 scope, state, last seen, by, via, config, and the open notices. The enrolled
@@ -8093,6 +8093,20 @@ when a scope's prefixes cover the address and
 otherwise.
 .B \-\-unconfigured
 lists only those;
+.B \-\-differs
+lists the devices whose last pull differs from what tacctl renders now,
+computed from the pull records with no login, as
+.B "device config list \-\-differs"
+does (the operator tier's; an engineer gets the devices of their own scopes):
+the config column says
+.B differs
+for them, and
+.B \-\-json
+has config
+.B differs
+and
+.BR differs_in ,
+the sections that differ;
 .B \-\-stale
 lists the devices whose last sighting is older than
 .BR stale\-days ,
@@ -8135,6 +8149,9 @@ Only the devices not seen for stale\-days.
 .TP
 \fB\-\-unconfigured\fR
 Only the devices no scope's prefixes cover.
+.TP
+\fB\-\-differs\fR
+Only the devices whose last pull differs from what is rendered now.
 .TP
 \fB\-\-name\fR \fI<text>\fR
 Only names that contain the text (a comma list: any of them).

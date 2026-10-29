@@ -6,7 +6,7 @@ The device registry gives names to the network devices that authenticate here. I
 
 ```
 device list [<word>] [--name <text>] [--ip <addr|cidr|text>] [--vendor <v>] [--scope <s>] [--stale]
-            [--unconfigured] [--scan] [--probe] [--json]
+            [--unconfigured] [--differs] [--scan] [--probe] [--json]
 
     Registered devices sorted by name (the enrolled hosts are listed by `host list`); `--name`
     (names containing the text), `--ip` (an address, a CIDR or a text the address contains),
@@ -16,8 +16,13 @@ device list [<word>] [--name <text>] [--ip <addr|cidr|text>] [--vendor <v>] [--s
     from the seen cache, CONFIG (the state of the last configuration pull: `ok`, `differs`,
     `never`, `failed`, `pull` for a Cisco device whose syntax is unknown; `-` for a vendor `other`
     and a device in no scope; the operator tier's: a read-only user's list has no such column),
-    open notices; --scan scans first,
-    --probe adds REACH (TCP connect to the ssh port, 3 s)
+    open notices; --scan scans first, --probe adds REACH (TCP connect to the ssh port, 3 s).
+    --differs keeps the devices whose last pull differs from what tacctl renders now, computed
+    from the pull records with no login, as `device config list --differs` does (the operator
+    tier's; an engineer gets their own scopes' devices); the CONFIG column then says `differs`
+    and `--json` has `config: "differs"` and `differs_in`, the sections that differ. `--stale`
+    here is the devices not seen for stale-days; `config list --stale` is the devices never read,
+    failed or differing
 
 device show <name|address> [--all] [--json]
 

@@ -29,6 +29,7 @@ import (
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/shellquote"
+	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -66,7 +67,7 @@ var (
 // deviceSpecs are the arguments of each verb, for the parser and for
 // completion (args.go).
 var deviceSpecs = map[string]Spec{
-	"list": {MaxArgs: 1, Args: []string{""}, Flags: []Flag{{Names: []string{"--stale"}}, {Names: []string{"--unconfigured"}},
+	"list": {MaxArgs: 1, Args: []string{""}, Flags: []Flag{{Names: []string{"--stale"}}, {Names: []string{"--unconfigured"}}, {Names: []string{"--differs"}},
 		{Names: []string{"--name"}, Value: true}, {Names: []string{"--ip"}, Value: true},
 		{Names: []string{"--vendor"}, Value: true, Kind: KindVendors}, {Names: []string{"--scope"}, Value: true, Kind: KindScopes},
 		{Names: []string{"--scan"}}, {Names: []string{"--probe"}}, flagJSON}},
@@ -168,7 +169,7 @@ var deviceSpecs = map[string]Spec{
 
 // deviceVerbs are the verbs ({Use, Short}), in usage order.
 var deviceVerbs = [][2]string{
-	{"list [<word>] [--name <text>] [--ip <addr|cidr|text>] [--vendor <vendor>] [--scope <scope>] [--stale] [--unconfigured] [--scan] [--probe] [--json]", "Registered devices, by name: scope, state, last seen, notices; the options narrow the list"},
+	{"list [<word>] [--name <text>] [--ip <addr|cidr|text>] [--vendor <vendor>] [--scope <scope>] [--stale] [--unconfigured] [--differs] [--scan] [--probe] [--json]", "Registered devices, by name: scope, state, last seen, notices; the options narrow the list"},
 	{"show <name|address> [--all] [--json]", "One device or host in full (--all: the acknowledged notices too)"},
 	{"add [<name>] <address> [options]", "Register a device (no name: offer the one it gives itself by SNMP); the vendor the device names by SNMP is shown, and offered at a terminal"},
 	{"onboard <address> --login <local-user> [--name <name>] [--host-key SHA256:<fp>] [--legacy-ssh] [--check] [--section <list>] [--json]", "Engineers, Junos devices: register a blank device reached with one of its local accounts (its host key accepted first by typing its name) and commit its first configuration as that account, kept only after your own TACACS+ login proves it"},
@@ -224,6 +225,7 @@ var deviceOptions = map[string][][2]string{
 	"list": {
 		{"--stale", "Only the devices not seen for stale-days"},
 		{"--unconfigured", "Only the devices no scope's prefixes cover"},
+		{"--differs", "Only the devices whose last pull differs from what is rendered now"},
 		{"--name <text>", "Only names containing the text (a comma list: any of them)"},
 		{"--ip <addr|cidr|text>", "Only an address equal to, inside, or containing it (a comma list)"},
 		{"--vendor <vendor>", "Only that vendor: cisco, juniper, wti or other (a comma list)"},
@@ -914,6 +916,9 @@ type deviceJSON struct {
 	// Config is the state of the configuration pull: ok, differs, never or
 	// failed (none for a host and for a vendor that is not read).
 	Config string `json:"config,omitempty"`
+	// DiffersIn names the sections of the last pull that differ from what
+	// tacctl renders now; present only for 'device list --differs'.
+	DiffersIn []string `json:"differs_in,omitempty"`
 	// Release, Model and Serial are what the last good pull read from the
 	// device about itself (read-only facts of the pull, shown to whoever is
 	// shown Config; each is absent when the pull did not read it).
@@ -1057,16 +1062,32 @@ func (inv *invocation) deviceList(args []string) error {
 	} else if _, res, err = inv.deviceLoad(); err != nil {
 		return err
 	}
+	var devices []devreg.Entry
+	for _, e := range res.Visible(inv.deviceFilter()) {
+		// The enrolled hosts are listed by 'host list'.
+		if e.Source == devreg.SourceDevice {
+			devices = append(devices, e)
+		}
+	}
+	// --differs: the state of each device's last pull against what tacctl
+	// renders now, from the records with no login, as 'device config list'
+	// computes it.
+	var now map[string]configNowState
+	if p.Has("--differs") {
+		if err := inv.deviceVerbAllowed("device", "list --differs", tier.Operator); err != nil {
+			return err
+		}
+		now = inv.configNowStates(devices)
+	}
 	var shown []devreg.Entry
 	narrow := newListFilter(p)
 	total := 0
-	for _, e := range res.Visible(inv.deviceFilter()) {
-		// The enrolled hosts are listed by 'host list'.
-		if e.Source != devreg.SourceDevice {
-			continue
-		}
+	for _, e := range devices {
 		_, _, _, stale := deviceSeenCols(inv, res, e)
 		if (p.Has("--unconfigured") && e.Configured) || (p.Has("--stale") && !stale) {
+			continue
+		}
+		if p.Has("--differs") && (!e.Configured || now[e.Name].state != string(devconf.StaleDiffers)) {
 			continue
 		}
 		total++
@@ -1085,14 +1106,20 @@ func (inv *invocation) deviceList(args []string) error {
 	if p.Has("--json") {
 		out := []deviceJSON{}
 		for _, e := range shown {
-			out = append(out, deviceJSONOf(inv, res, e, configs))
+			j := deviceJSONOf(inv, res, e, configs)
+			if n, ok := now[e.Name]; ok {
+				j.Config, j.DiffersIn = n.state, n.differs
+			}
+			out = append(out, j)
 		}
 		return inv.printJSON(out)
 	}
-	head := listHead("Registered devices", len(shown), total, !narrow.empty())
+	// --stale, --unconfigured and --differs narrow the list as the filters do.
+	narrowed := !narrow.empty() || p.Has("--stale") || p.Has("--unconfigured") || p.Has("--differs")
+	head := listHead("Registered devices", len(shown), total, narrowed)
 	inv.echo("")
 	if len(shown) == 0 {
-		inv.listNone(head, !narrow.empty(), "None. Register one with: tacctl device add <name> <address>")
+		inv.listNone(head, narrowed, "None. Register one with: tacctl device add <name> <address>")
 		return nil
 	}
 	cols := []ui.Col{ui.Left("NAME"), ui.Left("ADDRESS"), ui.Left("VENDOR"), ui.Left("SCOPE"), ui.Left("STATE"), ui.Left("LAST SEEN"), ui.Left("BY"), ui.Left("VIA"), ui.Left("NOTICES")}
@@ -1118,7 +1145,11 @@ func (inv *invocation) deviceList(args []string) error {
 		row := []any{e.Name, dash(e.Address), e.Vendor, dash(e.Scope), state, last, by, via, dash(kinds(ns))}
 		if configs != nil {
 			rec, _ := configs.Of(e.Name)
-			row = slices.Insert(row, 8, any(inv.configStateOf(e, rec)))
+			cell := inv.configStateOf(e, rec)
+			if n, ok := now[e.Name]; ok {
+				cell = n.state
+			}
+			row = slices.Insert(row, 8, any(cell))
 		}
 		if reach != nil {
 			row = slices.Insert(row, len(row)-1, any(reach[i]))

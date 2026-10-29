@@ -123,6 +123,25 @@ current behaviour; this file is where history lives.
    that take a name still take a host's, and `device notice list` still lists
    the hosts' notices; their behaviour does not change.
 
+7. **`device list --differs` lists the devices whose configuration differs.**
+   It keeps the devices whose last pull differs from what tacctl renders
+   now, computed from the pull records with no login, the way `device config
+   list --differs` does (one shared computation, so both name the same
+   devices): after a change of the store, `tacctl device list --differs` is
+   the list of devices to pull or plan. It is the operator tier's, like the
+   CONFIG column (a read-only user is refused, as for `--scan`), and an
+   engineer gets the devices of their own scopes. The CONFIG column then
+   says `differs`, and `device list --json` has `config: "differs"` and the
+   new field `differs_in`, the sections that differ (as `config list
+   --json`); without the option `device list` still reads the record only and
+   has no such field. `device list --stale` is still the devices not seen for
+   stale-days, where `device config list --stale` is the devices never read,
+   failed or differing. `--stale`, `--unconfigured` and `--differs` now count
+   as narrowing the list: the heading says `Registered devices (1), of 5` and
+   an empty result says `None match.` (it said `None. Register one with...`
+   for `--stale` and `--unconfigured` over a registry with devices). The usage
+   of `device list`, its Tab completion and the manual page show the option.
+
 ## 0.2.21 (2026-10-28)
 
 1. **`user rename` to a name with a period says what to do.** The refusal of
