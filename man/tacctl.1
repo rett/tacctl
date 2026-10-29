@@ -1087,8 +1087,9 @@ until then no device accepts the user.
 .B \-\-no\-change\-required
 skips the requirement. It is not set, and the command says why, for a
 superuser (never held to it) and for a user with no login on this server (the
-server is not enrolled, the user is not in its scope, or its name is no Linux
-account name), who could never change the password.
+server is not enrolled, its name is no Linux account name, its group has no
+privilege level, or, for a server still registered in a scope it shares with
+devices, the user is not in that scope), who could never change the password.
 .PP
 Reserved usernames
 .RB ( root
@@ -1386,8 +1387,10 @@ see
 .PP
 .B on
 skips, and names with the reason, a superuser and a user with no login on this
-server (the server is not enrolled, the user is not in its scope, the name is
-no Linux account name, or the user is disabled), and ends with
+server (the server is not enrolled, the name is no Linux account name, the
+user is disabled, the group has no privilege level, or, for a server still
+registered in a scope it shares with devices, the user is not in that scope),
+and ends with
 .BR "Flagged N, skipped M, already required K." ;
 .B off
 clears the requirement of the one user or of every user who has it, a

@@ -177,7 +177,8 @@ only when set.
   say so, since until then the user can neither log in nor change the password.
 - *A user must be able to change it.* The flag is not set, and the verb says why, for a user with no
   login on this server: the server is not enrolled (`host enroll --local`), the name is no Linux
-  account name (a leftover name with a period), or the user is disabled.
+  account name (a leftover name with a period), the user is disabled, the group has no priv-lvl, or,
+  for a server still registered in a scope it shares with devices, the user is not in that scope.
   `off` clears the flag of the user or of every user who has it, a superuser's included.
 - *Devices.* The TACACS+ and RADIUS configuration put the user in the scope this server is enrolled
   in (`host enroll --local`) and in no other, and only in the protocol of the method it is enrolled
