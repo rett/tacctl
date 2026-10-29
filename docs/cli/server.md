@@ -63,6 +63,7 @@ tacctl server addresses replace 192.0.2.10
 Server
 --------------------------------------------
   Address:         192.0.2.10
+  Name:            web1  (the host name; tacctl server name <label> sets one)
   Default method:  tacplus  (for hosts enrolled without --method)
   Metrics:         enabled, loopback only  (127.0.0.1:8080)
 
@@ -86,9 +87,10 @@ default listener: `disabled` when it is sunk to a port no scraper can reach,
 `enabled, loopback only` or `enabled, externally reachable` by its address.
 The listeners are those of the backends that are installed or enabled; a unit
 that is not installed shows `-`. `--json` has `addresses`, `address_source`
-(`setting`, `registry` or empty), `default_method`, `metrics` (`address`,
-`state`, `reach`) and `backends` (`id`, `protocol`, `installed`, `enabled`,
-`service` and `listeners` with `name`, `network`, `address`, `port`, `unit`).
+(`setting`, `registry` or empty), `name` (`value` and `source`, `setting` or
+`host name`), `default_method`, `metrics` (`address`, `state`, `reach`) and
+`backends` (`id`, `protocol`, `installed`, `enabled`, `service` and
+`listeners` with `name`, `network`, `address`, `port`, `unit`).
 
 **`server name`.** The name is the setting `server.name` of `tacctl.yaml`: 1 to 63 characters of
 lower-case letters, digits and hyphens, a letter first and no hyphen last, like the first label of
