@@ -8,6 +8,12 @@ package devapply
 // always did. A device of exactly one member (a virtual chassis of one
 // prints 'fpc0:' in 'show version') answers like a single device, without a
 // label, and takes a block labelled with that member too (plainOK).
+//
+// The local (master) member of a virtual chassis of two or more members
+// answers without a label [C]: its first lines come before the first label,
+// every other member's label opens a group of lines up to the next label,
+// and the master's last line ends the last group. The member that no label
+// names owns the lines no label opens (unlabelledOwner, chassisReply).
 
 import (
 	"fmt"
@@ -140,7 +146,8 @@ func setKind(set []string) string {
 // member prints the header 'fpc0:' in 'show version' and answers a commit
 // like a single device; a block labelled with that member is read too, and
 // a label of another member is not), and for two routing engines. A chassis
-// or a cluster of two or more members must name every member.
+// or a cluster of two or more members must name every member, except that
+// the master of a chassis answers without a label (unlabelledOwner).
 func plainOK(set []string) bool {
 	return len(set) < 2 || setKind(set) == "re"
 }
@@ -158,7 +165,8 @@ func labelsOf(members []*memberText) []string {
 // succeeds' alone, or one block of it for every member and nothing else. set
 // is the members 'show version' listed (none for a single device): the
 // answer then names exactly those, each once; for one member and for two
-// routing engines the plain answer is read too (plainOK). why names the member and the
+// routing engines the plain answer is read too (plainOK), and so are the
+// lines of a chassis' master (chassisReply). why names the member and the
 // text that is no success, or the missing and unexpected members (empty
 // when the answer has no member or is whole).
 func checkAnswer(body []string, set []string) (ok bool, why string) {
@@ -170,6 +178,12 @@ func checkAnswer(body []string, set []string) (ok bool, why string) {
 		return false, setFault(set, nil)
 	case len(members) == 0:
 		return exactly(body, textCheckOK), ""
+	}
+	if owner, why := unlabelledOwner(set, labelsOf(members), plain); owner != "" || why != "" {
+		if why != "" {
+			return false, why
+		}
+		return chassisReply(set, owner, body, nil)
 	}
 	for _, m := range members {
 		for i, t := range m.texts {
@@ -192,9 +206,10 @@ func checkAnswer(body []string, set []string) (ok bool, why string) {
 
 // readCommitted reports whether a commit's answer is want, after the
 // check's 'configuration check succeeds' that a commit prints first [C] (or
-// without it). A device with members prints it for each of them (by
-// analogy with the check's blocks and the commit of two routing engines;
-// no capture of a commit's answer from one): every member's text is the
+// without it). A chassis whose master answers without a label is read by
+// chassisReply [C]. A device in which every member has a label prints a
+// block for each of them (by analogy with the check's blocks and the commit
+// of two routing engines; no capture of one): every member's text is the
 // check's success, optionally, then the commit's note, optionally, and last
 // 'commit complete'; the note may also stand alone between the members'
 // blocks, where the single device prints it. why names the member and the
@@ -202,7 +217,7 @@ func checkAnswer(body []string, set []string) (ok bool, why string) {
 // for a single device): the answer names exactly those, and every one of
 // them ends in 'commit complete', so the commit's members are the check's;
 // for one member, and for two routing engines, the plain answer is read too
-// (plainOK).
+// (plainOK), and so are the lines of a chassis' master (chassisReply).
 func readCommitted(body []string, set []string, want ...string) (ok bool, why string) {
 	plain, members, why := splitMembers(body)
 	switch {
@@ -213,12 +228,15 @@ func readCommitted(body []string, set []string, want ...string) (ok bool, why st
 	case len(members) == 0:
 		return exactly(body, append([]string{textCheckOK}, want...)...) || exactly(body, want...), ""
 	}
-	var notes []string
-	for _, w := range want {
-		if w != textCommitComplete {
-			notes = append(notes, w)
+	if owner, why := unlabelledOwner(set, labelsOf(members), plain); owner != "" || why != "" {
+		if why != "" && !exactly(plain, notesOf(want)...) {
+			return false, why
+		}
+		if owner != "" {
+			return chassisReply(set, owner, body, want)
 		}
 	}
+	notes := notesOf(want)
 	// the stand-alone lines are the note, or none when the members print it
 	inMembers := false
 	var unfinished []string
@@ -260,4 +278,182 @@ func readCommitted(body []string, set []string, want ...string) (ok bool, why st
 		return false, fmt.Sprintf("no member and no line says %q", cut(notes[0]))
 	}
 	return true, ""
+}
+
+// notesOf are the commit's notes among the lines a commit's answer is
+// wanted to hold: all but 'commit complete'.
+func notesOf(want []string) []string {
+	var notes []string
+	for _, w := range want {
+		if w != textCommitComplete {
+			notes = append(notes, w)
+		}
+	}
+	return notes
+}
+
+// unlabelledOwner finds the member of a virtual chassis that answers
+// without a label [C]. For a set of two or more members of kind fpc, when
+// the answer has lines no label opens (plain) and exactly one member of the
+// set has no block, those lines are that member's: the master, whose
+// answer is not headed. It returns the member, or why the plain lines
+// cannot be one's: every member has a block (they are a stray line), or
+// more than one lacks one (which of them owns the lines cannot be told).
+// Nothing else reads plain lines as a member's: a cluster, two routing
+// engines and a single member keep their rules (plainOK), and so does an
+// answer in which every member has a block.
+func unlabelledOwner(set, labels, plain []string) (owner, why string) {
+	if len(plain) == 0 || len(set) < 2 || setKind(set) != "fpc" {
+		return "", ""
+	}
+	var missing []string
+	for _, l := range set {
+		if !slices.Contains(labels, l) {
+			missing = append(missing, l)
+		}
+	}
+	if len(missing) == 1 {
+		return missing[0], ""
+	}
+	if len(missing) == 0 {
+		return "", ""
+	}
+	return "", fmt.Sprintf("a line %q outside the members' answers: members %s all lack a block, so it cannot be the answer of one",
+		cut(plain[0]), strings.Join(missing, ", "))
+}
+
+// lineGroup is the lines a label opens: all of them up to the next label
+// or the end of the answer.
+type lineGroup struct {
+	label string
+	lines []string
+}
+
+// splitGroups separates an answer into the lines before the first label
+// and the groups the labels open.
+func splitGroups(body []string) (head []string, groups []*lineGroup) {
+	var cur *lineGroup
+	for _, l := range nonBlank(body) {
+		l = strings.TrimSpace(l)
+		if m := reMemberLabel.FindStringSubmatch(l); m != nil {
+			cur = &lineGroup{label: m[1]}
+			groups = append(groups, cur)
+			continue
+		}
+		if cur == nil {
+			head = append(head, cut(l))
+		} else {
+			cur.lines = append(cur.lines, cut(l))
+		}
+	}
+	return head, groups
+}
+
+// chassisReply reads the answer of a virtual chassis whose one member,
+// owner, answers without a label [C]. The check of a chassis of three:
+//
+//	configuration check succeeds        the owner (the master)
+//	fpc1:
+//	configuration check succeeds
+//	fpc2:
+//	configuration check succeeds
+//
+// and a confirmed commit (the reply of 'commit' leaves out the note's
+// lines):
+//
+//	configuration check succeeds        the owner: its check, then the note
+//	commit confirmed will be ...
+//	fpc1:
+//	commit complete                     a member: complete, then the note
+//	commit confirmed will be ...
+//	fpc2:
+//	commit complete
+//	commit confirmed will be ...
+//	commit complete                     the owner's last line, in the last group
+//
+// A label owns the lines up to the next label, so the owner's 'commit
+// complete' reads as the last group's last line. want is nil for the check,
+// else the commit's note (if it has one) and 'commit complete'. Every rule
+// is strict, and the first line that breaks one is named with its member:
+// the owner's head is the check (optional for a commit) and the note
+// (exactly when the commit has one) and nothing else; each labelled
+// member's group is the check (optional, for a commit), 'commit complete'
+// and the note, in that order (the check alone, for the check); the note is
+// required of a confirmed commit and refused otherwise, as the real chassis
+// prints it for every member, so a confirmed commit without it is refused;
+// a label appears once; the owner's 'commit complete' ends the last group,
+// and without one the owner did not finish. The owner is inferred as the
+// one member of the set that has no block.
+func chassisReply(set []string, owner string, body []string, want []string) (ok bool, why string) {
+	head, groups := splitGroups(body)
+	who := owner + " (unlabelled)"
+	var notes []string
+	var base []string // what each labelled member's group holds, in order
+	if want == nil {
+		base = []string{textCheckOK}
+	} else {
+		notes = notesOf(want)
+		base = append([]string{textCommitComplete}, notes...)
+	}
+
+	// the owner's head: the check (optional for a commit), then the note
+	headWant := notes
+	if want == nil || (len(head) > 0 && head[0] == textCheckOK) {
+		headWant = append([]string{textCheckOK}, notes...)
+	}
+	if why := lineFault(who, head, headWant); why != "" {
+		return false, why
+	}
+
+	seen := map[string]bool{}
+	labels := []string{owner}
+	for i, g := range groups {
+		if seen[g.label] {
+			return false, fmt.Sprintf("member %s has two blocks: its label appears twice", g.label)
+		}
+		seen[g.label] = true
+		labels = append(labels, g.label)
+		lines := g.lines
+		core := base
+		if want != nil && len(lines) > 0 && lines[0] == textCheckOK {
+			// a commit's member may print the check first, as the owner's head
+			core = append([]string{textCheckOK}, base...)
+		}
+		if i == len(groups)-1 && want != nil {
+			// the owner's last line ends the last group
+			switch {
+			case len(lines) == len(core) && slices.Equal(lines, core):
+				return false, fmt.Sprintf("member %s did not answer %q after the members' blocks", who, textCommitComplete)
+			case len(lines) > len(core) && lines[len(lines)-1] == textCommitComplete:
+				lines = lines[:len(lines)-1]
+			case len(lines) == len(core)+1 && slices.Equal(lines[:len(core)], core):
+				// the member's own lines, and one more where the owner's last stands
+				return false, fmt.Sprintf("member %s answered %q after the members' blocks, not %q", who, lines[len(core)], textCommitComplete)
+			}
+		}
+		if why := lineFault(g.label, lines, core); why != "" {
+			return false, why
+		}
+	}
+	if why := setFault(set, labels); why != "" {
+		return false, why
+	}
+	return true, ""
+}
+
+// lineFault compares a member's lines with the lines it must hold, and
+// names the first that is not the one wanted, or the one that is missing.
+func lineFault(member string, got, want []string) string {
+	for i := 0; i < len(got) && i < len(want); i++ {
+		if got[i] != want[i] {
+			return fmt.Sprintf("member %s answered %q, not %q", member, got[i], want[i])
+		}
+	}
+	switch {
+	case len(got) > len(want):
+		return fmt.Sprintf("member %s answered %q besides its own lines", member, got[len(want)])
+	case len(got) < len(want):
+		return fmt.Sprintf("member %s did not answer %q", member, want[len(got)])
+	}
+	return ""
 }
