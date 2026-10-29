@@ -76,7 +76,7 @@ command -v wget > /dev/null 2>&1 || { apt-get install -y -qq wget ca-certificate
 tacctl config render 2>&1 | tail -2
 
 section "backend enable radius"
-tacctl backend enable radius -y; rc=$?
+tacctl backend enable radius --yes; rc=$?
 check "enable exits 0" is "$rc" 0
 pkg_version
 "$(command -v freeradius || command -v radiusd)" -v | head -1
@@ -159,7 +159,7 @@ systemctl reload "$UNIT"; check "reload succeeds" is "$?" 0
 check "still serving after reload" is "$(rq alice Correct-Horse-1)" Access-Accept
 
 section "backend disable radius"
-tacctl backend disable radius -y 2>&1 | tail -3
+tacctl backend disable radius --yes 2>&1 | tail -3
 check "unit inactive" bash -c "! systemctl is-active --quiet $UNIT"
 check "unit not enabled" bash -c "! systemctl is-enabled --quiet $UNIT"
 check "drop-in removed, unit is the package's again" bash -c "[[ ! -e $DROPIN ]] && ! systemctl cat $UNIT | grep -q tacctl"
@@ -171,7 +171,7 @@ check "nothing listens on 1812" bash -c "! ss -uln | grep -q ':1812 '"
 # skipped there.
 if systemctl start "$UNIT" 2> /dev/null && sleep 2 && systemctl is-active --quiet "$UNIT"; then
     ok "the package's own configuration still starts under the unit (untouched)"
-    tacctl backend enable radius -y > /tmp/out 2>&1; rc=$?
+    tacctl backend enable radius --yes > /tmp/out 2>&1; rc=$?
     check "enable is refused while somebody runs the unit, and the unit is left running" bash -c "[[ $rc == 1 ]] && grep -q \"somebody's RADIUS server\" /tmp/out && systemctl is-active --quiet $UNIT && [[ ! -e $DROPIN ]]"
     systemctl stop "$UNIT"
 else
@@ -180,7 +180,7 @@ else
 fi
 
 section "enable again (installed: no package install)"
-tacctl backend enable radius -y 2>&1 | tail -2
+tacctl backend enable radius --yes 2>&1 | tail -2
 check "active and enabled" bash -c "systemctl is-active --quiet $UNIT && systemctl is-enabled --quiet $UNIT"
 check "cases pass again" "${HERE}/cases.sh" "$DATA"
 

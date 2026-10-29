@@ -93,7 +93,7 @@ complete_words() {
     assert_output "$(printf 'bash\nzsh\nfish')"
 }
 
-@test "completion: backend subcommands, then backend ids, then -y" {
+@test "completion: backend subcommands, then backend ids, then --yes" {
     complete_words tacctl backend ""
     assert_output "$(printf 'disable\nenable\nlist\nstatus')"
     complete_words tacctl backend enable ""
@@ -103,7 +103,7 @@ complete_words() {
     complete_words tacctl backend disable ""
     assert_output "tacacs"
     complete_words tacctl backend enable radius ""
-    assert_output "$(printf -- '-y\n--yes')"
+    assert_output "--yes"
     complete_words tacctl backend list ""
     assert_output ""
 }
@@ -283,9 +283,9 @@ complete_words() {
     complete_words tacctl log tail --backend ""
     assert_output "$(printf 'tacacs\nradius')"
     complete_words tacctl log clear ""
-    assert_output "$(printf -- '--backend\n--force\n-y\n--yes')"
+    assert_output "$(printf -- '--backend\n--force\n--yes')"
     complete_words tacctl log clear --backend tacacs ""
-    assert_output "$(printf -- '--force\n-y\n--yes')"
+    assert_output "$(printf -- '--force\n--yes')"
 }
 
 @test "completion: scope protocols still completes its verbs and the protocols" {
@@ -343,11 +343,11 @@ complete_words() {
 
 @test "completion: install, upgrade, uninstall and version offer their flags" {
     complete_words tacctl install ""
-    assert_output "$(printf -- '--branch\n--server\n-y\n--yes')"
+    assert_output "$(printf -- '--branch\n--server\n--yes')"
     complete_words tacctl upgrade ""
     assert_output "--branch"
     complete_words tacctl uninstall ""
-    assert_output "$(printf -- '-y\n--yes')"
+    assert_output "--yes"
     complete_words tacctl version ""
     assert_output "--long"
 }

@@ -121,7 +121,7 @@ package_present() {
 }
 
 radius_up() {
-    tacctl backend enable radius -y
+    tacctl backend enable radius --yes
     assert_success
     : > "$CALLS_LOG"
 }
@@ -153,7 +153,7 @@ enabled_list() {
 # --- enable ------------------------------------------------------------------
 
 @test "enable (Debian layout): installs the packages, stops the package's own unit, renders, installs the drop-in, starts" {
-    tacctl backend enable radius -y
+    tacctl backend enable radius --yes
     assert_success
     assert_output --partial "Installing FreeRADIUS (freeradius freeradius-utils)"
     assert_output --partial "Backend 'radius' is enabled and running."
@@ -203,7 +203,7 @@ enabled_list() {
 @test "enable (RHEL layout): dnf, radiusd.service, the radiusd account, a forking ExecStart" {
     export TACCTL_RADIUS_FAMILY=rhel
     rm -f "${STUB_BIN}/apt-get"
-    tacctl backend enable radius -y
+    tacctl backend enable radius --yes
     assert_success
     stub_called '^dnf install -y -q freeradius freeradius-utils$'
     local dropin="${TACCTL_SYSTEMD_DIR}/radiusd.service.d/tacctl.conf"
@@ -220,7 +220,7 @@ enabled_list() {
 }
 
 @test "enable: the warnings of the rendered state are shown (command rules, secrets)" {
-    tacctl backend enable radius -y
+    tacctl backend enable radius --yes
     assert_success
     assert_output --partial "RADIUS does not enforce the command rules (commands.<group>) of: operator."
     assert_output --partial "The secret of scope lab, prod-inner is longer than 63 characters or has a space"
@@ -232,7 +232,7 @@ enabled_list() {
     : > "${SD}/active.freeradius"
     local before
     before=$(state)
-    tacctl backend enable radius -y
+    tacctl backend enable radius --yes
     assert_failure
     assert_output --partial "freeradius.service is running: somebody's RADIUS server"
     assert_output --partial "systemctl disable --now freeradius.service"
@@ -247,11 +247,11 @@ enabled_list() {
 @test "enable: so is one that is only enabled at boot; once handed over, enable goes through without the package manager" {
     package_present
     : > "${SD}/enabled.freeradius"
-    tacctl backend enable radius -y
+    tacctl backend enable radius --yes
     assert_failure
     assert_output --partial "freeradius.service is enabled at boot"
     rm -f "${SD}/enabled.freeradius"
-    tacctl backend enable radius -y
+    tacctl backend enable radius --yes
     assert_success
     assert_output --partial "FreeRADIUS is already installed"
     ! stub_called '^apt-get'
@@ -262,7 +262,7 @@ enabled_list() {
     : > "${SD}/fail-check"
     local before
     before=$(state)
-    tacctl backend enable radius -y
+    tacctl backend enable radius --yes
     assert_failure
     assert_output --partial "FreeRADIUS rejects the rendered configuration"
     # The daemon's message names the live path, not the scratch copy.
@@ -278,7 +278,7 @@ enabled_list() {
     : > "${SD}/fail-start"
     local before
     before=$(state)
-    tacctl backend enable radius -y
+    tacctl backend enable radius --yes
     assert_failure
     assert_output --partial "FreeRADIUS failed to start"
     assert_output --partial "Backend 'radius' was not enabled."
@@ -292,7 +292,7 @@ enabled_list() {
 
 @test "disable: stops and disables the unit, removes the drop-in, keeps the rendered files; enable brings it back without installing" {
     radius_up
-    tacctl backend disable radius -y
+    tacctl backend disable radius --yes
     assert_success
     assert_output --partial "Backend 'radius' is disabled"
     [[ "$(enabled_list)" == "tacacs" ]]
@@ -305,7 +305,7 @@ enabled_list() {
     assert_line --regexp '^  radius +radius +freeradius +yes +no +inactive'
 
     : > "$CALLS_LOG"
-    tacctl backend enable radius -y
+    tacctl backend enable radius --yes
     assert_success
     refute_output --partial "is not installed"
     ! stub_called '^apt-get'
@@ -315,24 +315,24 @@ enabled_list() {
 
 @test "disable: while disabled its artifacts are not rendered, and the store can change" {
     radius_up
-    tacctl backend disable radius -y
+    tacctl backend disable radius --yes
     local before
     before=$(sha256sum < "$RUSERS")
     tacctl user disable bob
     assert_success
     [[ "$(sha256sum < "$RUSERS")" == "$before" ]]
     # Enabling renders the current store.
-    tacctl backend enable radius -y
+    tacctl backend enable radius --yes
     assert_success
     refute grep -q '^bob' "$RUSERS"
 }
 
 @test "re-enable: refused while somebody runs the package's configuration under the unit, which is left running" {
     radius_up
-    tacctl backend disable radius -y
+    tacctl backend disable radius --yes
     : > "${SD}/active.freeradius"
     : > "$CALLS_LOG"
-    tacctl backend enable radius -y
+    tacctl backend enable radius --yes
     assert_failure
     assert_output --partial "somebody's RADIUS server"
     [[ -e "${SD}/active.freeradius" ]]
@@ -649,7 +649,7 @@ EOF
 @test "log clear --backend radius: truncates the three logs after a yes" {
     radius_up
     plant_logs
-    tacctl log clear --backend radius -y
+    tacctl log clear --backend radius --yes
     assert_success
     [[ ! -s "${TACCTL_RADIUS_LOG}/tacctl-auth.log" && ! -s "${TACCTL_RADIUS_LOG}/tacctl-accounting.log" && ! -s "${TACCTL_RADIUS_LOG}/tacctl-radius.log" ]]
 }
@@ -795,7 +795,7 @@ radius_uninstall() {
 
 @test "upgrade: a disabled backend (no drop-in) is left alone" {
     radius_up
-    tacctl backend disable radius -y
+    tacctl backend disable radius --yes
     : > "$CALLS_LOG"
     local before
     before=$(state)
@@ -912,7 +912,7 @@ radius_uninstall() {
 
 @test "uninstall: a disabled RADIUS backend is still found (its rendered files hold secrets) and somebody else's running unit is not stopped" {
     radius_up
-    tacctl backend disable radius -y
+    tacctl backend disable radius --yes
     : > "${SD}/active.freeradius"
     : > "$CALLS_LOG"
     radius_uninstall stop

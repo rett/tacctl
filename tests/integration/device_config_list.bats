@@ -224,7 +224,7 @@ print("fine")' <<< "$output"
     assert_success
     [[ -f "${TACCTL_VAR_LIB}/device-config/lab-j.yaml" ]]
     [[ -f "${TACCTL_VAR_LIB}/device-config/lab-k.yaml" ]]
-    run bash -c 'printf "lab-j,192.168.1.20,juniper\npdu1,192.168.1.40,wti\n" | "$1" device import - --replace -y' _ "$TACCTL_BIN_SCRIPT"
+    run bash -c 'printf "lab-j,192.168.1.20,juniper\npdu1,192.168.1.40,wti\n" | "$1" device import - --replace --yes' _ "$TACCTL_BIN_SCRIPT"
     assert_success
     [[ -f "${TACCTL_VAR_LIB}/device-config/lab-j.yaml" ]]
     [[ ! -e "${TACCTL_VAR_LIB}/device-config/lab-k.yaml" ]]

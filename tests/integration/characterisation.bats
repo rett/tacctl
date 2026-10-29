@@ -796,7 +796,7 @@ ${ESC}[0;31m[ERROR]${ESC}[0m $1"
     stub_cmd git
     stub_cmd wget
     runs "$TACCTL_BIN_SCRIPT" install --branch < /dev/null
-    _refused "Usage: tacctl install [--branch <name>] [--server <ip>] [-y|--yes]" --branch
+    _refused "Usage: tacctl install [--branch <name>] [--server <ip>] [--yes]" --branch
     refute_called '^(git|wget) '
 }
 
@@ -804,12 +804,12 @@ ${ESC}[0;31m[ERROR]${ESC}[0m $1"
 @test "install and uninstall: an unknown argument is refused before the plan" {
     stub_cmd git
     stub_cmd wget
-    runs "$TACCTL_BIN_SCRIPT" install -y whatever --branch feature/x < /dev/null
-    _refused "Usage: tacctl install [--branch <name>] [--server <ip>] [-y|--yes]" whatever
+    runs "$TACCTL_BIN_SCRIPT" install --yes whatever --branch feature/x < /dev/null
+    _refused "Usage: tacctl install [--branch <name>] [--server <ip>] [--yes]" whatever
     runs "$TACCTL_BIN_SCRIPT" uninstall --branch feature/x < /dev/null
-    _refused "Usage: tacctl uninstall [-y|--yes]" --branch
-    runs "$TACCTL_BIN_SCRIPT" uninstall -y extra < /dev/null
-    _refused "Usage: tacctl uninstall [-y|--yes]" extra
+    _refused "Usage: tacctl uninstall [--yes]" --branch
+    runs "$TACCTL_BIN_SCRIPT" uninstall --yes extra < /dev/null
+    _refused "Usage: tacctl uninstall [--yes]" extra
     [[ ! -s "$CALLS_LOG" || -z "$(grep -vE '^(chown|logger|sleep) ' "$CALLS_LOG")" ]]
 }
 

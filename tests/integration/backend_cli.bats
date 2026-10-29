@@ -137,7 +137,7 @@ run_plain() {
     assert_output --partial "Backends: tacacs radius"
     run "$TACCTL_BIN_SCRIPT" backend frobnicate
     assert_failure 1
-    assert_output --partial "enable <id> [-y]"
+    assert_output --partial "enable <id> [--yes]"
 }
 
 # bats test_tags=cutover:wp2-4d

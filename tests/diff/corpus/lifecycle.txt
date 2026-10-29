@@ -2,7 +2,7 @@
 # stop before they change anything, which are the only ones a sandboxed run may
 # take. install and uninstall stop at their confirmation prompt (a closed stdin
 # or 'n' is a no); anything past it would install packages, write /opt, /etc
-# and /usr/local or remove them. Never add -y|--yes to these lines, nor a 'y'
+# and /usr/local or remove them. Never add --yes to these lines, nor a 'y'
 # answer.
 #
 # Left out on purpose:
@@ -25,7 +25,7 @@ backend enable -x
 backend enable --force radius
 backend enable radius tacacs
 backend enable tacacs
-backend enable tacacs -y
+backend enable tacacs --yes
 backend enable radius
 backend enable radius <<< n
 backend enable radius <<< N\n
@@ -35,7 +35,7 @@ backend enable --yes
 backend enable radius -z
 backend enable radius --yes=1
 backend enable Radius
-backend enable tacacs radius -y
+backend enable tacacs radius --yes
 
 # --- backend disable -----------------------------------------------------------
 backend disable
@@ -45,9 +45,9 @@ backend disable radius tacacs
 backend disable radius
 backend disable radius --yes
 backend disable tacacs
-backend disable tacacs -y
+backend disable tacacs --yes
 backend disable ""
-backend disable -y
+backend disable --yes
 backend disable tacacs --force
 backend disable TACACS
 backend disable tacacs tacacs

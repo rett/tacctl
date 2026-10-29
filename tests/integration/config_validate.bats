@@ -35,12 +35,12 @@ snapshot_count() { find "${TACCTL_STATE_DIR}/backups" -mindepth 1 -maxdepth 1 -n
 # plain: the last output with colours stripped.
 plain() { output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output"); }
 
-@test "config validate --fix-names -y: renames every name, one snapshot per rename" {
+@test "config validate --fix-names --yes: renames every name, one snapshot per rename" {
     run "$TACCTL_BIN_SCRIPT" config validate
     plain
     assert_output --partial "the device 'Core-SW1' has upper case in its name"
     n=$(snapshot_count)
-    run "$TACCTL_BIN_SCRIPT" config validate --fix-names -y
+    run "$TACCTL_BIN_SCRIPT" config validate --fix-names --yes
     assert_success
     plain
     assert_output --partial "Device 'Core-SW1' renamed to 'core-sw1'."
@@ -69,7 +69,7 @@ plain() { output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output"); }
 
 @test "config validate --fix-names: a name whose lower-case spelling is taken is not offered and the exit is 1" {
     "$TACCTL_BIN_SCRIPT" user add carol readonly --hash "$HASH" --scopes lab > /dev/null
-    run "$TACCTL_BIN_SCRIPT" config validate --fix-names -y
+    run "$TACCTL_BIN_SCRIPT" config validate --fix-names --yes
     assert_failure 1
     plain
     assert_output --partial "'Carol' is not offered: 'carol' is taken; pick a name: tacctl user rename Carol <new>"

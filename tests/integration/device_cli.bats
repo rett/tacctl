@@ -66,7 +66,7 @@ snapshot_count() { find "${TACCTL_STATE_DIR}/backups" -mindepth 1 -maxdepth 1 -n
     before=$(sha256sum < "${TACCTL_STATE_DIR}/store.yaml")
     "$TACCTL_BIN_SCRIPT" device add core-sw1 10.99.0.1 --vendor cisco --no-host-key
     "$TACCTL_BIN_SCRIPT" device rename core-sw1 dc1-core1
-    "$TACCTL_BIN_SCRIPT" device remove dc1-core1 -y
+    "$TACCTL_BIN_SCRIPT" device remove dc1-core1 --yes
     after=$(sha256sum < "${TACCTL_STATE_DIR}/store.yaml")
     [[ "$before" == "$after" ]]
     run stat -c %a "$DEVICES"
@@ -286,7 +286,7 @@ devices:
     assert_failure 1
 }
 
-@test "device remove: confirms, cancels on closed stdin, -y and --all skip the question" {
+@test "device remove: confirms, cancels on closed stdin, --yes and --all skip the question" {
     "$TACCTL_BIN_SCRIPT" device add core-sw1 10.99.0.1 --no-host-key
     "$TACCTL_BIN_SCRIPT" device add edge-fw 10.99.0.2 --no-host-key
     local before
@@ -300,9 +300,9 @@ devices:
     assert_success
     run grep -c core-sw1 "$DEVICES"
     assert_output "0"
-    run "$TACCTL_BIN_SCRIPT" device remove nope -y
+    run "$TACCTL_BIN_SCRIPT" device remove nope --yes
     assert_failure 1
-    run "$TACCTL_BIN_SCRIPT" device remove --all -y
+    run "$TACCTL_BIN_SCRIPT" device remove --all --yes
     assert_success
     run "$TACCTL_BIN_SCRIPT" device list
     plain
@@ -351,7 +351,7 @@ CSV
     # YAML out is the file; it imports back (--replace) to the same bytes.
     "$TACCTL_BIN_SCRIPT" device export > "${BATS_TEST_TMPDIR}/out.yaml"
     cmp "${BATS_TEST_TMPDIR}/out.yaml" "$DEVICES"
-    run "$TACCTL_BIN_SCRIPT" device import --replace -y - < "${BATS_TEST_TMPDIR}/out.yaml"
+    run "$TACCTL_BIN_SCRIPT" device import --replace --yes - < "${BATS_TEST_TMPDIR}/out.yaml"
     assert_success
     cmp "${BATS_TEST_TMPDIR}/out.yaml" "$DEVICES"
 }
@@ -412,7 +412,7 @@ CSV
     assert_failure 1
     plain
     assert_output --partial "'web1' is an enrolled host"
-    run "$TACCTL_BIN_SCRIPT" device remove web1 -y
+    run "$TACCTL_BIN_SCRIPT" device remove web1 --yes
     assert_failure 1
     plain
     assert_output --partial "is an enrolled host"
@@ -534,7 +534,7 @@ x $(key rsa)"
     assert_output --partial "Aborted; the pin was not changed."
     run grep -c host_keys "$DEVICES"
     assert_output "0"
-    run "$TACCTL_BIN_SCRIPT" device hostkey core-sw1 accept -y
+    run "$TACCTL_BIN_SCRIPT" device hostkey core-sw1 accept --yes
     assert_success
     plain
     assert_output --partial "Pinned 2 host key(s) for 'core-sw1'."

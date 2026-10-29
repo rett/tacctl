@@ -298,7 +298,7 @@ device config apply --check --max 0 --all
 @known 0.2.9 item 5: device config shapes is new
 device config shapes
 @known 0.2.9 item 5: device config shapes is new
-device config shapes seed nosuch -y
+device config shapes seed nosuch --yes
 @known 0.2.9 item 12: device collect is new
 device collect
 @known 0.2.9 item 12: device collect is new
@@ -402,7 +402,7 @@ device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device
 @known 0.2.4 item 13: device snmp is new; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 version v3 ;; device snmp core-sw1 clear ;; device export
 @known 0.2.4 item 13: device snmp is new; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
-device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 community --stdin <<< dev-community-1 ;; device rename core-sw1 dc1-core1 ;; device snmp dc1-core1 show --reveal ;; device remove dc1-core1 -y
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 community --stdin <<< dev-community-1 ;; device rename core-sw1 dc1-core1 ;; device snmp dc1-core1 show --reveal ;; device remove dc1-core1 --yes
 @known 0.2.4 item 13: the registry has the snmp map; 0.2.4 item 14: device show has the SNMP rows and scope snmp show says the order; 0.2.5 item 25: a Cisco device's show has a Config syntax row; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 version v2c ;; device show core-sw1 ;; scope snmp lab show
 
