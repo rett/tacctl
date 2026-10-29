@@ -49,6 +49,9 @@ const (
 	// devices and hosts reach this server at, a list that holds one address
 	// for now (ServerAddressesProblem).
 	TypeServerAddresses = "server_addresses"
+	// TypeServerName is server.name (0.2.22): the name of this server in
+	// the console prompt and its notices (names.ServerNameProblem).
+	TypeServerName = "server_name"
 )
 
 // listTypes take list input (conf_set_list / a JSON list).
@@ -118,10 +121,14 @@ func NewSchema(backends []string) *Schema {
 			// The address devices and hosts reach this server at (0.2.21;
 			// 'host enroll --local' writes it): a list of one for now.
 			"server.addresses": {Type: TypeServerAddresses},
+			// The name the console prompt and its notices show in place of
+			// the host name (0.2.22). A 0.2.21 binary does not know the key
+			// (Added0222, rollback.go).
+			"server.name": {Type: TypeServerName},
 			// Backends that serve the model, in render and restart order.
 			"backends.enabled": {Type: TypeBackendList, Values: slices.Clone(backends),
 				Default: []any{"tacacs"}, HasDefault: true},
-			// Per-backend daemon settings ('tacctl config loglevel|metrics').
+			// Per-backend daemon settings ('tacctl config loglevel', 'tacctl server metrics').
 			"backends.tacacs.level": {Type: TypeInt, Min: intp(0), Max: intp(100),
 				Default: 20, HasDefault: true},
 			"backends.tacacs.metrics_address": {Type: TypeHostPort,
@@ -485,6 +492,15 @@ func (s *Schema) Validate(path string, value any, isList bool) string {
 		return snmpTextProblem(value)
 	case TypeServerAddresses:
 		return ServerAddressesProblem(value)
+	case TypeServerName:
+		str, isStr := value.(string)
+		if !isStr {
+			return "must be a string"
+		}
+		if p := names.ServerNameProblem(str); p != "" {
+			return py.ReprString(str) + " " + p
+		}
+		return ""
 	case TypeSudoCommandList:
 		items, isList := py.List(value)
 		if !isList || len(items) == 0 {

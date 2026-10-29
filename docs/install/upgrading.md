@@ -105,8 +105,10 @@ needs it there, so every target adds the scope of this server's own login
 (`tacctl`) to the scopes of each user who logs in to the server and lacks it
 (the plan counts and names them; a warning, so `--apply` needs `--yes`), after
 a snapshot. Every target also removes the server address `server.addresses`
-from `tacctl.yaml`, which no older release knows; the host registry keeps the
-address in this server's entry, which the older release reads.
+and the server name `server.name` (0.2.22, `tacctl server name`) from
+`tacctl.yaml`, which no older release knows; the host registry keeps the
+address in this server's entry, which the older release reads, and the
+console shows the host name again.
 
 **An emergency lockdown stops every rollback to a release before 0.2.19**
 (the dry run too): such a release has no such record and would render every
@@ -221,8 +223,8 @@ snapshot; this release, if it stays, reads the two as missing until its next
 
 ### To 0.2.20
 
-0.2.20 reads every file this release writes but `server.addresses`, so the
-rollback removes that key and adds the scope of this server's own login to the
+0.2.20 reads every file this release writes but `server.addresses` and
+`server.name`, so the rollback removes those keys and adds the scope of this server's own login to the
 users' scopes (above), after a snapshot. Nothing else is converted, and
 `--hosts` is accepted and does nothing.
 

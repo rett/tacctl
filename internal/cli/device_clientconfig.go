@@ -30,7 +30,11 @@ func (inv *invocation) deviceClientConfig(args []string) error {
 			return err
 		}
 	}
-	inv.write(string(devreg.SSHConfig(entries, a.Paths.KnownHosts, inv.hooks.serverName(), a.Knobs.Now())))
+	server := a.Conf().ServerName()
+	if server == "" {
+		server = inv.hooks.serverName()
+	}
+	inv.write(string(devreg.SSHConfig(entries, a.Paths.KnownHosts, server, a.Knobs.Now())))
 	_, _ = io.WriteString(a.Out.Stderr, devreg.SSHConfigHint)
 	return nil
 }

@@ -406,6 +406,7 @@ var auditTable = map[string]auditEntry{
 	// the list form changes nothing; add, remove and replace write their own line
 	"server addresses": action().readWhen(serverAddressesReadForm),
 	"server show":      read(),
+	"server name":      mixed(),
 	"server listen":    mixed(),
 	"server metrics":   mixed(),
 }

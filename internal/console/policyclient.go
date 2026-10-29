@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/tier"
 )
 
@@ -52,6 +53,10 @@ type Remote struct {
 	// a superuser, who is never locked out by a read error. An answer that
 	// names no such field is a release before 0.2.20, which flags nobody.
 	PasswordChangeUnknown bool
+	// Name is the name of this server the console shows in its prompt and
+	// notices (0.2.22, server.name); "" when the answer has none: the host
+	// name is shown.
+	Name string
 	// Known reports whether the answer was read (false: the defaults).
 	Known bool
 	// TierRead reports whether the answer named the caller's tier (a
@@ -149,6 +154,11 @@ func ParseRemote(out string) (r Remote, ok bool) {
 		case "pc_max":
 			if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= MaxPasswordCacheMax {
 				r.PCMax, ok = time.Duration(n)*time.Hour, true
+			}
+		case "name":
+			// not a policy field: a line with a name and nothing else is no answer
+			if names.ServerNameProblem(v) == "" {
+				r.Name = v
 			}
 		case "shell":
 			ok = ok || v == "console" || v == "system"

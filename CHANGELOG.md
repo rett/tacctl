@@ -299,6 +299,23 @@ current behaviour; this file is where history lives.
    has no row for `config listen`, `config metrics` or `server`: both are still
    the superuser's, and the sudoers rules of the tiers are unchanged.
 
+16. **`server name`: the name the console shows for this server.** The
+   console's prompt (`<host>> `) and its notices (the banner of a session, `tacctl
+   console on <host>`, and the header of `device client-config`) showed the short
+   host name of the machine. `tacctl server name [<label>|unset]` sets another
+   name, recorded as the new setting `server.name` of `tacctl.yaml`; with no
+   word it shows the name in effect and whether it is the setting or the host
+   name, and `unset` removes it. A name is 1 to 63 lower-case letters, digits and
+   hyphens, a letter first and no hyphen last (upper case, a period, an
+   underscore and a digit first are refused; `unset` removes the name and cannot
+   be one; a bad value in the file is reported by `config validate`). Nothing else is renamed: the
+   host name, this server's entry in the host registry and the accounts stay.
+   The console reads the name once, when a session starts, from the root side
+   (`_console-policy` carries `name=<label>`; an older console ignores it).
+   `server show` has a `Name` line and `name` in `--json`. Only the superuser sets
+   it. An older release refuses the key, so `tacctl rollback` removes
+   `server.name` for every target.
+
 ## 0.2.21 (2026-10-28)
 
 1. **`user rename` to a name with a period says what to do.** The refusal of

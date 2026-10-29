@@ -174,12 +174,36 @@ var Added0221 = []Family{
 // Added0221Key reports whether path is a key 0.2.21 added.
 func Added0221Key(path string) bool { return inFamilies(Added0221, path) }
 
+// Added0222 are the key families 0.2.22 added: the name of this server in the
+// console prompt and its notices (server.name). A 0.2.21 or older binary does
+// not know it (its schema refuses the key, so its 'config validate' reports
+// it and its 'backup restore' refuses a snapshot that has it), so every
+// rollback removes it.
+var Added0222 = []Family{
+	{"server.name", false},
+}
+
+// Added0222Key reports whether path is a key 0.2.22 added.
+func Added0222Key(path string) bool { return inFamilies(Added0222, path) }
+
+// RollbackKeys0221 are the leaf keys of the overrides that a 0.2.21 binary
+// does not know, in file order (Added0222).
+func (c *Config) RollbackKeys0221() []string {
+	var out []string
+	walkLeaves(c.Overrides(), "", func(p string, _ any) {
+		if Added0222Key(p) {
+			out = append(out, p)
+		}
+	})
+	return out
+}
+
 // RollbackKeys0220 are the leaf keys of the overrides that a 0.2.20 binary
-// does not know, in file order (Added0221).
+// does not know, in file order (Added0221, Added0222).
 func (c *Config) RollbackKeys0220() []string {
 	var out []string
 	walkLeaves(c.Overrides(), "", func(p string, _ any) {
-		if Added0221Key(p) {
+		if Added0221Key(p) || Added0222Key(p) {
 			out = append(out, p)
 		}
 	})
@@ -287,7 +311,7 @@ func (c *Config) unknown023(path string) bool {
 func (c *Config) RollbackKeys029() []string {
 	var out []string
 	walkLeaves(c.Overrides(), "", func(p string, _ any) {
-		if Added0210Key(p) || Added0217Key(p) || Added0219Key(p) || Added0220Key(p) || Added0221Key(p) {
+		if Added0210Key(p) || Added0217Key(p) || Added0219Key(p) || Added0220Key(p) || Added0221Key(p) || Added0222Key(p) {
 			out = append(out, p)
 		}
 	})
@@ -304,7 +328,7 @@ func (c *Config) RollbackKeys029() []string {
 func (c *Config) RollbackKeys0218() []string {
 	var out []string
 	walkLeaves(c.Overrides(), "", func(p string, _ any) {
-		if Added0219Key(p) || Added0220Key(p) || Added0221Key(p) {
+		if Added0219Key(p) || Added0220Key(p) || Added0221Key(p) || Added0222Key(p) {
 			out = append(out, p)
 		}
 	})
@@ -321,7 +345,7 @@ func (c *Config) RollbackKeys0218() []string {
 func (c *Config) RollbackKeys0216() []string {
 	var out []string
 	walkLeaves(c.Overrides(), "", func(p string, _ any) {
-		if Added0217Key(p) || Added0219Key(p) || Added0220Key(p) || Added0221Key(p) {
+		if Added0217Key(p) || Added0219Key(p) || Added0220Key(p) || Added0221Key(p) || Added0222Key(p) {
 			out = append(out, p)
 		}
 	})

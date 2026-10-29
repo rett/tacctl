@@ -290,3 +290,28 @@ func CommandMatchIsDead(name, rx string) bool {
 	}
 	return false
 }
+
+// reServerName: a DNS label that starts with a letter, in lower case: 1 to
+// 63 characters, letters, digits and hyphens, not ending in a hyphen.
+var reServerName = regexp.MustCompile(`^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$`)
+
+// ServerNameReserved is the word 'server name' takes to remove the name; it
+// cannot be one.
+const ServerNameReserved = "unset"
+
+// ServerNameProblem is "" when s can be the name of this server (server.name:
+// the name the console prompt and its notices show in place of the host
+// name), else why not.
+func ServerNameProblem(s string) string {
+	switch {
+	case s == ServerNameReserved:
+		return "is the word that removes the name"
+	case HasUpper(s):
+		return "has upper case: a server name is lower case"
+	case len(s) > 63:
+		return "is longer than 63 characters"
+	case !reServerName.MatchString(s):
+		return "is not a name of letters, digits and hyphens that starts with a letter and does not end in a hyphen"
+	}
+	return ""
+}

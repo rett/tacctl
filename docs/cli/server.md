@@ -10,6 +10,13 @@ server show [--json]
     service) and every listener with its network, address, port and unit state. `--json` prints
     the same as a document. Superuser only
 
+server name [<label>|unset]
+
+    The name the console shows for this server in its prompt (`<name>> `) and its notices (the
+    banner of a session, the header of `device client-config`) in place of the host name. With no
+    word it shows the name in effect and where it comes from (the setting or the host name);
+    `<label>` sets it, `unset` removes it. Superuser only
+
 server addresses [list]
 
     The address devices and hosts reach this server at: the setting `server.addresses` of
@@ -43,6 +50,7 @@ server metrics show|enable|disable|reset|address <host:port>
 
 ```
 tacctl server show
+tacctl server name core-1
 tacctl server listen tcp 10.1.0.1:49
 tacctl server metrics address 10.1.0.1:8080
 tacctl server addresses
@@ -81,6 +89,22 @@ that is not installed shows `-`. `--json` has `addresses`, `address_source`
 (`setting`, `registry` or empty), `default_method`, `metrics` (`address`,
 `state`, `reach`) and `backends` (`id`, `protocol`, `installed`, `enabled`,
 `service` and `listeners` with `name`, `network`, `address`, `port`, `unit`).
+
+**`server name`.** The name is the setting `server.name` of `tacctl.yaml`: 1 to 63 characters of
+lower-case letters, digits and hyphens, a letter first and no hyphen last, like the first label of
+a host name (a name with upper case, a period, an underscore or a digit first is refused with
+`Nothing was changed.`; `unset` is the word that removes the name, so it cannot be one). Nothing
+else is renamed: the host name, the name of this server's entry in the host registry and the
+accounts are as they were. A console session reads the name once, when it starts, from the root
+side with the rest of its policy (`_console-policy` says `name=<label>`), so an open session keeps
+the name it began with. `server show` has a `Name` line (and `name` in `--json`).
+
+```
+$ tacctl server name
+  Server name: web1  (the host name; none is set: tacctl server name <label>)
+$ tacctl server name core-1
+[INFO] Server name set: core-1. The console shows it from the next session.
+```
 
 **`server listen` and `server metrics`** write `listeners.<backend>.<name>` and
 `backends.tacacs.metrics_address` of `tacctl.yaml`, and the log lines are `server listen backend=

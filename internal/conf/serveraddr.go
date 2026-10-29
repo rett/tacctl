@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"strings"
 
+	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/py"
 )
 
@@ -70,4 +71,17 @@ func (c *Config) ServerAddress() string {
 		return a.String()
 	}
 	return ""
+}
+
+// ServerNameKey is the tacctl.yaml key of the name of this server in the
+// console prompt and its notices (0.2.22).
+const ServerNameKey = "server.name"
+
+// ServerName is server.name, "" when it is not set or not a server name.
+func (c *Config) ServerName() string {
+	v, _ := c.Get(ServerNameKey, "")
+	if names.ServerNameProblem(v) != "" {
+		return ""
+	}
+	return v
 }

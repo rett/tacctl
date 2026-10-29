@@ -259,6 +259,16 @@ func TestConsolePtyBannerPromptAndExit(t *testing.T) {
 	}
 }
 
+// The name of the server setting (name=<label> in the policy answer) is the
+// console's prompt and the host of its banner, in place of the host name.
+func TestConsolePtyServerNameIsThePromptAndBanner(t *testing.T) {
+	p := startConsole(t, ptyPolicyRO+" name=core-1", "carol,tac-users,tac-readonly")
+	p.expect(`tacctl console on core-1 — type 'help'\. Devices: device list\. This session is logged\.\r\n`)
+	p.expect(`core-1> `)
+	p.send("exit\r")
+	p.ends(0)
+}
+
 // A typed space completes a fixed word in the console, and does not when
 // the policy line says space_completion=no.
 func TestConsolePtySpaceCompletion(t *testing.T) {

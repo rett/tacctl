@@ -12580,6 +12580,8 @@ The lockdowns that stand: scope, groups, since, how long, by whom, why, the user
 .SS Server settings \fB(tacctl server)\fR
 This server's own settings: an overview
 .RB ( "server show" ),
+the name the console shows for it
+.RB ( "server name" ),
 the addresses devices and hosts reach it at, where its backends listen
 .RB ( "server listen" )
 and the Prometheus exporter
@@ -12591,7 +12593,7 @@ Show this server in one place, and change nothing: the address devices and
 hosts reach it at (the setting, else the copy in this server's registry entry,
 as
 .B "server addresses"
-shows it), the default method of
+shows it), its name (the setting or the host name), the default method of
 .BR "host enroll" ,
 the Prometheus exporter (its address, whether it is enabled and whether it is
 reachable from this machine only), each backend with whether it is installed
@@ -12599,7 +12601,8 @@ and enabled and the state of its service, and each listener with its network,
 address, port and the state of its unit.
 .B \-\-json
 prints the same as a document with \fBaddresses\fR, \fBaddress_source\fR
-(\fBsetting\fR, \fBregistry\fR or empty), \fBdefault_method\fR, \fBmetrics\fR
+(\fBsetting\fR, \fBregistry\fR or empty), \fBname\fR (\fBvalue\fR,
+\fBsource\fR: \fBsetting\fR or \fBhost name\fR), \fBdefault_method\fR, \fBmetrics\fR
 (\fBaddress\fR, \fBstate\fR, \fBreach\fR) and \fBbackends\fR (\fBid\fR,
 \fBprotocol\fR, \fBinstalled\fR, \fBenabled\fR, \fBservice\fR and
 \fBlisteners\fR with \fBname\fR, \fBnetwork\fR, \fBaddress\fR, \fBport\fR and
@@ -12615,6 +12618,35 @@ Options:
 Print the overview as a JSON document.
 .RE
 .\" END GENERATED: command server show
+.TP
+.BI "server name [" label "|unset]"
+Show, set or remove the name of this server in the console: the prompt
+.RB ( "<name>> " )
+and the notices of a session (its banner, the header of
+.BR "device client\-config" )
+show it in place of the host name. With no word it shows the name in effect and
+whether it is the setting or the host name;
+.I label
+sets it and
+.B unset
+removes it. A name is 1 to 63 characters of lower\-case letters, digits and
+hyphens, a letter first and no hyphen last; upper case, a period, an
+underscore and a digit first are refused, and so is
+.B unset
+(the word that removes it). It is the setting
+.B server.name
+of
+.IR tacctl.yaml ;
+nothing else is renamed. A console session reads it once, when it starts.
+Only the superuser runs it, and a change writes
+.BI "server name from=" old " to=" new
+beside the command's own pair of lines.
+.\" BEGIN GENERATED: command server name
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command server name
 .PP
 The addresses devices and hosts reach this server at. The setting is
 .B server.addresses
@@ -13357,7 +13389,9 @@ tacctl is the console: the interactive shell
 .RB ( "tacctl shell" )
 with the prompt
 .IB host "> "
-(the server's short host name) and the banner
+(the server's short host name, or the name
+.B "server name"
+sets) and the banner
 .IR "tacctl\~console on host \(em type 'help'. Devices: device list. This session is logged." ,
 whose lines run as
 .PP
@@ -13830,7 +13864,7 @@ scope breakglass, scope default, scope devices, scope exec\-timeout,
 scope mgmt\-acl, scope netconf, scope prefixes, scope protocols,
 scope radius\-group, scope secret, scope snmp, scope staging,
 scope tacacs\-group, scope vendor\-attrs, server listen,
-server metrics, user scope
+server metrics, server name, user scope
 .TP
 .B "mixed, auth.notice"
 config audit\-strict, config sudoers, console system\-shell, rollback,
@@ -15243,6 +15277,10 @@ Shortest shared secret an operator may type. Set with \fBtacctl config secret\-m
 .B server.addresses
 list of one IP address (not a host name, unspecified, loopback, link\-local, broadcast or IPv4\-mapped IPv6). Default: none (unset).
 The address devices and hosts reach this server at, a list that holds one address for now; the enrolment of this server and install record it (detected from the interface with the default route when none is recorded and none is given), and server addresses changes it. Set with \fBtacctl server addresses\fR.
+.TP
+.B server.name
+name of 1 to 63 characters in lower case (a letter, then letters, digits or hyphens, not ending in a hyphen); not unset. Default: none (unset).
+The name of this server in the console prompt and its notices, in place of the host name; unset: the host name. Set with \fBtacctl server name\fR.
 .TP
 .B snmp.port
 integer, 1 to 65535. Default: 161.

@@ -1,8 +1,8 @@
 package cli
 
 // 'tacctl server show [--json]' (0.2.22): what this server is, in one place.
-// The address devices and hosts reach it at, the default method of new hosts,
-// the metrics exporter, and for each backend whether it is enabled, its
+// The address devices and hosts reach it at, the name the console shows, the
+// default method of new hosts, the metrics exporter, and for each backend whether it is enabled, its
 // service and its listeners with their ports and units. It reads settings and
 // asks systemd for the state of each unit; it changes nothing and writes no
 // audit line. The superuser's, as the rest of the family (the tier table has
@@ -29,10 +29,19 @@ type serverShowJSON struct {
 	// registry entry, from before the setting) or "".
 	Addresses     []string `json:"addresses"`
 	AddressSource string   `json:"address_source"`
+	// Name is the name of this server in the console prompt and its notices:
+	// the setting server.name ("setting") or the host name ("host name").
+	Name serverNameJSON `json:"name"`
 	// DefaultMethod is the method 'host enroll' gives a host without --method.
 	DefaultMethod string             `json:"default_method"`
 	Metrics       serverMetricsJSON  `json:"metrics"`
 	Backends      []serverBackendRow `json:"backends"`
+}
+
+// serverNameJSON is the name in effect and where it comes from.
+type serverNameJSON struct {
+	Value  string `json:"value"`
+	Source string `json:"source"`
 }
 
 // serverMetricsJSON is the Prometheus exporter of the TACACS+ backend's
@@ -101,6 +110,7 @@ func (inv *invocation) serverShowData() (*serverShowJSON, error) {
 	}
 	out := &serverShowJSON{Addresses: []string{}, Backends: []serverBackendRow{}, DefaultMethod: inv.linuxDefaultMethod()}
 	c := inv.app.Conf()
+	out.Name.Value, out.Name.Source = inv.serverNameNow()
 	switch key, recorded := c.ServerAddress(), inv.recordedServer(reg); {
 	case key != "":
 		out.Addresses, out.AddressSource = []string{key}, "setting"
@@ -178,6 +188,11 @@ func (inv *invocation) serverShow(args []string) error {
 		inv.echo("  Address:         " + strings.Join(d.Addresses, ", ") + "  (this server's registry entry; the setting is written by the next 'host enroll --local')")
 	default:
 		inv.echo("  Address:         " + strings.Join(d.Addresses, ", "))
+	}
+	if d.Name.Source == "setting" {
+		inv.echo("  Name:            " + d.Name.Value + "  (the setting server.name)")
+	} else {
+		inv.echo("  Name:            " + d.Name.Value + "  (the host name; tacctl server name <label> sets one)")
 	}
 	inv.echo("  Default method:  " + d.DefaultMethod + "  (for hosts enrolled without --method)")
 	m := d.Metrics

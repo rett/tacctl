@@ -34,6 +34,7 @@ func TestServerShowNothingInstalled(t *testing.T) {
 	for _, want := range []string{
 		"\nServer\n",
 		"  Address:         (none — 'tacctl host enroll --local' records the address of this machine, or: tacctl server addresses add <ip>)\n",
+		"  Name:            " + shortHostname() + "  (the host name; tacctl server name <label> sets one)\n",
 		"  Default method:  tacplus  (for hosts enrolled without --method)\n",
 		"  Metrics:         enabled, loopback only  (127.0.0.1:8080)\n",
 		"Backends\n",
@@ -67,11 +68,13 @@ func TestServerShowSettingsAndListeners(t *testing.T) {
 	hs.installTacquito()
 	hs.run(nil, "server", "addresses", "add", "203.0.113.9")
 	hs.run(nil, "host", "default-method", "radius")
+	hs.run(nil, "server", "name", "core-1")
 	hs.run(nil, "server", "metrics", "address", ":9090")
 	hs.showRun("active", "server", "show")
 	out := plain(hs.out.String())
 	for _, want := range []string{
 		"  Address:         203.0.113.9\n",
+		"  Name:            core-1  (the setting server.name)\n",
 		"  Default method:  radius  (for hosts enrolled without --method)\n",
 		"  Metrics:         enabled, externally reachable  (:9090)\n",
 	} {
@@ -126,6 +129,9 @@ func TestServerShowJSON(t *testing.T) {
 	var d serverShowJSON
 	if err := json.Unmarshal(hs.out.Bytes(), &d); err != nil {
 		t.Fatalf("%v\n%s", err, hs.out.String())
+	}
+	if d.Name.Value != shortHostname() || d.Name.Source != "host name" {
+		t.Errorf("name %+v", d.Name)
 	}
 	if len(d.Addresses) != 0 || d.AddressSource != "" || d.DefaultMethod != "tacplus" ||
 		d.Metrics.Address != "127.0.0.1:8080" || d.Metrics.State != "enabled" || d.Metrics.Reach != "loopback" {

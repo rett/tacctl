@@ -45,6 +45,7 @@ const serverFollowUps = "Re-point the devices and hosts at the new address: tacc
 var serverSpecs = map[string]Spec{
 	"addresses": {MaxArgs: 2, Args: []string{"list|add|remove|replace", ""}},
 	"show":      {MaxArgs: 0, Flags: []Flag{flagJSON}},
+	"name":      {MaxArgs: 1, Args: []string{"unset"}},
 	"listen": {MaxArgs: 2, Args: []string{"show|reset|tcp|tcp6|udp|udp6", ""}, Flags: []Flag{
 		{Names: []string{"--backend"}, Value: true, Kind: "backends"},
 		{Names: []string{"--listener"}, Value: true, Kind: KindListeners}}},
@@ -54,6 +55,7 @@ var serverSpecs = map[string]Spec{
 // serverRows are the family's rows: the forms of its verb, with one line each.
 var serverRows = [][2]string{
 	{"show [--json]", "Show the address, the default method, the metrics exporter, the backends and the listeners"},
+	{"name [<label>|unset]", "Show, set or remove the name the console's prompt and notices use instead of the host name"},
 	{"addresses list", "Show the address devices and hosts reach this server at (no word: the same)"},
 	{"addresses add <ip>[,<ip>...]", "Set the address when none is set (one is held for now)"},
 	{"addresses remove <ip>[,<ip>...]", "Take an address out (the only one stays: use replace)"},
@@ -69,7 +71,7 @@ func init() {
 }
 
 func serverCmd(inv *invocation) *cobra.Command {
-	c := verb("server <subcommand>", "This server's settings (show, addresses, listen, metrics)")
+	c := verb("server <subcommand>", "This server's settings (show, name, addresses, listen, metrics)")
 	c.RunE = inv.native(withPreflight, inv.server)
 	c.AddCommand(withRun(verb(serverUseAddresses, "The address devices and hosts reach this server at"),
 		inv.native(withPreflight, func(args []string) error {
@@ -78,6 +80,10 @@ func serverCmd(inv *invocation) *cobra.Command {
 	c.AddCommand(withRun(verb(serverUseShow, "Show the address, the backends, the listeners and the metrics exporter"),
 		inv.native(withPreflight, func(args []string) error {
 			return inv.server(append([]string{"show"}, args...))
+		})))
+	c.AddCommand(withRun(verb(serverUseName, "Show, set or remove the name of this server in the console"),
+		inv.native(withPreflight, func(args []string) error {
+			return inv.server(append([]string{"name"}, args...))
 		})))
 	c.AddCommand(withRun(verb("listen [--backend <id>] [--listener <name>] [show|reset|<network> <address>]",
 		"Show, change or reset a listener's address"), inv.native(withPreflight, func(args []string) error {
@@ -137,8 +143,15 @@ TACACS+ listener without options; RADIUS: --backend radius --listener
 auth|acct <udp|udp6> <address>), and restarts the unit; 'metrics' controls
 the Prometheus exporter of the TACACS+ backend.
 
+The name is what the console shows in its prompt (<name>> ) and its notices
+instead of the host name: a lower-case name of letters, digits and hyphens
+(a letter first, no hyphen last, 63 characters at most; not the word unset,
+which removes it). It is recorded in the setting server.name of tacctl.yaml;
+with no word 'name' shows the name in effect and where it comes from.
+
 Examples:
   tacctl server show
+  tacctl server name core-1
   tacctl server listen tcp 10.1.0.1:49
   tacctl server metrics address 10.1.0.1:8080
   tacctl server addresses
@@ -163,6 +176,8 @@ func (inv *invocation) server(args []string) error {
 		return inv.serverAddresses(rest)
 	case "show":
 		return inv.serverShow(rest)
+	case "name":
+		return inv.serverName(rest)
 	case "listen":
 		return inv.serverListen(rest)
 	case "metrics":
