@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -198,7 +199,7 @@ func TestHostEnrollSyncUnenroll(t *testing.T) {
 	}
 
 	out := hs.run(nil, "host", "list")
-	if !strings.Contains(plain(out), "  web1  admin@web1.example.net  192.0.2.50  lab    192.0.2.1  tacplus  3\n") {
+	if !regexp.MustCompile(`(?m)^  web1  admin@web1\.example\.net  192\.0\.2\.50  lab    configured +- +- +192\.0\.2\.1  tacplus  3 +-$`).MatchString(plain(out)) {
 		t.Errorf("list %q", plain(out))
 	}
 	// A disabled user is inactive (expired on the host, never deleted).

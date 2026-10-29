@@ -11,7 +11,8 @@ tacctl host enroll admin@web2 --method radius # the same with pam_radius_auth ag
 tacctl host enroll --local                    # rebuild, move or repair this machine's own login
 tacctl user scope jsmith add <scope>          # give a user a login on hosts of that scope...
 tacctl host sync web1                         # ...and push the account (or: tacctl host sync --all)
-tacctl host list                              # with each host's address and METHOD
+tacctl host list                              # scope, state, last seen, METHOD, notices
+tacctl host list --stale --scope lab          # narrow it: --name, --ip, --scope, --stale
 tacctl host list --json                       # the same for scripts
 tacctl host show web1                         # web1 in full: scope, keys, sightings, accounts, last
                                               # sync, OS facts

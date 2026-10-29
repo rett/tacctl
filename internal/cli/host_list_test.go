@@ -7,17 +7,43 @@ import (
 	"testing"
 )
 
-// hostListRows are the rows of the host table by host name, each as its
-// whitespace-separated cells.
+// hostListRows are the rows of the host table by host name, each as its cells
+// (cut at the columns of the header line, since LAST SEEN and a time hold a
+// space).
 func hostListRows(out string) (header []string, rows map[string][]string) {
 	rows = map[string][]string{}
+	var starts []int
+	inRows := false
 	for _, l := range strings.Split(out, "\n") {
 		f := strings.Fields(l)
 		switch {
+		case len(f) == 0:
+			inRows = false
 		case len(f) > 0 && f[0] == "NAME":
-			header = f
-		case len(f) > 2 && header != nil:
-			rows[f[0]] = f
+			starts, header, inRows = nil, nil, true
+			for _, w := range []string{"NAME", "TARGET", "ADDRESS", "SCOPE", "STATE", "LAST SEEN", "BY", "SERVER", "METHOD", "USERS", "NOTICES"} {
+				if i := strings.Index(l, w+" "); i >= 0 || strings.HasSuffix(l, w) {
+					if i < 0 {
+						i = strings.LastIndex(l, w)
+					}
+					starts = append(starts, i)
+					header = append(header, w)
+				}
+			}
+		case len(f) > 2 && inRows && !strings.HasPrefix(l, "  -"):
+			var cells []string
+			for i, st := range starts {
+				end := len(l)
+				if i+1 < len(starts) {
+					end = min(starts[i+1], len(l))
+				}
+				if st >= end {
+					cells = append(cells, "")
+					continue
+				}
+				cells = append(cells, strings.TrimSpace(l[st:end]))
+			}
+			rows[cells[0]] = cells
 		}
 	}
 	return header, rows
@@ -81,7 +107,7 @@ func TestHostListAddressColumn(t *testing.T) {
 	if got := hostListCell(t, header, rows["web1"], "ADDRESS"); got != "192.168.1.10" {
 		t.Errorf("held web1 address %q\n%s", got, out)
 	}
-	if header[len(header)-1] != "STATE" || hostListCell(t, header, rows["web1"], "STATE") != "BREAK-GLASS" {
+	if hostListCell(t, header, rows["web1"], "STATE") != "BREAK-GLASS" {
 		t.Errorf("held host not marked\n%s", out)
 	}
 	if !strings.Contains(out, "1 host(s) held for break-glass") {
@@ -280,11 +306,11 @@ func TestHostListArguments(t *testing.T) {
 	sb := hostLab(t)
 	sb.run("", []string{"host", "list", "--bogus"})
 	sb.expect(1, "", "Unknown option: '--bogus'")
-	if !strings.Contains(sb.stderr(), "Usage: tacctl host list [--json]") {
+	if !strings.Contains(sb.stderr(), hostListUsage) {
 		t.Errorf("stderr %q", sb.stderr())
 	}
 	sb.run("", []string{"host", "list", "web1"})
-	if sb.code != 1 || !strings.Contains(sb.stderr(), "Usage: tacctl host list [--json]") {
+	if sb.code != 1 || !strings.Contains(sb.stderr(), hostListUsage) {
 		t.Errorf("an argument: %d %q", sb.code, sb.stderr())
 	}
 }

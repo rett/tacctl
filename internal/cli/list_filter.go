@@ -155,6 +155,16 @@ func listStateCell(state string, stale, held bool) any {
 	return state
 }
 
+// listHead is the heading of a list: the label and the number shown, and,
+// when the list was narrowed, how many there were before.
+func listHead(label string, shown, total int, narrowed bool) string {
+	head := fmt.Sprintf("%s (%d)", label, shown)
+	if narrowed {
+		head += fmt.Sprintf(", of %d", total)
+	}
+	return head
+}
+
 // listNone prints the heading of a list with no row and one line under it:
 // "None match." for a narrowed list, else none, which says how to make the
 // first one.

@@ -2727,15 +2727,25 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config metrics show
 .TP
-.B "host list [ \-\-json ]"
-Show enrolled Linux hosts with their SSH target, the address recorded for the
-host at its last enroll or sync (a dash when none is), scope, server address,
-method and user count. A host with a break\-glass hold is marked
+.BI "host list [ \-\-name " text " ] [ \-\-ip " address|cidr|text " ] [ \-\-scope " scope " ] [ \-\-stale ] [ \-\-json ]"
+Show enrolled Linux hosts, sorted by name, as
+.B "device list"
+shows devices: the SSH target, the address (the one recorded at the host's last
+enroll or sync, else the single address of its scope, a dash when neither is
+known), scope, state
+.RB ( configured :
+the host's scope exists;
+.BR unconfigured ;
+.BR stale :
+not seen for stale\-days), last seen and by (from the seen cache that
+.B "device scan"
+refreshes), server address, method, user count and open notices. A host with a
+break\-glass hold is marked
 .B BREAK\-GLASS
-in a
-.B STATE
-column, which is there while one is held in the caller's scopes, and a footer
-counts them. For the superuser a last line,
+in the state column and a footer counts them. A line under the table gives the
+age of the seen data and, when the hosts have open notices, how many
+.RB ( "device notice list" ).
+For the superuser a last line,
 .BR "N finding(s): see tacctl config validate" ,
 says that the registrations have findings
 .RB ( "config validate" ;
@@ -2745,13 +2755,32 @@ among them the names with upper case that
 .B "config validate"
 lists under
 .BR "Names:" .
+The options narrow the list as those of
+.B "device list"
+do; all must match.
+.B \-\-name
+keeps the names that contain the text,
+.B \-\-ip
+the addresses equal to, inside or containing it, and
+.B \-\-scope
+the hosts that scope answers (each takes a comma list: any of them);
+.B \-\-stale
+keeps the hosts not seen for stale\-days. This server's own login has no scope
+in the table.
 .B \-\-json
 prints a JSON array instead, empty (\fB[]\fR) when there is no host: for each
 host its
 .BR name ", " local ", " target ", " port " (22 unless the registry gives one; 0 for this server's own host), " scope ", " server ", " method ", " identity " (the path only), " address
-(the recorded one, empty when unknown),
-.B users
-and
+(empty when unknown),
+.BR users ,
+.B state
+(configured or unconfigured),
+.B seen
+(first, last, count, last user, outcome, via, NAS identifier and stale, as
+.B "device list \-\-json"
+has it; absent when the address was never seen),
+.B notices
+(kind, text and acknowledged) and
 .B drift
 (the scope warning the table prints, empty when none), a
 .B breakglass
@@ -2772,6 +2801,18 @@ both forms.
 Requires: \fBengineer\fR.
 .PP
 Options:
+.TP
+\fB\-\-stale\fR
+Only the hosts not seen for stale\-days.
+.TP
+\fB\-\-name\fR \fI<text>\fR
+Only names containing the text (comma list: any).
+.TP
+\fB\-\-ip\fR \fI<addr|cidr|text>\fR
+Only an address equal to, inside or containing it.
+.TP
+\fB\-\-scope\fR \fI<scope>\fR
+Only the hosts that scope answers (comma list).
 .TP
 \fB\-\-json\fR
 (list and show) Print JSON (show: every field, and \-\-check's findings under 'check').

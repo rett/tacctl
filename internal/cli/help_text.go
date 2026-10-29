@@ -542,7 +542,11 @@ server's own tacctl users comes with 'host enroll --local' and 'host sync'.
 
 Usage: tacctl host <subcommand> [arguments]
 
-  list [--json]                        Show enrolled hosts, with the address recorded for each
+  list [options]                       Show enrolled hosts: scope, state, last seen, notices
+      --stale                          (list) Only the hosts not seen for stale-days
+      --name <text>                    (list) Only names containing the text (comma list: any)
+      --ip <addr|cidr|text>            (list) Only an address equal to, inside or containing it
+      --scope <scope>                  (list) Only the hosts that scope answers (comma list)
   show <name> [--all] [--json]         One enrolled host in full: connection, scope, address, host keys, sightings,
                                        notices, accounts, last sync and host facts
       --all                            (show) The acknowledged notices too

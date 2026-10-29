@@ -278,7 +278,7 @@ func TestBreakglassHostHoldRoundTrip(t *testing.T) {
 	if !hasAuditMatch(sb.runner, "auth.info", `breakglass release host=web1 addr=192\.168\.1\.10 held=\S+ by=root`) {
 		t.Errorf("no release audit line: %v", sb.runner.Argvs())
 	}
-	if got := plain(sb.run("", []string{"host", "list"})); strings.Contains(got, "BREAK-GLASS") || strings.Contains(got, "STATE") {
+	if got := plain(sb.run("", []string{"host", "list"})); strings.Contains(got, "BREAK-GLASS") {
 		t.Errorf("host list after the release:\n%s", got)
 	}
 }

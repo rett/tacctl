@@ -86,6 +86,27 @@ current behaviour; this file is where history lives.
    emitted where it was: on a terminal, off in a pipe, with `NO_COLOR` and
    `TACCTL_COLOR=never`, and in the console as `console color` says.
 
+5. **`host list` shows what `device list` shows of a device.** Its table has
+   STATE after SCOPE (`configured` when the host's scope exists,
+   `unconfigured`, a `stale` mark, and `BREAK-GLASS` in place of both while the
+   host is held; the column used to be the last and appeared only while a
+   hold was in the caller's scopes), LAST SEEN and BY from the seen cache, and
+   NOTICES last; a line under
+   the table gives the age of the seen data (`seen data as of ...`) and how
+   many notices are open (`tacctl device notice list` lists them), and the
+   heading counts the hosts (`Enrolled Linux hosts (2), of 5` when narrowed).
+   The new options narrow the list as `device list`'s do: `--name <text>`,
+   `--ip <addr|cidr|text>` and `--scope <scope>` take one value or a comma
+   list, `--stale` keeps the hosts not seen for stale-days, and all must
+   match. ADDRESS is the address recorded at the last enroll or sync, else the
+   single address of the host's scope (a host never synced shows it now, where
+   it showed `-`), the address LAST SEEN is looked up by. An engineer's list
+   and counts hold the hosts of their own scopes only; this server's own
+   login still shows `-` as its scope and `--scope` never selects it.
+   `host list --json` has the new fields `state`, `seen` (as in `device list
+   --json`, absent when the address was never seen) and `notices`, and its
+   `address` follows the rule above; the fields it had are unchanged.
+
 ## 0.2.21 (2026-10-28)
 
 1. **`user rename` to a name with a period says what to do.** The refusal of

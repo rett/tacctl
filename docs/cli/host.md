@@ -3,15 +3,26 @@
 [Documentation](../README.md) › [CLI reference](README.md)
 
 ```
-host list [--json]
+host list [--name <text>] [--ip <addr|cidr|text>] [--scope <scope>] [--stale] [--json]
 
-    Show enrolled Linux hosts (target, ADDRESS, scope, server, METHOD, users); a host with a
-    break-glass hold is marked BREAK-GLASS in a STATE column; when the registrations have
-    findings (below), a last line says how many and points to `config validate`
+    Show enrolled Linux hosts sorted by name, as `device list` shows devices: target, ADDRESS,
+    scope, STATE (configured: the host's scope exists; unconfigured; stale; BREAK-GLASS while the
+    host is held), LAST SEEN and BY from the seen cache, server, METHOD, users and open notices. A
+    last line gives the age of the seen data and, when the hosts have open notices, how many; when
+    the registrations have findings (below), another says how many and points to `config validate`
 
+    --name <text>
+        Only names containing the text (one value or a comma list: any of them)
+    --ip <addr|cidr|text>
+        Only an address equal to, inside or containing the text (a comma list)
+    --scope <scope>
+        Only the hosts that scope answers (a comma list)
+    --stale
+        Only the hosts not seen for stale-days (`device stale-days`)
     --json
         Print a JSON array (`[]` for no host) and no table: name, local, target, port, scope,
-        server, method, identity, address, users, drift, breakglass (while held) and findings
+        server, method, identity, address, users, state, seen (while the address was seen),
+        notices, drift, breakglass (while held) and findings
 
 host show <name> [--all] [--json] [--check]
 
@@ -236,11 +247,20 @@ duplicate: it runs the removal script on the machine that the surviving
 registration shares.
 
 **Listing.** ADDRESS is the address recorded at the host's last `host enroll`
-or `host sync` (the one a break-glass hold carves out), `-` when none is. In
+or `host sync` (the one a break-glass hold carves out), else the single
+address of its scope, `-` when neither is known; LAST SEEN and BY are what the
+seen cache holds for that address (`tacctl device scan` refreshes it), and the
+summary under the table says how old the data is. The options narrow the list
+as those of `device list` do (the options must all match; a host of another
+scope, for an engineer, is not counted). This server's own login has no scope
+column (`-`) and `--scope` never selects it. In
 `host list --json` each host has `name`, `local`, `target`, `port` (22 unless
 the registry gives one; 0 for this server's own host), `scope`, `server`,
 `method`, `identity` (the path only), `address` (empty when unknown), `users`,
-`drift` (the warning the table prints when the scope no longer answers the
+`state`, `seen` (first, last, count, last user, outcome, via, NAS identifier
+and stale, as in `device list --json`; absent when the address was never
+seen), `notices` (kind, text and acknowledged; `device notice list` and
+`host show --all` list them), `drift` (the warning the table prints when the scope no longer answers the
 host, empty when none), `breakglass` (the hold, as in `host show --json`,
 only while the host is held) and `findings` (those of the next paragraph that
 name the host, with the `Names:` findings of `config validate` about the host,
