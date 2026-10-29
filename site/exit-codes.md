@@ -30,7 +30,7 @@ change is needed" apart.
 | **3** | A backend command was refused because a rendered file holds a hand edit it would discard. Nothing was written. | `tacctl config validate` names both ways out (keep or discard the edit). Usually a superuser task. |
 | **126** | sudo could not be run to re-run tacctl as root | Check sudo on the server; escalate to the server owner |
 | **127** | sudo is not installed, and tacctl was not run as root | As 126 |
-| **130** | Interrupted (Ctrl-C at a prompt, or during a pull or apply) | For an apply, check each device's state; a pull never writes to a device |
+| **130** | Interrupted (Ctrl-C at a prompt, or during a pull, an apply, or `host sync` or `host check` with `--concurrency`) | For an apply, check each device's state; a pull never writes to a device |
 
 `tacctl ssh` ends with the status of the ssh it runs, and `tacctl shell -c`
 with the status of its line.

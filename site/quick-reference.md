@@ -70,8 +70,8 @@ usage. In the console and `tacctl shell`, `?` shows help.
 | Task | Command | Tier |
 |---|---|---|
 | List / filter | `tacctl host list [--name t] [--ip a] [--scope s] [--stale]` · `host show <n>` | E |
-| Check | `tacctl host check --all` | S |
-| Push accounts | `tacctl host sync --all` | S |
+| Check | `tacctl host check --all [--concurrency <n>]` | S |
+| Push accounts | `tacctl host sync --all [--concurrency <n>]` | S |
 | Enroll | `tacctl host enroll <user>@<host> --scope <s>` | S |
 | Move / retire | `tacctl host move <n> <s>` · `host unenroll <n>` | S |
 
