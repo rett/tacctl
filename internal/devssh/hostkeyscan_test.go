@@ -292,3 +292,178 @@ func TestScanHostKeysShortOfferFirst(t *testing.T) {
 		t.Errorf("old device: keys %q, offers %v, err %v", keys, offers, err)
 	}
 }
+
+// blockingDial never connects: it returns when the context it is given ends.
+func blockingDial(dials *int) devssh.Dialer {
+	return func(ctx context.Context, _, _ string) (net.Conn, error) {
+		*dials++
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+}
+
+// A connect budget gives up on an address nobody answers at after the budget,
+// not after the whole timeout; ScanHostKeys without it waits the timeout.
+func TestScanHostKeysConnectBudget(t *testing.T) {
+	var dials int
+	start := time.Now()
+	_, err := devssh.ScanHostKeysTiming(bg(), "192.0.2.1", 0, devssh.ScanTiming{Connect: 200 * time.Millisecond, Handshake: 5 * time.Second}, true, blockingDial(&dials))
+	if !errors.Is(err, devssh.ErrTimeout) {
+		t.Fatalf("err = %v, want ErrTimeout", err)
+	}
+	if d := time.Since(start); d < 150*time.Millisecond || d > 2*time.Second {
+		t.Errorf("took %v, want about the 200ms connect budget", d)
+	}
+	if dials != 1 {
+		t.Errorf("%d connections after a connect timeout, want 1", dials)
+	}
+
+	// Without the budget (ScanHostKeys, or a budget that is not shorter than
+	// the timeout) the connect runs the whole timeout.
+	for name, scan := range map[string]func() error{
+		"ScanHostKeys": func() error {
+			_, err := devssh.ScanHostKeys(bg(), "192.0.2.1", 0, 600*time.Millisecond, blockingDial(new(int)))
+			return err
+		},
+		"quick unset": func() error {
+			_, err := devssh.ScanHostKeysTiming(bg(), "192.0.2.1", 0, devssh.ScanTiming{Connect: 100 * time.Millisecond, Handshake: 600 * time.Millisecond}, false, blockingDial(new(int)))
+			return err
+		},
+		"budget not shorter": func() error {
+			_, err := devssh.ScanHostKeysTiming(bg(), "192.0.2.1", 0, devssh.ScanTiming{Connect: 5 * time.Second, Handshake: 600 * time.Millisecond}, true, blockingDial(new(int)))
+			return err
+		},
+	} {
+		start = time.Now()
+		if err := scan(); !errors.Is(err, devssh.ErrTimeout) {
+			t.Errorf("%s: err = %v, want ErrTimeout", name, err)
+		}
+		if d := time.Since(start); d < 500*time.Millisecond {
+			t.Errorf("%s: took %v, want the whole 600ms timeout", name, d)
+		}
+	}
+
+	// A refused connect is ErrUnreachable at once, with or without a budget.
+	refuse := func(context.Context, string, string) (net.Conn, error) {
+		return nil, &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}
+	}
+	if _, err := devssh.ScanHostKeysTiming(bg(), "192.0.2.1", 0, devssh.ScanTiming{Connect: 200 * time.Millisecond, Handshake: 5 * time.Second}, true, refuse); !errors.Is(err, devssh.ErrUnreachable) {
+		t.Errorf("refused: err = %v, want ErrUnreachable", err)
+	}
+}
+
+// A server that accepts at once and greets after a delay longer than the
+// connect budget but shorter than the handshake budget is read (a real
+// device was measured to send its banner about 3 s after the connect), next
+// to the dialer that never connects, which is given up on within the connect
+// budget.
+func TestScanHostKeysConnectBudgetSlowGreeter(t *testing.T) {
+	srv := serve(t, transcript(t, nil))
+	host, port := scanArgs(t, srv)
+	slow := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		c, err := (&net.Dialer{}).DialContext(ctx, network, addr)
+		if err != nil {
+			return nil, err
+		}
+		return &lateConn{Conn: c, delay: 600 * time.Millisecond}, nil
+	}
+	start := time.Now()
+	keys, err := devssh.ScanHostKeysTiming(bg(), host, port, devssh.ScanTiming{Connect: 200 * time.Millisecond, Handshake: 5 * time.Second}, true, slow)
+	if err != nil || len(keys) == 0 {
+		t.Fatalf("keys %q, err %v", keys, err)
+	}
+	if d := time.Since(start); d < 500*time.Millisecond || d > 4*time.Second {
+		t.Errorf("took %v, want the greeting's delay (600ms) and well under the timeout", d)
+	}
+}
+
+// lateConn delays the first read, as a server slow to send its banner does.
+type lateConn struct {
+	net.Conn
+	delay time.Duration
+	once  sync.Once
+}
+
+func (c *lateConn) Read(p []byte) (int, error) {
+	c.once.Do(func() { time.Sleep(c.delay) })
+	return c.Conn.Read(p)
+}
+
+// The defaults: the connect budget survives a lost SYN on a link with a
+// 600 ms round trip (1 s to retransmit plus the round trip, 3 s being the
+// floor) and is shorter than the handshake budget; the other timings are the
+// values the scans have always had; zero fields of a ScanTiming are those.
+func TestDefaultScanTiming(t *testing.T) {
+	d := devssh.DefaultScanTiming()
+	if d.Connect < 3*time.Second || d.Connect >= d.Handshake {
+		t.Errorf("Connect %v, Handshake %v", d.Connect, d.Handshake)
+	}
+	if d.Keyscan != 5*time.Second || d.KeyscanRetry != 3*time.Second || d.Handshake != devssh.DefaultConnectTimeout || d.Attempt != 5*time.Second {
+		t.Errorf("defaults changed: %+v", d)
+	}
+	if got := (devssh.ScanTiming{Attempt: time.Second}).WithDefaults(); got.Attempt != time.Second || got.Connect != d.Connect || got.Handshake != d.Handshake {
+		t.Errorf("WithDefaults: %+v", got)
+	}
+}
+
+// satelliteConn adds a round trip to every turn of the conversation: the
+// first read after a write waits rtt.
+type satelliteConn struct {
+	net.Conn
+	rtt   time.Duration
+	wrote bool
+	mu    sync.Mutex
+}
+
+func (c *satelliteConn) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	c.wrote = true
+	c.mu.Unlock()
+	return c.Conn.Write(p)
+}
+
+func (c *satelliteConn) Read(p []byte) (int, error) {
+	c.mu.Lock()
+	wait := c.wrote
+	c.wrote = false
+	c.mu.Unlock()
+	if wait {
+		time.Sleep(c.rtt)
+	}
+	return c.Conn.Read(p)
+}
+
+// A device behind a link with a 600 ms round trip, whose connect takes 1.5 s
+// (a lost SYN and the round trip), is read with the defaults, in the quick
+// read of a device nothing has answered from yet too. The first two
+// connections of the read (the handshake and the first per-type attempt, the
+// two budgets) are slowed; the rest are not, to keep the test short.
+func TestScanHostKeysTimingSatelliteLink(t *testing.T) {
+	t.Parallel()
+	srv := serve(t, transcript(t, nil))
+	host, port := scanArgs(t, srv)
+	var mu sync.Mutex
+	dials := 0
+	satellite := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		mu.Lock()
+		dials++
+		slow := dials <= 2
+		mu.Unlock()
+		if slow {
+			select {
+			case <-time.After(1500 * time.Millisecond):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		c, err := (&net.Dialer{}).DialContext(ctx, network, addr)
+		if err != nil || !slow {
+			return c, err
+		}
+		return &satelliteConn{Conn: c, rtt: 600 * time.Millisecond}, nil
+	}
+	keys, err := devssh.ScanHostKeysTiming(bg(), host, port, devssh.ScanTiming{}, true, satellite)
+	if err != nil || len(keys) == 0 {
+		t.Fatalf("keys %q, err %v; want a read with the default timing", keys, err)
+	}
+}
