@@ -108,11 +108,11 @@ without the server's scope in the user's own scopes. Every older release
 needs it there (0.2.21 has it itself), so every target but `0.2.21` adds the scope of this server's own login
 (`tacctl`) to the scopes of each user who logs in to the server and lacks it
 (the plan counts and names them; a warning, so `--apply` needs `--yes`), after
-a snapshot. Every target also removes the server address `server.addresses`
-and the server name `server.name` (0.2.22, `tacctl server name`) from
-`tacctl.yaml`, which no older release knows; the host registry keeps the
-address in this server's entry, which the older release reads, and the
-console shows the host name again.
+a snapshot. Every target removes the server name `server.name` (0.2.22,
+`tacctl server name`) from `tacctl.yaml`, and every target but `0.2.21` the
+server address `server.addresses` too; no older release knows them. The host
+registry keeps the address in this server's entry, which the older release
+reads, and the console shows the host name again.
 
 **An emergency lockdown stops every rollback to a release before 0.2.19**
 (the dry run too): such a release has no such record and would render every
