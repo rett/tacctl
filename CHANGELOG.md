@@ -28,6 +28,24 @@ current behaviour; this file is where history lives.
    SHA256:<fp>`. A `legacy-ssh` device, a device that
    answered, `device enroll` and `device collect` are scanned as before, and
    so is the diagnosis `tacctl ssh` prints after an ssh that ended with 255.
+2. **A Junos virtual chassis whose master answers without a label is applied to.**
+   `device config apply` failed at the check on a virtual chassis with `a
+   line "configuration check succeeds" outside the members' answers`: the
+   local (master) member answers `commit check` and the commits without a
+   label, and only the other members get a header (`fpc1:`, `fpc2:`). The
+   master's success comes first, and on a commit its `commit complete` is the
+   last line, after the other members' blocks. tacctl now reads the lines no
+   label opens as the answer of the one member of `show version` that has no
+   block, and holds them to rules like the others': its lines are the check
+   (optional on a commit) and, on a confirmed commit only, the note, then
+   `commit complete` last; every other member's block is the check (optional
+   on a commit), `commit complete` and, on a confirmed commit only, the note,
+   which each member of a confirmed commit must print as the real chassis
+   does, so a confirmed commit without it is refused. A failing text, a
+   missing last line, an extra line, a label twice and two members without a
+   block still fail the step, and the error names the member and its line. A
+   single member, two routing engines, a cluster and a chassis in which every
+   member has a label are read as before.
 
 ## 0.2.21 (2026-10-28)
 

@@ -11418,7 +11418,24 @@ and the answers of
 .B "commit check"
 and of the commits must name exactly those, each with its own success; a member
 that is missing, unexpected or answers otherwise fails the step, and the error
-names the member and its text. A chassis of one member answers like a single
+names the member and its text. The local (master) member of a virtual chassis
+answers without a label: its success comes first, the other members follow with
+their header
+.RB ( fpc1: ),
+and on a commit its
+.B "commit complete"
+is the last line, after theirs. It is read as the member the labelled blocks
+leave out (exactly one member of
+.B "show version"
+may lack a block), and held to rules like the others': its lines are the check
+(a commit leaves it out or prints it) and, on a confirmed commit only, the note,
+then
+.B "commit complete"
+last; a member's block is the check (optional on a commit),
+.B "commit complete"
+and, on a confirmed commit only, the note, which every member of a confirmed
+commit must print; each line once and in that order. A line that is none of
+these, a label twice and two members without a block fail the step. A chassis of one member answers like a single
 device:
 .B "show version"
 prints its header
@@ -11435,9 +11452,10 @@ more members that names no member is refused, because nothing proves the other
 members committed (a confirmed commit rolls back by itself), and the command
 line transport (the default) can be used; a chassis of one member is read like
 a single device, with no member element or one named by that member, and
-another name is refused. The shape of these replies over NETCONF, and the
-commits' replies of a chassis of several members on the command line, are
-inferred: no capture of them exists. A proof that fails cancels the commit
+another name is refused. The shape of these replies over NETCONF is inferred:
+no capture of it exists, nor of the commits' replies of a chassis in which every
+member has a label on the command line (the shape with an unlabelled master was
+captured from a real three-member chassis). A proof that fails cancels the commit
 .RB ( "rollback 1" ,
 .BR commit )
 and the device is
