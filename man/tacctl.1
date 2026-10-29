@@ -12699,6 +12699,41 @@ Options:
 .BI "emergency lockdown " scope
 The lockdowns that stand: scope, groups, since, how long, by whom, why, the users locked out, the superusers who keep access and the ways a device's local accounts stay usable. \fB\-\-json\fR prints an array with \fBlocked_users\fR and \fBexempt\fR.
 .SS Server settings \fB(tacctl server)\fR
+This server's own settings: an overview
+.RB ( "server show" )
+and the addresses devices and hosts reach it at. The family is the
+superuser's alone (the tier table has no row for it).
+.TP
+.BI "server show [\-\-json]"
+Show this server in one place, and change nothing: the address devices and
+hosts reach it at (the setting, else the copy in this server's registry entry,
+as
+.B "server addresses"
+shows it), the default method of
+.BR "host enroll" ,
+the Prometheus exporter (its address, whether it is enabled and whether it is
+reachable from this machine only), each backend with whether it is installed
+and enabled and the state of its service, and each listener with its network,
+address, port and the state of its unit.
+.B \-\-json
+prints the same as a document with \fBaddresses\fR, \fBaddress_source\fR
+(\fBsetting\fR, \fBregistry\fR or empty), \fBdefault_method\fR, \fBmetrics\fR
+(\fBaddress\fR, \fBstate\fR, \fBreach\fR) and \fBbackends\fR (\fBid\fR,
+\fBprotocol\fR, \fBinstalled\fR, \fBenabled\fR, \fBservice\fR and
+\fBlisteners\fR with \fBname\fR, \fBnetwork\fR, \fBaddress\fR, \fBport\fR and
+\fBunit\fR).
+.\" BEGIN GENERATED: command server show
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-json\fR
+Print the overview as a JSON document.
+.RE
+.\" END GENERATED: command server show
+.PP
 The addresses devices and hosts reach this server at. The setting is
 .B server.addresses
 in

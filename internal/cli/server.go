@@ -44,10 +44,12 @@ const serverFollowUps = "Re-point the devices and hosts at the new address: tacc
 // serverSpecs are the arguments of each verb (completion and parsing).
 var serverSpecs = map[string]Spec{
 	"addresses": {MaxArgs: 2, Args: []string{"list|add|remove|replace", ""}},
+	"show":      {MaxArgs: 0, Flags: []Flag{flagJSON}},
 }
 
 // serverRows are the family's rows: the forms of its verb, with one line each.
 var serverRows = [][2]string{
+	{"show [--json]", "Show the address, the default method, the metrics exporter, the backends and the listeners"},
 	{"addresses list", "Show the address devices and hosts reach this server at (no word: the same)"},
 	{"addresses add <ip>[,<ip>...]", "Set the address when none is set (one is held for now)"},
 	{"addresses remove <ip>[,<ip>...]", "Take an address out (the only one stays: use replace)"},
@@ -61,11 +63,15 @@ func init() {
 }
 
 func serverCmd(inv *invocation) *cobra.Command {
-	c := verb("server <subcommand>", "This server's settings (addresses: where devices and hosts reach it)")
+	c := verb("server <subcommand>", "This server's settings (show, addresses)")
 	c.RunE = inv.native(withPreflight, inv.server)
 	c.AddCommand(withRun(verb(serverUseAddresses, "The address devices and hosts reach this server at"),
 		inv.native(withPreflight, func(args []string) error {
 			return inv.server(append([]string{"addresses"}, args...))
+		})))
+	c.AddCommand(withRun(verb(serverUseShow, "Show the address, the backends, the listeners and the metrics exporter"),
+		inv.native(withPreflight, func(args []string) error {
+			return inv.server(append([]string{"show"}, args...))
 		})))
 	return c
 }
@@ -77,7 +83,11 @@ func serverHelp() string {
 	for _, r := range serverRows {
 		fmt.Fprintf(&b, "  %-36s  %s\n", r[0], r[1])
 	}
+	fmt.Fprintf(&b, "      %-34s  %s\n", "--json", "Print the overview as a JSON document")
 	b.WriteString(`
+'show' reads the settings and asks systemd for the state of the services; it
+changes nothing.
+
 The address is the one the devices' walkthroughs (config cisco, juniper, wti),
 'config linux script' and 'host enroll' tell a device or host to authenticate
 against, unless --server names another for that run. It is an IP address,
@@ -93,6 +103,7 @@ this server's own PAM and accounts together (what 'host enroll --local
 --server <ip>' does), and says what is left to do. Only the superuser runs it.
 
 Examples:
+  tacctl server show
   tacctl server addresses
   tacctl server addresses replace 192.0.2.10
 
@@ -113,6 +124,8 @@ func (inv *invocation) server(args []string) error {
 		return nil
 	case "addresses":
 		return inv.serverAddresses(rest)
+	case "show":
+		return inv.serverShow(rest)
 	default:
 		return inv.unknownSub(sub)
 	}

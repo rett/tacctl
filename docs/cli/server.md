@@ -3,6 +3,13 @@
 [Documentation](../README.md) › [CLI reference](README.md)
 
 ```
+server show [--json]
+
+    This server at a glance, changing nothing: the address devices and hosts reach it at, the
+    default method of `host enroll`, the metrics exporter, every backend (installed, enabled,
+    service) and every listener with its network, address, port and unit state. `--json` prints
+    the same as a document. Superuser only
+
 server addresses [list]
 
     The address devices and hosts reach this server at: the setting `server.addresses` of
@@ -24,9 +31,43 @@ server addresses replace <ip>[,<ip>...]
 ```
 
 ```
+tacctl server show
 tacctl server addresses
 tacctl server addresses replace 192.0.2.10
 ```
+
+**`server show`.**
+
+```
+Server
+--------------------------------------------
+  Address:         192.0.2.10
+  Default method:  tacplus  (for hosts enrolled without --method)
+  Metrics:         enabled, loopback only  (127.0.0.1:8080)
+
+Backends
+------------------------------------------
+  ID      PROTOCOL  ENABLED  SERVICE
+  ----------------------------------------
+  tacacs  tacacs    yes      active
+  radius  radius    no       not installed
+
+Listeners
+---------------------------------------------------
+  BACKEND  LISTENER  NETWORK  ADDRESS  PORT  UNIT
+  -------------------------------------------------
+  tacacs   default   tcp      :49      49    active
+```
+
+The address is the setting, else the copy in this server's registry entry (the
+line says so). The metrics line is the exporter of the TACACS+ backend's
+default listener: `disabled` when it is sunk to a port no scraper can reach,
+`enabled, loopback only` or `enabled, externally reachable` by its address.
+The listeners are those of the backends that are installed or enabled; a unit
+that is not installed shows `-`. `--json` has `addresses`, `address_source`
+(`setting`, `registry` or empty), `default_method`, `metrics` (`address`,
+`state`, `reach`) and `backends` (`id`, `protocol`, `installed`, `enabled`,
+`service` and `listeners` with `name`, `network`, `address`, `port`, `unit`).
 
 **What a change does.** `server addresses add` and `replace` run in one apply,
 after a snapshot (`tacctl backup list`): the setting, this server's registry

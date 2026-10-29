@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Integration tests for 'tacctl server addresses' (0.2.21) with the real
+# Integration tests for 'tacctl server' (addresses 0.2.21, show 0.2.22) with the real
 # binary: the one address this release holds, the refusals, the change of the
 # address on this server's own login (the client script is a stub), the audit
 # lines, and that the verb is the superuser's alone with a tiers sudoers
@@ -40,6 +40,28 @@ registry() { cat "${TACCTL_STATE_DIR}/linux-hosts" 2> /dev/null || true; }
     run "$TACCTL_BIN_SCRIPT" server bogus
     assert_failure 1
     assert_output --partial "Unknown subcommand: 'bogus'"
+}
+
+@test "server show: the overview prints the settings and the backends, --json the same as a document, and it changes nothing" {
+    local before
+    before="$(cat "${TACCTL_STATE_DIR}/tacctl.yaml" 2> /dev/null || true)"
+    run "$TACCTL_BIN_SCRIPT" server show
+    assert_success
+    assert_output --partial "Server"
+    assert_output --partial "Address:         (none"
+    assert_output --partial "Default method:  tacplus"
+    assert_output --partial "Metrics:         enabled, loopback only  (127.0.0.1:8080)"
+    assert_output --partial "Backends"
+    assert_output --partial "Listeners"
+    "$TACCTL_BIN_SCRIPT" server addresses add 192.0.2.10 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" server show --json
+    assert_success
+    run jq -r '.addresses[0], .address_source, .default_method, .metrics.state, (.backends | map(.id) | join(","))' <<< "$output"
+    assert_output "$(printf '192.0.2.10\nsetting\ntacplus\nenabled\ntacacs,radius')"
+    run "$TACCTL_BIN_SCRIPT" server show bogus
+    assert_failure 1
+    assert_output --partial "Unknown argument: 'bogus'"
+    [ -z "$before" ] || [ "$before" = "$(cat "${TACCTL_STATE_DIR}/tacctl.yaml")" ]
 }
 
 @test "server addresses: nothing recorded, then add sets the one address and says what is left to do" {

@@ -258,6 +258,19 @@ current behaviour; this file is where history lives.
    `tacctl shell` and the console, and may name a verb the tier cannot run;
    the answer that comes after `sudo` is filtered.
 
+13. **`server show`: this server at a glance.** `tacctl server show [--json]`
+   prints the address devices and hosts reach this server at (the setting, else
+   the copy in this server's registry entry), the default method of `host
+   enroll`, the metrics exporter (address, enabled or disabled, loopback only or
+   externally reachable), each backend with whether it is installed and enabled
+   and the state of its service, and each listener of the installed or enabled
+   backends with its network, address, port and the state of its unit. It
+   changes nothing and writes no audit line. `--json` has the same data
+   (`addresses`, `address_source`, `default_method`, `metrics`, `backends` with
+   their `listeners`). Like the rest of the family it is the superuser's: the
+   tier table has no row for `server`, so the sudoers rules of the tiers are
+   unchanged.
+
 ## 0.2.21 (2026-10-28)
 
 1. **`user rename` to a name with a period says what to do.** The refusal of

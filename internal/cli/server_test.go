@@ -223,7 +223,7 @@ func TestServerAddressesAudit(t *testing.T) {
 // wrote it and a rollback has nothing to take out.
 func TestServerIsTheSuperusersAlone(t *testing.T) {
 	for _, tr := range []tier.Tier{tier.Readonly, tier.Operator, tier.Engineer} {
-		for _, sub := range []string{"", "addresses", "list"} {
+		for _, sub := range []string{"", "addresses", "list", "show"} {
 			if tier.Permits(tr, "server", sub) {
 				t.Errorf("%s may run 'server %s'", tr, sub)
 			}

@@ -82,7 +82,7 @@ tacctl emergency <subcommand>
 
 tacctl server <subcommand>
 
-    This server's settings (addresses: where devices and hosts reach it); see server.md
+    This server's settings (show, addresses); see server.md
 
 tacctl ssh <name|address> [-p port] [-X|-Y] [-g] [-L|-R|-D spec]... [-- ssh args]
 
