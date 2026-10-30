@@ -9,7 +9,7 @@ doctype: explanation
 
 # Vendor Notes
 
-*What differs between Cisco, Junos and WTI for operations staff · Checked against tacctl 0.2.20*
+*What differs between Cisco, Junos and WTI for operations staff · Checked against tacctl 0.2.21*
 
 [Printable PDF](../pdf/tacctl-vendor-notes.pdf){: .pdf-link }
 
@@ -91,6 +91,11 @@ A new IOS 15.6 router may need `--legacy-ssh` and still speak `modern`.
   shows or pins it; the source address must be inside the scope's prefixes.
 - **Restore point.** `tacctl device config plan sw1 --restore-point=flash:`
   adds a block to paste first; `configure replace` with that file backs out.
+- **Server port.** When the TACACS+ listener is not on 49
+  (`tacctl config listen`), the walkthrough adds `port <n>` under
+  `tacacs server TACACS`, after `address ipv4` (with `--legacy`, after
+  `single-connection` on the `tacacs-server host` line). On 49 it adds
+  nothing.
 - **Vendor detection** by SNMP does not name IOS 12.x devices (or ASA and
   IOS XR). Register them with `--vendor cisco`.
 
@@ -123,7 +128,8 @@ default); you type `commit` yourself after the check.
 
 On a virtual chassis, two routing engines or a cluster, the apply expects
 the check and the commits to answer for every member `show version` lists,
-and fails the step when one does not ([Engineer Guide](engineer-guide-device-changes.md)
+and fails the step when one does not; a chassis of one member is applied to
+like a single device ([Engineer Guide](engineer-guide-device-changes.md)
 §5.1).
 
 ### 3.3 Other Junos points
@@ -133,6 +139,7 @@ and fails the step when one does not ([Engineer Guide](engineer-guide-device-cha
 | Apply `failed: other editors or staged changes` | Someone has uncommitted configuration on the device. Coordinate; commit or discard on the device. |
 | `bad secret` continues on a Junos device after a re-paste | Delete the secret and set it again, to avoid hidden characters |
 | A blank device with only a local account | `tacctl device onboard` (Engineer Guide §2.3) |
+| The TACACS+ listener is not on 49 (`tacctl config listen`) | The walkthrough adds `set system tacplus-server <address> port <n>` |
 | Break-glass | A local `system login user` works after the tacplus timeout; `root` on the console is always local. Over ssh, `root` needs the scope to record it and `root-login allow` on the device ([Break Glass](break-glass.md) §1.1) |
 
 ### 3.4 The management filter: `ssh-only` or `strict`
@@ -154,23 +161,24 @@ both.
 
 **The authentication server's address in `strict`.** When the device
 authenticates against another address than the one tacctl reaches it from
-(`--server`, a RADIUS listener bound to another address, or `--source` alone,
-the device still being told the address detected for the server), that
+(`--server`, the recorded server address (`tacctl server addresses`), a
+RADIUS listener bound to another address, or `--source` alone, the device
+still being told the address detected for the server), that
 address is not a source of `permit-mgmt`. The device starts those sessions,
 so a term of its own, `permit-auth-replies`, last in the filter, accepts from
 it only the server's answers:
 
 | Protocol | What `permit-auth-replies` accepts from the address |
 |---|---|
-| TACACS+ | tcp from source port `tacacs` with `tcp-established`: established connections only, so a new connection from that port is refused |
+| TACACS+ | tcp from the TACACS+ listener's source port (`tacacs`, 49, by default) with `tcp-established`: established connections only, so a new connection from that port is refused |
 | RADIUS | udp from source ports `radius` and `radacct` (the listener's, 1812 and 1813 by default), after the SNMP terms, so `deny-snmp` decides udp port 161 first |
 
 The filter keeps no state and matches the answers by source port, so for
 RADIUS it cannot tell an answer from another udp packet sent from those
 ports (a scope with no SNMP clients has no `deny-snmp` term, and udp port 161
 from that address and port is accepted too). There is one address and no
-such term with neither flag, with `--server` equal to the detected address
-or to `--source`, or when a plain entry of the permit list holds the address
+such term with neither flag and no recorded address, with `--server` equal to
+the detected address or to `--source`, or when a plain entry of the permit list holds the address
 (it is then accepted for everything, as any source of the list). An entry
 with services for the address keeps its services, and the term adds the
 answers. The address is no way in for ssh: the lock-out check of a plan does
@@ -247,6 +255,7 @@ The unit asks for the `wti` service and reads the standard `priv-lvl`:
 | Usernames | WTI's limit is 32 characters |
 | Service Name | Must be `wti`, not `shell` |
 | Fallback Local | Must be `On` for break-glass to work. With `Off`, nobody gets in until the hold is released. |
+| Authentication Port | The TACACS+ listener's (49 by default; `tacctl config listen`) |
 | Multiple Logins | `On`, or pulls and second sessions are refused |
 
 WTI symptoms and fixes are in [Troubleshooting](troubleshooting.md) §6.

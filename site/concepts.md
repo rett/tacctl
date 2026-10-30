@@ -9,7 +9,7 @@ doctype: explanation
 
 # Concepts
 
-*Users, groups, scopes and tiers, and the other words tacctl uses · Checked against tacctl 0.2.20*
+*Users, groups, scopes and tiers, and the other words tacctl uses · Checked against tacctl 0.2.21*
 
 [Printable PDF](../pdf/tacctl-concepts.pdf){: .pdf-link }
 
@@ -36,6 +36,9 @@ hosts, notices, plans and snapshots.
 > everywhere. A new user created without `--scopes` is placed in the
 > default scope only (`tacctl scope default` shows which one).
 
+The tacctl server and its console are the exception: every user can log in
+there, whatever their scopes, unless disabled or in a group of tier none.
+
 ---
 
 ## 2. Groups and tiers
@@ -58,9 +61,9 @@ superuser**. Each tier can run everything the tiers below it can.
 
 | Tier | Adds |
 |---|---|
-| Read-only | Lists and shows, `ssh` to devices in your scopes, `status`, `passwd`, `device notice list`, `device client-config`, `man` |
+| Read-only | Lists and shows of users, groups and devices, `scope list`, `ssh` to devices in your scopes, `status`, `passwd`, `device notice list`, `device client-config`, `man` |
 | Operator | Logs, `config validate`, `device check`, `scan`, `discover`, `device config list`, `backup list`, `device export`; `console show` and the console's system-shell settings (read only); turning their own password cache on or off |
-| Engineer | For the devices of **your own scopes only**: registry changes, pull, diff, plan, Junos apply, enroll, onboard, host keys; listing break-glass holds; listing and showing hosts; reading the Junos management filter mode |
+| Engineer | For the devices of **your own scopes only**: registry changes, pull, diff, plan, Junos apply, enroll, onboard, host keys; listing break-glass holds; listing and showing hosts; `scope show`; reading the Junos management filter mode |
 | Superuser | Everything else: users, groups, scopes, secrets, hosts, lockdowns, break-glass holds, restores |
 
 On a device, an operator "changes nothing and interrupts nothing": `clear`,
@@ -91,6 +94,8 @@ tacctl scope show site-a             # prefixes, users, secret length, settings
   log in to it.
 - Changing a scope's secret takes effect on the server **at once**. Every
   device in the scope fails until it has the new key.
+- The name `tacctl` is reserved. A scope of that name, managed by tacctl, is
+  this server's own login: it is in no listing and no command edits it.
 
 ---
 

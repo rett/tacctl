@@ -9,7 +9,7 @@ doctype: how-to
 
 # Troubleshooting
 
-*Symptom-first fixes for login and device problems · Checked against tacctl 0.2.20*
+*Symptom-first fixes for login and device problems · Checked against tacctl 0.2.21*
 
 [Printable PDF](../pdf/tacctl-troubleshooting.pdf){: .pdf-link }
 
@@ -86,8 +86,9 @@ its own procedure in §5 of that page.
 
 ## 5. Nothing reaches the server
 
-1. From the device: `telnet <server_ip> 49` (TACACS+). RADIUS uses UDP
-   1812/1813 and can't be tested with telnet.
+1. From the device: `telnet <server_ip> 49` (TACACS+; the port of the
+   listener, see step 3). RADIUS uses UDP 1812/1813 by default and can't be
+   tested with telnet.
 2. `tacctl backend status`: are the services and listeners up?
 3. `tacctl config listen show` (add `--backend radius` for RADIUS): is the
    listener on the right address?
@@ -139,6 +140,10 @@ retry, run `tacctl log tail 50`, then set the log level back.
 | `is locked by another tacctl command` | Wait, then retry |
 | `not permitted` in the shell | Your tier doesn't allow the command. `?` shows the tier it needs. |
 | `A password change is required of '<user>'` | Only `passwd`, `version` and `help` run until you change your password: `tacctl passwd` |
+| A user cannot log in to the tacctl server or its console | Every user can, unless disabled or in a group of tier none (`tacctl user show <name>`). The account exists after the next `tacctl host sync <server>`. A name with a period has no Linux account. |
+| `Scope 'tacctl' is reserved. Rename the scope of that name first` (from `host enroll --local`, the sync of the server or `config validate`) | A scope called `tacctl` from an earlier release blocks the server's own login. `tacctl scope rename tacctl <new-name>`, then `tacctl host enroll --local`. |
+| `This machine's own login was not set up (an upgrade does not ask without a terminal)` | `upgrade` found no login and had no terminal to ask on. Run `tacctl host enroll --local`. |
+| `This machine's own login was not set up (the enrolment stopped, see above; nothing is half applied)` | A safeguard stopped the setup, and the lines above say why. Fix that, then run `tacctl host enroll --local`. |
 
 Exit statuses, including 3 (hand edit) and the sudo codes 126 and 127, are
 explained in [Exit Codes](exit-codes.md).

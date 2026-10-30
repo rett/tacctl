@@ -8,7 +8,7 @@ doctype: explanation
 
 # About These Docs
 
-*What this documentation covers, how it relates to the repository docs, and the conventions it follows · Checked against tacctl 0.2.20*
+*What this documentation covers, how it relates to the repository docs, and the conventions it follows · Checked against tacctl 0.2.21*
 
 [Printable PDF](../pdf/tacctl-about-these-docs.pdf){: .pdf-link }
 
@@ -37,7 +37,7 @@ reference wins**: please report the difference.
 ## 2. Which release a page describes
 
 Every page says, under its title, which tacctl release it was checked
-against (for example *Checked against tacctl 0.2.20*). The footer shows
+against (for example *Checked against tacctl 0.2.21*). The footer shows
 the release for the documentation as a whole. Run `tacctl version` on your
 server to see which release you have.
 [What's New for Operators](whats-new-for-operators.md) lists what changed

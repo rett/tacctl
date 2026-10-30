@@ -9,7 +9,7 @@ doctype: how-to
 
 # Linux Host Operations
 
-*Keeping enrolled Linux hosts in step · Checked against tacctl 0.2.20*
+*Keeping enrolled Linux hosts in step · Checked against tacctl 0.2.21*
 
 [Printable PDF](../pdf/tacctl-linux-host-operations.pdf){: .pdf-link }
 
@@ -93,10 +93,28 @@ tacctl host enroll admin@10.30.0.16 --name db3 --port 2222 --identity ~/.ssh/dep
   server's default is used (`tacctl host default-method`).
 - `--name`: the registry name. The default is the short hostname, in lower
   case.
+- `--server <address>`: the address the host uses for this server. A host
+  that is enrolled already keeps the address it has, so enrolling it again
+  to repair it never repoints it; a new host gets the recorded address
+  (`tacctl server addresses`), else the source address of the route to the
+  host. The server's port in the PAM setup is the configured listener's.
 - Enrolling pins the host's ssh keys and registers the host.
 
 If the host's `/etc/login.defs` `UID_MIN`–`UID_MAX` overlaps tacctl's UID
 range, enroll and sync warn you. Keep local UIDs clear of that range.
+
+### 3.1 This machine
+
+The tacctl server is a host of its own kind. `tacctl install` and
+`tacctl upgrade` set up its login, so every user can log in to it and to its
+console, and `tacctl host enroll --local` is the command to rebuild that
+login, to move it to another address (`--server <ip>`, or `tacctl server
+addresses replace <ip>`, which is the same change) and to repair it.
+`--local` takes no `--scope`. A `host sync` of the server repairs a login that
+was changed by hand (`Repaired the managed server login.`), and `host move`
+of the server only says that `host enroll --local` sets its login up.
+[Superuser Daily Operations](superuser-daily-operations.md) §11 has the
+details.
 
 ---
 
@@ -178,6 +196,7 @@ form of this procedure.
 | Compliance check | `tacctl host check --all` |
 | Push accounts | `tacctl host sync --all` |
 | Enroll | `tacctl host enroll <user>@<host> --scope <s>` |
+| Rebuild or repair this server's login | `tacctl host enroll --local` |
 | Move scope | `tacctl host move <n> <scope>` |
 | Rename | `tacctl host rename <old> <new>` |
 | Retire | `tacctl host unenroll <n>` |

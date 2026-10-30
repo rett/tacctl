@@ -9,7 +9,7 @@ doctype: how-to
 
 # Emergency Lockdown
 
-*Refusing the logins of chosen groups on a scope, and lifting it again · Checked against tacctl 0.2.20*
+*Refusing the logins of chosen groups on a scope, and lifting it again · Checked against tacctl 0.2.21*
 
 [Printable PDF](../pdf/tacctl-emergency-lockdown.pdf){: .pdf-link }
 
@@ -77,6 +77,9 @@ tacctl emergency lockdown --all-scopes enable --reason "INC-4821"
 - At the terminal you confirm by typing the **scope name** back, or the
   word `all` for `--all-scopes`. There is no `--yes`.
 - A further `enable` adds to what is already locked.
+- This server's own login (the reserved scope `tacctl`) is locked by
+  `--all-scopes` only, and `--all-scopes disable` lifts it; its lines say
+  `this server's own login`. `emergency lockdown tacctl ...` is refused.
 
 > **Never put a secret in a reason.** Reasons are logged as typed.
 

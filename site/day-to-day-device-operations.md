@@ -9,7 +9,7 @@ doctype: how-to
 
 # Day-to-Day Device Operations
 
-*A console-first guide for operators and engineers · Checked against tacctl 0.2.20*
+*A console-first guide for operators and engineers · Checked against tacctl 0.2.21*
 
 [Printable PDF](../pdf/tacctl-day-to-day-device-operations.pdf){: .pdf-link }
 

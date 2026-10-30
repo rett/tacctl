@@ -9,7 +9,7 @@ doctype: how-to
 
 # Operator Field Guide
 
-*For NOC, help-desk and network support staff · Checked against tacctl 0.2.20*
+*For NOC, help-desk and network support staff · Checked against tacctl 0.2.21*
 
 [Printable PDF](../pdf/tacctl-operator-field-guide.pdf){: .pdf-link }
 
@@ -29,7 +29,7 @@ engineer or superuser.
 | You can | Read-only tier | Operator tier |
 |---|---|---|
 | Change your own password (`tacctl passwd`) | ✔ | ✔ |
-| See users, groups, scopes, devices (`list`, `show`) | ✔ | ✔ |
+| See users, groups, scopes and devices (`user`, `group`, `device` `list` and `show`; `scope list`) | ✔ | ✔ |
 | `tacctl ssh` to devices in **your own scopes** | ✔ | ✔ |
 | Server health (`status`, `backend status`) | ✔ | ✔ |
 | Read logs (`log tail`, `search`, `failures`, `accounting`) | | ✔ |

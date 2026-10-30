@@ -9,7 +9,7 @@ doctype: how-to
 
 # Superuser Daily Operations
 
-*Day-to-day operations for tacctl superusers · Checked against tacctl 0.2.20*
+*Day-to-day operations for tacctl superusers · Checked against tacctl 0.2.21*
 
 [Printable PDF](../pdf/tacctl-superuser-daily-operations.pdf){: .pdf-link }
 
@@ -108,6 +108,15 @@ tacctl user list                    # name, group, status, password age, scopes
 tacctl user show alice              # full detail, incl. scope membership and last login
 tacctl group list                   # groups: Cisco priv-lvl, Junos class, user count
 tacctl group show operator          # every setting of a group and where it comes from
+```
+
+The optional `engineer` group comes from the preset. A custom group takes a
+Cisco privilege level and a Junos class:
+
+```bash
+tacctl group preset roles --dry-run     # preview the preset
+tacctl group preset roles               # apply it; this creates the engineer group
+tacctl group add ops-ro 1 RO-CLASS      # a custom group: priv-lvl, then Junos class
 ```
 
 | Task | Command | Details |
@@ -260,7 +269,7 @@ Superusers follow the same steps, for every scope.
 ## 5. Linux hosts
 
 ```bash
-tacctl host list                    # target, address, scope, method, users
+tacctl host list                    # target, address, scope, server, method, users
 tacctl host check --all             # read-only: does every host match what tacctl would make it?
 tacctl host sync --all              # push user changes to every enrolled host
 ```
@@ -313,6 +322,19 @@ tacctl scope secret site-a generate               # generate a new one
 After a change that affects device configuration, the command tells you which
 devices now need one, for example
 `tacctl device config apply --scope site-a --check`.
+
+A new scope, a renamed one and a removed one:
+
+```bash
+tacctl scope add site-c --prefixes 10.13.0.0/16 --secret generate    # prefixes are required
+tacctl scope default site-c                       # the scope `user add` uses without --scopes
+tacctl scope rename site-c site-d                 # users, hosts and settings follow the name
+tacctl scope remove site-d                        # refused while a user has it; --force strips it
+```
+
+A prefix belongs to one scope, so `scope add` refuses a prefix another scope
+already has. `scope remove` also removes every setting stored under the
+scope's name, so a new scope of that name starts from the defaults.
 
 > Changing a scope's secret takes effect on the server immediately. Every
 > device in the scope fails to authenticate until its key is updated. Plan
@@ -371,10 +393,12 @@ tacctl log accounting 50            # last 50 accounting records (who ran what)
 ## 10. The login console
 
 The console is the login shell of every tacctl user on the tacctl server,
-of every tier; there is no switch for it. The accounts follow at the next
-`host sync` of the server. To keep a user off the server, take the server's
-scope off the user. Local accounts that are not tacctl users keep their own
-shells.
+of every tier; there is no switch for it, and the user's scopes play no part:
+every user can log in to the server and its console unless disabled
+(`user disable`) or in a group of tier none. The accounts follow at the next
+`host sync` of the server; a user whose name has a period has no Linux
+account on any host, so no console login. Local accounts that are not tacctl
+users keep their own shells.
 
 ```bash
 tacctl console show       # the settings, each user's shell and system-shell access, and why
@@ -429,7 +453,67 @@ tacctl console list-max 100                             # the longest list shown
 
 ---
 
-## 11. Quick reference
+## 11. This server
+
+### 11.1 The server's own login
+
+Every user logs in to the tacctl server and its console through a login that
+tacctl manages: the scope `tacctl`, this server's entry in the host registry,
+the PAM client and sshd's drop-in, and the users' accounts. The scope is
+reserved: no listing or Tab shows it and no command creates, edits or looks
+it up. Device logins keep the user's own scopes.
+
+- `tacctl install` and `tacctl upgrade` set the login up. `install` asks once
+  (`Set up this machine's own login now, with <address> as the server
+  address? [y/N]`; `--yes` answers it; `--server <ip>` sets the address);
+  `upgrade` asks on a terminal only. A healthy setup prints nothing, and a
+  step that cannot be done safely is one line that names
+  `tacctl host enroll --local`, with nothing left half applied.
+- `tacctl host enroll --local` rebuilds, moves or repairs the login. It takes
+  no `--scope`.
+- `tacctl host sync <server>` repairs a login changed by hand
+  (`Repaired the managed server login.`), and `host forget` or
+  `host unenroll` of the server takes the login with them.
+- A scope called `tacctl` made by an earlier release blocks all of it.
+  `host enroll --local`, the sync of the server and `config validate` stop
+  with `Scope 'tacctl' is reserved. Rename the scope of that name first`:
+  `tacctl scope rename tacctl <new-name>`, then `tacctl host enroll --local`.
+  Do it before upgrading.
+- `emergency lockdown --all-scopes` includes the login (its lines say
+  `this server's own login`); `emergency lockdown tacctl ...` is refused.
+
+### 11.2 The server address
+
+The address devices and hosts reach this server at is the setting
+`server.addresses`. It is one IP address (behind NAT or a VPN if need be; not
+a host name, `0.0.0.0`, `::`, a loopback or a link-local address).
+
+```bash
+tacctl server addresses                      # the recorded address
+tacctl server addresses replace 192.0.2.10   # change it
+```
+
+`add` sets the address when none is set, `remove` of the only address is
+refused, and `replace` changes it. A change takes a snapshot and then runs in
+one apply: the setting, the registry entry, the managed scope's prefixes and
+this server's PAM client and accounts. If the setup on this machine fails,
+nothing is changed. Then it says what is left:
+
+```text
+[INFO] Re-point the devices and hosts at the new address: tacctl host sync --all; the device
+walkthroughs name the new address
+```
+
+The recorded address is the default of `--server` for the device
+walkthroughs (`config cisco|juniper|wti`, and so `device config show`,
+`pull`, `diff`, `plan` and `apply`), `config linux script` and `host enroll`;
+`--server` wins for that run. Without a record the address is detected as it
+was. A host that is already enrolled keeps the address it has, and
+`host enroll --server` changes it.
+
+---
+
+## 12. Quick reference
 
 | Task | Command |
 |---|---|
@@ -460,6 +544,8 @@ tacctl console list-max 100                             # the longest list shown
 | Watch logins live | `tacctl log tail -f` |
 | Console settings and each user's shell | `tacctl console show` |
 | System shell for a tier / a user | `tacctl console system-shell <tier> enable` · `console system-shell user <name> enable\|disable\|clear` |
+| Server address: show / change | `tacctl server addresses` · `tacctl server addresses replace <ip>` |
+| Rebuild, move or repair the server's own login | `tacctl host enroll --local` |
 
 See [Exit Codes](exit-codes.md) for exit statuses.
 
