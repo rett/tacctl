@@ -339,10 +339,12 @@ device client-config
 
     Print an ssh_config Include for your devices (Host blocks with the vendor options and the pin)
 
-device scan [--full] [--since <dur>] [--backend <id>]
+device scan [--full] [--since <dur>] [--backend <id>] [--sources]
 
     Read the backends' logs into the seen cache from where the last scan stopped; re-scan pinned
-    host keys (never re-pins); print each log's window and the notices
+    host keys (never re-pins); print each log's window and the notices. --sources then tests the
+    AAA source addresses of the devices as `device check --sources` does, device by device, and
+    names a device that could not be tested; it is refused with --if-stale and --quiet
 
 device discover [--all] [--snmp] [--backend <id>]
 
@@ -351,7 +353,7 @@ device discover [--all] [--snmp] [--backend <id>]
     SNMP (its scope's credentials) and puts them in the line (`--vendor` when the device names
     one; what was not used as a `# SNMP:` comment). Without --snmp it contacts nothing
 
-device check <name>|--all [--json]
+device check <name>|--all [--sources] [--json]
 
     Checklist: scope, vendor tag, last seen, reachable (TCP connect, 3 s), host key against the pin,
     SNMP (the settings the device is read with and where each comes from; a credential only as set
@@ -361,7 +363,24 @@ device check <name>|--all [--json]
     NETCONF (a Junos device: what the last pull's probe found, `hello ok`, `port closed`, `no
     hello`, or `not probed`; a check logs in to nothing), notices; --all ends with the devices
     registered as other that name a vendor; --json: the rows, with sysname, syslocation,
-    vendor_detected (vendor_reason, vendor_error) and netconf
+    vendor_detected (vendor_reason, vendor_error) and netconf.
+    --sources also tests the source addresses of the device's TACACS+ and RADIUS clients (read from
+    its last pull; see [Device configuration](../devices/configuration.md)):
+    each but the registered address is connected to (at most eight per device), its ssh host key
+    read without logging in and compared with the pin. An address that does not answer
+    (`source-address <address> is unreachable from this server; it may be unreachable by design`)
+    or that presents another key (`source-address <address> presents another SSH host key
+    (<fingerprint>), the device's is <fingerprint>: the address may belong to another device`) is a
+    warning (the registered device that holds the address is named when there is one; an address
+    from an IOS source interface is `source-interface <name> (<address>)`); one info line sums up
+    the device. Not compared, with the reason: a device with no pinned key, and an address that
+    presents only a key type that is not pinned. Skipped: loopback, link-local, unspecified,
+    multicast and broadcast addresses, and an interface whose addresses are not recorded, not
+    visible to the login or learned dynamically. About 8 seconds per unanswered address, devices 8
+    at a time (the timing scale of the device multiplies it). Nothing is pinned, recorded or
+    changed, no difference is counted, and the audit line (`sources tested=N unreachable=N
+    mismatched=N`) names no address; --json adds a `sources` array (address, interface, result
+    `ok`, `unreachable`, `mismatch` or `skipped`, fingerprint, pinned, device, source, reason)
 
 device snmp <name> [show [--reveal]]
 

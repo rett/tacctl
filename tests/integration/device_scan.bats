@@ -289,6 +289,28 @@ two_scans() {
     assert_output --partial "Usage: tacctl device check <name>|--all"
 }
 
+@test "device check --sources, device scan --sources: nothing to test before a pull; the background form refuses it" {
+    "$TACCTL_BIN_SCRIPT" device add loop 127.0.0.1 --port 1 --vendor cisco > /dev/null
+    run at 2026-10-04T12:00:00Z device check loop --sources
+    assert_success
+    plain
+    assert_output --partial "Check loop (127.0.0.1, cisco)"
+    assert_output --partial "[INFO] no source address was tested: its configuration was never read: tacctl device config pull loop"
+    run at 2026-10-04T12:00:00Z device check loop --sources --json
+    assert_success
+    assert_output --partial '"sources": ['
+    run at 2026-10-04T12:00:00Z device scan --sources
+    assert_success
+    plain
+    assert_output --partial "Source addresses"
+    assert_output --partial "[INFO] loop: no source address was tested: its configuration was never read: tacctl device config pull loop"
+    assert_output --partial "[INFO] 1 device not tested (see the lines above)"
+    run "$TACCTL_BIN_SCRIPT" device scan --sources --if-stale
+    assert_failure 1
+    plain
+    assert_output --partial "--sources is not part of the background form: give it without --if-stale or --quiet."
+}
+
 @test "device list --scan scans first" {
     register
     cp "${SIGHTINGS}/tacctl-auth.log-1" "$AUTHLOG"

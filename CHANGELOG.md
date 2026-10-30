@@ -140,6 +140,51 @@ current behaviour; this file is where history lives.
    check. The new key is ignored by every earlier release, so `rollback` has
    nothing to undo.
 
+7. **New: `device check --sources` and `device scan --sources` test the AAA
+   source addresses.** A source address the device holds can be another
+   device's, or out of this server's reach, and the check of item 6 cannot
+   tell. With `--sources`, the source addresses of a device's TACACS+ and
+   RADIUS clients (a Junos `source-address` under `system tacplus-server` or
+   `radius-server`; the addresses of the interface an IOS `ip tacacs
+   source-interface` or `ip radius source-interface` names, from the interface
+   facts of the last pull, the one in tacctl's `aaa group server` included)
+   are tested, each but the device's registered address, at most eight per
+   device: this server connects to the address, reads the SSH host key
+   without logging in (the read of `device hostkey` and of the host-key scan:
+   ssh-keyscan, then tacctl's own client, with the timing scale of the device)
+   and compares it with the key pinned for the device. An address that does
+   not answer is a warning, `source-address <address> is unreachable from
+   this server; it may be unreachable by design`, and so is one whose key is
+   not the device's, `source-address <address> presents another SSH host key
+   (<fingerprint>), the device's is <fingerprint>: the address may belong to
+   another device` (with the name of the registered device that holds the
+   address, when there is one); an address from an IOS source interface is
+   named `source-interface <name> (<address>)`, and an error that is not "no
+   answer" reads `could not be tested: <reason>`. One info line sums up the
+   device (`3 source addresses tested, all present the device's key`).
+   Skipped with the reason: a source-interface whose addresses are not
+   recorded (`pull the device again`), whose login could not see the
+   interfaces, or whose address is learned dynamically; a loopback,
+   link-local, unspecified, multicast or broadcast address; and the addresses
+   beyond the eighth. Not compared: a device with no pinned key (`not
+   compared: no host key is pinned for <device>`, nothing is connected to)
+   and an address that presents only a key type that is not pinned (`not
+   compared: presented only rsa, pinned ed25519`). In a scan, a device that
+   cannot be tested is named with the reason and the last line counts them.
+   The test is a warning and no more: the device keeps its state, no
+   difference is counted, nothing is pinned, recorded or stored, and a pull,
+   a plan, a diff and a list never run it. An unanswered address costs about
+   8 seconds; devices are tested eight at a time, the addresses of one device
+   one after the other, the timing scale of the device multiplies the time,
+   a terminal gets a progress line on standard error, and Ctrl-C stops the
+   test. `device check --json` has a `sources` array with the flag
+   (`address`, `interface`, `result` `ok`, `unreachable`, `mismatch` or
+   `skipped`, `fingerprint`, `pinned` and `device` for a mismatch, `source`
+   and `reason` for a source left out). The audit line is `sources tested=N
+   unreachable=N mismatched=N` and names no address. `scan --sources` is
+   refused with `--if-stale` and `--quiet`. Both verbs stay the operator
+   tier's.
+
 ## 0.2.22 (2026-10-29)
 
 1. **A device `ssh-keyscan` reads nothing from, but plain `ssh` reaches, gets

@@ -65,6 +65,51 @@ Device core-sw2 (lab, juniper): pulled 2026-10-09 14:02 by alice over netconf
   `diff` and `plan` say once, where the device has a source, that it is not
   checked (`their addresses are not recorded (pull the device again)`, `this
   login cannot see the interfaces`).
+- **AAA: testing the source addresses.** An address the device holds can
+  still be another device's, or out of this server's reach, and the check
+  above cannot tell. `tacctl device check <name>|--all --sources` and `tacctl
+  device scan --sources` (operator tier and up, as the verbs are) connect to
+  each source address of the device's AAA clients that is not its registered
+  address: the Junos `source-address` under `system tacplus-server` or
+  `radius-server`, and the addresses of the interface an IOS `ip tacacs
+  source-interface` or `ip radius source-interface` names (the interface
+  facts of the last pull; the one in tacctl's `aaa group server` counts). The
+  addresses come from the stored pull, deduplicated, at most eight per
+  device; the rest is said not to be tested. Each is read as `device
+  hostkey` reads the device's own address, without logging in (ssh-keyscan,
+  then tacctl's own client, with the timing scale of the device), and the
+  keys are compared with the key pinned for the device: one equal key is
+  enough. An address that does not answer is a warning (`source-address
+  <address> is unreachable from this server; it may be unreachable by
+  design`), and so is one that presents another key (`source-address
+  <address> presents another SSH host key (<fingerprint>), the device's is
+  <fingerprint>: the address may belong to another device`, with the name of
+  the registered device that holds the address when there is one). An address
+  that came through an IOS source interface is named `source-interface
+  <name> (<address>)`. An error that is not "no answer" (ssh-keyscan cannot
+  be run) reads `could not be tested: <reason>`. One info line sums up the
+  device (`3 source addresses tested, all present the device's key`). Not
+  compared, with the reason: a device with no pinned key (`not compared: no
+  host key is pinned for <device>`, nothing is connected to) and an address
+  that presents only a key type that is not pinned (`not compared: presented
+  only rsa, pinned ed25519`). Left out, with the reason: a source-interface
+  whose addresses are not recorded (`pull the device again`), whose login
+  could not see the interfaces, or whose address is learned dynamically, and
+  a loopback, link-local, unspecified, multicast or broadcast address. In a
+  scan, a device that cannot be tested is named with the reason, and the last
+  line counts them. The test is a warning and no more: the device keeps its
+  state, no difference is counted, nothing is pinned, recorded or stored, and
+  a pull, a plan, a diff and a list never run it. An unanswered address costs
+  about 8 seconds (ssh-keyscan's 5 and the built-in client's 3), at most
+  eight addresses are tested per device and eight devices at a time; the
+  timing scale of the device multiplies it, and on a terminal a line on
+  standard error says which device the test is at. `device check --json`
+  carries a `sources` array with `--sources` (`address`, `interface`,
+  `result` `ok`, `unreachable`, `mismatch` or `skipped`, `fingerprint`,
+  `pinned` and `device` for a mismatch, `source` and `reason` for a source
+  left out). The audit line is `sources tested=N unreachable=N mismatched=N`,
+  with no address. A server often has no path to a device's loopback, so an
+  unreachable source may be by design.
 - **What a scope's block may state.** A scope's block (and the default) holds only what is the same for every device of the scope. A value that names the device itself, an address it holds or an interface it has (`set snmp trap-options source-address <address>`, `set system ntp source-address <address>`, `snmp-server trap-source <interface>`, and the `source <interface>` of an IOS `ntp server`), is an error there: it is stated in the device's own block (`tacctl device block <name> ...`). The loopback by its convention name, `lo0` on Junos and `Loopback0` on IOS, is the one exception, with a note that a device without it cannot take it. A scope block that states one fails its check and is not rendered for any device (`tacctl scope block <scope> <vendor> check <block>` names the line); `adopt` into a scope leaves such statements out and says so.
 - **The Junos `system` block: syslog, the login announcement, the retry options and the password policy.** Beside the login message, domain, time zone, name servers and NTP, the block states `set system login announcement <<'EOF'` (the text shown before the login, a heredoc like the message); `set system syslog host <address|name> <facility> <level>`, `host <h> facility-override <authorization|daemon|ftp|kernel|local0-local7|user>`, `host <h> log-prefix <word>`, `host <h> explicit-priority` and `syslog time-format year|millisecond`; `set system login retry-options` with `tries-before-disconnect` (1 to 10), `backoff-threshold` (1 to 3), `backoff-factor` (5 to 10), `minimum-time` (20 to 60), `maximum-time` (20 to 300) and `lockout-period` (1 to 43200 minutes); and `set system login password` with `minimum-length` (6 to 20), `minimum-changes` (1 to 128), `change-type character-sets|set-transitions` and `format md5|sha1|sha256|sha512`. The list is closed: another leaf under `syslog` or `login` (a file, the console, a user, a class) is an error, as is `maximum-time` below `minimum-time`. `syslog source-address <address>` names an address of the device and is the device's own block's only. A statement is identified by its host and facility, or its leaf; a more specific layer's replaces the less specific one's, and `delete system <the words of the identity>` says it is not managed on this device. The plan sets what is missing, replaces a differing level or value in place and never deletes (the device's syslog files and users are no business of the block and are left alone). `lockout-period` locks an account after its failed logins: the check says so.
 - **Which block a statement comes from.** In the region of `device config plan` every statement that a block states has a comment before it that names the block in the words of the verb that edits it: `# from scope block lab juniper system` (`tacctl scope block lab juniper edit system`) or `# from device block sw1 system` (`tacctl device block sw1 edit system`); on IOS the comment starts with `!`. It changes where the layer does, so a device's own block laid over the scope's shows both. The reason above the section and the findings name the layers too (`the system block of scope 'lab' with the block of device 'sw1' over it`); a community or trap group is named for the layer that wrote it, and the scope's and the device's are two findings. The walkthrough (`device config show`, `config juniper|cisco --name`) has the same comments where the two layers are laid together; a block of one layer is named by its heading. `--plain` stays statements only, for `load set`.
