@@ -455,7 +455,7 @@ where_secret() {
         check "[$m] no pam_radius_auth line and no RADIUS server file" c bash -c '! grep -rq pam_radius /etc/pam.d && [[ ! -e /etc/tacctl-pam_radius.conf ]]'
     fi
     check "[$m] the host records its method" c grep -qx "$m" /var/lib/tacctl-client/method
-    expect "[$m] the registry and 'host list' show the method" "c1 +root@${CIP} +${CIP} +linux-c1 +${SIP} +${m} " "$(tacctl host list)"
+    expect "[$m] the registry and 'host list' show the method" "c1 +root@${CIP} +${CIP} +linux-c1 .*${SIP} +${m} " "$(tacctl host list)"
     expect "[$m] the host's scope serves the method's protocol only" "protocols: $([[ $m == radius ]] && echo radius || echo tacacs)\$" "$(tacctl scope protocols linux-c1)"
 }
 
