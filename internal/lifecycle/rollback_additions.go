@@ -41,9 +41,11 @@ type rollbackAddition struct {
 }
 
 // rollbackAdditions is the list: the changes of the releases from 0.2.22 on,
-// in the order of their release. The timing scale is rollback_timeoutscale.go.
+// in the order of their release. The timing scale is rollback_timeoutscale.go,
+// the users' email addresses are rollback_email.go.
 var rollbackAdditions = []rollbackAddition{
 	{Release: "0.2.22", Read: (*RollbackPlan).planTimeoutScale, Add: (*RollbackPlan).addTimeoutScale},
+	{Release: "0.2.23", Read: (*RollbackPlan).planEmail, Add: (*RollbackPlan).addEmail},
 }
 
 // addReleaseChanges runs the entries of additions that apply to p's target.

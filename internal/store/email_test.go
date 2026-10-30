@@ -146,3 +146,62 @@ users:
 	}
 	contains(t, out, "user 'root': the accounting sink must not carry an email address")
 }
+
+// A rollback sees the key in a store as it is on disk, names the users and
+// not the addresses, and takes it out of every user in one write (an older
+// release refuses the key); the snapshot runs first.
+func TestRollbackEmail(t *testing.T) {
+	e := newEnv(t)
+	e.useFixture("store.multiscope.yaml")
+	e.mustMutate(userSet("alice", "email=alice@example.net"))
+	e.mustMutate(userSet("carol", "email=carol@example.net"))
+	e.mustMutate(userSet("bob", "password_change_required=true"))
+	names, err := store.EmailKeys(e.path)
+	if err != nil || strings.Join(names, ",") != "alice,carol" {
+		t.Fatalf("keys %v, %v", names, err)
+	}
+	snapshots := 0
+	removed, changed, err := store.RollbackEmail(e.path, func() error { snapshots++; return nil })
+	if err != nil || !changed || strings.Join(removed, ",") != "alice,carol" || snapshots != 1 {
+		t.Fatalf("removed %v changed %v err %v snapshots %d", removed, changed, err, snapshots)
+	}
+	text := string(readFile(t, e.path))
+	if strings.Contains(text, "email") || !strings.Contains(text, "password_change_required: true") {
+		t.Errorf("the store after:\n%s", text)
+	}
+	if left, _ := store.EmailKeys(e.path); len(left) != 0 {
+		t.Errorf("keys left: %v", left)
+	}
+	// nothing to remove: the file is not written again
+	ino := inode(t, e.path)
+	removed, changed, err = store.RollbackEmail(e.path, nil)
+	if err != nil || changed || len(removed) != 0 || inode(t, e.path) != ino {
+		t.Errorf("second run: %v %v %v", removed, changed, err)
+	}
+	// an error from the snapshot stops the write
+	e.mustMutate(userSet("alice", "email=alice@example.net"))
+	if _, _, err := store.RollbackEmail(e.path, func() error { return os.ErrPermission }); err == nil {
+		t.Error("the write went on after a failed snapshot")
+	}
+	if got := e.mustGet("users", "alice", "email"); got != "alice@example.net" {
+		t.Errorf("alice after the failed snapshot: %q", got)
+	}
+}
+
+// A store that does not validate for another reason still shows its keys.
+func TestEmailKeysReadAnUnvalidatedStore(t *testing.T) {
+	e := newEnv(t)
+	e.useFixture("store.multiscope.yaml")
+	e.mustMutate(userSet("alice", "email=alice@example.net"))
+	text := strings.Replace(string(readFile(t, e.path)), "version: 1", "version: 2", 1)
+	if err := writeFileMode(e.path, text); err != nil {
+		t.Fatal(err)
+	}
+	names, err := store.EmailKeys(e.path)
+	if err != nil || strings.Join(names, ",") != "alice" {
+		t.Fatalf("%v %v", names, err)
+	}
+	if _, _, err := store.RollbackEmail(e.path, nil); err == nil {
+		t.Error("the store that does not validate was written")
+	}
+}

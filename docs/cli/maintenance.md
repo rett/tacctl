@@ -137,26 +137,29 @@ the note is written as `<redacted>` in the command line they follow.
 
 `backup recover <snapshot>` puts back from a snapshot one kind of data and
 leaves everything else as it is, where `backup restore` puts back the whole
-state. The kinds are `email` (the email addresses of users, `user email`) and
-`snmp-users`, which is reserved: `--only snmp-users` is refused with `not
-available yet` and nothing changes. Without `--only` it recovers every kind
-that can be recovered. For `email` it reads the snapshot's `store.yaml` and
-sets the address of each user who has one there and exists now with none, in
-one store write that goes through the same validation as `user email`. A user
-who no longer exists, a user who has another address now (the current one is
-kept) and an address another user holds now are skipped and named; a user who
-has the address already is nothing to do. The lists name users, never an
-address. The snapshot is looked up in `backups/` and then among the copies
-`backup keep` made in `backups-kept/`, which no retention reaches (a rollback
-keeps the snapshot it names there, so the data it dropped can be recovered
-after an older release pruned `backups/`); a kept copy that was read is named,
-with `backup unkeep`, which removes it once the data is recovered. `--dry-run`
-lists what would be recovered and changes nothing; otherwise the command asks
-for confirmation (`--yes` does not), snapshots the current state first (the
-snapshot being read is not taken by the retention), and ends with the number
-recovered and skipped. Nothing is rendered or restarted. A snapshot from
-before the data existed, or an old-style backup, recovers nothing. The audit
-line is `backup recover id= pre= kinds= restored= skipped=`, with no address.
+state. It is the way back for what `tacctl rollback` removed: the rollback
+keeps the snapshot it took (`backup keep`) and names it (see [Rolling
+back](../install/upgrading.md#rolling-back)). The kinds are `email` (the email
+addresses of users, `user email`) and `snmp-users`, which is reserved: `--only
+snmp-users` is refused with `not available yet` and nothing changes. Without
+`--only` it recovers every kind that can be recovered. For `email` it reads
+the snapshot's `store.yaml` and sets the address of each user who has one
+there and exists now with none, in one store write that goes through the same
+validation as `user email`. A user who no longer exists, a user who has
+another address now (the current one is kept) and an address another user
+holds now are skipped and named; a user who has the address already is nothing
+to do. The lists name users, never an address. The snapshot is looked up in
+`backups/` and then among the copies `backup keep` made in `backups-kept/`,
+which no retention reaches (a rollback keeps the snapshot it names there, so
+the data it dropped can be recovered after an older release pruned
+`backups/`); a kept copy that was read is named, with `backup unkeep`, which
+removes it once the data is recovered. `--dry-run` lists what would be
+recovered and changes nothing; otherwise the command asks for confirmation
+(`--yes` does not), snapshots the current state first (the snapshot being read
+is not taken by the retention), and ends with the number recovered and
+skipped. Nothing is rendered or restarted. A snapshot from before the data
+existed, or an old-style backup, recovers nothing. The audit line is `backup
+recover id= pre= kinds= restored= skipped=`, with no address.
 
 A snapshot that knows the hosts also puts the host files back: `linux-hosts`
 whole, `hosts/` made to match (a record the snapshot lacks is removed),

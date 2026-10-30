@@ -553,6 +553,8 @@ func TestRollbackRealOldBinary(t *testing.T) {
 	// A system-shell setting of a single user (0.2.20) is a key 0.2.3 rejects
 	// as well: the rollback takes it out with the others.
 	hs.step("", "console", "system-shell", "user", "bob", "enable")
+	// the email address of 0.2.23 is a key 0.2.3 refuses in the store too
+	hs.step("", "user", "email", "bob", "bob@example.net")
 	stubs := t.TempDir()
 	for _, name := range []string{"systemctl", "logger", "chown"} {
 		if err := os.WriteFile(filepath.Join(stubs, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
@@ -575,6 +577,9 @@ func TestRollbackRealOldBinary(t *testing.T) {
 	}
 	if out, code = run("console", "show"); code != 1 || !strings.Contains(out, "settings: unknown key 'password_cache'") {
 		t.Errorf("0.2.3 console show before: %d\n%s", code, out)
+	}
+	if out, code = run("config", "validate"); !strings.Contains(out, "user 'bob': unknown field 'email'") {
+		t.Errorf("0.2.3 config validate before does not refuse the address: %d\n%s", code, out)
 	}
 	if out, code = run("device", "list"); code != 1 || !strings.Contains(out, "device 'sw1': unknown key 'snmp'") {
 		t.Errorf("0.2.3 device list before: %d\n%s", code, out)
@@ -610,6 +615,9 @@ func TestRollbackRealOldBinary(t *testing.T) {
 	}
 	// The device locations (0.2.3's own) are still there, and its SNMP
 	// settings are the scope's.
+	if out, code = run("user", "show", "bob"); code != 0 || !strings.Contains(out, "bob") {
+		t.Errorf("0.2.3 user show of a user who had an address, after: %d\n%s", code, out)
+	}
 	if out, code = run("device", "show", "sw1"); code != 0 || !strings.Contains(out, "Rack 4, DC1") {
 		t.Errorf("0.2.3 device show after: %d\n%s", code, out)
 	}

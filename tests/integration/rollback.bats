@@ -510,6 +510,53 @@ JSON
     assert_output "core-1"
 }
 
+@test "rollback 0.2.22: an email address is removed after a snapshot, and backup recover puts it back" {
+    "$TACCTL_BIN_SCRIPT" user email alice alice@example.net
+    before=$(_sums)
+    n=$(_snapshots)
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.22
+    assert_success
+    assert_output --partial "remove email of alice"
+    assert_output --partial "Email addresses are removed from the store"
+    assert_output --partial "--apply takes a snapshot of the state first"
+    assert_output --partial "tacctl rollback 0.2.22 --apply --yes"
+    refute_output --partial "example.net"
+    [[ "$(_sums)" == "$before" ]]
+    [[ "$(_snapshots)" == "$n" ]]
+
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.22 --apply
+    assert_failure
+    assert_output --partial "The warnings above need your decision"
+    [[ "$(_sums)" == "$before" ]]
+
+    : > "$CALLS_LOG"
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.22 --apply --yes
+    assert_success
+    assert_output --partial "store.yaml: removed the email address of 1 user"
+    assert_output --partial "tacctl backup recover"
+    [[ "$(_snapshots)" -eq $((n + 1)) ]]
+    ! grep -q 'email:' "${TACCTL_STATE_DIR}/store.yaml"
+    run grep -E '^logger -t tacctl .*rollback target=0.2.22' "$CALLS_LOG"
+    assert_output --partial "email-users=alice"
+    assert_output --partial " kept="
+    ! grep -q 'alice@example.net' "$CALLS_LOG"
+
+    snap=$(find "$TACCTL_STATE_DIR/backups" -mindepth 1 -maxdepth 1 -type d -name '2*' | sort | tail -n 1)
+    snap=${snap##*/}
+    # the snapshot is kept, and the kept copy outlives the original
+    [[ -f "${TACCTL_STATE_DIR}/backups-kept/$snap/store.yaml" ]]
+    grep -q 'rollback to 0.2.22: dropped the email addresses of 1 user' "${TACCTL_STATE_DIR}/backups-kept/$snap/kept"
+    rm -rf "${TACCTL_STATE_DIR}/backups/$snap"
+    run "$TACCTL_BIN_SCRIPT" backup recover "$snap" --only email --yes
+    assert_success
+    assert_output --partial "Recovered 1 item from snapshot $snap."
+    run "$TACCTL_BIN_SCRIPT" user email alice
+    assert_output "alice@example.net"
+    # a second dry run of the rollback lists the address again
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.22
+    assert_output --partial "remove email of alice"
+}
+
 @test "rollback 0.2.9 is the superuser's alone" {
     _state_029
     before=$(_sums)

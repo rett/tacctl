@@ -159,6 +159,12 @@ the lines that had no actor (`uid-map renumbered`, `uid-range set`, the two
 `scope staging done` stays without an actor, as the sweep that writes it has
 none.
 
+The `rollback` line is `rollback target=<release> keys=<n> by=<user>`; when it
+removed the users' email addresses it is `rollback target=<release> keys=<n>
+kept=<id> email-users=<names> by=<user>`: `kept` is the snapshot it keeps
+(`backup keep`, with a note that says what was dropped), and `email-users` the
+users whose address it removed, never an address.
+
 `device config apply` writes, at `auth.notice`, a review line for each device
 asked, then, when any device was approved, the approval line, and each applied
 device's line:

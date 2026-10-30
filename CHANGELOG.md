@@ -6,19 +6,21 @@ current behaviour; this file is where history lives.
 ## 0.2.23 (unreleased)
 
 1. **`tacctl rollback 0.2.22`, the release before this one, is a target.**
-   0.2.22 reads every file this release writes, so the target converts
-   nothing for now: the server name, the timing scale, the server address, the
-   users' login to this server, a user name with a period and an emergency
-   lockdown all stay, no snapshot is taken (no file is converted), and it
-   needs no `--yes`; `--hosts` is accepted and does nothing. The older targets
-   (`0.2.21` and back) still remove the server name and the timing scale, and
-   still say so; only the `0.2.22` target keeps them. What a later change of
-   this release stores in a file that 0.2.22 refuses is a step of every
-   target, the ones that return early included: the steps for a release's
-   changes are listed once (`rollbackAdditions`, in
-   `internal/lifecycle/rollback_additions.go`) and added to the plan of each
-   target older than that release, so the timing scale is such an entry for
-   the targets before 0.2.22 and a new entry reaches `0.2.22` too.
+   0.2.22 reads every file this release writes but the users' email addresses
+   (item 8), so the target converts nothing else: the server name, the timing
+   scale, the server address, the users' login to this server, a user name
+   with a period and an emergency lockdown all stay. With no address in the
+   store no file is converted, no snapshot is taken and it needs no `--yes`;
+   with one it takes the snapshot first and needs `--yes` (item 11). `--hosts`
+   is accepted and does nothing. The older targets (`0.2.21` and back) still
+   remove the server name and the timing scale, and still say so; only the
+   `0.2.22` target keeps them. What a change of this release stores in a file
+   that 0.2.22 refuses is a step of every target, the ones that return early
+   included: the steps for a release's changes are listed once
+   (`rollbackAdditions`, in `internal/lifecycle/rollback_additions.go`) and
+   added to the plan of each target older than that release, so the timing
+   scale is such an entry for the targets before 0.2.22, the email addresses
+   one for every target, and a new entry reaches `0.2.22` too.
 
 2. **`device rename` carries the staging address.** A device staged at a bench
    address (`config <vendor> --staging <address> --name <device>`) is recorded
@@ -256,6 +258,25 @@ current behaviour; this file is where history lives.
    keeps the one being read) and ends with the numbers recovered and skipped.
    The audit line `backup recover id= pre= kinds= restored= skipped=` holds
    counts and snapshot ids, never an address.
+
+11. **A rollback removes the email addresses, after a snapshot that it
+    keeps.** No older release knows `users.<name>.email`, so every `tacctl
+    rollback` target removes it from `store.yaml`, the `0.2.22` target and the
+    ones that return early included. The dry run names the users who have an
+    address, never the address, in a warning, so `--apply` needs `--yes`; it
+    takes the snapshot first (the `0.2.22` target takes one only when an
+    address stands) and keeps it (item 9): the older release prunes `backups/`
+    by its own retention and knows no marker, so the snapshot is copied to
+    `backups-kept/`, where no retention reaches it, with the note `rollback to
+    <target>: dropped the email addresses of N users` (a count, no name and no
+    address). The apply names the snapshot, the kept copy and the command that
+    puts the addresses back once this release is installed again (`tacctl
+    backup recover <snapshot> --only email`, item 10; `backup unkeep` removes
+    the copy after that), and the audit line of the rollback carries the kept
+    snapshot's id and the users (`kept=` `email-users=`), never an address. A
+    store that cannot be read refuses every target. Until the older release is
+    installed, `tacctl user email` and `tacctl user add --email` write the key
+    again, and the command says so.
 
 ## 0.2.22 (2026-10-29)
 

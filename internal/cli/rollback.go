@@ -14,11 +14,13 @@ package cli
 import (
 	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/lifecycle"
+	"github.com/rett/tacctl/internal/snapshot"
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -102,13 +104,47 @@ func (inv *invocation) rollback(args []string) error {
 
 	inv.echo("")
 	inv.echo(ui.Bold + "Applying." + ui.NC)
-	rollbackBase := "rollback target=" + version + " keys=" + strconv.Itoa(len(plan.Keys())) + " by=" + inv.sudoUser()
-	// The snapshot is of the files the rollback converts.
+	lineHead := "rollback target=" + version + " keys=" + strconv.Itoa(len(plan.Keys()))
+	by := " by=" + inv.sudoUser()
+	rollbackBase := lineHead + by
+	// The snapshot is of the files the rollback converts. It is the record of
+	// what the rollback drops, so the audit line names it (a state that
+	// equals the newest snapshot takes none: that one is the record).
+	snapID := ""
 	if plan.PendingFiles() {
-		if err := inv.snapshotFirst(); err != nil {
+		id, err := inv.snapshotFirstID()
+		if err != nil {
 			inv.verbResult(audit.Notice, rollbackBase, "store")
 			return err
 		}
+		if snapID = id; snapID == "" {
+			if ids := inv.snapshotIDs(); len(ids) > 0 {
+				snapID = ids[0]
+			}
+		}
+	}
+	// What the rollback drops from the store is recorded by the snapshot, and
+	// the older release prunes backups/ by its own retention and knows no
+	// KeepID: the snapshot is kept ('backup keep', a copy in backups-kept/
+	// that no retention reaches) with a note that says what was dropped, never
+	// who or what the addresses were. The line names it and the users (never
+	// an address), before by=.
+	emailUsers := plan.EmailUsers()
+	if len(emailUsers) > 0 {
+		if snapID == "" {
+			a.Out.ErrorE("Could not keep the snapshot of the state: there is none.")
+			inv.verbResult(audit.Notice, rollbackBase, "store")
+			return inv.usageErr("Nothing was converted.")
+		}
+		if snapshot.KeptPath(a.Paths.KeptDir, snapID) == "" {
+			note := "rollback to " + version + ": dropped the email addresses of " + strconv.Itoa(len(emailUsers)) + " " + plural(len(emailUsers), "user", "users")
+			if _, _, kerr := snapshot.Keep(a.Paths.BackupDir, a.Paths.KeptDir, snapID, inv.keptInfo(note)); kerr != nil {
+				a.Out.ErrorE("Could not keep snapshot " + snapID + " in " + a.Paths.KeptDir + ": " + kerr.Error())
+				inv.verbResult(audit.Notice, rollbackBase, "store")
+				return inv.usageErr("Nothing was converted.")
+			}
+		}
+		rollbackBase = lineHead + " kept=" + snapID + " email-users=" + namesList(emailUsers, 10) + by
 	}
 	done, err := lifecycle.ApplyRollback(plan)
 	for _, d := range done {
@@ -131,6 +167,9 @@ func (inv *invocation) rollback(args []string) error {
 	a.Conf().Reload()
 
 	inv.rollbackNextSteps(version, plan.PendingFiles())
+	if len(emailUsers) > 0 {
+		inv.rollbackEmailNote(version, snapID, emailUsers)
+	}
 	inv.verbResult(audit.Info, rollbackBase, "")
 	return nil
 }
@@ -240,6 +279,19 @@ func (inv *invocation) rollbackSnapshotNote(snapshot bool, tail string) {
 	inv.echo("state back and loses what changed since" + tail)
 }
 
+// rollbackEmailNote says, after a rollback that removed the users' email
+// addresses (every target), where they are and how they come back, and that
+// the commands that set one write the key again.
+func (inv *invocation) rollbackEmailNote(version, snapID string, users []string) {
+	n := len(users)
+	inv.echo("")
+	inv.echo("The email " + plural(n, "address", "addresses") + " of " + strconv.Itoa(n) + " " + plural(n, "user", "users") + " (" + strings.ReplaceAll(namesList(users, 10), ",", ", ") + ") " + plural(n, "was", "were") + " removed from the store; " + version + " does not know the key.")
+	inv.echo(plural(n, "It is", "They are") + " in snapshot " + snapID + ", which is kept in " + inv.app.Paths.KeptDir + "/" + snapID + " (no retention reaches it; " + version + " prunes backups/ by its own):")
+	inv.echo("once " + rollbackFrom + " is installed again, 'tacctl backup recover " + snapID + " --only email' puts " + plural(n, "it", "them") + " back; 'tacctl backup unkeep " + snapID + "' removes the kept copy after that.")
+	inv.echo("Until then, do not run 'tacctl user email' or 'tacctl user add --email': they write the key again, which " + version + " refuses.")
+	inv.echo("If one did, run 'tacctl rollback " + version + " --apply --yes' again (it removes it).")
+}
+
 // rollbackTimeoutScaleNote says, after a rollback to a release before 0.2.22, that the commands of the
 // timing scale write what the older release refuses until it is installed.
 func (inv *invocation) rollbackTimeoutScaleNote(version string) {
@@ -249,8 +301,9 @@ func (inv *invocation) rollbackTimeoutScaleNote(version string) {
 }
 
 // rollbackNextSteps0222 is the next steps of the rollback to 0.2.22: the
-// upgrade of the tag. It converts nothing yet, so there is no command to
-// avoid until the upgrade.
+// upgrade of the tag. 0.2.22 reads every file but the store's email
+// addresses (rollbackEmailNote), so there is no command to avoid until the
+// upgrade but the two that set one.
 func (inv *invocation) rollbackNextSteps0222(version string, snapshot bool) {
 	inv.echo("")
 	inv.echo(ui.Bold + "Next steps" + ui.NC)

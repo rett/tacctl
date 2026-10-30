@@ -127,6 +127,22 @@ release connects to every device with its fixed timings again, which a slow or
 distant device may not meet. The values stay in the snapshot `--apply` takes
 first.
 
+**Email addresses (0.2.23).** `users.<name>.email` (`tacctl user email`, `user
+add --email`) is a key no older release reads: every target, the ones that
+return early and `0.2.22` included, removes it from `store.yaml` after a
+snapshot. The plan names the users who have an address (never the address), in
+a warning, so `--apply` needs `--yes`; a rollback of a store without an
+address is as it was. The older release prunes `backups/` by its own retention
+(the newest 30) and knows no marker, so `--apply` also keeps the snapshot
+(`tacctl backup keep`: a copy in `/etc/tacctl/backups-kept/<snapshot>/`, with
+a note that says what was dropped, never an address or a name), where no
+retention reaches it, and names it with the command that puts the addresses
+back once this release is installed again: `tacctl backup recover <snapshot>
+--only email`. `backup unkeep <snapshot>` removes the kept copy after that. A
+store that cannot be read refuses every target (an address that cannot be seen
+is not hidden). Until the older release is installed, do not run `tacctl user
+email` or `tacctl user add --email`; if one ran, run the rollback again.
+
 **An emergency lockdown stops every rollback to a release before 0.2.19**
 (the dry run too): such a release has no such record and would render every
 locked user back into the scope. 0.2.19 has the record as this release writes
@@ -242,11 +258,13 @@ snapshot; this release, if it stays, reads the two as missing until its next
 
 ### To 0.2.22
 
-0.2.22 reads every file this release writes, so the rollback converts nothing:
-the server name, the timing scale, the server address, the users' login to
-this server, a user name with a period and an emergency lockdown all stay, no
-snapshot is taken (there is no file to convert), and it needs no `--yes`.
-`--hosts` is accepted and does nothing.
+0.2.22 reads every file this release writes but the users' email addresses
+in `store.yaml`, so the rollback removes those (above) and converts nothing
+else: the server name, the timing scale, the server address, the users' login
+to this server, a user name with a period and an emergency lockdown all stay.
+With no address in the store no file is converted, no snapshot is taken and
+`--yes` is not needed; with one the rollback takes a snapshot first and needs
+`--yes`. `--hosts` is accepted and does nothing.
 
 ```bash
 tacctl rollback 0.2.22          # the dry run: steps, writes nothing
@@ -271,10 +289,12 @@ tacctl upgrade --branch 0.2.21  # install 0.2.21
 ```
 
 Until 0.2.21 is installed, do not run `tacctl server name <label>`, `tacctl
-device timeout-scale`, `tacctl scope timeout-scale` or `tacctl config devices
-timeout-scale`; if one ran, run `tacctl rollback 0.2.21 --apply` again. The scripts that call `config
-listen` or `config metrics` are the ones of 0.2.21; the ones that call `server
-listen` or `server metrics` do not run there.
+device timeout-scale`, `tacctl scope timeout-scale`, `tacctl config devices
+timeout-scale`, `tacctl user email` or `tacctl user add --email`; if one ran,
+run `tacctl rollback 0.2.21 --apply` again (with `--yes` when an email address
+stands). The scripts that call `config listen` or `config metrics` are the
+ones of 0.2.21; the ones that call `server listen` or `server metrics` do not
+run there.
 
 ### To 0.2.20
 

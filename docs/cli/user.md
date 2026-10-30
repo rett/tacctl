@@ -174,6 +174,10 @@ only when set, so a store without one is unchanged. No mail is sent to it.
   `--email` value, the address of `user email` or the first word with an `@`
   in any other `user` verb, and `…(redacted)` in place of the rest. Like any
   word on a command line it is in sudo's own log.
+- *Older releases.* A release before 0.2.23 refuses the key, so every `tacctl
+  rollback` target removes it after a snapshot that it keeps, and names the
+  users; `backup recover` puts the addresses back (see
+  [Rolling back](../install/upgrading.md#rolling-back)).
 
 **A name with a period.** A user name is letters, digits, `_` and `-`. A period cannot be part of a
 Linux account name, and every user has an account on the tacctl server. A store from 0.2.20 or 0.2.21

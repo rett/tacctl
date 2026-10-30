@@ -115,6 +115,8 @@ func TestRollbackRealOldBinary0221(t *testing.T) {
 	hs.step("", "config", "devices", "timeout-scale", "3")
 	hs.step("", "scope", "timeout-scale", "lab", "2")
 	hs.step("", "device", "timeout-scale", "sw1", "4")
+	// the email address of 0.2.23, which 0.2.21 refuses in the store
+	hs.step("", "user", "email", "bob", "bob@example.net")
 	stubs := t.TempDir()
 	for _, name := range []string{"systemctl", "logger", "chown"} {
 		if err := os.WriteFile(filepath.Join(stubs, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
@@ -130,14 +132,18 @@ func TestRollbackRealOldBinary0221(t *testing.T) {
 		return plain(string(res.Stdout) + string(res.Stderr)), res.Code
 	}
 	if out, code := run("config", "validate"); code != 1 || !strings.Contains(out, "server.name: unknown config key") ||
-		!strings.Contains(out, "device.timeout_scale: unknown config key") || !strings.Contains(out, "timeout_scale_scope.lab: unknown config key") {
+		!strings.Contains(out, "device.timeout_scale: unknown config key") || !strings.Contains(out, "timeout_scale_scope.lab: unknown config key") ||
+		!strings.Contains(out, "user 'bob': unknown field 'email'") {
 		t.Errorf("0.2.21 config validate before: %d\n%s", code, out)
 	}
 	if out, code := run("device", "list"); code == 0 || !strings.Contains(out, "unknown key 'timeout_scale'") {
 		t.Errorf("0.2.21 device list before: %d\n%s", code, out)
 	}
-	hs.run(hs.runner(), "rollback", "0.2.21", "--apply")
+	hs.run(hs.runner(), "rollback", "0.2.21", "--apply", "--yes")
 	hs.expect(0, "Applying.", "")
+	if out, code := run("user", "show", "bob"); code != 0 || !strings.Contains(out, "bob") {
+		t.Errorf("0.2.21 user show of a user who had an address, after: %d\n%s", code, out)
+	}
 	if out, code := run("config", "render"); code != 0 {
 		t.Errorf("0.2.21 config render after: %d\n%s", code, out)
 	}

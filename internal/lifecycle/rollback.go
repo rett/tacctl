@@ -113,6 +113,12 @@ package lifecycle
 // are taken out for every target but 0.2.3, which never opens them
 // (rollback_rootleaves.go).
 //
+// The users' email addresses (0.2.23, users.<name>.email in store.yaml) are a
+// key every target's schema refuses: every target removes them after the
+// snapshot, the targets that return early (0.2.22, 0.2.21, 0.2.20) included,
+// with a warning that names the users (rollback_email.go, an entry of
+// rollbackAdditions); 'tacctl backup recover' puts them back from the snapshot.
+//
 // What is not a rollback step: the rendered backend files (nothing 0.2.4
 // changed reaches them), the sshd drop-ins, the tier-pin marker and the host
 // records (all as 0.2.3 has them).
@@ -435,6 +441,10 @@ type RollbackPlan struct {
 	// pwStore are the users of the store that carry the required password
 	// change (0.2.20), which every older release refuses (rollback_pwchange.go).
 	pwStore []pwFlag
+	// emailUsers are the users of the store that have an email address
+	// (0.2.23), which every older release refuses (rollback_email.go): every
+	// target.
+	emailUsers []string
 	// rootLeaf are the stored pulls whose breakglass section holds the root
 	// statements of 0.2.20's pull (rollback_rootleaves.go): taken out for
 	// the targets that read the records.
@@ -494,7 +504,7 @@ func (p *RollbackPlan) Pending() bool {
 // PendingFiles: there is a file of tacctl's own to convert (the snapshot
 // holds those; the sudoers drop-ins and the stored pulls are not in it).
 func (p *RollbackPlan) PendingFiles() bool {
-	return len(p.keys) > 0 || len(p.pwStore) > 0 || len(p.managedUsers) > 0 || p.console.Text != nil || len(p.snmpDev) > 0 || len(p.syntaxDev) > 0 || len(p.netconfDev) > 0 || len(p.syntaxKeyDev) > 0 || len(p.timeoutDev) > 0
+	return len(p.keys) > 0 || len(p.pwStore) > 0 || len(p.emailUsers) > 0 || len(p.managedUsers) > 0 || p.console.Text != nil || len(p.snmpDev) > 0 || len(p.syntaxDev) > 0 || len(p.netconfDev) > 0 || len(p.syntaxKeyDev) > 0 || len(p.timeoutDev) > 0
 }
 
 func (p *RollbackPlan) todoSudoers() []sudoersPlan {
@@ -1125,6 +1135,15 @@ func ApplyRollback(p *RollbackPlan) ([]string, error) {
 		}
 		if len(removed) > 0 {
 			done = append(done, fmt.Sprintf("%s: removed the required password change of %d %s", pt.StoreFile, len(removed), plural(len(removed), "user", "users")))
+		}
+	}
+	if len(p.emailUsers) > 0 {
+		removed, _, err := store.RollbackEmail(pt.StoreFile, nil)
+		if err != nil {
+			return done, fmt.Errorf("%s: %w", pt.StoreFile, err)
+		}
+		if len(removed) > 0 {
+			done = append(done, fmt.Sprintf("%s: removed the email address of %d %s", pt.StoreFile, len(removed), plural(len(removed), "user", "users")))
 		}
 	}
 	if p.console.Text != nil {

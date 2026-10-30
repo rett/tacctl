@@ -1,10 +1,13 @@
 package lifecycle
 
 // The rollback to 0.2.22, the release before this one. 0.2.22 reads every
-// file this release writes, so the plan of the target converts nothing of
-// its own for now: it leaves every file alone, and a change of this release
-// that 0.2.22 refuses is a step of rollbackAdditions (rollback_additions.go),
-// which reaches this target and every older one.
+// file this release writes but what a step of rollbackAdditions
+// (rollback_additions.go) undoes, so the plan of the target converts nothing
+// of its own: it leaves every file alone, and a change of this release that
+// 0.2.22 refuses (the users' email addresses, rollback_email.go) is a step of
+// that list, which reaches this target and every older one. When a step has
+// something to do the target converts a file, takes the snapshot and needs
+// --yes if the step warns.
 //
 // What 0.2.22 has that every older target lacks stays: the server name and
 // the timing scale (the additions of 0.2.22 are undone by the older targets

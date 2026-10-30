@@ -370,13 +370,42 @@ key it does not know). It is a note in the plan, not a warning: the older
 release connects to every device with its fixed timings again, which a slow or
 distant device may not meet, and the values stay in the snapshot.
 .IP
-.B "rollback 0.2.22"
-converts nothing: 0.2.22 reads every file this release writes, so the server name,
-the timing scale, the server address, the users' login to this server, a user name
-with a period and an emergency lockdown stay. It takes no snapshot (there is
-no file to convert), needs no
+Every target removes the users' email addresses
+.RB ( "user email" ,
+.BR "user add \-\-email" )
+from
+.IR store.yaml :
+no older release knows the key, and the ones that return early, 0.2.22 among
+them, convert this file too. The plan names the users who have one (never the
+address) in a warning, so
+.B \-\-apply
+needs
 .BR \-\-yes ,
-and
+and takes the snapshot first. The older release prunes
+.I backups/
+by its own retention and knows no marker, so the apply also keeps the snapshot
+.RB ( "backup keep" ):
+a copy in
+.IR /etc/tacctl/backups\-kept/ ,
+where no retention reaches it, with the note
+.B "rollback to <target>: dropped the email addresses of N users"
+(a count, no name, no address). The apply names the snapshot, the kept copy and
+.BR "tacctl backup recover <snapshot> \-\-only email" ,
+which puts the addresses back once this release is installed again
+.RB ( "backup unkeep"
+removes the copy after that); the audit line of the rollback names the kept
+snapshot and the users. A store that cannot be read
+refuses every target. Until the older release is installed, the two verbs that
+set an address write the key again, and the command says so.
+.IP
+.B "rollback 0.2.22"
+converts nothing but the email addresses: 0.2.22 reads every other file this
+release writes, so the server name, the timing scale, the server address, the
+users' login to this server, a user name with a period and an emergency
+lockdown stay. With no address in the store it takes no snapshot (there is no
+file to convert) and needs no
+.BR \-\-yes ;
+with one it takes the snapshot and needs it.
 .B \-\-hosts
 is accepted and does nothing. The command ends with the next step,
 .BR "tacctl upgrade \-\-branch 0.2.22" .
@@ -387,16 +416,16 @@ removes
 and the timing scale and converts nothing else: no scope is added to the users, and a user name with
 a period and an emergency lockdown stay, as 0.2.21 reads both. It needs no
 .B \-\-yes
-(it has no warning), and
+(it has no warning of its own: the email addresses, above, are the one), and
 .B \-\-hosts
 is accepted and does nothing. The command ends with the next step,
 .BR "tacctl upgrade \-\-branch 0.2.21" ,
 and names the verbs that write a key 0.2.21 refuses until then
 .RB ( "server name" ,
 .BR "device timeout\-scale" ,
-.B "scope timeout\-scale"
-and
-.BR "config devices timeout\-scale" ).
+.BR "scope timeout\-scale" ,
+.B "config devices timeout\-scale"
+and the two that set an email address).
 .IP
 .B "rollback 0.2.20"
 removes
@@ -1202,7 +1231,9 @@ or the first word with an @ in any other
 .B user
 verb) and a mark in place of the rest. The accounting sink
 .RB ( root )
-takes none.
+takes none. An older release refuses the key:
+.B "tacctl rollback"
+removes it, after a snapshot, and names the users.
 .\" BEGIN GENERATED: command user email
 .RS
 .PP
@@ -6154,7 +6185,11 @@ Do not ask for confirmation.
 Put back from a snapshot only the kinds of data named, and leave everything else
 as it is
 .RB ( "backup restore"
-puts back the whole state). It reads the snapshot's
+puts back the whole state). It is the way back for what
+.B rollback
+removed: the rollback keeps the snapshot it took
+.RB ( "backup keep" )
+and names it. It reads the snapshot's
 .I store.yaml
 and, for each kind, the live state, and lists per user what it would restore and
 what it skips, with the reason (the names of users, never an address). The kinds
