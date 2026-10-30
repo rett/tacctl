@@ -8,7 +8,7 @@ doctype: explanation
 
 # About These Docs
 
-*What this documentation covers, how it relates to the repository docs, and the conventions it follows · Checked against tacctl 0.2.21*
+*What this documentation covers, how it relates to the repository docs, and the conventions it follows · Checked against tacctl 0.2.22*
 
 [Printable PDF](../pdf/tacctl-about-these-docs.pdf){: .pdf-link }
 
