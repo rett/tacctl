@@ -40,8 +40,9 @@ tacctl uninstall [--yes]
 
 tacctl rollback <version> [--apply] [--yes] [--hosts]
 
-    Prepare the state for the release before this one (0.2.21), for 0.2.20, 0.2.19, 0.2.18, 0.2.17,
-    0.2.16, 0.2.9 or for 0.2.3: a dry run unless --apply; see install/upgrading.md, "Rolling back"
+    Prepare the state for the release before this one (0.2.22), for 0.2.21,
+    0.2.20, 0.2.19, 0.2.18, 0.2.17, 0.2.16, 0.2.9 or for 0.2.3: a dry run
+    unless --apply; see install/upgrading.md, "Rolling back"
 
 tacctl status
 

@@ -25,7 +25,7 @@ import (
 )
 
 // planRollback0217 completes p (a plan whose tacctl.yaml was read and whose
-// records hold no unsettled apply) for the release before this one.
+// records hold no unsettled apply) for the release before 0.2.18.
 func planRollback0217(p *RollbackPlan) (*RollbackPlan, error) {
 	pt := p.in.Paths
 	p.keys = p.in.Conf.RollbackKeys0218()

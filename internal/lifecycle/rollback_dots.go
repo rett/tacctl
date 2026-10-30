@@ -6,8 +6,8 @@ package lifecycle
 // 0.2.18 and 0.2.19, whose user-name pattern is verified against each tag)
 // reads letters, digits, '_' and '-' only, so a store that keeps a dotted
 // name fails there with "user '<name>': invalid name" on every store command.
-// The rollback is refused while one stands, for every target but 0.2.21 and 0.2.20
-// (which read such a name), in the dry run and --apply alike, and nothing is
+// The rollback is refused while one stands, for every target but 0.2.22, 0.2.21
+// and 0.2.20 (which read such a name), in the dry run and --apply alike, and nothing is
 // changed. A console.yaml override under a dotted name (the ignored 'users'
 // mapping of 0.2.19 and before) is not a reason to refuse: the plan takes that
 // entry out of the file (console.DottedUsersKey).

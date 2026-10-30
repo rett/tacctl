@@ -11,7 +11,7 @@ import (
 	"github.com/rett/tacctl/internal/execx"
 )
 
-// 'tacctl rollback 0.2.21', the release before this one, on the host sandbox
+// 'tacctl rollback 0.2.21', the release before 0.2.22, on the host sandbox
 // with this server enrolled. The plan's own cases are internal/lifecycle's.
 
 // The dry run of 0.2.21 removes the server name and nothing else: the

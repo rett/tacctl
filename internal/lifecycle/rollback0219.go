@@ -1,6 +1,6 @@
 package lifecycle
 
-// The rollback to 0.2.19 (the release before this one): the part of
+// The rollback to 0.2.19 (the release before 0.2.20): the part of
 // PlanRollback that runs when RollbackInput.Target is RollbackTarget0219.
 // What 0.2.20 changed that a 0.2.19 binary reads, checked against the sources
 // of the 0.2.19 tag and, where a test can, against that release built from
@@ -64,7 +64,7 @@ import (
 )
 
 // planRollback0219 completes p (a plan whose tacctl.yaml was read and whose
-// records hold no unsettled apply) for the release before this one.
+// records hold no unsettled apply) for the release before 0.2.20.
 func planRollback0219(p *RollbackPlan) (*RollbackPlan, error) {
 	in := p.in
 	pt := in.Paths

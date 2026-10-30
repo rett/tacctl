@@ -1,6 +1,6 @@
 package lifecycle
 
-// The rollback to 0.2.21, the release before this one. 0.2.21 reads every
+// The rollback to 0.2.21. 0.2.21 reads every
 // file this release writes but one key of tacctl.yaml: the name of the server
 // in the console (server.name, conf.Added0222), which its schema refuses (its
 // 'config validate' reports "unknown config key" and its 'backup restore'
@@ -21,7 +21,7 @@ package lifecycle
 // virtual chassis (no stored format).
 
 // planRollback0221 completes p (a plan whose tacctl.yaml was read and whose
-// records hold no unsettled apply) for the release before this one.
+// records hold no unsettled apply) for 0.2.21.
 func planRollback0221(p *RollbackPlan) (*RollbackPlan, error) {
 	pt := p.in.Paths
 	p.keys = p.in.Conf.RollbackKeys0221()

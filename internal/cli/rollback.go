@@ -3,7 +3,7 @@ package cli
 // 'tacctl rollback <version> [--apply] [--yes] [--hosts]' (docs/plans/
 // 0.2.3-plan.md D50, docs/plans/0.2.4-plan.md D73, docs/plans/
 // 0.2.9-rollout-plan.md D143, docs/plans/0.2.10-plan.md): prepare tacctl's
-// state for the release before this one (0.2.21), for 0.2.20, 0.2.19, 0.2.18, 0.2.17, 0.2.16, for 0.2.9 or for 0.2.3. The plan and the conversions of
+// state for the release before this one (0.2.22), for 0.2.21, 0.2.20, 0.2.19, 0.2.18, 0.2.17, 0.2.16, for 0.2.9 or for 0.2.3. The plan and the conversions of
 // the files are internal/lifecycle's (rollback.go); this is the command
 // around them: the arguments, what is printed, the snapshot and the
 // sudoers installer.
@@ -31,7 +31,7 @@ const rollbackUsage = "Usage: tacctl rollback <version> [--apply] [--yes] [--hos
 var rollbackSpec = Spec{
 	Flags:   []Flag{{Names: []string{"--apply"}}, {Names: []string{"--yes"}}, {Names: []string{"--hosts"}}},
 	MinArgs: 1, MaxArgs: 1,
-	Args: []string{lifecycle.RollbackTarget0221 + "|" + lifecycle.RollbackTarget0220 + "|" + lifecycle.RollbackTarget0219 + "|" + lifecycle.RollbackTarget0218 + "|" + lifecycle.RollbackTarget0217 + "|" + lifecycle.RollbackTarget0216 + "|" + lifecycle.RollbackTarget029 + "|" + lifecycle.RollbackTarget},
+	Args: []string{lifecycle.RollbackTarget0222 + "|" + lifecycle.RollbackTarget0221 + "|" + lifecycle.RollbackTarget0220 + "|" + lifecycle.RollbackTarget0219 + "|" + lifecycle.RollbackTarget0218 + "|" + lifecycle.RollbackTarget0217 + "|" + lifecycle.RollbackTarget0216 + "|" + lifecycle.RollbackTarget029 + "|" + lifecycle.RollbackTarget},
 }
 
 func rollbackCmd(inv *invocation) *cobra.Command {
@@ -130,7 +130,7 @@ func (inv *invocation) rollback(args []string) error {
 	inv.loaded = false
 	a.Conf().Reload()
 
-	inv.rollbackNextSteps(version)
+	inv.rollbackNextSteps(version, plan.PendingFiles())
 	inv.verbResult(audit.Info, rollbackBase, "")
 	return nil
 }
@@ -144,7 +144,11 @@ func (inv *invocation) printRollbackPlan(version string, plan *lifecycle.Rollbac
 	}
 	inv.echo(ui.Bold + title + ui.NC)
 	inv.echo("")
-	inv.echo("  --apply takes a snapshot of the state first (tacctl backup list), then does, in this order:")
+	if plan.PendingFiles() {
+		inv.echo("  --apply takes a snapshot of the state first (tacctl backup list), then does, in this order:")
+	} else {
+		inv.echo("  --apply converts no file of tacctl's own and takes no snapshot; the steps, in this order:")
+	}
 	inv.echo("")
 	for i, s := range plan.Steps {
 		mark := "leaves"
@@ -176,19 +180,25 @@ func (inv *invocation) printRollbackPlan(version string, plan *lifecycle.Rollbac
 	}
 }
 
-// rollbackNextSteps tells the operator what to do next, exactly.
-func (inv *invocation) rollbackNextSteps(version string) {
-	// every target refuses the timing scale (0.2.22)
-	defer inv.rollbackTimeoutScaleNote(version)
+// rollbackNextSteps tells the operator what to do next, exactly; snapshot is
+// whether the apply took one.
+func (inv *invocation) rollbackNextSteps(version string, snapshot bool) {
+	// every target older than 0.2.22 refuses the timing scale
+	if lifecycle.RollbackUndoes(version, "0.2.22") {
+		defer inv.rollbackTimeoutScaleNote(version)
+	}
 	switch version {
+	case lifecycle.RollbackTarget0222:
+		inv.rollbackNextSteps0222(version, snapshot)
+		return
 	case lifecycle.RollbackTarget0221:
-		inv.rollbackNextSteps0221(version)
+		inv.rollbackNextSteps0221(version, snapshot)
 		return
 	case lifecycle.RollbackTarget0220:
 		inv.rollbackNextSteps0220(version)
 		return
 	case lifecycle.RollbackTarget0219:
-		inv.rollbackNextSteps0219(version)
+		inv.rollbackNextSteps0219(version, snapshot)
 		return
 	case lifecycle.RollbackTarget0218:
 		inv.rollbackNextSteps0218(version)
@@ -197,10 +207,10 @@ func (inv *invocation) rollbackNextSteps(version string) {
 		inv.rollbackNextSteps0217(version)
 		return
 	case lifecycle.RollbackTarget0216:
-		inv.rollbackNextSteps0216(version)
+		inv.rollbackNextSteps0216(version, snapshot)
 		return
 	case lifecycle.RollbackTarget029:
-		inv.rollbackNextSteps029(version)
+		inv.rollbackNextSteps029(version, snapshot)
 		return
 	}
 	inv.echo("")
@@ -211,12 +221,26 @@ func (inv *invocation) rollbackNextSteps(version string) {
 	inv.echo("")
 	inv.echo("Until the upgrade, do not run a command that writes the console's settings, a device's SNMP settings or configuration syntax, a scope's Cisco source interface or the settings of 'device config pull':")
 	inv.echo("it writes the 0.2.5 form again. If one did, run 'tacctl rollback " + version + " --apply' again (it converts what is left).")
-	inv.echo("")
-	inv.echo("The snapshot taken first (the newest entry of 'tacctl backup list') holds the 0.2.5 state. Restore it with 0.2.5 only: 'tacctl backup restore <id>' of this release brings that")
-	inv.echo("state back and loses what changed since; " + version + "'s restore refuses a tacctl.yaml with a key it does not know.")
+	inv.rollbackSnapshotNote(snapshot, "; "+version+"'s restore refuses a tacctl.yaml with a key it does not know.")
 }
 
-// rollbackTimeoutScaleNote says, after any rollback, that the commands of the
+// rollbackFrom is the release this build is: the state a rollback leaves in
+// its snapshot. It moves with each release.
+const rollbackFrom = "0.2.23"
+
+// rollbackSnapshotNote says where the state before the rollback is, when the
+// apply took a snapshot (it takes none when no file of tacctl's own is
+// converted); tail ends the second sentence.
+func (inv *invocation) rollbackSnapshotNote(snapshot bool, tail string) {
+	if !snapshot {
+		return
+	}
+	inv.echo("")
+	inv.echo("The snapshot the rollback took first (the newest entry of 'tacctl backup list') holds the " + rollbackFrom + " state. Restore it with " + rollbackFrom + " only: 'tacctl backup restore <id>' of this release brings that")
+	inv.echo("state back and loses what changed since" + tail)
+}
+
+// rollbackTimeoutScaleNote says, after a rollback to a release before 0.2.22, that the commands of the
 // timing scale write what the older release refuses until it is installed.
 func (inv *invocation) rollbackTimeoutScaleNote(version string) {
 	inv.echo("")
@@ -224,10 +248,22 @@ func (inv *invocation) rollbackTimeoutScaleNote(version string) {
 	inv.echo("If one did, run 'tacctl rollback " + version + " --apply' again (it removes it).")
 }
 
+// rollbackNextSteps0222 is the next steps of the rollback to 0.2.22: the
+// upgrade of the tag. It converts nothing yet, so there is no command to
+// avoid until the upgrade.
+func (inv *invocation) rollbackNextSteps0222(version string, snapshot bool) {
+	inv.echo("")
+	inv.echo(ui.Bold + "Next steps" + ui.NC)
+	inv.echo("  1. Install " + version + " with the upgrade (see Upgrading in the README), which switches the clone in " + inv.app.Paths.Deploy + " to the tag, builds it and re-executes it:")
+	inv.echo("       tacctl upgrade --branch " + version)
+	inv.echo("  2. Check it: tacctl status; tacctl config validate")
+	inv.rollbackSnapshotNote(snapshot, ".")
+}
+
 // rollbackNextSteps0221 is the next steps of the rollback to 0.2.21: the
 // upgrade of the tag, and the one command that writes again what the rollback
 // took out (the server name, which 0.2.21 refuses).
-func (inv *invocation) rollbackNextSteps0221(version string) {
+func (inv *invocation) rollbackNextSteps0221(version string, snapshot bool) {
 	inv.echo("")
 	inv.echo(ui.Bold + "Next steps" + ui.NC)
 	inv.echo("  1. Install " + version + " with the upgrade (see Upgrading in the README), which switches the clone in " + inv.app.Paths.Deploy + " to the tag, builds it and re-executes it:")
@@ -235,9 +271,7 @@ func (inv *invocation) rollbackNextSteps0221(version string) {
 	inv.echo("  2. Check it: tacctl status; tacctl config validate")
 	inv.echo("")
 	inv.echo("Until the upgrade, do not run 'tacctl server name <label>': it writes the key " + version + " refuses. If it did, run 'tacctl rollback " + version + " --apply' again (it removes it).")
-	inv.echo("")
-	inv.echo("A snapshot the rollback took first (the newest entry of 'tacctl backup list') holds the 0.2.22 state. Restore it with 0.2.22 only: 'tacctl backup restore <id>' of this release brings that")
-	inv.echo("state back and loses what changed since; " + version + "'s restore refuses a snapshot with a key it does not know.")
+	inv.rollbackSnapshotNote(snapshot, "; "+version+"'s restore refuses a snapshot with a key it does not know.")
 }
 
 // rollbackNextSteps0220 is the next steps of the rollback to 0.2.20: the
@@ -257,7 +291,7 @@ func (inv *invocation) rollbackNextSteps0220(version string) {
 // rollbackNextSteps0219 is the next steps of the rollback to 0.2.19: the
 // upgrade of the tag, and the commands that write again what the rollback
 // took out (0.2.20's keys, which 0.2.19 refuses) until it.
-func (inv *invocation) rollbackNextSteps0219(version string) {
+func (inv *invocation) rollbackNextSteps0219(version string, snapshot bool) {
 	inv.echo("")
 	inv.echo(ui.Bold + "Next steps" + ui.NC)
 	inv.echo("  1. Install " + version + " with the upgrade (see Upgrading in the README), which switches the clone in " + inv.app.Paths.Deploy + " to the tag, builds it and re-executes it:")
@@ -266,9 +300,7 @@ func (inv *invocation) rollbackNextSteps0219(version string) {
 	inv.echo("")
 	inv.echo("Until the upgrade, do not run 'tacctl scope mgmt-acl <scope> mode strict', 'tacctl user add', 'tacctl user passwd <name>' or 'tacctl user require-password-change' (the first two require a password change by default),")
 	inv.echo("'tacctl console color', 'tacctl console list-max', 'tacctl console system-shell user' or 'tacctl console password-cache on': they write the keys " + version + " refuses. If one did, run 'tacctl rollback " + version + " --apply' again (it converts what is left).")
-	inv.echo("")
-	inv.echo("A snapshot the rollback took first (the newest entry of 'tacctl backup list') holds the 0.2.20 state. Restore it with 0.2.20 only: 'tacctl backup restore <id>' of this release brings that")
-	inv.echo("state back and loses what changed since; " + version + "'s restore refuses a snapshot with a key it does not know.")
+	inv.rollbackSnapshotNote(snapshot, "; "+version+"'s restore refuses a snapshot with a key it does not know.")
 }
 
 // rollbackNextSteps0218 is the next steps of the rollback to 0.2.18, which
@@ -308,7 +340,7 @@ func (inv *invocation) rollbackSyntaxKeyNote(version string) {
 // upgrade of the tag is the documented way, and what must not run until it.
 // 0.2.16's schema refuses audit.strict, so the key is removed here, and it
 // must not be set again before the older release is installed.
-func (inv *invocation) rollbackNextSteps0216(version string) {
+func (inv *invocation) rollbackNextSteps0216(version string, snapshot bool) {
 	inv.echo("")
 	inv.echo(ui.Bold + "Next steps" + ui.NC)
 	inv.echo("  1. Install " + version + " with the upgrade (see Upgrading in the README), which switches the clone in " + inv.app.Paths.Deploy + " to the tag, builds it and re-executes it:")
@@ -317,15 +349,13 @@ func (inv *invocation) rollbackNextSteps0216(version string) {
 	inv.echo("")
 	inv.echo("Until the upgrade, do not add the 'audit' setting (audit.strict) to " + inv.app.Paths.Overrides + " again: " + version + " does not know the key, and its 'config validate' reports it.")
 	inv.echo("If it was, run 'tacctl rollback " + version + " --apply' again (it converts what is left).")
-	inv.echo("")
-	inv.echo("The snapshot taken first (the newest entry of 'tacctl backup list') holds the 0.2.18 state. Restore it with 0.2.18 only: 'tacctl backup restore <id>' of this release brings that")
-	inv.echo("state back and loses what changed since; " + version + "'s restore refuses a tacctl.yaml with a key it does not know.")
+	inv.rollbackSnapshotNote(snapshot, "; "+version+"'s restore refuses a tacctl.yaml with a key it does not know.")
 	inv.rollbackSyntaxKeyNote(version)
 }
 
 // rollbackNextSteps029 is the next steps of the rollback to 0.2.9: the
 // upgrade of the tag is the documented way, and what must not run until it.
-func (inv *invocation) rollbackNextSteps029(version string) {
+func (inv *invocation) rollbackNextSteps029(version string, snapshot bool) {
 	inv.echo("")
 	inv.echo(ui.Bold + "Next steps" + ui.NC)
 	inv.echo("  1. Install " + version + " with the upgrade (see Upgrading in the README), which switches the clone in " + inv.app.Paths.Deploy + " to the tag, builds it and re-executes it:")
@@ -334,8 +364,6 @@ func (inv *invocation) rollbackNextSteps029(version string) {
 	inv.echo("")
 	inv.echo("Until the upgrade, do not run 'tacctl scope netconf', 'tacctl device netconf', 'tacctl config devices apply-transport' or 'tacctl device config apply --transport':")
 	inv.echo("they write the NETCONF service setting and the transport setting again. If one did, run 'tacctl rollback " + version + " --apply' again (it converts what is left).")
-	inv.echo("")
-	inv.echo("The snapshot taken first (the newest entry of 'tacctl backup list') holds the 0.2.10 state. Restore it with 0.2.10 only: 'tacctl backup restore <id>' of this release brings that")
-	inv.echo("state back and loses what changed since; " + version + "'s restore refuses a tacctl.yaml with a key it does not know.")
+	inv.rollbackSnapshotNote(snapshot, "; "+version+"'s restore refuses a tacctl.yaml with a key it does not know.")
 	inv.rollbackSyntaxKeyNote(version)
 }

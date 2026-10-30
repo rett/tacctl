@@ -121,7 +121,7 @@ func (p *RollbackPlan) applyManagedScope() (string, error) {
 	return sf + ": added scope " + pwchange.ManagedScope + " to " + strconv.Itoa(len(added)) + " " + plural(len(added), "user", "users"), nil
 }
 
-// planRollback0220 completes p for the release before this one: 0.2.20 reads
+// planRollback0220 completes p for the release before 0.2.21: 0.2.20 reads
 // every file this release writes but the server address of tacctl.yaml
 // (server.addresses, conf.Added0221), which it refuses, so the plan removes
 // that key, adds the managed scope's step (every target) and leaves the

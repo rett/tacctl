@@ -3,6 +3,23 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.23 (unreleased)
+
+1. **`tacctl rollback 0.2.22`, the release before this one, is a target.**
+   0.2.22 reads every file this release writes, so the target converts
+   nothing for now: the server name, the timing scale, the server address, the
+   users' login to this server, a user name with a period and an emergency
+   lockdown all stay, no snapshot is taken (no file is converted), and it
+   needs no `--yes`; `--hosts` is accepted and does nothing. The older targets
+   (`0.2.21` and back) still remove the server name and the timing scale, and
+   still say so; only the `0.2.22` target keeps them. What a later change of
+   this release stores in a file that 0.2.22 refuses is a step of every
+   target, the ones that return early included: the steps for a release's
+   changes are listed once (`rollbackAdditions`, in
+   `internal/lifecycle/rollback_additions.go`) and added to the plan of each
+   target older than that release, so the timing scale is such an entry for
+   the targets before 0.2.22 and a new entry reaches `0.2.22` too.
+
 ## 0.2.22 (2026-10-29)
 
 1. **A device `ssh-keyscan` reads nothing from, but plain `ssh` reaches, gets

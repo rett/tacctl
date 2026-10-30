@@ -123,6 +123,8 @@ func (p *RollbackPlan) lockdownKeysStep(target string) RollbackStep {
 			s.Lines = []string{"nothing to remove (no server address, server name or timeout scale is set)"}
 		case RollbackTarget0221:
 			s.Lines = []string{"nothing to remove (no server name or timeout scale is set)"}
+		case RollbackTarget0222:
+			s.Lines = []string{"nothing to remove (every key of tacctl.yaml is one " + target + " knows)"}
 		}
 		return s
 	}

@@ -67,7 +67,7 @@ func TestRollback0216ApplyRoundTrip(t *testing.T) {
 	hs.expect(0, "Applying.", "")
 	out := hs.all()
 	for _, want := range []string{"removed 1 key", "Next steps", "tacctl upgrade --branch 0.2.16",
-		"do not add the 'audit' setting (audit.strict)", "holds the 0.2.18 state"} {
+		"do not add the 'audit' setting (audit.strict)", "holds the 0.2.23 state"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("--apply output lacks %q:\n%s", want, out)
 		}

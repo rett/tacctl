@@ -113,7 +113,7 @@ func TestRollback029ApplyRoundTrip(t *testing.T) {
 	out := hs.all()
 	for _, want := range []string{"Config snapshot saved to", "state/tacctl.yaml: removed 4 keys",
 		"state/devices.yaml: removed the NETCONF service setting of 1 device",
-		"Next steps", "tacctl upgrade --branch 0.2.9", "holds the 0.2.10 state. Restore it with 0.2.10 only"} {
+		"Next steps", "tacctl upgrade --branch 0.2.9", "holds the 0.2.23 state. Restore it with 0.2.23 only"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("--apply output lacks %q:\n%s", want, out)
 		}
