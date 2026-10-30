@@ -288,6 +288,14 @@ A report is a saved, dated document about the registered devices, made on demand
   separately; a host unreachable at `disable` keeps the drop-in. The server's
   own console drop-in needs the lockdown block before the tier blocks. The
   script protocol of `internal/hosts` and `client-remove.sh` carry it.
+- **Granular lockdown on hosts (not scheduled).** 0.2.23 ships the host
+  lockdown as a static `Match Group tac-users,!tac-superuser` drop-in, so a
+  partial lockdown locks every non-superuser on the scope's hosts. A finer
+  form is `Match User <locked accounts>`: `host sync` sends the locked
+  accounts in the script header (script protocol 7 would already carry the
+  desired state), the drop-in is rewritten when the list changes, and a user
+  added to a locked group is locked at the next sync. Superusers and the
+  provisioner stay out by construction.
 - **Naming a device from its configuration (0.2.23).** For a device SNMP
   cannot name, an opt-in registers it under a random provisional name with a
   common prefix, reads the host name from the first pull and takes it over
