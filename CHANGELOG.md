@@ -41,6 +41,18 @@ current behaviour; this file is where history lives.
    state, last seen, notices`; which options narrow the list is in its usage
    block, `help device list` and the manual page, as for every other verb.
 
+4. **`host rename` carries a staging line spelled differently.** The staging
+   line of a host holds its name as it was written, and names compare without
+   regard to case. `host rename` matched the old name exactly, so a line
+   spelled with other case than the registry's was not carried to the new
+   name, and in a rename of the spelling only (`host rename Web1 web1`) the
+   host's own line counted as a leftover of an earlier host of that name: the
+   rename asked for `--yes` and then dropped the line. The old name is matched
+   without regard to case first, so such a line is carried (or kept) and only
+   a line of the new name that is not the host's own is a leftover. The
+   warning of a staging file that cannot be written names the addresses of the
+   dropped lines too.
+
 ## 0.2.22 (2026-10-29)
 
 1. **A device `ssh-keyscan` reads nothing from, but plain `ssh` reaches, gets
