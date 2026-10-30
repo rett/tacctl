@@ -83,7 +83,10 @@ current behaviour; this file is where history lives.
    server block, another group, a method list or login list of another name,
    the login method of a line, the authentication order, a `tacacs-server
    host` line and a deactivated statement. The source interface is compared
-   only where the scope sets one, as before.
+   only where the scope sets one, as before. The `Kept:` line of the plan
+   names these statements `TACACS+ server settings`, `RADIUS server
+   settings`, `TACACS+ options` or `RADIUS options`, and so does `kinds` of
+   `--json`.
 
 ## 0.2.22 (2026-10-29)
 

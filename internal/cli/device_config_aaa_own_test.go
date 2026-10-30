@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -219,7 +220,7 @@ func TestAAAOwnSettingsReadTheSameEverywhere(t *testing.T) {
 				t.Errorf("plan: exit %d\n%s", b.sb.code, out)
 			}
 			flat := strings.Join(strings.Fields(strings.ReplaceAll(out, "\n#", " ")), " ")
-			for _, want := range []string{"CONSISTENT: nothing to paste.", "Kept: aaa " + itoa(c.n) + c.noun() + " of the device's own ("} {
+			for _, want := range []string{"CONSISTENT: nothing to paste.", "Kept: aaa " + itoa(c.n) + c.noun() + " of the device's own (" + strings.Join(c.kinds, ", ") + ")"} {
 				if !strings.Contains(flat, want) {
 					t.Errorf("the plan lacks %q:\n%s", want, out)
 				}
@@ -243,7 +244,7 @@ func TestAAAOwnSettingsReadTheSameEverywhere(t *testing.T) {
 				t.Fatalf("json: %v\n%s", err, js)
 			}
 			if g := got[0]; g.Status != "consistent" || len(g.Irregularities) != 0 || len(g.Kept) != 1 || g.Kept[0].Section != "aaa" ||
-				g.Kept[0].Count != c.n || len(g.Kept[0].Kinds) == 0 {
+				g.Kept[0].Count != c.n || !slices.Equal(g.Kept[0].Kinds, c.kinds) {
 				t.Errorf("json: %+v", g)
 			}
 		})
