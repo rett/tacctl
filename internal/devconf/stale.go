@@ -88,7 +88,7 @@ func (r *Record) Extracted(secs map[string]devices.Section) Extracted {
 	if err != nil {
 		fam = r.Vendor
 	}
-	return Extracted{Vendor: fam, Sections: secs, SecretsVisible: r.SecretsVisible}
+	return Extracted{Vendor: fam, Sections: secs, SecretsVisible: r.SecretsVisible, Interfaces: r.Interfaces}
 }
 
 // SetSections keeps the fingerprint and the comparison state of every

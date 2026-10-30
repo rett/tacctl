@@ -45,6 +45,11 @@ type Extracted struct {
 	// never compared; 'device sync' (0.2.9, Junos only) and 'device enroll'
 	// (0.2.17) are the readers.
 	Hostname string
+	// Interfaces are the addresses of the device's interfaces as its
+	// configuration states them (0.2.23, D314); nil for a record made before
+	// 0.2.23 and for a WTI unit. They are no section and never compared as
+	// statements; the check of the source of the AAA client reads them.
+	Interfaces *InterfaceFacts
 }
 
 // Options are the optional inputs of ExtractWith.
