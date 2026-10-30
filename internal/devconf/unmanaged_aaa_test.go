@@ -102,6 +102,12 @@ func TestAAAOwnSettings(t *testing.T) {
 		{"ios tacacs the legacy host line", "ios", iosTAC, with(iosTACDev, "tacacs-server host 192.0.2.98"), StateDiffers, 0},
 		{"ios tacacs another group", "ios", iosTAC, with(iosTACDev, "aaa group server tacacs+ OTHER", " server name TACACS"), StateDiffers, 0},
 		{"ios tacacs a server of tacacs's group", "ios", iosTAC, with(iosTACDev, "aaa group server tacacs+ LAB", " server name OTHER"), StateDiffers, 0},
+		{"ios tacacs group's vrf, source interface and dead time", "ios", iosTAC, with(iosTACDev, "aaa group server tacacs+ LAB", " ip vrf forwarding MGMT",
+			"aaa group server tacacs+ LAB", " ip tacacs source-interface Loopback1", "aaa group server tacacs+ LAB", " deadtime 5"), StateOK, 3},
+		{"ios tacacs group's private server with its key", "ios", iosTAC, with(iosTACDev, "aaa group server tacacs+ LAB", " server-private 192.0.2.98 key 7 0822455D0A16"), StateDiffers, 0},
+		{"ios tacacs group's private server", "ios", iosTAC, with(iosTACDev, "aaa group server tacacs+ LAB", " server-private 192.0.2.98 timeout 5"), StateDiffers, 0},
+		{"ios tacacs group's server by address", "ios", iosTAC, with(iosTACDev, "aaa group server tacacs+ LAB", " server 192.0.2.98"), StateDiffers, 0},
+		{"ios tacacs another group's vrf", "ios", iosTAC, with(iosTACDev, "aaa group server tacacs+ OTHER", " ip vrf forwarding MGMT"), StateDiffers, 0},
 		{"ios tacacs another method list", "ios", iosTAC, with(iosTACDev, "aaa authentication login OTHER local"), StateDiffers, 0},
 		{"ios tacacs another login on the vty lines", "ios", iosTAC, swap(iosTACDev, " login authentication default", " login local"), StateDiffers, 0},
 		// IOS RADIUS
@@ -109,6 +115,10 @@ func TestAAAOwnSettings(t *testing.T) {
 		{"ios radius test probe and dead criteria", "ios", iosRAD, with(iosRADDev, "radius server RADIUS", " automate-tester username probe", "radius server RADIUS", " dead-criteria time 10 tries 3"), StateOK, 2},
 		{"ios radius another retransmit", "ios", iosRAD, swap(iosRADDev, " retransmit 2", " retransmit 5"), StateDiffers, 0},
 		{"ios radius another server block", "ios", iosRAD, with(iosRADDev, "radius server OTHER", " address ipv4 192.0.2.98 auth-port 1812 acct-port 1813"), StateDiffers, 0},
+		{"ios radius group's vrf, source interface and dead time", "ios", iosRAD, with(iosRADDev, "aaa group server radius LAB", " ip vrf forwarding MGMT",
+			"aaa group server radius LAB", " ip radius source-interface Loopback1", "aaa group server radius LAB", " deadtime 5"), StateOK, 3},
+		{"ios radius group's private server with its key", "ios", iosRAD, with(iosRADDev, "aaa group server radius LAB", " server-private 192.0.2.98 key 7 0822455D0A16"), StateDiffers, 0},
+		{"ios radius group's load balancing", "ios", iosRAD, with(iosRADDev, "aaa group server radius LAB", " load-balance method least-outstanding"), StateDiffers, 0},
 		{"ios radius another group", "ios", iosRAD, with(iosRADDev, "aaa group server radius OTHER", " server name OTHER"), StateDiffers, 0},
 		{"ios radius the old host line", "ios", iosRAD, with(iosRADDev, "radius-server host 192.0.2.98"), StateDiffers, 0},
 	} {

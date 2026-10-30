@@ -10754,8 +10754,14 @@ IOS
 and
 .BR "radius server" :
 .BR send\-nat\-address ,
-.BR automate\-tester )
-and the options of the client
+.BR automate\-tester ),
+the
+.BR "ip vrf forwarding" ,
+the group's own
+.BR "ip tacacs source\-interface" " or " "ip radius source\-interface"
+and the
+.B deadtime
+of the IOS server group tacctl renders, and the options of the client
 .RB ( "system tacplus\-options" ,
 .BR "system radius\-options" )
 that do not decide who can log in or what they may do.
@@ -10771,16 +10777,23 @@ other than
 .BR junos\-exec ,
 .BR strict\-authorization ,
 .BR "radius\-options password\-protocol" ).
-Another server or server block, another group, a method list or login list of
+Another server or server block (a
+.BR server ,
+.B "server name"
+or
+.B server\-private
+line of tacctl's group included), another group, a method list or login list of
 another name, the login method of a line, the authentication order, a
 .B "tacacs\-server host"
 line and a deactivated statement stay differences: they decide who can log in.
 The plan's Kept line names the statements of the server
 .BR "TACACS+ server settings" ,
 .BR "RADIUS server settings" ,
-.B "TACACS+ options"
+.BR "TACACS+ options" ,
+.BR "RADIUS options" ,
+.B "TACACS+ group settings"
 or
-.BR "RADIUS options" .
+.BR "RADIUS group settings" .
 The CONFIG column of
 .B "device list"
 and the state of

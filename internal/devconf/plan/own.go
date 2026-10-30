@@ -106,6 +106,12 @@ func ownKind(vendor, section, stem string) string {
 		return ""
 	}
 	switch f[0] {
+	case "aaa":
+		// a leaf of the server group tacctl renders (its vrf, its source
+		// interface, its dead time)
+		if len(f) > 3 && f[1] == "group" && f[2] == "server" {
+			return map[string]string{"tacacs+": "TACACS+", "radius": "RADIUS"}[f[3]] + " group settings"
+		}
 	case "tacacs", "radius":
 		// a leaf of the server block tacctl renders (a port, a vrf, ...)
 		if len(f) > 1 && f[1] == "server" {

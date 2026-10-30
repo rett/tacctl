@@ -187,6 +187,26 @@ func aaaOwnCases() []aaaOwnCase {
 					return appendStmts(text, "aaa group server radius OTHER", "  server name OTHER")
 				},
 			}},
+		{name: "ios tacacs group", vendor: "cisco", n: 2, kinds: []string{"TACACS+ group settings"}, field: "deadtime 5",
+			own: func(t *testing.T, text string) string {
+				return inBlock(t, inBlock(t, text, "aaa group server tacacs+ ", "ip vrf forwarding MGMT"), "aaa group server tacacs+ ", "deadtime 5")
+			},
+			differs: func(t *testing.T, text string) string { return swapLine(t, text, "timeout 5", "timeout 9") },
+			findings: map[string]func(*testing.T, string) string{
+				"a private server in tacctl's group": func(t *testing.T, text string) string {
+					return inBlock(t, text, "aaa group server tacacs+ ", "server-private 192.0.2.98 key lab-secret-0123456789abcdef")
+				},
+			}},
+		{name: "ios radius group", vendor: "cisco", radius: true, n: 2, kinds: []string{"RADIUS group settings"}, field: "deadtime 5",
+			own: func(t *testing.T, text string) string {
+				return inBlock(t, inBlock(t, text, "aaa group server radius ", "ip radius source-interface Loopback1"), "aaa group server radius ", "deadtime 5")
+			},
+			differs: func(t *testing.T, text string) string { return swapLine(t, text, "retransmit 2", "retransmit 5") },
+			findings: map[string]func(*testing.T, string) string{
+				"a private server in tacctl's group": func(t *testing.T, text string) string {
+					return inBlock(t, text, "aaa group server radius ", "server-private 192.0.2.98 key lab-secret-0123456789abcdef")
+				},
+			}},
 	}
 }
 

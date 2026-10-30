@@ -86,7 +86,12 @@ current behaviour; this file is where history lives.
    only where the scope sets one, as before. The `Kept:` line of the plan
    names these statements `TACACS+ server settings`, `RADIUS server
    settings`, `TACACS+ options` or `RADIUS options`, and so does `kinds` of
-   `--json`.
+   `--json`. The IOS server group tacctl renders (`aaa group server
+   tacacs+|radius`) has the same: its `ip vrf forwarding`, its own
+   `ip tacacs source-interface` or `ip radius source-interface` and its `deadtime` are the device's own (`TACACS+
+   group settings`, `RADIUS group settings`), while a server line in it
+   (`server`, `server name`, `server-private`, with or without a key) is
+   another server and stays a difference, as does every leaf of another group.
 
 ## 0.2.22 (2026-10-29)
 

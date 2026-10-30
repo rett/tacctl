@@ -31,6 +31,11 @@ func TestAAAOwnSettingsAreKeptAndNoItem(t *testing.T) {
 			mutI: func(c *IOSConfig) {
 				_ = c.Apply([]Line{{Op: OpLine, Context: []string{"tacacs server TACACS"}, Text: "send-nat-address"}})
 			}},
+		{name: "ios tacacs group", fix: "cisco.reference-lab", own: 2, kinds: []string{"TACACS+ group settings"}, kept: []string{"ip vrf forwarding", "deadtime"},
+			mutI: func(c *IOSConfig) {
+				_ = c.Apply([]Line{{Op: OpLine, Context: []string{"aaa group server tacacs+ LAB-TACACS"}, Text: "ip vrf forwarding MGMT"},
+					{Op: OpLine, Context: []string{"aaa group server tacacs+ LAB-TACACS"}, Text: "deadtime 5"}})
+			}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := fixtureNamed(t, tc.fix)

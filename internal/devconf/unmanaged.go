@@ -21,7 +21,8 @@ package devconf
 //
 // In the 'aaa' section the device's own are the leaves under the server
 // block tacctl renders that the rendering does not state (a source address,
-// a timeout, a retry count, a routing instance) and the options of the
+// a timeout, a retry count, a routing instance), the vrf, the source
+// interface and the dead time of the IOS server group tacctl renders, and the options of the
 // client ('tacplus-options', 'radius-options') that do not decide who can
 // log in or what they may do. A leaf the rendering states with another value
 // is a difference, which the plan replaces in place. A TACACS+ port is never
@@ -31,7 +32,8 @@ package devconf
 // group, a method list or a login list of another name, the login leaf of a
 // line and the options that change the service asked for or how a password
 // is checked are findings: they decide who can authenticate, which method is
-// asked or what the login gets. The source interface ('ip tacacs
+// asked or what the login gets (a server line of tacctl's own group is one:
+// 'server', 'server name' and 'server-private' stay findings). The source interface ('ip tacacs
 // source-interface') and the other leaves of a line never reach the section
 // when the rendering states none (the extraction leaves them out), so they
 // need no shape.
@@ -135,6 +137,29 @@ var (
 		}
 		tacacs := words[0] == "tacacs" || words[1] == "tacplus-server"
 		return !tacacs || words[3] != "port"
+	}
+	// a leaf of the IOS server group tacctl renders ('aaa group server
+	// tacacs+|radius <name> <leaf>') that is the device's own: its vrf
+	// ('ip vrf forwarding'), its own source interface ('ip tacacs|radius
+	// source-interface') and its dead time, when the rendering states none.
+	// The group's servers ('server', 'server name', 'server-private') are
+	// not: a server that is not tacctl's is who can log in, whatever group of
+	// tacctl's it sits in. Another group's leaves are a finding as well.
+	ownGroupLeaf = func(words []string, exp *renderedSet) bool {
+		if len(words) < 6 || !exp.has(words[:5]) {
+			return false
+		}
+		n := 0
+		switch leaf := words[5:]; {
+		case leaf[0] == "deadtime":
+			n = 1
+		case len(leaf) >= 3 && leaf[0] == "ip" && (leaf[1] == "vrf" && leaf[2] == "forwarding" ||
+			(leaf[1] == "tacacs" || leaf[1] == "radius") && leaf[2] == "source-interface"):
+			n = 3
+		default:
+			return false
+		}
+		return len(words) >= 5+n && !exp.has(words[:5+n])
 	}
 	// a leaf of the client's options ('system tacplus-options <leaf>',
 	// 'system radius-options <leaf>') the rendering says nothing of: the
@@ -252,6 +277,8 @@ var keptShapes = map[string][]keptShape{
 		// group's leaves and the login leaves of the lines are findings.
 		{Row: "ios.aaa.server-block", Pattern: "tacacs server $ $", keepStmt: ownServerLeaf},
 		{Row: "ios.aaa.radius-block", Pattern: "radius server $ $", keepStmt: ownServerLeaf},
+		{Row: "ios.aaa.group", Pattern: "aaa group server tacacs+ $ $", keepStmt: ownGroupLeaf},
+		{Row: "ios.aaa.radius-group", Pattern: "aaa group server radius $ $", keepStmt: ownGroupLeaf},
 		// The system section (0.2.7) is additive, as on Junos: what the
 		// device holds beside the block's statements is its own, and a single
 		// value the block states and the device holds otherwise is a
