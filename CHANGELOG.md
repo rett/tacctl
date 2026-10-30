@@ -185,6 +185,33 @@ current behaviour; this file is where history lives.
    refused with `--if-stale` and `--quiet`. Both verbs stay the operator
    tier's.
 
+8. **A user can have an email address.** `tacctl user add <name> <group>
+   --email <address>` records one with the user, and `tacctl user email <name>
+   [<address>|clear]` prints, sets or removes it (both are the superuser's).
+   It is the key `users.<name>.email` of `store.yaml`, written only when set,
+   so a store without an address is the file it was and the store version
+   stays 1. The address is a plain `local@domain`: exactly one `@`, a local
+   part, a domain of at least two dot-separated labels, at most 254
+   characters, and no spaces, angle brackets, quotes or control characters;
+   it is kept as typed, and `clear` is not an address. An address belongs to
+   one user, compared without regard to case: `user add --email`, `user
+   email` and the store's own validation refuse a second user with the same
+   address and name the first user. `user show` prints an `Email` line for a
+   user who has one, to every tier that can run `user show`; `user list` does
+   not show it, and `store show --json` carries it. `user rename` carries the
+   address, and `store import --replace` keeps the one an existing store has
+   (a rendered or legacy file cannot hold one). No mail is sent to it, and
+   changing it renders nothing and restarts no service. The address is never
+   in an audit line: `--email` is a secret flag, the address of `user email`
+   is written as `<redacted>` in `args=` whichever way it is typed (in the
+   place of the name, with extra words), the `user email` line says only
+   `op=set` or `op=clear`, and no message repeats the address. A word with
+   an `@` typed in the place of a name, a group or a scope in another `user`
+   verb is redacted and not repeated either, and the history of `tacctl
+   shell` keeps the line up to the address (the `--email` value, the address
+   of `user email`, or the first word with an `@` in any other `user` verb)
+   and `…(redacted)` in place of the rest. The accounting sink takes none.
+
 ## 0.2.22 (2026-10-29)
 
 1. **A device `ssh-keyscan` reads nothing from, but plain `ssh` reaches, gets

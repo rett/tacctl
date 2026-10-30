@@ -240,6 +240,10 @@ func (inv *invocation) userRequirePasswordChange(args []string) error {
 		}
 	}
 	if state != "on" && state != "off" {
+		if strings.Contains(state, "@") {
+			// an email address typed in the place of the state is not repeated
+			return inv.usageErr("The state is neither on nor off.", usage)
+		}
 		return inv.usageErr("'"+state+"' is neither on nor off.", usage)
 	}
 	if err := inv.requireStore(); err != nil {

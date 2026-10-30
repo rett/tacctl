@@ -15,6 +15,7 @@ import (
 	"os"
 	"sort"
 
+	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/yamlpy"
 )
@@ -48,6 +49,9 @@ type User struct {
 	// flag alone does not bind a user: a superuser is never held to it
 	// (internal/pwchange decides, from the group's tier, at run time).
 	PasswordChangeRequired bool
+	// Email is the optional address of the user (0.2.23, users.<name>.email),
+	// "" when none is set. It is kept as typed; no mail is sent to it.
+	Email string
 }
 
 // IsDisabled is user_is_disabled: the user cannot authenticate (flagged,
@@ -110,6 +114,18 @@ func (m *Model) Group(name string) *Group { return m.groups[name] }
 
 // User returns the named user, or nil.
 func (m *Model) User(name string) *User { return m.users[name] }
+
+// EmailHolder is the first user (by name) other than except that holds the
+// address, compared without regard to case, or "". An address belongs to one
+// user.
+func (m *Model) EmailHolder(address, except string) string {
+	for _, n := range m.UserNames() {
+		if u := m.users[n]; n != except && u.Email != "" && names.SameEmail(u.Email, address) {
+			return n
+		}
+	}
+	return ""
+}
 
 // Scope returns the named scope, or nil.
 func (m *Model) Scope(name string) *Scope { return m.scopes[name] }
@@ -216,6 +232,7 @@ func FromStore(s *store.Store) *Model {
 			u.PasswordChanged = str(get(e, "password_changed"))
 			u.AccountingSink = truthy(get(e, "accounting_sink"))
 			u.PasswordChangeRequired = truthy(get(e, "password_change_required"))
+			u.Email = str(get(e, "email"))
 		}
 		m.Users = append(m.Users, u)
 		m.users[name] = u

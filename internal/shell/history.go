@@ -168,8 +168,11 @@ func escapeEntry(line string) string {
 // Redact is the line as the history stores it. Everything from the first
 // value that may be a secret on is replaced by RedactedMark:
 //
-//   - after '--secret', '--hash' or '--password' ('--secret=<v>' keeps the
-//     name);
+//   - after '--secret', '--hash', '--password' or '--email' ('--secret=<v>'
+//     keeps the name);
+//   - after the name in 'user email <name> <address>' (an address typed in
+//     the place of the name goes too; 'user email <name>' and 'user email
+//     <name> clear' are kept);
 //   - after 'set' in 'secret … set …' ('scope secret lab set x' is stored as
 //     'scope secret lab set …(redacted)');
 //   - after 'import' when a value follows it;
@@ -213,10 +216,32 @@ func redactAt(toks []string) int {
 	if toks[0] == "passwd" {
 		return 1
 	}
+	if len(toks) >= 2 && toks[0] == "user" && toks[1] == "email" {
+		return redactUserEmail(toks)
+	}
+	keep := redactFlags(toks)
+	if toks[0] == "user" {
+		// A name of a user, a group or a scope cannot hold an '@': the first
+		// word that does is an email address typed in the place of a name (or
+		// the value of --email), and the line is kept up to it.
+		for i, t := range toks[1:] {
+			if i++; strings.Contains(t, "@") {
+				if keep < 0 || i < keep-1 {
+					return i
+				}
+				break
+			}
+		}
+	}
+	return keep
+}
+
+// redactFlags is redactAt by the words that introduce a secret.
+func redactFlags(toks []string) int {
 	for i, t := range toks {
 		name, _, hasVal := strings.Cut(t, "=")
 		switch {
-		case name == "--secret" || name == "--hash" || name == "--password":
+		case name == "--secret" || name == "--hash" || name == "--password" || name == "--email":
 			if hasVal {
 				toks[i] = name + "="
 			}
@@ -232,4 +257,21 @@ func redactAt(toks []string) int {
 		}
 	}
 	return -1
+}
+
+// redactUserEmail is redactAt of 'user email ...': the words after the user's
+// name are the address (or 'clear'), and a word with an '@' in the place of
+// the name is one too (a user name cannot hold it).
+func redactUserEmail(toks []string) int {
+	rest := toks[2:]
+	if len(rest) == 0 {
+		return -1
+	}
+	if strings.Contains(rest[0], "@") {
+		return 2
+	}
+	if len(rest) == 1 || (len(rest) == 2 && rest[1] == "clear") {
+		return -1
+	}
+	return 3
 }

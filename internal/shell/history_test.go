@@ -40,6 +40,33 @@ func TestRedact(t *testing.T) {
 		{"tacctl scope secret lab set x", "tacctl scope secret lab set …(redacted)"},
 		{"tacctl", "tacctl"},
 		{"sudo tacctl", "sudo tacctl"},
+		// an email address is personal data: the flag's value and the word
+		// of 'user email' are not kept
+		{"user add bob ops --email bob@example.net", "user add bob ops --email …(redacted)"},
+		{"user add bob ops --email=bob@example.net --hash x", "user add bob ops --email=…(redacted)"},
+		{"user email bob alice@example.net", "user email bob …(redacted)"},
+		{"user email bob alice@example.net extra", "user email bob …(redacted)"},
+		{"user email alice@example.net", "user email …(redacted)"},
+		{"user email alice@example.net bob@example.net", "user email …(redacted)"},
+		{"tacctl user email bob carol@example.net", "tacctl user email bob …(redacted)"},
+		{"user email bob", "user email bob"},
+		{"user email bob clear", "user email bob clear"},
+		{"user email", "user email"},
+		// a word with an '@' in any other user verb is an address in the place of
+		// a name; the line is kept up to it
+		{"user remove alice@example.net", "user remove …(redacted)"},
+		{"user show alice@example.net", "user show …(redacted)"},
+		{"user rename bob alice@example.net", "user rename bob …(redacted)"},
+		{"user move alice@example.net operator", "user move …(redacted)"},
+		{"user move bob alice@example.net", "user move bob …(redacted)"},
+		{"user scope bob add lab,alice@example.net", "user scope bob add …(redacted)"},
+		{"user add zed alice@example.net", "user add zed …(redacted)"},
+		{"user add alice@example.net operator --hash x", "user add …(redacted)"},
+		{"user add zed operator --scopes alice@example.net", "user add zed operator --scopes …(redacted)"},
+		{"user passwd alice@example.net --hash x", "user passwd …(redacted)"},
+		{"user require-password-change bob alice@example.net", "user require-password-change bob …(redacted)"},
+		{"user add zed ops --hash x --email alice@example.net", "user add zed ops --hash …(redacted)"},
+		{"user show bob", "user show bob"},
 	}
 	for _, c := range cases {
 		if got := Redact(c.line); got != c.want {

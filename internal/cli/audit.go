@@ -32,6 +32,7 @@ import (
 
 	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/console"
+	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -151,6 +152,42 @@ func secretAll(rest []string) []int {
 	return out
 }
 
+// secretEmail marks the words of 'user email <name> [<address>|clear]' that
+// can be the address: every word after the name but the sub-command 'clear',
+// and the first word too when it holds an '@' (a user name cannot), which is
+// an address typed where the name goes. An address is not a secret in the
+// sense of a password, but it is personal data and is never logged.
+func secretEmail(rest []string) []int {
+	var out []int
+	for i, w := range rest {
+		switch {
+		case i == 0 && !strings.Contains(w, "@"):
+		case i > 0 && w == names.EmailClear:
+		default:
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+// withAtSign marks, beside the words f marks (f may be nil), every word with
+// an '@': a user, group or scope name cannot hold one, so it is an email
+// address typed in the place of a name, and an address is never logged.
+func withAtSign(f func(rest []string) []int) func(rest []string) []int {
+	return func(rest []string) []int {
+		var out []int
+		if f != nil {
+			out = f(rest)
+		}
+		for i, w := range rest {
+			if strings.Contains(w, "@") && !slices.Contains(out, i) {
+				out = append(out, i)
+			}
+		}
+		return out
+	}
+}
+
 // secretSurplus marks the words that no flag and no positional of the verb's
 // spec takes: the secret that was typed on the command line in the place of
 // the prompt the verb offers ('user passwd bob <password>', 'user add bob
@@ -239,17 +276,18 @@ var auditTable = map[string]auditEntry{
 
 	"user list":    read(),
 	"user show":    read(),
-	"user add":     withSecret(action(), secretSurplus(func() Spec { return userSpecs["add"] })),
-	"user remove":  action(),
-	"user passwd":  withSecret(action(), secretSurplus(func() Spec { return userSpecs["passwd"] })),
-	"user disable": action(),
-	"user enable":  action(),
-	"user rename":  action(),
-	"user move":    action(),
+	"user add":     withSecret(action(), withAtSign(secretSurplus(func() Spec { return userSpecs["add"] }))),
+	"user remove":  withSecret(action(), withAtSign(nil)),
+	"user email":   withSecret(mixed(), secretEmail),
+	"user passwd":  withSecret(action(), withAtSign(secretSurplus(func() Spec { return userSpecs["passwd"] }))),
+	"user disable": withSecret(action(), withAtSign(nil)),
+	"user enable":  withSecret(action(), withAtSign(nil)),
+	"user rename":  withSecret(action(), withAtSign(nil)),
+	"user move":    withSecret(action(), withAtSign(nil)),
 	"user verify":  read(),
-	"user scope":   mixed(),
+	"user scope":   withSecret(mixed(), withAtSign(nil)),
 
-	"user require-password-change": action(),
+	"user require-password-change": withSecret(action(), withAtSign(nil)),
 
 	"group list":   read(),
 	"group show":   read(),

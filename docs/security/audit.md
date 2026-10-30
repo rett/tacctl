@@ -83,6 +83,7 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `user add` | `name` `group` `scopes` |
 | `user remove`, `user disable`, `user enable` | `name` |
 | `user passwd` | `name` `source=prompt\|hash\|generated` |
+| `user email` | `name` `op=set\|clear`; the address is never written |
 | `user rename` | `from` `to` `uid=carried\|-` |
 | `user password-change` | `name` `state=required\|cleared` `via=require\|add\|passwd\|self`: a requirement to change the password set or lifted, for whom (`by=` is who) |
 | `user move` | `name` `from` `to` (groups) |
@@ -250,6 +251,14 @@ with `reason=superuser` (the verb is the superuser's) or `reason=scope` (the thi
 `args=` writes `<redacted>` for:
 
 - the value of a flag that carries a secret or a password hash (`--hash` of `user add` and `user passwd`, `--secret` of `scope add`), as `--hash <redacted>` or `--hash=<redacted>`; the `-` of `--hash -` is written as `<redacted>` too;
+- the value of `--email` of `user add` and every word of `user email` after
+  the name but `clear` (and the name too when it holds an `@`: an address
+  typed in its place), and every word with an `@` in the other `user` verbs
+  that write a line (`remove`, `rename`, `disable`, `enable`, `passwd`,
+  `move`, `scope`, `require-password-change`, and `add`), where a user, group
+  or scope name cannot hold one. An address is personal data, not a password,
+  but it is never logged; the `user email` detail line says only `op=set` or
+  `op=clear`;
 - the value in `scope secret <scope> set <value>`, and every word of `scope secret` after the scope but the sub-command (`show`, `set`, `generate`) and the flag `--stdin`, and a lone word after `scope secret` that is none of them;
 - every word of `hash` and of `passwd`, and every word of `user add`, `user passwd`, `scope add` and the `community` and `v3-user` verbs of `scope snmp`, `device snmp` and `config snmp` that no flag or argument of the verb takes, a word that starts with `-` and is no flag of the verb included. These verbs ask for the password, the community or the SNMPv3 keys at a prompt (or on standard input with `--stdin`) and refuse a line that carries one. `user add`, `user passwd`, `scope add` and `passwd` are actions and write the start line before they refuse it. The SNMP verbs and `scope secret` are mixed and refuse at parse without a line, but an engineer's refusal inside the verb (`scope snmp prod community ...` for a scope that is not theirs) writes `cmd DENY` with the same `args=`; the redaction matters there. A word starting with `-` or a switch given a value (`--stdin=x`) is redacted too.
 

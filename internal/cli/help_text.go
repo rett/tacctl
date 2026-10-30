@@ -88,8 +88,12 @@ Subcommands:
   <b>add</b> <o><username></o> <o><group></o>                       Add a new user; lands in default scope
   <b>add</b> <o><username></o> <o><group></o> <o>--scopes <s></o>[,s...]   Grant specific scopes at creation
   <b>add</b> <o><username></o> <o><group></o> <o>--hash <hash></o>         Add with pre-generated bcrypt hash (<o>-</o> reads it from stdin)
+  <b>add</b> <o><username></o> <o><group></o> <o>--email <address></o>     Record an email address (a plain address; no mail is sent)
   <b>add</b> <o><username></o> <o><group></o> <o>--no-change-required</o>  Skip the required password change (a new user must change it first)
   <b>remove</b> <o><username></o>                            Remove a user
+  <b>email</b> <o><username></o>                             Show the user's email address
+  <b>email</b> <o><username></o> <o><address></o>                   Set it (an address belongs to one user)
+  <b>email</b> <o><username></o> <o>clear</o>                       Remove it
   <b>passwd</b> <o><username></o>                            Change a user's password
   <b>passwd</b> <o><username></o> <o>--hash <hash></o>              Change with pre-generated bcrypt hash (<o>-</o> reads it from stdin)
   <b>passwd</b> <o><username></o> <o>--no-change-required</o>       Skip the required password change (a reset requires one)
@@ -109,6 +113,8 @@ Examples:
   tacctl user list
   tacctl user add jsmith superuser
   tacctl user add jsmith superuser --scopes prod,lab
+  tacctl user add alice superuser --email alice@example.net
+  tacctl user email alice alice@example.net
   tacctl user scope jsmith add prod
   tacctl user verify jsmith
 

@@ -9,7 +9,8 @@ user list
 
 user show <name>
 
-    Show user details incl. scope membership and last login (no password prompt)
+    Show user details incl. scope membership, last login and, when the user
+    has one, the email address (no password prompt)
 
 user add <name> <group>
 
@@ -29,9 +30,25 @@ user add <name> <group> --scopes <name>[,name...]
 
     Grant specific scopes at creation
 
+user add <name> <group> --email <address>
+
+    Record an email address for the user (see "An email address")
+
 user add <name> <group> --hash <hash>|-
 
     Add user with pre-generated bcrypt hash (`-`: read it from standard input)
+
+user email <name>
+
+    Print the user's email address, or say that there is none
+
+user email <name> <address>
+
+    Set the email address (an address belongs to one user)
+
+user email <name> clear
+
+    Remove the email address
 
 user remove <name>
 
@@ -128,6 +145,35 @@ listings and Tab do not offer one, and a scope list that is empty means no
 device. A user kept off the server is disabled (`user disable`) or in a group
 of tier none. When a command next writes a user's record, a stored copy of the
 server's own scope (from an install before 0.2.21) is dropped from it.
+
+**An email address.** A user may have an email address, for the people who
+look after the accounts. It is `users.<name>.email` in `store.yaml`, written
+only when set, so a store without one is unchanged. No mail is sent to it.
+
+- *Form.* A plain address, `alice@example.net`: exactly one `@`, a local
+  part, a domain of at least two dot-separated labels, at most 254
+  characters, and no spaces, angle brackets, quotes or control characters.
+  It is kept as typed. `user email <name> clear` removes it; `clear` is not an
+  address.
+- *One user each.* An address belongs to one user, compared without regard
+  to case. `user add --email`, `user email` and the store itself refuse an
+  address another user holds, and name that user.
+- *Who sets it, who sees it.* `user add --email` and `user email` are the
+  superuser's. `user show` prints an `Email` line for a user who has one, to
+  every tier that can run `user show`; `user list` does not show it, and
+  `store show --json` carries it. The accounting sink takes none.
+- *Kept.* `user rename` carries it, and `store import --replace` keeps the
+  one an existing store has (a rendered or legacy file cannot hold one).
+  Nothing is rendered or restarted when it changes.
+- *Not logged.* The address is in no audit line: the `--email` value and the
+  address of `user email` are written as `<redacted>` in `args=`, the `user
+  email` line says `op=set` or `op=clear`, and no message repeats the address,
+  nor does a word with an `@` typed in the place of a name in another `user`
+  verb (see [Audit log](../security/audit.md#secrets-on-the-command-line)).
+  The history of `tacctl shell` keeps the line up to the address, the
+  `--email` value, the address of `user email` or the first word with an `@`
+  in any other `user` verb, and `…(redacted)` in place of the rest. Like any
+  word on a command line it is in sudo's own log.
 
 **A name with a period.** A user name is letters, digits, `_` and `-`. A period cannot be part of a
 Linux account name, and every user has an account on the tacctl server. A store from 0.2.20 or 0.2.21
@@ -238,4 +284,10 @@ of standard input (typed without echo at a terminal; a control character in
 it is refused), so it is not on the command line: sudo's log records the whole command line and `ps` shows it
 while the command runs. `--hash <hash>` works as well.
 
-Each change also writes a line of its own to the audit log, beside the `cmd start` and `cmd end` pair: `user add name= group= scopes=`, `user passwd name= source=prompt|hash|generated`, `user rename from= to= uid=`, `user scope name= op= scopes=` and the like, and `user password-change name= state=required|cleared via=require|add|passwd|self` when a requirement is set or lifted, never a password or a hash ([Audit log](../security/audit.md#detail-lines)).
+Each change also writes a line of its own to the audit log, beside the `cmd
+start` and `cmd end` pair: `user add name= group= scopes=`, `user passwd name=
+source=prompt|hash|generated`, `user rename from= to= uid=`, `user email name=
+op=set|clear`, `user scope name= op= scopes=` and the like, and `user
+password-change name= state=required|cleared via=require|add|passwd|self` when
+a requirement is set or lifted, never a password or a hash ([Audit
+log](../security/audit.md#detail-lines)).

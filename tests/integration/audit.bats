@@ -110,6 +110,51 @@ audit_calls() { grep -E '^logger -t tacctl ' "$CALLS_LOG" || true; }
     ! grep -q "$SECRET" "$CALLS_LOG"
 }
 
+@test "audit: an email address is in no line, in any form" {
+    ADDR="marker.0123abcd@example.net"
+    ALL="$BATS_TEST_TMPDIR/all.log"
+    : > "$ALL"
+    keep() { cat "$CALLS_LOG" >> "$ALL"; }
+    as_user ops no no -- user email dave "$ADDR"
+    keep
+    assert_failure
+    as_user ops no no -- user email ro "$ADDR"
+    keep
+    assert_success
+    run audit_calls
+    assert_line --regexp 'cmd start .* cmd="user email" args="ro <redacted>" sid='
+    assert_line --regexp 'user email name=ro op=set by=ops'
+    as_user ops no no -- user email ro clear
+    keep
+    assert_success
+    run audit_calls
+    assert_line --regexp 'cmd start .* cmd="user email" args="ro clear" sid='
+    as_user ops no no -- user email "$ADDR" "$ADDR"
+    keep
+    assert_failure
+    as_user ops no no -- user add dave operator --hash "$TEST_HASH" --scopes lab --email "$ADDR"
+    keep
+    assert_success
+    run audit_calls
+    assert_line --regexp 'cmd start .* cmd="user add" args="dave operator --hash <redacted> --scopes lab --email <redacted>" sid='
+    as_user ops no no -- user add erin operator --hash "$TEST_HASH" --scopes lab "$ADDR"
+    keep
+    assert_failure
+    # an address in the place of a name, a group or a scope, in any user verb
+    local probe
+    for probe in "user add zed $ADDR" "user add zed operator --hash $TEST_HASH --scopes $ADDR" "user add $ADDR operator" \
+        "user remove $ADDR" "user rename $ADDR zed" "user rename ro $ADDR" "user disable $ADDR" "user passwd $ADDR" \
+        "user move ro $ADDR" "user scope ro add $ADDR" "user require-password-change ro $ADDR" "user email ro --email=$ADDR"; do
+        # shellcheck disable=SC2086
+        as_user ops no no -- $probe
+        keep
+        refute_output --partial "0123abcd"
+    done
+    # Nothing logged by any command of the test holds the address.
+    [[ -s "$ALL" ]]
+    ! grep -q "0123abcd" "$ALL"
+}
+
 @test "audit: a password typed in the place of the prompt is redacted" {
     as_user ops no no -- user passwd dave "$SECRET"
     assert_failure

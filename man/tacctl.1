@@ -1072,7 +1072,9 @@ a line
 for a user who must change the password (or who is flagged and is a superuser,
 which the flag never binds; with the reason when the user cannot log in to change it), last login (the most recent of every enabled backend: the TACACS+
 accounting log, the RADIUS auth log), Cisco privilege level, Juniper
-class, and a hash fingerprint. Read-only: does not prompt for the
+class, a hash fingerprint and, for a user who has one, the
+.B Email
+address. Read-only: does not prompt for the
 password (unlike
 .BR "user verify" ).
 .\" BEGIN GENERATED: command user show
@@ -1082,7 +1084,7 @@ Requires: \fBreadonly\fR.
 .RE
 .\" END GENERATED: command user show
 .TP
-.BI "user add " "name group " [ "--hash " hash ] [ "--scopes " name[,name...] ] [ --no\-change\-required ]
+.BI "user add " "name group " [ "--hash " hash ] [ "--scopes " name[,name...] ] [ "--email " address ] [ --no\-change\-required ]
 Add a user. The name is lower case (lower\-case letters, digits,
 .BR _ " and " \- ):
 a name with upper case is refused with the lower\-case spelling to use, and a
@@ -1108,6 +1110,11 @@ Without
 .BR --scopes ,
 the user lands in the current default scope; on fresh installs that is
 .BR lab .
+.BI --email " address"
+records an email address for the user (see
+.BR "user email" ).
+It is checked before anything is asked or written, and an address another user
+holds is refused, naming that user.
 .PP
 A new user must change the password at the first login to this server
 (see
@@ -1140,10 +1147,68 @@ Add with pre\-generated bcrypt hash (\- reads it from stdin).
 \fB\-\-scopes\fR \fI<s>[,s...]\fR
 Grant specific scopes at creation.
 .TP
+\fB\-\-email\fR \fI<address>\fR
+Record an email address for the user (a plain address, local@domain). No mail is sent to it. An address belongs to one user.
+.TP
 \fB\-\-no\-change\-required\fR
 Do not require the user to change the password at the first login to this server. Without it a new user must change it first, and no device accepts the user until then (a superuser, and a user with no login on this server, never must).
 .RE
 .\" END GENERATED: command user add
+.TP
+.BI "user email " "name " [ address | clear ]
+Show, set or clear the email address of a user. Without a second word it
+prints the address, or says that the user has none. An
+.I address
+sets it, and
+.B clear
+removes it (the word is not an address). The address is a plain
+.IB local @ domain
+of at most 254 characters, with exactly one
+.BR @ ,
+a local part, a domain of at least two dot\-separated labels, and no spaces,
+angle brackets, quotes or control characters; it is kept as typed. An address
+belongs to one user, compared without regard to case: the command, the
+.B \-\-email
+option of
+.B "user add"
+and the store itself refuse an address another user holds, naming that user.
+The address is stored as
+.B users.<name>.email
+in
+.I store.yaml
+(written only when set, so a store without one is unchanged), carried by
+.BR "user rename" ,
+kept by
+.BR "store import \-\-replace" ,
+shown by
+.B "user show"
+(to everyone who can run it) and
+.BR "store show \-\-json" ,
+and not listed by
+.BR "user list" .
+No mail is sent to it, and nothing is rendered or restarted. The address is
+never written to an audit line (the argument is logged as
+.BR <redacted> ),
+to a message or to a log; a word with an @ typed in the place of a name, a
+group or a scope in another
+.B user
+verb is redacted too, and the history of
+.B "tacctl shell"
+keeps the line up to the address (the
+.B \-\-email
+value, the address of
+.BR "user email" ,
+or the first word with an @ in any other
+.B user
+verb) and a mark in place of the rest. The accounting sink
+.RB ( root )
+takes none.
+.\" BEGIN GENERATED: command user email
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command user email
 .TP
 .BI "user remove " name
 Remove a user after confirmation. The user's
@@ -14323,7 +14388,7 @@ scope exec\-timeout, scope mgmt\-acl, scope netconf, scope prefixes,
 scope protocols, scope radius\-group, scope secret, scope snmp,
 scope staging, scope tacacs\-group, scope timeout\-scale,
 scope vendor\-attrs, server listen, server metrics, server name,
-user scope
+user email, user scope
 .TP
 .B "mixed, auth.notice"
 config audit\-strict, config sudoers, console system\-shell, rollback,
@@ -16800,7 +16865,21 @@ says whether this file is the same.
 .I ~/.local/state/tacctl/history
 The
 .B tacctl shell
-history of the invoking user: mode 0600, the newest 1000 lines, redacted.
+history of the invoking user: mode 0600, the newest 1000 lines, redacted (the value of
+.BR \-\-secret ,
+.BR \-\-hash ,
+.B \-\-password
+and
+.BR \-\-email ,
+what follows
+.B set
+in
+.BR "secret ... set" ,
+the address of
+.BR "user email" ,
+and the rest of a
+.B user
+line from its first word with an @).
 .SS TACACS+ (tacquito)
 .TP
 .I /etc/tacquito/tacquito.yaml

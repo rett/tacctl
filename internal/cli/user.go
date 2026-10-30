@@ -15,6 +15,7 @@ import (
 
 	"github.com/rett/tacctl/internal/hash"
 	"github.com/rett/tacctl/internal/hosts"
+	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/shellquote"
@@ -28,9 +29,12 @@ var userSpecs = map[string]Spec{
 	"show": {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}},
 	"add": {MinArgs: 2, MaxArgs: 2, Args: []string{"", KindGroups}, Flags: []Flag{
 		{Names: []string{"--hash"}, Value: true, Secret: true}, {Names: []string{"--scopes"}, Value: true, Kind: KindScopes + KindList},
+		{Names: []string{"--email"}, Value: true, Secret: true, Arg: "<address>", Desc: "Record an email address",
+			Long: "Record an email address for the user (a plain address, local@domain). No mail is sent to it. An address belongs to one user"},
 		{Names: []string{noChangeRequired}, Desc: "Skip the required password change",
 			Long: "Do not require the user to change the password at the first login to this server. Without it a new user must change it first, and no device accepts the user until then (a superuser, and a user with no login on this server, never must)"}}},
 	"remove": {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}},
+	"email":  {MinArgs: 1, MaxArgs: 2, Args: []string{KindUsers, names.EmailClear}},
 	"passwd": {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}, Flags: []Flag{{Names: []string{"--hash"}, Value: true, Secret: true},
 		{Names: []string{noChangeRequired}, Desc: "Skip the required password change",
 			Long: "Do not require the user to change the password at the next login to this server. Without it the reset requires one, and no device accepts the user until it is done (a superuser, and a user with no login on this server, never must); with it a requirement that stands is lifted"}}},
@@ -53,8 +57,9 @@ func userCmd(inv *invocation) *cobra.Command {
 	c := verb("user <subcommand>", "User management (list, add, remove, passwd, scope, ...)",
 		withRun(verb("list", "List all users (name, group, status, pw age, scopes)"), n(inv.userList)),
 		withRun(verb("show <username>", "Show user details incl. scope membership"), n(inv.userShow)),
-		withRun(verb("add <username> <group> [--hash <hash>|-] [--scopes <s>[,s...]] [--no-change-required]", "Add a new user; lands in default scope"), n(inv.userAdd)),
+		withRun(verb("add <username> <group> [--hash <hash>|-] [--scopes <s>[,s...]] [--email <address>] [--no-change-required]", "Add a new user; lands in default scope"), n(inv.userAdd)),
 		withRun(verb("remove <username>", "Remove a user"), n(inv.userRemove)),
+		withRun(verb("email <username> [<address>|clear]", "Show, set or clear a user's email address"), n(inv.userEmail)),
 		withRun(verb("passwd <username> [--hash <hash>|-] [--no-change-required]", "Change a user's password"), n(inv.userPasswd)),
 		withRun(verb("disable <username>", "Disable a user (preserves hash)"), n(inv.userDisable)),
 		withRun(verb("enable <username>", "Re-enable a disabled user"), n(inv.userEnable)),
@@ -114,6 +119,8 @@ type userInfo struct {
 	group, status, passwordChanged, privLvl, juniperClass, hashType string
 	hasHash                                                         bool
 	scopes, orphans                                                 []string
+	// email is the user's address, "" when none is set.
+	email string
 }
 
 func (inv *invocation) userInfo(name string) (ui userInfo, ok bool, err error) {
@@ -143,6 +150,8 @@ func (inv *invocation) userInfo(name string) (ui userInfo, ok bool, err error) {
 			ui.hashType = v
 		case "has_hash":
 			ui.hasHash = v == "1"
+		case "email":
+			ui.email = v
 		case "scope":
 			s, exists := v, "1"
 			if i := strings.LastIndexByte(v, '|'); i >= 0 {
@@ -191,7 +200,13 @@ func (inv *invocation) groupCheck(group string, extra ...string) error {
 		n, _, _ := strings.Cut(l, "|")
 		avail = append(avail, n)
 	}
-	return inv.usageErr(append([]string{"Group '" + group + "' does not exist. Available: " + strings.Join(avail, "|")}, extra...)...)
+	// a word with an '@' is an email address typed in the place of a group: a
+	// message never repeats one
+	shown := "'" + group + "' "
+	if strings.Contains(group, "@") {
+		shown = ""
+	}
+	return inv.usageErr(append([]string{"Group " + shown + "does not exist. Available: " + strings.Join(avail, "|")}, extra...)...)
 }
 
 // hashArg is _user_hash_arg: the --hash value as canonical hex, or the
@@ -269,6 +284,10 @@ func (inv *invocation) scopeList(csv string) ([]string, error) {
 			return nil, err
 		}
 		if !contains(all, s) {
+			if strings.Contains(s, "@") {
+				// an email address typed in the place of a scope is not repeated
+				return nil, inv.usageErr("Scope does not exist. Available: " + strings.Join(all, " "))
+			}
 			return nil, inv.usageErr("Scope '" + s + "' does not exist. Available: " + strings.Join(all, " "))
 		}
 		if !contains(out, s) {
@@ -362,6 +381,9 @@ func (inv *invocation) userShow(args []string) error {
 	inv.echoE("  " + b + "User:" + nc + "             " + username)
 	inv.echoE("  " + b + "Group:" + nc + "            " + u.group)
 	inv.echoE("  " + b + "UID:" + nc + "              " + inv.userUID(username))
+	if u.email != "" {
+		inv.echoE("  " + b + "Email:" + nc + "            " + u.email)
+	}
 	if u.status == "disabled" {
 		inv.echoE("  " + b + "Status:" + nc + "           " + ui.Red + "disabled" + nc)
 	} else {
@@ -421,7 +443,7 @@ func (inv *invocation) userShow(args []string) error {
 
 // --- add --------------------------------------------------------------------
 
-const userAddUsage = "Usage: tacctl user add <username> <group> [--hash <bcrypt-hash>|-] [--scopes <name>[,<name>...]] [--no-change-required]"
+const userAddUsage = "Usage: tacctl user add <username> <group> [--hash <bcrypt-hash>|-] [--scopes <name>[,<name>...]] [--email <address>] [--no-change-required]"
 
 func (inv *invocation) userAdd(args []string) error {
 	a := inv.app
@@ -450,7 +472,7 @@ func (inv *invocation) userAdd(args []string) error {
 		return inv.usageErr("User '" + username + "' already exists.")
 	}
 
-	var hexHash, scopesCSV string
+	var hexHash, scopesCSV, email string
 	skipChange := false
 	rest := args[min(2, len(args)):]
 	for len(rest) > 0 {
@@ -475,7 +497,20 @@ func (inv *invocation) userAdd(args []string) error {
 				return inv.usageErr("Usage: tacctl user add <username> <group> --scopes <name>[,<name>...]")
 			}
 			rest = rest[2:]
+		case "--email":
+			email = arg(rest, 1)
+			if email == "" {
+				return inv.usageErr("Usage: tacctl user add <username> <group> --email <address>")
+			}
+			if err := names.ValidateEmail(email); err != nil {
+				return err
+			}
+			rest = rest[2:]
 		default:
+			// a word that looks like an address is never repeated
+			if strings.Contains(rest[0], "@") {
+				return inv.usageErr("Unknown argument. An email address follows --email.", userAddUsage)
+			}
 			return inv.usageErr("Unknown argument: '"+rest[0]+"'", userAddUsage)
 		}
 	}
@@ -510,6 +545,11 @@ func (inv *invocation) userAdd(args []string) error {
 	if err != nil {
 		return err
 	}
+	if email != "" {
+		if err := inv.emailFree(m, email, username); err != nil {
+			return err
+		}
+	}
 	var barrier pwBarrier
 	require := !skipChange
 	if require {
@@ -532,6 +572,9 @@ func (inv *invocation) userAdd(args []string) error {
 		a.Out.Info("Using pre-generated bcrypt hash.")
 	}
 	fields := []string{"group=" + group, "scopes=" + display, "hash=" + hexHash, "disabled=false", "password_changed=today"}
+	if email != "" {
+		fields = append(fields, "email="+email)
+	}
 	if require {
 		fields = append(fields, "password_change_required=true")
 	}
@@ -545,6 +588,9 @@ func (inv *invocation) userAdd(args []string) error {
 	}
 	inv.detail("user add", kvp("name", username), kvp("group", group), kvp("scopes", display))
 	a.Out.InfoE("User '" + username + "' added (" + group + ") with scopes: " + display)
+	if email != "" {
+		a.Out.InfoE("Email address recorded for '" + username + "'.")
+	}
 	if err := inv.userSettingsMoved(stale, username, ""); err != nil {
 		return err
 	}
@@ -560,6 +606,92 @@ func (inv *invocation) userAdd(args []string) error {
 		a.Out.InfoE("No password change is required of '" + username + "': " + barrier.why + ".")
 	}
 	inv.echo("")
+	return nil
+}
+
+// emailFree refuses an address another user holds (no regard to case),
+// naming that user; the address is not repeated.
+func (inv *invocation) emailFree(m *model.Model, address, except string) error {
+	if holder := m.EmailHolder(address, except); holder != "" {
+		return inv.usageErr("That email address already belongs to user '"+holder+"' (an address belongs to one user).", "Nothing was changed.")
+	}
+	return nil
+}
+
+// --- email ------------------------------------------------------------------
+
+const userEmailUsage = "Usage: tacctl user email <username> [<address>|clear]"
+
+// userEmail is 'user email <username> [<address>|clear]': without a second
+// word it prints the address (or says there is none); with an address it
+// sets it; 'clear' removes it. The address is never written to an audit
+// line or repeated in a message.
+func (inv *invocation) userEmail(args []string) error {
+	a := inv.app
+	username := arg(args, 0)
+	if username == "" || len(args) > 2 {
+		return inv.usageErr(userEmailUsage)
+	}
+	if err := inv.requireStore(); err != nil {
+		return err
+	}
+	if err := names.ValidateExistingUsername(username); err != nil {
+		return err
+	}
+	u, ok, err := inv.userInfo(username)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return inv.usageErr("User '" + username + "' does not exist.")
+	}
+	if len(args) == 1 {
+		if u.email == "" {
+			a.Out.Info("User '" + username + "' has no email address.")
+		} else {
+			inv.echo(u.email)
+		}
+		return nil
+	}
+	word := args[1]
+	if strings.HasPrefix(word, "-") {
+		// an option (an address never starts with '-'), not repeated
+		return inv.usageErr(userEmailUsage)
+	}
+	switch {
+	case word == names.EmailClear:
+		if u.email == "" {
+			a.Out.Info("User '" + username + "' has no email address; nothing to clear.")
+			return nil
+		}
+		if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, "email=null") }); err != nil {
+			return err
+		}
+		inv.detail("user email", kvp("name", username), kvp("op", "clear"))
+		a.Out.Info("Email address of '" + username + "' cleared.")
+		return nil
+	case u.email != "" && word == u.email:
+		a.Out.Info("User '" + username + "' has that email address already.")
+		return nil
+	}
+	if err := names.ValidateEmail(word); err != nil {
+		return err
+	}
+	m, err := inv.model()
+	if err != nil {
+		return err
+	}
+	if usr := m.User(username); usr != nil && usr.AccountingSink {
+		return inv.usageErr("User '" + username + "' is the accounting sink and takes no email address.")
+	}
+	if err := inv.emailFree(m, word, username); err != nil {
+		return err
+	}
+	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, "email="+word) }); err != nil {
+		return err
+	}
+	inv.detail("user email", kvp("name", username), kvp("op", "set"))
+	a.Out.Info("Email address of '" + username + "' set.")
 	return nil
 }
 
