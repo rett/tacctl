@@ -25,7 +25,7 @@ func TestAAAOwnSettingsAreKeptAndNoItem(t *testing.T) {
 	}{
 		{name: "junos tacplus", fix: "juniper.synthetic-lab", own: 3, kinds: []string{"TACACS+ server settings", "TACACS+ options"},
 			kept: []string{"source-address", "timeout", "service-name"},
-			mutJ: addMany("set system tacplus-server 192.0.2.10 source-address 192.0.2.1", "set system tacplus-server 192.0.2.10 timeout 10",
+			mutJ: addMany("set system tacplus-server 192.0.2.10 source-address 192.0.2.250", "set system tacplus-server 192.0.2.10 timeout 10",
 				"set system tacplus-options service-name junos-exec")},
 		{name: "ios tacacs", fix: "cisco.reference-lab", own: 1, kinds: []string{"TACACS+ server settings"}, kept: []string{"send-nat-address"},
 			mutI: func(c *IOSConfig) {

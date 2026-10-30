@@ -208,6 +208,10 @@ type DiffLine struct {
 	// Unmanaged marks an extra ('+') statement that is the device's own,
 	// kept by rule: not a difference.
 	Unmanaged bool
+	// Why, on an extra ('+') statement, says why the device's own source of
+	// the AAA client is a difference all the same: it names an address or an
+	// interface the device does not have (D314).
+	Why string
 }
 
 // SectionResult is the comparison of one section.
@@ -402,6 +406,15 @@ func orderFindings(fam string, exp, dev []stmt) []DiffLine {
 // Order is compared for a Junos authentication order and filter terms and
 // for ACL entries (runs of one action as sets): '!'.
 func Compare(vendor string, expected, got devices.Section, secretsVisible bool) (SectionResult, error) {
+	return CompareWith(vendor, expected, got, secretsVisible, nil)
+}
+
+// CompareWith is Compare with the interface addresses of the device's pull
+// (Extracted.Interfaces, nil when the record has none): the source of the AAA
+// client that the aaa section holds, and that is the device's own, is a
+// difference when it names an address or an interface the device does not
+// have (D314). Where the facts cannot tell, the section's notes say so.
+func CompareWith(vendor string, expected, got devices.Section, secretsVisible bool, facts *InterfaceFacts) (SectionResult, error) {
 	fam, err := Family(vendor)
 	if err != nil {
 		return SectionResult{}, err
@@ -413,6 +426,11 @@ func Compare(vendor string, expected, got devices.Section, secretsVisible bool) 
 	if res.Name == "" {
 		res.Name = got.Name
 	}
+	// the check of the AAA source (D314): only the aaa section of a Junos or
+	// IOS device has one
+	src := &sourceCheck{fam: fam, facts: facts}
+	var srcBad map[string]string
+	checks := res.Name == SectionAAA && (fam == FamilyJunos || fam == FamilyIOS)
 	if slices.ContainsFunc(dev, func(x stmt) bool { return legacyCommunity(fam, x) }) {
 		// A record of an older tacctl: its community names are all one mark,
 		// so the rendering's are compared that way too (by presence).
@@ -490,6 +508,14 @@ func Compare(vendor string, expected, got devices.Section, secretsVisible bool) 
 		// from.
 		if !slices.ContainsFunc(exp, isSourceInterface) {
 			dev = slices.DeleteFunc(dev, isSourceInterface)
+		}
+		// The device's own source interface is nobody's business to compare
+		// then, but it must exist (D314): one the pull recorded that names no
+		// interface with an address is a finding all the same.
+		if checks {
+			var more []stmt
+			more, srcBad = src.iosGlobalSources(exp, dev)
+			dev = append(dev, more...)
 		}
 		// IOS prints 'aaa session-id common' by itself; tacctl renders it, and
 		// where a rendering has none (an operator's own expectation) it is
@@ -625,11 +651,25 @@ func Compare(vendor string, expected, got devices.Section, secretsVisible bool) 
 	for _, x := range dev {
 		if left[x.stem] > 0 {
 			left[x.stem]--
+			// a source the rendering states that the device holds is the
+			// section's, and still has to exist
+			if checks {
+				if why := src.why(x); why != "" {
+					res.Lines = append(res.Lines, DiffLine{Op: OpExtra, Text: x.stem, Why: why})
+					extra++
+				}
+			}
 			continue
 		}
 		l := DiffLine{Op: OpExtra, Text: x.stem, Secret: x.secret, Unmanaged: unmanaged(fam, res.Name, x, rs)}
 		if x.secret {
 			l.Text += notePresent
+		}
+		// the device's own source of the AAA client must be on the device
+		if checks && (l.Unmanaged || srcBad[x.stem] != "") {
+			if why := src.why(x); why != "" {
+				l.Unmanaged, l.Why = false, why
+			}
 		}
 		res.Lines = append(res.Lines, l)
 		if l.Unmanaged {
@@ -637,6 +677,9 @@ func Compare(vendor string, expected, got devices.Section, secretsVisible bool) 
 			continue
 		}
 		extra++
+	}
+	if src.unchecked {
+		res.Notes = append(res.Notes, facts.sourceNote())
 	}
 	order := orderFindings(fam, exp, dev)
 	res.Lines = append(res.Lines, order...)
@@ -755,7 +798,7 @@ func CompareAll(expected []devices.Section, got Extracted) ([]SectionResult, err
 		}
 		g := got.Sections[n]
 		g.Name = n
-		r, err := Compare(got.Vendor, e, g, got.SecretsVisible)
+		r, err := CompareWith(got.Vendor, e, g, got.SecretsVisible, got.Interfaces)
 		if err != nil {
 			return nil, err
 		}

@@ -22,6 +22,7 @@
 = aaa authorization commands 15 default local group LAB-TACACS
 = aaa authorization config-commands
 + line con 0 > login authentication default
+note: the source of the AAA server is not checked against the interfaces of the device: this login cannot see the interfaces
 [roles] ok
 = privilege exec level 1 show running-config
 = privilege exec level 7 undebug all

@@ -53,6 +53,9 @@ ip name-server 198.51.100.53
 username lab-admin privilege 15 secret 9 $9$EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLE
 username lab-ops privilege 7 secret 9 $9$EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAMPLE
 !
+interface Loopback0
+ ip address 192.0.2.250 255.255.255.255
+!
 ip tacacs source-interface Loopback0
 tacacs server TACACS
  address ipv4 192.0.2.10

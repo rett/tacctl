@@ -117,6 +117,11 @@ func (p *planner) buildItems(d *Delta, byName map[string]devconf.SectionResult) 
 			}
 			it.Severity = severityOf(d.Vendor, name, stem, kind)
 			it.Action = p.actionFor(d, &it, extraOf, stem)
+			if l.Why != "" {
+				// the AAA source the device does not hold (D314): never
+				// removed or fixed by the paste, and it stops AAA
+				it.Words, it.Severity, it.Action = sourceWords(d.Vendor, stem, l.Why), SevAccess, sourceAction
+			}
 			d.Items = append(d.Items, it)
 		}
 	}
@@ -130,6 +135,29 @@ func (p *planner) buildItems(d *Delta, byName map[string]devconf.SectionResult) 
 	for i := range d.Items {
 		d.Items[i].N = i + 1
 	}
+}
+
+// What the report says of an AAA source the device does not hold (D314).
+const (
+	sourceAction = "Left alone: add the address to an interface, or change the source (not managed by tacctl)."
+	sourceGuard  = "the source of the AAA server is the device's own setting: never removed"
+)
+
+// sourceWords says what is wrong with a source in the words of the report:
+// the finding, with the server or the server group it belongs to.
+func sourceWords(vendor, stem, why string) string {
+	if vendor == devconf.FamilyJunos {
+		if t := splitTokens(strings.TrimPrefix(stem, "set ")); len(t) >= 4 && t[0] == "system" {
+			return "the " + map[string]string{"tacplus-server": "TACACS+", "radius-server": "RADIUS"}[t[1]] + " server " + t[2] + ": " + why
+		}
+		return why
+	}
+	if path := strings.Split(stem, pathSep); len(path) == 2 {
+		if f := strings.Fields(path[0]); len(f) == 5 && f[0] == "aaa" && f[1] == "group" {
+			return "the " + map[string]string{"tacacs+": "TACACS+", "radius": "RADIUS"}[f[3]] + " server group " + f[4] + ", " + why
+		}
+	}
+	return why
 }
 
 // objectOf names the object a statement is part of, for grouping: a filter,
@@ -568,6 +596,8 @@ func (p *planner) buildExtras(d *Delta) {
 	for _, k := range d.Kept {
 		e := Extra{Section: k.Section, Text: k.Text}
 		switch {
+		case p.badSource[k.Section+"|"+k.Text]:
+			e.Guard = sourceGuard
 		case strings.HasPrefix(k.Text, "deactivate "):
 			e.Guard = "deactivated; activate or delete it by hand"
 		case d.Vendor == devconf.FamilyJunos:
