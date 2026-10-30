@@ -9,7 +9,7 @@ doctype: how-to
 
 # Superuser Daily Operations
 
-*Day-to-day operations for tacctl superusers · Checked against tacctl 0.2.21*
+*Day-to-day operations for tacctl superusers · Checked against tacctl 0.2.22*
 
 [Printable PDF](../pdf/tacctl-superuser-daily-operations.pdf){: .pdf-link }
 
@@ -144,11 +144,12 @@ by device name.
 ### 4.1 Find what you have
 
 ```bash
-tacctl device list                     # every device and host, with scope, state, last seen, CONFIG
+tacctl device list                     # every registered device: scope, state, last seen, CONFIG
 tacctl device list --scope site-a --vendor juniper
 tacctl device list --ip 10.10.0.0/16
 tacctl device list --stale             # not seen for stale-days (default 30)
 tacctl device list --unconfigured      # registered, but no scope covers the address
+tacctl device list --differs           # last pull differs from what is rendered now (no login)
 tacctl device list --probe             # adds REACH: TCP connect to the ssh port
 
 tacctl device show sw1                 # one device in full
@@ -157,7 +158,21 @@ tacctl device check --all
 ```
 
 A `STATE` of `configured` means a scope's prefixes cover the device's
-address. Only configured devices can authenticate users.
+address; `unconfigured` means none does, and only configured devices can
+authenticate users. `stale` marks a device not seen for stale-days, and
+`BREAK-GLASS` shows while the device is held back from the server
+([Break Glass](break-glass.md)). The `CONFIG` column is the state of the last
+pull: `ok`, `differs`, `never`, `failed`, or `pull` for a Cisco device whose
+configuration syntax is unknown, or whose vendor changed since its last pull
+(pull it again); `-` for a vendor `other` and a device no scope covers. The
+enrolled Linux hosts are not in this list: `tacctl host list` shows them (§5).
+
+After a change of users, scopes or settings, `tacctl device list --differs`
+names the devices to pull or plan. It computes this from the pull records with
+no login, as `device config list --differs` does, and it counts as a filter:
+the heading reads `Registered devices (1), of 5` (the second number appears
+when the list is narrowed by an option or a word), and an empty result says
+`None match.`
 
 > `device check` and `--probe` connect from the tacctl server. If the server
 > has no route to the management ports, a timeout here may be a false alarm.
@@ -264,12 +279,43 @@ The full change workflow (plans, Cisco paste, Junos apply, WTI checklist,
 back-out) is in [Engineer Guide: Device Changes](engineer-guide-device-changes.md).
 Superusers follow the same steps, for every scope.
 
+### 4.9 Slow or distant devices
+
+A device behind a satellite circuit (a round trip of about 600 ms) or with a
+slow CPU can miss the timings tacctl uses to reach it. The timing scale is one
+whole number from 1 to 10 that multiplies them all (1, the default, changes
+nothing). Only a superuser sets it:
+
+```bash
+tacctl device timeout-scale rtr1 3         # one device
+tacctl scope timeout-scale site-a 3        # every device of a scope
+tacctl config devices timeout-scale 2      # every device of the server
+tacctl device timeout-scale rtr1           # the scale in force and where it comes from
+tacctl device timeout-scale rtr1 clear     # remove the device's own
+```
+
+The scale in force is the device's own, else its scope's, else the server's,
+else 1. `clear` removes a device's or a scope's own. A scope's scale follows
+`scope rename` and goes with `scope remove`. `device show` and `scope show`
+have a `Timeout scale` row (and `device show --json` a `timeout_scale` object
+with `scale` and `from`) when the scale in force is not 1; engineers read it
+there. The scale multiplies the connect and handshake of the ssh and NETCONF
+sessions and of `tacctl ssh`, the host-key scans, the SNMP timeout (never above
+10 s) and the default time of one device in a pull or an apply (kept between
+10 s and 600 s); a typed `--timeout` wins, and the confirmed-commit windows
+are never scaled. [Connecting to Devices](connecting-to-devices.md) §7 has the
+table. `config validate` checks all three stored values, and `rollback`
+removes them ([Backups and Undo](backups-and-undo.md) §5). To find the slow
+device of a run, use `--timing`
+([Engineer Guide](engineer-guide-device-changes.md) §3).
+
 ---
 
 ## 5. Linux hosts
 
 ```bash
-tacctl host list                    # target, address, scope, server, method, users
+tacctl host list                    # target, address, scope, state, last seen, by, notices
+tacctl host list --scope site-a --stale     # filters: --name, --ip, --scope, --stale
 tacctl host check --all             # read-only: does every host match what tacctl would make it?
 tacctl host sync --all              # push user changes to every enrolled host
 ```
@@ -396,8 +442,8 @@ The console is the login shell of every tacctl user on the tacctl server,
 of every tier; there is no switch for it, and the user's scopes play no part:
 every user can log in to the server and its console unless disabled
 (`user disable`) or in a group of tier none. The accounts follow at the next
-`host sync` of the server; a user whose name has a period has no Linux
-account on any host, so no console login. Local accounts that are not tacctl
+`host sync` of the server; a user stored with a period in the name (0.2.20
+and 0.2.21 allowed it) has no Linux account on any host, so no console login. Local accounts that are not tacctl
 users keep their own shells.
 
 ```bash
@@ -446,7 +492,9 @@ tacctl console list-max 100                             # the longest list shown
   `console password-cache on`, and it is off until they do
   ([Getting Started](getting-started.md) §1.3).
 - `console color` decides whether Tab's lists, `?`, `-h` and `--help` are in
-  colour in the console. `auto`, the default, lets the terminal decide.
+  colour in the console: command names, sub-commands, fixed words and options
+  in teal, live names (users, groups, devices, hosts) in bold. `auto`, the
+  default, lets the terminal decide.
 - `console list-max` is the longest list the console shows before it asks
   `Show all N?` (default 40, at most 1000; a negative number never asks).
 - Both are server-wide, and each console session reads them when it starts.
@@ -454,6 +502,10 @@ tacctl console list-max 100                             # the longest list shown
 ---
 
 ## 11. This server
+
+`tacctl server` holds this server's own settings and is the superuser's alone:
+`server show` (an overview), `server name`, `server addresses`, `server listen`
+and `server metrics`.
 
 ### 11.1 The server's own login
 
@@ -511,6 +563,46 @@ walkthroughs (`config cisco|juniper|wti`, and so `device config show`,
 was. A host that is already enrolled keeps the address it has, and
 `host enroll --server` changes it.
 
+### 11.3 The overview, the name, the listeners and the metrics exporter
+
+```bash
+tacctl server show               # this server at a glance; --json for a script
+tacctl server name tacacs-a      # the name the console shows for this server
+tacctl server listen             # where the TACACS+ listener binds
+tacctl server metrics            # the Prometheus exporter
+```
+
+`server show` changes nothing and writes no audit line. It prints the server
+address (the setting, else the copy in this server's registry entry), a `Name`
+line (the name in effect, with `the host name` beside it when none is set),
+the default method of `host enroll`, the metrics exporter (its address,
+`enabled` or `disabled`, `loopback only` or `externally reachable`), each
+backend with whether it is installed and enabled and the state of its
+service, and each listener of the installed or enabled backends with its
+network, address, port and unit state. `--json` has the same data:
+`addresses`, `address_source`, `name` (`value` and `source`, `setting` or
+`host name`), `default_method`, `metrics` and `backends` with their
+`listeners`.
+
+`server name [<label>|unset]` sets the name the console shows in its prompt
+(`<name>> `) and its notices (the banner of a session, `tacctl console on
+<name>`, the header of `device client-config`) in place of the host name. With
+no word it shows the name in effect and whether it is the setting or the host
+name; `unset` removes the setting. A name is 1 to 63 lower-case letters,
+digits and hyphens, a letter first and no hyphen last. Nothing else is
+renamed: the host name, this server's registry entry and the accounts stay. A
+console session reads the name once, when it starts.
+
+`server listen [--backend <id>] [--listener <name>] [show|reset|<network>
+<address>]` shows, changes or resets where a backend listens. It asks for
+confirmation before `tcp6` or `udp6`, restarts the unit, and puts the old
+setting back if the unit does not stay up. `server metrics
+[show|enable|disable|reset|address <host:port>]` controls the Prometheus
+exporter of the TACACS+ backend (loopback only, 127.0.0.1:8080, by default;
+`disable` moves it to a port no scraper can reach; an address that is not
+loopback prints a warning). The device walkthroughs follow the listeners'
+ports ([Engineer Guide](engineer-guide-device-changes.md) §4.1).
+
 ---
 
 ## 12. Quick reference
@@ -544,7 +636,10 @@ was. A host that is already enrolled keeps the address it has, and
 | Watch logins live | `tacctl log tail -f` |
 | Console settings and each user's shell | `tacctl console show` |
 | System shell for a tier / a user | `tacctl console system-shell <tier> enable` · `console system-shell user <name> enable\|disable\|clear` |
+| This server at a glance | `tacctl server show` |
 | Server address: show / change | `tacctl server addresses` · `tacctl server addresses replace <ip>` |
+| Name of the server in the console | `tacctl server name [<label>\|unset]` |
+| Timing scale for a slow or distant device / scope / server | `tacctl device timeout-scale <name> [<n>\|clear]` · `scope timeout-scale <scope> [<n>\|clear]` · `config devices timeout-scale [<n>]` |
 | Rebuild, move or repair the server's own login | `tacctl host enroll --local` |
 
 See [Exit Codes](exit-codes.md) for exit statuses.

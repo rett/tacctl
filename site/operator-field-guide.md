@@ -9,7 +9,7 @@ doctype: how-to
 
 # Operator Field Guide
 
-*For NOC, help-desk and network support staff · Checked against tacctl 0.2.21*
+*For NOC, help-desk and network support staff · Checked against tacctl 0.2.22*
 
 [Printable PDF](../pdf/tacctl-operator-field-guide.pdf){: .pdf-link }
 
@@ -139,6 +139,7 @@ command they need.
 ```bash
 tacctl device config list              # ok / differs / never / failed per device
 tacctl device config list --differs
+tacctl device list --differs           # the same devices, in the device table
 ```
 
 Report `differs` and `failed` devices to an engineer. Fixing them is their

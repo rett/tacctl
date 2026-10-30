@@ -9,7 +9,7 @@ doctype: explanation
 
 # Glossary
 
-*The words tacctl and this documentation use, in one list · Checked against tacctl 0.2.21*
+*The words tacctl and this documentation use, in one list · Checked against tacctl 0.2.22*
 
 [Printable PDF](../pdf/tacctl-glossary.pdf){: .pdf-link }
 
@@ -64,6 +64,7 @@ explains it in full.
 | **System shell** | A user's own shell on the tacctl server, started with the console word `system-shell`. Superusers always; read-only and operator users when a superuser opens it; engineers never. | [Superuser Daily Operations](superuser-daily-operations.md) §10.1 |
 | **Template user** | Junos: the local account a TACACS+ user logs in through. Must exist before TACACS+ logins work. | [Vendor Notes](vendor-notes.md) §3.1 |
 | **Tier** | The level of tacctl access a group gives: read-only < operator < engineer < superuser. | [Concepts](concepts.md) §2 |
+| **Timing scale** | A whole number from 1 to 10 that multiplies the network timings tacctl uses to reach a device, for a slow or distant one. Set for a device, a scope or the server; 1 changes nothing. | [Connecting to Devices](connecting-to-devices.md) §7 |
 
 ---
 
