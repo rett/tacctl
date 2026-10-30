@@ -8,7 +8,6 @@ by number and file name.
 | File | What it is |
 |---|---|
 | `backlog.md` | The roadmap (section 0) and the open items |
-| `0.2.22-plan.md` | The 0.2.22 release in progress (D284-D295) |
 | `apply-deferred.md` | NETCONF apply and rollback, deferred (D77-D93) |
 | `asa-deferred.md` | Cisco ASA, deferred |
 | `wti-interface.md` | The WTI units' menus and levels (a reference) |

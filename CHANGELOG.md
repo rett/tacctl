@@ -3,7 +3,7 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
-## 0.2.22 (unreleased)
+## 0.2.22 (2026-10-29)
 
 1. **A device `ssh-keyscan` reads nothing from, but plain `ssh` reaches, gets
    its host key read.** `device hostkey <name> accept|set`, `device add`,
