@@ -13,4 +13,10 @@ Subcommands:
       --note <text>                          Why it is kept (free text, shown by list, never logged)
   unkeep <timestamp> [--yes]                 Remove the kept copy of a snapshot (with confirmation)
       --yes                                  Do not ask for confirmation
+  recover <snapshot> [--only <kind>[,<kind>...]] [--dry-run] [--yes]
+                                             Put back what a rollback dropped, from a snapshot (kinds: email, snmp-users)
+                                             The snapshot is in backups/, else the kept copy in backups-kept/
+      --only <kind>[,<kind>...]              Recover only these kinds; without it, every kind that can be recovered
+      --dry-run                              List what would be recovered and change nothing
+      --yes                                  Do not ask for confirmation
 

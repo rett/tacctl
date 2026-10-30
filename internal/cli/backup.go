@@ -54,7 +54,8 @@ var backupSpecs = map[string]Spec{
 	"keep": {MinArgs: 1, MaxArgs: 1, Args: []string{KindBackups}, Flags: []Flag{{Names: []string{"--note"}, Value: true, Secret: true, Arg: "<text>",
 		Desc: "Record why the snapshot is kept",
 		Long: "Record why the snapshot is kept: free text, stored in the kept copy, shown by backup list and never written to the audit log. It is not a place for secrets. A new note replaces the old one"}}},
-	"unkeep": {MinArgs: 1, MaxArgs: 1, Args: []string{KindBackups}, Flags: []Flag{{Names: []string{"--yes"}, Desc: "Do not ask for confirmation"}}},
+	"recover": recoverSpec(),
+	"unkeep":  {MinArgs: 1, MaxArgs: 1, Args: []string{KindBackups}, Flags: []Flag{{Names: []string{"--yes"}, Desc: "Do not ask for confirmation"}}},
 }
 
 // 'config diff' and 'config restore' are cmd_backup diff|restore.
@@ -73,12 +74,13 @@ func backupCmd(inv *invocation) *cobra.Command {
 	n := func(run func([]string) error) func(*cobra.Command, []string) error {
 		return inv.native(withPreflight, run)
 	}
-	c := verb("backup <subcommand>", "Backup management (list, diff, restore, keep, unkeep)",
+	c := verb("backup <subcommand>", "Backup management (list, diff, restore, keep, unkeep, recover)",
 		withRun(verb("list", "Show snapshots, then old-style backups"), n(inv.backupList)),
 		withRun(verb("diff [<timestamp>]", "Diff store.yaml and tacctl.yaml against a snapshot"), n(inv.backupDiff)),
 		withRun(verb("restore <timestamp> [--legacy|--keep-uids]", "Restore a snapshot (with confirmation)"), n(inv.backupRestore)),
 		withRun(verb("keep <timestamp> [--note <text>]", "Keep a snapshot where no retention reaches it"), n(inv.backupKeep)),
 		withRun(verb("unkeep <timestamp> [--yes]", "Remove the kept copy of a snapshot"), n(inv.backupUnkeep)),
+		withRun(verb("recover <snapshot> [--only <kind>[,<kind>...]] [--dry-run] [--yes]", "Put back what a rollback dropped, from a snapshot"), n(inv.backupRecover)),
 	)
 	// No sub-command or an unknown one: the usage, exit 1.
 	c.RunE = n(func(args []string) error {

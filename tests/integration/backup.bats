@@ -850,3 +850,51 @@ pre-store.20250601_000000
     assert_output --partial "is removed."
     [[ ! -d "${TACCTL_STATE_DIR}/backups-kept/$snap" ]]
 }
+
+@test "backup recover: puts a user's email address back from a snapshot and nothing else" {
+    add_user alice superuser
+    "$TACCTL_BIN_SCRIPT" user email alice alice@example.net
+    add_user bob
+    # the snapshot before the next change holds alice's address
+    "$TACCTL_BIN_SCRIPT" user email alice clear
+    "$TACCTL_BIN_SCRIPT" user disable bob
+    [[ "$(grep -c 'email:' "${TACCTL_STATE_DIR}/store.yaml")" -eq 0 ]]
+    local snap; snap="$(snapshots | while read -r s; do grep -q 'alice@example.net' "${BACKUPS}/$s/store.yaml" && echo "$s"; done | tail -n 1)"
+    [[ -n "$snap" ]]
+
+    # reserved and unknown kinds are refused
+    run "$TACCTL_BIN_SCRIPT" backup recover "$snap" --only snmp-users --yes
+    assert_failure
+    assert_output --partial "not available yet"
+    run "$TACCTL_BIN_SCRIPT" backup recover "$snap" --only bogus --yes
+    assert_failure
+    assert_output --partial "Unknown kind"
+
+    # the dry run lists the user, not the address, and changes nothing
+    local before; before="$(cat "${TACCTL_STATE_DIR}/store.yaml")"
+    run "$TACCTL_BIN_SCRIPT" backup recover "$snap" --dry-run
+    assert_success
+    assert_output --partial "alice: restore"
+    assert_output --partial "This was a dry run"
+    refute_output --partial "example.net"
+    [[ "$(cat "${TACCTL_STATE_DIR}/store.yaml")" == "$before" ]]
+
+    : > "$CALLS_LOG"
+    run "$TACCTL_BIN_SCRIPT" backup recover "$snap" --yes
+    assert_success
+    assert_output --partial "Recovered 1 item from snapshot $snap."
+    refute_output --partial "example.net"
+    run "$TACCTL_BIN_SCRIPT" user email alice
+    assert_output "alice@example.net"
+    # nothing else came back: bob is still disabled
+    run "$TACCTL_BIN_SCRIPT" user show bob
+    assert_output --partial "disabled"
+    # the audit line holds the counts and the id, never the address
+    run grep -E '^logger -t tacctl .*backup recover id=' "$CALLS_LOG"
+    assert_output --partial "kinds=email restored=1 skipped=0"
+    ! grep -q 'alice@example.net' "$CALLS_LOG"
+
+    run "$TACCTL_BIN_SCRIPT" backup recover "$snap" --yes
+    assert_success
+    assert_output --partial "Nothing to recover."
+}

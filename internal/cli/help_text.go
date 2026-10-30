@@ -52,7 +52,7 @@ Commands:
   <b>store</b> <o><subcommand></o>                    The canonical store: show, import, rollback
   <b>config</b> <o><subcommand></o>                   Configuration (show, render, cisco, juniper, wti, validate, ...)
   <b>log</b> <o><subcommand></o>                      Log viewer (tail, search, failures, accounting; <o>--backend <id></o>)
-  <b>backup</b> <o><subcommand></o>                   Backup management (list, diff, restore, keep, unkeep)
+  <b>backup</b> <o><subcommand></o>                   Backup management (list, diff, restore, keep, unkeep, recover)
   <b>hash</b> <o><subcommand></o>                     Bcrypt helper (generate, commands — runs as invoking user, no sudo)
   <b>completion</b> bash|zsh|fish              Print the shell completion script
   <b>man</b> [<o>--path</o>] [<o><word>...</o>]              Open the manual page, at a command or topic
@@ -685,6 +685,12 @@ Subcommands:
   <b>keep</b> <o><timestamp></o> [<o>--note <text></o>]           Copy a snapshot to backups-kept/, where no retention reaches it
       <o>--note <text></o>                          Why it is kept (free text, shown by list, never logged)
   <b>unkeep</b> <o><timestamp></o> [<o>--yes</o>]                 Remove the kept copy of a snapshot (with confirmation)
+      <o>--yes</o>                                  Do not ask for confirmation
+  <b>recover</b> <o><snapshot></o> [<o>--only <kind></o>[,<kind>...]] [<o>--dry-run</o>] [<o>--yes</o>]
+                                             Put back what a rollback dropped, from a snapshot (kinds: email, snmp-users)
+                                             The snapshot is in backups/, else the kept copy in backups-kept/
+      <o>--only <kind></o>[,<kind>...]              Recover only these kinds; without it, every kind that can be recovered
+      <o>--dry-run</o>                              List what would be recovered and change nothing
       <o>--yes</o>                                  Do not ask for confirmation
 
 `,

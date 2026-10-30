@@ -99,6 +99,7 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `backup restore` | `id` `pre` (the snapshot taken first) `keep-uids` `legacy`; `auth.notice` |
 | `backup keep` | `id` `note=yes\|no` `already=yes\|no`; the note is never written |
 | `backup unkeep` | `id` `only-copy=yes\|no` |
+| `backup recover` | `id` `pre` (the snapshot taken first) `kinds` `restored` `skipped`; never an address |
 | `store import` | `source` `replace` `force`; `auth.notice` |
 | `store rollback` | `pre`; `auth.notice` |
 | `install` | `branch`; `auth.notice` |

@@ -6149,6 +6149,72 @@ Options:
 Do not ask for confirmation.
 .RE
 .\" END GENERATED: command backup unkeep
+.TP
+.BI "backup recover " snapshot " " [ \-\-only " " kind[,kind...] ] " " [ \-\-dry\-run ] " " [ \-\-yes ]
+Put back from a snapshot only the kinds of data named, and leave everything else
+as it is
+.RB ( "backup restore"
+puts back the whole state). It reads the snapshot's
+.I store.yaml
+and, for each kind, the live state, and lists per user what it would restore and
+what it skips, with the reason (the names of users, never an address). The kinds
+are
+.B email
+(the email addresses of users,
+.BR "user email" )
+and
+.BR snmp\-users ,
+which is reserved: it is accepted by name and refused with
+.BR "not available yet" ,
+and nothing is changed. Without
+.B \-\-only
+every kind that can be recovered is recovered. For
+.BR email ,
+a user the snapshot gives an address and who exists now with none gets it
+(through the same validation as
+.BR "user email" ,
+so an address belongs to one user). A user who no longer exists, one who has
+another address now (the current one is kept) and an address another user holds
+now are skipped and named; a user who has the address already is nothing to
+do. Nothing is rendered or restarted. A snapshot of an older release that holds
+no address, or an old\-style backup, recovers nothing. The snapshot is looked up
+as every command that takes an id does: in
+.IR backups/ ,
+then among the copies
+.B "backup keep"
+made in
+.IR backups\-kept/ ,
+which no retention reaches (a rollback keeps the snapshot it names there, so the
+data it dropped can be recovered after an older release pruned
+.IR backups/ ).
+.B \-\-dry\-run
+lists and changes nothing. Otherwise the command asks for confirmation
+.RB ( \-\-yes
+does not), takes a snapshot of the current state first (the snapshot being read
+is kept by the retention), writes the change, and ends with the number
+recovered and skipped. A kept copy that was read is named, with the command
+that removes it once the data is recovered
+.RB ( "backup unkeep" ).
+The audit line is
+.B "backup recover id= pre= kinds= restored= skipped="
+and holds no address.
+.\" BEGIN GENERATED: command backup recover
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-only\fR \fI<kind>[,<kind>...]\fR
+Recover only the listed kinds of data: email, snmp\-users. Without it every kind that can be recovered is.
+.TP
+\fB\-\-dry\-run\fR
+List what would be recovered and change nothing.
+.TP
+\fB\-\-yes\fR
+Do not ask for confirmation.
+.RE
+.\" END GENERATED: command backup recover
 .SS Hash generation \fB(tacctl hash)\fR
 .TP
 .B hash
@@ -14449,10 +14515,10 @@ group edit (the field is tier or priv\-lvl), install, log clear,
 store rollback, uninstall, upgrade
 .TP
 .B "mixed"
-backup keep, config allow, config bcrypt\-cost, config branch,
-config cisco, config deny, config devices, config juniper,
-config linux, config loglevel, config mgmt\-acl, config password\-age,
-config password\-min\-length, config render,
+backup keep, backup recover, config allow, config bcrypt\-cost,
+config branch, config cisco, config deny, config devices,
+config juniper, config linux, config loglevel, config mgmt\-acl,
+config password\-age, config password\-min\-length, config render,
 config secret\-min\-length, config snmp, config validate, config wti,
 console agent\-forwarding, console color, console forwarding,
 console idle\-timeout, console list\-max, console password\-cache,

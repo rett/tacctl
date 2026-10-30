@@ -233,6 +233,30 @@ current behaviour; this file is where history lives.
    for secrets: it is written as `<redacted>` in the audit line, which carries
    the id and `note=yes|no` only.
 
+10. **`tacctl backup recover <snapshot>` puts back one kind of data from a
+   snapshot.** `backup restore` brings back the whole state; `backup recover
+   <snapshot> [--only <kind>[,<kind>...]] [--dry-run] [--yes]` (the
+   superuser's) brings back a kind and leaves everything else as it is. The
+   kinds are listed in one place (`recoverKinds`, `internal/cli/
+   backup_recover.go`): `email` recovers the email addresses of users (item
+   8), and `snmp-users` is reserved, accepted by name and refused with `not
+   available yet` until it is built. Without `--only` it recovers every kind
+   that can be recovered. For `email` it reads the snapshot's `store.yaml` and
+   sets the address of each user who has one there and exists now with none,
+   through the same validation as `user email`, so an address still belongs to
+   one user. A user who no longer exists, a user who has another address now
+   (the current one is kept) and an address another user holds now are
+   skipped and named; a user who has it already is nothing to do. The lists
+   name users, never an address. The snapshot is found as `backup diff` and
+   `restore` find one (item 9): in `backups/`, then among the kept copies, so
+   a snapshot a retention pruned is still recovered from its kept copy, which
+   is named with the command that removes it (`backup unkeep`). `--dry-run`
+   lists and changes nothing; otherwise it asks for confirmation (`--yes`
+   does not), takes a snapshot of the current state first (the retention
+   keeps the one being read) and ends with the numbers recovered and skipped.
+   The audit line `backup recover id= pre= kinds= restored= skipped=` holds
+   counts and snapshot ids, never an address.
+
 ## 0.2.22 (2026-10-29)
 
 1. **A device `ssh-keyscan` reads nothing from, but plain `ssh` reaches, gets

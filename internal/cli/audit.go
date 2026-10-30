@@ -427,6 +427,7 @@ var auditTable = map[string]auditEntry{
 	"backup restore": action().weighty(),
 	"backup keep":    withSecret(mixed(), secretSurplus(func() Spec { return backupSpecs["keep"] })),
 	"backup unkeep":  action(),
+	"backup recover": withSecret(mixed(), withAtSign(nil)),
 
 	"store show":     read(),
 	"store import":   mixed().weighty(),
