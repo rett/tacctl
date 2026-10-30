@@ -158,10 +158,10 @@ var deviceSpecs = map[string]Spec{
 	"ssh":           sshSpec,
 	"client-config": {MaxArgs: 0},
 	"scan": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--full"}}, {Names: []string{"--since"}, Value: true},
-		{Names: []string{"--if-stale"}}, {Names: []string{"--quiet"}},
+		{Names: []string{"--if-stale"}}, {Names: []string{"--quiet"}}, {Names: []string{"--sources"}},
 		{Names: []string{"--backend"}, Value: true, Kind: KindBackends}}},
 	"discover": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--all"}}, {Names: []string{"--snmp"}}, {Names: []string{"--backend"}, Value: true, Kind: KindBackends}}},
-	"check":    {MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}, flagJSON}},
+	"check":    {MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}, {Names: []string{"--sources"}}, flagJSON}},
 	// 'device config show <name>' is device_config.go.
 	"config": {MinArgs: 1, MaxArgs: 2, Args: []string{"show", KindDevices}, Flags: []Flag{
 		{Names: []string{"--protocol"}, Value: true, Kind: "tacacs|radius"},
@@ -210,9 +210,9 @@ var deviceVerbs = [][2]string{
 	{deviceBlockUse, "A device's own configuration blocks (snmp and system, for Junos and IOS) over its scope's: list, show, check, set, remove, edit, adopt"},
 	{"ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]", "Alias of 'tacctl ssh': a session to the device, as you"},
 	{"client-config", "Print an ssh_config Include for your devices (Host blocks, pinned keys)"},
-	{"scan [--full] [--since <dur>] [--backend <id>]", "Read the logs for the devices seen; re-scan pinned host keys"},
+	{"scan [--full] [--since <dur>] [--backend <id>] [--sources]", "Read the logs for the devices seen; re-scan pinned host keys"},
 	{"discover [--all] [--snmp] [--backend <id>]", "Scan, then list the addresses that authenticated unregistered (--snmp: read each one's name and vendor by SNMP for the add lines)"},
-	{"check <name>|--all [--json]", "Checklist: scope, tag, seen, reachable, host key, SNMP name, location and vendor"},
+	{"check <name>|--all [--sources] [--json]", "Checklist: scope, tag, seen, reachable, host key, SNMP name, location and vendor"},
 	{"config show <name> [--protocol tacacs|radius] [--legacy] [--server <address|name>] [--source <address>]", "The device's data, then its vendor walkthrough for its scope"},
 	{"config pull <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale | --differs | --name <text> | --ip <addr|cidr|text> [options]", "Read the devices' configuration as you and compare the managed sections with what tacctl renders"},
 	{"config diff <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale | --differs | --name <text> | --ip <addr|cidr|text> [--pull] [--timing] [--section <list>] [--exit-code] [--json]", "The last pull against what tacctl renders now, section by section"},
@@ -316,6 +316,7 @@ var deviceOptions = map[string][][2]string{
 		{"--since <dur>", "Read this stretch of the logs (7d, 12h, 2w)"},
 		{"--if-stale", "The background form: read only when the data is older than five minutes and no scan is under way; re-scan a device's host keys only when its last scan is a day old"},
 		{"--quiet", "Print nothing (with --if-stale: what a session start runs)"},
+		{"--sources", "Test the AAA source addresses: read the host key, never log in"},
 		{"--backend <id>", "(scan, discover) Only that backend's log"},
 	},
 	"discover": {
@@ -546,7 +547,12 @@ starts 'scan --if-stale --quiet' in the background (operator tier and up). --ful
 without being registered, each with its 'device add' line (--all: those only
 refused too; --snmp: the name and vendor read by SNMP in each line). 'check' and 'list --probe' connect to each ssh port (3 s): this
 server often has no path to management ports, so a timeout may be a false
-alarm. Scans, discover and check are for the operator tier and up.
+alarm. 'scan --sources' and 'check --sources' also test the source addresses of a
+device's TACACS+ and RADIUS clients (read from its last pull): each but the registered
+address is connected to, its SSH host key read without logging in and compared with
+the key pinned for the device; an address that does not answer or presents another key
+is a warning (it may belong to another device, or be out of this server's reach by
+design), never a difference. Scans, discover and check are for the operator tier and up.
 
 A device is found by name or by its registered address. A name is letters,
 digits, '.', '_' and '-', at most 253 characters, each dotted part at most 63:

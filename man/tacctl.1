@@ -9970,7 +9970,7 @@ Requires: \fBreadonly\fR.
 .RE
 .\" END GENERATED: command device client-config
 .TP
-.BI "device scan " "[ \-\-full ] [ \-\-since " duration " ] [ \-\-backend " id " ]"
+.BI "device scan " "[ \-\-full ] [ \-\-since " duration " ] [ \-\-backend " id " ] [ \-\-sources ]"
 Read each enabled backend's log (or only
 .IR id 's)
 into the seen cache, from where the previous scan stopped; the first scan reads
@@ -9994,6 +9994,13 @@ the stretch of log read and what it found, the host-key results, how many seen
 addresses are registered, and the open notices. Records not seen for twice
 .B stale\-days
 are dropped. A cache that cannot be read is rebuilt.
+.B \-\-sources
+also tests the source addresses of the AAA clients of the devices (see
+.BR "device check" );
+it cannot be combined with
+.B \-\-if\-stale
+or
+.BR \-\-quiet .
 .\" BEGIN GENERATED: command device scan
 .RS
 .PP
@@ -10012,6 +10019,9 @@ The background form: read only when the data is older than five minutes and no s
 .TP
 \fB\-\-quiet\fR
 Print nothing (with \-\-if\-stale: what a session start runs).
+.TP
+\fB\-\-sources\fR
+Test the AAA source addresses: read the host key, never log in.
 .TP
 \fB\-\-backend\fR \fI<id>\fR
 (scan, discover) Only that backend's log.
@@ -10055,7 +10065,7 @@ Read each listed address's name and vendor by SNMP and put them in its 'device a
 .RE
 .\" END GENERATED: command device discover
 .TP
-.BI "device check " name " | \-\-all [ \-\-json ]"
+.BI "device check " name " | \-\-all [ \-\-sources ] [ \-\-json ]"
 A checklist per entry: the scope that answers the address, the vendor tag, the
 last sighting (from the seen cache), whether its ssh port accepts a TCP
 connection (3 seconds; a timeout may be a false alarm, as for
@@ -10089,6 +10099,70 @@ and its notices.
 ends with the devices registered as
 .B other
 that name a vendor tacctl reads.
+.B \-\-sources
+also tests the source addresses of the device's TACACS+ and RADIUS clients, read
+from its last pull: a Junos
+.B source\-address
+under
+.B system tacplus\-server
+or
+.BR radius\-server ,
+and the addresses of the interface an IOS
+.B ip tacacs source\-interface
+or
+.B ip radius source\-interface
+names (those of the interface facts the pull recorded; the one in a server group
+counts). Each address but the device's registered one (the host-key scan reads
+that) is connected to, at most eight per device, one after the other (devices a
+few at a time), and its ssh host key is read without logging in, as
+.B "device hostkey"
+reads it (ssh-keyscan, then tacctl's own client, with the timing scale of the
+device), and compared with the key pinned for the device. An address that does
+not answer is a warning
+.RB ( "source\-address <a> is unreachable from this server; it may be unreachable by design" )
+and so is one that presents another key
+.RB ( "source\-address <a> presents another SSH host key (<fingerprint>), the device's is <fingerprint>: the address may belong to another device" ;
+the name of the registered device that holds the address follows when there is one).
+An address that came through an IOS source interface is named
+.BR "source\-interface <name> (<a>)" .
+An error that is not "no answer" (ssh-keyscan cannot be run) is
+.B "could not be tested: <reason>"
+instead. A device with no pinned key is not compared
+.RB ( "not compared: no host key is pinned for <device>" ),
+and neither is an address that presents only a key type that is not pinned
+.RB ( "not compared: presented only rsa, pinned ed25519" );
+a loopback, link-local, unspecified, multicast or broadcast address, an
+interface whose addresses are not recorded (pull the device again), whose login
+could not see the interfaces, or whose address is learned dynamically are
+skipped with the reason, and one line sums up the device
+.RB ( "3 source addresses tested, all present the device's key" ).
+A device that cannot be tested at all says why in a scan.
+An unanswered address costs about 8 seconds (ssh-keyscan's 5 and the built-in
+client's 3), at most 8 addresses are tested per device, and 8 devices at a time;
+the timing scale of the device multiplies it. On a terminal, a line on standard
+error says which device the test is at.
+The result is a warning only: the device keeps its state, no difference is
+counted, and nothing is pinned, recorded or stored. A pull, a plan, a diff and a
+list never run it. The audit line is
+.B "sources tested=N unreachable=N mismatched=N"
+and names no address. It is the operator tier's, as the verbs are. With
+.B \-\-json
+each device has a
+.B sources
+array of
+.IR address ,
+.IR interface ,
+.I result
+.RB ( ok ,
+.BR unreachable ,
+.B mismatch
+or
+.BR skipped ),
+.IR fingerprint " and " pinned
+(a mismatch),
+.I source
+(a source left out) and
+.IR reason .
 .B \-\-json
 prints the rows for scripts, the sysName as
 .B sysname
@@ -10124,6 +10198,9 @@ Options:
 .TP
 \fB\-\-all\fR
 Check every device.
+.TP
+\fB\-\-sources\fR
+Test the AAA source addresses: read the host key, never log in.
 .TP
 \fB\-\-json\fR
 (list, show, export, check) Print JSON.
