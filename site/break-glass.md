@@ -9,7 +9,7 @@ doctype: how-to
 
 # Break Glass
 
-*Local emergency accounts, and holding a device or host back from the server · Checked against tacctl 0.2.21*
+*Local emergency accounts, and holding a device or host back from the server · Checked against tacctl 0.2.22*
 
 [Printable PDF](../pdf/tacctl-break-glass.pdf){: .pdf-link }
 
