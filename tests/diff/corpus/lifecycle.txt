@@ -21,8 +21,11 @@
 # --- backend enable ------------------------------------------------------------
 backend enable
 backend enable bogus
+@known 0.2.22 item 8: the usage line of backend enable and disable shows --yes, not -y
 backend enable -x
+@known 0.2.22 item 8: the usage line of backend enable and disable shows --yes, not -y
 backend enable --force radius
+@known 0.2.22 item 8: the usage line of backend enable and disable shows --yes, not -y
 backend enable radius tacacs
 backend enable tacacs
 backend enable tacacs --yes
@@ -32,15 +35,20 @@ backend enable radius <<< N\n
 backend enable radius <<< yes
 backend enable ""
 backend enable --yes
+@known 0.2.22 item 8: the usage line of backend enable and disable shows --yes, not -y
 backend enable radius -z
+@known 0.2.22 item 8: the usage line of backend enable and disable shows --yes, not -y
 backend enable radius --yes=1
 backend enable Radius
+@known 0.2.22 item 8: the usage line of backend enable and disable shows --yes, not -y
 backend enable tacacs radius --yes
 
 # --- backend disable -----------------------------------------------------------
 backend disable
 backend disable bogus
+@known 0.2.22 item 8: the usage line of backend enable and disable shows --yes, not -y
 backend disable -x
+@known 0.2.22 item 8: the usage line of backend enable and disable shows --yes, not -y
 backend disable radius tacacs
 backend disable radius
 backend disable radius --yes
@@ -48,8 +56,10 @@ backend disable tacacs
 backend disable tacacs --yes
 backend disable ""
 backend disable --yes
+@known 0.2.22 item 8: the usage line of backend enable and disable shows --yes, not -y
 backend disable tacacs --force
 backend disable TACACS
+@known 0.2.22 item 8: the usage line of backend enable and disable shows --yes, not -y
 backend disable tacacs tacacs
 
 # legacy read-only mode: no store yet

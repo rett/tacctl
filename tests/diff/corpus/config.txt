@@ -337,8 +337,10 @@ config metrics 'sh\tow'
 config password-age '4\t5'
 config get 'a\tb' 'fall\tback'
 config get-list 'a\tb'
+@known 0.2.22 item 11: an unknown sub-command is one error line, the closest verbs and a pointer to the help (-h), not the older error text
 config sudoers 'sh\tow'
 config sudoers install 'bad\tgroup'
+@known 0.2.22 item 11: an unknown sub-command is one error line, the closest verbs and a pointer to the help (-h), not the older error text
 config sudoers tiers 'sh\tow'
 
 # sudoers install: the group, the prompt, closed stdin

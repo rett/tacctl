@@ -111,6 +111,7 @@ scope prefixes lab remove --all <<< n
 @known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 scope prefixes lab remove --all --force <<< y
 scope prefixes lab clear
+@known 0.2.22 item 11: an unknown sub-command is one error line, the closest verbs and a pointer to the help (-h), not the older error text
 scope prefixes lab set 10.0.0.0/8
 @known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 scope add prod --prefixes 10.0.0.0/8 --secret prod-secret-1234567890abcdef ;; scope prefixes lab add 10.0.0.0/8
