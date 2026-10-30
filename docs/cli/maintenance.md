@@ -78,9 +78,12 @@ backup diff [<timestamp>]      Diff store.yaml and tacctl.yaml against a snapsho
 backup restore <ts> [--legacy|--keep-uids]
                                Restore a snapshot (with confirmation); --legacy for an old-style
                                backup; --keep-uids leaves the UID ledger as it is
+backup keep <ts> [--note <text>]
+                               Copy a snapshot to backups-kept/, where no retention reaches it
+backup unkeep <ts> [--yes]     Remove the kept copy of a snapshot (with confirmation)
 ```
 
-A backup is a snapshot of the canonical files, `/etc/tacctl/backups/<timestamp>/{store.yaml,tacctl.yaml,manifest}`, taken automatically before every change that would alter them (nothing is added when they already equal the newest snapshot). The manifest records `rendered.json`, the tacctl version and who took the snapshot: `sid` (the session id of the audit lines), `user` and `command` (the command's words, without arguments). The newest 30 snapshots are kept. Snapshots hold shared secrets and password hashes: the directory is `0700`, the files `0600`, and `backup diff` and `backup restore` are superuser-only.
+A backup is a snapshot of the canonical files, `/etc/tacctl/backups/<timestamp>/{store.yaml,tacctl.yaml,manifest}`, taken automatically before every change that would alter them (nothing is added when they already equal the newest snapshot). The manifest records `rendered.json`, the tacctl version and who took the snapshot: `sid` (the session id of the audit lines), `user` and `command` (the command's words, without arguments). The newest 30 snapshots are kept. Snapshots hold shared secrets and password hashes: the directory is `0700`, the files `0600`, and `backup diff`, `backup restore`, `backup keep` and `backup unkeep` are superuser-only.
 
 A snapshot also holds the files of the enrolled Linux hosts: `linux-hosts`
 (the registry), `hosts/` (one record per host), `staging` (the staging
@@ -104,6 +107,30 @@ the records whole. The snapshot `backup restore` takes first compares
 everything, records included, since it is what undoes the restore.
 
 `backup restore <ts>` puts back both files, re-renders every enabled backend's config (a hand-edited file is kept under `backups/legacy/` first), and restarts the backends. It snapshots the current state first, so a restore can be undone with another restore, and it changes nothing if the snapshot is invalid or the render fails. The snapshot's `backends.enabled` comes back with the rest of `tacctl.yaml`: a backend it enables must already be installed (otherwise nothing changes and the message says to run `backend enable`) and is started; one it leaves out is stopped and disabled.
+
+`backup keep <ts> [--note <text>]` copies a snapshot to
+`/etc/tacctl/backups-kept/<ts>/` (0700, the files 0600), where no retention
+reaches it: this release prunes `backups/` beyond the newest 30, and the older
+releases a rollback goes to do the same without knowing any marker. The copy
+is a snapshot like any other (the same files, the manifest included) with a
+file `kept` that records the note, who last set it (the user and the session
+id of the audit lines) and when: the keeper until a new `--note` replaces the
+note, and then whoever replaced it. The note is free text of at most 200
+printable characters (no control or format character, no line break); it is
+stored in the copy and shown by `backup list`, and it is not a place for
+secrets. Keeping a snapshot that is kept already says so and changes nothing,
+but for `--note`, which replaces the note. `backup list` marks a kept snapshot
+`snapshot, kept` and shows its note in a NOTE column, and `kept only` when its
+original has been pruned from `backups/`. `backup diff`, `backup restore` and
+`backup recover` look an id up in `backups/` first and then among the kept
+copies, so they work on a copy whose original is gone; a restore does not
+touch `backups-kept/`. `backup unkeep <ts>` removes the kept copy after a
+confirmation (`--yes` does not ask), and says first when no snapshot of that
+id remains in `backups/` (the kept copy is then the only copy); the snapshot
+in `backups/` is not touched. `uninstall` archives `backups-kept/` with
+`backups/` when the backups are preserved. The audit lines are `backup keep
+id= note=yes|no already=yes|no` and `backup unkeep id= only-copy=yes|no`, and
+the note is written as `<redacted>` in the command line they follow.
 
 A snapshot that knows the hosts also puts the host files back: `linux-hosts`
 whole, `hosts/` made to match (a record the snapshot lacks is removed),

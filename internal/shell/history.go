@@ -168,8 +168,8 @@ func escapeEntry(line string) string {
 // Redact is the line as the history stores it. Everything from the first
 // value that may be a secret on is replaced by RedactedMark:
 //
-//   - after '--secret', '--hash', '--password' or '--email' ('--secret=<v>'
-//     keeps the name);
+//   - after '--secret', '--hash', '--password', '--email' or '--note'
+//     ('--secret=<v>' keeps the name);
 //   - after the name in 'user email <name> <address>' (an address typed in
 //     the place of the name goes too; 'user email <name>' and 'user email
 //     <name> clear' are kept);
@@ -241,7 +241,7 @@ func redactFlags(toks []string) int {
 	for i, t := range toks {
 		name, _, hasVal := strings.Cut(t, "=")
 		switch {
-		case name == "--secret" || name == "--hash" || name == "--password" || name == "--email":
+		case name == "--secret" || name == "--hash" || name == "--password" || name == "--email" || name == "--note":
 			if hasVal {
 				toks[i] = name + "="
 			}

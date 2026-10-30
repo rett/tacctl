@@ -52,7 +52,7 @@ Commands:
   <b>store</b> <o><subcommand></o>                    The canonical store: show, import, rollback
   <b>config</b> <o><subcommand></o>                   Configuration (show, render, cisco, juniper, wti, validate, ...)
   <b>log</b> <o><subcommand></o>                      Log viewer (tail, search, failures, accounting; <o>--backend <id></o>)
-  <b>backup</b> <o><subcommand></o>                   Backup management (list, diff, restore)
+  <b>backup</b> <o><subcommand></o>                   Backup management (list, diff, restore, keep, unkeep)
   <b>hash</b> <o><subcommand></o>                     Bcrypt helper (generate, commands — runs as invoking user, no sudo)
   <b>completion</b> bash|zsh|fish              Print the shell completion script
   <b>man</b> [<o>--path</o>] [<o><word>...</o>]              Open the manual page, at a command or topic
@@ -682,6 +682,10 @@ Subcommands:
   <b>restore</b> <o><timestamp></o> [<o>--legacy</o>|<o>--keep-uids</o>]  Restore a snapshot (with confirmation); <o>--legacy</o> for an old-style backup
       <o>--legacy</o>                               The timestamp names an old-style backup (backups/legacy)
       <o>--keep-uids</o>                            Leave the UID ledger (linux-uids) as it is; the registry, records and staging come back
+  <b>keep</b> <o><timestamp></o> [<o>--note <text></o>]           Copy a snapshot to backups-kept/, where no retention reaches it
+      <o>--note <text></o>                          Why it is kept (free text, shown by list, never logged)
+  <b>unkeep</b> <o><timestamp></o> [<o>--yes</o>]                 Remove the kept copy of a snapshot (with confirmation)
+      <o>--yes</o>                                  Do not ask for confirmation
 
 `,
 	// lib/users.sh cmd_hash_usage

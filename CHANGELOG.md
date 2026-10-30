@@ -212,6 +212,27 @@ current behaviour; this file is where history lives.
    of `user email`, or the first word with an `@` in any other `user` verb)
    and `…(redacted)` in place of the rest. The accounting sink takes none.
 
+9. **`tacctl backup keep` and `backup unkeep` persist a snapshot that
+   matters.** Snapshots live in `backups/`, of which this release prunes the
+   oldest beyond 30 and the older releases a rollback goes to do the same
+   without knowing any marker. `tacctl backup keep <snapshot> [--note
+   <text>]` (the superuser's) copies the snapshot to
+   `/etc/tacctl/backups-kept/<snapshot>/` (0700, files 0600), outside
+   anything a retention reaches, with a file `kept` that records the note,
+   who last set it (the user and the session id) and when. Keeping a snapshot
+   that is kept already says so, and a new `--note` replaces the note. `tacctl
+   backup unkeep <snapshot> [--yes]` removes the copy after a confirmation and
+   says first when no snapshot of that id remains in `backups/` (the copy is
+   then the only copy). `backup list` marks a kept snapshot (`snapshot, kept`,
+   `kept only` when the original is pruned) and shows its note; `backup diff`,
+   `backup restore` and `backup recover` find an id in `backups/` first and
+   then among the kept copies, with the same checks, so a kept copy still
+   restores after its original is gone; a restore does not touch
+   `backups-kept/`; `uninstall` archives it with `backups/` when the backups
+   are kept. The note is free text stored in the kept copy and is not a place
+   for secrets: it is written as `<redacted>` in the audit line, which carries
+   the id and `note=yes|no` only.
+
 ## 0.2.22 (2026-10-29)
 
 1. **A device `ssh-keyscan` reads nothing from, but plain `ssh` reaches, gets

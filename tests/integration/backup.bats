@@ -792,3 +792,61 @@ pre-store.20250601_000000
     assert_success
     [[ "${#lines[@]}" -eq 50 ]]
 }
+
+@test "backup keep: a snapshot is copied out of backups/, listed with its note, restored from the copy and removed by unkeep" {
+    add_user alice superuser
+    add_user bob
+    local snap; snap="$(newest_snapshot)"
+    : > "$CALLS_LOG"
+    run "$TACCTL_BIN_SCRIPT" backup keep "$snap" --note "before bob went away"
+    assert_success
+    assert_output --partial "Snapshot $snap kept in ${TACCTL_STATE_DIR}/backups-kept/$snap"
+    [[ -f "${TACCTL_STATE_DIR}/backups-kept/$snap/store.yaml" ]]
+    [[ -f "${TACCTL_STATE_DIR}/backups-kept/$snap/manifest" ]]
+    [[ -f "${TACCTL_STATE_DIR}/backups-kept/$snap/kept" ]]
+    # the note is in the copy, not in the log
+    grep -q 'before bob went away' "${TACCTL_STATE_DIR}/backups-kept/$snap/kept"
+    run grep -E '^logger -t tacctl .*(backup keep id=|cmd="backup keep")' "$CALLS_LOG"
+    assert_output --partial "note=yes already=no"
+    assert_output --partial "--note <redacted>"
+    ! grep -q 'bob went away' "$CALLS_LOG"
+
+    run "$TACCTL_BIN_SCRIPT" backup keep "$snap"
+    assert_success
+    assert_output --partial "is kept already."
+
+    run "$TACCTL_BIN_SCRIPT" backup list
+    assert_success
+    assert_output --partial "snapshot, kept"
+    assert_output --partial "before bob went away"
+
+    # the original is pruned: the copy is listed as kept only and restores
+    rm -rf "${BACKUPS:?}/$snap"
+    run "$TACCTL_BIN_SCRIPT" backup list
+    assert_output --partial "kept only"
+    run "$TACCTL_BIN_SCRIPT" backup diff "$snap"
+    assert_success
+    assert_output --partial "snapshot $snap"
+    run "$TACCTL_BIN_SCRIPT" backup restore "$snap" <<< "y"
+    assert_success
+    assert_output --partial "Restored snapshot $snap."
+    [[ -f "${TACCTL_STATE_DIR}/backups-kept/$snap/store.yaml" ]]
+
+    # an id that is no snapshot id is refused
+    run "$TACCTL_BIN_SCRIPT" backup keep ../backups-kept
+    assert_failure
+    assert_output --partial "Backup not found"
+    run "$TACCTL_BIN_SCRIPT" backup unkeep .. --yes
+    assert_failure
+    assert_output --partial "is not kept"
+
+    # unkeep says when the copy is the only one, asks, and removes it
+    run "$TACCTL_BIN_SCRIPT" backup unkeep "$snap" <<< "n"
+    assert_success
+    assert_output --partial "Cancelled."
+    [[ -d "${TACCTL_STATE_DIR}/backups-kept/$snap" ]]
+    run "$TACCTL_BIN_SCRIPT" backup unkeep "$snap" --yes
+    assert_success
+    assert_output --partial "is removed."
+    [[ ! -d "${TACCTL_STATE_DIR}/backups-kept/$snap" ]]
+}

@@ -38,7 +38,7 @@ Commands:
   store <subcommand>                    The canonical store: show, import, rollback
   config <subcommand>                   Configuration (show, render, cisco, juniper, wti, validate, ...)
   log <subcommand>                      Log viewer (tail, search, failures, accounting; --backend <id>)
-  backup <subcommand>                   Backup management (list, diff, restore)
+  backup <subcommand>                   Backup management (list, diff, restore, keep, unkeep)
   hash <subcommand>                     Bcrypt helper (generate, commands — runs as invoking user, no sudo)
   completion bash|zsh|fish              Print the shell completion script
   man [--path] [<word>...]              Open the manual page, at a command or topic

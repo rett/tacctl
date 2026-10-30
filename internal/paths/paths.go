@@ -47,6 +47,9 @@ type Paths struct {
 	Config     string // TACCTL_CONFIG (CONFIG): tacquito.yaml
 	BackupDir  string // BACKUP_DIR
 	PWDatesDir string // PASSWORD_DATES_DIR
+	// KeptDir holds the snapshots 'backup keep' copied out of BackupDir: no
+	// retention reaches it (internal/snapshot, kept.go).
+	KeptDir    string
 	AcctLog    string // ACCT_LOG
 	Overrides  string // TACCTL_OVERRIDES_FILE: tacctl.yaml
 	StoreFile  string // STORE_FILE
@@ -152,6 +155,7 @@ func Resolve(env Env, exe string, exists func(string) bool) Paths {
 	p.Config = env.Or("TACCTL_CONFIG", p.Etc+"/tacquito.yaml")
 	p.BackupDir = p.StateDir + "/backups"
 	p.PWDatesDir = p.StateDir + "/backups/password-dates"
+	p.KeptDir = p.StateDir + "/backups-kept"
 	p.AcctLog = p.Log + "/accounting.log"
 	p.Overrides = p.StateDir + "/tacctl.yaml"
 	p.StoreFile = p.StateDir + "/store.yaml"

@@ -5878,7 +5878,14 @@ Only that backend's log (every subcommand).
 .SS Backup management \fB(tacctl backup)\fR
 .TP
 .B backup list
-List snapshots, newest first, then old-style backups.
+List snapshots, newest first, then old-style backups. A snapshot that
+.B "backup keep"
+copied is marked
+.B "snapshot, kept"
+and a note column shows its note; one whose original has been pruned from
+.I backups/
+is
+.BR "kept only" .
 .\" BEGIN GENERATED: command backup list
 .RS
 .PP
@@ -6068,6 +6075,80 @@ The timestamp names an old\-style backup (backups/legacy).
 Leave the UID ledger (linux\-uids) as it is; the registry, records and staging come back.
 .RE
 .\" END GENERATED: command backup restore
+.TP
+.BI "backup keep " timestamp " " [ \-\-note " " text ]
+Copy a snapshot to
+.IR /etc/tacctl/backups\-kept/<timestamp>/ ,
+where no retention reaches it: this release prunes
+.I backups/
+beyond the newest 30, and the older releases a rollback goes to do the same
+without knowing any marker. The copy is a snapshot like any other (the same
+files, the manifest included, mode 0600 in a directory of 0700) with a file
+.I kept
+that records the note, who last set it (the user and the session id of the audit
+lines) and when: the keeper until a new
+.B \-\-note
+replaces the note, and then whoever replaced it. The note is free text of at most 200
+printable characters (no control or format character, no line break); it is stored in
+the kept copy and shown by
+.BR "backup list" ,
+and it is not a place for secrets. The audit line
+.B "backup keep id= note=yes|no already=yes|no"
+says only whether a note was given, and the note is written as
+.B <redacted>
+in the command line it logs. Keeping a snapshot that is kept already says so and
+changes nothing, but for
+.BR \-\-note ,
+which replaces the note. A kept snapshot is looked up after
+.IR backups/ :
+.BR "backup diff" ,
+.B "backup restore"
+and
+.B "backup recover"
+find an id in
+.I backups/
+first and then among the kept copies, so they work on a copy whose original is
+gone. A restore does not touch
+.IR backups\-kept/ .
+When the backups are preserved,
+.B uninstall
+archives
+.I backups\-kept/
+with
+.IR backups/ .
+.\" BEGIN GENERATED: command backup keep
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-note\fR \fI<text>\fR
+Record why the snapshot is kept: free text, stored in the kept copy, shown by backup list and never written to the audit log. It is not a place for secrets. A new note replaces the old one.
+.RE
+.\" END GENERATED: command backup keep
+.TP
+.BI "backup unkeep " timestamp " " [ \-\-yes ]
+Remove the kept copy of a snapshot after confirmation
+.RB ( \-\-yes
+does not ask). When no snapshot of that id remains in
+.IR backups/ ,
+the command says that the kept copy is the only copy before it asks. The
+snapshot in
+.I backups/
+is not touched. The audit line is
+.BR "backup unkeep id= only-copy=yes|no" .
+.\" BEGIN GENERATED: command backup unkeep
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-yes\fR
+Do not ask for confirmation.
+.RE
+.\" END GENERATED: command backup unkeep
 .SS Hash generation \fB(tacctl hash)\fR
 .TP
 .B hash
@@ -14352,12 +14433,12 @@ are:
 .\" BEGIN GENERATED: audit-classes
 .TP
 .B "action"
-_phase, backend disable, backend enable, breakglass hold,
-breakglass release, console install, console remove, device add,
-device enroll, device notice, device remove, device rename,
-device ssh, device support\-bundle, emergency lockdown, group add,
-group edit, group remove, host enroll, host forget, host move,
-host rename, host sync, host unenroll, passwd, scope add,
+_phase, backend disable, backend enable, backup unkeep,
+breakglass hold, breakglass release, console install, console remove,
+device add, device enroll, device notice, device remove,
+device rename, device ssh, device support\-bundle, emergency lockdown,
+group add, group edit, group remove, host enroll, host forget,
+host move, host rename, host sync, host unenroll, passwd, scope add,
 scope remove, scope rename, server addresses, ssh, user add,
 user disable, user enable, user move, user passwd, user remove,
 user rename, user require\-password\-change
@@ -14368,9 +14449,9 @@ group edit (the field is tier or priv\-lvl), install, log clear,
 store rollback, uninstall, upgrade
 .TP
 .B "mixed"
-config allow, config bcrypt\-cost, config branch, config cisco,
-config deny, config devices, config juniper, config linux,
-config loglevel, config mgmt\-acl, config password\-age,
+backup keep, config allow, config bcrypt\-cost, config branch,
+config cisco, config deny, config devices, config juniper,
+config linux, config loglevel, config mgmt\-acl, config password\-age,
 config password\-min\-length, config render,
 config secret\-min\-length, config snmp, config validate, config wti,
 console agent\-forwarding, console color, console forwarding,
@@ -16670,6 +16751,18 @@ holds old-style
 backups, the pre-store config and files a render or
 the state migration displaced.
 .TP
+.I /etc/tacctl/backups\-kept/
+The snapshots
+.B "backup keep"
+copied out of
+.IR backups/ ,
+one directory per snapshot (mode 0700, files 0600, a file
+.I kept
+with the note, who set it and when). No retention reaches it; it is removed only by
+.BR "backup unkeep" ,
+by hand, or with the state directory by
+.BR uninstall .
+.TP
 .I /etc/tacctl/templates/
 Host-specific overrides for the device config templates
 .RI ( cisco ,
@@ -16871,6 +16964,7 @@ history of the invoking user: mode 0600, the newest 1000 lines, redacted (the va
 .B \-\-password
 and
 .BR \-\-email ,
+.BR \-\-note ,
 what follows
 .B set
 in

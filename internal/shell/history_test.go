@@ -67,6 +67,10 @@ func TestRedact(t *testing.T) {
 		{"user require-password-change bob alice@example.net", "user require-password-change bob …(redacted)"},
 		{"user add zed ops --hash x --email alice@example.net", "user add zed ops --hash …(redacted)"},
 		{"user show bob", "user show bob"},
+		// the note of a kept snapshot is free text
+		{"backup keep 20261030_010101_001 --note before the upgrade", "backup keep 20261030_010101_001 --note …(redacted)"},
+		{"backup keep 20261030_010101_001 --note='the state of bob' --yes", "backup keep 20261030_010101_001 --note=…(redacted)"},
+		{"backup keep 20261030_010101_001", "backup keep 20261030_010101_001"},
 	}
 	for _, c := range cases {
 		if got := Redact(c.line); got != c.want {

@@ -97,6 +97,8 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `config sudoers`, `config sudoers tiers` | `op=install\|remove` `file`, and `group` for the first |
 | `console set` | `key` `item` `from` `to`: `key` is the setting (`system-shell`, `forwarding`, `agent-forwarding`, `ssh-escape`, `password-cache`, `idle-timeout`, `space-completion`, `color`, `list-max`) and `item` the tier, the user (`user:<name>` for a system-shell setting of one user) or part of it; `auth.notice` for `system-shell` |
 | `backup restore` | `id` `pre` (the snapshot taken first) `keep-uids` `legacy`; `auth.notice` |
+| `backup keep` | `id` `note=yes\|no` `already=yes\|no`; the note is never written |
+| `backup unkeep` | `id` `only-copy=yes\|no` |
 | `store import` | `source` `replace` `force`; `auth.notice` |
 | `store rollback` | `pre`; `auth.notice` |
 | `install` | `branch`; `auth.notice` |
@@ -259,6 +261,10 @@ with `reason=superuser` (the verb is the superuser's) or `reason=scope` (the thi
   or scope name cannot hold one. An address is personal data, not a password,
   but it is never logged; the `user email` detail line says only `op=set` or
   `op=clear`;
+- the value of `--note` of `backup keep` (free text of the operator's, stored
+  in the kept copy and shown by `backup list`) and every word of `backup keep`
+  that no option or argument of the verb takes; the detail line says only
+  `note=yes` or `note=no`;
 - the value in `scope secret <scope> set <value>`, and every word of `scope secret` after the scope but the sub-command (`show`, `set`, `generate`) and the flag `--stdin`, and a lone word after `scope secret` that is none of them;
 - every word of `hash` and of `passwd`, and every word of `user add`, `user passwd`, `scope add` and the `community` and `v3-user` verbs of `scope snmp`, `device snmp` and `config snmp` that no flag or argument of the verb takes, a word that starts with `-` and is no flag of the verb included. These verbs ask for the password, the community or the SNMPv3 keys at a prompt (or on standard input with `--stdin`) and refuse a line that carries one. `user add`, `user passwd`, `scope add` and `passwd` are actions and write the start line before they refuse it. The SNMP verbs and `scope secret` are mixed and refuse at parse without a line, but an engineer's refusal inside the verb (`scope snmp prod community ...` for a scope that is not theirs) writes `cmd DENY` with the same `args=`; the redaction matters there. A word starting with `-` or a switch given a value (`--stdin=x`) is redacted too.
 

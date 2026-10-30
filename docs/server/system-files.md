@@ -11,6 +11,7 @@
 | `/etc/tacctl/tacctl.yaml` | Operator overrides — only keys you've changed. Absent keys inherit from the canonical defaults built into tacctl. Inspect with `tacctl config dump`; list canonical defaults with `tacctl config defaults`. |
 | `/etc/tacctl/rendered.json` | Checksums of the generated files (drift detection) |
 | `/etc/tacctl/backups/` | Snapshots (`<timestamp>/`), `legacy/` (old-style backups, pre-store config, displaced files), `password-dates/` (read by the importer) |
+| `/etc/tacctl/backups-kept/` | The snapshots `backup keep` copied out of `backups/` (`<timestamp>/`, 0700, files 0600, a file `kept` with the note, who and when). No retention reaches it; `backup unkeep` or a hand removes a copy, and `uninstall` archives it with `backups/` when the backups are kept |
 | `/etc/tacctl/templates/` | Device config templates: a copy of each shipped one, which you may customize (a file here overrides the built-in one); `.shipped.sha256` is the manifest of what tacctl wrote there, `<name>.template.new` is a new release's version beside a template you customized (see [Custom Templates](../devices/templates.md#custom-templates)) |
 | `/etc/tacctl/devices.yaml` | The device registry (`tacctl device`): names, addresses and settings of the network devices; 0600 root, absent means none. Snapshots include it |
 | `/etc/tacctl/snmp.yaml` | The SNMP community, or the v3 user and passphrases, that `device add` and `device check` read a device's sysName with (`tacctl config snmp`); 0600 root, never printed, absent means none |
