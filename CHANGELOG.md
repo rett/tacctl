@@ -93,6 +93,53 @@ current behaviour; this file is where history lives.
    (`server`, `server name`, `server-private`, with or without a key) is
    another server and stays a difference, as does every leaf of another group.
 
+6. **The source of the AAA client must be an address of the device.** A
+   source address that no interface of the device holds, or a source
+   interface that does not exist or has no address, may not be used, and the
+   AAA packets may not reach the server, without a word. The leaves of
+   tacctl's own server are the device's own settings (item 5), so the
+   comparison now checks the one that can break the login. A Junos `system
+   tacplus-server` or `radius-server <address> source-address <ip>`, and an
+   IOS `ip tacacs source-interface` or `ip radius source-interface` (the
+   device's own, tacctl's own from `config cisco source-interface`, and the
+   one under tacctl's `aaa group server`), that matches nothing the device
+   holds is a difference: `aaa` reads `differs`, `device config diff` lists
+   it as a `+` line with its reason (`--json` has it as `why`), `device
+   config list`, `--differs` and the CONFIG column of `device list` follow,
+   and `device config plan` reports an ACCESS item, `source-address <ip> is
+   not an address of any interface this login can see` or `source-interface
+   <name>: no such interface with an address that this login can see`, with
+   `Left alone: add the address to an interface, or change the source (not
+   managed by tacctl).` The paste never fixes it and `--converge` never
+   removes it. Addresses compare as parsed addresses (an IPv6 address in any
+   spelling, a prefix length ignored), interface names without regard to
+   case (the name is the first word of the `interface` line, so `Serial0/0.1
+   point-to-point` is `Serial0/0.1`); the virtual address of a VRRP group
+   and the address of `lo0` count, a deactivated interface, unit, family or
+   address does not, and an interface that is shut (Junos `disable`, IOS
+   `shutdown`) still holds its address: operational state is not checked.
+   An interface that takes its address by itself or derives it makes every
+   source possible: on Junos `family inet dhcp`, `dhcp-client`,
+   `negotiate-address`, `family inet6 dhcpv6-client` and an `address ...
+   eui-64`; on IOS `ip address dhcp`, `negotiated` or `pool`, `ipv6 address
+   dhcp`, `autoconfig` or `... eui-64`, and `ip unnumbered`. The global IOS
+   source interface is not checked while tacctl's server group holds a
+   source interface of its own for the protocol, which overrides it. Only the
+   source of the AAA client is checked; syslog, NTP and SNMP sources are not.
+   The check assumes that the login of the pull sees every interface: a Junos
+   class that hides only some of them cannot be told from one that shows all,
+   and a source on a hidden interface reads as one the device does not hold.
+   To tell, `device config pull` now records the addresses of the device's
+   interfaces, read from the configuration it already reads (no new
+   command), in `/var/lib/tacctl/devices-config.json`; no output, `--json`
+   document or audit line shows them. A device pulled before this release
+   has none and a login that cannot see the interfaces records none: its
+   source stays the device's own, and `diff` and `plan` say once that it is
+   not checked (`their addresses are not recorded (pull the device again)`,
+   `this login cannot see the interfaces`), only where there is a source to
+   check. The new key is ignored by every earlier release, so `rollback` has
+   nothing to undo.
+
 ## 0.2.22 (2026-10-29)
 
 1. **A device `ssh-keyscan` reads nothing from, but plain `ssh` reaches, gets

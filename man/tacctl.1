@@ -10849,6 +10849,78 @@ stays
 and gives each section the integer
 .B unmanaged
 (left out when 0).
+.PP
+The source of the AAA client must be on the device. A Junos
+.B source\-address
+under tacctl's
+.B "system tacplus\-server"
+or
+.BR "system radius\-server" ,
+and an IOS
+.B "ip tacacs source\-interface"
+or
+.B "ip radius source\-interface"
+(the device's own, tacctl's own, and the one under tacctl's server group), are
+the device's own only while they name something the device has: an address
+that one of its interfaces holds (a prefix length is ignored; the virtual
+address of a VRRP group counts; a deactivated interface, unit, family or
+address does not; a shut interface, Junos
+.B disable
+or IOS
+.BR shutdown ,
+still holds its address, for operational state is not checked), an interface
+that exists and carries an address (its name is the first word of the
+.B interface
+line). Otherwise the source may not be used and the AAA packets may not reach
+the server, without a word, so the statement is a difference: the
+.B aaa
+section
+.BR differs ,
+the diff lists it as a
+.B +
+line with the reason, and the plan reports an item of severity
+.B ACCESS
+(\c
+.B "source\-address 192.0.2.99 is not an address of any interface this login can see"
+or
+.BR "source\-interface Loopback9: no such interface with an address that this login can see" ),
+which the paste never fixes and
+.B \-\-converge
+never removes:
+.BR "Left alone: add the address to an interface, or change the source (not managed by tacctl)" .
+Addresses compare as addresses, not as text. An interface that takes or
+derives its address by itself makes every source possible (Junos
+.BR "family inet dhcp" ,
+.BR dhcp\-client ,
+.BR negotiate\-address ,
+.B "family inet6 dhcpv6\-client"
+and an
+.BR "address ... eui\-64" ;
+IOS
+.BR "ip address dhcp" ,
+.B negotiated
+or
+.BR pool ,
+.BR "ipv6 address dhcp" ,
+.B autoconfig
+or
+.BR "... eui\-64" ,
+and
+.BR "ip unnumbered" ).
+The global IOS source interface is not checked while tacctl's server group
+holds a source interface of its own for the protocol, which overrides it.
+Only the source of the AAA client is checked, not the sources of syslog, NTP or
+SNMP. The check assumes that the login of the pull sees every interface: a
+Junos class that hides only some of them cannot be told from one that shows
+all, and a source on a hidden interface reads as one the device does not hold.
+The addresses are read at the pull from the configuration it reads anyway and
+kept in the record
+.RB ( /var/lib/tacctl/devices\-config.json ,
+not snapshotted, rebuilt by a pull). A record made before they were recorded,
+or a pull whose login saw no interface, cannot be checked: the source stays
+the device's own, and the diff and the plan say so once
+.RB ( "their addresses are not recorded (pull the device again)" ,
+.BR "this login cannot see the interfaces" ).
 .\" BEGIN GENERATED: command device config diff
 .RS
 .PP

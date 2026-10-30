@@ -492,7 +492,8 @@ device config diff <name>[,<name>...] | --all | --scope <scope> | --vendor <vend
     `+` one it has in a managed hierarchy that tacctl does not render, `!` a reordering, `?` a
     secret the login could not see, `=` a secret present (its value is never compared or shown); a
     section in which nothing rendered is missing or different and the extras are only statements of
-    the device's own, kept by rule, reads `ok (+N unmanaged)`
+    the device's own, kept by rule, reads `ok (+N unmanaged)`; a source of the AAA client that
+    names no address or interface of the device is a `+` line with its reason and `differs`
 
     --pull
         Read the devices first (with the options of `pull`, `--timing` included: the timing of the
