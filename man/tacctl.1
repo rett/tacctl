@@ -10666,9 +10666,7 @@ and kept. A section is what tacctl renders plus whatever the device holds in
 the same hierarchy, so a stray server is a difference. Each section is
 .BR ok ,
 .B "ok (+N unmanaged)"
-(the
-.B snmp
-section only; see below),
+(a section whose extras are only statements of the device's own; see below),
 .BR differs ,
 .B missing
 (nothing of tacctl's on the device; its lines are listed all the same),
@@ -10740,6 +10738,50 @@ trap groups and options, and on IOS
 .B "enable traps"
 and the rest of
 .BR snmp\-server ).
+The
+.B aaa
+section reads so when the extras are the leaves of tacctl's own server that
+the standard does not state (Junos
+.B "system tacplus\-server"
+and
+.BR "system radius\-server" :
+.BR source\-address ,
+.BR timeout ,
+.BR retry ,
+.BR routing\-instance ;
+IOS
+.B "tacacs server"
+and
+.BR "radius server" :
+.BR send\-nat\-address ,
+.BR automate\-tester )
+and the options of the client
+.RB ( "system tacplus\-options" ,
+.BR "system radius\-options" )
+that do not decide who can log in or what they may do.
+A leaf the standard states with another value is a difference, which the plan
+replaces in place. A TACACS+
+.B port
+is a difference: the standard states one only for a server off the default
+port, so a port on the device against a server on the default is the wrong
+one. So are the options that change the service asked for or how a password is
+checked
+.RB ( "tacplus\-options service\-name" ,
+other than
+.BR junos\-exec ,
+.BR strict\-authorization ,
+.BR "radius\-options password\-protocol" ).
+Another server or server block, another group, a method list or login list of
+another name, the login method of a line, the authentication order, a
+.B "tacacs\-server host"
+line and a deactivated statement stay differences: they decide who can log in.
+The CONFIG column of
+.B "device list"
+and the state of
+.B "device config list"
+are the pull's record and follow the next pull of the device;
+.B \-\-differs
+recomputes at once.
 The statements are still listed, as
 .B +
 lines, with the note
@@ -10760,8 +10802,14 @@ of
 or
 .B plan
 exit 2 (the plan has no item for them, only a Kept line with their number). Only
-.B snmp
-reads this way: an extra server, login class, filter or user in
+statements that are no business of who can log in read this way (the
+.BR snmp ,
+.B system
+and
+.B netconf
+sections, and the leaves of tacctl's own server in
+.BR aaa ):
+an extra server, login class, filter or user in
 .BR aaa ,
 .B roles
 or

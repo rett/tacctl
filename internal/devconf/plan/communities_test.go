@@ -177,27 +177,61 @@ func TestSectionWithTheDevicesOwnStatementsIsOK(t *testing.T) {
 	}
 }
 
+// ownMore builds the further examples of a row from pairs of a statement and
+// whether it is the device's own.
+func ownMore(pairs ...any) []keptMore {
+	var out []keptMore
+	for i := 0; i < len(pairs); i += 2 {
+		out = append(out, keptMore{pairs[i].(string), pairs[i+1].(bool)})
+	}
+	return out
+}
+
+// keptMore is a further example of a row.
+type keptMore struct {
+	stmt      string
+	unmanaged bool
+}
+
 // keptExamples are, per ownership row with a Kept column, a statement of
-// that shape (as a pull shows it) and whether it is the device's own. Only
-// the snmp rows are: an extra of the other sections (another server, class,
-// user, filter or list) is a finding about who can log in, and stays a
-// difference. unrender is a rendered statement taken out first (what is kept
-// when tacctl renders none); dropped is a statement the comparison does not
-// count at all.
+// that shape (as a pull shows it) and whether it is the device's own. The
+// snmp, system and netconf rows are, and so are the leaves of tacctl's
+// server in the aaa section (a source address, a timeout); an extra of the
+// other sections (a class, a user, a filter) and in aaa another server, a
+// group, a list of another name or the login leaf of a line is a finding
+// about who can log in, and stays a difference. unrender is a rendered
+// statement taken out first (what is kept when tacctl renders none);
+// dropped is a statement the comparison does not count at all. finding, for
+// a row whose Kept column names both, is a statement of the other kind: an
+// extra that is a finding.
 var keptExamples = map[string]struct {
 	stmt      string
 	unmanaged bool
 	unrender  string
 	dropped   bool
+	// finding is, for a row that keeps the device's own and something that
+	// decides who can log in, a statement of the second kind
+	finding string
+	// more are further statements of the row's other shapes (a row may have
+	// several: each shape needs an example, or removing it goes unseen) and
+	// whether they are the device's own
+	more []keptMore
+	// golden, for a row of the aaa section of a RADIUS scope, is the managed
+	// golden the device is read against (the fixtures are TACACS+)
+	golden string
 	// radius: the unit is read against the RADIUS rendering (a WTI unit
 	// whose scope uses RADIUS, with TACACS+ turned off) and not the lab
 	// unit's TACACS+ one
 	radius bool
 }{
-	"junos.roles.class":       {stmt: "set system login class OTHER-CLASS permissions view", unmanaged: false},
-	"junos.roles.user-class":  {stmt: "set system login user OTHER-CLASS class OTHER-CLASS", unmanaged: false},
-	"junos.aaa.tacplus":       {stmt: "set system tacplus-server 192.0.2.98 port 4949", unmanaged: false},
-	"junos.aaa.radius":        {stmt: "set system radius-server 192.0.2.98 port 1812", unmanaged: false},
+	"junos.roles.class":      {stmt: "set system login class OTHER-CLASS permissions view", unmanaged: false},
+	"junos.roles.user-class": {stmt: "set system login user OTHER-CLASS class OTHER-CLASS", unmanaged: false},
+	"junos.aaa.tacplus": {stmt: "set system tacplus-server 192.0.2.10 source-address 192.0.2.1", unmanaged: true,
+		finding: "set system tacplus-server 192.0.2.98 source-address 192.0.2.1",
+		more:    ownMore("set system tacplus-options enhanced-accounting", true, "set system tacplus-options service-name other-exec", false, "set system tacplus-options strict-authorization", false, "set system tacplus-server 192.0.2.10 port 4949", false)},
+	"junos.aaa.radius": {stmt: "set system radius-server 10.0.0.42 source-address 192.0.2.1", unmanaged: true,
+		finding: "set system radius-server 192.0.2.98 source-address 192.0.2.1", golden: "managed.juniper-radius.lab.txt",
+		more: ownMore("set system radius-options revert-interval 60", true, "set system radius-options password-protocol mschap-v2", false)},
 	"junos.snmp.client-list":  {stmt: "set snmp client-list OTHER-LIST 192.0.2.7/32", unmanaged: true},
 	"junos.snmp.community":    {stmt: "set snmp community <other:2> authorization read-only", unmanaged: true},
 	"junos.snmp.trap-group":   {stmt: "set snmp trap-group <other:2> targets 192.0.2.7", unmanaged: true},
@@ -244,20 +278,22 @@ var keptExamples = map[string]struct {
 	"ios.aaa.source-interface":                 {stmt: "ip tacacs source-interface Loopback0", unmanaged: false, dropped: true},
 	"ios.aaa.console-leaf":                     {stmt: "line con 0 > exec-timeout 5 0", unmanaged: false},
 	"ios.aaa.vty-leaf":                         {stmt: "line vty 0 4 > exec-timeout 5 0", unmanaged: false},
-	"ios.aaa.server-block":                     {stmt: "tacacs server OTHER > address ipv4 192.0.2.98", unmanaged: false},
-	"ios.aaa.radius-block":                     {stmt: "radius server OTHER > address ipv4 192.0.2.98", unmanaged: false},
-	"ios.aaa.legacy-host":                      {stmt: "tacacs-server host 192.0.2.98", unmanaged: false},
-	"ios.aaa.legacy-radius-host":               {stmt: "radius-server host 192.0.2.98", unmanaged: false},
-	"ios.aaa.group":                            {stmt: "aaa group server tacacs+ OTHER > server name OTHER", unmanaged: false},
-	"ios.aaa.radius-group":                     {stmt: "aaa group server radius OTHER > server name OTHER", unmanaged: false},
-	"ios.roles.privilege":                      {stmt: "privilege exec level 9 show", unmanaged: false},
-	"ios.snmp.community":                       {stmt: "snmp-server community <other:2> RO", unmanaged: true},
-	"ios.snmp.location":                        {stmt: "snmp-server location Rack 5", unmanaged: true, unrender: "snmp-server location"},
-	"ios.snmp.contact":                         {stmt: "snmp-server contact Other NOC", unmanaged: true, unrender: "snmp-server contact"},
-	"ios.snmp.acl":                             {stmt: "ip access-list standard OTHER-SNMP > permit 192.0.2.7", unmanaged: true},
-	"ios.snmp.block-host":                      {stmt: "snmp-server host 192.0.2.99 version 2c <other:2>", unmanaged: true},
-	"ios.snmp.block-traps":                     {stmt: "snmp-server enable traps tty", unmanaged: true},
-	"ios.snmp.block-trap-source":               {stmt: "snmp-server trap-source loopback9", unmanaged: true},
+	"ios.aaa.server-block": {stmt: "tacacs server TACACS > send-nat-address", unmanaged: true,
+		finding: "tacacs server OTHER > address ipv4 192.0.2.98", more: ownMore("tacacs server TACACS > port 4949", false)},
+	"ios.aaa.radius-block": {stmt: "radius server RADIUS > automate-tester username probe", unmanaged: true,
+		finding: "radius server OTHER > address ipv4 192.0.2.98", golden: "managed.cisco-radius.lab.txt"},
+	"ios.aaa.legacy-host":        {stmt: "tacacs-server host 192.0.2.98", unmanaged: false},
+	"ios.aaa.legacy-radius-host": {stmt: "radius-server host 192.0.2.98", unmanaged: false},
+	"ios.aaa.group":              {stmt: "aaa group server tacacs+ OTHER > server name OTHER", unmanaged: false},
+	"ios.aaa.radius-group":       {stmt: "aaa group server radius OTHER > server name OTHER", unmanaged: false},
+	"ios.roles.privilege":        {stmt: "privilege exec level 9 show", unmanaged: false},
+	"ios.snmp.community":         {stmt: "snmp-server community <other:2> RO", unmanaged: true},
+	"ios.snmp.location":          {stmt: "snmp-server location Rack 5", unmanaged: true, unrender: "snmp-server location"},
+	"ios.snmp.contact":           {stmt: "snmp-server contact Other NOC", unmanaged: true, unrender: "snmp-server contact"},
+	"ios.snmp.acl":               {stmt: "ip access-list standard OTHER-SNMP > permit 192.0.2.7", unmanaged: true},
+	"ios.snmp.block-host":        {stmt: "snmp-server host 192.0.2.99 version 2c <other:2>", unmanaged: true},
+	"ios.snmp.block-traps":       {stmt: "snmp-server enable traps tty", unmanaged: true},
+	"ios.snmp.block-trap-source": {stmt: "snmp-server trap-source loopback9", unmanaged: true},
 	// 0.2.7: the IOS system section is additive too (the stems of the
 	// compared form: the banner is its mark)
 	"ios.system.banner":               {stmt: "banner login " + devconf.MessageMark("Another banner"), unmanaged: true, unrender: "banner login"},
@@ -313,8 +349,10 @@ var keptExamples = map[string]struct {
 // the ownership rows: every row with a Kept column has an example, a row
 // that a shape names is the device's own in the comparison (and the planner
 // keeps it), the others are findings, and every shape names a row of its
-// family or none. Junos and IOS have shapes in the snmp and system rows
-// only; a unit's are in the aaa, snmp and mgmt-acl rows.
+// family or none. Junos and IOS have shapes in the snmp, system and netconf
+// rows and in the rows of the server blocks of the aaa section; a unit's are
+// in the aaa, snmp and mgmt-acl rows. A row that keeps both the device's own
+// and something about who can log in has the second as its finding example.
 func TestKeptShapesFollowTheOwnedRows(t *testing.T) {
 	for _, fam := range []string{devconf.FamilyJunos, devconf.FamilyIOS, devconf.FamilyWTI} {
 		rows := map[string]OwnedRow{}
@@ -330,7 +368,8 @@ func TestKeptShapesFollowTheOwnedRows(t *testing.T) {
 			case devconf.FamilyWTI:
 				ok = named && r.Kept != "" && slices.Contains([]string{devconf.SectionAAA, devconf.SectionSNMP, devconf.SectionMgmtACL}, r.Section)
 			default:
-				ok = named && (r.Section == devconf.SectionSNMP || r.Section == devconf.SectionSystem || r.Section == devconf.SectionNetconf)
+				ok = named && (r.Section == devconf.SectionSNMP || r.Section == devconf.SectionSystem || r.Section == devconf.SectionNetconf ||
+					r.Section == devconf.SectionAAA && r.Kept != "")
 			}
 			if s.Row != "" && !ok {
 				t.Errorf("%s: shape %q names %q, not a row of the table that keeps something of the device's own", fam, s.Pattern, s.Row)
@@ -372,6 +411,18 @@ func TestKeptShapesFollowTheOwnedRows(t *testing.T) {
 					t.Fatal(err)
 				}
 				exp, dev = e, cur.Sections[r.Section]
+			case ex.golden != "":
+				// a RADIUS scope's device: what the rendering holds, as the
+				// device prints it
+				exp = goldenSections(t, ex.golden)
+				for i, l := range sectionNamed(exp, r.Section).Lines {
+					if f := strings.Fields(l); sectionNamed(exp, r.Section).Secret[i] && len(f) > 0 {
+						f[len(f)-1] = "<secret>"
+						l = strings.Join(f, " ")
+					}
+					dev.Lines = append(dev.Lines, l)
+				}
+				dev.Name = r.Section
 			case fam == devconf.FamilyJunos:
 				fixture := "juniper.synthetic-communities"
 				if r.Section == devconf.SectionSystem {
@@ -426,22 +477,36 @@ func TestKeptShapesFollowTheOwnedRows(t *testing.T) {
 				dev.Lines = dkeep
 			}
 			// the stored form: a secret is known by its mark
-			dev.Lines, dev.Secret = append(slices.Clone(dev.Lines), ex.stmt), nil
-			res, err := devconf.Compare(fam, want, dev, true)
-			if err != nil {
-				t.Fatal(err)
-			}
-			found := false
-			for _, l := range res.Lines {
-				if l.Op == devconf.OpExtra && strings.HasPrefix(l.Text, strings.SplitN(ex.stmt, " (", 2)[0]) {
-					found = true
-					if l.Unmanaged != ex.unmanaged {
-						t.Errorf("%s: %q unmanaged %v, want %v", r.ID, ex.stmt, l.Unmanaged, ex.unmanaged)
+			extra := func(stmt string) (found, own bool) {
+				d := dev
+				d.Lines, d.Secret = append(slices.Clone(dev.Lines), stmt), nil
+				res, err := devconf.Compare(fam, want, d, true)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, l := range res.Lines {
+					if l.Op == devconf.OpExtra && strings.HasPrefix(l.Text, strings.SplitN(stmt, " (", 2)[0]) {
+						found, own = true, l.Unmanaged
 					}
 				}
+				return found, own
+			}
+			found, own := extra(ex.stmt)
+			if found && own != ex.unmanaged {
+				t.Errorf("%s: %q unmanaged %v, want %v", r.ID, ex.stmt, own, ex.unmanaged)
 			}
 			if found == ex.dropped {
 				t.Errorf("%s: %q is an extra of the comparison: %v, want %v", r.ID, ex.stmt, found, !ex.dropped)
+			}
+			if ex.finding != "" {
+				if found, own := extra(ex.finding); !found || own {
+					t.Errorf("%s: %q is an extra: %v, the device's own: %v; want a finding", r.ID, ex.finding, found, own)
+				}
+			}
+			for _, m := range ex.more {
+				if found, own := extra(m.stmt); !found || own != m.unmanaged {
+					t.Errorf("%s: %q is an extra: %v, the device's own: %v; want the device's own: %v", r.ID, m.stmt, found, own, m.unmanaged)
+				}
 			}
 		}
 	}

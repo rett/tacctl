@@ -53,6 +53,38 @@ current behaviour; this file is where history lives.
    warning of a staging file that cannot be written names the addresses of the
    dropped lines too.
 
+5. **The device's own settings of its AAA server are no difference.** A
+   Junos device that holds `set system tacplus-server <address>
+   source-address <address>`, a `timeout`, a `retry`, a `routing-instance` or
+   an option of `system tacplus-options` or `radius-options` that does not
+   decide who can log in, and an IOS device that holds a `send-nat-address`
+   or an `automate-tester` under tacctl's `tacacs server` or `radius server`
+   block, was listed by `device config plan` as an access irregularity that
+   the paste leaves alone (`the paste fixes 0, leaves 1`, then `Nothing to
+   paste`), and `diff`, `device config list`, `device list` and `--differs`
+   said the device differed. The planner already left these alone; the
+   comparison did not call them the device's own, which it did for `snmp`,
+   `system` and `netconf` only. They are the device's own now: the `aaa`
+   section reads `ok (+N unmanaged)`, the plan has no item for them, and the
+   device is consistent when nothing else differs. `--differs` recomputes at
+   once; the state in the CONFIG column of `device list` and in `device
+   config list` is the pull's record, and changes at the next pull of the
+   device. The leaves of tacctl's own server that the standard does not state
+   are the device's own; a leaf it states with another value (the timeout of
+   an IOS block, the port of a RADIUS server) is still a difference that the
+   plan replaces in place. A TACACS+ `port` is never the device's own: the
+   standard states one only for a server off the default port, so a port on
+   the device against a server on the default is the device asking the wrong
+   port. Of the client's options, those that change the service asked for
+   or how a password is checked stay differences (`tacplus-options
+   service-name` other than `junos-exec`, `strict-authorization`,
+   `radius-options password-protocol`); the others are the device's own.
+   What decides who can authenticate stays a difference: another server or
+   server block, another group, a method list or login list of another name,
+   the login method of a line, the authentication order, a `tacacs-server
+   host` line and a deactivated statement. The source interface is compared
+   only where the scope sets one, as before.
+
 ## 0.2.22 (2026-10-29)
 
 1. **A device `ssh-keyscan` reads nothing from, but plain `ssh` reaches, gets
