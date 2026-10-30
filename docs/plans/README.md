@@ -7,6 +7,7 @@ by number and file name.
 
 | File | What it is |
 |---|---|
+| `0.2.23-plan.md` | The 0.2.23 release in progress (D296-D311) |
 | `backlog.md` | The roadmap (section 0) and the open items |
 | `apply-deferred.md` | NETCONF apply and rollback, deferred (D77-D93) |
 | `asa-deferred.md` | Cisco ASA, deferred |
