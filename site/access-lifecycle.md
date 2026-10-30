@@ -9,7 +9,7 @@ doctype: how-to
 
 # Access Lifecycle
 
-*Joiners, movers and leavers · Checked against tacctl 0.2.20*
+*Joiners, movers and leavers · Checked against tacctl 0.2.21*
 
 [Printable PDF](../pdf/tacctl-access-lifecycle.pdf){: .pdf-link }
 
@@ -34,6 +34,12 @@ tacctl tier), their **scopes** decide *where* they can log in, and their
 > everywhere. The `engineer` group exists only after
 > `tacctl group preset roles`; check with `tacctl group list`.
 
+The tacctl server and its console are the exception: every user can log in
+there, whatever their scopes, unless disabled (`user disable`) or in a group
+of tier none. The server's own login is a scope that tacctl manages and
+no listing shows ([Superuser Daily Operations](superuser-daily-operations.md)
+§11.1).
+
 ---
 
 ## 2. Joiner: a new person
@@ -56,7 +62,8 @@ Names are lower case: letters, digits, `_` and `-`, and a period between
 two parts (`alice.smith`; never first, last or twice in a row). `root` and
 `tacquito` are reserved. A name with a period is no Linux account name:
 `host sync` skips that user with a warning, so they log in at devices only,
-and `tacctl rollback` is refused while such a name exists.
+with no account on any host and no console login on the tacctl server, and
+`tacctl rollback` is refused while such a name exists.
 
 **Password without you seeing it.** The person creates a bcrypt hash on
 their own machine (`tacctl hash commands` prints the recipes for Linux,
@@ -96,6 +103,12 @@ tacctl host sync --all
 
 > **After a rename,** sync **all** hosts before you give the old name to a
 > new person. Otherwise a host's UID check will refuse the sync.
+
+A rename to a name with a period is refused for a user who has a UID or an
+account on a host, since the next sync would remove the account. The refusal
+names the two ways forward: a name without a period, or a new user (`user
+remove`, `host sync --all`, then `user add` under the new name with the group
+and scopes the refusal prints), who gets a new password and no UID.
 
 A name may also clash with a scope's break-glass local account. tacctl
 refuses that and names the command that resolves it.
@@ -177,9 +190,9 @@ What the requirement does, until the user changes the password:
 
 A superuser is never held to it: the tier of the user's group decides each
 time. The requirement is set only for a user who can log in to the server to
-make the change (the server enrolled with `host enroll --local`, the user in
-its scope, enabled, with no period in the name); otherwise the command says
-why and sets nothing. `require-password-change --all` ends with
+make the change (the server's own login set up, the user enabled, with no
+period in the name); otherwise the command says why and sets nothing.
+`require-password-change --all` ends with
 `Flagged N, skipped M, already required K.`
 
 Who is waiting: `user list` marks the date with `(change required)`,
@@ -189,11 +202,12 @@ Two marks need you:
 | Mark | Meaning | What to do |
 |---|---|---|
 | `flagged, cannot log in to change it` | The user has no login on the server (`user show` gives the reason) | Restore the login, or `tacctl user require-password-change <name> off` |
-| `flagged, devices in a scope shared with the server still accept the password` | The server shares its scope with devices, which keep accepting the old password | Give the server a scope of its own: `scope add`, then `host enroll --local --scope <name>` |
+| `flagged, devices in a scope shared with the server still accept the password` | The server is still registered in a scope it shares with devices (an install from before 0.2.21), which keep accepting the old password | `tacctl host enroll --local`: it gives the server its managed scope, and the devices of the old scope stop accepting the old password |
 
-A change that would leave a flagged user with no login on the server (taking
-the server's scope away, for example) is refused with nothing changed, and
-names `tacctl user require-password-change <name> off`.
+A change that would leave a flagged user with no login on the server (`host
+forget` or `host unenroll` of the server, or disabling the backend of its
+login, for example) is refused with nothing changed, and names
+`tacctl user require-password-change <name> off`.
 
 > **Before you require it of everyone,** check
 > `tacctl console forwarding tiers`. A user of a listed tier can still

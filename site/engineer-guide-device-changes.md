@@ -9,7 +9,7 @@ doctype: how-to
 
 # Engineer Guide: Device Changes
 
-*Register, compare, plan and apply device AAA configuration · Checked against tacctl 0.2.20*
+*Register, compare, plan and apply device AAA configuration · Checked against tacctl 0.2.21*
 
 [Printable PDF](../pdf/tacctl-engineer-guide-device-changes.pdf){: .pdf-link }
 
@@ -222,6 +222,18 @@ tacctl device config show sw1
 > **The output contains the scope's shared secret.** Handle it as secret.
 > Each print writes a `secret-read` line to the audit log.
 
+The walkthrough tells the device the server address recorded with
+`tacctl server addresses` (else the detected one; `--server` wins), and says
+which address plays which role when that differs from the address tacctl
+reaches the device from. It follows the configured TACACS+ listener's port
+too: nothing is written for the default 49, and a listener on another port
+adds `port <n>` under `tacacs server TACACS` (Cisco), `set system
+tacplus-server <address> port <n>` (Junos) and the Authentication Port item
+(WTI). `diff` and `plan` render the same, so a device that still has the old
+port differs and its plan types the new one. A template you changed in an
+earlier release has none of the new variables: the upgrade leaves it and
+writes the new default beside it as `.new`.
+
 ### 4.2 Junos: the management filter
 
 The Junos management filter is planned whole, in the mode of the device's
@@ -308,7 +320,11 @@ What happens during an apply:
   exactly the members `show version` lists. A member that is missing or
   answers otherwise fails the step, and the error names the member and its
   text. Over NETCONF, a reply of a virtual chassis or a cluster that names no
-  member is refused; use the command-line transport, the default.
+  member is refused; use the command-line transport, the default. A chassis
+  of exactly one member (`show version` prints `fpc0:` even then) answers
+  like a single device: its plain lines are read, and so is a block labelled
+  with that one member; a block of another member, or a label twice, is
+  refused.
 - The first device of each new shape goes alone (canary). By default at most
   5 devices are changed per run (`--max`), with a pause between devices
   (`--pause`).

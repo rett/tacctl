@@ -9,7 +9,7 @@ doctype: tutorial
 
 # Getting Started
 
-*Your first login, the console and the shell, and where to go next · Checked against tacctl 0.2.20*
+*Your first login, the console and the shell, and where to go next · Checked against tacctl 0.2.21*
 
 [Printable PDF](../pdf/tacctl-getting-started.pdf){: .pdf-link }
 
@@ -114,6 +114,22 @@ tacacs> console password-cache off      # saved; forgets the password and stops 
 When your tier is not allowed, `on` is refused and the message names the
 command a superuser runs to allow it.
 
+With the cache on and still empty, `ssh` and `device ssh` to a device with a
+pinned host key ask for your password themselves, once, before they connect:
+
+```text
+tacacs> ssh sw1
+Password for alice (device login):
+```
+
+The password is kept, so the next `ssh` to any device asks nothing, and the
+shell says `password cached for this session (console password-cache)`.
+Ctrl-C at the prompt ends the line with status 130 and starts nothing; an
+empty answer stores nothing. A wrong password stays only until the first ssh
+that ends with status 255, which forgets it. Without a terminal, for a device
+with no pinned host key, or with an option of ssh's own after `--`, ssh asks
+for the password itself, as it always did, and nothing is cached.
+
 ---
 
 ## 2. Your password
@@ -163,7 +179,7 @@ Your tacctl **group** sets your **tier**. Tiers, lowest to highest:
 
 | Tier | Typical person | Can do (in short) |
 |---|---|---|
-| Read-only | Monitoring, help desk | Lists and shows, `ssh` to devices in your scopes, `status`, `passwd` |
+| Read-only | Monitoring, help desk | Lists and shows of users, groups and devices, `scope list`, `ssh` to devices in your scopes, `status`, `passwd` |
 | Operator | NOC, tier 1–2 | Read-only plus logs, `config validate`, `device check`, `scan`, `discover`, drift views, `backup list` |
 | Engineer | Change engineers | Operator plus device registry and device configuration work **in your own scopes** |
 | Superuser | Platform owners | Everything: users, groups, scopes, hosts, lockdowns, break-glass, restores |

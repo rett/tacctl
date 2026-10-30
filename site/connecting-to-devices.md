@@ -9,7 +9,7 @@ doctype: how-to
 
 # Connecting to Devices
 
-*tacctl ssh by name, plain ssh with pinned keys, and what to do when a connection is refused · Checked against tacctl 0.2.20*
+*tacctl ssh by name, plain ssh with pinned keys, and what to do when a connection is refused · Checked against tacctl 0.2.21*
 
 [Printable PDF](../pdf/tacctl-connecting-to-devices.pdf){: .pdf-link }
 
@@ -65,13 +65,14 @@ allowed it, and type your password once per session
 
 ```text
 tacacs> console password-cache on   # once: saved for your later sessions too
-tacacs> ssh sw1
-tacacs> ssh rtr1
+tacacs> ssh sw1                     # asks for your password, once, before it connects
+tacacs> ssh rtr1                    # asks nothing
 tacacs> console forget              # drop the cached password now
 ```
 
 In a system shell, `tacctl shell --password-cache` does the same for one
-shell session.
+shell session. The ssh audit line ends `password=asked` for the line that
+prompted and `password=cached` for a line that used the cache.
 
 ---
 

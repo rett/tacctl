@@ -9,7 +9,7 @@ doctype: how-to
 
 # Audit and Compliance
 
-*Audit trail, evidence and periodic reviews · Checked against tacctl 0.2.20*
+*Audit trail, evidence and periodic reviews · Checked against tacctl 0.2.21*
 
 [Printable PDF](../pdf/tacctl-audit-and-compliance.pdf){: .pdf-link }
 
@@ -111,6 +111,7 @@ $J | grep 'scope secret set'                     # secret rotations
 $J | grep -E 'emergency lockdown|breakglass'     # lockdowns and holds, with reasons
 $J | grep 'device config apply'                  # device changes: review, approval, apply
 $J | grep 'scope mgmt-acl scope=.* op=mode'      # Junos filter mode changes (value=strict|ssh-only)
+$J | grep 'server addresses'                     # changes of the server address (op=, address=)
 $J | grep 'group edit'                           # privilege or tier changes to groups
 $J | grep 'backup restore'                       # rollbacks
 $J | grep 'console start'                        # console logins (user=, from=)

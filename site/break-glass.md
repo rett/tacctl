@@ -9,7 +9,7 @@ doctype: how-to
 
 # Break Glass
 
-*Local emergency accounts, and holding a device or host back from the server · Checked against tacctl 0.2.20*
+*Local emergency accounts, and holding a device or host back from the server · Checked against tacctl 0.2.21*
 
 [Printable PDF](../pdf/tacctl-break-glass.pdf){: .pdf-link }
 
@@ -92,8 +92,12 @@ tacctl breakglass hold "sw2=console recovery,sw3" --reason "CHG-1182 failed past
 - Several devices: a comma list, each with an optional `=reason`. Each
   device is checked on its own; the ones refused are named on a
   `Not held:` line.
-- A hold is refused for a name that is not registered, already held, has
-  no address, or that no scope covers.
+- A hold is refused, with nothing changed, for a name that is neither a
+  registered device nor an enrolled host (or is both), one that is already
+  held, this server's own host, a name with no address, a loopback address
+  or an address a listener binds, a device at the address of an enrolled
+  host (the hold would silence the host too), and an address that no scope
+  covers.
 
 > **Only the registered address is carved out.** If a device sends AAA
 > from another address (a Cisco source interface, NAT, IPv6), the server
