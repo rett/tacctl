@@ -37,7 +37,10 @@ func TestServerAddressesList(t *testing.T) {
 	hs.run(nil, "server")
 	hs.expect(0, "Usage: tacctl server <subcommand>", "")
 	hs.run(nil, "server", "bogus")
-	hs.expect(1, "Usage: tacctl server <subcommand>", "[ERROR] Unknown subcommand: 'bogus'")
+	hs.expect(1, "", "[ERROR] Unknown subcommand: 'bogus'")
+	if hs.out.Len() != 0 {
+		t.Errorf("an unknown sub-command printed the usage: %q", hs.out.String())
+	}
 	hs.run(nil, "server", "addresses", "bogus")
 	hs.expect(1, "", "Unknown subcommand: 'bogus'")
 	hs.run(nil, "server", "addresses", "list", "x")
@@ -220,7 +223,7 @@ func TestServerAddressesAudit(t *testing.T) {
 // wrote it and a rollback has nothing to take out.
 func TestServerIsTheSuperusersAlone(t *testing.T) {
 	for _, tr := range []tier.Tier{tier.Readonly, tier.Operator, tier.Engineer} {
-		for _, sub := range []string{"", "addresses", "list"} {
+		for _, sub := range []string{"", "addresses", "list", "show"} {
 			if tier.Permits(tr, "server", sub) {
 				t.Errorf("%s may run 'server %s'", tr, sub)
 			}

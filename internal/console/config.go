@@ -409,7 +409,7 @@ func (f *File) validate() error {
 		}
 	}
 	for u, on := range f.SystemShellUsers {
-		if !names.MatchUser(u) {
+		if !names.MatchExistingUser(u) {
 			return fail("settings.system_shell_users: invalid user name '" + u + "'.")
 		}
 		if t := f.SystemShellUserTiers[u]; on && t != tier.Readonly && t != tier.Operator {
@@ -417,7 +417,7 @@ func (f *File) validate() error {
 		}
 	}
 	for u := range f.PasswordCacheUsers {
-		if !names.MatchUser(u) {
+		if !names.MatchExistingUser(u) {
 			return fail("settings.password_cache_users: invalid user name '" + u + "'.")
 		}
 	}
@@ -435,7 +435,7 @@ func (f *File) validate() error {
 		return fail("settings.password_cache.max must be 1-" + strconv.Itoa(MaxPasswordCacheMax) + " (hours).")
 	}
 	for u := range f.IgnoredUsers {
-		if !names.MatchUser(u) {
+		if !names.MatchExistingUser(u) {
 			return fail("users: invalid user name '" + u + "'.")
 		}
 	}

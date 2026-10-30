@@ -130,14 +130,16 @@ run_plain() {
 }
 
 # bats test_tags=cutover:wp2-4d
-@test "cli: backend with no subcommand or an unknown one prints the usage, exit 1" {
+@test "cli: backend with no subcommand prints the usage, an unknown one the short error, exit 1" {
     run "$TACCTL_BIN_SCRIPT" backend
     assert_failure 1
     assert_output --partial "Usage: tacctl backend <subcommand> [arguments]"
     assert_output --partial "Backends: tacacs radius"
     run "$TACCTL_BIN_SCRIPT" backend frobnicate
     assert_failure 1
-    assert_output --partial "enable <id> [-y]"
+    assert_output --partial "Unknown subcommand: 'frobnicate'"
+    assert_output --partial "Run 'tacctl backend -h' for usage."
+    refute_output --partial "Usage: tacctl backend"
 }
 
 # bats test_tags=cutover:wp2-4d

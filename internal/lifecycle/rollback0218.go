@@ -120,7 +120,9 @@ func (p *RollbackPlan) lockdownKeysStep(target string) RollbackStep {
 		case RollbackTarget0219:
 			s.Lines = []string{"nothing to remove (no scope has a management filter mode)"}
 		case RollbackTarget0220:
-			s.Lines = []string{"nothing to remove (no server address is set)"}
+			s.Lines = []string{"nothing to remove (no server address, server name or timeout scale is set)"}
+		case RollbackTarget0221:
+			s.Lines = []string{"nothing to remove (no server name or timeout scale is set)"}
 		}
 		return s
 	}
@@ -136,6 +138,10 @@ func (p *RollbackPlan) lockdownKeysStep(target string) RollbackStep {
 			what = append(what, "the management filter mode of a scope is 0.2.20's")
 		case conf.Added0221Key(k) && !slices.Contains(what, "the server address is 0.2.21's (this server's registry entry keeps a copy, which the older release reads)"):
 			what = append(what, "the server address is 0.2.21's (this server's registry entry keeps a copy, which the older release reads)")
+		case k == conf.ServerNameKey && !slices.Contains(what, "the server name is 0.2.22's (the console shows the host name again)"):
+			what = append(what, "the server name is 0.2.22's (the console shows the host name again)")
+		case conf.Added0222Key(k) && k != conf.ServerNameKey && !slices.Contains(what, "the timeout scale is 0.2.22's (the fixed timings apply again)"):
+			what = append(what, "the timeout scale is 0.2.22's (the fixed timings apply again)")
 		}
 	}
 	s.Lines = append(s.Lines, "("+strings.Join(what, ", ")+"; "+target+"'s schema refuses it: its 'config validate' reports it and its 'backup restore' refuses a snapshot that has it; every other key is one it has and stays)")

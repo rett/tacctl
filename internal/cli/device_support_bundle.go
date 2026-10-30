@@ -178,8 +178,7 @@ func (inv *invocation) deviceSupportBundle(args []string) error {
 	password := string(secret)
 	askpass.Zero(secret)
 
-	st := inv.deviceConfigSettings()
-	ctx, cancel := context.WithTimeout(inv.ctx, 4*st.timeout)
+	ctx, cancel := context.WithTimeout(inv.ctx, 4*inv.deviceTimeoutOf(e))
 	defer cancel()
 	files, notes, err := inv.collectBundle(ctx, e, vendor, account, local, pw, password)
 	if err != nil {

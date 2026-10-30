@@ -20,9 +20,9 @@ import (
 // (docs/plans/go-rewrite.md 3.9 item 6).
 var installPrereqs = []string{"git", "wget"}
 
-// Install is 'tacctl install [--branch <name>] [--server <ip>] [-y|--yes]'
+// Install is 'tacctl install [--branch <name>] [--server <ip>] [--yes]'
 // (cmd_install):
-// the plan and a confirmation ([y/N]; -y answers it, new in 0.2.0), then
+// the plan and a confirmation ([y/N]; --yes answers it, new in 0.2.0), then
 // in 0.1.16's order: every enabled backend's 'install build' (tacquito:
 // Go checked, source, build), the deploy clone (cloned, or pulled), the
 // installed command (built from the clone when it is not the clone's
@@ -309,7 +309,7 @@ func (h *Host) installSummary(seed SeedResult) {
 	h.echo("    6. RADIUS as well (optional): tacctl backend enable radius")
 	h.echo("")
 	h.echo("  Security hardening:")
-	h.echo("    7. Bind to a specific IP:  tacctl config listen tcp <mgmt-ip>:49")
+	h.echo("    7. Bind to a specific IP:  tacctl server listen tcp <mgmt-ip>:49")
 	h.echo("    8. Add connection ACL:     tacctl config allow add <cidr>")
 	h.echo("    9. Review config:          tacctl config show")
 	h.echo("")

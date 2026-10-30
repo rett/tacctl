@@ -14,7 +14,7 @@
 //     listeners;
 //   - the listeners (listeners.tacacs in tacctl.yaml) and the two settings
 //     that reach every listener (backends.tacacs.level, .metrics_address:
-//     'tacctl config loglevel' and 'tacctl config metrics'), applied by
+//     'tacctl config loglevel' and 'tacctl server metrics'), applied by
 //     restarting the unit concerned and put back when it does not come up;
 //   - the status parts, log and accounting commands, last login, secret
 //     constraints and device variables.
@@ -191,7 +191,7 @@ func (b *Backend) SecretConstraints() backend.Constraints { return backend.Const
 
 // DeviceVars is backend_tacacs_device_vars: the TACACS+ device templates
 // take everything from the model and tacctl.yaml but the port the clients
-// connect to, TACACS_PORT: the default listener's, as 'tacctl config listen'
+// connect to, TACACS_PORT: the default listener's, as 'tacctl server listen'
 // has it (backend.ServerPort).
 func (b *Backend) DeviceVars(context.Context, string, string) (map[string]string, error) {
 	port := backend.ServerPort(b.listenerLines(), backend.TACACS, backend.RoleDefault)

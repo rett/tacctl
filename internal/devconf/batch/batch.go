@@ -12,6 +12,11 @@
 // progress goes to a View, which is only ever called from the goroutine
 // that called Run, so a view needs no locking and workers never write
 // anywhere.
+//
+// A job may also Mark the phases it passes (connect, login, read, ...): the
+// dispatcher stamps each with the injected clock, keeps it in the job's
+// Entry and shows nothing, and Summary.Timings turns the marks into the
+// time of each phase (timing.go).
 package batch
 
 import (
@@ -183,6 +188,30 @@ func Progress(ctx context.Context, step string) {
 	}
 }
 
+// markKey carries a job's phase marker in its context.
+type markKey struct{}
+
+// Mark says that the phase step of the running job just ended: the time
+// since the job began, or since its last mark, is that phase's (Timing). It
+// is how a verb that was asked for its timing finds where the time went, and
+// unlike Progress it shows nothing: it is no event of a view, so a run that
+// marks prints what a run that does not mark prints. The step is a short
+// word that names the phase ("connect", "login", "read"). Mark is a no-op
+// outside a job's context and under Quiet, and safe to call from the job's
+// own goroutines while Do runs.
+func Mark(ctx context.Context, step string) {
+	if f, ok := ctx.Value(markKey{}).(func(string)); ok && f != nil {
+		f(step)
+	}
+}
+
+// Quiet is ctx without the marking: a part of a job whose phases are not to
+// be told apart (the fresh login of a verification is part of the
+// verification) is run under it.
+func Quiet(ctx context.Context) context.Context {
+	return context.WithValue(ctx, markKey{}, (func(string))(nil))
+}
+
 // Options are the settings of a run.
 type Options struct {
 	// Concurrency is the requested pool size (--concurrency) and Cap the
@@ -278,6 +307,10 @@ type Event struct {
 	At     time.Time
 	// Step is the text of a PhaseProgress event; empty otherwise.
 	Step string
+	// Marks are the phases the job marked with Mark before it ended, in
+	// order (a PhaseDone event only). A mark is not an event of its own: a
+	// view sees nothing of it until the job is done.
+	Marks []StepMark
 }
 
 // View is the progress display. Run calls it from its own goroutine only,
@@ -311,6 +344,9 @@ type Entry struct {
 	Result   Result
 	Started  time.Time
 	Finished time.Time
+	// Marks are the phases the job marked, in order (Mark), each with the
+	// time of the injected clock when the dispatcher took it.
+	Marks []StepMark
 }
 
 // Duration is how long the job ran by the injected clock; zero for a job
@@ -407,6 +443,8 @@ type msg struct {
 	r    Result
 	step string
 	end  bool
+	// mark: step is a phase the job finished (Mark), not a progress text.
+	mark bool
 }
 
 // job states in Run.
@@ -567,6 +605,12 @@ func Run(ctx context.Context, opt Options, jobs []Job, view View) Summary {
 					case <-runCtx.Done():
 					}
 				})
+				jctx = context.WithValue(jctx, markKey{}, func(step string) {
+					select {
+					case results <- msg{i: i, step: step, mark: true}:
+					case <-runCtx.Done():
+					}
+				})
 				results <- msg{i: i, r: runJob(jctx, opt.Timeout, jobs[i]), end: true}
 			}()
 		}
@@ -584,6 +628,10 @@ func Run(ctx context.Context, opt Options, jobs []Job, view View) Summary {
 				interrupt(true)
 				interrupted = true
 			default:
+			}
+			if d.mark {
+				sum.Entries[d.i].Marks = append(sum.Entries[d.i].Marks, StepMark{Step: d.step, At: now()})
+				break
 			}
 			if !d.end {
 				view.Update(Event{Index: d.i, Name: names[d.i], Phase: PhaseProgress, Step: d.step, At: now()})
@@ -614,7 +662,8 @@ func Run(ctx context.Context, opt Options, jobs []Job, view View) Summary {
 					sum.AuthFailed++
 				}
 			}
-			view.Update(Event{Index: d.i, Name: names[d.i], Phase: PhaseDone, Result: r, At: at})
+			view.Update(Event{Index: d.i, Name: names[d.i], Phase: PhaseDone, Result: r, At: at,
+				Marks: append([]StepMark(nil), sum.Entries[d.i].Marks...)})
 			if canary[d.i] {
 				if r.Status == StatusOK {
 					shapeOK[jobs[d.i].Shape] = true

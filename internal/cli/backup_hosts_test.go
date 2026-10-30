@@ -338,7 +338,7 @@ func TestHostVerbsSnapshotBeforeTheRegistryChanges(t *testing.T) {
 	}
 
 	// move: the snapshot has the host in the scope it leaves.
-	hs.run(nil, "host", "move", "web1", "prod", "-y")
+	hs.run(nil, "host", "move", "web1", "prod", "--yes")
 	hs.expect(0, "Host 'web1' enrolled", "")
 	dirs = hs.snapshotDirs()
 	if len(dirs) <= n1 {

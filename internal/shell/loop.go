@@ -115,8 +115,8 @@ type Options struct {
 	// Interactive only.
 	SpaceCompletion bool
 	// Styled shows the words of the lists (Tab's columns, '?') in the
-	// palette: command names bright white, sub-commands, fixed words and
-	// options teal, live names bold, the descriptions plain. The caller
+	// palette: command names, sub-commands, fixed words and options
+	// teal, live names bold, the descriptions plain. The caller
 	// decides it from the terminal and the user's choice (ui.Colour, the
 	// console's color setting); false: plain. Interactive only.
 	Styled bool

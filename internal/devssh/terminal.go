@@ -12,6 +12,8 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/crypto/ssh"
+
+	"github.com/rett/tacctl/internal/devconf/batch"
 )
 
 // The terminal a TermSession asks for: what a menu-driven device (a WTI
@@ -157,6 +159,7 @@ func (c *Client) Terminal(ctx context.Context) (TermSession, error) {
 		return nil, err
 	}
 	go func() { out.close(sess.Wait()) }()
+	batch.Mark(c.ctx, "session")
 	return &terminal{c: c, sess: sess, in: in, out: out, quiet: c.quiet}, nil
 }
 

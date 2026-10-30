@@ -132,7 +132,7 @@ func Prepare(ctx context.Context, vendor, scope string, m *model.Model, enabled 
 	r.AuthPort, r.AcctPort, r.Secret = vars["AUTH_PORT"], vars["ACCT_PORT"], vars["SECRET"]
 	if r.AuthPort == "" || r.AcctPort == "" {
 		return nil, &RefusedError{Lines: []string{
-			"Could not read the RADIUS auth and acct listener ports (tacctl config listen --backend radius show).",
+			"Could not read the RADIUS auth and acct listener ports (tacctl server listen --backend radius show).",
 		}}
 	}
 	if r.Secret == "" {
@@ -184,7 +184,7 @@ func Prepare(ctx context.Context, vendor, scope string, m *model.Model, enabled 
 				continue
 			}
 			if strings.HasPrefix(host, "127.") {
-				warn.WriteString("  - The " + l.Name + " listener is bound to " + host + ": no device can reach it (tacctl config listen --backend radius)\n")
+				warn.WriteString("  - The " + l.Name + " listener is bound to " + host + ": no device can reach it (tacctl server listen --backend radius)\n")
 			}
 			if r.ServerAddr == "" {
 				r.ServerAddr = host

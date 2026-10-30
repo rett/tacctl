@@ -420,7 +420,7 @@ func TestStrictPlanRevealsUnlessNoSecrets(t *testing.T) {
 // refuses before the editor runs.
 func TestStrictRefusesABlockEditBeforeTheEditor(t *testing.T) {
 	b := newEditBox(t)
-	b.sb.blk("", "lab", "juniper", "set", "snmp", "--file", b.sb.blockFile("snmp.txt", verbSNMPFile), "-y")
+	b.sb.blk("", "lab", "juniper", "set", "snmp", "--file", b.sb.blockFile("snmp.txt", verbSNMPFile), "--yes")
 	if b.sb.code != 0 {
 		t.Fatal(b.sb.stderr())
 	}

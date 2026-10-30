@@ -209,7 +209,7 @@ as_engineer() {
     assert_failure
     assert_output --partial "SNMP credentials for a device named 'other' are already on disk"
     rm "${SNMPDIR}/devices/other.yaml"
-    run "$T" device remove core-1 -y
+    run "$T" device remove core-1 --yes
     assert_success
     [[ ! -e "${SNMPDIR}/devices" ]]
 }

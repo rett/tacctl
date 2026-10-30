@@ -43,9 +43,9 @@ func configKeyWords(s *conf.Schema) string {
 
 // topSpecs are the verbs outside the families.
 var topSpecs = map[string]Spec{
-	"install":   {Flags: []Flag{{Names: []string{"--branch"}, Value: true}, {Names: []string{"--server"}, Value: true}, {Names: []string{"-y", "--yes"}}}},
+	"install":   {Flags: []Flag{{Names: []string{"--branch"}, Value: true}, {Names: []string{"--server"}, Value: true}, {Names: []string{"--yes"}}}},
 	"upgrade":   {Flags: []Flag{{Names: []string{"--branch"}, Value: true}}},
-	"uninstall": {Flags: []Flag{{Names: []string{"-y", "--yes"}}}},
+	"uninstall": {Flags: []Flag{{Names: []string{"--yes"}}}},
 	"rollback":  rollbackSpec,
 	"version":   {Flags: []Flag{{Names: []string{"--long"}}}},
 	// completion <shell>: the word is one of the shells.
@@ -424,7 +424,7 @@ var configFamilies = map[string]string{
 	"cisco.source_interface.": KindScopes, "scope_auth_method.": KindScopes,
 	"scope_mgmt_acl.names.cisco.": KindScopes, "scope_mgmt_acl.names.juniper.": KindScopes,
 	"scope_mgmt_acl.permits.": KindScopes, "scope_mgmt_acl.mode.": KindScopes, "breakglass_scope.": KindScopes, "blocks.": KindScopes,
-	"snmp_scope.": KindScopes, "netconf_scope.": KindScopes,
+	"snmp_scope.": KindScopes, "netconf_scope.": KindScopes, "timeout_scale_scope.": KindScopes,
 	"listeners.": "", "blocks_device.": "", "breakglass_hold.": "", "emergency.lockdown.": "",
 }
 

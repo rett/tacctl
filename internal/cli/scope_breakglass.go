@@ -130,7 +130,7 @@ func (inv *invocation) scopeBreakGlass(args []string) error {
 		inv.echo("")
 		return nil
 	}
-	return inv.usageErr(withUsage("Unknown subcommand: '"+sub+"'", usage)...)
+	return inv.unknownSub(sub, "list", "add", "remove")
 }
 
 // scopeBreakGlassList is 'scope breakglass <scope> [list]'.

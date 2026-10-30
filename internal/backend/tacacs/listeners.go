@@ -156,7 +156,7 @@ func (o listenerOps) Show(_ context.Context, name string) (string, error) {
 	want := listenerName(name)
 	l, override, ok := b.listenerGet(want)
 	if !ok {
-		b.out().Error("No listener '" + want + "'. Create it: tacctl config listen --listener " + want + " tcp <address>")
+		b.out().Error("No listener '" + want + "'. Create it: tacctl server listen --listener " + want + " tcp <address>")
 		return "", backend.ErrFailed
 	}
 	if want != "default" {
@@ -246,7 +246,7 @@ func (o listenerOps) Set(ctx context.Context, name, network, address string) err
 		return backend.ErrFailed
 	}
 	if address == "" {
-		out.Error("Missing address. Example: tacctl config listen " + network + " :49")
+		out.Error("Missing address. Example: tacctl server listen " + network + " :49")
 		return backend.ErrFailed
 	}
 	if conf.ListenAddressProblem(network, address) != "" {

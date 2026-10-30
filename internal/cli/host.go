@@ -10,6 +10,7 @@ package cli
 // able to sudo.
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -43,7 +44,12 @@ var (
 // hostSpecs are the arguments of each verb, for completion (args.go). Host
 // names complete from the registry (KindHosts).
 var hostSpecs = map[string]Spec{
-	"list": {Flags: []Flag{flagJSON}},
+	"list": {Flags: []Flag{
+		{Names: []string{"--stale"}, Arg: "", Desc: "Only the hosts not seen for stale-days"},
+		{Names: []string{"--name"}, Value: true, Arg: "<text>", Desc: "Only names containing the text (comma list: any)"},
+		{Names: []string{"--ip"}, Value: true, Arg: "<addr|cidr|text>", Desc: "Only an address equal to, inside or containing it"},
+		{Names: []string{"--scope"}, Value: true, Kind: KindScopes, Arg: "<scope>", Desc: "Only the hosts that scope answers (comma list)"},
+		flagJSON}},
 	"show": {MinArgs: 1, MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{
 		{Names: []string{"--all"}}, flagJSON, {Names: []string{"--check"}}}},
 	"enroll": {MaxArgs: 1, Args: []string{""}, Flags: []Flag{
@@ -58,8 +64,8 @@ var hostSpecs = map[string]Spec{
 		flagYes,
 		{Names: []string{"--staging"}},
 		flagAllowUIDMismatch, flagRemoveHome}},
-	"sync":  {MaxArgs: -1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--all"}}, flagAllowUIDMismatch, flagRemoveHome}},
-	"check": {MaxArgs: -1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--all"}}, flagJSON}},
+	"sync":  {MaxArgs: -1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--all"}}, flagAllowUIDMismatch, flagRemoveHome, hostConcurrencyFlag}},
+	"check": {MaxArgs: -1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--all"}}, flagJSON, hostConcurrencyFlag}},
 	"move": {MaxArgs: 2, Args: []string{KindHosts, KindScopes}, Flags: []Flag{{Names: []string{"--all"}, Alone: true},
 		flagYes, flagAllowUIDMismatch, flagRemoveHome}},
 	"unenroll": {MinArgs: 1, MaxArgs: 1, Args: []string{KindHosts}, Flags: []Flag{{Names: []string{"--force"}}}},
@@ -81,7 +87,7 @@ var hostSpecs = map[string]Spec{
 
 // hostVerbs are the verbs ({Use, Short}), in usage order.
 var hostVerbs = [][2]string{
-	{"list [--json]", "Show enrolled hosts"},
+	{"list [--name <text>] [--ip <addr|cidr|text>] [--scope <scope>] [--stale] [--json]", "Show enrolled hosts: scope, state, last seen, notices"},
 	{"show <name> [--all] [--json] [--check]", "One enrolled host in full; --check compares it with what tacctl would make it"},
 	{"enroll <[user@]host> | --local [options]", "Install TACACS+ or RADIUS login on a host over SSH and register it"},
 	{"sync <name>... | --all [options]", "Push account adds, renames, deletions, expiries and tier changes"},
@@ -89,8 +95,8 @@ var hostVerbs = [][2]string{
 	{"move <name> [<scope>] | --all [options]", "Move an enrolled host to another scope (default: the scope answering its address)"},
 	{"target <name> [<[user@]host>] [options]", "Show or change how tacctl reaches an enrolled host over ssh"},
 	{"provisioner <name> rotate <user> [options]", "Switch the account tacctl logs in to the host with, proving the new one before the registry changes"},
-	{"rename <old> <new> [-y]", "Give an enrolled host another name; its own linux-<name> scope can follow"},
-	{"forget <name> [-y]", "Drop a host's registration from this server without contacting the host"},
+	{"rename <old> <new> [--yes]", "Give an enrolled host another name; its own linux-<name> scope can follow"},
+	{"forget <name> [--yes]", "Drop a host's registration from this server without contacting the host"},
 	{"unenroll <name> [--force]", "Remove the login method from the host (accounts and homes are kept)"},
 	{"default-method [tacplus|radius]", "Show or set the method for hosts enrolled without --method"},
 }
@@ -149,9 +155,7 @@ func (inv *invocation) host(args []string) error {
 		inv.write(hostUsage())
 		return nil
 	default:
-		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-		inv.write(hostUsage())
-		return exit(1)
+		return inv.unknownSub(sub)
 	}
 }
 
@@ -163,7 +167,7 @@ func (inv *invocation) registry() (*hosts.Registry, error) {
 // --- list ------------------------------------------------------------------------
 
 // hostListUsage is the usage line of 'host list'.
-const hostListUsage = "Usage: tacctl host list [--json]"
+const hostListUsage = "Usage: tacctl host list [--name <text>] [--ip <addr|cidr|text>] [--scope <scope>] [--stale] [--json]"
 
 // hostListJSON is one host of 'host list --json'.
 type hostListJSON struct {
@@ -177,10 +181,17 @@ type hostListJSON struct {
 	Server   string `json:"server"`
 	Method   string `json:"method"`
 	Identity string `json:"identity"`
-	// Address is the address recorded at the host's last enroll or sync
-	// (the device registry's), "" when none is.
+	// Address is the host's address as 'device list' gave it: the one
+	// recorded at its last enroll or sync, else the single address of its
+	// scope, "" when neither is known.
 	Address string `json:"address"`
 	Users   int    `json:"users"`
+	// State is configured (its scope exists) or unconfigured.
+	State string `json:"state"`
+	// Seen is what the seen cache knows of Address (absent when nothing).
+	Seen *deviceSeenJSON `json:"seen,omitempty"`
+	// Notices are the host's notices, the acknowledged ones included.
+	Notices []deviceNoticeJSON `json:"notices"`
 	// Drift is the warning the table prints under it (a scope that no
 	// longer answers the host, or a scope that is gone), "" when none.
 	Drift      string            `json:"drift"`
@@ -193,6 +204,18 @@ type hostListJSON struct {
 type hostFindingJSON struct {
 	Text string `json:"text"`
 	Fix  string `json:"fix"`
+}
+
+// hostRow is an enrolled host with the facts the list needs of it: the
+// registry's entry, the resolver's view (state, address, notices) and the
+// table's scope ("" for this server's own login, which is no scope of the
+// operator's).
+type hostRow struct {
+	reg   hosts.Entry
+	entry devreg.Entry
+	scope string
+	stale bool
+	hold  *conf.Hold
 }
 
 // hostList is cmd_host_list.
@@ -213,29 +236,66 @@ func (inv *invocation) hostList(args []string) error {
 	if !asJSON {
 		inv.echo("")
 	}
+	const label = "Enrolled Linux hosts"
 	if reg.Empty() {
 		if asJSON {
 			return inv.printJSON([]hostListJSON{})
 		}
-		inv.echoE(ui.Bold + "Enrolled Linux hosts" + ui.NC)
-		inv.echo(ui.Rule("Enrolled Linux hosts"))
+		inv.echoE(ui.Bold + label + ui.NC)
+		inv.echo(ui.Rule(label))
 		inv.echo("  None. Enroll one with: tacctl host enroll <[user@]host>")
 		inv.echo("")
 		inv.hostFindingsFooter()
 		return nil
 	}
-	// An engineer lists the hosts of their own scopes (D47).
-	f := inv.callerScopes()
-	var shown []hosts.Entry
-	for _, e := range reg.Entries() {
-		if f.allows(e.Scope) {
-			shown = append(shown, e)
-		}
-	}
 	// The model and the device registry are read once here; hostAddress, which
 	// the drift check of each row calls, loads the registry again for its row.
 	m, merr := inv.model()
 	devs, _ := inv.hostDevices()
+	// The resolver gives each host what 'device list' showed of it: state,
+	// address, sightings and notices.
+	file := devs
+	if file == nil {
+		file = &devreg.File{}
+	}
+	res := devreg.NewResolver(file, reg, m)
+	res.Seen = inv.seenLoad()
+	entries := map[string]devreg.Entry{}
+	for _, e := range res.All() {
+		if e.Source == devreg.SourceHost {
+			entries[e.Name] = e
+		}
+	}
+	// An engineer lists the hosts of their own scopes (D47).
+	f := inv.callerScopes()
+	narrow := newListFilter(p)
+	var shown []hostRow
+	total := 0
+	for _, he := range reg.Entries() {
+		if !f.allows(he.Scope) {
+			continue
+		}
+		r := hostRow{reg: he, entry: entries[he.Name], scope: he.Scope}
+		if inv.entryManaged(he) {
+			r.scope = "" // this server's own login: no scope of the operator's
+		}
+		_, _, _, r.stale = deviceSeenCols(inv, res, r.entry)
+		if p.Has("--stale") && !r.stale {
+			continue
+		}
+		total++
+		// The filter sees the scope as the table shows it.
+		seen := r.entry
+		seen.Scope = r.scope
+		if !narrow.match(seen) {
+			continue
+		}
+		// A host the server has been told not to answer is marked in STATE.
+		if h, ok := inv.hostHoldIn(devs, he); ok {
+			r.hold = &h
+		}
+		shown = append(shown, r)
+	}
 	users := func(e hosts.Entry) int {
 		if merr != nil {
 			return 0
@@ -243,59 +303,43 @@ func (inv *invocation) hostList(args []string) error {
 		rows, _ := inv.linuxAccounts(m, e.Scope, e.Server, e.Target == hosts.Local)
 		return hosts.UserCount(rows)
 	}
-	recorded := func(e hosts.Entry) string {
-		if devs == nil {
-			return ""
-		}
-		return devs.HostAddressOf(e.Name)
-	}
-	// A host the server has been told not to answer is marked in a STATE
-	// column, which is there only while one is held in the caller's scopes.
-	holds := map[string]conf.Hold{}
-	for _, e := range shown {
-		if h, ok := inv.hostHoldIn(devs, e); ok {
-			holds[e.Name] = h
-		}
-	}
 	if asJSON {
-		return inv.hostListJSONOut(reg, shown, devs, holds, users)
+		return inv.hostListJSONOut(reg, res, shown, users)
 	}
-	cols := []ui.Col{ui.Left("NAME"), ui.Left("TARGET"), ui.Left("ADDRESS"), ui.Left("SCOPE"), ui.Left("SERVER"), ui.Left("METHOD"), ui.Left("USERS")}
-	if len(holds) > 0 {
-		cols = append(cols, ui.Left("STATE"))
-	}
-	t := ui.NewTable("Enrolled Linux hosts", cols...)
-	for _, e := range shown {
-		scope := e.Scope
-		if inv.entryManaged(e) {
-			scope = "-" // this server's own login: no scope of the operator's
+	head := listHead(label, len(shown), total, !narrow.empty() || p.Has("--stale"))
+	if len(shown) == 0 {
+		if total == 0 && f.restricted && narrow.empty() && !p.Has("--stale") {
+			inv.listNone(head, false, "None in your scopes.")
+		} else {
+			inv.listNone(head, true, "")
 		}
-		row := []any{e.Name, hostTargetPort(e), dash(recorded(e)), scope, e.Server, reg.Method(e.Name), strconv.Itoa(users(e))}
-		if len(holds) > 0 {
-			state := any("")
-			if _, ok := holds[e.Name]; ok {
-				state = ui.Styled(ui.Red, "BREAK-GLASS")
-			}
-			row = append(row, state)
-		}
-		t.Add(row...)
-	}
-	if t.Len() == 0 {
-		inv.echoE(ui.Bold + "Enrolled Linux hosts" + ui.NC)
-		inv.echo(ui.Rule("Enrolled Linux hosts"))
-		inv.echo("  None in your scopes.")
-		inv.echo("")
 		inv.hostFindingsFooter()
 		return nil
 	}
+	cols := []ui.Col{ui.Left("NAME"), ui.Left("TARGET"), ui.Left("ADDRESS"), ui.Left("SCOPE"), ui.Left("STATE"),
+		ui.Left("LAST SEEN"), ui.Left("BY"), ui.Left("SERVER"), ui.Left("METHOD"), ui.Left("USERS"), ui.Left("NOTICES")}
+	t := ui.NewTable(head, cols...)
+	open, held := 0, 0
+	for _, r := range shown {
+		last, by, _, _ := deviceSeenCols(inv, res, r.entry)
+		if r.hold != nil {
+			held++
+		}
+		ns := res.NoticesFor(r.entry)
+		open += len(devreg.Open(ns))
+		t.Add(r.reg.Name, hostTargetPort(r.reg), dash(r.entry.Address), dash(r.scope), listStateCell(r.entry.State(), r.stale, r.hold != nil),
+			last, by, r.reg.Server, reg.Method(r.reg.Name), strconv.Itoa(users(r.reg)), dash(kinds(ns)))
+	}
 	inv.write(t.String())
 	inv.echo("")
-	if len(holds) > 0 {
-		inv.echoE(fmt.Sprintf("  %s%d host(s) held for break-glass%s: tacctl breakglass list", ui.Red, len(holds), ui.NC))
-		inv.echo("")
+	inv.echo("  " + inv.deviceSeenFooter(res))
+	inv.listOpenNotices(open)
+	if held > 0 {
+		inv.echoE(fmt.Sprintf("  %s%d host(s) held for break-glass%s: tacctl breakglass list", ui.Red, held, ui.NC))
 	}
-	for _, e := range shown {
-		if msg := inv.hostScopeDrift(e, inv.hostAddress(e)); msg != "" {
+	inv.echo("")
+	for _, r := range shown {
+		if msg := inv.hostScopeDrift(r.reg, inv.hostAddress(r.reg)); msg != "" {
 			inv.app.Out.WarnE(msg)
 		}
 	}
@@ -313,9 +357,9 @@ func hostTargetPort(e hosts.Entry) string {
 }
 
 // hostListJSONOut prints 'host list --json': one object for each of shown (the
-// caller's hosts), holds being the ones held. The findings are the
-// superuser's view, so a restricted caller's are empty.
-func (inv *invocation) hostListJSONOut(reg *hosts.Registry, shown []hosts.Entry, devs *devreg.File, holds map[string]conf.Hold, users func(hosts.Entry) int) error {
+// caller's hosts). The findings are the superuser's view, so a restricted
+// caller's are empty.
+func (inv *invocation) hostListJSONOut(reg *hosts.Registry, res *devreg.Resolver, shown []hostRow, users func(hosts.Entry) int) error {
 	byHost := map[string][]hostFindingJSON{}
 	for _, fd := range inv.hostListFindings() {
 		for _, n := range fd.Hosts {
@@ -323,26 +367,24 @@ func (inv *invocation) hostListJSONOut(reg *hosts.Registry, shown []hosts.Entry,
 		}
 	}
 	out := []hostListJSON{}
-	for _, e := range shown {
+	for _, r := range shown {
+		e := r.reg
 		local := e.Target == hosts.Local
-		scope := e.Scope
-		if inv.entryManaged(e) {
-			scope = "" // this server's own login: no scope of the operator's
-		}
-		v := hostListJSON{Name: e.Name, Local: local, Target: e.Target, Scope: scope, Server: e.Server,
-			Method: reg.Method(e.Name), Identity: e.Identity, Users: users(e),
-			Drift: inv.hostScopeDrift(e, inv.hostAddress(e)), Findings: []hostFindingJSON{}}
+		v := hostListJSON{Name: e.Name, Local: local, Target: e.Target, Scope: r.scope, Server: e.Server,
+			Method: reg.Method(e.Name), Identity: e.Identity, Users: users(e), Address: r.entry.Address, State: r.entry.State(),
+			Notices: []deviceNoticeJSON{}, Drift: inv.hostScopeDrift(e, inv.hostAddress(e)), Findings: []hostFindingJSON{}}
 		if !local {
 			v.Port = 22
 			if n, err := strconv.Atoi(e.Port); err == nil && n > 0 {
 				v.Port = n
 			}
 		}
-		if devs != nil {
-			v.Address = devs.HostAddressOf(e.Name)
+		v.Seen = deviceSeenJSONOf(inv, res, r.entry)
+		for _, n := range res.NoticesFor(r.entry) {
+			v.Notices = append(v.Notices, deviceNoticeJSON{Kind: n.Kind, Text: n.Text, Acked: n.Acked})
 		}
-		if h, ok := holds[e.Name]; ok {
-			v.Breakglass = holdJSONOfHold(h)
+		if r.hold != nil {
+			v.Breakglass = holdJSONOfHold(*r.hold)
 		}
 		if fs := byHost[e.Name]; fs != nil {
 			v.Findings = fs
@@ -477,7 +519,7 @@ func (inv *invocation) hostEnroll(args []string) error {
 		case "--remove-home":
 			o.removeHome = true
 			i++
-		case "-y", "--yes":
+		case "--yes":
 			o.yes = true
 			i++
 		case "--staging":
@@ -1351,20 +1393,20 @@ func (inv *invocation) hostMove(args []string) error {
 		switch {
 		case w == "--all":
 			all = true
-		case w == "-y" || w == "--yes" || w == "--remove-home" || w == "--allow-uid-mismatch":
+		case w == "--yes" || w == "--remove-home" || w == "--allow-uid-mismatch":
 			pass = append(pass, w)
 		case strings.HasPrefix(w, "-"):
-			return inv.usageErr("Unknown option: '"+w+"'", "Usage: tacctl host move <name> [<scope>] | --all  [-y] [--remove-home] [--allow-uid-mismatch]")
+			return inv.usageErr("Unknown option: '"+w+"'", "Usage: tacctl host move <name> [<scope>] | --all  [--yes] [--remove-home] [--allow-uid-mismatch]")
 		case name == "":
 			name = w
 		case scope == "":
 			scope = w
 		default:
-			return inv.usageErr("Usage: tacctl host move <name> [<scope>] | --all  [-y] [--remove-home] [--allow-uid-mismatch]")
+			return inv.usageErr("Usage: tacctl host move <name> [<scope>] | --all  [--yes] [--remove-home] [--allow-uid-mismatch]")
 		}
 	}
 	if all == (name != "") {
-		return inv.usageErr("Usage: tacctl host move <name> [<scope>] | --all  [-y] [--remove-home] [--allow-uid-mismatch]")
+		return inv.usageErr("Usage: tacctl host move <name> [<scope>] | --all  [--yes] [--remove-home] [--allow-uid-mismatch]")
 	}
 	reg, err := inv.registry()
 	if err != nil {
@@ -1549,6 +1591,7 @@ func (inv *invocation) hostSync(args []string) error {
 	a := inv.app
 	var typed []string
 	all, removeHome := false, false
+	concurrency := 1
 	scriptArgs := []string{"--accounts-only"}
 	for i := 0; i < len(args); {
 		switch w := args[i]; {
@@ -1561,6 +1604,21 @@ func (inv *invocation) hostSync(args []string) error {
 		case w == "--all":
 			all = true
 			i++
+		case w == "--concurrency" || strings.HasPrefix(w, "--concurrency="):
+			value, ok := strings.CutPrefix(w, "--concurrency=")
+			i++
+			if !ok {
+				if i >= len(args) {
+					return inv.usageErr(hostSyncUsage)
+				}
+				value = args[i]
+				i++
+			}
+			n, err := inv.hostConcurrency(value, hostSyncUsage)
+			if err != nil {
+				return err
+			}
+			concurrency = n
 		case strings.HasPrefix(w, "-"):
 			return inv.usageErr("Unknown option: '" + w + "'")
 		default:
@@ -1571,7 +1629,7 @@ func (inv *invocation) hostSync(args []string) error {
 		}
 	}
 	if !all && len(typed) == 0 {
-		return inv.usageErr("Usage: tacctl host sync <name>... | --all  [--allow-uid-mismatch] [--remove-home]")
+		return inv.usageErr(hostSyncUsage)
 	}
 	if all && len(typed) > 0 {
 		return inv.usageErr("Give names or --all, not both.")
@@ -1621,65 +1679,140 @@ func (inv *invocation) hostSync(args []string) error {
 	if err := inv.renumberUIDs(true); err != nil {
 		return err
 	}
-	he := inv.hostsEnv()
-	he.ReadKeys = true
+	if pool := min(concurrency, len(names)); pool > 1 {
+		return inv.hostSyncPool(reg, names, pool, scriptArgs, removeHome)
+	}
+	st := inv.sequentialStep()
+	he := inv.syncEnv(st)
 	failed := false
 	for _, name := range names {
-		e, _ := reg.Find(name)
-		method := reg.Method(name)
+		f, err := inv.syncHost(st, he, &reg, name, scriptArgs, removeHome)
+		if err != nil {
+			return err
+		}
+		failed = failed || f
+	}
+	if failed {
+		return exit(1)
+	}
+	return nil
+}
+
+// hostSyncUsage is the usage line of 'host sync'.
+const hostSyncUsage = "Usage: tacctl host sync <name>... | --all  [--allow-uid-mismatch] [--remove-home] [--concurrency <n>]"
+
+// syncEnv is the environment of one host's sync: the host's public keys and
+// facts are read over its session.
+func (inv *invocation) syncEnv(st *hostStep) *hosts.Env {
+	he := inv.hostsEnv()
+	he.ReadKeys = true
+	st.quiet(he)
+	return he
+}
+
+// hostSyncPool syncs names, pool hosts at once (host_batch.go). A host's
+// output is printed in the order typed; none is asked a question; the exit
+// status is the one of a sequential run: 1 when a host failed.
+func (inv *invocation) hostSyncPool(reg *hosts.Registry, names []string, pool int, scriptArgs []string, removeHome bool) error {
+	// The start line of the audit is written here, on the command's own
+	// goroutine (as the device pulls do): the workers write the records.
+	inv.app.Audit().Touch()
+	keys := make([]string, len(names))
+	for i, n := range names {
+		if e, ok := reg.Find(n); ok {
+			keys[i] = hostTargetKey(e)
+		}
+	}
+	run := inv.runHostPool(names, keys, pool, func(st *hostStep, i int) (bool, error) {
+		var he *hosts.Env
+		st.serial(func() { he = inv.syncEnv(st) })
+		r := reg
+		return inv.syncHost(st, he, &r, names[i], scriptArgs, removeHome)
+	})
+	// An interrupt ends the command as it ends a run one host after the
+	// other; the hosts under way were interrupted, the others not started.
+	if run.sum.Interrupted {
+		return ui.ErrInterrupted
+	}
+	if err := firstError(run.errs); err != nil {
+		return err
+	}
+	if slices.Contains(run.failed, true) {
+		return exit(1)
+	}
+	return nil
+}
+
+// syncHost is the sync of one enrolled host of 'host sync'. failed says it
+// did not succeed (it has said why); err ends the command. reg is the
+// registry as read, replaced when this server's own registration is set up.
+func (inv *invocation) syncHost(st *hostStep, he *hosts.Env, regp **hosts.Registry, name string, scriptArgs []string, removeHome bool) (failed bool, err error) {
+	a := inv.app
+	reg := *regp
+	e, _ := reg.Find(name)
+	method := reg.Method(name)
+	proceed := false
+	st.serial(func() {
 		if e.Target == hosts.Local {
 			// this server's own login: the scope tacctl manages is taken over
 			// or repaired first (managed_scope.go); a new one needs a new
 			// client setup, which only the enrolment writes
-			switch _, err := inv.managedSetup(reg, inv.localServer(e).Address, false); {
-			case errors.Is(err, errManagedNeedsEnroll):
+			switch _, merr := inv.managedSetup(reg, inv.localServer(e).Address, false); {
+			case errors.Is(merr, errManagedNeedsEnroll):
 				a.Out.InfoE(name + ": to set up this server's own login for every user: tacctl host enroll --local")
-			case errors.Is(err, errManagedClash):
+			case errors.Is(merr, errManagedClash):
 				// this server only: the other hosts are synced
 				a.Out.ErrorE(name + ": " + managedClashText)
 				inv.recordRun(name, "sync", "a scope of the operator's has the reserved name 'tacctl'", nil)
 				inv.hostSyncLine(e, nil, removeHome, "a scope of the operator's has the reserved name")
 				failed = true
-				continue
-			case err != nil:
-				return err
+				return
+			case merr != nil:
+				err = merr
+				return
 			}
 			if reg, err = inv.registry(); err != nil {
-				return err
+				return
 			}
+			*regp = reg
 			e, _ = reg.Find(name)
 		}
-		exists, err := inv.scopeExists(e.Scope)
-		if err != nil {
-			return err
+		exists, serr := inv.scopeExists(e.Scope)
+		if serr != nil {
+			err = serr
+			return
 		}
 		if !exists {
 			a.Out.ErrorE(name + ": scope '" + e.Scope + "' no longer exists; skipped.")
 			inv.recordRun(name, "sync", "its scope '"+e.Scope+"' no longer exists", nil)
 			inv.hostSyncLine(e, nil, removeHome, "its scope '"+e.Scope+"' no longer exists")
 			failed = true
-			continue
+			return
 		}
 		if e.Target != hosts.Local {
-			if login, _, isUser, err := inv.provisioningLogin(e.Target); err != nil {
-				return err
+			if login, _, isUser, perr := inv.provisioningLogin(e.Target); perr != nil {
+				err = perr
+				return
 			} else if isUser {
 				a.Out.Warn(name + ": the provisioning account '" + login + "' is a tacctl user; re-enrol with a local account that does not authenticate through tacctl: tacctl host enroll <account>@<host> --name " + name)
 			}
 		}
-		ok, err := inv.syncOne(he, e, method, scriptArgs, removeHome)
-		if err != nil {
-			return err
-		}
-		if !ok {
+		proceed = true
+	})
+	if !proceed {
+		return failed, err
+	}
+	ok, err := inv.syncOne(st, he, e, method, scriptArgs, removeHome)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		st.serial(func() {
 			a.Out.ErrorE(name + ": sync failed (see the host's output above; nothing was changed there if it reported a conflict).")
-			failed = true
-		}
+		})
+		failed = true
 	}
-	if failed {
-		return exit(1)
-	}
-	return nil
+	return failed, nil
 }
 
 // provisioningLogin is the account 'host' logs in to target with: the
@@ -1703,10 +1836,10 @@ func (inv *invocation) provisioningLogin(target string) (login string, explicit,
 // syncOne pushes an accounts-only script to one host and runs it; ok is
 // false when the script could not be written or failed there. The run is
 // recorded for 'host show', failed or not.
-func (inv *invocation) syncOne(he *hosts.Env, e hosts.Entry, method string, scriptArgs []string, removeHome bool) (bool, error) {
-	ok, reason, ran, err := inv.syncRun(he, e, method, scriptArgs, removeHome)
+func (inv *invocation) syncOne(st *hostStep, he *hosts.Env, e hosts.Entry, method string, scriptArgs []string, removeHome bool) (bool, error) {
+	ok, reason, ran, err := inv.syncRun(st, he, e, method, scriptArgs, removeHome)
 	switch {
-	case errors.Is(err, ui.ErrInterrupted):
+	case errors.Is(err, ui.ErrInterrupted), st.concurrent && errors.Is(err, context.Canceled):
 		reason = "interrupted"
 	case err != nil:
 		reason = strings.Join(msgs(err), " ")
@@ -1715,8 +1848,10 @@ func (inv *invocation) syncOne(he *hosts.Env, e hosts.Entry, method string, scri
 	if ran {
 		run = he
 	}
-	inv.recordRun(e.Name, "sync", reason, run)
-	inv.hostSyncLine(e, run, removeHome, reason)
+	st.serial(func() {
+		inv.recordRun(e.Name, "sync", reason, run)
+		inv.hostSyncLine(e, run, removeHome, reason)
+	})
 	return ok, err
 }
 
@@ -1758,72 +1893,92 @@ func runReasonWord(reason string) string {
 }
 
 // syncRun is syncOne's run: reason says why it failed, ran whether the
-// client script ran on the host.
-func (inv *invocation) syncRun(he *hosts.Env, e hosts.Entry, method string, scriptArgs []string, removeHome bool) (ok bool, reason string, ran bool, err error) {
+// client script ran on the host. What it does on this server runs through
+// st.serial; what it does on the host does not, so hosts run side by side.
+func (inv *invocation) syncRun(st *hostStep, he *hosts.Env, e hosts.Entry, method string, scriptArgs []string, removeHome bool) (ok bool, reason string, ran bool, err error) {
 	// A host that cannot hold the range gets no account changes.
-	if err := he.CheckIDMap(inv.ctx, e.Name, e.Target, e.Port, e.Identity); errors.Is(err, hosts.ErrFailed) {
+	if err := he.CheckIDMap(st.ctx, e.Name, e.Target, e.Port, e.Identity); errors.Is(err, hosts.ErrFailed) {
 		return false, "the host cannot hold the UID range " + he.UIDRange().String(), false, nil
 	} else if err != nil {
 		return false, "", false, err
 	}
-	script, err := hosts.TempFile(inv.app.Paths.TempDir)
+	var script string
+	var req hosts.ScriptRequest
+	st.serial(func() {
+		if script, err = hosts.TempFile(inv.app.Paths.TempDir); err != nil {
+			return
+		}
+		if req, err = inv.scriptRequest(e.Scope, e.Server, method, script, e.Target == hosts.Local); err != nil {
+			return
+		}
+		req.Temp, req.AccountsOnly = true, true
+		req.Local = e.Target == hosts.Local
+	})
+	if script != "" {
+		defer func() { _ = os.Remove(script) }()
+	}
 	if err != nil {
 		return false, "", false, err
 	}
-	defer func() { _ = os.Remove(script) }()
-	req, err := inv.scriptRequest(e.Scope, e.Server, method, script, e.Target == hosts.Local)
+	skipped, err := inv.homesQuestions(st.ctx, he, &req, e.Name, e.Target, e.Port, e.Identity, removeHome, st.concurrent)
 	if err != nil {
 		return false, "", false, err
 	}
-	req.Temp, req.AccountsOnly = true, true
-	req.Local = e.Target == hosts.Local
-	if err := inv.homesToDelete(he, &req, e.Name, e.Target, e.Port, e.Identity, removeHome); err != nil {
-		return false, "", false, err
+	if skipped {
+		st.serial(func() {
+			inv.app.Out.WarnE(e.Name + ": the home directories of removed users are kept, as no questions are asked with --concurrency above 1: " +
+				"add --remove-home to delete them, or sync " + e.Name + " alone to be asked.")
+		})
 	}
 	consoleCheck := false
-	if e.Target == hosts.Local {
-		inv.localScopeWarning(e)
-		if consoleCheck, err = inv.consoleForLocal(&req); err != nil {
-			return false, "", false, err
+	var res hosts.ScriptResult
+	st.serial(func() {
+		if e.Target == hosts.Local {
+			inv.localScopeWarning(e)
+			if consoleCheck, err = inv.consoleForLocal(&req); err != nil {
+				return
+			}
 		}
-	}
-	res, err := he.WriteScript(req)
+		res, err = he.WriteScript(req)
+	})
 	if errors.Is(err, hosts.ErrFailed) {
 		return false, "the client script could not be written", false, nil
 	}
 	if err != nil {
 		return false, "", false, err
 	}
-	code, err := he.RunScript(inv.ctx, e.Target, e.Port, e.Identity, script, scriptArgs)
+	code, err := he.RunScript(st.ctx, e.Target, e.Port, e.Identity, script, scriptArgs)
 	if err != nil {
 		return false, "", true, err
 	}
 	if code != 0 {
 		return false, "the client script failed on the host (exit status " + strconv.Itoa(code) + ")", true, nil
 	}
-	counts := hosts.UsersText(hosts.CountLines(res.Users))
-	if he.Summary != nil {
-		counts = he.Summary.Counts()
-	}
-	inv.app.Out.InfoE(e.Name + ": synced (" + counts + ").")
-	he.PinKeys(inv.ctx, e)
-	resolved := "127.0.0.1"
-	if host, _, ok := hosts.ScanTarget(e.Target, e.Port); ok {
-		resolved = inv.resolveV4(host)
-	}
-	inv.hostFacts(he, e.Name, e.Target, resolved)
-	if e.Target != hosts.Local {
-		addr := inv.hostAddress(e)
-		if addr == "" {
-			addr = resolved
+	st.serial(func() {
+		counts := hosts.UsersText(hosts.CountLines(res.Users))
+		if he.Summary != nil {
+			counts = he.Summary.Counts()
 		}
-		if msg := inv.hostScopeDrift(e, addr); msg != "" {
-			inv.app.Out.WarnE(msg)
+		inv.app.Out.InfoE(e.Name + ": synced (" + counts + ").")
+		he.PinKeys(st.ctx, e)
+		resolved := "127.0.0.1"
+		if host, _, ok := hosts.ScanTarget(e.Target, e.Port); ok {
+			resolved = inv.resolveV4(host)
 		}
-	}
-	if consoleCheck {
-		inv.consoleAfterLocal()
-	}
+		inv.hostFacts(he, e.Name, e.Target, resolved)
+		if e.Target != hosts.Local {
+			addr := inv.hostAddress(e)
+			if addr == "" {
+				addr = resolved
+			}
+			if msg := inv.hostScopeDrift(e, addr); msg != "" {
+				inv.app.Out.WarnE(msg)
+			}
+		}
+		if consoleCheck {
+			inv.consoleAfterLocal()
+		}
+	})
 	return true, "", true, nil
 }
 
@@ -1832,13 +1987,30 @@ func (inv *invocation) syncRun(he *hosts.Env, e hosts.Entry, method string, scri
 // yes for on the terminal (stdin), one question per removed user of the
 // host; with no terminal none (the script keeps them and says so).
 func (inv *invocation) homesToDelete(he *hosts.Env, req *hosts.ScriptRequest, name, target, port, identity string, removeHome bool) error {
+	_, err := inv.homesQuestions(inv.ctx, he, req, name, target, port, identity, removeHome, false)
+	return err
+}
+
+// homesQuestions is homesToDelete; with noAsk (hosts side by side, where no
+// terminal can answer one host's question among the others') nothing is
+// asked and every home is kept, and skipped says the host has removed users
+// whose homes would have been asked about.
+func (inv *invocation) homesQuestions(ctx context.Context, he *hosts.Env, req *hosts.ScriptRequest, name, target, port, identity string, removeHome, noAsk bool) (skipped bool, err error) {
 	if removeHome {
 		req.RemoveAllHomes = true
-		return nil
+		return false, nil
 	}
 	var ask func(string) string
-	if p := inv.app.Prompter(); p.Interactive() {
-		ask = p.Ask
+	switch {
+	case noAsk:
+		ask = func(string) string {
+			skipped = true
+			return ""
+		}
+	default:
+		if p := inv.app.Prompter(); p.Interactive() {
+			ask = p.Ask
+		}
 	}
 	current := map[string]bool{}
 	for _, r := range req.Rows {
@@ -1848,9 +2020,9 @@ func (inv *invocation) homesToDelete(he *hosts.Env, req *hosts.ScriptRequest, na
 	for _, n := range req.Inactive {
 		current[n] = true
 	}
-	homes, err := he.HomesToDelete(inv.ctx, name, target, port, identity, current, ask)
+	homes, err := he.HomesToDelete(ctx, name, target, port, identity, current, ask)
 	req.RemoveHomes = homes
-	return err
+	return skipped, err
 }
 
 // --- unenroll ------------------------------------------------------------------------

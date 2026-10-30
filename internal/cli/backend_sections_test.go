@@ -131,11 +131,11 @@ func (s *sectionsSandbox) run(stdin string, args ...string) string {
 func (s *sectionsSandbox) all() string { return plain(s.out.String() + s.err.String()) }
 
 // fakeUp is fake_up: the stand-in installed, enabled ('backend enable fake
-// -y'), rendered, running; its call log emptied.
+// --yes'), rendered, running; its call log emptied.
 func (s *sectionsSandbox) fakeUp() {
 	s.t.Helper()
 	s.fk.SetInstalled(true)
-	s.run("", "backend", "enable", "fake", "-y")
+	s.run("", "backend", "enable", "fake", "--yes")
 	if s.code != 0 {
 		s.t.Fatalf("backend enable fake: %d\n%s", s.code, s.all())
 	}

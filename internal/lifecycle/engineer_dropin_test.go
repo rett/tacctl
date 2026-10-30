@@ -43,7 +43,7 @@ func TestUninstallRemovesTheOldEngineerDropIn(t *testing.T) {
 	o.write(o.p.ShellsFile, "/bin/sh\n")
 	o.run.On([]string{"getent", "passwd"}, execx.Result{Stdout: []byte("root:x:0:0:root:/root:/bin/bash\n")})
 	o.run.On([]string{"sshd", "-t"}, execx.Result{})
-	if code := uninstall(o, "-y"); code != 0 {
+	if code := uninstall(o, "--yes"); code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
 	}
 	if _, err := os.Stat(o.p.SSHDEngineerDropInOld); err == nil {

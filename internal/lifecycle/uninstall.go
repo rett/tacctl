@@ -17,10 +17,10 @@ import (
 	"github.com/rett/tacctl/internal/ui"
 )
 
-// Uninstall is 'tacctl uninstall [-y|--yes]' (cmd_uninstall): what will go
+// Uninstall is 'tacctl uninstall [--yes]' (cmd_uninstall): what will go
 // and a confirmation, then every backend that is enabled or still
 // installed is stopped; whether to keep the config backups and each
-// backend's logs is asked (-y, new in 0.2.0, answers the confirmation
+// backend's logs is asked (--yes, new in 0.2.0, answers the confirmation
 // "yes" and these "no": nothing is kept); then the installed command and
 // each backend's program, the sudoers rules and the Linux host data, the
 // completion, the man page, the state directory (the backups archived
@@ -74,7 +74,7 @@ func Uninstall(ctx context.Context, h *Host, args []string) error {
 		return err
 	}
 
-	// What to keep (-y keeps nothing).
+	// What to keep (--yes keeps nothing).
 	h.echo("")
 	keepBackups := !yes && h.confirm("Preserve config backups ("+p.BackupDir+")? [y/N]: ")
 	keepLogs := map[string]bool{}

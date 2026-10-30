@@ -332,11 +332,11 @@ func TestDeviceSNMPFileFollowsTheDevice(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Removal drops the file (and the directories with the last).
-	sb.dev("y\n", "remove", "core-1", "-y")
+	sb.dev("y\n", "remove", "core-1", "--yes")
 	if _, err := os.Stat(to); !os.IsNotExist(err) {
 		t.Errorf("file left after remove: %v", err)
 	}
-	sb.dev("", "remove", "--all", "-y")
+	sb.dev("", "remove", "--all", "--yes")
 	for _, p := range []string{sb.path("state", "snmp", "devices"), sb.path("state", "snmp")} {
 		if _, err := os.Stat(p); !os.IsNotExist(err) {
 			t.Errorf("%s left: %v", p, err)
@@ -346,7 +346,7 @@ func TestDeviceSNMPFileFollowsTheDevice(t *testing.T) {
 	sb.dev("", "add", "a1", "192.168.1.1", "--no-host-key", "--no-lookup")
 	sb.dev("", "add", "a2", "192.168.1.2", "--no-host-key", "--no-lookup")
 	sb.devSNMP("c-a2\n", "a2", "community", "--stdin")
-	sb.run("a1,192.168.1.1\n", []string{"device", "import", "-", "--replace", "-y"})
+	sb.run("a1,192.168.1.1\n", []string{"device", "import", "-", "--replace", "--yes"})
 	sb.expect(0, "1 removed", "")
 	if _, err := os.Stat(sb.path("state", "snmp", "devices", "a2.yaml")); !os.IsNotExist(err) {
 		t.Errorf("a removed device's file left: %v", err)
@@ -487,7 +487,7 @@ func TestDeviceSNMPEngineer(t *testing.T) {
 	if sb.code != 0 || !strings.Contains(sb.read("state/snmp/devices/lab-core.yaml"), "lab-dev-comm-1") || !strings.Contains(sb.devices(), "port: 2161") {
 		t.Errorf("rename: %d %q", sb.code, sb.stderr())
 	}
-	sb.asEngineer("y\n", "device", "remove", "lab-core", "-y")
+	sb.asEngineer("y\n", "device", "remove", "lab-core", "--yes")
 	if sb.code != 0 {
 		t.Errorf("remove: %d %q", sb.code, sb.stderr())
 	}

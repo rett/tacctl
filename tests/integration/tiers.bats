@@ -397,7 +397,7 @@ print("" if v is None else v)' "${TACCTL_STATE_DIR}/store.yaml" "$1" "$2"
         as_user "$tier" yes -- backend enable tacacs
         assert_failure
         assert_output --partial "not permitted for the"
-        as_user "$tier" yes -- backend disable tacacs -y
+        as_user "$tier" yes -- backend disable tacacs --yes
         assert_failure
         as_user "$tier" yes -- store show
         assert_failure

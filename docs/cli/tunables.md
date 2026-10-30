@@ -65,10 +65,11 @@ Keys without a shipped default (`backends.*`, `listeners.*`, `snmp.*`, `device.c
 | `audit.strict` | `true` or `false` (`false`) | `config audit-strict` |
 | `backends.enabled` | non-empty list of `tacacs`, `radius` (`[tacacs]`) | `backend enable`, `backend disable` |
 | `backends.tacacs.level` | 0 to 100 (20) | `config loglevel` |
-| `backends.tacacs.metrics_address` | host:port (127.0.0.1:8080) | `config metrics address` |
+| `backends.tacacs.metrics_address` | host:port (127.0.0.1:8080) | `server metrics address` |
 | `bcrypt.cost` | 10 to 14 (12) | `config bcrypt-cost` |
 | `host.default_method` | `tacplus` or `radius` (`tacplus`) | `host default-method` |
 | `server.addresses` | list of one IP address, the address devices and hosts reach this server at, not a host name, loopback, link-local, multicast, broadcast or IPv4-mapped (a list that holds one address for now) | `server addresses` |
+| `server.name` | 1 to 63 lower-case letters, digits and hyphens, a letter first, no hyphen last, not `unset`: the name of this server in the console prompt and its notices; unset: the host name | `server name` |
 | `linux.engineer_sudo` | list of absolute command paths (unset: every command) | `config linux engineer-sudo` |
 | `linux.uid_min`, `linux.uid_max` | 1000 to 4294967293 (80000, 89999) | `config linux uid-range` |
 | `mgmt_acl.names.cisco`, `mgmt_acl.names.juniper` | name of 1 to 63 characters (`VTY-ACL`, `MGMT-ACL`) | `config mgmt-acl cisco-name`, `juniper-name` |
@@ -82,6 +83,8 @@ Keys without a shipped default (`backends.*`, `listeners.*`, `snmp.*`, `device.c
 | `device.config.max_concurrency`, `device.config.transport`, `device.config.timeout`, `device.config.confirm_timeout` | 1 to 64 (8); `auto`, `netconf` or `ssh` (`auto`); 10 to 600 seconds (90); 1 to 60 minutes (5) | `config devices` |
 | `device.apply.confirm_timeout`, `device.apply.pause` | 3 to 60 minutes (10); 0 to 3600 seconds (60) | `config devices apply-confirm-timeout`, `apply-pause` |
 | `device.apply.transport` | `cli`, `auto` or `netconf` (cli) | `config devices apply-transport` |
+| `device.timeout_scale` | 1 to 10 (1): multiplies every network timing used to reach a device; see [Slow or distant devices](../devices/connecting.md#slow-or-distant-devices) | `config devices timeout-scale` |
+| `timeout_scale_scope.<scope>` | 1 to 10: the scope's own scale, in place of `device.timeout_scale`; a device's own (`devices.yaml`) wins; unset: follows the server's | `scope timeout-scale` |
 | `privileges.<group>` | list of Cisco priv-exec commands (the shipped list of a built-in group) | `group privilege` |
 | `commands.<group>` | ordered `{name, action, match}` rules ending in the `*` catch-all (shipped) | `group commands` |
 | `aaa.order.<scope>` | `tacacs-first` or `local-first` (`tacacs-first`) | `scope aaa-order` |
@@ -91,7 +94,7 @@ Keys without a shipped default (`backends.*`, `listeners.*`, `snmp.*`, `device.c
 | `scope_auth_method.<scope>` | `tacacs` or `radius` (unset) | `scope auth-method` |
 | `scope_mgmt_acl.names.cisco.<scope>`, `scope_mgmt_acl.names.juniper.<scope>`, `scope_mgmt_acl.permits.<scope>` | the scope's own ACL name, filter name and permitted entries (CIDRs, each with optional services), in place of `mgmt_acl.*` | `scope mgmt-acl` |
 | `scope_mgmt_acl.mode.<scope>` | `strict`: the scope's Junos filter is deny by default; unset is `ssh-only` | `scope mgmt-acl <scope> mode` |
-| `listeners.<backend>.<name>` | network, address, role, metrics_address (`tacacs.default` tcp :49, `radius.auth` udp :1812, `radius.acct` udp :1813) | `config listen` |
+| `listeners.<backend>.<name>` | network, address, role, metrics_address (`tacacs.default` tcp :49, `radius.auth` udp :1812, `radius.acct` udp :1813) | `server listen` |
 | `junos.<group>.deny_commands`, `junos.<group>.deny_configuration` | list of POSIX extended regular expressions (unset) | `group junos` |
 | `wti_level.<group>` | `viewonly`, `user`, `superuser` or `administrator` (unset: the priv-lvl band) | `group add`, `group edit` |
 | `tier.<group>` | `readonly`, `operator`, `engineer` or `superuser` (unset: the priv-lvl band) | `group add`, `group edit` |

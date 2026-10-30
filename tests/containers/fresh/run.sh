@@ -14,7 +14,7 @@
 # index of this repository changes). Then: the shim installs Go (downloaded from dl.google.com and
 # checked against its published SHA-256) and builds /usr/local/bin/tacctl;
 # 'version --long'; 'user passwd engineer' answered through a pty;
-# 'config cisco --scope lab'; 'uninstall -y'; and what is left on the
+# 'config cisco --scope lab'; 'uninstall --yes'; and what is left on the
 # container's filesystem that was not there before the install and is not
 # there either in a second container that only installed the same packages.
 #
@@ -237,8 +237,8 @@ if [[ -n "$ROLLBACK" ]]; then
     if [[ $rc == 0 ]] && ! grep -q 'Building' <<< "$out"; then ok "a second upgrade builds nothing"; else bad "a second upgrade builds nothing (exit ${rc})"; fi
 fi
 
-# --- uninstall -y and what is left ------------------------------------------------
-if timed "uninstall -y" 'tacctl uninstall -y'; then ok "uninstall -y"; else bad "uninstall -y"; fi
+# --- uninstall --yes and what is left ------------------------------------------------
+if timed "uninstall --yes" 'tacctl uninstall --yes'; then ok "uninstall --yes"; else bad "uninstall --yes"; fi
 snap after
 section "left behind"
 # A second container from the same image that only installs the packages

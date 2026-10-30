@@ -149,7 +149,7 @@ restarts() { grep -c 'systemctl restart' "$CALLS_LOG" || true; }
     run hold lab-sw "console recovery"
     assert_success
     base=$(restarts)
-    run plain device address lab-sw 192.168.1.9 -y
+    run plain device address lab-sw 192.168.1.9 --yes
     assert_success
     assert_output --partial "Break-glass hold MOVED on lab-sw from 192.168.1.1 to 192.168.1.9"
     [[ "$(restarts)" == "$((base + 1))" ]]
@@ -159,11 +159,11 @@ restarts() { grep -c 'systemctl restart' "$CALLS_LOG" || true; }
     refute_output --partial "NOT ANSWERED"
     run plain breakglass list
     assert_output --partial "192.168.1.9"
-    run plain device address lab-sw 127.0.0.1 -y
+    run plain device address lab-sw 127.0.0.1 --yes
     assert_failure 1
     assert_output --partial "loopback"
     assert_output --partial "Nothing was changed."
-    run plain device remove lab-sw -y
+    run plain device remove lab-sw --yes
     assert_failure 1
     assert_output --partial "break-glass is held on lab-sw: release it first"
     run plain device rename lab-sw lab-core

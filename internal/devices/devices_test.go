@@ -294,7 +294,7 @@ func TestPrepare(t *testing.T) {
 	want := "  - The secret is 71 characters; some RADIUS clients take no more than 63. FreeRADIUS accepts it, but check your\n" +
 		"    device's limit before pasting (tacctl scope secret lab generate makes a 32-character one; the scope's secret is shared with TACACS+)\n" +
 		"  - The secret has characters outside [a-z], which some RADIUS clients do not take\n" +
-		"  - The acct listener is bound to 127.0.0.1: no device can reach it (tacctl config listen --backend radius)\n" +
+		"  - The acct listener is bound to 127.0.0.1: no device can reach it (tacctl server listen --backend radius)\n" +
 		"  - The auth and acct listeners are bound to different addresses (10.0.0.77, 127.0.0.1); the device takes one address for both, this uses 10.0.0.77\n"
 	if r.Warnings != want || r.ServerAddr != "10.0.0.77" {
 		t.Errorf("warnings:\n%s\nwant:\n%s", r.Warnings, want)

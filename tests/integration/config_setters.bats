@@ -150,32 +150,49 @@ setup() {
 
 # --- listen ------------------------------------------------------------------
 
-@test "config listen show: prints current default (tcp :49)" {
-    run "$TACCTL_BIN_SCRIPT" config listen show
+@test "config listen and config metrics are gone: server listen and server metrics replace them, with no alias" {
+    for old in "listen show" "listen tcp 10.1.0.1:49" "metrics" "metrics address 10.1.0.1:9090"; do
+        run "$TACCTL_BIN_SCRIPT" config $old
+        assert_failure 1
+        assert_output --partial "Unknown subcommand: '${old%% *}'"
+        assert_output --partial "Run 'tacctl config -h' for usage."
+        refute_output --partial "Current listener"
+    done
+    run "$TACCTL_BIN_SCRIPT" server listen show
+    assert_success
+    assert_output --partial "Current listener: tcp :49"
+    run "$TACCTL_BIN_SCRIPT" server metrics
+    assert_success
+    assert_output --partial "Prometheus metrics exporter"
+    assert_output --partial "tacctl server metrics address <host:port>"
+}
+
+@test "server listen show: prints current default (tcp :49)" {
+    run "$TACCTL_BIN_SCRIPT" server listen show
     assert_success
     assert_output --partial "tcp :49"
     assert_output --partial "template default"
 }
 
-@test "config listen tcp :49 — setting default is a no-op once pinned" {
+@test "server listen tcp :49 — setting default is a no-op once pinned" {
     stub_cmd systemctl 'if [[ "$1" == "is-active" ]]; then exit 0; else exit 0; fi'
-    run "$TACCTL_BIN_SCRIPT" config listen tcp 10.1.0.1:49
+    run "$TACCTL_BIN_SCRIPT" server listen tcp 10.1.0.1:49
     assert_success
     run grep -F 'TACQUITO_ADDRESS=10.1.0.1:49' "$TACCTL_OVERRIDE_DIR/tacctl.conf"
     assert_success
 
     # Setting the same value again: idempotent.
-    run "$TACCTL_BIN_SCRIPT" config listen tcp 10.1.0.1:49
+    run "$TACCTL_BIN_SCRIPT" server listen tcp 10.1.0.1:49
     assert_success
     assert_output --partial "Already listening"
 }
 
-@test "config listen reset: clears override when one exists" {
+@test "server listen reset: clears override when one exists" {
     stub_cmd systemctl 'if [[ "$1" == "is-active" ]]; then exit 0; else exit 0; fi'
-    "$TACCTL_BIN_SCRIPT" config listen tcp 10.1.0.1:49
+    "$TACCTL_BIN_SCRIPT" server listen tcp 10.1.0.1:49
     grep -q 'address: 10.1.0.1:49' "$TACCTL_STATE_DIR/tacctl.yaml"
 
-    run "$TACCTL_BIN_SCRIPT" config listen reset
+    run "$TACCTL_BIN_SCRIPT" server listen reset
     assert_success
     # The listener is gone from tacctl.yaml, and the drop-in is rendered
     # with the default address.
@@ -186,14 +203,14 @@ setup() {
     grep -qxF 'Environment="TACQUITO_ADDRESS=:49"' "$TACCTL_OVERRIDE_DIR/tacctl.conf"
 }
 
-@test "config listen tcp: rejects missing address argument" {
-    run "$TACCTL_BIN_SCRIPT" config listen tcp
+@test "server listen tcp: rejects missing address argument" {
+    run "$TACCTL_BIN_SCRIPT" server listen tcp
     assert_failure
     assert_output --partial "Missing address"
 }
 
-@test "config listen: rejects unknown subcommand" {
-    run "$TACCTL_BIN_SCRIPT" config listen bogus
+@test "server listen: rejects unknown subcommand" {
+    run "$TACCTL_BIN_SCRIPT" server listen bogus
     assert_failure
     assert_output --partial "Invalid subcommand"
 }

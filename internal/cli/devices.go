@@ -339,7 +339,7 @@ func (inv *invocation) deviceServerFlag(server string) (addr, name string, err e
 
 // tacacsPort is the port the TACACS+ server listens on, as the tacacs
 // backend reports it for a device template (the default listener of
-// 'tacctl config listen'): the TACACS_PORT device variable, "" when the
+// 'tacctl server listen'): the TACACS_PORT device variable, "" when the
 // backend gives none (the walkthroughs then say 49).
 func (inv *invocation) tacacsPort(vendor, scope string) string {
 	b, err := inv.app.Backends().Get(backend.TACACS)

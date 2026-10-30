@@ -35,7 +35,7 @@ setup() {
     stub_cmd ssh-keyscan "echo \"\${!#} ${FAKEDEV_KEY}\""
     FP=$(ssh-keygen -lf - <<< "$FAKEDEV_KEY" | awk '{print $2}')
     # the registered device and its record: a collect as alice
-    SUDO_USER=alice "$TACCTL_BIN_SCRIPT" device collect "$ADDR" --host-key "$FP" --register -y > /dev/null 2>&1
+    SUDO_USER=alice "$TACCTL_BIN_SCRIPT" device collect "$ADDR" --host-key "$FP" --register --yes > /dev/null 2>&1
     fakedev_stop
 }
 
@@ -104,12 +104,12 @@ EOF
     [[ -z "$(field example-sw5 hostname)" ]]
 }
 
-@test "sync --apply: without a terminal it needs -y; with it one write, audited" {
+@test "sync --apply: without a terminal it needs --yes; with it one write, audited" {
     sync example-sw5 --apply
     assert_failure 2
-    assert_output --partial "without one needs -y"
+    assert_output --partial "without one needs --yes"
     [[ -z "$(field example-sw5 location)" ]]
-    sync example-sw5 --apply -y
+    sync example-sw5 --apply --yes
     assert_success
     assert_output --partial "Wrote 2 field(s) on 1 device(s)."
     [[ "$(field example-sw5 location)" == "Lab rack 5" ]]
@@ -117,7 +117,7 @@ EOF
     [[ "$(field example-sw5 address)" == "$ADDR" ]]
     [[ "$(field example-sw5 vendor)" == juniper ]]
     stub_called "logger -t tacctl -p auth.info device sync user=alice devices=1 fields=2"
-    sync example-sw5 --apply -y
+    sync example-sw5 --apply --yes
     assert_success
     assert_output --partial "Nothing to fill"
 }
@@ -135,14 +135,14 @@ EOF
 
 @test "sync: a set field is kept, --overwrite replaces it and shows the old value" {
     "$TACCTL_BIN_SCRIPT" device location example-sw5 "Old rack" > /dev/null
-    sync example-sw5 --apply -y
+    sync example-sw5 --apply --yes
     assert_success
     assert_output --regexp "example-sw5 +location +Old rack +Lab rack 5 +keep"
     [[ "$(field example-sw5 location)" == "Old rack" ]]
     sync example-sw5 --overwrite
     assert_output --regexp "example-sw5 +location +Old rack +Lab rack 5 +replace"
     [[ "$(field example-sw5 location)" == "Old rack" ]]
-    sync example-sw5 --overwrite --apply -y
+    sync example-sw5 --overwrite --apply --yes
     assert_success
     [[ "$(field example-sw5 location)" == "Lab rack 5" ]]
 }
@@ -151,7 +151,7 @@ EOF
     local bad
     for bad in "other.example.net=192.168.1.99" "example-sw5.lab.example.net=${ADDR},192.168.1.99" \
         "example-sw5.lab.example.net=192.168.1.99"; do
-        TACCTL_TEST_RESOLVE="$bad" sync example-sw5 --apply -y
+        TACCTL_TEST_RESOLVE="$bad" sync example-sw5 --apply --yes
         assert_success
         assert_output --regexp "example-sw5 +hostname +- +example-sw5\.lab\.example\.net +refused: does not resolve: not filled"
         [[ -z "$(field example-sw5 hostname)" ]]
@@ -160,26 +160,26 @@ EOF
     sync example-sw5
     assert_output --regexp "example-sw5 +hostname +- +example-sw5\.lab\.example\.net +fill: resolves to the address"
     "$TACCTL_BIN_SCRIPT" device hostname example-sw5 old.example.net > /dev/null
-    TACCTL_TEST_RESOLVE="old.example.net=${ADDR}" sync example-sw5 --overwrite --apply -y
+    TACCTL_TEST_RESOLVE="old.example.net=${ADDR}" sync example-sw5 --overwrite --apply --yes
     assert_success
     assert_output --partial "does not resolve: not filled"
     [[ "$(field example-sw5 hostname)" == old.example.net ]]
-    sync example-sw5 --overwrite --apply -y
+    sync example-sw5 --overwrite --apply --yes
     [[ "$(field example-sw5 hostname)" == example-sw5.lab.example.net ]]
 }
 
 @test "sync: what a device reports is checked: a value the registry would not accept is refused" {
     # a device that says hostile things of itself, collected afresh
-    "$TACCTL_BIN_SCRIPT" device remove example-sw5 -y > /dev/null
+    "$TACCTL_BIN_SCRIPT" device remove example-sw5 --yes > /dev/null
     rm -f "${TACCTL_VAR_LIB}/devices-config.json"
     sed -i '/^set snmp location/d' "${JDIR}/config.set"
     printf 'set snmp location "%s"\nset snmp description "%s"\n' "$(printf 'l%.0s' $(seq 1 130))" "$(printf 'd%.0s' $(seq 1 200))" >> "${JDIR}/config.set"
     fakedev_start "$JDIR"
     stub_cmd ssh-keyscan "echo \"\${!#} ${FAKEDEV_KEY}\""
     FP=$(ssh-keygen -lf - <<< "$FAKEDEV_KEY" | awk '{print $2}')
-    SUDO_USER=alice "$TACCTL_BIN_SCRIPT" device collect "$ADDR" --host-key "$FP" --register -y > /dev/null 2>&1
+    SUDO_USER=alice "$TACCTL_BIN_SCRIPT" device collect "$ADDR" --host-key "$FP" --register --yes > /dev/null 2>&1
     fakedev_stop
-    sync example-sw5 --apply -y
+    sync example-sw5 --apply --yes
     assert_success
     assert_output --regexp "example-sw5  location +- +l+\.\.\. +refused: The location is limited to 120 characters"
     assert_output --regexp "example-sw5  description +- +d+\.\.\. +refused: The description is limited to 120 characters"

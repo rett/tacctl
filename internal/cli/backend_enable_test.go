@@ -137,7 +137,7 @@ func (e *swEnv) out() string { return plain(e.stdout.String() + e.stderr.String(
 func (e *swEnv) fakeUp() {
 	e.t.Helper()
 	e.fake.SetInstalled(true)
-	if code := e.run("", "enable", "fake", "-y"); code != 0 {
+	if code := e.run("", "enable", "fake", "--yes"); code != 0 {
 		e.t.Fatalf("fake_up: %d\n%s", code, e.out())
 	}
 	e.reset()
@@ -221,7 +221,7 @@ func countOf(calls []string, line string) int {
 
 func TestBackendEnableOrder(t *testing.T) {
 	e := newSwEnv(t)
-	e.want(e.run("", "enable", "fake", "-y"), 0)
+	e.want(e.run("", "enable", "fake", "--yes"), 0)
 	e.has("[INFO] Backend 'fake' is enabled and running.\n")
 	if e.enabledNow() != "tacacs fake" {
 		t.Errorf("enabled %q", e.enabledNow())
@@ -291,7 +291,7 @@ func TestBackendEnableUnchangedIsStarted(t *testing.T) {
 	e := newSwEnv(t)
 	e.fake.SetInstalled(true)
 	e.want(e.run("", "enable", "fake"), 0)
-	e.want(e.run("", "disable", "fake", "-y"), 0)
+	e.want(e.run("", "disable", "fake", "--yes"), 0)
 	e.reset()
 	// Its artifact is still there and still what the store renders.
 	e.want(e.run("", "enable", "fake"), 0)
@@ -305,7 +305,7 @@ func TestBackendEnableAlreadyEnabled(t *testing.T) {
 	e := newSwEnv(t)
 	e.fakeUp()
 	before := e.state()
-	e.want(e.run("", "enable", "fake", "-y"), 0)
+	e.want(e.run("", "enable", "fake", "--yes"), 0)
 	e.has("[INFO] Backend 'fake' is already enabled.")
 	if e.state() != before || len(e.fake.Calls()) != 0 {
 		t.Error("something changed")
@@ -319,10 +319,10 @@ func TestBackendEnableBadArguments(t *testing.T) {
 		args []string
 		msg  string
 	}{
-		{[]string{"ldap", "-y"}, "[ERROR] Unknown backend 'ldap' (known: tacacs fake).\n"},
+		{[]string{"ldap", "--yes"}, "[ERROR] Unknown backend 'ldap' (known: tacacs fake).\n"},
 		{nil, "[ERROR] Missing backend id (known: tacacs fake).\n"},
-		{[]string{"fake", "extra", "-y"}, "[ERROR] Usage: tacctl backend enable <id> [-y]\n"},
-		{[]string{"--bogus", "fake"}, "[ERROR] Unknown option '--bogus'. Usage: tacctl backend enable <id> [-y]\n"},
+		{[]string{"fake", "extra", "--yes"}, "[ERROR] Usage: tacctl backend enable <id> [--yes]\n"},
+		{[]string{"--bogus", "fake"}, "[ERROR] Unknown option '--bogus'. Usage: tacctl backend enable <id> [--yes]\n"},
 	} {
 		e.want(e.run("", "enable", c.args...), 1)
 		if got := plain(e.stderr.String()); got != c.msg || e.stdout.Len() != 0 {
@@ -340,7 +340,7 @@ func TestBackendEnableWithoutStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := e.state()
-	e.want(e.run("", "enable", "fake", "-y"), 1)
+	e.want(e.run("", "enable", "fake", "--yes"), 1)
 	e.has(store.NotInitialisedMsg)
 	if e.state() != before || len(e.fake.Calls()) != 0 {
 		t.Error("something was touched")
@@ -351,7 +351,7 @@ func TestBackendEnableInstallStepFails(t *testing.T) {
 	e := newSwEnv(t)
 	e.fake.PhaseFail = backend.PhaseFiles
 	before := e.state()
-	e.want(e.run("", "enable", "fake", "-y"), 1)
+	e.want(e.run("", "enable", "fake", "--yes"), 1)
 	e.has("[ERROR] fake: files failed\n")
 	e.has("[ERROR] Backend 'fake': install step 'files' failed (exit 1).\n")
 	e.has("[ERROR] Backend 'fake' was not enabled. tacctl.yaml, the store and every rendered file are as they were; what the install did stays on this machine.\n")
@@ -365,7 +365,7 @@ func TestBackendEnableGateRefuses(t *testing.T) {
 	e := newSwEnv(t)
 	e.fake.Gate = backend.GateRefused
 	before := e.state()
-	e.want(e.run("", "enable", "fake", "-y"), 3)
+	e.want(e.run("", "enable", "fake", "--yes"), 3)
 	e.has("[ERROR] Backend 'fake' was not enabled. tacctl.yaml, the store and every rendered file are as they were; the install stays on this machine.\n")
 	if e.state() != before || !e.fake.Installed() || e.fake.Called("stage") {
 		t.Error("state")
@@ -376,7 +376,7 @@ func TestBackendEnableGateRefuses(t *testing.T) {
 func TestBackendEnableGateAdopts(t *testing.T) {
 	e := newSwEnv(t)
 	e.fake.Gate = backend.GateAdopt
-	e.want(e.run("", "enable", "fake", "-y"), 0)
+	e.want(e.run("", "enable", "fake", "--yes"), 0)
 	if !e.fake.Called("stage --force") || e.enabledNow() != "tacacs fake" {
 		t.Errorf("calls %q", e.fake.Calls())
 	}
@@ -389,7 +389,7 @@ func TestBackendEnableEnabledBackendEdited(t *testing.T) {
 	e.fake.SetInstalled(true)
 	e.tac.Gate = backend.GateRefused
 	before := e.state()
-	e.want(e.run("", "enable", "fake", "-y"), 3)
+	e.want(e.run("", "enable", "fake", "--yes"), 3)
 	e.has("was not enabled")
 	if e.state() != before {
 		t.Error("something changed")
@@ -401,7 +401,7 @@ func TestBackendEnableStageFails(t *testing.T) {
 	e := newSwEnv(t)
 	e.fake.Fail = "stage"
 	before := e.state()
-	e.want(e.run("", "enable", "fake", "-y"), 1)
+	e.want(e.run("", "enable", "fake", "--yes"), 1)
 	e.has("fake: cannot express this model")
 	// The new backend's artifact is named among those that could not be
 	// rendered.
@@ -417,7 +417,7 @@ func TestBackendEnableCommitFails(t *testing.T) {
 	e := newSwEnv(t)
 	e.fake.Fail = "commit"
 	before := e.state()
-	e.want(e.run("", "enable", "fake", "-y"), 1)
+	e.want(e.run("", "enable", "fake", "--yes"), 1)
 	if e.state() != before || e.exists(e.fakeConf) {
 		t.Errorf("not undone:\n%s", e.out())
 	}
@@ -428,7 +428,7 @@ func TestBackendEnableStartStepFails(t *testing.T) {
 	e := newSwEnv(t)
 	e.fake.PhaseFail = backend.PhaseStart
 	before := e.state()
-	e.want(e.run("", "enable", "fake", "-y"), 1)
+	e.want(e.run("", "enable", "fake", "--yes"), 1)
 	e.has("[ERROR] Backend 'fake': install step 'start' failed (exit 1).\n")
 	e.has("[WARN] Backend 'fake' did not come up (service unknown); undoing the change.\n")
 	e.has("[ERROR] Backend 'fake' was not enabled. tacctl.yaml and every rendered file are back as they were, the service is stopped and disabled; the install stays on this machine.\n")
@@ -546,7 +546,7 @@ func TestBackendDisablePromptNo(t *testing.T) {
 func TestBackendDisableYes(t *testing.T) {
 	e := newSwEnv(t)
 	e.fakeUp()
-	e.want(e.run("", "disable", "fake", "-y"), 0)
+	e.want(e.run("", "disable", "fake", "--yes"), 0)
 	e.hasNot("Cancelled")
 	if e.enabledNow() != "tacacs" {
 		t.Error("not disabled")
@@ -556,7 +556,7 @@ func TestBackendDisableYes(t *testing.T) {
 func TestBackendDisableLastIsRefused(t *testing.T) {
 	e := newSwEnv(t)
 	before := e.state()
-	e.want(e.run("", "disable", "tacacs", "-y"), 1)
+	e.want(e.run("", "disable", "tacacs", "--yes"), 1)
 	if got := plain(e.stderr.String()); got != "[ERROR] Backend 'tacacs' is the only enabled backend. With none enabled nothing would serve the store.\n"+
 		"[ERROR] Enable another first ('tacctl backend enable <id>'), or remove tacctl's daemons with 'tacctl uninstall'.\n" {
 		t.Errorf("stderr %q", got)
@@ -573,7 +573,7 @@ func TestBackendDisableTacacsWithoutStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := e.state()
-	e.want(e.run("", "disable", "tacacs", "-y"), 1)
+	e.want(e.run("", "disable", "tacacs", "--yes"), 1)
 	e.has("[ERROR] Backend 'tacacs' cannot be disabled while there is no store: " + e.p.Config +
 		" is still the source of truth and tacquito the only thing serving it.\n[ERROR] " + store.NotInitialisedMsg + "\n")
 	if e.state() != before || e.tac.Called("service stop") {
@@ -588,7 +588,7 @@ func TestBackendDisableLegacyMode(t *testing.T) {
 	if err := os.Remove(e.p.StoreFile); err != nil {
 		t.Fatal(err)
 	}
-	e.want(e.run("", "disable", "fake", "-y"), 0)
+	e.want(e.run("", "disable", "fake", "--yes"), 0)
 	if e.enabledNow() != "tacacs" || !e.fake.Called("service stop") || e.fake.Called("gate") {
 		t.Errorf("calls %q", e.fake.Calls())
 	}
@@ -599,7 +599,7 @@ func TestBackendDisableTacacsWhenAnotherStays(t *testing.T) {
 	e := newSwEnv(t)
 	e.fakeUp()
 	yaml, _ := os.ReadFile(e.p.Config)
-	e.want(e.run("", "disable", "tacacs", "-y"), 0)
+	e.want(e.run("", "disable", "tacacs", "--yes"), 0)
 	if e.enabledNow() != "fake" || !e.tac.Called("service stop") || !e.tac.Called("service disable") {
 		t.Errorf("calls %q", e.tac.Calls())
 	}
@@ -610,14 +610,14 @@ func TestBackendDisableTacacsWhenAnotherStays(t *testing.T) {
 
 func TestBackendDisableNotEnabledOrUnknown(t *testing.T) {
 	e := newSwEnv(t)
-	e.want(e.run("", "disable", "fake", "-y"), 0)
+	e.want(e.run("", "disable", "fake", "--yes"), 0)
 	e.has("[INFO] Backend 'fake' is not enabled. Nothing to do.")
-	e.want(e.run("", "disable", "ldap", "-y"), 1)
+	e.want(e.run("", "disable", "ldap", "--yes"), 1)
 	e.has("[ERROR] Unknown backend 'ldap' (known: tacacs fake).")
 	e.want(e.run("", "disable", "--yes", "fake", "tacacs"), 1)
-	e.has("[ERROR] Usage: tacctl backend disable <id> [-y]")
+	e.has("[ERROR] Usage: tacctl backend disable <id> [--yes]")
 	e.want(e.run("", "disable", "-x"), 1)
-	e.has("[ERROR] Unknown option '-x'. Usage: tacctl backend disable <id> [-y]")
+	e.has("[ERROR] Unknown option '-x'. Usage: tacctl backend disable <id> [--yes]")
 }
 
 // The gate covers the backends that stay, not the one going.
@@ -626,7 +626,7 @@ func TestBackendDisableGatesTheRest(t *testing.T) {
 	e.fakeUp()
 	// The one being disabled refuses its gate: that must not stop it.
 	e.fake.Gate = backend.GateRefused
-	e.want(e.run("", "disable", "fake", "-y"), 0)
+	e.want(e.run("", "disable", "fake", "--yes"), 0)
 	if e.enabledNow() != "tacacs" {
 		t.Error("not disabled")
 	}
@@ -635,7 +635,7 @@ func TestBackendDisableGatesTheRest(t *testing.T) {
 	e.want(e.run("", "enable", "fake"), 0)
 	e.tac.Gate = backend.GateRefused
 	before := e.state()
-	e.want(e.run("", "disable", "fake", "-y"), 3)
+	e.want(e.run("", "disable", "fake", "--yes"), 3)
 	e.has("[ERROR] Backend 'fake' was not disabled. tacctl.yaml, the store and every rendered file are as they were.")
 	if e.state() != before {
 		t.Error("something changed")
@@ -647,7 +647,7 @@ func TestBackendDisableStopFails(t *testing.T) {
 	e := newSwEnv(t)
 	e.fakeUp()
 	e.fake.StopFails = true
-	e.want(e.run("", "disable", "fake", "-y"), 1)
+	e.want(e.run("", "disable", "fake", "--yes"), 1)
 	e.has("[ERROR] Backend 'fake' is out of backends.enabled, but its service could not be stopped or disabled. Run: systemctl stop fake.service ; systemctl disable fake.service\n")
 	if e.enabledNow() != "tacacs" {
 		t.Error("backends.enabled not updated")
@@ -658,7 +658,7 @@ func TestBackendDisableThenEnable(t *testing.T) {
 	e := newSwEnv(t)
 	e.fakeUp()
 	before, _ := os.ReadFile(e.fakeConf)
-	e.want(e.run("", "disable", "fake", "-y"), 0)
+	e.want(e.run("", "disable", "fake", "--yes"), 0)
 	e.want(e.run("", "enable", "fake"), 0)
 	if after, _ := os.ReadFile(e.fakeConf); !bytes.Equal(after, before) {
 		t.Error("files differ")
@@ -672,7 +672,7 @@ func TestBackendDisableThenEnable(t *testing.T) {
 func TestBackendDisabledIsNotRendered(t *testing.T) {
 	e := newSwEnv(t)
 	e.fakeUp()
-	e.want(e.run("", "disable", "fake", "-y"), 0)
+	e.want(e.run("", "disable", "fake", "--yes"), 0)
 	e.reset()
 	_, err := e.set.StoreApply(context.Background(), backend.ApplyOptions{}, func() error {
 		_, err := store.Mutate(e.p.StoreFile, e.env.MutateOptions(), func(s *store.Store) error { return s.UserDel("carol") })
@@ -702,14 +702,14 @@ func TestBackendEnableDisableCLI(t *testing.T) {
 	sb.run("", []string{"backend", "enable"})
 	sb.expect(1, "", "[ERROR] Missing backend id (known: tacacs radius).")
 	sb.run("", []string{"backend", "disable", "radius", "--bogus"})
-	sb.expect(1, "", "[ERROR] Unknown option '--bogus'. Usage: tacctl backend disable <id> [-y]")
-	sb.run("", []string{"backend", "enable", "tacacs", "-y"})
+	sb.expect(1, "", "[ERROR] Unknown option '--bogus'. Usage: tacctl backend disable <id> [--yes]")
+	sb.run("", []string{"backend", "enable", "tacacs", "--yes"})
 	sb.expect(0, "[INFO] Backend 'tacacs' is already enabled.", "")
-	sb.run("", []string{"backend", "disable", "radius", "-y"})
+	sb.run("", []string{"backend", "disable", "radius", "--yes"})
 	sb.expect(0, "[INFO] Backend 'radius' is not enabled. Nothing to do.", "")
-	sb.run("", []string{"backend", "disable", "tacacs", "-y"})
+	sb.run("", []string{"backend", "disable", "tacacs", "--yes"})
 	sb.expect(1, "", "[ERROR] Backend 'tacacs' is the only enabled backend.")
 	sb.write("state/tacctl.yaml", "backends:\n  enabled: [tacacs, ldap]\n", 0o600)
-	sb.run("", []string{"backend", "enable", "radius", "-y"})
+	sb.run("", []string{"backend", "enable", "radius", "--yes"})
 	sb.expect(1, "", "backends.enabled names 'ldap', and this tacctl has no such backend (it has: tacacs radius).")
 }

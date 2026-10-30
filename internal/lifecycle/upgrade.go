@@ -27,15 +27,15 @@ var selfUpdatePaths = []string{"cmd", "internal", "vendor", "go.mod", "go.sum", 
 
 // The one-line usages a refused argument is followed by.
 const (
-	installUsage   = "Usage: tacctl install [--branch <name>] [--server <ip>] [-y|--yes]"
+	installUsage   = "Usage: tacctl install [--branch <name>] [--server <ip>] [--yes]"
 	upgradeUsage   = "Usage: tacctl upgrade [--branch <name>]"
-	uninstallUsage = "Usage: tacctl uninstall [-y|--yes]"
+	uninstallUsage = "Usage: tacctl uninstall [--yes]"
 )
 
 // parseLifecycleArgs reads an install, upgrade or uninstall command line:
 // '--branch <name>' when branch is not nil, '--server <ip>' when server is
 // not nil (an IP address that can be the server address, checked here),
-// '-y' or '--yes' when yes is not nil. Anything else, or a '--branch' or
+// '--yes' when yes is not nil. Anything else, or a '--branch' or
 // '--server' with no value after it, is refused ("Unknown argument: '<x>'"
 // and the usage, exit 1) before anything is done.
 func parseLifecycleArgs(h *Host, args []string, branch, server *string, yes *bool, usage string) error {
@@ -51,7 +51,7 @@ func parseLifecycleArgs(h *Host, args []string, branch, server *string, yes *boo
 			}
 			*server = args[i+1]
 			i++
-		case yes != nil && (a == "-y" || a == "--yes"):
+		case yes != nil && a == "--yes":
 			*yes = true
 		default:
 			h.Out.Error("Unknown argument: '" + a + "'")
@@ -97,6 +97,11 @@ func Upgrade(ctx context.Context, h *Host, args []string) error {
 	// Each backend checks that it can be upgraded at all, before anything
 	// is touched.
 	if err := h.upgrade(ctx, ids, backend.PhasePreflight, ""); err != nil {
+		return err
+	}
+	// A user name with a period (0.2.20, 0.2.21) is no account name on this
+	// server: renamed first, nothing changed until then.
+	if err := h.dottedUsersGate(); err != nil {
 		return err
 	}
 	h.ensureSafeDirectory(ctx, p.Deploy)

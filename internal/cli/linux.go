@@ -114,6 +114,9 @@ func (inv *invocation) configLinux(args []string) error {
 		inv.write(configLinuxUsage())
 		return nil
 	}
+	if plainWord(arg(args, 0)) {
+		return inv.unknownSub(arg(args, 0))
+	}
 	inv.write(configLinuxUsage())
 	return exit(1)
 }
@@ -978,7 +981,7 @@ func (inv *invocation) configLinuxUID(args []string) error {
 		inv.echo("")
 		return nil
 	}
-	if err := names.ValidateUsername(username); err != nil {
+	if err := names.ValidateExistingUsername(username); err != nil {
 		return inv.validated(err)
 	}
 	if uid == "" {

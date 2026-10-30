@@ -16,6 +16,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/rett/tacctl/internal/devssh"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
 )
@@ -162,7 +163,7 @@ func TestKeyscanCmd(t *testing.T) {
 
 // For a legacy device that ssh-keyscan reads nothing from (or cannot be
 // run for), the fallback's keys are returned; both failing keeps
-// ssh-keyscan's error; a device that did not answer at all, unless it is
+// ssh-keyscan's error; a name that does not resolve, unless the device is
 // legacy, never reaches the fallback.
 func TestScanWithFallback(t *testing.T) {
 	ed, rsa := testKey(t, "ed25519"), testKey(t, "rsa")
@@ -177,7 +178,7 @@ func TestScanWithFallback(t *testing.T) {
 		calls   []string
 	)
 	answer := func(keys []HostKey, err error) KeyFallback {
-		return func(_ context.Context, address string, port int) ([]HostKey, error) {
+		return func(_ context.Context, address string, port int, _ bool, _ devssh.ScanTiming) ([]HostKey, error) {
 			callsMu.Lock()
 			calls = append(calls, address+" "+strconv.Itoa(port))
 			callsMu.Unlock()
@@ -233,10 +234,10 @@ func TestScanWithFallback(t *testing.T) {
 		!reflect.DeepEqual(na.OneByOne, []string{"ed25519", "ecdsa", "rsa"}) {
 		t.Errorf("not legacy, both fail: %v", err)
 	}
-	// Not reached (it refused, or timed out): no second dial, no fallback.
+	// A name that does not resolve: no second dial, no fallback.
 	calls = nil
 	unreachable := &fake.Runner{Strict: true}
-	unreachable.On([]string{"ssh-keyscan"}, execx.Result{Stderr: []byte("connect (`10.99.0.1'): Connection refused\n")})
+	unreachable.On([]string{"ssh-keyscan"}, execx.Result{Stderr: []byte("getaddrinfo sw1.example.net: Name or service not known\n")})
 	if _, err := ScanWith(ctx, unreachable, "10.99.0.1", 22, false, answer([]HostKey{rsa}, nil)); err != ErrNoAnswer || len(calls) != 0 || unreachable.Count("ssh-keyscan") != 1 {
 		t.Errorf("not legacy, unreachable: %v calls %q runs %d", err, calls, unreachable.Count("ssh-keyscan"))
 	}

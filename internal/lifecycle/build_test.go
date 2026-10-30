@@ -50,7 +50,7 @@ func TestInstallObtainsTheCommandWithInstallBinary(t *testing.T) {
 	o.cloned()
 	o.commit = "something-else"
 	o.modernShim("Installing the 0.2.1 release binary (linux/amd64, verified)", false)
-	if code := install(o, "-y"); code != 0 {
+	if code := install(o, "--yes"); code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
 	}
 	recipe := filepath.Join(o.p.Deploy, "bin", "tacctl.sh")

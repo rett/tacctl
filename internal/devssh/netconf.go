@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+
+	"github.com/rett/tacctl/internal/devconf/batch"
 )
 
 // Framing is how NETCONF messages are delimited on the channel (RFC 6242).
@@ -131,6 +133,7 @@ func (c *Client) NETCONF(opts ...NetconfOption) (NetconfSession, error) {
 		_ = ch.Close()
 		return nil, err
 	}
+	batch.Mark(c.ctx, "session")
 	return n, nil
 }
 

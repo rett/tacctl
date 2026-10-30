@@ -31,7 +31,7 @@ snapshot_count() { find "${TACCTL_STATE_DIR}/backups" -mindepth 1 -maxdepth 1 -n
     run "$TACCTL_BIN_SCRIPT" device list
     assert_success
     plain
-    assert_output --partial "Registered devices (1) and enrolled hosts (0)"
+    assert_output --partial "Registered devices (1)"
     assert_output --regexp "core-sw1 +10\.99\.0\.1 +cisco +- +unconfigured"
     assert_output --partial "seen data: none (tacctl device scan)"
 
@@ -66,7 +66,7 @@ snapshot_count() { find "${TACCTL_STATE_DIR}/backups" -mindepth 1 -maxdepth 1 -n
     before=$(sha256sum < "${TACCTL_STATE_DIR}/store.yaml")
     "$TACCTL_BIN_SCRIPT" device add core-sw1 10.99.0.1 --vendor cisco --no-host-key
     "$TACCTL_BIN_SCRIPT" device rename core-sw1 dc1-core1
-    "$TACCTL_BIN_SCRIPT" device remove dc1-core1 -y
+    "$TACCTL_BIN_SCRIPT" device remove dc1-core1 --yes
     after=$(sha256sum < "${TACCTL_STATE_DIR}/store.yaml")
     [[ "$before" == "$after" ]]
     run stat -c %a "$DEVICES"
@@ -99,7 +99,8 @@ devices:
     run "$TACCTL_BIN_SCRIPT" device frobnicate
     assert_failure 1
     assert_output --partial "Unknown subcommand: 'frobnicate'"
-    assert_output --partial "Usage: tacctl device <subcommand>"
+    assert_output --partial "Run 'tacctl device -h' for usage."
+    refute_output --partial "Usage: tacctl device <subcommand>"
 }
 
 @test "device add: refuses bad input and writes nothing" {
@@ -286,7 +287,7 @@ devices:
     assert_failure 1
 }
 
-@test "device remove: confirms, cancels on closed stdin, -y and --all skip the question" {
+@test "device remove: confirms, cancels on closed stdin, --yes and --all skip the question" {
     "$TACCTL_BIN_SCRIPT" device add core-sw1 10.99.0.1 --no-host-key
     "$TACCTL_BIN_SCRIPT" device add edge-fw 10.99.0.2 --no-host-key
     local before
@@ -300,9 +301,9 @@ devices:
     assert_success
     run grep -c core-sw1 "$DEVICES"
     assert_output "0"
-    run "$TACCTL_BIN_SCRIPT" device remove nope -y
+    run "$TACCTL_BIN_SCRIPT" device remove nope --yes
     assert_failure 1
-    run "$TACCTL_BIN_SCRIPT" device remove --all -y
+    run "$TACCTL_BIN_SCRIPT" device remove --all --yes
     assert_success
     run "$TACCTL_BIN_SCRIPT" device list
     plain
@@ -351,7 +352,7 @@ CSV
     # YAML out is the file; it imports back (--replace) to the same bytes.
     "$TACCTL_BIN_SCRIPT" device export > "${BATS_TEST_TMPDIR}/out.yaml"
     cmp "${BATS_TEST_TMPDIR}/out.yaml" "$DEVICES"
-    run "$TACCTL_BIN_SCRIPT" device import --replace -y - < "${BATS_TEST_TMPDIR}/out.yaml"
+    run "$TACCTL_BIN_SCRIPT" device import --replace --yes - < "${BATS_TEST_TMPDIR}/out.yaml"
     assert_success
     cmp "${BATS_TEST_TMPDIR}/out.yaml" "$DEVICES"
 }
@@ -389,19 +390,30 @@ CSV
     [[ ! -e "${TACCTL_STATE_DIR}/linux-hosts" ]]
 }
 
-@test "enrolled hosts appear in device list and show, read-only" {
+@test "enrolled hosts appear in host list, not in device list, and in device show, read-only" {
     printf 'web1|root@192.0.2.10|2222|lab|192.0.2.1|\nubuntu|root@192.0.2.11||lab|192.0.2.1|\n' > "${TACCTL_STATE_DIR}/linux-hosts"
     run "$TACCTL_BIN_SCRIPT" device list
     assert_success
     plain
-    assert_output --partial "Registered devices (0) and enrolled hosts (2)"
-    assert_output --regexp "web1 +- +linux +lab +configured"
+    assert_output --partial "Registered devices (0)"
+    refute_output --partial "enrolled hosts"
+    refute_output --partial "web1"
+    run "$TACCTL_BIN_SCRIPT" device list --json
+    assert_output "[]"
+    run "$TACCTL_BIN_SCRIPT" host list
+    assert_success
+    plain
+    assert_output --regexp "web1 +root@192\.0\.2\.10:2222 +.* lab +configured"
     assert_output --regexp "ubuntu .*generic-name"
+    run "$TACCTL_BIN_SCRIPT" device show web1
+    assert_success
+    plain
+    assert_output --partial "Enrolled host web1"
     run "$TACCTL_BIN_SCRIPT" device add web1 10.99.0.5
     assert_failure 1
     plain
     assert_output --partial "'web1' is an enrolled host"
-    run "$TACCTL_BIN_SCRIPT" device remove web1 -y
+    run "$TACCTL_BIN_SCRIPT" device remove web1 --yes
     assert_failure 1
     plain
     assert_output --partial "is an enrolled host"
@@ -481,13 +493,17 @@ x $(key rsa)"
 }
 
 @test "device add: a device that does not answer is refused unless --no-host-key" {
+    # ssh-keyscan prints the resolver's failure, the one failure it reports
+    # about a device (a refused or filtered address prints nothing, like a
+    # silent server): only ssh-keyscan is tried.
+    stub_cmd ssh-keyscan "echo 'getaddrinfo sw1.example.net: Name or service not known' >&2"
     run "$TACCTL_BIN_SCRIPT" device add x 192.0.2.1 --port 2222
     assert_failure 1
     plain
     assert_output --partial "No ssh host key could be read from 192.0.2.1 port 2222 (ssh-keyscan); nothing was changed."
     assert_output --partial "register it without a pinned key: tacctl device add x 192.0.2.1 --port 2222 --no-host-key"
     [[ ! -e "$DEVICES" ]]
-    stub_cmd ssh-keyscan
+    : > "$CALLS_LOG"
     run "$TACCTL_BIN_SCRIPT" device add x 192.0.2.1 --no-host-key
     assert_success
     plain
@@ -519,7 +535,7 @@ x $(key rsa)"
     assert_output --partial "Aborted; the pin was not changed."
     run grep -c host_keys "$DEVICES"
     assert_output "0"
-    run "$TACCTL_BIN_SCRIPT" device hostkey core-sw1 accept -y
+    run "$TACCTL_BIN_SCRIPT" device hostkey core-sw1 accept --yes
     assert_success
     plain
     assert_output --partial "Pinned 2 host key(s) for 'core-sw1'."

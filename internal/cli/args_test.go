@@ -10,14 +10,14 @@ var userAddSpec = Spec{
 	Flags: []Flag{
 		{Names: []string{"--hash"}, Value: true},
 		{Names: []string{"--scopes"}, Value: true},
-		{Names: []string{"--yes", "-y"}},
+		{Names: []string{"--yes", "--force"}},
 		{Names: []string{"--match"}, Value: true, Repeat: true},
 	},
 	MinArgs: 2, MaxArgs: 2,
 }
 
 func TestParse(t *testing.T) {
-	p, err := Parse(userAddSpec, []string{"alice", "--hash", "abc", "ops", "--scopes=lab,prod", "-y", "--match", "a", "--match=b"})
+	p, err := Parse(userAddSpec, []string{"alice", "--hash", "abc", "ops", "--scopes=lab,prod", "--yes", "--match", "a", "--match=b"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,8 +40,8 @@ func TestParse(t *testing.T) {
 	}
 
 	// "--" ends the flags; a lone "-" and an empty string are positionals.
-	p, err = Parse(Spec{MaxArgs: -1}, []string{"-", "", "--", "--hash", "-y"})
-	if err != nil || !reflect.DeepEqual(p.Args, []string{"-", "", "--hash", "-y"}) {
+	p, err = Parse(Spec{MaxArgs: -1}, []string{"-", "", "--", "--hash", "--yes"})
+	if err != nil || !reflect.DeepEqual(p.Args, []string{"-", "", "--hash", "--yes"}) {
 		t.Errorf("-- handling: %q %v", p.Args, err)
 	}
 	// A value that looks like a flag is taken as the value.
@@ -85,7 +85,7 @@ func TestParseErrors(t *testing.T) {
 		{[]string{"a", "b", "--bogus=1"}, new(*UnknownFlagError), "Unknown flag: '--bogus=1'"},
 		{[]string{"a", "b", "--hash"}, new(*MissingValueError), "--hash requires a value"},
 		{[]string{"a", "b", "--yes=1"}, new(*UnexpectedValueError), "--yes takes no value"},
-		{[]string{"a", "b", "-y", "--yes"}, new(*RepeatedFlagError), "--yes given more than once"},
+		{[]string{"a", "b", "--force", "--yes"}, new(*RepeatedFlagError), "--yes given more than once"},
 		{[]string{"a"}, new(*ArgCountError), "expected at least 2 argument(s), got 1"},
 		{[]string{"a", "b", "c", "d"}, new(*ArgCountError), "Unknown argument: 'c'"},
 	}

@@ -22,6 +22,13 @@
 //     output or a NETCONF message is at most MaxOutput, and the session is
 //     closed when a device sends more.
 //
+// A caller that wants to know where the time of a connection went runs it
+// in a batch job (internal/devconf/batch): Dial marks the end of the
+// connection ("connect": the TCP connect and the key exchange up to the
+// pinned host key) and of the login ("login"), and opening a command-line,
+// NETCONF or terminal session marks "session" (batch.Mark). The marks tell
+// the batch's clock and print nothing; outside a job they do nothing.
+//
 // Two things callers must know. On Junos the exit status of an exec channel
 // does not signal a CLI error (a syntax error exits 0 and its text,
 // 'error: ...' or 'syntax error', is in the output): the vendor reader
@@ -47,6 +54,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+
+	"github.com/rett/tacctl/internal/devconf/batch"
 )
 
 // DefaultPort is the ssh port a Target with Port 0 connects to.
@@ -194,6 +203,8 @@ func Dial(ctx context.Context, t Target) (*Client, error) {
 	}
 
 	st := &dialState{pins: pins, password: &passwordMemo{src: t.Password, ctx: hs}}
+	// the key exchange ends with the host key: the connection is made
+	st.connected = func() { batch.Mark(ctx, "connect") }
 	cfg := &ssh.ClientConfig{
 		User:              t.User,
 		Auth:              st.methods(),
@@ -216,6 +227,7 @@ func Dial(ctx context.Context, t Target) (*Client, error) {
 		_ = conn.Close()
 		return nil, st.classify(ctx, hs, addr, err)
 	}
+	batch.Mark(ctx, "login")
 	c := &Client{conn: ssh.NewClient(sc, chans, reqs), addr: addr, timeout: t.timeout(), quiet: t.quietPeriod(), ctx: ctx}
 	stop := context.AfterFunc(ctx, func() { _ = c.Close() })
 	c.mu.Lock()
@@ -306,6 +318,10 @@ func (c *Client) within(ctx context.Context, fn func() error) error {
 type dialState struct {
 	pins     []ssh.PublicKey
 	password *passwordMemo
+	// connected is told once, when the device's key is a pinned one (nil: no
+	// one asks).
+	connected func()
+	once      sync.Once
 
 	mu      sync.Mutex
 	offered ssh.PublicKey // the key the device presented
@@ -321,6 +337,10 @@ func (s *dialState) hostKey(_ string, _ net.Addr, key ssh.PublicKey) error {
 	s.offered = key
 	for _, p := range s.pins {
 		if bytes.Equal(p.Marshal(), key.Marshal()) {
+			// later key exchanges (a rekey) are not the connection
+			if s.connected != nil {
+				s.once.Do(s.connected)
+			}
 			return nil
 		}
 	}

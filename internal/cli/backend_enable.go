@@ -1,6 +1,6 @@
 package cli
 
-// 'tacctl backend enable|disable <id> [-y]' (cmd_backend_enable and
+// 'tacctl backend enable|disable <id> [--yes]' (cmd_backend_enable and
 // cmd_backend_disable, lib/backend.sh at 0.1.16). Both are one transaction
 // on the files tacctl owns (backends.enabled in tacctl.yaml, the store,
 // every rendered artifact and rendered.json): they complete or leave all of
@@ -88,12 +88,12 @@ func (s *switcher) fail(msgs ...string) error {
 	return exit(1)
 }
 
-// parse is the argument loop of both commands: -y|--yes, one id; any other
+// parse is the argument loop of both commands: --yes, one id; any other
 // dash-word is an unknown option, a second id a usage error (exit 1).
 func (s *switcher) parse(args []string, usage string) (id string, yes bool, err error) {
 	for _, a := range args {
 		switch {
-		case a == "-y" || a == "--yes":
+		case a == "--yes":
 			yes = true
 		case strings.HasPrefix(a, "-"):
 			return "", false, s.fail("Unknown option '" + a + "'. " + usage)
@@ -122,7 +122,7 @@ func (s *switcher) enabled() ([]string, error) {
 	return ids, nil
 }
 
-// confirm is _backend_confirm: true only on y or Y (or with -y); anything
+// confirm is _backend_confirm: true only on y or Y (or with --yes); anything
 // else, an empty stdin included, is a no, said as such (the callers then
 // exit 0: declining is not a failure).
 func (s *switcher) confirm(prompt string, yes bool) bool {
@@ -182,7 +182,7 @@ func (s *switcher) applyError(err error) int {
 //
 //  1. refuse unless the backend exists, is not enabled, and the store
 //     exists;
-//  2. not installed: confirm (-y skips), then its install phases build,
+//  2. not installed: confirm (--yes skips), then its install phases build,
 //     files, account. Failure: nothing but its software is touched;
 //  3. StoreApply gating every backend of the new set (the new one
 //     included), adding the id to backends.enabled and rendering every
@@ -204,7 +204,7 @@ func (s *switcher) applyError(err error) int {
 // Whatever fails exits 1 (3 when a gate refused: a rendered file was edited
 // by hand), saying what state it left.
 func (s *switcher) enable(args []string) error {
-	id, yes, err := s.parse(args, "Usage: tacctl backend enable <id> [-y]")
+	id, yes, err := s.parse(args, "Usage: tacctl backend enable <id> [--yes]")
 	if err != nil {
 		return err
 	}
@@ -353,7 +353,7 @@ func (s *switcher) undo(b backend.Backend, keptConf string, kept *backend.Kept, 
 // there is no store (an install still in legacy mode: tacquito.yaml is the
 // only source of truth and tacquito the one thing serving it).
 //
-//  1. confirm (-y skips);
+//  1. confirm (--yes skips);
 //  2. store mode: StoreApply gates the backends that stay, takes the id out
 //     of backends.enabled and renders the rest. Failure: everything as it
 //     was, the service untouched. Legacy mode (a backend other than
@@ -365,7 +365,7 @@ func (s *switcher) undo(b backend.Backend, keptConf string, kept *backend.Kept, 
 //
 // Its rendered files, their records, the snapshots and the package stay.
 func (s *switcher) disable(args []string) error {
-	id, yes, err := s.parse(args, "Usage: tacctl backend disable <id> [-y]")
+	id, yes, err := s.parse(args, "Usage: tacctl backend disable <id> [--yes]")
 	if err != nil {
 		return err
 	}

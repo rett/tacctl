@@ -122,8 +122,8 @@ func (inv *invocation) deviceConfigShapes(args []string) error {
 	switch {
 	case sub == "list" && len(rest) > 0:
 		return inv.argErr("'shapes list' takes no name: '"+rest[0]+"'. Seed a device with: tacctl device config shapes seed <name>", usage)
-	case sub == "list" && p.Has("-y"):
-		return inv.argErr("-y answers the question of 'shapes seed'; 'shapes list' asks none.", usage)
+	case sub == "list" && p.Has("--yes"):
+		return inv.argErr("--yes answers the question of 'shapes seed'; 'shapes list' asks none.", usage)
 	case sub == "seed" && (p.Has("--show") || p.Has("--json")):
 		return inv.argErr("--show and --json are for 'shapes list'.", usage)
 	}
@@ -251,7 +251,7 @@ func (inv *invocation) deviceConfigShapesList(p Parsed) error {
 	return nil
 }
 
-// deviceConfigSeed is 'shapes seed <name>[,<name>...] [-y]': the shape of
+// deviceConfigSeed is 'shapes seed <name>[,<name>...] [--yes]': the shape of
 // each device's last check or apply is filed as confirmed by the person's
 // word (D135). The lines are the ones the check saw: nothing is re-planned,
 // and no device is contacted.
@@ -360,7 +360,7 @@ func (inv *invocation) deviceConfigSeed(p Parsed, rest []string) error {
 	inv.echo("  This is your word that each shape above was applied to the device and verified there")
 	inv.echo("  by other means: 'device config apply --confirmed' will then apply it to other devices")
 	inv.echo("  with no review of their own.")
-	if !p.Has("-y") && !inv.app.Prompter().Confirm("  Mark them confirmed? [y/N]: ") {
+	if !p.Has("--yes") && !inv.app.Prompter().Confirm("  Mark them confirmed? [y/N]: ") {
 		inv.app.Out.Info("Nothing was changed.")
 		return nil
 	}

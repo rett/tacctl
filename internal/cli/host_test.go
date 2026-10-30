@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -147,9 +148,14 @@ func TestHostFamilyUsage(t *testing.T) {
 	hs := newHostSandbox(t)
 	hs.run(nil, "host")
 	hs.expect(0, "Host Commands", "")
+	// 'host' has no word 'help': it is an unknown sub-command like any
+	// other, answered without the usage
 	for _, w := range []string{"help", "bogus"} {
 		hs.run(nil, "host", w)
-		hs.expect(1, "Usage: tacctl host <subcommand>", "[ERROR] Unknown subcommand: '"+w+"'")
+		hs.expect(1, "", "[ERROR] Unknown subcommand: '"+w+"'")
+		if hs.out.Len() != 0 {
+			t.Errorf("an unknown sub-command printed the usage: %q", hs.out.String())
+		}
 	}
 	// -h lists the sub-commands as '?' does (help_request.go).
 	hs.run(nil, "host", "-h")
@@ -157,9 +163,9 @@ func TestHostFamilyUsage(t *testing.T) {
 	hs.run(nil, "config", "linux")
 	hs.expect(0, "Linux host TACACS+ or RADIUS login", "")
 	hs.run(nil, "config", "linux", "bogus")
-	hs.expect(1, "Usage: tacctl config linux <subcommand>", "")
-	if hs.err.Len() != 0 {
-		t.Errorf("config linux bogus: stderr %q", hs.err.String())
+	hs.expect(1, "", "[ERROR] Unknown subcommand: 'bogus'\nRun 'tacctl config linux -h' for usage.")
+	if hs.out.Len() != 0 {
+		t.Errorf("config linux bogus: stdout %q", hs.out.String())
 	}
 	hs.run(nil, "config", "linux", "builds", "bogus")
 	hs.expect(1, "", "Usage: tacctl config linux builds [list|clear]")
@@ -198,7 +204,7 @@ func TestHostEnrollSyncUnenroll(t *testing.T) {
 	}
 
 	out := hs.run(nil, "host", "list")
-	if !strings.Contains(plain(out), "  web1  admin@web1.example.net  192.0.2.50  lab    192.0.2.1  tacplus  3\n") {
+	if !regexp.MustCompile(`(?m)^  web1  admin@web1\.example\.net  192\.0\.2\.50  lab    configured +- +- +192\.0\.2\.1  tacplus  3 +-$`).MatchString(plain(out)) {
 		t.Errorf("list %q", plain(out))
 	}
 	// A disabled user is inactive (expired on the host, never deleted).
@@ -291,7 +297,7 @@ func TestHostEnrollScopeChoice(t *testing.T) {
 	if !strings.Contains(hs.out.String(), "their accounts on web1 are deleted: alice, bob") || hs.pushed != "" {
 		t.Errorf("move: %q pushed %d", hs.out.String(), len(hs.pushed))
 	}
-	hs.run(nil, "host", "enroll", "web1", "--scope", "linux-web1", "-y", "--build-on-host")
+	hs.run(nil, "host", "enroll", "web1", "--scope", "linux-web1", "--yes", "--build-on-host")
 	hs.expect(0, "Host 'web1' enrolled", "")
 	if hs.registry() != "web1|web1||linux-web1|198.51.100.7|\n" {
 		t.Errorf("registry %q", hs.registry())

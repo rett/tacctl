@@ -81,12 +81,12 @@ sudo_lines() { grep '^sudo ' "$CALLS_LOG" || true; }
 }
 
 @test "shell: metacharacters are words, nothing else runs" {
-    run "$TACCTL_BIN_SCRIPT" shell -c "user list; touch ${BATS_TEST_TMPDIR}/pwned \$(touch ${BATS_TEST_TMPDIR}/pwned2)"
+    run "$TACCTL_BIN_SCRIPT" shell -c "user show alice; touch ${BATS_TEST_TMPDIR}/pwned \$(touch ${BATS_TEST_TMPDIR}/pwned2)"
     assert_failure
     assert_file_not_exists "${BATS_TEST_TMPDIR}/pwned"
     assert_file_not_exists "${BATS_TEST_TMPDIR}/pwned2"
     run sudo_lines
-    assert_output --partial "tacctl user list; touch ${BATS_TEST_TMPDIR}/pwned \$(touch"
+    assert_output --partial "tacctl user show alice; touch ${BATS_TEST_TMPDIR}/pwned \$(touch"
 }
 
 @test "shell < file: runs the lines in order and stops at the first failure" {

@@ -169,8 +169,8 @@ _client_env() {
 }
 
 @test "config linux script: the port is the default listener's, from the listener model" {
-    TACCTL_SETTLE_SECONDS=0 "$TACCTL_BIN_SCRIPT" config listen tcp 192.0.2.10:4949 > /dev/null
-    TACCTL_SETTLE_SECONDS=0 "$TACCTL_BIN_SCRIPT" config listen --listener mgmt tcp 127.0.0.1:5050 > /dev/null
+    TACCTL_SETTLE_SECONDS=0 "$TACCTL_BIN_SCRIPT" server listen tcp 192.0.2.10:4949 > /dev/null
+    TACCTL_SETTLE_SECONDS=0 "$TACCTL_BIN_SCRIPT" server listen --listener mgmt tcp 127.0.0.1:5050 > /dev/null
     run _gen
     assert_success
     run sed '/^__TARBALL__$/,$d' "$OUT"

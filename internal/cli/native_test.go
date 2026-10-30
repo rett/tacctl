@@ -192,7 +192,7 @@ func TestUserListShowAndUsage(t *testing.T) {
 	sb.expect(1, "", "[ERROR] User 'ghost' does not exist.")
 	sb.run("", []string{"user", "show", "bad name"})
 	sb.expect(1, "", "Username must contain only letters")
-	for _, w := range []string{"", "help", "bogus"} {
+	for _, w := range []string{"", "help", "-x"} {
 		args := []string{"user"}
 		if w != "" {
 			args = append(args, w)
@@ -201,6 +201,11 @@ func TestUserListShowAndUsage(t *testing.T) {
 			t.Errorf("%q: %d %q", args, sb.code, got)
 		}
 	}
+	// a word that is no sub-command is the short answer, not the usage
+	if got := sb.run("", []string{"user", "bogus"}); got != "" {
+		t.Errorf("user bogus: %q", got)
+	}
+	sb.expect(1, "", "Unknown subcommand: 'bogus'\nRun 'tacctl user -h' for usage.")
 }
 
 func TestUserAddRemoveThroughStoreApply(t *testing.T) {
@@ -405,7 +410,7 @@ func TestUserScopeVerbs(t *testing.T) {
 	sb.run("", []string{"user", "scope", "bob", "--help"})
 	sb.expect(0, "scope <user> remove --all             Remove every scope from the user", "")
 	sb.run("", []string{"user", "scope", "bob", "bogus"})
-	sb.expect(1, "", "Run 'tacctl user scope bob' for usage.")
+	sb.expect(1, "", "Run 'tacctl user scope -h' for usage.")
 }
 
 func TestUserMoveUsageNamesUser(t *testing.T) {
@@ -462,8 +467,8 @@ func TestNativePrelude(t *testing.T) {
 	// install, upgrade and uninstall are superuser commands (and native
 	// since WP3.3d): denied before anything runs.
 	for _, c := range []string{"install", "upgrade", "uninstall"} {
-		ro(c, "-y")
-		sb.expect(1, "", "[ERROR] 'tacctl "+c+" -y' is not permitted for the readonly tier.")
+		ro(c, "--yes")
+		sb.expect(1, "", "[ERROR] 'tacctl "+c+" --yes' is not permitted for the readonly tier.")
 		if len(sb.runner.Execs()) != 0 || sb.runner.Called("git") || sb.runner.Called("systemctl") {
 			t.Errorf("%s: ran %q", c, sb.runner.Argvs())
 		}
@@ -499,8 +504,10 @@ func TestHashFamily(t *testing.T) {
 			t.Errorf("%q: %d %q %q", args, sb.code, got, sb.err.String())
 		}
 	}
-	sb.run("", []string{"hash", "bogus"})
-	sb.expect(1, "tacctl hash", "[ERROR] Unknown subcommand: 'bogus'")
+	if out := sb.run("", []string{"hash", "bogus"}); out != "" {
+		t.Errorf("an unknown sub-command printed the usage: %q", out)
+	}
+	sb.expect(1, "", "[ERROR] Unknown subcommand: 'bogus'")
 	out := sb.run("CorrectHorse99\nCorrectHorse99\n", []string{"hash", "generate"})
 	m := regexp.MustCompile(`(?m)^  ([0-9a-f]{120})$`).FindStringSubmatch(out)
 	if sb.code != 0 || m == nil || hash.Verify("CorrectHorse99", m[1]) != hash.Match || !strings.HasPrefix(m[1], "24326224313224") {

@@ -3,6 +3,20 @@
 [Documentation](../README.md) › [CLI reference](README.md)
 
 ```
+server show [--json]
+
+    This server at a glance, changing nothing: the address devices and hosts reach it at, the
+    default method of `host enroll`, the metrics exporter, every backend (installed, enabled,
+    service) and every listener with its network, address, port and unit state. `--json` prints
+    the same as a document. Superuser only
+
+server name [<label>|unset]
+
+    The name the console shows for this server in its prompt (`<name>> `) and its notices (the
+    banner of a session, the header of `device client-config`) in place of the host name. With no
+    word it shows the name in effect and where it comes from (the setting or the host name);
+    `<label>` sets it, `unset` removes it. Superuser only
+
 server addresses [list]
 
     The address devices and hosts reach this server at: the setting `server.addresses` of
@@ -21,12 +35,83 @@ server addresses replace <ip>[,<ip>...]
     release lifts the limit. An address is an IP address, which may be behind NAT or a VPN and need
     not be on this machine; a host name, `0.0.0.0`, `::`, a loopback and a link-local address are
     refused. Superuser only
+
+server listen [--backend <id>] [--listener <name>] [show|tcp|tcp6|udp|udp6|reset] [<addr>]
+
+    Show, change, or reset a listen address (default: the TACACS+ listener 'default'; see
+    server/backends.md, "Listeners"). Superuser only
+
+server metrics show|enable|disable|reset|address <host:port>
+
+    Prometheus exporter control (TACACS+). Default: loopback-only 127.0.0.1:8080. `disable` sinks to
+    127.0.0.1:0 (unreachable ephemeral port) since tacquito's own disable flag would crash the
+    server. Superuser only
 ```
 
 ```
+tacctl server show
+tacctl server name core-1
+tacctl server listen tcp 10.1.0.1:49
+tacctl server metrics address 10.1.0.1:8080
 tacctl server addresses
 tacctl server addresses replace 192.0.2.10
 ```
+
+**`server show`.**
+
+```
+Server
+--------------------------------------------
+  Address:         192.0.2.10
+  Name:            web1  (the host name; tacctl server name <label> sets one)
+  Default method:  tacplus  (for hosts enrolled without --method)
+  Metrics:         enabled, loopback only  (127.0.0.1:8080)
+
+Backends
+------------------------------------------
+  ID      PROTOCOL  ENABLED  SERVICE
+  ----------------------------------------
+  tacacs  tacacs    yes      active
+  radius  radius    no       not installed
+
+Listeners
+---------------------------------------------------
+  BACKEND  LISTENER  NETWORK  ADDRESS  PORT  UNIT
+  -------------------------------------------------
+  tacacs   default   tcp      :49      49    active
+```
+
+The address is the setting, else the copy in this server's registry entry (the
+line says so). The metrics line is the exporter of the TACACS+ backend's
+default listener: `disabled` when it is sunk to a port no scraper can reach,
+`enabled, loopback only` or `enabled, externally reachable` by its address.
+The listeners are those of the backends that are installed or enabled; a unit
+that is not installed shows `-`. `--json` has `addresses`, `address_source`
+(`setting`, `registry` or empty), `name` (`value` and `source`, `setting` or
+`host name`), `default_method`, `metrics` (`address`, `state`, `reach`) and
+`backends` (`id`, `protocol`, `installed`, `enabled`, `service` and
+`listeners` with `name`, `network`, `address`, `port`, `unit`).
+
+**`server name`.** The name is the setting `server.name` of `tacctl.yaml`: 1 to 63 characters of
+lower-case letters, digits and hyphens, a letter first and no hyphen last, like the first label of
+a host name (a name with upper case, a period, an underscore or a digit first is refused with
+`Nothing was changed.`; `unset` is the word that removes the name, so it cannot be one). Nothing
+else is renamed: the host name, the name of this server's entry in the host registry and the
+accounts are as they were. A console session reads the name once, when it starts, from the root
+side with the rest of its policy (`_console-policy` says `name=<label>`), so an open session keeps
+the name it began with. `server show` has a `Name` line (and `name` in `--json`).
+
+```
+$ tacctl server name
+  Server name: web1  (the host name; none is set: tacctl server name <label>)
+$ tacctl server name core-1
+[INFO] Server name set: core-1. The console shows it from the next session.
+```
+
+**`server listen` and `server metrics`** write `listeners.<backend>.<name>` and
+`backends.tacacs.metrics_address` of `tacctl.yaml`, and the log lines are `server listen backend=
+listener= from= to=` and `server metrics from= to=`. [Listeners](../server/backends.md#listeners)
+and [Metrics](../server/metrics-and-retention.md) have the details.
 
 **What a change does.** `server addresses add` and `replace` run in one apply,
 after a snapshot (`tacctl backup list`): the setting, this server's registry

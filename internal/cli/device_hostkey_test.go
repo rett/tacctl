@@ -43,12 +43,19 @@ func keyscanOut(addr string, keys ...devreg.HostKey) []byte {
 	return []byte(b.String())
 }
 
-// scan scripts ssh-keyscan to offer keys (none: no answer, as from a device
-// that timed out).
+// unresolvable is what OpenSSH's ssh-keyscan prints for a name that does not
+// resolve.
+func unresolvable(host string) string {
+	return "getaddrinfo " + host + ": Name or service not known\n"
+}
+
+// scan scripts ssh-keyscan to offer keys (none: no answer, as from a name
+// that does not resolve, the one failure ssh-keyscan reports on standard
+// error; a refused connection prints nothing, like a silent device).
 func scan(addr string, keys ...devreg.HostKey) func(*fake.Runner) {
 	if len(keys) == 0 {
 		return func(r *fake.Runner) {
-			r.On([]string{"ssh-keyscan"}, execx.Result{Stderr: []byte(addr + ": Connection timed out\n")})
+			r.On([]string{"ssh-keyscan"}, execx.Result{Stderr: []byte(unresolvable(addr))})
 		}
 	}
 	return func(r *fake.Runner) {
@@ -138,7 +145,7 @@ func TestDeviceAddPinsHostKeys(t *testing.T) {
 	if kh := sb.knownHosts(); strings.Contains(kh, "old-ios") || !strings.Contains(kh, "core-ios "+rsa.String()) {
 		t.Errorf("after rename:\n%s", kh)
 	}
-	sb.dev("", "remove", "core-ios", "-y")
+	sb.dev("", "remove", "core-ios", "--yes")
 	if strings.Contains(sb.knownHosts(), "core-ios") {
 		t.Errorf("after remove:\n%s", sb.knownHosts())
 	}
@@ -240,7 +247,7 @@ func TestDeviceHostkeyVerb(t *testing.T) {
 		t.Errorf("pinned, still unpinned:\n%s", out)
 	}
 	// The same keys again: nothing to do.
-	out = sb.devScan("", scan("10.99.0.1", rsa, ed), "hostkey", "core-sw1", "accept", "-y")
+	out = sb.devScan("", scan("10.99.0.1", rsa, ed), "hostkey", "core-sw1", "accept", "--yes")
 	if sb.code != 0 || !strings.Contains(out, "already these; nothing was changed") {
 		t.Errorf("accept, unchanged: %d\n%s", sb.code, out)
 	}
@@ -249,8 +256,8 @@ func TestDeviceHostkeyVerb(t *testing.T) {
 	if !strings.Contains(out, "Host keys pinned for 'core-sw1':\n    ED25519  "+ed.Fingerprint()+"\n             "+ed.String()+"\n    RSA      "+rsa.Fingerprint()+"\n             "+rsa.String()) {
 		t.Errorf("show pinned:\n%s", out)
 	}
-	// A changed device: accept -y shows both and re-pins.
-	out = sb.devScan("", scan("10.99.0.1", ec), "hostkey", "core-sw1", "accept", "-y")
+	// A changed device: accept --yes shows both and re-pins.
+	out = sb.devScan("", scan("10.99.0.1", ec), "hostkey", "core-sw1", "accept", "--yes")
 	if sb.code != 0 || !strings.Contains(out, "Pinned now:\n    ED25519") || !strings.Contains(out, "To pin (offered by 10.99.0.1 port 22):\n    ECDSA    "+ec.Fingerprint()) {
 		t.Errorf("accept changed: %d\n%s", sb.code, out)
 	}
@@ -272,7 +279,7 @@ func TestDeviceHostkeyVerb(t *testing.T) {
 		err    string
 	}{
 		{scan("10.99.0.1", ed), []string{"set", ec.Fingerprint()}, "No host key 'core-sw1' (10.99.0.1) offers matches " + ec.Fingerprint() + "; the pin was not changed."},
-		{scan("10.99.0.1"), []string{"accept", "-y"}, "No ssh host key could be read from 10.99.0.1 port 22 (ssh-keyscan); nothing was changed."},
+		{scan("10.99.0.1"), []string{"accept", "--yes"}, "No ssh host key could be read from 10.99.0.1 port 22 (ssh-keyscan); nothing was changed."},
 		{nil, []string{"set"}, "'set' needs the fingerprint"},
 		{nil, []string{"set", "SHA256:short"}, "Invalid fingerprint 'SHA256:short'"},
 		{nil, []string{"forget"}, "Unknown action: 'forget'"},
@@ -289,7 +296,7 @@ func TestDeviceHostkeyVerb(t *testing.T) {
 	sb.dev("", "hostkey")
 	sb.expect(1, "", "Usage: tacctl device hostkey")
 	// Administrators only, show included.
-	for _, args := range [][]string{{"hostkey", "core-sw1"}, {"hostkey", "core-sw1", "accept", "-y"}} {
+	for _, args := range [][]string{{"hostkey", "core-sw1"}, {"hostkey", "core-sw1", "accept", "--yes"}} {
 		sb.cfgRun("", append([]string{"device"}, args...), func(r *fake.Runner) {
 			r.On([]string{"id", "-nG", "--", "carol"}, execx.Result{Stdout: []byte("carol tac-users tac-operator\n")})
 		}, "SUDO_USER=carol")
@@ -386,7 +393,7 @@ func TestHostEnrollSyncPinHostKeys(t *testing.T) {
 	}
 	// device hostkey accept re-pins a host.
 	r = hostKeys(nil, ec)
-	hs.run(r, "device", "hostkey", "web1", "accept", "-y")
+	hs.run(r, "device", "hostkey", "web1", "accept", "--yes")
 	if hs.code != 0 || hs.knownHosts() != devreg.KnownHostsHeader+"web1 "+ec.String()+"\n" {
 		t.Errorf("hostkey accept web1: %d %q\n%s", hs.code, hs.out.String(), hs.knownHosts())
 	}

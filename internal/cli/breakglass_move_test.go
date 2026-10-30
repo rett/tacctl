@@ -59,7 +59,7 @@ func TestBreakglassDeviceAddressMovesTheHold(t *testing.T) {
 	checkCarvedAt(t, cfg0, "192.168.1.1", "192.168.1.9")
 	rec := sb.overrides()
 
-	out := plain(sb.run("", []string{"device", "address", "lab-sw", "192.168.1.9", "-y"}))
+	out := plain(sb.run("", []string{"device", "address", "lab-sw", "192.168.1.9", "--yes"}))
 	if sb.code != 0 {
 		t.Fatalf("address: %d %q %q", sb.code, out, sb.stderr())
 	}
@@ -106,7 +106,7 @@ func TestBreakglassDeviceAddressMovesTheHold(t *testing.T) {
 	}
 }
 
-// Without -y the line asks; only a yes goes on.
+// Without --yes the line asks; only a yes goes on.
 func TestBreakglassDeviceAddressAsksBeforeMoving(t *testing.T) {
 	sb := heldLab(t)
 	devs, rec, cfg := sb.devices(), sb.overrides(), sb.renderedConfig()
@@ -159,7 +159,7 @@ func TestBreakglassDeviceAddressRefusesWhatAHoldRefuses(t *testing.T) {
 				c.prepare(sb)
 			}
 			devs, rec, cfg := sb.devices(), sb.overrides(), sb.renderedConfig()
-			out := plain(sb.run("y\n", []string{"device", "address", "lab-sw", c.addr, "-y"}))
+			out := plain(sb.run("y\n", []string{"device", "address", "lab-sw", c.addr, "--yes"}))
 			if sb.code != 1 || !strings.Contains(sb.stderr(), c.want) || !strings.Contains(sb.stderr(), "Nothing was changed.") {
 				t.Errorf("exit %d, stderr %q, want %q and 'Nothing was changed.'\n%s", sb.code, sb.stderr(), c.want, out)
 			}
@@ -176,11 +176,11 @@ func TestBreakglassDeviceAddressOtherRefusals(t *testing.T) {
 	sb := heldLab(t)
 	devs, rec, cfg := sb.devices(), sb.overrides(), sb.renderedConfig()
 
-	sb.asEngineer("", "device", "address", "lab-sw", "192.168.1.3", "-y")
+	sb.asEngineer("", "device", "address", "lab-sw", "192.168.1.3", "--yes")
 	if sb.code != 1 || !strings.Contains(sb.stderr(), "break-glass is held on lab-sw: moving its address moves the hold, which is the superuser's. Nothing was changed.") {
 		t.Errorf("engineer: %d %q", sb.code, sb.stderr())
 	}
-	sb.run("", []string{"device", "address", "lab-sw", "192.168.1.9", "--apply", "-y"})
+	sb.run("", []string{"device", "address", "lab-sw", "192.168.1.9", "--apply", "--yes"})
 	if sb.code != 1 || !strings.Contains(sb.stderr(), "--apply does not go with a held device") {
 		t.Errorf("--apply: %d %q", sb.code, sb.stderr())
 	}
@@ -188,7 +188,7 @@ func TestBreakglassDeviceAddressOtherRefusals(t *testing.T) {
 	if sb.code != 1 || !strings.Contains(sb.stderr(), "The address is required") {
 		t.Errorf("clear: %d %q", sb.code, sb.stderr())
 	}
-	sb.run("", []string{"device", "address", "lab-sw", "192.168.1.9.9", "-y"})
+	sb.run("", []string{"device", "address", "lab-sw", "192.168.1.9.9", "--yes"})
 	if sb.code != 1 || !strings.Contains(sb.stderr(), "Invalid address") {
 		t.Errorf("invalid: %d %q", sb.code, sb.stderr())
 	}
@@ -215,7 +215,7 @@ func TestBreakglassDeviceAddressSaysWhenTheRestartFailed(t *testing.T) {
 	sb := heldLab(t)
 	sb.script = func(r *fake.Runner) { r.On([]string{"systemctl", "restart"}, execx.Result{Code: 1}) }
 
-	out := plain(sb.run("", []string{"device", "address", "lab-sw", "192.168.1.9", "-y"}))
+	out := plain(sb.run("", []string{"device", "address", "lab-sw", "192.168.1.9", "--yes"}))
 	if sb.code != 1 {
 		t.Fatalf("exit %d, want 1\n%s\n%s", sb.code, out, sb.stderr())
 	}
@@ -252,7 +252,7 @@ func TestBreakglassDeviceAddressRenderFailureKeepsRegistryAndRecordTogether(t *t
 		_ = os.Remove(f.Name())
 		t.Skip("the directory stays writable (running as root?)")
 	}
-	sb.run("", []string{"device", "address", "lab-sw", "192.168.1.9", "-y"})
+	sb.run("", []string{"device", "address", "lab-sw", "192.168.1.9", "--yes"})
 	_ = os.Chmod(dir, 0o700)
 	if sb.code != 1 || !strings.Contains(sb.stderr(), "could not be rendered") {
 		t.Fatalf("exit %d, want 1 and a render failure: %q", sb.code, sb.stderr())
@@ -268,7 +268,7 @@ func TestBreakglassImportStillRefusesToMoveAHeldDevice(t *testing.T) {
 	sb := heldLab(t)
 	exported := sb.dev("", "export")
 	devs, rec := sb.devices(), sb.overrides()
-	sb.run(strings.Replace(exported, "192.168.1.1", "192.168.1.9", 1), []string{"device", "import", "-y", "-"})
+	sb.run(strings.Replace(exported, "192.168.1.1", "192.168.1.9", 1), []string{"device", "import", "--yes", "-"})
 	if sb.code != 1 || !strings.Contains(sb.stderr(), "break-glass is held on lab-sw: an import neither removes it nor moves it to another address; move the hold with 'tacctl device address lab-sw <address>'") ||
 		!strings.Contains(sb.stderr(), "Nothing was changed.") {
 		t.Errorf("import: %d %q", sb.code, sb.stderr())

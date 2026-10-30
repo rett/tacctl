@@ -403,6 +403,12 @@ func (inv *invocation) shellExec(root *cobra.Command, exe string, managed bool, 
 			_ = inv.unknownCommand(root, words[0])
 			return 1
 		}
+		if path, sub, ok := unknownBelow(root, words); ok {
+			// The same for a word below the first, with the tier's view for
+			// the hint.
+			_ = inv.unknownSubAt(root, path, sub, nil)
+			return 1
+		}
 		argv := shellArgv(exe, words, shellNoPrompt(managed, t), extraEnv, a.Env.Get)
 		c := execx.Cmd{Name: argv[0], Args: argv[1:]}
 		if !noSudo[words[0]] && askpassWords(words) {

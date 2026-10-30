@@ -37,17 +37,17 @@ var deviceBlockCompletion = Spec{MinArgs: 1, MaxArgs: -1,
 	Args: []string{KindDevices, blockSubs, blockWords, ""},
 	Flags: []Flag{{Names: []string{"--reveal"}, Only: "show"}, {Names: []string{"--effective"}, Only: "show"},
 		{Names: []string{"--file"}, Value: true, Only: "check|set", Kind: KindFile},
-		{Names: []string{"--against"}, Only: "check"}, {Names: []string{"-y", "--yes"}, Only: "set|remove|edit|adopt"}}}
+		{Names: []string{"--against"}, Only: "check"}, {Names: []string{"--yes"}, Only: "set|remove|edit|adopt"}}}
 
 // deviceBlockVerbs are the verbs ({Use, Short}), in usage order.
 var deviceBlockVerbs = [][2]string{
 	{"list", "The device's own blocks (of its vendor): whether each is in force, its size and what it states, and the findings"},
 	{"show <block> [--effective] [--reveal]", "The device's block elided; --effective: the block as rendered (the scope's with the device's over it, a comment per object saying which layer it is from); --reveal prints the strings"},
 	{"check <block> [--file <path>|-] [--against]", "Lint the file in force, a file or standard input; --against plans this device with the text in force and prints the statements of the block's section"},
-	{"set <block> (--file <path>|-) [-y]", "Check a file or standard input, show the diff, ask, take a snapshot and put the block in force"},
-	{"remove <block> [-y]", "Take the block out of force and delete its file (asks)"},
-	{"edit <block> [-y]", "Open the block in your editor (VISUAL, EDITOR, else editor, else vi, run as you on a private copy), check what comes back and, after the diff and the question, put it in force; a new block starts with the scope's objects as comments to override"},
-	{"adopt <block> [-y]", "Read this device's own statements of the hierarchy with your login (nothing is stored), minus what the scope's block states, open them in your editor as the draft to prune, then check, diff, ask and put the block in force"},
+	{"set <block> (--file <path>|-) [--yes]", "Check a file or standard input, show the diff, ask, take a snapshot and put the block in force"},
+	{"remove <block> [--yes]", "Take the block out of force and delete its file (asks)"},
+	{"edit <block> [--yes]", "Open the block in your editor (VISUAL, EDITOR, else editor, else vi, run as you on a private copy), check what comes back and, after the diff and the question, put it in force; a new block starts with the scope's objects as comments to override"},
+	{"adopt <block> [--yes]", "Read this device's own statements of the hierarchy with your login (nothing is stored), minus what the scope's block states, open them in your editor as the draft to prune, then check, diff, ask and put the block in force"},
 }
 
 // deviceBlockOptions are the option lines under a verb's row.
@@ -61,7 +61,7 @@ var deviceBlockOptions = map[string][][2]string{
 		{"--against", "Plan the device with this text in force and print the statements of its section (from its last pull; nothing is written and no device is reached)"},
 	},
 	"set": {
-		{"-y, --yes", "(set, remove, edit, adopt) Answer yes to the question (a block read from standard input needs it)"},
+		{"--yes", "(set, remove, edit, adopt) Answer yes to the question (a block read from standard input needs it)"},
 	},
 }
 
@@ -136,9 +136,7 @@ func (inv *invocation) deviceBlock(args []string) error {
 	}
 	spec, ok := deviceBlockSpecs[sub]
 	if !ok {
-		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-		inv.write(deviceBlockUsage(key))
-		return exit(1)
+		return inv.unknownSub(sub, specVerbs(deviceBlockSpecs)...)
 	}
 	var rest []string
 	if len(args) > 2 {

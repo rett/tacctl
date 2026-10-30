@@ -9,7 +9,9 @@ package devreg
 import (
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/rett/tacctl/internal/devssh"
 	"github.com/rett/tacctl/internal/hosts"
 )
 
@@ -99,7 +101,15 @@ func PinOptions(name, knownHosts string) []SSHOption {
 // arguments the user passes come after them, so ssh, which keeps the first
 // value of an option, cannot be talked out of the pin by them.
 func SSHOptions(e Entry, knownHosts string) []SSHOption {
-	out := []SSHOption{{"ConnectTimeout", strconv.Itoa(SSHConnectTimeout)}}
+	return SSHOptionsScaled(e, knownHosts, 1)
+}
+
+// SSHOptionsScaled is SSHOptions with the connect timeout multiplied by the
+// timing scale in force for the entry (devssh.ScaleDuration: 1 is
+// SSHConnectTimeout).
+func SSHOptionsScaled(e Entry, knownHosts string, scale int) []SSHOption {
+	connect := int(devssh.ScaleDuration(SSHConnectTimeout*time.Second, scale) / time.Second)
+	out := []SSHOption{{"ConnectTimeout", strconv.Itoa(connect)}}
 	out = append(out, Profile(e)...)
 	if Pinned(e) {
 		out = append(out, PinOptions(e.Name, knownHosts)...)

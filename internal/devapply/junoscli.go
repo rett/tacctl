@@ -46,7 +46,8 @@ type JunosCLI struct {
 	m      *masker
 	// members are the labels the pre-flight's 'show version' listed (none
 	// for a single device): the answers of 'commit check' and of a commit
-	// name exactly these (one member may answer without a label, plainOK).
+	// name exactly these (one may answer without a label: plainOK,
+	// unlabelledOwner).
 	members []string
 	// committed is the held session's last compare (and its delta): the
 	// change a confirmed commit after it commits, which Cancel undoes.

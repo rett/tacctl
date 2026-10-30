@@ -62,7 +62,7 @@ else
 fi
 
 if [[ "$WANT" != "tacplus" ]]; then
-    tacctl backend enable radius -y 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E 'ERROR|enabled and running' | tail -3
+    tacctl backend enable radius --yes 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E 'ERROR|enabled and running' | tail -3
     unit=freeradius; systemctl cat radiusd > /dev/null 2>&1 && unit=radiusd
     systemctl is-active --quiet "$unit" || { echo "FAIL  ${unit} did not start"; exit 1; }
     echo "FreeRADIUS: $("$(command -v freeradius || command -v radiusd)" -v | head -1 | sed 's/, for host.*//')"

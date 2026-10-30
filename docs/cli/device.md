@@ -6,17 +6,25 @@ The device registry gives names to the network devices that authenticate here. I
 
 ```
 device list [<word>] [--name <text>] [--ip <addr|cidr|text>] [--vendor <v>] [--scope <s>] [--stale]
-            [--unconfigured] [--scan] [--probe] [--json]
+            [--unconfigured] [--differs] [--scan] [--probe] [--json]
 
-    Registered devices, then enrolled hosts, sorted by name; `--name` (names containing the text),
-    `--ip` (an address, a CIDR or a text the address contains), `--vendor` and `--scope` narrow the
-    list (one value or a comma list, any of them; the options must all match) and a bare word
-    matches a name, an address, a vendor or a scope. Scope, STATE (configured: a scope's prefixes
-    cover the address; unconfigured; stale), last seen / by / via from the seen cache, CONFIG (the
-    state of the last configuration pull: `ok`, `differs`, `never`, `failed`, `pull` for a Cisco
-    device whose syntax is unknown; `-` for a host, a vendor `other` and a device in no scope; the
-    operator tier's: a read-only user's list has no such column), open notices; --scan scans first,
-    --probe adds REACH (TCP connect to the ssh port, 3 s)
+    Registered devices sorted by name (the enrolled hosts are listed by `host list`); `--name`
+    (names containing the text), `--ip` (an address, a CIDR or a text the address contains),
+    `--vendor` and `--scope` narrow the list (one value or a comma list, any of them; the options
+    must all match) and a bare word matches a name, an address, a vendor or a scope. The heading
+    counts the devices (`Registered devices (1), of 5` when narrowed; `None match.` when none is
+    left). Scope, STATE (configured: a scope's prefixes cover the address; unconfigured; stale;
+    BREAK-GLASS while the device is held), last seen / by / via
+    from the seen cache, CONFIG (the state of the last configuration pull: `ok`, `differs`,
+    `never`, `failed`, `pull` for a Cisco device whose syntax is unknown; `-` for a vendor `other`
+    and a device in no scope; the operator tier's: a read-only user's list has no such column),
+    open notices; --scan scans first, --probe adds REACH (TCP connect to the ssh port, 3 s).
+    --differs keeps the devices whose last pull differs from what tacctl renders now, computed
+    from the pull records with no login, as `device config list --differs` does (the operator
+    tier's; an engineer gets their own scopes' devices); the CONFIG column then says `differs`
+    and `--json` has `config: "differs"` and `differs_in`, the sections that differ. `--stale`
+    here is the devices not seen for stale-days; `config list --stale` is the devices never read,
+    failed or differing
 
 device show <name|address> [--all] [--json]
 
@@ -82,7 +90,7 @@ device onboard <address> --login <local-user> [--name <name>] [--host-key SHA256
     device")
 
 device collect <address>... | --discovered [--login <local-user>] [--host-key SHA256:<fp>]
-               [--register [-y]] [--json]
+               [--register [--yes]] [--json]
 
     Engineers, Junos devices: log in once to each address nobody registered and read what it is:
     address by address and before any login, the one host key that would be pinned (ed25519 first,
@@ -95,7 +103,7 @@ device collect <address>... | --discovered [--login <local-user>] [--host-key SH
     authentication order, servers, EN-CLASS, NETCONF, lo0 filter, legacy ssh); your own password,
     or with `--login` a local account's, asked once and never kept or cached; the first refusal
     ends the run; `--register` registers each through `device add` under the name it reports, with
-    the key accepted pinned (one question, `-y` without a terminal; `-y` answers only that
+    the key accepted pinned (one question, `--yes` without a terminal; `--yes` answers only that
     question, never a key's) and keeps the read as its first pull record; `--json` lists under
     `host_keys` only the key accepted (none for a skipped or refused address); a registered address
     is refused; see Collecting from addresses nobody registered (devices/planning.md, "Collecting
@@ -146,13 +154,13 @@ device enroll <address>... | --discovered [--host-key SHA256:<fp>]
         the questions, the progress and the table on standard error
 
 device sync <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> [--apply] [--overwrite]
-            [--json] [-y]
+            [--json] [--yes]
 
     Engineers: fill the registry's empty hostname, location and description from what each Junos
     device's last pull record says of itself (no login; a reported host name is filled only when it
     resolves to the device's registered address and no other): the preview first, `--apply` writes
-    in one registry write after one question (`-y`), `--overwrite` also replaces a field that is set
-    and shows the old value; control characters and values the registry would not accept are
+    in one registry write after one question (`--yes`), `--overwrite` also replaces a field that is
+    set and shows the old value; control characters and values the registry would not accept are
     refused; see Filling the registry from the records (devices/planning.md, "Filling the registry
     from the records")
 
@@ -166,7 +174,7 @@ device support-bundle <name> [--vendor cisco|juniper|wti] [--login <local-user>]
     `--vendor` reads the device as another vendor for this run only; `--login` is a Junos local
     account's one-shot password, as for a pull; see Support bundles (devices/support-bundle.md)
 
-device remove <name>[,<name>...] | --all [-y]
+device remove <name>[,<name>...] | --all [--yes]
 
     Remove from the registry (confirms; hosts, scopes and vendor tags are not touched)
 
@@ -182,10 +190,10 @@ device address|hostname|vendor|port|description|location <name> [<value>|clear]
     clears it too). A vendor change marks the last pull `needs pull (vendor changed)`: `config
     diff`, `plan` and `sync` say to pull again instead of reading it in the new vendor's shape
 
-device vendor <name> --from-device [-y]
+device vendor <name> --from-device [--yes]
 
     Read the vendor the device names by SNMP now (as `device add` does), show it beside the
-    registered one and set it after a `y` at a terminal, or with `-y`; a read that names no
+    registered one and set it after a `y` at a terminal, or with `--yes`; a read that names no
     vendor, no answer and SNMP not set up are refused with the reason and change nothing
 
 device address|description|location <name> <value> --apply
@@ -195,22 +203,22 @@ device address|description|location <name> <value> --apply
     Junos devices, at a terminal (anything else is refused before the registry changes); a value
     that is already set applies nothing; the exit status is the apply's
 
-device address <name> <address> [-y]
+device address <name> <address> [--yes]
 
     On a device with a break-glass hold the hold moves with the address (superuser; an engineer
     is refused). The new address must pass what a new hold passes: not a loopback address, not
     one a listener of either backend binds, not an enrolled host's, not held by another record,
-    covered by a scope. One line names both addresses and asks to confirm (`-y` skips it); the
+    covered by a scope. One line names both addresses and asks to confirm (`--yes` skips it); the
     registry and the record are written together, rendered once, and each backend whose file
     changed is restarted once (a restart that fails is reported as `NOT restarted`, exit 1; both
     stay on the new address). A refused address changes nothing. `--apply` is refused for a held
     device. `device remove` and `device import` of a held device are still refused
 
-device location <name> --from-device [-y]
+device location <name> --from-device [--yes]
 
     Read the device's own location (SNMP sysLocation) now and store it; an empty answer is refused;
     a different registered one is shown beside it and replaced after a `y` at a terminal, or with
-    `-y`
+    `--yes`
 
 device legacy-ssh <name> [enable|disable]
 
@@ -239,6 +247,20 @@ device netconf <name> [show|enable|disable|leave|clear] [--connection-limit <n>|
     setting, and a registry file or an import that gives one to another vendor is refused; `--apply`
     as for the fields above; Tab offers the Junos devices
 
+device timeout-scale <name> [<n>|clear]
+
+    Superuser. The device's own timing scale, 1 to 10: it multiplies each network timing used to
+    reach the device (the connect and handshake of the sessions and of `tacctl ssh`, the host-key
+    scans, the SNMP timeout up to its maximum, the per-device time of a pull or an apply within its
+    bounds), for a device behind a long round trip or with a slow CPU. `<n>` sets it, `clear`
+    removes it (its scope's, `scope timeout-scale`, then the server's, `config devices
+    timeout-scale`, applies again). With no value it prints the scale in force, where it comes from
+    and what it makes of each timing. `device show` has a `Timeout scale` row, and `--json` a
+    `timeout_scale` object (`scale` and `from`: `device`, `scope` or `global`), when the scale in
+    force is not 1. An enrolled Linux host has none of its own. See "Slow or distant devices" in the
+    connecting page. Stored as `timeout_scale` in `devices.yaml`, only when set; Tab offers the
+    devices
+
 device stale-days [<n>]
 
     Days without a sighting after which a device is stale (default 30)
@@ -253,7 +275,7 @@ device notice <name> ack|unack <kind>
     Acknowledge or reopen a notice; the superuser's (three words are this form, so a device named
     `list` takes it too)
 
-device import [--check] [--replace] [--allow-generic] [-y] <file|->
+device import [--check] [--replace] [--allow-generic] [--yes] <file|->
 
     CSV (name,address[,vendor[,port[,description]]]) or the registry's YAML; a file is existing
     data (so is the CSV of `device export --csv`) and loads its names as they are (a line says how
@@ -271,7 +293,7 @@ device hostkey <name> [show]
 
     The pinned ssh host-key fingerprints of a device or enrolled host (administrators)
 
-device hostkey <name> accept [-y]
+device hostkey <name> accept [--yes]
 
     Re-scan and pin every key it offers, after confirmation (verify on the console first)
 
@@ -286,7 +308,15 @@ device hostkey <name> set SHA256:<fp>
     `--legacy-ssh`), each with `-T 3`; the keys of every type that answers are returned, and a
     type that fails does not fail the scan. If that reads nothing either, tacctl's own ssh client
     reads the keys (any device, not only `--legacy-ssh` ones; no credential is sent). A device
-    that refuses the connection or does not answer is not asked again.
+    whose name does not resolve is not asked again (ssh-keyscan prints that failure and no other: a
+    refused connection, a filtered address and a server slow to greet all print nothing). A
+    device it reads nothing from and prints nothing about (ssh-keyscan gives up after 5 seconds,
+    plain `ssh` waits longer) goes straight to tacctl's own ssh client, once and without the
+    one-type retry; the connect is bounded by 3 seconds, so that a refused device costs nothing
+    more and a filtered or powered-off address 3 seconds, and the handshake by 10. The keys are
+    read one type after the other, so a device that is slow to greet can take several seconds.
+    `device enroll`, `device collect`, a `--legacy-ssh` device and the diagnosis after a failed
+    `tacctl ssh` are as before.
 
     When no read gives a key from a device that accepted the connection, the refusal names the
     reads that were made ("ssh-keyscan, then one key type at a time (ed25519, ecdsa, rsa), and
@@ -294,7 +324,10 @@ device hostkey <name> set SHA256:<fp>
     `ssh-keyscan -t ed25519 <address>` (with `-p <port>` for another port; also `-t ecdsa`,
     `-t rsa`), and the ways to accept a key by its fingerprint: `--host-key SHA256:<fp>` for
     `device add`, `enroll`, `collect` and `onboard`, `device hostkey <name> set SHA256:<fp>` for a
-    registered device. Nothing is written; `--no-host-key` registers the device unpinned.
+    registered device. For a device ssh-keyscan printed nothing about, the refusal names
+    "ssh-keyscan, and tacctl's own ssh client" and gives the same command with `-T 30` (more
+    time to greet) and the same two ways to accept a key. Nothing is written;
+    `--no-host-key` registers the device unpinned.
 
 device ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]
 
@@ -385,20 +418,20 @@ device block <name> check <block> [--file <path>|-] [--against]
     As `scope block ... check`, for the device's own block; `--against` plans this device with the
     text in force
 
-device block <name> set <block> (--file <path>|-) [-y]
+device block <name> set <block> (--file <path>|-) [--yes]
 
     Superuser; as `scope block ... set`. Only a Junos or an IOS device in a scope has blocks
 
-device block <name> remove <block> [-y]
+device block <name> remove <block> [--yes]
 
     Superuser; as `scope block ... remove` (also for a device that has left every scope)
 
-device block <name> edit <block> [-y]
+device block <name> edit <block> [--yes]
 
     Superuser, at a terminal; as `scope block ... edit`. A new block opens with the scope's objects
     as `# set ...` lines to uncomment where the device differs
 
-device block <name> adopt <block> [-y]
+device block <name> adopt <block> [--yes]
 
     Superuser, at a terminal; as `scope block ... adopt`, from this device, minus what the scope's
     block states with the same statements
@@ -429,6 +462,14 @@ device config pull <name>[,<name>...] | --all | --scope <scope> | --vendor <vend
     --concurrency <n>, --timeout <seconds>, --max-failures <n>
         At most n devices at once (never above `device.config.max_concurrency`), the time one may
         take (10-600, default `device.config.timeout`), stop starting devices after n failures
+    --timing
+        After the summary, where each device's time went: its phases in the order they happened
+        (`connect`, `login`, `session`, `read`, `compare`, `record`), each with its time, and the
+        total, then the slowest device; a phase the device did not reach is left out, and a device
+        that failed shows the time it was in when it did. With `--json`, each device's line has a
+        `timings` object (`total_ms` and `steps`, each `step` with its `ms`) and the summary names
+        the slowest device (`timings.slowest`, `timings.slowest_ms`). Nothing is stored (see
+        Where the time goes (devices/configuration.md, "Where the time goes"))
     --diff --json
         Print the differences after the summary; one JSON line per device, then the summary
     --server <address|name>, --source <address>
@@ -452,7 +493,9 @@ device config diff <name>[,<name>...] | --all | --scope <scope> | --vendor <vend
     the device's own, kept by rule, reads `ok (+N unmanaged)`
 
     --pull
-        Read the devices first (with the options of `pull`)
+        Read the devices first (with the options of `pull`, `--timing` included: the timing of the
+        pull follows the summary, and with `--json` each device's object has `timings`, the
+        slowest device's saying `"slowest": true`)
     --section <list>, --json, --exit-code
         Only those sections; JSON; exit 2 when a device differs (none failed)
 
@@ -472,7 +515,9 @@ device config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vend
     own scopes' devices
 
     --pull
-        Read the devices first (with the options of `pull`)
+        Read the devices first (with the options of `pull`; with `--timing` its timing goes to
+        standard error, standard output staying the plan: with `--json` one `{"timings": ...}` line
+        there, with every device and the slowest)
     --section <list>
         Only aaa, roles, mgmt-acl, snmp, system, netconf (the report still names the others)
     --converge
@@ -520,14 +565,15 @@ device config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <ven
     interrupted (a Ctrl-C at a question of the review, or before the first commit, applies
     nothing). The audit lines of the
     review, the approval and each device's apply carry `mode=attended`, or `mode=scripted` for
-    `--confirmed -y`
+    `--confirmed --yes`
 
     --check
         Stop after the device's own commit check: nothing is committed, the shape is recorded
         (`--exit-code`: exit 2 when a device needs a change)
     --confirmed
-        Apply only shapes an earlier apply confirmed and skip the others; the one form `-y` answers
-        the review of (every device's question, no terminal needed; the lines say `mode=scripted`)
+        Apply only shapes an earlier apply confirmed and skip the others; the one form `--yes`
+        answers the review of (every device's question, no terminal needed; the lines say
+        `mode=scripted`)
     --max <n>, --pause <seconds>, --no-canary
         At most n devices of a run (default 5); wait between devices after each shape's first
         (0-3600, default `device.apply.pause`); start a shape's devices together instead of its
@@ -561,20 +607,27 @@ device config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <ven
                   --source <address>
         As for `pull` (an apply runs one device at a time unless `--concurrency`; `--max-failures`
         defaults to 1)
-    --json -y
+    --timing
+        After the summary, where each device's time went over the whole run (the pull of `--pull`,
+        the check and the apply added up): `connect`, `login`, `session`, `preflight`, `read`,
+        `load`, `check`, `commit`, `verify`, `confirm` and `record`, those the device reached, each
+        with its time, and the total, then the slowest device. With `--json`, each device's object
+        of a phase has a `timings` object and the summary names the slowest device
+        (`timings.slowest`). Nothing is stored (devices/configuration.md, "Where the time goes")
+    --json --yes
         One object per device and phase, then the summary (the review goes to standard error; each
         device's answer is an object with `"phase":"review"`, `"status":"approved"|"declined"` and
         `"mode":"attended"|"scripted"`; a declined device has only that object, no `"phase":"apply"`
         one; a review cut short by Ctrl-C ends with `"phase":"review","status":"interrupted"`);
         answer the review (with `--confirmed`)
 
-device config shapes [list [--show <hash>] [--json] | seed <name>[,<name>...] [-y]]
+device config shapes [list [--show <hash>] [--json] | seed <name>[,<name>...] [--yes]]
 
     Superusers: the shapes of the changes `apply` has seen (the same change on two devices is one
     shape), which a verified apply confirmed, the devices at each now and, for a new one, the
     nearest confirmed shape; `--show` prints one shape's statements. `seed` files the shape of a
     device's last check or apply as confirmed on your word, for a device applied and verified by
-    hand (one question; `-y` answers it). Contacts no device
+    hand (one question; `--yes` answers it). Contacts no device
 
 device config list [--stale] [--never] [--failed] [--differs] [--name <text>]
                    [--ip <addr|cidr|text>] [--transport netconf|ssh|none]
@@ -611,7 +664,7 @@ export. A name that exists with upper case keeps working, is found in any
 case, and is listed by `tacctl config validate` with the `device rename` that
 fixes it.
 
-A device is found by name (any case) or by its registered address; an unregistered address is not found, even when a scope covers it. An address is registered once. A device name is letters, digits, `.`, `_` and `-`, starting with a letter or digit, at most 253 characters with each dotted part at most 63, so a fully qualified host name (`sw1.site-a.example`) is one. An enrolled host's name is the same, starting with a letter; `host enroll` borrows the short name from the target (`alice@sw1.example.net` is `sw1`), and a fully qualified name is given with `--name` or `host rename`. Enrolled Linux hosts share the namespace and appear in `list` and `show` as `linux` entries, read-only. `list`, `show`, `notice list`, `client-config` and `tacctl ssh` are open to the read-only and operator tiers, limited to the entries of their own scopes (`tacctl ssh` is limited so for every tier); `export` is operator-level, filtered the same way.
+A device is found by name (any case) or by its registered address; an unregistered address is not found, even when a scope covers it. An address is registered once. A device name is letters, digits, `.`, `_` and `-`, starting with a letter or digit, at most 253 characters with each dotted part at most 63, so a fully qualified host name (`sw1.site-a.example`) is one. An enrolled host's name is the same, starting with a letter; `host enroll` borrows the short name from the target (`alice@sw1.example.net` is `sw1`), and a fully qualified name is given with `--name` or `host rename`. Enrolled Linux hosts share the namespace and `show` (and the other verbs that take a device, which do not change a host) takes one by name, as a `linux` entry, read-only; `list` shows devices only, and `host list` the hosts. `list`, `show`, `notice list`, `client-config` and `tacctl ssh` are open to the read-only and operator tiers, limited to the entries of their own scopes (`tacctl ssh` is limited so for every tier); `export` is operator-level, filtered the same way.
 
 A name that is a factory or image default is refused with the command that names the device on the device itself (`hostname`, `set system host-name`, ...); a host already enrolled under such a name is not refused and carries a `generic-name` notice. `host enroll --name` follows the same rules. Add your own patterns with `generic_names:` (regular expressions, whole-name, case-insensitive) in `devices.yaml`.
 

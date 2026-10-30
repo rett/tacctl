@@ -234,8 +234,9 @@ usage_case() {
     done
     runs "$TACCTL_BIN_SCRIPT" hash bogus
     assert_failure 1
-    assert_output "$want"
-    assert_equal "$stderr" "${ESC}[0;31m[ERROR]${ESC}[0m Unknown subcommand: 'bogus'"
+    assert_output ""
+    assert_equal "$stderr" "${ESC}[0;31m[ERROR]${ESC}[0m Unknown subcommand: 'bogus'
+Run 'tacctl hash -h' for usage."
 }
 
 # bats test_tags=cutover:wp2-4a
@@ -521,7 +522,7 @@ EOF
 
     runs "$TACCTL_BIN_SCRIPT" user verify 'bad name'
     assert_failure 1
-    assert_equal "$stderr" "${ESC}[0;31m[ERROR]${ESC}[0m Username must contain only letters, numbers, underscores, hyphens, and periods (not first, not last, not two in a row)."
+    assert_equal "$stderr" "${ESC}[0;31m[ERROR]${ESC}[0m Username must contain only letters, numbers, underscores and hyphens (a period cannot be part of a Linux account name)."
 }
 
 # bats test_tags=cutover:wp2-4a
@@ -796,7 +797,7 @@ ${ESC}[0;31m[ERROR]${ESC}[0m $1"
     stub_cmd git
     stub_cmd wget
     runs "$TACCTL_BIN_SCRIPT" install --branch < /dev/null
-    _refused "Usage: tacctl install [--branch <name>] [--server <ip>] [-y|--yes]" --branch
+    _refused "Usage: tacctl install [--branch <name>] [--server <ip>] [--yes]" --branch
     refute_called '^(git|wget) '
 }
 
@@ -804,12 +805,12 @@ ${ESC}[0;31m[ERROR]${ESC}[0m $1"
 @test "install and uninstall: an unknown argument is refused before the plan" {
     stub_cmd git
     stub_cmd wget
-    runs "$TACCTL_BIN_SCRIPT" install -y whatever --branch feature/x < /dev/null
-    _refused "Usage: tacctl install [--branch <name>] [--server <ip>] [-y|--yes]" whatever
+    runs "$TACCTL_BIN_SCRIPT" install --yes whatever --branch feature/x < /dev/null
+    _refused "Usage: tacctl install [--branch <name>] [--server <ip>] [--yes]" whatever
     runs "$TACCTL_BIN_SCRIPT" uninstall --branch feature/x < /dev/null
-    _refused "Usage: tacctl uninstall [-y|--yes]" --branch
-    runs "$TACCTL_BIN_SCRIPT" uninstall -y extra < /dev/null
-    _refused "Usage: tacctl uninstall [-y|--yes]" extra
+    _refused "Usage: tacctl uninstall [--yes]" --branch
+    runs "$TACCTL_BIN_SCRIPT" uninstall --yes extra < /dev/null
+    _refused "Usage: tacctl uninstall [--yes]" extra
     [[ ! -s "$CALLS_LOG" || -z "$(grep -vE '^(chown|logger|sleep) ' "$CALLS_LOG")" ]]
 }
 

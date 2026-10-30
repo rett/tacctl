@@ -35,7 +35,7 @@ func TestScopeBlockCiscoVerbs(t *testing.T) {
 	}
 	noneOf(t, "check", out+sb.stderr(), secret, group)
 
-	out = sb.blk("", "lab", "cisco", "set", "snmp", "--file", f, "-y")
+	out = sb.blk("", "lab", "cisco", "set", "snmp", "--file", f, "--yes")
 	if sb.code != 0 || !strings.Contains(out, "The snmp block of scope 'lab' is set (") {
 		t.Fatalf("set: %d\n%s%s", sb.code, out, sb.stderr())
 	}
@@ -138,7 +138,7 @@ func TestScopeBlockCiscoRefusals(t *testing.T) {
 				t.Errorf("%s: the output holds %q:\n%s", c.name, bad, out)
 			}
 		}
-		sb.blk("", "lab", "cisco", "set", "snmp", "--file", f, "-y")
+		sb.blk("", "lab", "cisco", "set", "snmp", "--file", f, "--yes")
 		if sb.code != 1 {
 			t.Errorf("%s: set accepted it", c.name)
 		}
@@ -170,7 +170,7 @@ func TestDeviceBlockCisco(t *testing.T) {
 	sb.dev("", "add", "sw-j", "192.168.1.6", "--vendor", "juniper", "--no-host-key", "--no-lookup")
 	without := plain(sb.cfgRun("", []string{"config", "cisco", "--scope", "lab", "--name", "rt1"}, route))
 	f := sb.blockFile("snmp.txt", ciscoVerbFile)
-	sb.blk("", "lab", "cisco", "set", "snmp", "--file", f, "-y")
+	sb.blk("", "lab", "cisco", "set", "snmp", "--file", f, "--yes")
 	sb.expect(0, "is set", "")
 
 	out := plain(sb.cfgRun("", []string{"config", "cisco", "--scope", "lab", "--name", "rt1"}, route))
@@ -193,7 +193,7 @@ func TestDeviceBlockCisco(t *testing.T) {
 	if sb.code != 0 {
 		t.Fatalf("list: %d", sb.code)
 	}
-	sb.dev(dev, "block", "rt1", "set", "snmp", "-", "-y")
+	sb.dev(dev, "block", "rt1", "set", "snmp", "-", "--yes")
 	sb.expect(0, "The snmp block of device 'rt1' is set", "")
 	if got := sb.read("state/blocks/_devices/rt1/cisco/snmp"); got != dev {
 		t.Errorf("the device's file:\n%q", got)
@@ -268,7 +268,7 @@ func TestBlockCiscoCheckAgainstADevice(t *testing.T) {
 		t.Errorf("a Junos device: %q", b.sb.stderr())
 	}
 	// once in force, the device's plan carries the block
-	b.run("scope", "block", "lab", "cisco", "set", "snmp", "--file", f, "-y")
+	b.run("scope", "block", "lab", "cisco", "set", "snmp", "--file", f, "--yes")
 	out = b.run("device", "config", "plan", "lab-c", "--pull", "--no-secrets")
 	for _, w := range []string{"access list NMS-POLLERS of the SNMP block of scope 'lab'", "ip access-list standard NMS-POLLERS"} {
 		if !strings.Contains(out, w) {

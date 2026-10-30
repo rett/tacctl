@@ -66,7 +66,7 @@ const ownLoginCmd = "tacctl host enroll --local"
 // out is everything the run printed, without colour.
 func (hs *hostSandbox) out2() string { return plain(hs.out.String() + hs.err.String()) }
 
-// A fresh install with -y sets this machine's own login up with the
+// A fresh install with --yes sets this machine's own login up with the
 // machinery of 'host enroll --local': the managed scope, the registry entry,
 // the recorded address and the client script, after a snapshot; the detected
 // address is said.
@@ -111,7 +111,7 @@ func TestOwnLoginInstallServerFlag(t *testing.T) {
 	}
 }
 
-// An install without -y asks once, with the address in the question, and
+// An install without --yes asks once, with the address in the question, and
 // reads the answer from standard input as its other prompts do; anything
 // but y leaves the server as it was and says the command in one line.
 func TestOwnLoginInstallAsks(t *testing.T) {

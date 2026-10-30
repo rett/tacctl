@@ -140,9 +140,7 @@ func (inv *invocation) scopeSNMP(args []string) error {
 	}
 	spec, ok := scopeSNMPSpecs[sub]
 	if !ok {
-		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-		inv.write(scopeSNMPUsage(scope))
-		return exit(1)
+		return inv.unknownSub(sub, specVerbs(scopeSNMPSpecs)...)
 	}
 	var rest []string
 	if len(args) > 2 {
@@ -249,6 +247,9 @@ func (inv *invocation) scopeSNMPShow(scope string, reveal bool) error {
 	}
 	inv.echo("  port:       " + strconv.Itoa(e.Port) + "  " + from(e.PortFrom))
 	inv.echo("  timeout:    " + strconv.Itoa(e.Timeout) + " s, one retry  " + from(e.TimeoutFrom))
+	if note := snmpScaleNote(e.Timeout, inv.timeoutScaleOf(scope, 0).N); note != "" {
+		inv.echo(note)
+	}
 	secret := func(set bool, value string) string {
 		switch {
 		case !set:

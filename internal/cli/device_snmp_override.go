@@ -75,6 +75,9 @@ type deviceSNMPOwn struct {
 	// version, so a map always exists in use): a file without one is what a
 	// rollback to 0.2.3 left, or a stray, and is ignored, not read.
 	Orphan bool
+	// TimeoutScale is the device's own timing scale (0.2.22), 0 for none: the
+	// lookup's timeout is multiplied by the scale in force (snmpConfigOwn).
+	TimeoutScale int
 }
 
 // layer is the device's level of the resolution.
@@ -95,7 +98,7 @@ func (o deviceSNMPOwn) chosen() bool {
 // and, when it has one, the credentials file, read here (an unreadable one
 // is the error). A file with no map beside it is ignored (Orphan).
 func (inv *invocation) deviceSNMPOwnOf(d devreg.Device) (deviceSNMPOwn, error) {
-	o := deviceSNMPOwn{Name: d.Name, SNMP: d.SNMP.Clone()}
+	o := deviceSNMPOwn{Name: d.Name, SNMP: d.SNMP.Clone(), TimeoutScale: d.TimeoutScale}
 	// A name too long for a file of its own has no credentials to read
 	// (the verbs that would write them refuse).
 	if _, err := snmpcred.DeviceFile(inv.app.Paths.SNMPDir, d.Name); err != nil {
@@ -439,7 +442,7 @@ func (inv *invocation) deviceSNMP(args []string) error {
 	}
 	spec, ok := deviceSNMPSpecs[sub]
 	if !ok {
-		return inv.usageErr(withUsage("Unknown subcommand: '"+sub+"'", usage)...)
+		return inv.unknownSub(sub, specVerbs(deviceSNMPSpecs)...)
 	}
 	p, err := Parse(spec, rest)
 	if err != nil {
@@ -521,6 +524,9 @@ func (inv *invocation) deviceSNMPShow(e devreg.Entry, reveal bool) error {
 	}
 	inv.echo("  port:       " + strconv.Itoa(eff.Port) + "  " + info.fromLabel(eff.PortFrom))
 	inv.echo("  timeout:    " + strconv.Itoa(eff.Timeout) + " s, one retry  " + info.fromLabel(eff.TimeoutFrom))
+	if note := snmpScaleNote(eff.Timeout, inv.timeoutScaleOf(e.Scope, e.TimeoutScale).N); note != "" {
+		inv.echo(note)
+	}
 	secret := func(set bool, value string) string {
 		switch {
 		case !set:

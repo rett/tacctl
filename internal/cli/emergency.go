@@ -116,9 +116,7 @@ func (inv *invocation) emergency(args []string) error {
 	case "lockdown":
 		return inv.emergencyLockdown(rest)
 	default:
-		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-		inv.write(emergencyHelp())
-		return exit(1)
+		return inv.unknownSub(sub)
 	}
 }
 

@@ -95,7 +95,7 @@ func (inv *invocation) configSudoers(args []string) error {
 	case "remove":
 		return inv.removeFile("config sudoers", file)
 	default:
-		return inv.usageErr("Invalid subcommand: '" + sub + "'. Use: show, install, or remove")
+		return inv.unknownSub(sub)
 	}
 
 	if !reSudoersGroup.MatchString(group) {
@@ -163,7 +163,7 @@ func (inv *invocation) configSudoersTiers(args []string) error {
 	case "remove":
 		return inv.removeFile("config sudoers tiers", file)
 	}
-	return inv.usageErr("Invalid subcommand: '" + sub + "'. Use: tiers show, tiers install, or tiers remove")
+	return inv.unknownSub(sub)
 }
 
 // removeFile is the 'remove' of both drop-ins.

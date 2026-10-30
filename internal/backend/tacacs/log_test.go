@@ -137,7 +137,7 @@ func TestLogClear(t *testing.T) {
 	if readFile(t, e.p.AcctLog) != "" {
 		t.Fatal("not truncated")
 	}
-	for _, flag := range []string{"-y", "--yes"} {
+	for _, flag := range []string{"--yes"} {
 		e.stdin("")
 		out, _ = e.log("clear", flag)
 		mustContain(t, out, "Logs cleared")

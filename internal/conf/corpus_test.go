@@ -449,6 +449,9 @@ func TestGolden(t *testing.T) {
 		if prefix == ScopeMgmtACLModePrefix {
 			continue // 0.2.20's per-scope management filter mode: not in 0.1.16's golden
 		}
+		if prefix == TimeoutScaleScopePrefix {
+			continue // 0.2.22's per-scope timing scale: not in 0.1.16's golden
+		}
 		if prefix == NetconfScopePrefix {
 			continue // 0.2.10's per-scope NETCONF service setting: not in 0.1.16's golden
 		}

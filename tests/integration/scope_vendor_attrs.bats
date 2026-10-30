@@ -86,7 +86,7 @@ entry() { sed -n "/^  $1:/,/^  [a-z]/p" "$STORE" | sed '$d'; }
     for verb in set clear none; do
         tc scope vendor-attrs lab "$verb" cisco
         assert_failure
-        assert_output --partial "Unknown subcommand: '${verb}'. The verbs are enable and disable"
+        assert_output --partial "Unknown subcommand: '${verb}'. The verbs are enable and disable: nothing is sent until a vendor is enabled."
     done
     tc scope vendor-attrs nosuch enable cisco
     assert_failure

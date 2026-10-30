@@ -105,7 +105,7 @@ func TestBackendEnableWaitsForTheApplyLock(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			done := make(chan error, 1)
-			go func() { done <- e.switcherCtx(ctx, "").enable([]string{"fake", "-y"}) }()
+			go func() { done <- e.switcherCtx(ctx, "").enable([]string{"fake", "--yes"}) }()
 			waitFor(t, "the waiting line", func() bool { return strings.Contains(e.out(), backend.WaitingMsg) })
 			time.Sleep(300 * time.Millisecond)
 			if e.state() != before || len(e.fake.Calls()) != 0 || len(e.tac.Calls()) != 0 {
@@ -180,7 +180,7 @@ func TestFailedEnableKeepsAConcurrentStoreChange(t *testing.T) {
 		waitFor(t, "the other command's waiting line", func() bool { return strings.Contains(pout.String(), backend.WaitingMsg) })
 	}
 
-	e.want(e.run("", "enable", "fake", "-y"), 1)
+	e.want(e.run("", "enable", "fake", "--yes"), 1)
 	e.has("did not come up")
 	select {
 	case err := <-peerDone:
@@ -221,7 +221,7 @@ func TestBackendDisableLegacyWaitsForTheApplyLock(t *testing.T) {
 		hold()
 	}()
 	start := time.Now()
-	e.want(e.run("", "disable", "fake", "-y"), 0)
+	e.want(e.run("", "disable", "fake", "--yes"), 0)
 	if took := time.Since(start); took < 700*time.Millisecond {
 		t.Errorf("took %v: did not wait", took)
 	}

@@ -257,6 +257,7 @@ func TestRollback023FromThisRelease(t *testing.T) {
 func TestRollbackRealOldBinary029(t *testing.T) {
 	bin := oldBinaryOf(t, "0.2.9", old029Flag)
 	hs := rollback029State(t)
+	hs.withTimeoutScale()
 	stubs := t.TempDir()
 	for _, name := range []string{"systemctl", "logger", "chown"} {
 		if err := os.WriteFile(filepath.Join(stubs, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
@@ -277,7 +278,8 @@ func TestRollbackRealOldBinary029(t *testing.T) {
 	if code != 1 || !strings.Contains(out, "device.apply.transport: unknown config key") || !strings.Contains(out, "netconf_scope") {
 		t.Errorf("0.2.9 config validate before: %d\n%s", code, out)
 	}
-	if out, code = run("device", "list"); code != 1 || !strings.Contains(out, "device 'sw2': unknown key 'netconf'") {
+	if out, code = run("device", "list"); code != 1 || !strings.Contains(out, "device 'sw1': unknown key 'timeout_scale'") {
+		// sw1 comes first in the file: its timing scale (0.2.22) is the first key 0.2.9 refuses; sw2's netconf map follows
 		t.Errorf("0.2.9 device list before: %d\n%s", code, out)
 	}
 
@@ -286,6 +288,14 @@ func TestRollbackRealOldBinary029(t *testing.T) {
 	hs.expect(0, "Applying.", "")
 
 	// After: it reads everything, the records included.
+	// the drop-in this release rendered carries a newer comment than the one the
+	// older release renders: it says so until its first render rewrites it
+	if out, code = run("config", "validate"); code != 1 || !strings.Contains(out, "is out of date with the store") {
+		t.Errorf("0.2.9 config validate before its first render: %d\n%s", code, out)
+	}
+	if out, code = run("config", "render"); code != 0 {
+		t.Errorf("0.2.9 config render after: %d\n%s", code, out)
+	}
 	out, code = run("config", "validate")
 	if code != 0 || strings.Contains(out, "unknown config key") || !strings.Contains(out, "Configuration is valid.") {
 		t.Errorf("0.2.9 config validate after: %d\n%s", code, out)

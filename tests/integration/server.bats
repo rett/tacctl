@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Integration tests for 'tacctl server addresses' (0.2.21) with the real
+# Integration tests for 'tacctl server' (addresses 0.2.21, show, name, listen and metrics 0.2.22) with the real
 # binary: the one address this release holds, the refusals, the change of the
 # address on this server's own login (the client script is a stub), the audit
 # lines, and that the verb is the superuser's alone with a tiers sudoers
@@ -37,9 +37,60 @@ registry() { cat "${TACCTL_STATE_DIR}/linux-hosts" 2> /dev/null || true; }
     assert_success
     assert_output --partial "Usage: tacctl server <subcommand>"
     assert_output --partial "addresses add <ip>[,<ip>...]"
+    assert_output --partial "name [<label>|unset]"
+    assert_output --partial "listen [show|reset|<network> <address>]"
+    assert_output --partial "metrics [show|enable|disable|reset|address <host:port>]"
     run "$TACCTL_BIN_SCRIPT" server bogus
     assert_failure 1
     assert_output --partial "Unknown subcommand: 'bogus'"
+}
+
+@test "server show: the overview prints the settings and the backends, --json the same as a document, and it changes nothing" {
+    local before
+    before="$(cat "${TACCTL_STATE_DIR}/tacctl.yaml" 2> /dev/null || true)"
+    run "$TACCTL_BIN_SCRIPT" server show
+    assert_success
+    assert_output --partial "Server"
+    assert_output --partial "Address:         (none"
+    assert_output --partial "Default method:  tacplus"
+    assert_output --partial "Metrics:         enabled, loopback only  (127.0.0.1:8080)"
+    assert_output --partial "Backends"
+    assert_output --partial "Listeners"
+    "$TACCTL_BIN_SCRIPT" server addresses add 192.0.2.10 > /dev/null
+    run "$TACCTL_BIN_SCRIPT" server show --json
+    assert_success
+    run jq -r '.addresses[0], .address_source, .default_method, .metrics.state, (.backends | map(.id) | join(","))' <<< "$output"
+    assert_output "$(printf '192.0.2.10\nsetting\ntacplus\nenabled\ntacacs,radius')"
+    run "$TACCTL_BIN_SCRIPT" server show bogus
+    assert_failure 1
+    assert_output --partial "Unknown argument: 'bogus'"
+    [ -z "$before" ] || [ "$before" = "$(cat "${TACCTL_STATE_DIR}/tacctl.yaml")" ]
+}
+
+@test "server name: shows the host name until one is set, sets and removes a lower-case label, refuses the rest" {
+    run "$TACCTL_BIN_SCRIPT" server name
+    assert_success
+    assert_output --partial "(the host name; none is set: tacctl server name <label>)"
+    run "$TACCTL_BIN_SCRIPT" server name core-1
+    assert_success
+    assert_output --partial "Server name set: core-1."
+    run "$TACCTL_BIN_SCRIPT" config get server.name
+    assert_output "core-1"
+    run "$TACCTL_BIN_SCRIPT" server name
+    assert_output --partial "Server name: core-1  (the setting server.name)"
+    run "$TACCTL_BIN_SCRIPT" server show --json
+    run jq -r '.name.value, .name.source' <<< "$output"
+    assert_output "$(printf 'core-1\nsetting')"
+    for bad in Core core_1 1core core- core.example.net; do
+        run "$TACCTL_BIN_SCRIPT" server name "$bad"
+        assert_failure 1
+        assert_output --partial "Nothing was changed."
+    done
+    run "$TACCTL_BIN_SCRIPT" server name unset
+    assert_success
+    assert_output --partial "Server name removed"
+    run "$TACCTL_BIN_SCRIPT" server name unset
+    assert_output --partial "No server name is set. Nothing was changed."
 }
 
 @test "server addresses: nothing recorded, then add sets the one address and says what is left to do" {

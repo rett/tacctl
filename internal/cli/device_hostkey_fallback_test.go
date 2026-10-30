@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rett/tacctl/internal/app"
 	"github.com/rett/tacctl/internal/devreg"
@@ -28,7 +29,7 @@ func TestDeviceAddLegacyFallsBackToBuiltinScan(t *testing.T) {
 	rsa := hkKey(t, "rsa")
 	var calls []string
 	sb.hooks.keyFallback = func(*invocation) devreg.KeyFallback {
-		return func(_ context.Context, address string, port int) ([]devreg.HostKey, error) {
+		return func(_ context.Context, address string, port int, _ bool, _ devssh.ScanTiming) ([]devreg.HostKey, error) {
 			calls = append(calls, address+":"+strconv.Itoa(port))
 			return []devreg.HostKey{rsa}, nil
 		}
@@ -53,11 +54,11 @@ func TestDeviceAddLegacyFallsBackToBuiltinScan(t *testing.T) {
 		t.Errorf("keyscan answered: %d, fallback calls %q", sb.code, calls)
 	}
 
-	// A device without legacy-ssh that did not answer at all (no banner:
-	// refused, timed out) is refused as before, the built-in client not asked.
+	// A device without legacy-ssh whose name does not resolve is refused as
+	// before, the built-in client not asked.
 	calls = nil
 	sb.devScan("", func(r *fake.Runner) {
-		r.On([]string{"ssh-keyscan"}, execx.Result{Stderr: []byte("connect (`192.0.2.4'): Connection refused\n")})
+		r.On([]string{"ssh-keyscan"}, execx.Result{Stderr: []byte(unresolvable("sw1.example.net"))})
 	}, "add", "plain", "192.0.2.4", "--vendor", "cisco")
 	sb.expect(1, "", "No ssh host key could be read from 192.0.2.4 port 22 (ssh-keyscan); nothing was changed.")
 	if len(calls) != 0 {
@@ -73,7 +74,7 @@ func TestDeviceAddFallsBackToBuiltinScanWithoutLegacy(t *testing.T) {
 	ed := hkKey(t, "ed25519")
 	var calls []string
 	sb.hooks.keyFallback = func(*invocation) devreg.KeyFallback {
-		return func(_ context.Context, address string, port int) ([]devreg.HostKey, error) {
+		return func(_ context.Context, address string, port int, _ bool, _ devssh.ScanTiming) ([]devreg.HostKey, error) {
 			calls = append(calls, address+":"+strconv.Itoa(port))
 			return []devreg.HostKey{ed}, nil
 		}
@@ -98,7 +99,7 @@ func TestScanLearningLegacy(t *testing.T) {
 	rsa, ed := hkKey(t, "rsa"), hkKey(t, "ed25519")
 	var fallbackCalls int
 	sb.hooks.keyFallback = func(*invocation) devreg.KeyFallback {
-		return func(context.Context, string, int) ([]devreg.HostKey, error) {
+		return func(context.Context, string, int, bool, devssh.ScanTiming) ([]devreg.HostKey, error) {
 			fallbackCalls++
 			return []devreg.HostKey{rsa}, nil
 		}
@@ -127,13 +128,13 @@ func TestScanLearningLegacy(t *testing.T) {
 	// algorithms as before, neither): the first scan's error.
 	fallbackCalls = 0
 	sb.hooks.keyFallback = func(*invocation) devreg.KeyFallback {
-		return func(context.Context, string, int) ([]devreg.HostKey, error) {
+		return func(context.Context, string, int, bool, devssh.ScanTiming) ([]devreg.HostKey, error) {
 			fallbackCalls++
 			return nil, devssh.ErrUnreachable
 		}
 	}
 	_, legacy, err = learn(func(r *fake.Runner) {
-		r.On([]string{"ssh-keyscan"}, execx.Result{Stderr: []byte("192.0.2.4: Connection timed out\n")})
+		r.On([]string{"ssh-keyscan"}, execx.Result{Stderr: []byte(unresolvable("192.0.2.4"))})
 	})
 	if !errors.Is(err, devreg.ErrNoAnswer) || legacy || fallbackCalls != 1 {
 		t.Errorf("unreachable: legacy=%v err=%v fallback calls %d", legacy, err, fallbackCalls)
@@ -146,7 +147,7 @@ func TestDeviceAddLegacyBothScansFail(t *testing.T) {
 	sb := newSandbox(t, true)
 	called := 0
 	sb.hooks.keyFallback = func(*invocation) devreg.KeyFallback {
-		return func(context.Context, string, int) ([]devreg.HostKey, error) {
+		return func(context.Context, string, int, bool, devssh.ScanTiming) ([]devreg.HostKey, error) {
 			called++
 			return nil, devssh.ErrHandshake
 		}
@@ -155,6 +156,10 @@ func TestDeviceAddLegacyBothScansFail(t *testing.T) {
 	sb.expect(1, "", "No ssh host key could be read from 192.0.2.2 port 22 (ssh-keyscan, and tacctl's own ssh client for legacy-ssh); nothing was changed.")
 	if !strings.Contains(sb.stderr(), "--no-host-key") || called != 1 {
 		t.Errorf("called %d\n%s", called, sb.stderr())
+	}
+	// A legacy-ssh device's refusal has no by-hand advice, as before.
+	if strings.Contains(sb.stderr(), "by hand") {
+		t.Errorf("by-hand advice for a legacy device:\n%s", sb.stderr())
 	}
 	if strings.Contains(sb.devices(), "old-ios") {
 		t.Errorf("registered:\n%s", sb.devices())
@@ -185,5 +190,84 @@ func TestDeviceAddLegacyScansTheFakeOldDevice(t *testing.T) {
 	}
 	if srv.Attempts() != 0 || srv.Logins() != 0 {
 		t.Errorf("attempts %d, logins %d", srv.Attempts(), srv.Logins())
+	}
+}
+
+// A device ssh-keyscan reads nothing from and says nothing about (a server
+// slow to greet: ssh-keyscan -T gives up silently) is read by the built-in
+// client, whose longer wait is what plain ssh has; both failing names both
+// and still gives the by-hand advice.
+func TestDeviceAddSilentDeviceFallsBackToBuiltinScan(t *testing.T) {
+	sb := newSandbox(t, true)
+	ed := hkKey(t, "ed25519")
+	var calls []string
+	var fbKeys []devreg.HostKey
+	var fbErr error
+	sb.hooks.keyFallback = func(*invocation) devreg.KeyFallback {
+		return func(_ context.Context, address string, port int, _ bool, _ devssh.ScanTiming) ([]devreg.HostKey, error) {
+			calls = append(calls, address+":"+strconv.Itoa(port))
+			return fbKeys, fbErr
+		}
+	}
+	nothing := func(r *fake.Runner) { r.On([]string{"ssh-keyscan"}, execx.Result{}) }
+
+	fbKeys = []devreg.HostKey{ed}
+	out := sb.devScan("", nothing, "add", "srx1", "192.0.2.6", "--vendor", "juniper")
+	if sb.code != 0 || !strings.Contains(out, "Host keys pinned (1)") || !strings.Contains(out, "ED25519  "+ed.Fingerprint()) {
+		t.Fatalf("add: %d\n%s\n%s", sb.code, out, sb.stderr())
+	}
+	if len(calls) != 1 || calls[0] != "192.0.2.6:22" || sb.runner.Count("ssh-keyscan") != 1 {
+		t.Errorf("fallback calls %q, ssh-keyscan runs %d", calls, sb.runner.Count("ssh-keyscan"))
+	}
+
+	calls, fbKeys, fbErr = nil, nil, devssh.ErrTimeout
+	sb.devScan("", nothing, "add", "srx2", "192.0.2.7", "--vendor", "juniper", "--port", "2222")
+	sb.expect(1, "", "No ssh host key could be read from 192.0.2.7 port 2222 (ssh-keyscan, and tacctl's own ssh client); nothing was changed.")
+	for _, want := range []string{
+		"it may be slow to answer. See what it offers by hand: ssh-keyscan -T 30 -p 2222 -t ed25519 192.0.2.7 (also -t ecdsa, -t rsa).",
+		"--host-key SHA256:<fp>",
+		"tacctl device hostkey <name> set SHA256:<fp>",
+	} {
+		if !strings.Contains(sb.stderr(), want) {
+			t.Errorf("stderr lacks %q:\n%s", want, sb.stderr())
+		}
+	}
+	if len(calls) != 1 || sb.runner.Count("ssh-keyscan") != 1 {
+		t.Errorf("fallback calls %q, ssh-keyscan runs %d", calls, sb.runner.Count("ssh-keyscan"))
+	}
+}
+
+// The built-in client's connect is bounded shortly for a device nothing has
+// answered from yet (quick), not for the others: an address nobody answers at
+// costs the connect budget of the default timing (devssh.ScanTiming), and the handshake keeps its own.
+func TestRealKeyFallbackQuickBoundsTheConnect(t *testing.T) {
+	sb := newSandbox(t, true)
+	var dials int
+	sb.hooks.deviceDial = func(ctx context.Context, _, _ string) (net.Conn, error) {
+		dials++
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	a := app.New(nil, paths.NewEnv(append(append([]string(nil), sb.env...), "SUDO_USER=alice")), "/opt/x/dist/tacctl", 1000,
+		app.Stdio{Stdin: strings.NewReader(""), Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}}, &fake.Runner{})
+	inv := &invocation{ctx: context.Background(), app: a, hooks: sb.hooks}
+	fb := realKeyFallback(inv)
+	quickConnect := devssh.DefaultScanTiming().Connect
+
+	start := time.Now()
+	_, err := fb(inv.ctx, "192.0.2.1", 22, true, devssh.DefaultScanTiming())
+	d := time.Since(start)
+	if !errors.Is(err, devssh.ErrTimeout) || dials != 1 || d < quickConnect-time.Second/2 || d > quickConnect+2*time.Second {
+		t.Errorf("quick: err %v, %d dials, took %v; want ErrTimeout after about %v", err, dials, d, quickConnect)
+	}
+
+	// Not quick: the connect has the whole budget, so a context shorter than
+	// the quick one is what ends it.
+	ctx, cancel := context.WithTimeout(context.Background(), quickConnect+time.Second)
+	defer cancel()
+	start = time.Now()
+	_, err = fb(ctx, "192.0.2.1", 22, false, devssh.DefaultScanTiming())
+	if err == nil || time.Since(start) < quickConnect+time.Second/2 {
+		t.Errorf("not quick: err %v after %v, want the connect to outlast the quick budget", err, time.Since(start))
 	}
 }

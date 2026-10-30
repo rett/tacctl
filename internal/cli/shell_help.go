@@ -35,6 +35,13 @@ var reProg = regexp.MustCompile(`^tacctl [a-z-]+ `)
 // padded to line up with its neighbours ('cisco   [--scope <name>] ...');
 // the description never holds two blanks in a row.
 func splitRow(line string) (left, desc string, ok bool) {
+	left, desc, _, ok = splitRowAt(line)
+	return left, desc, ok
+}
+
+// splitRowAt is splitRow with the column the description starts at in the
+// plain line.
+func splitRowAt(line string) (left, desc string, col int, ok bool) {
 	body := strings.TrimPrefix(plainBlock(line), "  ")
 	bestAt, bestLen := -1, 0
 	for i := 0; i < len(body); {
@@ -52,9 +59,9 @@ func splitRow(line string) (left, desc string, ok bool) {
 		i = j
 	}
 	if bestAt < 0 {
-		return "", "", false
+		return "", "", 0, false
 	}
-	return body[:bestAt], strings.TrimSpace(body[bestAt+bestLen:]), true
+	return body[:bestAt], strings.TrimSpace(body[bestAt+bestLen:]), 2 + bestAt + bestLen, true
 }
 
 // usageRows are the rows of a block's list: the lines after the heading
@@ -90,6 +97,28 @@ func usageRows(block, heading string) []usageRow {
 
 // topRows are the rows of the top-level usage's command list.
 func topRows() []usageRow { return usageRows(usageBlocks["top"], "Commands:") }
+
+// topColumn is the column the descriptions of the top-level usage's command
+// list start at: the usage pads them to it, and the Shell section follows.
+func topColumn() int {
+	_, after, ok := strings.Cut(plainBlock(usageBlocks["top"]), "\nCommands:\n")
+	if !ok {
+		return 0
+	}
+	col := 0
+	for _, line := range strings.Split(after, "\n") {
+		if strings.TrimSpace(line) == "" {
+			break
+		}
+		if !strings.HasPrefix(line, "  ") || strings.HasPrefix(line, "   ") {
+			continue
+		}
+		if _, _, c, ok := splitRowAt(line); ok {
+			col = max(col, c)
+		}
+	}
+	return col
+}
 
 // applyTopShorts sets the Short of each top-level command to its row's
 // description in the top-level usage.
@@ -180,7 +209,7 @@ func shellRows(console bool) [][2]string {
 
 // shellSection is the Shell section, in the columns of the command list.
 func shellSection(console bool) string {
-	width := 0
+	width := topColumn() - 4
 	for _, r := range topRows() {
 		width = max(width, len(r.Left))
 	}

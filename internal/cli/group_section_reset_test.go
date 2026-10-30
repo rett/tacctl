@@ -171,11 +171,13 @@ func TestSectionResetClearIsGone(t *testing.T) {
 	for _, c := range []struct{ family, usage string }{{"privilege", groupPrivilegeUsage()}, {"commands", groupCommandsUsage(sb.path("state", "tacctl.yaml"))}} {
 		for _, args := range [][]string{{"group", c.family, "clear", "operator"}, {"group", c.family, "clear"}, {"group", c.family, "bogus", "operator"}} {
 			out := sb.run("y\n", args)
-			if sb.code != 1 || !strings.Contains(sb.stderr(), "Unknown subcommand: '"+args[2]+"'") || !strings.Contains(plain(out), "tacctl group "+c.family+" reset <group> [--dry-run] [--yes]") {
+			if sb.code != 1 || !strings.Contains(sb.stderr(), "Unknown subcommand: '"+args[2]+"'") || out != "" ||
+				!strings.Contains(sb.stderr(), "Run 'tacctl group "+c.family+" -h' for usage.") {
 				t.Errorf("%v: exit %d, stderr %q\n%s", args, sb.code, sb.stderr(), out)
 			}
-			if strings.Contains(plain(out), " clear <group>") {
-				t.Errorf("%v: the usage still names clear:\n%s", args, out)
+			// the usage the pointer leads to does not name clear
+			if u := plain(sb.run("", []string{"group", c.family})); !strings.Contains(u, "tacctl group "+c.family+" reset <group> [--dry-run] [--yes]") || strings.Contains(u, " clear <group>") {
+				t.Errorf("%v: the usage:\n%s", args, u)
 			}
 		}
 	}

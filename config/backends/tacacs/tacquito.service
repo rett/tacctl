@@ -15,8 +15,8 @@ User=tacquito
 Group=tacquito
 # Defaults. The values in effect are in the drop-in tacctl renders from
 # tacctl.yaml, /etc/systemd/system/tacquito.service.d/tacctl.conf; change
-# them with `tacctl config listen`, `tacctl config loglevel` and
-# `tacctl config metrics`, not here.
+# them with `tacctl server listen`, `tacctl config loglevel` and
+# `tacctl server metrics`, not here.
 Environment="TACQUITO_NETWORK=tcp"
 Environment="TACQUITO_ADDRESS=:49"
 Environment="TACQUITO_LEVEL=20"
@@ -24,9 +24,9 @@ Environment="TACQUITO_LEVEL=20"
 # high-signal fingerprint of the service (auth counters, listener shape,
 # etc.) and should not ride the management interface without an explicit
 # operator choice. Manage via:
-#   tacctl config metrics address <host:port>   # custom bind
-#   tacctl config metrics disable               # route to 127.0.0.1:0 (no scraper can reach)
-#   tacctl config metrics enable                # revert to the default loopback:8080
+#   tacctl server metrics address <host:port>   # custom bind
+#   tacctl server metrics disable               # route to 127.0.0.1:0 (no scraper can reach)
+#   tacctl server metrics enable                # revert to the default loopback:8080
 # tacquito's `-export-promhttp=false` is not used: upstream's handler
 # unconditionally cancels the server context when the exporter goroutine
 # returns, which would tear down the whole daemon. Binding to an

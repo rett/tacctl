@@ -603,6 +603,16 @@ func (d *junosDevice) cfgCommit(sess *jsession, args []string) jresult {
 	if len(o.fails) > 0 {
 		return jresult{out: strings.Join(o.fails, "\n") + "\n" + jtCheckFailed + "\n"}
 	}
+	if d.masterAnswers() {
+		// the master answers without a label [C]
+		switch {
+		case o.badMember:
+			return jresult{out: d.masterReply(true, false, 0) + jtCheckFailed + "\n"}
+		case check:
+			return jresult{out: d.masterReply(true, false, 0)}
+		}
+		return jresult{out: d.masterReply(false, confirmed, minutes), drop: d.commitDrop(confirmed)}
+	}
 	if o.badMember {
 		return jresult{out: d.perMember(jtCheckOK, "chassis.check") + jtCheckFailed + "\n"}
 	}

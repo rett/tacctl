@@ -27,7 +27,7 @@ var logSpecs = map[string]Spec{
 	"search":     {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}, Flags: []Flag{logBackendFlag}},
 	"failures":   {Flags: []Flag{logBackendFlag}},
 	"accounting": {MaxArgs: 1, Flags: []Flag{logBackendFlag}},
-	"clear":      {Flags: []Flag{logBackendFlag, {Names: []string{"--force", "-y", "--yes"}}}},
+	"clear":      {Flags: []Flag{logBackendFlag, {Names: []string{"--force", "--yes"}}}},
 }
 
 var logBackendFlag = Flag{Names: []string{"--backend"}, Value: true, Kind: KindBackends}
@@ -47,7 +47,10 @@ func logCmd(inv *invocation) *cobra.Command {
 	)
 	// No sub-command or an unknown one (a --backend before the sub-command
 	// included): the usage, exit 1.
-	c.RunE = inv.native(withPreflight, func([]string) error {
+	c.RunE = inv.native(withPreflight, func(args []string) error {
+		if sub := arg(args, 0); plainWord(sub) {
+			return inv.unknownSub(sub)
+		}
 		inv.write(Usage("log", nil))
 		return exit(1)
 	})
@@ -77,6 +80,15 @@ func (inv *invocation) logRun(sub string, args []string) error {
 			hasOnly = only != ""
 		default:
 			rest = append(rest, a)
+		}
+	}
+	if sub == "clear" {
+		// The purge is confirmed by --yes or --force only: any other word
+		// is refused, not passed on as a flag that does not confirm.
+		for _, a := range rest {
+			if a != "--force" && a != "--yes" {
+				return inv.usageErr("Unknown option: '"+a+"'", "Usage: tacctl log clear [--backend <id>] [--force|--yes]")
+			}
 		}
 	}
 	ids, err := inv.enabledOrFail()

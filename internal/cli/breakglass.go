@@ -166,9 +166,7 @@ func (inv *invocation) breakglass(args []string) error {
 	case "list":
 		return inv.breakglassList(rest)
 	default:
-		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-		inv.write(breakglassUsage())
-		return exit(1)
+		return inv.unknownSub(sub)
 	}
 }
 
@@ -1699,7 +1697,7 @@ func (inv *invocation) heldNames([]string) []string {
 // holdMove is 'device address' on a held device (D175): the hold moves to
 // the new address with the device. newAddr passes the checks a new hold
 // passes (holdAddressBlock, holdCovered) and the registry's own; one line
-// names both addresses and asks to confirm (yes: -y). The registry and the
+// names both addresses and asks to confirm (yes: --yes). The registry and the
 // record are written under one StoreApply, so the render and the restart of
 // the backends that serve the addresses follow at once: the address is what
 // the renderers carve. A refusal changes nothing. The registry is not part

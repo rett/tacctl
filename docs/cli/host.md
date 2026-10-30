@@ -3,15 +3,28 @@
 [Documentation](../README.md) › [CLI reference](README.md)
 
 ```
-host list [--json]
+host list [--name <text>] [--ip <addr|cidr|text>] [--scope <scope>] [--stale] [--json]
 
-    Show enrolled Linux hosts (target, ADDRESS, scope, server, METHOD, users); a host with a
-    break-glass hold is marked BREAK-GLASS in a STATE column; when the registrations have
-    findings (below), a last line says how many and points to `config validate`
+    Show enrolled Linux hosts sorted by name, as `device list` shows devices: target, ADDRESS,
+    scope, STATE (configured: the host's scope exists; unconfigured; stale; BREAK-GLASS while the
+    host is held), LAST SEEN and BY from the seen cache, server, METHOD, users and open notices. The
+    heading counts the hosts (`Enrolled Linux hosts (2), of 5` when narrowed; `None match.` when
+    none is left). A last line gives the age of the seen data and, when the hosts have open
+    notices, how many; when the registrations have findings (below), another says how many and
+    points to `config validate`
 
+    --name <text>
+        Only names containing the text (one value or a comma list: any of them)
+    --ip <addr|cidr|text>
+        Only an address equal to, inside or containing the text (a comma list)
+    --scope <scope>
+        Only the hosts that scope answers (a comma list)
+    --stale
+        Only the hosts not seen for stale-days (`device stale-days`)
     --json
         Print a JSON array (`[]` for no host) and no table: name, local, target, port, scope,
-        server, method, identity, address, users, drift, breakglass (while held) and findings
+        server, method, identity, address, users, state, seen (while the address was seen),
+        notices, drift, breakglass (while held) and findings
 
 host show <name> [--all] [--json] [--check]
 
@@ -38,17 +51,18 @@ host enroll <[user@]host>|--local [opts]
         SSH port and key
     --build-on-host
         (tacplus) compile pam_tacplus on the host instead of in a container here
-    -y, --yes
+    --yes
         (enroll and move) Move a registered host to another scope even when that deletes accounts
     --staging
         (with --scope) Provisioned off-site: the bench address joins the scope as a /32 until the
         host is seen in place
 
-host sync <name>... | --all
+host sync <name>... | --all [--allow-uid-mismatch] [--remove-home] [--concurrency <n>]
 
     Push account adds, renames, deletions, expiries and tier changes (a renamed user's account is
     renamed, keeping its UID and home); pins the host's ssh keys if none are (enroll pins them too).
-    Several names run in the order typed, each as --all would run it. Every name is checked first
+    Several names run in the order typed (with `--concurrency`, they start in that order and their
+    output is printed in that order), each as --all would run it. Every name is checked first
     (an unknown one refuses the run, one given twice counts once); a host that fails does not stop
     the rest, and the exit status is 1. Names and --all are not given together. The numbers of
     new users are given out under the UID ledger's lock, held while the script is built and never
@@ -62,8 +76,24 @@ host sync <name>... | --all
     --remove-home
         (enroll, sync and move) delete removed users' home directories without asking
         (on a terminal each is asked; without one they are kept)
+    --concurrency <n>
+        Sync n hosts at once (1 or more; the default, 1, is one after the other). Each host's
+        output is held and printed whole, in the order typed, so lines never mix; the lines and
+        the exit status are those of a sequential run. What the hosts write here (UID ledger, host
+        records, device registry, staging addresses) is written one host at a time. No terminal is
+        used: ssh runs in BatchMode (a key or the agent; no password is asked) and the remote sudo
+        is `sudo -n`, so the login must be root or have passwordless sudo. The questions about
+        removed users' home directories are not asked and the homes are kept; a host with removed
+        users says so after the line that names them, and `--remove-home` deletes them (or sync
+        the host alone to be asked). Registrations that share an ssh target and port are synced one
+        after the other (they share one connection). Ctrl-C stops the run as in a sequential one:
+        no further host is started, the connections of the hosts under way are ended and those
+        hosts are reported, recorded and audited as interrupted, the hosts not started are named
+        and the status is 130. Without a terminal to carry the interrupt to it, a script already
+        running on a host may finish. With one host `--concurrency` changes nothing. There is no
+        per-host time limit and no limit on failures
 
-host check <name>... | --all [--json]
+host check <name>... | --all [--json] [--concurrency <n>]
 
     Compare each host with what tacctl would make it, read-only, as `host show <name> --check`
     does (superuser only: it logs in); nothing is changed on a host or here. Every name is checked
@@ -79,6 +109,16 @@ host check <name>... | --all [--json]
         Print a JSON array (`[]` for no host) and nothing else on standard output: name, target,
         state (ok, differences, failed or held), differences (text and fix), notes, error and
         breakglass (while held)
+    --concurrency <n>
+        Check n hosts at once (1 or more; the default, 1, is one after the other). Each host's
+        text, standard error included, is held and printed whole in the order typed, so the
+        report, the count and the exit status are those of a sequential run. No terminal is used:
+        the login runs in BatchMode (a key or the agent; no password is asked) and the remote sudo
+        is `sudo -n`, so the login must be root or have passwordless sudo. Hosts that share an
+        ssh target and port are checked one after the other. Ctrl-C stops the run as in a
+        sequential one: no further host is started, the reads under way are ended and give no
+        result, the hosts not started are named and the status is 130. With one host it changes
+        nothing. There is no per-host time limit
 
 host move <name> [<scope>]|--all
 
@@ -92,13 +132,13 @@ host provisioner <name> rotate <user> (--key <file>|--password) [--remove-old [-
     a new connection (sudo id -u gives 0), then change the registry; --remove-old removes the old
     account last, over the new one
 
-host rename <old> <new> [-y]
+host rename <old> <new> [--yes]
 
     Give an enrolled host another name (lower case; `host rename Web1 web1` fixes a name from
     before); nothing is sent to the host. Its pinned host keys, record, staging addresses and
     break-glass hold follow; asks about its own linux-<name> scope
 
-host forget <name> [-y]
+host forget <name> [--yes]
 
     Drop a host's registration from this server (registry line, pinned keys, record, staging
     addresses, host-key scan result) and send nothing to the host; also what a registry line no
@@ -158,8 +198,8 @@ enrolled, and `host forget <old>` removes them.
 
 What an earlier host of the new name left (a pinned key and address in the
 device registry, a record, staging addresses) is listed and replaced after a
-confirmation; `-y` skips it and declining changes nothing. A break-glass
-hold recorded under the new name is refused whatever `-y` says: only
+confirmation; `--yes` skips it and declining changes nothing. A break-glass
+hold recorded under the new name is refused whatever `--yes` says: only
 `breakglass release` removes a hold.
 
 A snapshot is taken, then the registry line is renamed where it is and one
@@ -180,7 +220,7 @@ write (the prompt is one line, shown wrapped):
   Scope 'linux-web1' is this host's own (no other host uses it).
   Rename it to 'linux-web9' too? [y/N]:
 ```
-`-y` answers both yes. The host is renamed whole first; then the scope is
+`--yes` answers both yes. The host is renamed whole first; then the scope is
 renamed as `scope rename` does it, with a snapshot of its own (two points to
 undo to), and the host's registry line and its staging addresses follow the
 scope. Answering no keeps the scope and ends with
@@ -206,7 +246,7 @@ drops, for the name, the registry line, the pinned keys, recorded address and
 history in the device registry (the generated `known_hosts` follows), the
 record (`/etc/tacctl/hosts/<name>.json`), the host's staging addresses from
 the `staging` file and the host-key scan result of the seen cache. It lists
-what it would drop and asks (`-y` skips the question). The host itself is
+what it would drop and asks (`--yes` skips the question). The host itself is
 not touched: its accounts, secrets and PAM setup stay, so the command is for a
 registration that is wrong, not for taking a host out of service (`host
 unenroll` does that on a host that can be reached, and drops the host's
@@ -236,11 +276,20 @@ duplicate: it runs the removal script on the machine that the surviving
 registration shares.
 
 **Listing.** ADDRESS is the address recorded at the host's last `host enroll`
-or `host sync` (the one a break-glass hold carves out), `-` when none is. In
+or `host sync` (the one a break-glass hold carves out), else the single
+address of its scope, `-` when neither is known; LAST SEEN and BY are what the
+seen cache holds for that address (`tacctl device scan` refreshes it), and the
+summary under the table says how old the data is. The options narrow the list
+as those of `device list` do (the options must all match; a host of another
+scope, for an engineer, is not counted). This server's own login has no scope
+column (`-`) and `--scope` never selects it. In
 `host list --json` each host has `name`, `local`, `target`, `port` (22 unless
 the registry gives one; 0 for this server's own host), `scope`, `server`,
 `method`, `identity` (the path only), `address` (empty when unknown), `users`,
-`drift` (the warning the table prints when the scope no longer answers the
+`state`, `seen` (first, last, count, last user, outcome, via, NAS identifier
+and stale, as in `device list --json`; absent when the address was never
+seen), `notices` (kind, text and acknowledged; `device notice list` and
+`host show --all` list them), `drift` (the warning the table prints when the scope no longer answers the
 host, empty when none), `breakglass` (the hold, as in `host show --json`,
 only while the host is held) and `findings` (those of the next paragraph that
 name the host, with the `Names:` findings of `config validate` about the host,

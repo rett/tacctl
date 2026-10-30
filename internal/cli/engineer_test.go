@@ -66,7 +66,7 @@ func TestEngineerDevicesOfOwnScopes(t *testing.T) {
 		{[]string{"device", "add", "prod-rtr", "10.99.0.2", "--no-host-key"}, "Scope 'prod' is not one of yours: the engineer tier changes the devices of its own scopes only (yours: lab)."},
 		{[]string{"device", "add", "stray", "100.64.0.1", "--no-host-key"}, "'stray' is at an address no scope answers"},
 		{[]string{"device", "port", "prod-sw", "2222"}, "Device 'prod-sw' not found."},
-		{[]string{"device", "remove", "prod-sw", "-y"}, "Device 'prod-sw' not found."},
+		{[]string{"device", "remove", "prod-sw", "--yes"}, "Device 'prod-sw' not found."},
 		{[]string{"device", "rename", "10.99.0.1", "x9"}, "Device '10.99.0.1' not found."},
 		{[]string{"device", "address", "lab-sw", "10.99.0.7"}, "Scope 'prod' is not one of yours"},
 		{[]string{"device", "hostkey", "prod-sw", "show"}, "Device 'prod-sw' not found."},
@@ -86,7 +86,7 @@ func TestEngineerDevicesOfOwnScopes(t *testing.T) {
 	if sb.code != 1 || !strings.Contains(sb.stderr(), "Scope 'prod' is not one of yours") || strings.Contains(sb.devices(), "prod-new") {
 		t.Errorf("import into prod: %d %q", sb.code, sb.stderr())
 	}
-	sb.asEngineer("lab-new,192.168.1.9\n", "device", "import", "-", "--replace", "-y")
+	sb.asEngineer("lab-new,192.168.1.9\n", "device", "import", "-", "--replace", "--yes")
 	if sb.code != 1 || !strings.Contains(sb.stderr(), "Scope 'prod' is not one of yours") || !strings.Contains(sb.devices(), "prod-sw") {
 		t.Errorf("import --replace: %d %q", sb.code, sb.stderr())
 	}
@@ -97,7 +97,7 @@ func TestEngineerDevicesOfOwnScopes(t *testing.T) {
 		t.Errorf("rename: %d %q", sb.code, sb.stderr())
 	}
 	// --all is the engineer's own devices.
-	if sb.asEngineer("", "device", "remove", "--all", "-y"); sb.code != 0 {
+	if sb.asEngineer("", "device", "remove", "--all", "--yes"); sb.code != 0 {
 		t.Errorf("remove --all: %d %q", sb.code, sb.stderr())
 	}
 	if d := sb.devices(); !strings.Contains(d, "prod-sw") || strings.Contains(d, "lab-core") || strings.Contains(d, "lab-rtr") {

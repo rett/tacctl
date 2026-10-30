@@ -190,6 +190,16 @@ func (e *Env) tty() bool {
 	return true
 }
 
+// NoTerminal makes e reach hosts as a run beside others must: no terminal
+// answers anything, so ssh runs in BatchMode (a key or the agent, no
+// password or passphrase prompt), the remote sudo is 'sudo -n' (a root login
+// or passwordless sudo), and nothing is read from standard input.
+func (e *Env) NoTerminal() {
+	no := func() bool { return false }
+	e.TTY, e.StdinTTY = no, no
+	e.Stdin = strings.NewReader("")
+}
+
 func (e *Env) stdinTTY() bool {
 	if e.StdinTTY != nil {
 		return e.StdinTTY()

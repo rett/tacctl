@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/rett/tacctl/internal/devices"
 	"github.com/rett/tacctl/internal/policy"
@@ -124,7 +125,12 @@ func (inv *invocation) snmpConfigOwn(scope string, own deviceSNMPOwn) (snmp.Conf
 	if own.chosen() {
 		setter = "tacctl device snmp " + shellquote.Q(own.Name)
 	}
-	return snmpcred.ResolveDevice(own.layer(), sc, def).Config(setter)
+	c, problem := snmpcred.ResolveDevice(own.layer(), sc, def).Config(setter)
+	// The wait for an answer is multiplied by the timing scale in force for
+	// the device (its own, its scope's, the server's), never above the most
+	// SNMP takes.
+	c.Timeout = time.Duration(scaledSNMPTimeout(int(c.Timeout/time.Second), inv.timeoutScaleOf(scope, own.TimeoutScale).N)) * time.Second
+	return c, problem
 }
 
 // snmpGetterFor is how this invocation reads sysName from a device of

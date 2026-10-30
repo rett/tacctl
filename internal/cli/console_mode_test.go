@@ -73,7 +73,7 @@ func TestConsoleLineArgv(t *testing.T) {
 		// The words of noSudo run as the user, without the marker.
 		{"carol tac-users tac-readonly", "hash commands", testExe + " hash commands"},
 		// A metacharacter is part of a word.
-		{"carol tac-users tac-readonly", "user list; id", "sudo -n TACCTL_CONSOLE=<id> " + testExe + " user list; id"},
+		{"carol tac-users tac-readonly", "user show alice; id", "sudo -n TACCTL_CONSOLE=<id> " + testExe + " user show alice; id"},
 	} {
 		h, run := consoleHarness(t, "", c.groups, consoleTestPolicy, "-c", c.line)
 		if err := run(); err != nil {

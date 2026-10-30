@@ -142,9 +142,7 @@ func (inv *invocation) configSNMP(args []string) error {
 			}
 			return f(rest)
 		}
-		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-		inv.write(configSNMPUsage())
-		return exit(1)
+		return inv.unknownSub(sub)
 	}
 }
 
@@ -222,6 +220,11 @@ func (inv *invocation) snmpShow(args []string) error {
 	}
 	inv.echo("  port:       " + src("snmp.port", strconv.Itoa(snmp.DefaultPort)))
 	inv.echo("  timeout:    " + src("snmp.timeout", strconv.Itoa(snmp.DefaultTimeout)) + " s, one retry")
+	if n, err := strconv.Atoi(inv.confGet("snmp.timeout", strconv.Itoa(snmp.DefaultTimeout))); err == nil {
+		if note := snmpScaleNote(n, inv.timeoutScaleOf("", 0).N); note != "" {
+			inv.echo(note)
+		}
+	}
 	inv.echo("  community:  " + secretOrSet(reveal, c.Community))
 	// The v3 lines only when v3 is chosen or set up: v2c is the usual way.
 	if version == snmp.V3 || c.User != "" || c.AuthPass != "" || c.PrivPass != "" {

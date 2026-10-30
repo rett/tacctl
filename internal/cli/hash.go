@@ -29,9 +29,7 @@ func hashCmd(inv *invocation) *cobra.Command {
 			inv.write(hashUsage())
 			return nil
 		default:
-			inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-			inv.write(hashUsage())
-			return exit(1)
+			return inv.unknownSub(sub)
 		}
 	})
 	return c

@@ -9,6 +9,7 @@ package cli
 // difference is one line with the command that fixes it.
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/rett/tacctl/internal/devreg"
@@ -39,7 +40,7 @@ func reenrollCommand(e hosts.Entry) string {
 // the check (a banner, ssh's messages) goes to stderr, so stdout is the
 // JSON alone.
 func (inv *invocation) hostCheck(e hosts.Entry, v *hostShowJSON, toStderr bool) (*hostCheckJSON, error) {
-	c, failed, err := inv.hostCheckRun(e, v, toStderr)
+	c, failed, err := inv.hostCheckRun(inv.ctx, inv.hostCheckEnv(inv.sequentialStep(), toStderr), e, v)
 	if err != nil {
 		return nil, err
 	}
@@ -49,16 +50,25 @@ func (inv *invocation) hostCheck(e hosts.Entry, v *hostShowJSON, toStderr bool) 
 	return c, nil
 }
 
-// hostCheckRun is hostCheck's run: failed says why the read-only run did
-// not complete ("" when it did; nothing was compared then), err is what
-// ends the command (an interrupt, a registry that cannot be read).
-func (inv *invocation) hostCheckRun(e hosts.Entry, v *hostShowJSON, toStderr bool) (c *hostCheckJSON, failed string, err error) {
-	a := inv.app
-	local := e.Target == hosts.Local
+// hostCheckEnv is the environment of a read-only run: what the host prints
+// besides the check goes to stderr when toStderr.
+func (inv *invocation) hostCheckEnv(st *hostStep, toStderr bool) *hosts.Env {
 	he := inv.hostsEnv()
 	if toStderr {
-		he.Out = ui.Output{Stdout: a.Out.Stderr, Stderr: a.Out.Stderr}
+		he.Out = ui.Output{Stdout: inv.app.Out.Stderr, Stderr: inv.app.Out.Stderr}
 	}
+	st.quiet(he)
+	return he
+}
+
+// hostCheckRun is hostCheck's run in he: failed says why the read-only run
+// did not complete ("" when it did; nothing was compared then), err is what
+// ends the command (an interrupt, a registry that cannot be read). It uses
+// nothing of the invocation that another host's run changes, so hosts can
+// run side by side.
+func (inv *invocation) hostCheckRun(ctx context.Context, he *hosts.Env, e hosts.Entry, v *hostShowJSON) (c *hostCheckJSON, failed string, err error) {
+	a := inv.app
+	local := e.Target == hosts.Local
 	rng := he.UIDRange()
 	names := make([]string, 0, len(v.Accounts.Users))
 	for _, u := range v.Accounts.Users {
@@ -67,11 +77,11 @@ func (inv *invocation) hostCheckRun(e hosts.Entry, v *hostShowJSON, toStderr boo
 	if !local {
 		he.Out.InfoE("Checking " + e.Name + " at " + targetText(e) + " (read-only)...")
 	}
-	st, code, err := he.Check(inv.ctx, e.Target, e.Port, e.Identity, names)
+	st, code, err := he.Check(ctx, e.Target, e.Port, e.Identity, names)
 	if err != nil {
 		return nil, "", err
 	}
-	if inv.ctx.Err() != nil {
+	if ctx.Err() != nil {
 		return nil, "", ui.ErrInterrupted
 	}
 	if code != 0 {

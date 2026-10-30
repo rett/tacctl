@@ -876,7 +876,7 @@ func TestForgetAndCarry(t *testing.T) {
 	if _, err := os.Stat(b.sb.path("var-lib", "device-config", "lab-kk.yaml")); err != nil {
 		t.Errorf("sections file: %v", err)
 	}
-	b.run("device", "remove", "lab-kk", "-y")
+	b.run("device", "remove", "lab-kk", "--yes")
 	if _, ok := b.records().Of("lab-kk"); ok {
 		t.Error("the record survived the removal")
 	}

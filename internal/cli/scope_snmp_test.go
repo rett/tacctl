@@ -327,7 +327,7 @@ func TestSNMPLookupUsesTheDevicesScope(t *testing.T) {
 	sb.cfgRun("", []string{"config", "snmp", "timeout", "1"}, nil)
 	hint := func() string {
 		out := plain(sb.cfgRun("", []string{"device", "add", "sw1", "127.0.0.1", "--no-host-key"}, nil))
-		sb.cfgRun("y\n", []string{"device", "remove", "sw1", "-y"}, nil)
+		sb.cfgRun("y\n", []string{"device", "remove", "sw1", "--yes"}, nil)
 		return out
 	}
 	// Scope credentials win over the default's.
@@ -347,13 +347,13 @@ func TestSNMPLookupUsesTheDevicesScope(t *testing.T) {
 	sb.said(0, "127.0.0.1 calls itself 'sw1.site-a.example'")
 	sb.cfgRun("", []string{"config", "snmp", "test", "127.0.0.1"}, nil)
 	sb.said(0, "127.0.0.1 calls itself 'sw1.site-a.example' (SNMP sysName) (tried with the settings of scope 'dmz' or the default's")
-	sb.cfgRun("y\n", []string{"device", "remove", "sw1", "-y"}, nil)
+	sb.cfgRun("y\n", []string{"device", "remove", "sw1", "--yes"}, nil)
 	sb.cfgRun("", []string{"config", "snmp", "test", "127.0.0.1"}, nil)
 	sb.said(1, "No answer from 127.0.0.1")
 	sb.cfgRun("", []string{"device", "add", "sw1", "127.0.0.1", "--no-host-key"}, nil)
 	// Without the scope's credentials the default's apply (and fail here).
 	sb.scopeSNMP("", "dmz", "clear")
-	sb.cfgRun("y\n", []string{"device", "remove", "sw1", "-y"}, nil)
+	sb.cfgRun("y\n", []string{"device", "remove", "sw1", "--yes"}, nil)
 	if out := hint(); !strings.Contains(out, "No SNMP answer from 127.0.0.1") {
 		t.Errorf("default credentials: %q", out)
 	}

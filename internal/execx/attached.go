@@ -8,6 +8,18 @@ import (
 
 type endOnDeadlineKey struct{}
 
+type endOnCancelKey struct{}
+
+// EndOnCancel marks ctx so that Attached ends the program with SIGTERM when
+// ctx is cancelled, whatever the cause. It is for a program that does not
+// share the terminal's foreground process group with the keys that cancel
+// ctx (several programs run side by side by one command, which one signal
+// must stop), or that a signal not sent from the terminal (kill -INT) must
+// stop too. Other callers keep leaving a cancellation to the child.
+func EndOnCancel(ctx context.Context) context.Context {
+	return context.WithValue(ctx, endOnCancelKey{}, true)
+}
+
 // EndOnDeadline marks ctx so that Attached ends the program with SIGTERM when
 // ctx's deadline passes (a timeout the caller set, as the idle time of a
 // dialog nobody answers). A cancellation that is not a deadline (Ctrl-C) is
@@ -35,13 +47,14 @@ func Attached(ctx context.Context, r Runner, c Cmd, stdin io.Reader, stdout, std
 	if err != nil {
 		return 127, ctx.Err() != nil, err
 	}
-	if ctx.Value(endOnDeadlineKey{}) != nil {
+	onCancel := ctx.Value(endOnCancelKey{}) != nil
+	if onCancel || ctx.Value(endOnDeadlineKey{}) != nil {
 		done := make(chan struct{})
 		defer close(done)
 		go func() {
 			select {
 			case <-ctx.Done():
-				if ctx.Err() == context.DeadlineExceeded {
+				if onCancel || ctx.Err() == context.DeadlineExceeded {
 					_ = p.Signal(syscall.SIGTERM)
 				}
 			case <-done:
