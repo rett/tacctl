@@ -465,16 +465,16 @@ func recordDetections(seen *devreg.Seen, reads map[string]vendorRead, at time.Ti
 	}
 }
 
-// deviceVendorFromDevice is 'device vendor <name> --from-device [-y]': the
+// deviceVendorFromDevice is 'device vendor <name> --from-device [--yes]': the
 // vendor the device names, read now, set as its vendor through the setter
 // (so a change drops the Cisco and Junos settings as a typed one does). A
 // read that names no vendor, no answer and SNMP not set up are refused with
 // the reason and change nothing; a different registered vendor is shown
-// beside the device's and replaced after 'y' at a terminal, or with -y.
+// beside the device's and replaced after 'y' at a terminal, or with --yes.
 func (inv *invocation) deviceVendorFromDevice(p Parsed, f *devreg.File, res *devreg.Resolver) error {
-	usage := "Usage: tacctl device vendor <name> --from-device [-y]"
+	usage := "Usage: tacctl device vendor <name> --from-device [--yes]"
 	if !p.Has("--from-device") {
-		return inv.usageErr("-y answers the question of --from-device.", usage)
+		return inv.usageErr("--yes answers the question of --from-device.", usage)
 	}
 	if len(p.Args) != 1 {
 		return inv.usageErr("--from-device takes the device's name only.", usage)
@@ -500,10 +500,10 @@ func (inv *invocation) deviceVendorFromDevice(p Parsed, f *devreg.File, res *dev
 	}
 	inv.echo("  Registry: " + d.Vendor)
 	inv.echo("  Device:   " + r.vendor + " (" + r.reason + "; " + r.evidence() + ")")
-	if !p.Has("-y") {
+	if !p.Has("--yes") {
 		pr := inv.app.Prompter()
 		if !pr.Interactive() {
-			return inv.usageErr("Give -y to set the vendor of '" + name + "' to " + r.vendor + " without a terminal. Nothing was changed.")
+			return inv.usageErr("Give --yes to set the vendor of '" + name + "' to " + r.vendor + " without a terminal. Nothing was changed.")
 		}
 		if !pr.ConfirmPrefix("  Set the vendor to the device's? [y/N]: ") {
 			inv.app.Out.Info("Aborted.")
@@ -668,15 +668,15 @@ func (s checkSysName) locationRow(e devreg.Entry) string {
 	return "differs: device '" + s.loc + "', registry '" + reg + "'"
 }
 
-// deviceLocationFromDevice is 'device location <name> --from-device [-y]':
+// deviceLocationFromDevice is 'device location <name> --from-device [--yes]':
 // the device's sysLocation, read now, stored as its location. An empty
 // answer, no answer and a value the registry rejects are refused with the
 // reason and change nothing; a different registered location is shown
-// beside the new one and replaced on 'y' at a terminal, or with -y.
+// beside the new one and replaced on 'y' at a terminal, or with --yes.
 func (inv *invocation) deviceLocationFromDevice(p Parsed, f *devreg.File, res *devreg.Resolver) error {
-	usage := "Usage: tacctl device location <name> --from-device [-y]"
+	usage := "Usage: tacctl device location <name> --from-device [--yes]"
 	if !p.Has("--from-device") {
-		return inv.usageErr("-y answers the question of --from-device.", usage)
+		return inv.usageErr("--yes answers the question of --from-device.", usage)
 	}
 	if len(p.Args) != 1 {
 		return inv.usageErr("--from-device takes the device's name only.", usage)
@@ -711,10 +711,10 @@ func (inv *invocation) deviceLocationFromDevice(p Parsed, f *devreg.File, res *d
 	if d.Location != "" {
 		inv.echo("  Registry: " + d.Location)
 		inv.echo("  Device:   " + text)
-		if !p.Has("-y") {
+		if !p.Has("--yes") {
 			pr := inv.app.Prompter()
 			if !pr.Interactive() {
-				return inv.usageErr("The registry already has a different location for '" + name + "'. Give -y to replace it with the device's.")
+				return inv.usageErr("The registry already has a different location for '" + name + "'. Give --yes to replace it with the device's.")
 			}
 			if !pr.ConfirmPrefix("  Replace the registry's location with the device's? [y/N]: ") {
 				inv.app.Out.Info("Aborted.")

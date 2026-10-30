@@ -549,21 +549,21 @@ func TestInstallCancelPrereqsAndBranchUsage(t *testing.T) {
 	}
 	o.stdin = ""
 	for bad, args := range map[string][]string{"--branch": {"--branch"}, "whatever": {"whatever", "--branch", "feature/x"},
-		"extra": {"-y", "extra"}} {
-		want := "[ERROR] Unknown argument: '" + bad + "'\n[ERROR] Usage: tacctl install [--branch <name>] [--server <ip>] [-y|--yes]\n"
+		"extra": {"--yes", "extra"}} {
+		want := "[ERROR] Unknown argument: '" + bad + "'\n[ERROR] Usage: tacctl install [--branch <name>] [--server <ip>] [--yes]\n"
 		if code := install(o, args...); code != 1 || o.stdout.Len() != 0 || stripANSI(o.stderr.String()) != want ||
 			len(o.phases) != 0 || len(o.run.Calls()) != 0 {
 			t.Errorf("%q: exit %d %q %q", args, code, o.stdout, o.stderr)
 		}
 	}
 	o.run.Missing("wget")
-	if code := install(o, "-y"); code != 1 || stripANSI(o.stderr.String()) != "[ERROR] Required command 'wget' not found. Install it first.\n" ||
+	if code := install(o, "--yes"); code != 1 || stripANSI(o.stderr.String()) != "[ERROR] Required command 'wget' not found. Install it first.\n" ||
 		o.stdout.Len() != 0 {
 		t.Errorf("no wget: exit %d %q %q", code, o.stdout, o.stderr)
 	}
 }
 
-// A fresh install, -y: 0.1.16's order (cmd_install), each backend's
+// A fresh install, --yes: 0.1.16's order (cmd_install), each backend's
 // phases with the source tree, README.md's 'account' phase before the
 // seed (install_seed.bats "cmd_install places README.md after the config
 // directory exists"), the clone, the installed command built from it, the
@@ -571,7 +571,7 @@ func TestInstallCancelPrereqsAndBranchUsage(t *testing.T) {
 func TestInstallFresh(t *testing.T) {
 	o := newOhost(t)
 	o.commit = "something-else" // a dev binary: the command is built from the clone
-	if code := install(o, "-y"); code != 0 {
+	if code := install(o, "--yes"); code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
 	}
 	tree := o.p.Tree
@@ -630,7 +630,7 @@ func TestInstallOverExistingCloneAndStore(t *testing.T) {
 	o.write(o.p.Command, "the shim built this\n")
 	_ = os.Chmod(o.p.Command, 0o755)
 	o.write(o.p.StoreFile, fixture(t, "store.minimal.yaml"))
-	if code := install(o, "--branch", "develop", "-y"); code != 0 {
+	if code := install(o, "--branch", "develop", "--yes"); code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
 	}
 	inOrder(t, o.text(), "Management repo already cloned at "+o.p.Deploy+", pulling latest...",
@@ -674,7 +674,7 @@ func TestInstallHoldsTheApplyLockFromTheSeed(t *testing.T) {
 		hold()
 	}()
 	start := time.Now()
-	if code := install(o, "-y"); code != 0 {
+	if code := install(o, "--yes"); code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
 	}
 	if took := time.Since(start); took < 700*time.Millisecond {
@@ -726,7 +726,7 @@ func TestInstallCancelledWaitForTheApplyLock(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
 	defer cancel()
 	o.run.Reset()
-	err = lifecycle.Install(ctx, o.host(), []string{"-y"})
+	err = lifecycle.Install(ctx, o.host(), []string{"--yes"})
 	if backend.ExitCode(err) != 1 {
 		t.Fatalf("exit %d (%v)", backend.ExitCode(err), err)
 	}
@@ -745,7 +745,7 @@ func TestInstallOverAStoreWarnsWhenABackendsConfigStepFails(t *testing.T) {
 	o.enableBoth()
 	o.write(o.p.StoreFile, fixture(t, "store.minimal.yaml"))
 	o.tac.failAt = "upgrade config"
-	if code := install(o, "-y"); code != 0 {
+	if code := install(o, "--yes"); code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
 	}
 	inOrder(t, o.text(), "Existing store found at", "PHASE tacacs upgrade config",
@@ -770,7 +770,7 @@ func TestInstallBranchOfABashReleaseStopsBeforeBuilding(t *testing.T) {
 			_ = os.MkdirAll(filepath.Join(dst, ".git"), 0o755)
 			return execx.Result{}, nil
 		})
-	if code := install(o, "--branch", "0.1.18", "-y"); code != 1 {
+	if code := install(o, "--branch", "0.1.18", "--yes"); code != 1 {
 		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
 	}
 	want := "[ERROR] '0.1.18' is a release of the bash era; install it with its own installer: sudo " +
@@ -788,7 +788,7 @@ func TestInstallBranchOfABashReleaseStopsBeforeBuilding(t *testing.T) {
 func TestInstallPhaseFailureStops(t *testing.T) {
 	o := newOhost(t)
 	o.tac.failAt = "install build"
-	if code := install(o, "-y"); code != 7 || o.run.Called("git", "clone") || len(o.phases) != 1 {
+	if code := install(o, "--yes"); code != 7 || o.run.Called("git", "clone") || len(o.phases) != 1 {
 		t.Errorf("exit %d phases %v", code, o.phases)
 	}
 }
@@ -1148,7 +1148,7 @@ func TestUninstallCancel(t *testing.T) {
 	}
 }
 
-// -y: no question asked, nothing kept; the phases in order on every
+// --yes: no question asked, nothing kept; the phases in order on every
 // present backend (a disabled but installed RADIUS too), every tacctl file
 // gone (install_seed.bats "cmd_uninstall removes the tier sudoers rules,
 // bash completion and Linux host data").
@@ -1158,7 +1158,7 @@ func TestUninstallYes(t *testing.T) {
 	o.rad.SetInstalled(true)
 	o.write(o.p.KnownHosts, "# generated\n")
 	o.write(o.p.TierPinMarker, "migrated\n")
-	if code := uninstall(o, "-y"); code != 0 {
+	if code := uninstall(o, "--yes"); code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
 	}
 	want := []string{"tacacs uninstall stop", "radius uninstall stop", "tacacs uninstall program", "radius uninstall program",
@@ -1217,7 +1217,7 @@ func TestUninstallRemovesAccess(t *testing.T) {
 	o.installed()
 	other := filepath.Join(filepath.Dir(o.p.SudoersFile), "other")
 	o.write(other, "keep\n")
-	uninstall(o, "-y")
+	uninstall(o, "--yes")
 	if _, err := os.Stat(other); err != nil {
 		t.Error("another sudoers file went too")
 	}
@@ -1240,7 +1240,7 @@ func TestUninstallPhaseFailureStops(t *testing.T) {
 	o := newOhost(t)
 	o.installed()
 	o.tac.failAt = "uninstall stop"
-	if code := uninstall(o, "-y"); code != 7 {
+	if code := uninstall(o, "--yes"); code != 7 {
 		t.Errorf("exit %d", code)
 	}
 	if _, err := os.Stat(o.p.Command); err != nil || strings.Contains(o.text(), "Removing") {
@@ -1326,7 +1326,7 @@ func TestInstallUpgradeRepairVarLib(t *testing.T) {
 func TestConsoleLinkInstallAndUpgrade(t *testing.T) {
 	o := newOhost(t)
 	o.commit = "something-else"
-	if code := install(o, "-y"); code != 0 {
+	if code := install(o, "--yes"); code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
 	}
 	if target, err := os.Readlink(o.p.ConsoleCommand); err != nil || target != o.p.Command {
@@ -1413,7 +1413,7 @@ func TestUninstallRestoresConsoleShells(t *testing.T) {
 		"carol:x:80002:80002:carol (TACACS+):/home/carol:" + o.p.ConsoleCommand + "\n")})
 	o.run.Fail([]string{"usermod", "-s", "/bin/bash", "carol"}, 8, "usermod: user carol is currently used by process 1")
 	o.run.On([]string{"sshd", "-t"}, execx.Result{})
-	if code := uninstall(o, "-y"); code != 0 {
+	if code := uninstall(o, "--yes"); code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
 	}
 	if !o.run.Called("usermod", "-s", "/bin/bash", "alice") || o.run.Called("usermod", "-s", "/bin/bash", "bob") {
@@ -1545,7 +1545,7 @@ func TestUpgradeRefreshesTheGroupSudoersItWrote(t *testing.T) {
 func TestLifecycleDetailLines(t *testing.T) {
 	o := newOhost(t)
 	o.commit = "something-else"
-	if code := install(o, "-y", "--branch", "feature/x"); code != 0 {
+	if code := install(o, "--yes", "--branch", "feature/x"); code != 0 {
 		t.Fatalf("install: exit %d", code)
 	}
 	if want := []string{"install branch=feature/x"}; !slices.Equal(o.audit, want) {
@@ -1572,7 +1572,7 @@ func TestLifecycleDetailLines(t *testing.T) {
 		t.Errorf("re-executed upgrade: %q", o.audit)
 	}
 	o.installed()
-	if code := uninstall(o, "-y"); code != 0 {
+	if code := uninstall(o, "--yes"); code != 0 {
 		t.Fatalf("uninstall: exit %d", code)
 	}
 	if want := []string{"uninstall backups=removed logs=removed"}; !slices.Equal(o.audit, want) {
@@ -1581,7 +1581,7 @@ func TestLifecycleDetailLines(t *testing.T) {
 }
 
 // Install offers this machine's own login after the services are started and
-// before the summary, once, with what the command line said: -y, --server.
+// before the summary, once, with what the command line said: --yes, --server.
 // An address that cannot be the server address is refused before anything
 // runs. Without the hook nothing changes (the plan has no line for it).
 func TestInstallSetsUpTheOwnLoginAfterTheStart(t *testing.T) {
@@ -1591,7 +1591,7 @@ func TestInstallSetsUpTheOwnLoginAfterTheStart(t *testing.T) {
 		got = append(got, opt)
 		o.out.Info("OWN LOGIN " + strings.Join(o.phases, ","))
 	}
-	if code := install(o, "-y", "--server", "192.0.2.10"); code != 0 {
+	if code := install(o, "--yes", "--server", "192.0.2.10"); code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
 	}
 	if want := []lifecycle.OwnLoginOptions{{Install: true, Yes: true, Server: "192.0.2.10"}}; !slices.Equal(got, want) {
@@ -1601,7 +1601,7 @@ func TestInstallSetsUpTheOwnLoginAfterTheStart(t *testing.T) {
 	if !strings.Contains(o.text(), "Offer to set up this machine's own login") {
 		t.Errorf("the plan has no line for it:\n%s", o.text())
 	}
-	// not -y: the answer to the plan's question, then the hook's own
+	// not --yes: the answer to the plan's question, then the hook's own
 	got, o.stdin = nil, "y\n"
 	if code := install(o); code != 0 || len(got) != 1 || got[0].Yes || got[0].Server != "" || !got[0].Install {
 		t.Errorf("exit %d, %+v", code, got)
@@ -1609,14 +1609,14 @@ func TestInstallSetsUpTheOwnLoginAfterTheStart(t *testing.T) {
 	// refused before anything runs
 	got = nil
 	for _, bad := range []string{"203.0.113.9x", "127.0.0.1", "0.0.0.0", "web1.example.net", "fe80::1"} {
-		if code := install(o, "-y", "--server", bad); code != 1 || len(got) != 0 || len(o.phases) != 0 || len(o.run.Calls()) != 0 ||
+		if code := install(o, "--yes", "--server", bad); code != 1 || len(got) != 0 || len(o.phases) != 0 || len(o.run.Calls()) != 0 ||
 			!strings.Contains(stripANSI(o.stderr.String()), "[ERROR] --server '"+bad+"' ") {
 			t.Errorf("--server %s: exit %d %q %v", bad, code, o.stderr, o.phases)
 		}
 	}
 	// no hook: no line in the plan
 	o.ownLogin = nil
-	install(o, "-y")
+	install(o, "--yes")
 	if strings.Contains(o.text(), "own login") {
 		t.Errorf("a line for the hook:\n%s", o.text())
 	}
@@ -1641,7 +1641,7 @@ func TestUpgradeSetsUpTheOwnLoginBeforeTheSummary(t *testing.T) {
 	}
 	inOrder(t, o.text(), "PHASE tacacs upgrade finish", "OWN LOGIN", rule+"\n  ")
 	got = nil
-	if code := upgrade(o, "-y"); code != 1 || len(got) != 0 {
-		t.Errorf("upgrade -y: exit %d, %+v", code, got)
+	if code := upgrade(o, "--yes"); code != 1 || len(got) != 0 {
+		t.Errorf("upgrade --yes: exit %d, %+v", code, got)
 	}
 }

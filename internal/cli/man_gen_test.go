@@ -287,6 +287,10 @@ var manFlagOverrides = map[string]string{
 	"device config forget --all":         "Every record, and the stored sections of every device (one of a device that is no longer registered too).",
 	"device config pull --server":        "The address the devices are told to authenticate against, for devices behind a translating firewall (not stored).",
 	"device config pull --source":        "The address this server reaches the devices from (not stored).",
+	"device config pull --timing":        "After the summary, print how long each phase took for each device (connect, login, session, read, compare, record: a phase the device did not reach is left out; one that failed shows the time it was in) and its total, then the slowest device. With --json each device's object has a \"timings\" object (the steps in order with their milliseconds, and the total) and the summary object names the slowest device. Nothing is stored.",
+	"device config diff --timing":        "With --pull: after the summary, print how long each phase of the pull took for each device, as 'device config pull --timing' does; with --json each device's object has the \"timings\" object, and the slowest device's says so (\"slowest\": true).",
+	"device config plan --timing":        "With --pull: print how long each phase of the pull took for each device, as 'device config pull --timing' does, on standard error (with --json one \"timings\" object there, with the devices and the slowest); standard output stays the plan.",
+	"device config apply --timing":       "After the summary, print how long each phase took for each device over the whole run (the pull of --pull, the check and the apply: connect, login, session, preflight, read, load, check, commit, verify, confirm, record; a phase that was not reached is left out, and one that failed shows the time it was in) and its total, then the slowest device. With --json each device's object of a phase has a \"timings\" object and the summary object names the slowest device. Nothing is stored.",
 	"device config diff --server":        "The address the devices are told to authenticate against (with --pull; not stored).",
 	"device config diff --source":        "The address this server reaches the devices from (with --pull; not stored).",
 	"device config plan --server":        "The address the devices are told to authenticate against, for devices behind a translating firewall (not stored).",
@@ -312,8 +316,8 @@ var manFlagOverrides = map[string]string{
 	"device config apply --json":         "One object per device and phase, then the summary; the review goes to standard error.",
 	"device config apply --exit-code":    "With --check: exit 2 when a device needs a change (and none failed).",
 	"device config apply --pull":         "Read the devices first, as 'device config pull' does (over device.config.transport), with the same password; a device whose pull fails is not checked, and --stale and --differs select from the fresh records.",
-	"device config apply -y":             "Answer the review (only with --confirmed: every shape is one an earlier apply confirmed; no terminal needed).",
-	"device config shapes -y":            "(seed) Answer the question: file the shapes as confirmed on your word.",
+	"device config apply --yes":          "Answer the review (only with --confirmed: every shape is one an earlier apply confirmed; no terminal needed).",
+	"device config shapes --yes":         "(seed) Answer the question: file the shapes as confirmed on your word.",
 	"device config shapes --json":        "(list) One object per shape: its state, devices, confirmations and the nearest confirmed shape.",
 	"device list --name":                 "Only names that contain the text (a comma list: any of them).",
 	"device list --ip":                   "Only addresses equal to, inside, or containing it (an address, a CIDR or a text; a comma list).",
@@ -323,8 +327,8 @@ var manFlagOverrides = map[string]string{
 	"device ssh -Y":                      "Forward X11 to this server's display (trusted, as ssh -Y).",
 	"ssh -X":                             "Forward X11 to this server's display (untrusted, as ssh -X).",
 	"ssh -Y":                             "Forward X11 to this server's display (trusted, as ssh -Y).",
-	"host forget -y":                     "(forget) Forget the host without asking.",
-	"host rename -y":                     "(rename) Answer both questions yes: replace what an earlier host of the new name left, and rename the host's own linux-<name> scope.",
+	"host forget --yes":                  "(forget) Forget the host without asking.",
+	"host rename --yes":                  "(rename) Answer both questions yes: replace what an earlier host of the new name left, and rename the host's own linux-<name> scope.",
 }
 
 // capitalizeDesc starts the sentence of a description with a capital: the
@@ -391,13 +395,14 @@ var manKeyDocs = map[string]struct{ verb, desc string }{
 	"linux.uid_min":                          {setWith("config linux uid-range"), "First UID and GID of the Linux accounts tacctl makes, one range for every host."},
 	"linux.uid_max":                          {setWith("config linux uid-range"), "Last UID and GID of that range."},
 	"server.addresses":                       {setWith("server addresses"), "The address devices and hosts reach this server at, a list that holds one address for now; the enrolment of this server and install record it (detected from the interface with the default route when none is recorded and none is given), and server addresses changes it."},
+	"server.name":                            {setWith("server name"), "The name of this server in the console prompt and its notices, in place of the host name; unset: the host name."},
 	"linux.engineer_sudo":                    {setWith("config linux engineer-sudo"), "The commands tac-engineer may run through sudo on enrolled hosts other than this server; unset: every command."},
 	"mgmt_acl.names.cisco":                   {setWith("config mgmt-acl cisco-name"), "Name of the ACL config cisco emits."},
 	"mgmt_acl.names.juniper":                 {setWith("config mgmt-acl juniper-name"), "Name of the filter config juniper emits."},
 	"mgmt_acl.permits":                       {setWith("config mgmt-acl add", "config mgmt-acl remove"), "The entries the management ACL and filter permit: a CIDR, or a CIDR with its services (10.0.0.0/8:tcp/22,udp/161,icmp)."},
 	"backends.enabled":                       {setWith("backend enable", "backend disable"), "The backends that serve the model, in render and restart order."},
 	"backends.tacacs.level":                  {setWith("config loglevel"), "Log level of tacquito."},
-	"backends.tacacs.metrics_address":        {setWith("config metrics address"), "Where tacquito's Prometheus exporter listens."},
+	"backends.tacacs.metrics_address":        {setWith("server metrics address"), "Where tacquito's Prometheus exporter listens."},
 	"snmp.version":                           {setWith("config snmp community", "config snmp v3-user"), "SNMP version of the name lookup of device add and device check; unset: no lookup."},
 	"snmp.port":                              {setWith("config snmp port"), "UDP port of the agents."},
 	"snmp.timeout":                           {setWith("config snmp timeout"), "Seconds to wait for an answer (one retry)."},
@@ -410,6 +415,7 @@ var manKeyDocs = map[string]struct{ verb, desc string }{
 	"device.apply.confirm_timeout":           {setWith("config devices apply-confirm-timeout"), "Minutes of the commit confirmed of every device config apply: the device undoes the change by itself after that long unless the confirming commit is typed."},
 	"device.apply.pause":                     {setWith("config devices apply-pause"), "Seconds device config apply waits between the devices of a batch after the canary; 0: none."},
 	"device.apply.transport":                 {setWith("config devices apply-transport"), "How device config apply reaches a Junos device: NETCONF where the last read found it answering and the login may commit, else the command line (auto), the command line only (cli), or NETCONF only (netconf)."},
+	"device.timeout_scale":                   {setWith("config devices timeout-scale"), "The timing scale of every device: a whole number from 1 to 10 that multiplies each network timing used to reach a device (the connect and handshake of the sessions, the host-key scans, the SNMP timeout up to its maximum, the per-device time of a pull or an apply within its bounds); a scope's and a device's own win."},
 	"privileges.<group>":                     {setWith("group privilege"), "The Cisco priv-exec commands the group's level may run; unset: the shipped list."},
 	"commands.<group>":                       {setWith("group commands"), "The group's command rules, in order, ending in the catch-all; unset: the shipped rules."},
 	"aaa.order.<scope>":                      {setWith("scope aaa-order"), "Order of the methods in the Cisco aaa lines and the Junos authentication-order the scope's configurations emit."},
@@ -422,7 +428,7 @@ var manKeyDocs = map[string]struct{ verb, desc string }{
 	"scope_mgmt_acl.names.juniper.<scope>":   {setWith("scope mgmt-acl"), "The scope's own filter name, in place of mgmt_acl.names.juniper."},
 	"scope_mgmt_acl.permits.<scope>":         {setWith("scope mgmt-acl"), "The scope's own permitted entries (a CIDR, or a CIDR with its services), in place of mgmt_acl.permits."},
 	"scope_mgmt_acl.mode.<scope>":            {setWith("scope mgmt-acl"), "The mode of the scope's Junos management filter: strict accepts every protocol from the permit list and has no default-accept term; unset: ssh-only, the filter that restricts ssh, NETCONF and SNMP. Only strict is stored."},
-	"listeners.<backend>.<name>":             {setWith("config listen"), "Where a backend's daemon listens; the built-in listeners can be changed and reset, not removed."},
+	"listeners.<backend>.<name>":             {setWith("server listen"), "Where a backend's daemon listens; the built-in listeners can be changed and reset, not removed."},
 	"junos.<group>.deny_commands":            {setWith("group junos"), "POSIX extended regular expressions of the commands the Junos class of the group may not run."},
 	"junos.<group>.deny_configuration":       {setWith("group junos"), "POSIX extended regular expressions of the configuration statements the Junos class may not touch."},
 	"wti_level.<group>":                      {setWith("group edit", "group add"), "The WTI access level of the group, in place of the one its priv-lvl band gives."},
@@ -447,6 +453,7 @@ var manKeyDocs = map[string]struct{ verb, desc string }{
 	"netconf_scope.<scope>.state":            {setWith("scope netconf"), "The NETCONF service of the scope's Junos devices: enable or disable (unset: leave, nothing is planned or compared)."},
 	"netconf_scope.<scope>.connection_limit": {setWith("scope netconf"), "The connection limit of an enabled NETCONF service (1 to 250); unset: none stated."},
 	"netconf_scope.<scope>.rate_limit":       {setWith("scope netconf"), "The rate limit of an enabled NETCONF service (1 to 250); unset: none stated."},
+	"timeout_scale_scope.<scope>":            {setWith("scope timeout-scale"), "The timing scale of the scope's devices, 1 to 10, in place of device.timeout_scale; a device's own wins."},
 	"snmp_scope.<scope>.clients":             {setWith("scope snmp"), "The SNMP clients the scope's walkthroughs allow (the server's own address first and a final deny are added when rendered, not stored)."},
 }
 
@@ -464,6 +471,7 @@ var manPlaceholders = map[string]string{
 	"cisco.source_interface.": "<scope>",
 	"scope_auth_method.":      "<scope>", "scope_mgmt_acl.names.cisco.": "<scope>",
 	"scope_mgmt_acl.names.juniper.": "<scope>", "scope_mgmt_acl.permits.": "<scope>", "scope_mgmt_acl.mode.": "<scope>",
+	"timeout_scale_scope.": "<scope>",
 }
 
 // manTypeText is how the page names a rule's type.
@@ -505,6 +513,8 @@ func manTypeText(r conf.Rule) string {
 		return "non-empty list of absolute command paths"
 	case conf.TypeServerAddresses:
 		return "list of one IP address (not a host name, unspecified, loopback, link-local, broadcast or IPv4-mapped IPv6)"
+	case conf.TypeServerName:
+		return "name of 1 to 63 characters in lower case (a letter, then letters, digits or hyphens, not ending in a hyphen); not unset"
 	case conf.TypeBreakGlassList:
 		return "list of name:role entries, role one of " + strings.Join(conf.BreakGlassRoles, ", ") + ", at most " + strconv.Itoa(conf.MaxBreakGlassUsers)
 	case conf.TypeLockdownGroups:

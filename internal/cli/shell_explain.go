@@ -540,14 +540,12 @@ func alignRowsWith(rows [][2]string, paintLeft func(string) string) string {
 }
 
 // paintUsage is a usage row's left column in the palette of the lists: the
-// verb (the command's name at the top level, bright white) and the options
-// and fixed words after it (teal); placeholders as they are.
-func paintUsage(left string, top bool) string {
+// verb (the command's name at the top level) and the options and fixed
+// words after it, all teal; placeholders as they are.
+func paintUsage(left string) string {
 	toks := strings.Split(left, " ")
 	for i, t := range toks {
 		switch {
-		case i == 0 && top:
-			toks[i] = ui.Paint(ui.BrightWhite, t)
 		case i == 0, isOptionWord(t), isFixedToken(t):
 			toks[i] = ui.Paint(ui.Teal, t)
 		}
@@ -556,7 +554,7 @@ func paintUsage(left string, top bool) string {
 }
 
 // paintOptions is the left column of an option row: its spellings and
-// teal, the value it takes as it is ('-y, --yes', '--hash <hash>').
+// teal, the value it takes as it is ('--yes', '--hash <hash>').
 func paintOptions(left string) string {
 	toks := strings.Split(left, " ")
 	for i, t := range toks {
@@ -568,7 +566,7 @@ func paintOptions(left string) string {
 }
 
 // isOptionWord reports whether a word of a usage row is a flag
-// ('--hash', '-y', '[--long]').
+// ('--hash', '--yes', '[--long]').
 func isOptionWord(t string) bool {
 	return strings.HasPrefix(t, "-") || strings.HasPrefix(t, "[-")
 }
@@ -627,7 +625,7 @@ func (inv *invocation) shellExplain(root *cobra.Command) func([]string) (string,
 			lines = append(lines, [2]string{r.Left, r.Desc})
 		}
 		if len(lines) > 0 {
-			b.WriteString("Usage:\n" + alignRowsWith(lines, func(l string) string { return paintUsage(l, len(path) == 1) }))
+			b.WriteString("Usage:\n" + alignRowsWith(lines, paintUsage))
 		}
 		var flags [][2]string
 		for _, f := range spec.Flags {

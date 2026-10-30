@@ -273,7 +273,7 @@ func TestShapesListAndSeed(t *testing.T) {
 	if out := run("", "shapes"); sb.code != 0 || !strings.Contains(out, "None. A check or an apply") {
 		t.Errorf("empty: %d %q", sb.code, out)
 	}
-	run("", "shapes", "seed", "sw-j", "-y")
+	run("", "shapes", "seed", "sw-j", "--yes")
 	if sb.code != 1 || !strings.Contains(sb.err.String(), "has no check or apply on record that found a change") {
 		t.Errorf("seed nothing: %d %q", sb.code, sb.err.String())
 	}
@@ -315,7 +315,7 @@ func TestShapesListAndSeed(t *testing.T) {
 		t.Errorf("no audit line: %q", sb.runner.Argvs())
 	}
 	// again: already confirmed, nothing asked
-	if out := run("", "shapes", "seed", "sw-j", "-y"); sb.code != 0 || !strings.Contains(out+sb.out.String(), "already") && !strings.Contains(plain(sb.err.String()), "confirmed on those devices already") {
+	if out := run("", "shapes", "seed", "sw-j", "--yes"); sb.code != 0 || !strings.Contains(out+sb.out.String(), "already") && !strings.Contains(plain(sb.err.String()), "confirmed on those devices already") {
 		t.Errorf("again: %d %q %q", sb.code, out, sb.err.String())
 	}
 	if out := run("", "shapes", "list", "--show", hash[:5]); sb.code != 0 || !strings.Contains(out, "(seeded)") || !strings.Contains(out, "[aaa]") {

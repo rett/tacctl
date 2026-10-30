@@ -178,7 +178,8 @@ func (inv *invocation) runConsoleSession(args []string) error {
 	case console.ModeCommand:
 		r.mode, r.line = shellCommandMode, line
 	case console.ModeInteractive:
-		host := shortHostname()
+		// the name of the server setting, else the host name
+		host := or(cs.pol.Name, shortHostname())
 		r.mode, r.tty, r.idle, r.prompt = shellInteractive, f, cs.pol.Idle, host+"> "
 		if lock != nil {
 			inv.echo("tacctl console on " + host + ". This session is logged.")

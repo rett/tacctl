@@ -355,7 +355,7 @@ func TestRotateRefusals(t *testing.T) {
 		{[]string{"web1", "rotate", "deploy2", "--key", filepath.Join(hs.dir, "keys"), "--yes"}, "is not a regular file"},
 		{[]string{"web1", "rotate", "deploy2", "--key"}, "--key needs a file."},
 		{[]string{"web1", "rotate", "deploy2", "--key", key, "--bogus"}, "Unknown option: '--bogus'"},
-		{[]string{"web1", "bogus", "deploy2", "--key", key}, "The only one is 'rotate'."},
+		{[]string{"web1", "bogus", "deploy2", "--key", key}, "Unknown subcommand: 'bogus'\nRun 'tacctl host provisioner -h' for usage."},
 		{[]string{"web1", "rotate"}, "Usage: tacctl host provisioner <name> rotate <user>"},
 		{nil, "Usage: tacctl host provisioner <name> rotate <user>"},
 	} {

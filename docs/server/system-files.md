@@ -76,7 +76,7 @@ No file the FreeRADIUS package installed is edited, moved or unlinked.
 
 ## Important Notes
 
-- **IPv4 by default:** TACACS+ listens on IPv4 only (`tcp`), RADIUS on `udp`. Switching a listener to `tcp6`/`udp6` enables dual-stack, so IPv4 clients connect with mapped addresses (e.g., `::ffff:10.1.0.1`) that do not match IPv4 prefix rules — effectively bypassing prefix-based access control. Use `tacctl config listen tcp6 [::]:49` only if you also add IPv6 prefix rules; the command prompts for confirmation first.
+- **IPv4 by default:** TACACS+ listens on IPv4 only (`tcp`), RADIUS on `udp`. Switching a listener to `tcp6`/`udp6` enables dual-stack, so IPv4 clients connect with mapped addresses (e.g., `::ffff:10.1.0.1`) that do not match IPv4 prefix rules — effectively bypassing prefix-based access control. Use `tacctl server listen tcp6 [::]:49` only if you also add IPv6 prefix rules; the command prompts for confirmation first.
 - **Shared secrets:** Use hex-only secrets (`openssl rand -hex 16`) to avoid quoting issues on devices. A scope's secret is shared by TACACS+ and RADIUS.
 - **Juniper template users are required:** Every `local-user-name` value (`RO-CLASS`, `OP-CLASS`, `RW-CLASS`) must have a matching local user on each Juniper device. Without this, authentication succeeds but Junos rejects the login.
 - **Config edits:** Generated files are overwritten by tacctl and a hand edit blocks every change until it is resolved (see [Drift](store-and-configs.md#the-store-and-generated-configs)). Use tacctl commands; `tacctl` handles service restarts.

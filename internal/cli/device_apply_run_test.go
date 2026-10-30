@@ -165,7 +165,7 @@ func (b *applyBox) seed(name string) {
 	if code, out, errs := b.apply(name, "--check"); code != 0 {
 		b.t.Fatalf("check: %d\n%s\n%s", code, out, errs)
 	}
-	b.sb.cfgRun("", []string{"device", "config", "shapes", "seed", name, "-y"}, nil, "SUDO_USER=alice")
+	b.sb.cfgRun("", []string{"device", "config", "shapes", "seed", name, "--yes"}, nil, "SUDO_USER=alice")
 	if b.sb.code != 0 {
 		b.t.Fatalf("seed: %d %s", b.sb.code, b.sb.err.String())
 	}

@@ -2,10 +2,14 @@ package cli
 
 // An unknown top-level word (0.2.18 D277): one error line that names it, a
 // suggestion when one fits, and the pointer to the list of commands; not
-// the whole usage.
+// the whole usage. A word below the first that is none of the sub-commands
+// of its command (0.2.22) is answered the same way (unknownSub): the error,
+// the closest verbs of that level, and one line that points at the help of
+// the command.
 
 import (
 	"io"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -23,6 +27,178 @@ func notACommand(root *cobra.Command, w string) bool {
 		return false
 	}
 	return child(root, w) == nil
+}
+
+// unknownBelow is the check of the whole command line before sudo: it walks
+// the command tree with the words typed, and when a command that has
+// sub-commands is given a word that is none of them it gives the path of
+// that command and the word. It reads the fixed words of the tree only, never
+// a name of the store (no word after a command without sub-commands is looked
+// at, so a device, host or user name, a flag's value and a name that looks
+// like a verb are never taken), and it answers nothing where it could be
+// wrong: a word that starts with '-' (a flag may come before the verb),
+// 'help', an empty word, a hidden command, the first word (notACommand's) and
+// the words that run as the user (noSudo). A verb that exists but that the
+// caller's tier cannot run is a sub-command here: sudo and the tier gate
+// answer it as before.
+func unknownBelow(root *cobra.Command, words []string) (path []string, sub string, ok bool) {
+	if len(words) < 2 || noSudo[words[0]] {
+		return nil, "", false
+	}
+	cmd := root
+	for i, w := range words {
+		if next := child(cmd, w); next != nil {
+			if next.Hidden {
+				return nil, "", false
+			}
+			cmd, path = next, append(path, next.Name())
+			continue
+		}
+		if i == 0 || len(cmd.Commands()) == 0 || !plainWord(w) {
+			return nil, "", false
+		}
+		return path, w, true
+	}
+	return nil, "", false
+}
+
+// unknownSub is the answer of a command to a word sub that is none of its
+// sub-commands, whichever file dispatches it: the error line, the closest
+// verbs of that level, one line that points at the help of the command, exit
+// 1; not the usage. The command is the deepest one the words typed name, so a
+// verb that dispatches a word after a name ('scope secret <scope> <verb>')
+// names itself. verbs are the words of the level where they are not
+// sub-commands of the tree; none, they are its sub-commands.
+func (inv *invocation) unknownSub(sub string, verbs ...string) error {
+	return inv.unknownSubNote("", sub, verbs...)
+}
+
+// unknownSubNote is unknownSub for a verb whose error line says more than
+// that the word is unknown: note follows the word on the same line.
+func (inv *invocation) unknownSubNote(note, sub string, verbs ...string) error {
+	root := inv.root
+	if root == nil {
+		root = newRoot(inv)
+	}
+	_, path, _ := shellCommand(root, inv.app.Args)
+	return inv.unknownSubAtNote(root, path, sub, verbs, note)
+}
+
+// unknownSubAt is unknownSub for the command at path (the words after
+// 'tacctl'); the sudo re-exec and the shell call it before sudo with the path
+// unknownBelow gives.
+func (inv *invocation) unknownSubAt(root *cobra.Command, path []string, sub string, verbs []string) error {
+	return inv.unknownSubAtNote(root, path, sub, verbs, "")
+}
+
+func (inv *invocation) unknownSubAtNote(root *cobra.Command, path []string, sub string, verbs []string, note string) error {
+	inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'" + note)
+	if s := subSuggestions(root, path, sub, verbs, inv.viewFilter(root)); len(s) > 0 {
+		_, _ = io.WriteString(inv.app.Out.Stderr, "Did you mean: "+strings.Join(s, ", ")+"?\n")
+	}
+	if len(path) == 0 {
+		_, _ = io.WriteString(inv.app.Out.Stderr, "Run 'tacctl' for the commands.\n")
+	} else {
+		_, _ = io.WriteString(inv.app.Out.Stderr, "Run 'tacctl "+strings.Join(path, " ")+" -h' for usage.\n")
+	}
+	return exit(1)
+}
+
+// viewFilter tells whether the caller's tier can run the command at a path,
+// as far as the tier is known: in the shell and the console it is the view of
+// the lists, in a command run under sudo the tier the gate held the caller
+// to, and before sudo (nothing is read then) it is unknown, so everything is
+// shown.
+func (inv *invocation) viewFilter(root *cobra.Command) func([]string) bool {
+	eff, all, active := inv.currentView()
+	if !active {
+		eff, all = viewOf(inv.callerTier)
+	}
+	return func(p []string) bool { return viewShows(root, eff, all, p) }
+}
+
+// plainWord reports whether w is a word a command with sub-commands answers
+// as an unknown one: not empty, not 'help' and not a flag. A command whose
+// usage was its whole answer to anything else keeps that for those words (a
+// flag may come before the verb: 'log --backend tacacs tail').
+func plainWord(w string) bool { return w != "" && w != "help" && !strings.HasPrefix(w, "-") }
+
+// specVerbs are the verbs a table of Specs holds, by name.
+func specVerbs(specs map[string]Spec) []string {
+	out := make([]string, 0, len(specs))
+	for v := range specs {
+		out = append(out, v)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// choiceWord is a word of a choice the verb's first argument names
+// ('list|seed').
+var choiceWord = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+
+// subSuggestions are the commands a mistyped word w below the command at
+// path may have meant, at most maxSuggestions. A word that is a verb further
+// down the command (a sub-command of one of its sub-commands, or a word of
+// the choice a verb's first argument names: 'device config seed' is
+// 'device config shapes seed') is answered with the commands that have it,
+// the shorter paths first, then by name; else the sub-commands within two
+// edits of it (closestWords), by name. The commands the caller's tier cannot
+// run are not named (shown). The words of a leaf command's own verbs (verbs)
+// are given as they are: the command that dispatches them is the one typed.
+func subSuggestions(root *cobra.Command, path []string, w string, verbs []string, shown func([]string) bool) []string {
+	if w == "" || strings.HasPrefix(w, "-") {
+		return nil
+	}
+	if len(verbs) > 0 {
+		return closestWords(w, verbs)
+	}
+	node, _, _ := shellCommand(root, path)
+	var below [][]string
+	var walk func(c *cobra.Command, p []string)
+	walk = func(c *cobra.Command, p []string) {
+		for _, sub := range c.Commands() {
+			q := append(slices.Clone(p), sub.Name())
+			if sub.Hidden || !shown(q) {
+				continue
+			}
+			if sub.Name() == w && len(q) > len(path)+1 {
+				below = append(below, q)
+			}
+			if spec, ok := specFor(q); ok && len(spec.Args) > 0 {
+				if words := strings.Split(spec.Args[0], "|"); len(words) > 1 && slices.Contains(words, w) &&
+					!slices.ContainsFunc(words, func(x string) bool { return !choiceWord.MatchString(x) }) {
+					below = append(below, append(slices.Clone(q), w))
+				}
+			}
+			walk(sub, q)
+		}
+	}
+	walk(node, slices.Clone(path))
+	prefix := strings.Join(append([]string{"tacctl"}, path...), " ") + " "
+	var out []string
+	if len(below) > 0 {
+		slices.SortFunc(below, func(a, b []string) int {
+			if len(a) != len(b) {
+				return len(a) - len(b)
+			}
+			return strings.Compare(strings.Join(a, " "), strings.Join(b, " "))
+		})
+		for _, q := range below[:min(len(below), maxSuggestions)] {
+			out = append(out, "tacctl "+strings.Join(q, " "))
+		}
+		return out
+	}
+	var names []string
+	for _, sub := range node.Commands() {
+		if !sub.Hidden && shown(append(slices.Clone(path), sub.Name())) {
+			names = append(names, sub.Name())
+		}
+	}
+	for _, n := range closestWords(w, names) {
+		out = append(out, prefix+n)
+	}
+	return out
 }
 
 // maxSuggestions is how many commands a suggestion names at most.
@@ -86,21 +262,31 @@ func commandSuggestions(root *cobra.Command, w string) []string {
 		}
 		return out
 	}
+	var names []string
+	for _, c := range root.Commands() {
+		if !c.Hidden {
+			names = append(names, c.Name())
+		}
+	}
+	return closestWords(w, names)
+}
+
+// closestWords are the words of cands closest to w within two edits (letter
+// case of w ignored), at most maxSuggestions, by name. A candidate as far
+// from w as from nothing is not close.
+func closestWords(w string, cands []string) []string {
 	best, out := 3, []string(nil)
 	lw := strings.ToLower(w)
-	for _, c := range root.Commands() {
-		if c.Hidden {
-			continue
-		}
-		d := editDistance(lw, c.Name())
-		if d > 2 || (d >= len(lw) && lw != c.Name()) {
+	for _, c := range cands {
+		d := editDistance(lw, c)
+		if d > 2 || (d >= len(lw) && lw != c) {
 			continue // too far, or as far from w as from nothing
 		}
 		switch {
 		case d < best:
-			best, out = d, []string{c.Name()}
+			best, out = d, []string{c}
 		case d == best:
-			out = append(out, c.Name())
+			out = append(out, c)
 		}
 	}
 	slices.Sort(out)

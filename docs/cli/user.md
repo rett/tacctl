@@ -14,13 +14,12 @@ user show <name>
 user add <name> <group>
 
     Add a new user; lands in default scope. The name is lower case (`Names are lower case: use
-    'alice'.`): lower-case letters, digits, `_` and `-`, and a period between two of them
-    (`alice.smith`): never first, never last, never two in a row (`.alice`, `alice.`,
-    `alice..smith`, `.` and `..` are refused). Reserved names `root` and `tacquito` are
-    rejected (they collide with OS accounts tacquito resolves locally). A name with a period is
-    no Linux account name: `host sync` skips it with a warning, so the user has no account on
-    enrolled hosts and logs in at devices only (see "A period in a name" below). A new user must
-    change the password at the first login to this server (see "A required password change").
+    'alice'.`): lower-case letters, digits, `_` and `-`. A period is refused (`Username must
+    contain only letters, numbers, underscores and hyphens (a period cannot be part of a Linux
+    account name).`): every user has an account on the tacctl server. Reserved names `root` and
+    `tacquito` are rejected (they collide with OS accounts tacquito resolves locally). A new user
+    must change the password at the first login to this server (see "A required password
+    change").
 
 user add <name> <group> --no-change-required
 
@@ -75,28 +74,23 @@ user enable <name>
 
 user rename <old> <new>
 
-    Rename a user; the new name is lower case, with periods as for `user add`. The user's `console
-    system-shell user` setting moves to the new name, and the command says so. Changing only the
-    spelling (`user rename Alice alice`) fixes a name from before. Devices match the typed login
-    name exactly, so the rename changes what the person types at the device. The user keeps the
-    Linux UID: the line of the old name in `linux-uids` becomes the new name's, in place, and the
-    command says `UID <uid> follows the rename (linux-uids).` With enrolled hosts that list the user
-    it also says that the next `host sync` renames the account there by its UID, home kept where it
-    is. A user with no line is renamed as before. A new name that already has a line keeps its own
-    number, the ledger is left alone and a warning says that hosts remove the old account and create
-    the new one. If the ledger cannot be written after the rename, the command names the snapshot to
-    restore and exits 1. The move is made under the ledger's lock: a `host sync` builds its script
-    from the ledger under the same lock, so it sends the names as they were before the rename or
-    after it, never a mix; an account created under the old name is renamed at that host's next
-    sync. If the ledger is locked by another command for 30 seconds, the rename stops at the
-    snapshot with nothing changed (see [Consistent UIDs and GIDs](../hosts/ids-and-groups.md)). A
-    user that has a UID in `linux-uids`, or an account on an enrolled host, is not renamed to a name
-    with a period: the next sync would remove the account. The command says so, changes nothing and
-    names the two ways forward: a name without a period, or a new user (`user remove`, then
-    `host sync --all`, which removes the accounts, then `user add` under the new name with the
-    group and scopes it prints), which gets a new password and no UID (the old number stays
-    reserved). A user whose name has a period has no Linux account on any host, the tacctl server
-    included, so no console login.
+    Rename a user; the new name is lower case and follows the rules of `user add`. The user's
+    `console system-shell user` setting moves to the new name, and the command says so. Changing
+    only the spelling (`user rename Alice alice`) fixes a name from before. Devices match the
+    typed login name exactly, so the rename changes what the person types at the device. The user
+    keeps the Linux UID: the line of the old name in `linux-uids` becomes the new name's, in
+    place, and the command says `UID <uid> follows the rename (linux-uids).` With enrolled hosts
+    that list the user it also says that the next `host sync` renames the account there by its
+    UID, home kept where it is. A user with no line is renamed as before. A new name that already
+    has a line keeps its own number, the ledger is left alone and a warning says that hosts remove
+    the old account and create the new one. If the ledger cannot be written after the rename, the
+    command names the snapshot to restore and exits 1. The move is made under the ledger's lock: a
+    `host sync` builds its script from the ledger under the same lock, so it sends the names as
+    they were before the rename or after it, never a mix; an account created under the old name is
+    renamed at that host's next sync. If the ledger is locked by another command for 30 seconds,
+    the rename stops at the snapshot with nothing changed (see [Consistent UIDs and
+    GIDs](../hosts/ids-and-groups.md)). A user whose name has a period (see "A name with a period"
+    below) is renamed to a name that has none.
 
 user move <name> <group>
 
@@ -135,25 +129,27 @@ device. A user kept off the server is disabled (`user disable`) or in a group
 of tier none. When a command next writes a user's record, a stored copy of the
 server's own scope (from an install before 0.2.21) is dropped from it.
 
-**A period in a name.** A user name may hold periods between its parts (`alice.smith`, `a.b-c_d`):
-letters, digits, `_` and `-` in runs joined by single periods. It never starts or ends with a period,
-never has two in a row, and is never only periods; the length and the reserved names (`root`,
-`tacquito`) are as before. Group, scope and device-class names are not changed: a Juniper class name
-has the shape a user name had (letters, digits, `_` and `-`) and still has it, so a class cannot hold
-a period. What a period means elsewhere:
+**A name with a period.** A user name is letters, digits, `_` and `-`. A period cannot be part of a
+Linux account name, and every user has an account on the tacctl server. A store from 0.2.20 or 0.2.21
+can still hold a name with periods; it keeps loading, so the user can be shown, listed, disabled,
+moved, given scopes, removed and renamed. `user rename <old> <new>` is the way out, and the new name
+has no period. Meanwhile:
 
-- *Linux accounts.* A Linux account name here is lower-case letters, digits, `_` and `-`
-  ([Account lifecycle](../hosts/account-lifecycle.md)), so `host sync` and `host enroll` skip a user
-  with a period (`Skipping 'alice.smith': not a valid Linux account name ...`), `host show` lists it
-  as skipped, and no UID is given to it. The user logs in at devices over TACACS+ or RADIUS only.
-  `config linux uid <user> <uid>` refuses such a user, and `user rename` refuses to give a name with
-  a period to a user that has a UID or an account on a host.
-- *Rendered configuration.* The user is written to `tacquito.yaml` as a quoted name, and its
-  password authenticator gets an anchor with each period written `_dot_` (YAML anchors cannot hold a
-  period); the FreeRADIUS `users` file takes the name as it is.
-- *Older releases.* A release before 0.2.20 refuses a store with such a name, so every
-  `tacctl rollback` target is refused (the dry run too, nothing changed) while the store has a user
-  with a period. The refusal lists each with the way out: `tacctl user rename <name> <new-name>`.
+- `config validate` reports each such user as an error with the command that renames it
+  (`tacctl user rename alice.smith <new-name>`), and `config validate --fix-names` does not offer a
+  name with a period.
+- `tacctl upgrade` refuses and names each user with the rename command. Rename such a user
+  *before* upgrading from 0.2.20 or 0.2.21 (`user rename` works there): the old release's upgrade
+  has already replaced `tacctl` and the tacquito build when the new `tacctl` refuses, and says so
+  (the store, the configuration and the services are not changed); after the rename, `tacctl
+  upgrade` finishes it.
+- `tacctl rollback` to any target but 0.2.21 and 0.2.20 (which read such a name) is refused (the dry run too),
+  since the releases it goes to refuse the name; the refusal lists each user with the rename
+  command.
+- `tacctl passwd`, `user passwd` and `user require-password-change` refuse the name, and for a user
+  that stands add `rename it first: tacctl user rename <name> <new-name>`. `config linux uid <user>`
+  prints the number the ledger has for the user, if any, and `config linux uid <user> <uid>` is
+  refused. `host sync` skips the user with a warning (no account on enrolled hosts).
 
 **A required password change.** A user who must change the password can log in to the tacctl
 server only: every device refuses the user, as it refuses an unknown user, and every other enrolled
@@ -181,7 +177,8 @@ only when set.
   say so, since until then the user can neither log in nor change the password.
 - *A user must be able to change it.* The flag is not set, and the verb says why, for a user with no
   login on this server: the server is not enrolled (`host enroll --local`), the name is no Linux
-  account name (a period), or the user is disabled.
+  account name (a leftover name with a period), the user is disabled, the group has no priv-lvl, or,
+  for a server still registered in a scope it shares with devices, the user is not in that scope.
   `off` clears the flag of the user or of every user who has it, a superuser's included.
 - *Devices.* The TACACS+ and RADIUS configuration put the user in the scope this server is enrolled
   in (`host enroll --local`) and in no other, and only in the protocol of the method it is enrolled

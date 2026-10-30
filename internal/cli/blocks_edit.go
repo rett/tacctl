@@ -492,7 +492,7 @@ func findingLines(bc *blockCheck) []string {
 
 // --- the verb -----------------------------------------------------------------------
 
-// edit is 'edit <block> [-y]'.
+// edit is 'edit <block> [--yes]'.
 func (c *blockCtx) edit(block string, p Parsed) error {
 	inv := c.inv
 	if err := c.requireSuperuser("edit"); err != nil {
@@ -522,7 +522,7 @@ func (c *blockCtx) edit(block string, p Parsed) error {
 	case scopeShown:
 		inv.secretRead("block", c.scope+"/"+c.vendor+"/"+block)
 	}
-	return c.editFlow(block, seed, cur, "edit", "the edited text", p.Has("-y"))
+	return c.editFlow(block, seed, cur, "edit", "the edited text", p.Has("--yes"))
 }
 
 // editSeed is the text the editor opens: the file in force; for a block

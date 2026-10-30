@@ -353,7 +353,7 @@ func TestAdoptRefusals(t *testing.T) {
 		{[]string{"scope", "block", "lab", "juniper", "adopt", "prod-j", "snmp"}, "Device 'prod-j' is in scope 'prod', not in scope 'lab'"},
 		{[]string{"scope", "block", "lab", "juniper", "adopt", "lab-ios", "snmp"}, "'lab-ios' is not a Junos device"},
 		{[]string{"scope", "block", "lab", "juniper", "adopt", "nosuch", "snmp"}, "Device 'nosuch' not found"},
-		{[]string{"scope", "block", "lab", "juniper", "adopt", "jsw1.lab.example.net"}, "Usage: tacctl scope block lab juniper adopt <device> <block> [-y]"},
+		{[]string{"scope", "block", "lab", "juniper", "adopt", "jsw1.lab.example.net"}, "Usage: tacctl scope block lab juniper adopt <device> <block> [--yes]"},
 		{[]string{"scope", "block", "lab", "juniper", "adopt", "jsw1.lab.example.net", "firewall"}, ""},
 	} {
 		a.runAs("y\n", ed, c.args...)

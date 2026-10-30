@@ -100,6 +100,34 @@ print("fine")' <<< "$output"
     assert_output "fine"
 }
 
+@test "pull --timing: the phases of each device, the total and the slowest; nothing without it" {
+    fakedev_start "$JDIR"
+    fakedev_register lab-a 192.168.1.21 juniper lab-b 192.168.1.22 juniper
+    fakedev_serve "$JDIR" juniper lab
+    pull --all --concurrency 1
+    assert_success
+    refute_output --partial "timing"
+    refute_output --partial "slowest"
+    pull --all --concurrency 1 --timing
+    assert_success
+    assert_output --partial "2 ok"
+    assert_line "  timing:"
+    assert_line --regexp '^    lab-a  connect [0-9.]+m?s  login [0-9.]+m?s  session [0-9.]+m?s  read [0-9.]+m?s  compare [0-9.]+m?s  record [0-9.]+m?s  total [0-9.]+m?s$'
+    assert_line --regexp '^    lab-b  connect '
+    assert_line --regexp '^  slowest: lab-[ab] \([0-9.]+m?s\)$'
+    pull --all --concurrency 1 --timing --json
+    assert_success
+    run python3 -c '
+import json, sys
+docs = [json.loads(l) for l in sys.stdin.read().splitlines()]
+steps = [s["step"] for s in docs[0]["timings"]["steps"]]
+assert steps == ["connect", "login", "session", "read", "compare", "record"], steps
+assert docs[0]["timings"]["total_ms"] >= sum(s["ms"] for s in docs[0]["timings"]["steps"]) >= 0, docs[0]
+assert docs[2]["summary"]["timings"]["slowest"] in ("lab-a", "lab-b"), docs[2]
+print("fine")' <<< "$output"
+    assert_output "fine"
+}
+
 @test "pull: a wrong password stops the batch at the first rejection and says so" {
     fakedev_start "$JDIR"
     fakedev_register lab-a 192.168.1.21 juniper lab-b 192.168.1.22 juniper lab-c 192.168.1.23 juniper
@@ -413,6 +441,20 @@ add_pull() {
     stub_cmd ssh-keyscan "echo '${addr} ${FAKEDEV_KEY}'"
     SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device add "$name" "$addr" --no-lookup "$@" --pull
     plain
+}
+
+@test "device add: a device ssh-keyscan reads nothing from is read by the built-in client" {
+    # ssh-keyscan prints nothing at all, as the real one does for a server
+    # that is slow to greet (and for a refused or filtered address); the
+    # built-in client reaches the fake device through TACCTL_TEST_DEVICE_DIAL.
+    stub_cmd ssh-keyscan
+    fakedev_start "$JDIR"
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device add slow-j 192.0.2.30 --vendor juniper --no-lookup
+    assert_success
+    plain
+    assert_output --partial "Host keys pinned (1)"
+    run grep -F "$FAKEDEV_KEY" "${TACCTL_STATE_DIR}/devices.yaml"
+    assert_success
 }
 
 @test "device add --pull: registers, then pulls the one device as the caller" {

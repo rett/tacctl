@@ -23,7 +23,6 @@ import (
 
 	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/model"
-	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/tier"
@@ -247,7 +246,7 @@ func (inv *invocation) userRequirePasswordChange(args []string) error {
 		return err
 	}
 	if target != "" {
-		if err := names.ValidateUsername(target); err != nil {
+		if err := inv.newUsername(target); err != nil {
 			return err
 		}
 	}

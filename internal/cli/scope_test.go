@@ -79,7 +79,7 @@ func TestScopeUsageAndUnknown(t *testing.T) {
 			t.Errorf("%q: %d %q", args, sb.code, got)
 		}
 	}
-	if got := sb.run("", []string{"scope", "bogus"}); got != usage {
+	if got := sb.run("", []string{"scope", "bogus"}); got != "" {
 		t.Errorf("bogus: %q", got)
 	}
 	sb.expect(1, "", "[ERROR] Unknown subcommand: 'bogus'")
@@ -427,6 +427,8 @@ func TestConfigFiltersAndMgmtACL(t *testing.T) {
 	sb.runFamily("y\n", configAllowCmd, "config", "allow", "clear")
 	sb.expect(0, "Cleared allow list (2 entries removed).", "")
 	sb.runFamily("", configDenyCmd, "config", "deny", "frob")
+	sb.expect(1, "", "Unknown subcommand: 'frob'\nRun 'tacctl config deny -h' for usage.")
+	sb.runFamily("", configDenyCmd, "config", "deny", "--frob")
 	sb.expect(1, "Usage: tacctl config deny list|add|remove|clear [<cidr>[,<cidr>...]]", "")
 	sb.runFamily("", configDenyCmd, "config", "deny", "help")
 	sb.expect(0, "tacctl config deny — connection IP ACL (deny list)", "")
@@ -448,7 +450,7 @@ func TestConfigFiltersAndMgmtACL(t *testing.T) {
 
 func TestGroupFamily(t *testing.T) {
 	sb := newSandbox(t, true)
-	for _, w := range []string{"", "help", "bogus"} {
+	for _, w := range []string{"", "help", "-x"} {
 		args := []string{"group"}
 		if w != "" {
 			args = append(args, w)
@@ -457,6 +459,10 @@ func TestGroupFamily(t *testing.T) {
 			t.Errorf("%q: %d", args, sb.code)
 		}
 	}
+	if got := sb.run("", []string{"group", "bogus"}); got != "" || sb.code != 1 {
+		t.Errorf("group bogus: %d %q", sb.code, got)
+	}
+	sb.expect(1, "", "Unknown subcommand: 'bogus'\nRun 'tacctl group -h' for usage.")
 	sb.run("", []string{"group", "add", "helpdesk", "7", "HD-CLASS"})
 	sb.expect(0, "Group 'helpdesk' added (Cisco priv-lvl 7, Juniper HD-CLASS).", "")
 	sb.run("", []string{"group", "add", "netops", "16", "NO"})

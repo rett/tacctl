@@ -164,7 +164,7 @@ func TestBashHelpKeyQuestionMark(t *testing.T) {
 		{"before the cursor only", "tacctl user show\x1b[D\x1b[D\x1b[D\x1b[D?", `HELP\[-- user\]`, "user show"},
 		{"a flag that waits for a value, last", "tacctl breakglass hold sw1 --reason ?", `HELP\[-- breakglass hold sw1 --reason\]`, "breakglass hold sw1 --reason "},
 		{"its value being typed", "tacctl breakglass hold sw1 --reason why?", `HELP\[-- breakglass hold sw1 --reason\]`, "breakglass hold sw1 --reason why"},
-		{"a flag of install", "tacctl install -y --branch ?", `HELP\[-- install -y --branch\]`, "install -y --branch "},
+		{"a flag of install", "tacctl install --yes --branch ?", `HELP\[-- install --yes --branch\]`, "install --yes --branch "},
 		{"a dash-dash earlier", "tacctl log search -- ?", `HELP\[-- log search --\]`, "log search -- "},
 		{"a dash-dash and a help flag", "tacctl log search -- --help ?", `HELP\[-- log search -- --help\]`, "log search -- --help "},
 		{"a help flag", "tacctl user add --help ?", `HELP\[-- user add --help\]`, "user add --help "},

@@ -60,10 +60,15 @@ type pullArgs struct {
 	transport   string
 	concurrency int
 	timeout     time.Duration
-	maxFailures int
-	showDiff    bool
-	json        bool
-	render      managedOptions
+	// timeoutTyped: --timeout was given, and wins over the timing scale.
+	timeoutTyped bool
+	maxFailures  int
+	showDiff     bool
+	json         bool
+	// timing is --timing: the time of each phase per device and the slowest
+	// device.
+	timing bool
+	render managedOptions
 }
 
 // deviceSettings are the device.config.* settings in force.
@@ -153,7 +158,7 @@ func differingSections(rs []devconf.SectionResult) []string {
 func (inv *invocation) pullArgsOf(p Parsed, verb string) (pullArgs, error) {
 	st := inv.deviceConfigSettings()
 	usage := "Usage: tacctl device config " + deviceConfigUse(verb)
-	a := pullArgs{transport: st.transport, timeout: st.timeout, showDiff: p.Has("--diff"), json: p.Has("--json")}
+	a := pullArgs{transport: st.transport, timeout: st.timeout, showDiff: p.Has("--diff"), json: p.Has("--json"), timing: p.Has("--timing")}
 	// 'apply' has a --transport of its own (auto, cli or netconf: how it
 	// writes, D150); the reads of a pull are the settings'.
 	if p.Has("--transport") && verb != "apply" {
@@ -180,7 +185,7 @@ func (inv *invocation) pullArgsOf(p Parsed, verb string) (pullArgs, error) {
 		if err != nil {
 			return a, inv.argErr("--timeout takes seconds per device, 10 to 600: '"+p.Value("--timeout")+"'", usage)
 		}
-		a.timeout = time.Duration(n) * time.Second
+		a.timeout, a.timeoutTyped = time.Duration(n)*time.Second, true
 	}
 	if p.Has("--max-failures") {
 		n, err := atoiIn(p.Value("--max-failures"), 1, 1<<20)
@@ -452,7 +457,7 @@ func (inv *invocation) deviceTarget(e devreg.Entry, user string, pw devssh.Passw
 	host, _ := devreg.SSHTarget(e)
 	return devssh.Target{
 		Host: host, Port: e.SSHPort(), User: user, HostKeys: e.HostKeys, Legacy: e.LegacySSH,
-		Password: pw, ConnectTimeout: devssh.DefaultConnectTimeout, Dialer: inv.deviceDialer(),
+		Password: pw, ConnectTimeout: devssh.ConnectTimeoutFor(inv.scaleOfEntry(e)), Dialer: inv.deviceDialer(),
 	}
 }
 
@@ -851,7 +856,8 @@ func (r *pullRun) pullDevice(ctx context.Context, e devreg.Entry, o *pullOutcome
 	// The second connection of a WTI read (the user directory) is the same
 	// login: same target, host keys and password, in memory. A local login
 	// is one connection: it has none (--login is Junos only).
-	second := func(ctx context.Context) (*devssh.Client, error) { return devssh.Dial(ctx, target) }
+	// (its connection is a part of the read, not a connection to time apart)
+	second := func(ctx context.Context) (*devssh.Client, error) { return devssh.Dial(batch.Quiet(ctx), target) }
 	var opts []devssh.CLIOption
 	mode := r.mode
 	if r.local != nil {
@@ -870,6 +876,7 @@ func (r *pullRun) pullDevice(ctx context.Context, e devreg.Entry, o *pullOutcome
 	if err != nil {
 		return r.failed(ctx, e, o, err)
 	}
+	batch.Mark(ctx, "read")
 	o.Transport, o.Facts = rd.Transport, rd.Facts
 	if rd.Unit != nil {
 		o.OS, o.Unit = rd.Version, rd.Unit
@@ -919,6 +926,7 @@ func (r *pullRun) pullDevice(ctx context.Context, e devreg.Entry, o *pullOutcome
 	if err != nil {
 		return r.failed(ctx, e, o, err)
 	}
+	batch.Mark(ctx, "compare")
 	o.Result, o.Sections, o.SecretsVisible = devconf.ResultOK, results, ext.SecretsVisible
 	// The plain view, extracted the same way, tells the planner which
 	// statements a group supplies (D97). A view that does not extract is no
@@ -933,6 +941,7 @@ func (r *pullRun) pullDevice(ctx context.Context, e devreg.Entry, o *pullOutcome
 		o.Result = ""
 		return fail(batch.StatusFailed, "cannot record the result: "+strings.Join(msgs(err), " "), "")
 	}
+	batch.Mark(ctx, "record")
 	return batch.Result{Status: batch.StatusOK, Differs: differingSections(results)}
 }
 
@@ -1195,6 +1204,8 @@ func (inv *invocation) runPull(b pullBatch) (batch.Summary, []*pullOutcome, erro
 	for i, e := range b.entries {
 		jobs[i] = run.pullJob(e)
 	}
+	// The time of a device is the setting scaled for it unless one was typed.
+	timeout, jobs := inv.scaleJobTimeouts(b.entries, jobs, b.args.timeout, b.args.timeoutTyped)
 	// The start line of the audit is written here, on the command's own
 	// goroutine: the workers write the records, and audit.strict refuses by
 	// a panic that only this goroutine recovers (audit.Writer.Touch).
@@ -1202,8 +1213,8 @@ func (inv *invocation) runPull(b pullBatch) (batch.Summary, []*pullOutcome, erro
 	ctx, interrupts, stop := inv.batchInterrupts()
 	defer stop()
 	sum := batch.Run(ctx, batch.Options{
-		Concurrency: b.args.concurrency, Cap: settings.maxConcurrency, Timeout: b.args.timeout,
-		MaxFailures: b.args.maxFailures, StopOnAuthFailure: true, Interrupts: interrupts, Clock: inv.app.Knobs.Now,
+		Concurrency: b.args.concurrency, Cap: settings.maxConcurrency, Timeout: timeout,
+		MaxFailures: b.args.maxFailures, StopOnAuthFailure: true, Interrupts: interrupts, Clock: inv.batchClock(),
 	}, jobs, b.view)
 	run.password = ""
 	if d, ok := run.passwd.(interface{ Done() }); ok && b.pass == nil {
@@ -1325,6 +1336,7 @@ func (inv *invocation) deviceConfigPull(args []string) error {
 		return err
 	}
 	view := inv.newPullView(chosen.entries, pa.json, user, false)
+	view.timing = pa.timing
 	sum, outs, err := inv.runPull(pullBatch{entries: chosen.entries, render: chosen.render, args: pa, user: user, view: view, local: local})
 	if err != nil {
 		return err
@@ -1343,6 +1355,9 @@ func (inv *invocation) finishPull(sum batch.Summary, outs []*pullOutcome, chosen
 		inv.echo("  " + sum.Line())
 		if l := sum.StopLine(); l != "" {
 			inv.echo("  " + l)
+		}
+		if pa.timing {
+			inv.printTiming(sum.Timings(), false, false)
 		}
 		for i, o := range outs {
 			if o != nil && o.Hint != "" && sum.Entries[i].Result.Status.Failure() {

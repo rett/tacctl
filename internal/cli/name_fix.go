@@ -110,7 +110,7 @@ func (inv *invocation) fixNames(yes bool) (bool, error) {
 }
 
 // fixRename runs the verb that renames f's name to its lower-case spelling.
-// -y is given to 'host rename' only when the person gave it: otherwise the
+// --yes is given to 'host rename' only when the person gave it: otherwise the
 // verb asks its own questions, after ours.
 func (inv *invocation) fixRename(f hostFinding, yes bool) error {
 	args := []string{f.Name, f.To}
@@ -119,7 +119,7 @@ func (inv *invocation) fixRename(f hostFinding, yes bool) error {
 		return inv.deviceRename(args)
 	case "host":
 		if yes {
-			args = append(args, "-y")
+			args = append(args, "--yes")
 		}
 		return inv.hostRename(args)
 	case "user":

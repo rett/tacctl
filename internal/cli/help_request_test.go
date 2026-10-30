@@ -217,7 +217,7 @@ func TestPtyHelpIsWhatQuestionMarkPrints(t *testing.T) {
 var helpOnlyWords = [][]string{
 	nil, {"user"}, {"user", "add"}, {"user", "remove", "alice", "--yes"},
 	{"breakglass", "hold", "sw1", "--reason"}, {"breakglass", "hold", "sw1", "--reason", "why"},
-	{"install", "-y", "--branch"}, {"uninstall", "-y"}, {"upgrade"}, {"rollback", "0.2.18", "--apply", "--yes"},
+	{"install", "--yes", "--branch"}, {"uninstall", "--yes"}, {"upgrade"}, {"rollback", "0.2.18", "--apply", "--yes"},
 	{"store", "import", "--force"}, {"log", "clear", "--"}, {"log", "search", "--", "--help"},
 	{"user", "add", "--help"}, {"--help"}, {"-h"}, {"__help"}, {"__complete", "user"}, {"_console-policy"},
 	{"_completion-names", "users"}, {"shell", "-c", "user list"}, {"nosuch", "--x"},

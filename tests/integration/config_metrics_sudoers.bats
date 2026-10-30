@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Integration tests for `tacctl config metrics` + `tacctl config sudoers`.
+# Integration tests for `tacctl server metrics` + `tacctl config sudoers`.
 
 load ../helpers/setup
 load ../helpers/tmpenv
@@ -19,32 +19,32 @@ setup() {
 
 # --- metrics: show (default state) -------------------------------------------
 
-@test "config metrics: default show reports loopback-only default" {
-    run "$TACCTL_BIN_SCRIPT" config metrics
+@test "server metrics: default show reports loopback-only default" {
+    run "$TACCTL_BIN_SCRIPT" server metrics
     assert_success
     assert_output --partial "enabled (loopback-only)"
     assert_output --partial "127.0.0.1:8080"
     assert_output --partial "default"
 }
 
-@test "config metrics show: prints scrape URL for enabled state" {
-    run "$TACCTL_BIN_SCRIPT" config metrics show
+@test "server metrics show: prints scrape URL for enabled state" {
+    run "$TACCTL_BIN_SCRIPT" server metrics show
     assert_success
     assert_output --partial "http://127.0.0.1:8080/metrics"
 }
 
 # --- metrics: enable (no-op when already default) ----------------------------
 
-@test "config metrics enable: no-op on fresh install (already on default)" {
-    run "$TACCTL_BIN_SCRIPT" config metrics enable
+@test "server metrics enable: no-op on fresh install (already on default)" {
+    run "$TACCTL_BIN_SCRIPT" server metrics enable
     assert_success
     assert_output --partial "Already enabled"
 }
 
 # --- metrics: address --------------------------------------------------------
 
-@test "config metrics address: pins a custom host:port in tacctl.yaml and the rendered drop-in" {
-    run "$TACCTL_BIN_SCRIPT" config metrics address 10.1.0.1:9090
+@test "server metrics address: pins a custom host:port in tacctl.yaml and the rendered drop-in" {
+    run "$TACCTL_BIN_SCRIPT" server metrics address 10.1.0.1:9090
     assert_success
     run grep -F 'metrics_address: 10.1.0.1:9090' "$TACCTL_STATE_DIR/tacctl.yaml"
     assert_success
@@ -54,18 +54,18 @@ setup() {
     stub_called 'systemctl restart tacquito'
 }
 
-@test "config metrics address: externally reachable address emits a warning" {
-    run "$TACCTL_BIN_SCRIPT" config metrics address :9090
+@test "server metrics address: externally reachable address emits a warning" {
+    run "$TACCTL_BIN_SCRIPT" server metrics address :9090
     assert_success
     assert_output --partial "externally reachable"
 }
 
-@test "config metrics address: setting default clears the override" {
+@test "server metrics address: setting default clears the override" {
     # Pin first, then set to default value.
-    "$TACCTL_BIN_SCRIPT" config metrics address 10.1.0.1:9090
+    "$TACCTL_BIN_SCRIPT" server metrics address 10.1.0.1:9090
     grep -q 'metrics_address' "$TACCTL_STATE_DIR/tacctl.yaml"
 
-    run "$TACCTL_BIN_SCRIPT" config metrics address 127.0.0.1:8080
+    run "$TACCTL_BIN_SCRIPT" server metrics address 127.0.0.1:8080
     assert_success
     # tacctl.yaml (if it still exists) no longer names the metrics address,
     # and the drop-in is rendered with the default.
@@ -74,49 +74,49 @@ setup() {
         assert_output "0"
     fi
     grep -qxF 'Environment="TACQUITO_METRICS_ADDRESS=127.0.0.1:8080"' "$TACCTL_OVERRIDE_DIR/tacctl.conf"
-    run "$TACCTL_BIN_SCRIPT" config metrics
+    run "$TACCTL_BIN_SCRIPT" server metrics
     assert_output --partial "127.0.0.1:8080  (default)"
 }
 
-@test "config metrics address: rejects missing argument" {
-    run "$TACCTL_BIN_SCRIPT" config metrics address
+@test "server metrics address: rejects missing argument" {
+    run "$TACCTL_BIN_SCRIPT" server metrics address
     assert_failure
     assert_output --partial "Examples:"
 }
 
-@test "config metrics address: rejects address with no port" {
-    run "$TACCTL_BIN_SCRIPT" config metrics address 127.0.0.1
+@test "server metrics address: rejects address with no port" {
+    run "$TACCTL_BIN_SCRIPT" server metrics address 127.0.0.1
     assert_failure
     assert_output --partial "must include a port"
 }
 
 # --- metrics: disable --------------------------------------------------------
 
-@test "config metrics disable: sinks exporter to 127.0.0.1:0" {
-    run "$TACCTL_BIN_SCRIPT" config metrics disable
+@test "server metrics disable: sinks exporter to 127.0.0.1:0" {
+    run "$TACCTL_BIN_SCRIPT" server metrics disable
     assert_success
 
     run grep -F 'TACQUITO_METRICS_ADDRESS=127.0.0.1:0' "$TACCTL_OVERRIDE_DIR/tacctl.conf"
     assert_success
 
-    run "$TACCTL_BIN_SCRIPT" config metrics
+    run "$TACCTL_BIN_SCRIPT" server metrics
     assert_output --partial "disabled"
 }
 
-@test "config metrics disable: no-op when already disabled" {
-    "$TACCTL_BIN_SCRIPT" config metrics disable
-    run "$TACCTL_BIN_SCRIPT" config metrics disable
+@test "server metrics disable: no-op when already disabled" {
+    "$TACCTL_BIN_SCRIPT" server metrics disable
+    run "$TACCTL_BIN_SCRIPT" server metrics disable
     assert_success
     assert_output --partial "Already disabled"
 }
 
 # --- metrics: reset ----------------------------------------------------------
 
-@test "config metrics reset: clears the override" {
-    "$TACCTL_BIN_SCRIPT" config metrics address 10.1.0.1:9090
+@test "server metrics reset: clears the override" {
+    "$TACCTL_BIN_SCRIPT" server metrics address 10.1.0.1:9090
     grep -q 'metrics_address' "$TACCTL_STATE_DIR/tacctl.yaml"
 
-    run "$TACCTL_BIN_SCRIPT" config metrics reset
+    run "$TACCTL_BIN_SCRIPT" server metrics reset
     assert_success
     assert_output --partial "Metrics override cleared. Using unit default (127.0.0.1:8080)."
     if [[ -f "$TACCTL_STATE_DIR/tacctl.yaml" ]]; then
@@ -126,8 +126,8 @@ setup() {
     grep -qxF 'Environment="TACQUITO_METRICS_ADDRESS=127.0.0.1:8080"' "$TACCTL_OVERRIDE_DIR/tacctl.conf"
 }
 
-@test "config metrics: rejects unknown subcommand" {
-    run "$TACCTL_BIN_SCRIPT" config metrics bogus
+@test "server metrics: rejects unknown subcommand" {
+    run "$TACCTL_BIN_SCRIPT" server metrics bogus
     assert_failure
     assert_output --partial "Unknown subcommand"
 }
@@ -253,5 +253,6 @@ setup() {
 @test "config sudoers: rejects unknown subcommand" {
     run "$TACCTL_BIN_SCRIPT" config sudoers bogus
     assert_failure
-    assert_output --partial "Invalid subcommand"
+    assert_output --partial "Unknown subcommand: 'bogus'"
+    assert_output --partial "Run 'tacctl config sudoers -h' for usage."
 }

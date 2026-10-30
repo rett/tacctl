@@ -91,9 +91,9 @@ func TestSyncPreviewApplyOverwrite(t *testing.T) {
 	if b.srv.Attempts() != 0 {
 		t.Errorf("sync logged in (%d attempts)", b.srv.Attempts())
 	}
-	// --apply without a terminal needs -y
+	// --apply without a terminal needs --yes
 	b.sync("-", "sw-a", "--apply")
-	if b.sb.code != 2 || !strings.Contains(b.sb.stderr(), "without one needs -y") {
+	if b.sb.code != 2 || !strings.Contains(b.sb.stderr(), "without one needs --yes") {
 		t.Errorf("no terminal: %d %q", b.sb.code, b.sb.stderr())
 	}
 	// declined at the terminal: nothing written
@@ -105,7 +105,7 @@ func TestSyncPreviewApplyOverwrite(t *testing.T) {
 		t.Errorf("declined, written: %+v", e)
 	}
 	// applied
-	out = b.sync("-", "sw-a", "--apply", "-y")
+	out = b.sync("-", "sw-a", "--apply", "--yes")
 	if b.sb.code != 0 || !strings.Contains(out, "Wrote 3 field(s) on 1 device(s).") {
 		t.Fatalf("apply: %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
 	}
@@ -119,7 +119,7 @@ func TestSyncPreviewApplyOverwrite(t *testing.T) {
 		t.Errorf("audit %q", al)
 	}
 	// again: nothing to fill
-	out = b.sync("-", "sw-a", "--apply", "-y")
+	out = b.sync("-", "sw-a", "--apply", "--yes")
 	if !strings.Contains(out, "Nothing to fill") {
 		t.Errorf("again:\n%s", out)
 	}
@@ -133,7 +133,7 @@ func TestSyncPreviewApplyOverwrite(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	out = b.sync("-", "sw-a", "--apply", "-y")
+	out = b.sync("-", "sw-a", "--apply", "--yes")
 	if !strings.Contains(out, "keep") || !strings.Contains(out, "Old rack") || b.entry("sw-a").Location != "Old rack" {
 		t.Errorf("keep:\n%s\n%+v", out, b.entry("sw-a"))
 	}
@@ -144,7 +144,7 @@ func TestSyncPreviewApplyOverwrite(t *testing.T) {
 	if b.entry("sw-a").Location != "Old rack" {
 		t.Error("the preview wrote")
 	}
-	out = b.sync("-", "sw-a", "--overwrite", "--apply", "-y")
+	out = b.sync("-", "sw-a", "--overwrite", "--apply", "--yes")
 	if b.sb.code != 0 || b.entry("sw-a").Location != "Lab rack 9" || !strings.Contains(out, "Wrote 1 field(s)") {
 		t.Errorf("overwrite:\n%s\n%+v", out, b.entry("sw-a"))
 	}
@@ -157,7 +157,7 @@ func TestSyncRefusesHostileText(t *testing.T) {
 	b := newCollectBox(t)
 	b.syncSeed("sw-a", "192.168.1.31", "sw-a", // a bare name: not a DNS name
 		"set snmp location \"rack\x1b]0;x\x07\"", `set snmp description "`+strings.Repeat("d", 130)+`"`)
-	out := b.sync("-", "sw-a", "--apply", "-y")
+	out := b.sync("-", "sw-a", "--apply", "--yes")
 	if b.sb.code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
 	}
@@ -284,7 +284,7 @@ func TestSyncHostnameMustResolveToAddress(t *testing.T) {
 			b := newCollectBox(t)
 			b.syncSeed("sw-a", addr, "sw-a.lab.example.net", `set snmp location "Lab rack 2"`)
 			b.resolves(c.table)
-			out := b.sync("-", "sw-a", "--apply", "-y")
+			out := b.sync("-", "sw-a", "--apply", "--yes")
 			if b.sb.code != 0 {
 				t.Fatalf("exit %d\n%s\n%s", b.sb.code, out, b.sb.stderr())
 			}
@@ -315,7 +315,7 @@ func TestSyncOverwriteHostnameMustResolve(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.resolves(map[string][]string{"sw-a.lab.example.net": {"192.168.1.31", "10.9.9.9"}})
-	out := b.sync("-", "sw-a", "--overwrite", "--apply", "-y")
+	out := b.sync("-", "sw-a", "--overwrite", "--apply", "--yes")
 	if !strings.Contains(out, "does not resolve: not filled") || b.entry("sw-a").Hostname != "old.lab.example.net" {
 		t.Errorf("unresolved name replaced a hostname:\n%s\n%+v", out, b.entry("sw-a"))
 	}
@@ -324,7 +324,7 @@ func TestSyncOverwriteHostnameMustResolve(t *testing.T) {
 	if !strings.Contains(out, "replace: resolves to the address") || !strings.Contains(out, "old.lab.example.net") {
 		t.Errorf("preview:\n%s", out)
 	}
-	b.sync("-", "sw-a", "--overwrite", "--apply", "-y")
+	b.sync("-", "sw-a", "--overwrite", "--apply", "--yes")
 	if b.entry("sw-a").Hostname != "sw-a.lab.example.net" {
 		t.Errorf("resolved name not written: %+v", b.entry("sw-a"))
 	}

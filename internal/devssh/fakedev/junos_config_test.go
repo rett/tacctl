@@ -994,6 +994,53 @@ func TestJunosKnobChassis(t *testing.T) {
 	}
 }
 
+// 'chassis.master' makes the first member answer without a label, as the
+// master of a virtual chassis of three does [C]: its lines come before the
+// first label, the other members keep their header, and its 'commit
+// complete' is the last line. A failing member is still named, and the
+// all-labelled shape is the default.
+func TestJunosKnobChassisMasterUnlabelled(t *testing.T) {
+	const three = "fpc0 ex4600-40f 18.1R3-S6.1\nfpc1 ex4300-48t\nfpc2 ex4300-48t\n"
+	srv, _, _ := newJunos(t, map[string]string{"chassis": three, "chassis.master": ""})
+	c, _ := shell(t, srv, DefaultUser, DefaultPassword)
+	if ver := c.send("show version"); strings.Count(ver, "Hostname: ") != 3 || !strings.HasPrefix(ver, "fpc0:\n---") {
+		t.Errorf("show version:\n%s", ver)
+	}
+	c.send("configure exclusive")
+	c.send("set system login idle-timeout 30")
+	const chk = "configuration check succeeds\nfpc1: \nconfiguration check succeeds\nfpc2: \nconfiguration check succeeds"
+	if got := c.send("commit check"); got != chk {
+		t.Errorf("commit check: %q", got)
+	}
+	const note = "commit confirmed will be automatically rolled back in 3 minutes unless confirmed"
+	want := "configuration check succeeds\n" + note + "\nfpc1: \ncommit complete\n" + note + "\nfpc2: \ncommit complete\n" + note + "\ncommit complete"
+	if got := c.send("commit confirmed 3"); got != want {
+		t.Errorf("commit confirmed:\n%s\nwant\n%s", got, want)
+	}
+	const plain = "configuration check succeeds\nfpc1: \ncommit complete\nfpc2: \ncommit complete\ncommit complete"
+	if got := c.send(`commit comment "confirm"`); got != plain {
+		t.Errorf("commit: %q", got)
+	}
+
+	// a failing master is the unlabelled text; the others keep their label
+	srv, _, _ = newJunos(t, map[string]string{"chassis": three, "chassis.master": "", "chassis.check": "fpc0 => warning: master is out of sync\n"})
+	c, _ = shell(t, srv, DefaultUser, DefaultPassword)
+	c.send("configure exclusive")
+	c.send("set system login idle-timeout 30")
+	if got := c.send("commit check"); !strings.HasPrefix(got, "warning: master is out of sync\nfpc1: \nconfiguration check succeeds\nfpc2: ") {
+		t.Errorf("failing master: %q", got)
+	}
+
+	// the knob acts on a device of two or more members: one stays labelled
+	srv, _, _ = newJunos(t, map[string]string{"chassis": "fpc0 ex4600-40f\n", "chassis.master": ""})
+	c, _ = shell(t, srv, DefaultUser, DefaultPassword)
+	c.send("configure exclusive")
+	c.send("set system login idle-timeout 30")
+	if got := c.send("commit check"); got != "fpc0: \nconfiguration check succeeds" {
+		t.Errorf("one member: %q", got)
+	}
+}
+
 // A chassis of one member with 'chassis.plain' is a virtual chassis of one:
 // 'show version' prints the header 'fpc0:', and 'commit check' and the
 // commits print no label [C].

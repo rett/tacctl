@@ -139,4 +139,5 @@ plain() {
     run "$TACCTL_BIN_SCRIPT" device config frob
     assert_failure 1
     assert_output --partial "Unknown subcommand: 'frob'"
+    assert_output --partial "Run 'tacctl device config -h' for usage."
 }

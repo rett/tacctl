@@ -265,7 +265,7 @@ func TestLogClear(t *testing.T) {
 	plantLogs(t, r)
 	ctx := context.Background()
 	var b strings.Builder
-	if err := r.m.Log(ctx, "clear", []string{"-y"}, &b); err != nil {
+	if err := r.m.Log(ctx, "clear", []string{"--yes"}, &b); err != nil {
 		t.Fatal(err)
 	}
 	for _, f := range []string{r.m.L.AuthLog, r.m.L.AcctLog, r.m.L.DaemonLog} {
@@ -281,7 +281,7 @@ func TestLogClear(t *testing.T) {
 	contains(t, out, "[INFO] RADIUS logs cleared.\n")
 }
 
-// A clear without -y asks; anything but y or Y (and a closed stdin) cancels.
+// A clear without --yes asks; anything but y or Y (and a closed stdin) cancels.
 func TestLogClearAsks(t *testing.T) {
 	for _, c := range []struct {
 		in      string

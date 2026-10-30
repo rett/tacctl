@@ -1,6 +1,6 @@
 package cli
 
-// The server's port follows 'tacctl config listen' in everything that
+// The server's port follows 'tacctl server listen' in everything that
 // renders or compares it: the device walkthroughs, what a pull is compared
 // with, the plan and the host script. These run a TACACS+ listener on
 // tcp :4949 and RADIUS ones on udp :11812 and :11813; with the default
@@ -16,9 +16,9 @@ import (
 // udp :11812 and :11813 for RADIUS (enabled beside it).
 func listenMoved(t *testing.T, sb *sandbox) {
 	t.Helper()
-	sb.run("", []string{"config", "listen", "tcp", ":4949"})
+	sb.run("", []string{"server", "listen", "tcp", ":4949"})
 	if sb.code != 0 {
-		t.Fatalf("config listen tcp :4949: %d %q", sb.code, sb.stderr())
+		t.Fatalf("server listen tcp :4949: %d %q", sb.code, sb.stderr())
 	}
 }
 
@@ -224,7 +224,7 @@ func TestRadiusWalkthroughsFollowTheListeners(t *testing.T) {
 // the rendered files are the store's, and the socket probed is the listener's.
 func TestValidateAndStatusWithMovedListeners(t *testing.T) {
 	s := newSectionsSandbox(t, true)
-	s.run("", "config", "listen", "tcp", ":4949")
+	s.run("", "server", "listen", "tcp", ":4949")
 	s.expect(0, "Listener changed to tcp :4949", "")
 	s.tcp = "LISTEN 0 128 *:4949 *:* users:((\"tacquito\",pid=4242,fd=3))\n"
 	out := s.run("", "config", "validate")

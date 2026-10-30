@@ -15,8 +15,8 @@ import (
 	"github.com/rett/tacctl/internal/store"
 )
 
-// The apply lock around settingsApply (D154): 'config listen|loglevel|
-// metrics' copies tacctl.yaml and rendered.json, restarts the unit and puts
+// The apply lock around settingsApply (D154): 'server listen|metrics' and
+// 'config loglevel' copy tacctl.yaml and rendered.json, restart the unit and put
 // the copies back when it does not stay up. Another tacctl process is a
 // second tenv on the tree, with its own lock object.
 

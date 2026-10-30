@@ -169,11 +169,11 @@ func TestBreakglassHoldRoundTrip(t *testing.T) {
 	// The held device cannot be removed, nor moved to an address a hold
 	// would be refused at (its move is breakglass_move_test.go); a rename
 	// follows.
-	sb.run("", []string{"device", "address", "lab-sw", "127.0.0.9", "-y"})
+	sb.run("", []string{"device", "address", "lab-sw", "127.0.0.9", "--yes"})
 	sb.expect(1, "", "127.0.0.9 is a loopback address")
-	sb.run("", []string{"device", "remove", "lab-sw", "-y"})
+	sb.run("", []string{"device", "remove", "lab-sw", "--yes"})
 	sb.expect(1, "", "break-glass is held on lab-sw: release it first")
-	sb.run("", []string{"device", "remove", "--all", "-y"})
+	sb.run("", []string{"device", "remove", "--all", "--yes"})
 	sb.expect(1, "", "break-glass is held on lab-sw")
 	if !strings.Contains(sb.devices(), "lab-sw") {
 		t.Error("a refused remove removed it")

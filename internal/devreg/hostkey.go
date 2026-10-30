@@ -21,12 +21,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/rett/tacctl/internal/devssh"
 	"github.com/rett/tacctl/internal/execx"
 )
-
-// KeyscanTimeout is ssh-keyscan's -T: seconds to wait for a device.
-const KeyscanTimeout = 5
 
 // keyTypes are the host-key types tacctl pins, in the order they are kept
 // and shown: the order ssh prefers them in.
@@ -239,24 +238,35 @@ func CrossCheckKeys(session, scan []HostKey) CrossCheck {
 // offer, answers this command with nothing: ScanWith then asks for one type
 // at a time (KeyscanTypeCmd).
 func KeyscanCmd(address string, port int, legacy bool) execx.Cmd {
+	return keyscanCombined(address, port, legacy, devssh.DefaultScanTiming())
+}
+
+// keyscanCombined is KeyscanCmd with the timing tm (Keyscan is its -T).
+func keyscanCombined(address string, port int, legacy bool, tm devssh.ScanTiming) execx.Cmd {
 	types := "ed25519,ecdsa,rsa"
 	if legacy {
 		types += ",ssh-rsa"
 	}
-	return keyscanCmd(address, port, KeyscanTimeout, types)
+	return keyscanCmd(address, port, seconds(tm.Keyscan), types)
 }
-
-// KeyscanRetryTimeout is ssh-keyscan's -T for each of the one-type attempts
-// that follow a combined scan which read nothing: a device that answers a
-// single connection does so at once, and the attempts (three, four with
-// legacy-ssh) must stay short in sum.
-const KeyscanRetryTimeout = 3
 
 // KeyscanTypeCmd is the ssh-keyscan of one key type (ssh-keyscan's own
 // name for it: ed25519, ecdsa, rsa or ssh-rsa) at address and port, as ScanWith
-// retries a device that did not answer the combined scan.
+// retries a device that did not answer the combined scan. Its -T is the
+// KeyscanRetry of the timing: a device that answers a single connection does
+// so at once, and the attempts (three, four with legacy-ssh) must stay short
+// in sum.
 func KeyscanTypeCmd(address string, port int, typ string) execx.Cmd {
-	return keyscanCmd(address, port, KeyscanRetryTimeout, typ)
+	return keyscanTyped(address, port, typ, devssh.DefaultScanTiming())
+}
+
+func keyscanTyped(address string, port int, typ string, tm devssh.ScanTiming) execx.Cmd {
+	return keyscanCmd(address, port, seconds(tm.KeyscanRetry), typ)
+}
+
+// seconds is d as ssh-keyscan's -T takes it: whole seconds, at least 1.
+func seconds(d time.Duration) int {
+	return max(1, int((d+time.Second-1)/time.Second))
 }
 
 func keyscanCmd(address string, port, timeout int, types string) execx.Cmd {
@@ -282,15 +292,23 @@ func retryTypes(legacy bool) []string {
 // port, or offered no key type tacctl pins.
 var ErrNoAnswer = errors.New("no host key could be read")
 
-// NoAnswerError is ErrNoAnswer (errors.Is finds it) for a device that did
-// answer: the scan reached it, read no key, and tried the other ways. A
-// device that did not answer at all is ErrNoAnswer itself.
+// NoAnswerError is ErrNoAnswer (errors.Is finds it) for a scan that read no
+// key and went beyond ssh-keyscan: a device that answered (the one-type
+// retry, the built-in client), or one ssh-keyscan said nothing about (the
+// built-in client alone), or a legacy-ssh device (the built-in client). A
+// scan that stopped at one ssh-keyscan is ErrNoAnswer itself.
 type NoAnswerError struct {
 	// OneByOne are the key types asked for one at a time with ssh-keyscan
 	// after the combined scan read nothing, in the order tried.
 	OneByOne []string
 	// Builtin: the built-in ssh client was tried as well.
 	Builtin bool
+	// Silent: ssh-keyscan read no key and printed nothing about the device
+	// (it prints nothing for a refused connection, an address nobody
+	// answers at and a server slow to greet alike), so only the built-in
+	// client was tried after it, not the one-type retry. Set for a device
+	// that is not legacy-ssh.
+	Silent bool
 }
 
 func (e *NoAnswerError) Error() string { return ErrNoAnswer.Error() }
@@ -304,19 +322,39 @@ func (e *NoAnswerError) Unwrap() error { return ErrNoAnswer }
 var reReached = regexp.MustCompile(`(?im)^#\s+\S+\s+SSH-|closed by remote host|connection reset|exchange_identification|no matching `)
 
 // Reached reports whether what ssh-keyscan printed on standard error shows
-// that the device's ssh server accepted a connection, as opposed to a
-// connection that was refused or timed out, or an address that did not
-// resolve, none of which are worth asking again one type at a time. The
-// exit status cannot tell them apart (it is 0 or 1 whatever the reason, by
+// that the device's ssh server accepted a connection, which is worth asking
+// again one key type at a time. The exit status cannot tell a device that
+// answered from one that did not (it is 0 or 1 whatever the reason, by
 // version), the messages can.
 func Reached(stderr []byte) bool { return reReached.Match(stderr) }
 
+// reDown matches the one failure OpenSSH's ssh-keyscan reports that no
+// second try helps: a name that does not resolve. It prints
+// "getaddrinfo <host>: <resolver's text>" (OpenSSH 9.6 was observed to
+// print "getaddrinfo nosuchhost.invalid: Name or service not known"). That
+// is all it was observed to print without -v about a device it got no key
+// from: a refused connection, a filtered or powered-off address and a
+// server that never greets all print nothing, and so cannot be told apart
+// from each other here.
+var reDown = regexp.MustCompile(`(?im)^getaddrinfo\s+\S+:`)
+
+// Down reports whether what ssh-keyscan printed on standard error shows an
+// address that does not resolve (reDown), so that nothing more is tried.
+// Silence is not Down.
+func Down(stderr []byte) bool { return reDown.Match(stderr) }
+
 // KeyFallback reads the host keys at address and port another way than
 // ssh-keyscan: the built-in ssh client, which negotiates the algorithms of a
-// legacy-ssh device. It is a parameter (the cli hands in the real one, a
-// test its own) so that this package never dials. Keys it returns are
-// ordinary HostKeys; an error, or none, leaves the ssh-keyscan outcome.
-type KeyFallback func(ctx context.Context, address string, port int) ([]HostKey, error)
+// legacy-ssh device. quick is set for a device nothing has answered from
+// yet (ssh-keyscan printed nothing): the fallback then bounds the TCP
+// connect shortly, so that a filtered or powered-off address does not cost
+// the whole handshake budget. It is a parameter (the cli hands in the real
+// one, a test its own) so that this package never dials. Keys it returns are
+// ordinary HostKeys; an error, or none, leaves the ssh-keyscan outcome. tm is
+// the timing of the scan (no zero field; a scaled one for a slow or distant
+// device, devssh.ScanTiming.Scaled): the fallback reads with it, so that its
+// connect, handshake and per-type attempt are the scan's, not a default.
+type KeyFallback func(ctx context.Context, address string, port int, quick bool, tm devssh.ScanTiming) ([]HostKey, error)
 
 // Scan reads the host keys address offers on port with ssh-keyscan. A
 // device that does not answer is ErrNoAnswer; ssh-keyscan missing is an
@@ -331,26 +369,59 @@ func Scan(ctx context.Context, r execx.Runner, address string, port int, legacy 
 // legacy device), each with a short timeout: a device that drops or limits
 // the several connections ssh-keyscan opens at once, or mishandles its long
 // offer, answers one. A type that fails does not end the scan, and the keys
-// of all the types that answer are returned, as ssh-keyscan's would be. A
-// device that did not answer at all (refused, timed out, no route) gets no
-// second try, so that an unreachable one costs a single ssh-keyscan. If
-// still no key was read, the fallback is tried, for any device that was
-// reached and for a legacy device also when ssh-keyscan could not be run or
-// the device did not answer at all (an unreachable modern device is not
-// dialled a second time), and its keys are returned as ssh-keyscan's would be. When all fail the
-// error is ssh-keyscan's (a NoAnswerError when the device was reached), so
-// a caller's ErrNoAnswer handling is unchanged; a cancelled context is
-// returned as it is. A nil fallback is Scan.
+// of all the types that answer are returned, as ssh-keyscan's would be. If
+// still no key was read, the fallback is tried (a nil fallback is Scan):
+//   - for a device that was reached;
+//   - for a legacy device, whatever ssh-keyscan said, also when it could
+//     not be run;
+//   - for a device that answered nothing at all (ssh-keyscan printed
+//     nothing: a server slow to greet, which plain ssh reaches since it
+//     waits longer; a refused connection; an address nobody answers at),
+//     once and without the one-type retry, as nothing shows it accepted a
+//     connection. The fallback is asked to bound the connect shortly
+//     (quick). A refused device fails it at once, a filtered one costs the
+//     short connect budget.
+//
+// A name that does not resolve (Down) gets nothing more: one ssh-keyscan,
+// for a modern device. The fallback's keys are returned as ssh-keyscan's
+// would be. When all fail the error is ssh-keyscan's (a NoAnswerError when
+// anything beyond ssh-keyscan was tried), so a caller's ErrNoAnswer handling
+// is unchanged; a cancelled context is returned as it is.
 func ScanWith(ctx context.Context, r execx.Runner, address string, port int, legacy bool, fallback KeyFallback) ([]HostKey, error) {
-	keys, reached, err := keyscan(ctx, r, KeyscanCmd(address, port, legacy))
+	return scanWith(ctx, r, address, port, legacy, fallback, true, devssh.ScanTiming{})
+}
+
+// ScanWithTiming is ScanWith with the timing tm of ssh-keyscan's two -T and
+// of the built-in client's reads (its zero fields are the defaults of
+// devssh.DefaultScanTiming); the fallback is handed the same timing, and this
+// package never dials.
+func ScanWithTiming(ctx context.Context, r execx.Runner, address string, port int, legacy bool, fallback KeyFallback, tm devssh.ScanTiming) ([]HostKey, error) {
+	return scanWith(ctx, r, address, port, legacy, fallback, true, tm)
+}
+
+// ScanWithAnswered is ScanWith without the read of a device that answered
+// nothing: the fallback is only tried for a device that was reached and for
+// a legacy one. It is the scan of a caller that must not wait longer than
+// ssh-keyscan and, for a device that answered, the fallback.
+func ScanWithAnswered(ctx context.Context, r execx.Runner, address string, port int, legacy bool, fallback KeyFallback, tm devssh.ScanTiming) ([]HostKey, error) {
+	return scanWith(ctx, r, address, port, legacy, fallback, false, tm)
+}
+
+func scanWith(ctx context.Context, r execx.Runner, address string, port int, legacy bool, fallback KeyFallback, readSilent bool, tm devssh.ScanTiming) ([]HostKey, error) {
+	tm = tm.WithDefaults()
+	keys, seen, err := keyscan(ctx, r, keyscanCombined(address, port, legacy, tm))
 	if err == nil || ctx.Err() != nil {
 		return keys, err
 	}
 	noAnswer := errors.Is(err, ErrNoAnswer)
+	reached := seen.reached
+	// silent: ssh-keyscan read nothing and printed nothing about the
+	// device.
+	silent := noAnswer && !reached && !seen.down
 	var tried NoAnswerError
 	if noAnswer && reached {
 		tried.OneByOne = retryTypes(legacy)
-		found, rerr := scanOneByOne(ctx, r, address, port, tried.OneByOne)
+		found, rerr := scanOneByOne(ctx, r, address, port, tried.OneByOne, tm)
 		if rerr != nil {
 			return nil, rerr
 		}
@@ -358,10 +429,14 @@ func ScanWith(ctx context.Context, r execx.Runner, address string, port int, leg
 			return found, nil
 		}
 	}
-	if fallback == nil || (!legacy && (!noAnswer || !reached)) {
+	// The built-in client reads a legacy device whatever ssh-keyscan said,
+	// and a modern one that answered or (readSilent) that said nothing.
+	builtin := legacy || (noAnswer && (reached || (silent && readSilent)))
+	if fallback == nil || !builtin {
 		return nil, scanFailure(err, tried)
 	}
-	fk, ferr := fallback(ctx, address, port)
+	tried.Silent = silent && !legacy
+	fk, ferr := fallback(ctx, address, port, silent && !legacy, tm)
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -386,13 +461,13 @@ func scanFailure(err error, tried NoAnswerError) error {
 // returns the keys of every type that answered (in type order, without
 // duplicates). A type that fails, or an ssh-keyscan that cannot be run, is
 // skipped; only a cancelled context is an error.
-func scanOneByOne(ctx context.Context, r execx.Runner, address string, port int, types []string) ([]HostKey, error) {
+func scanOneByOne(ctx context.Context, r execx.Runner, address string, port int, types []string, tm devssh.ScanTiming) ([]HostKey, error) {
 	var found []HostKey
 	for _, t := range types {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		keys, _, err := keyscan(ctx, r, KeyscanTypeCmd(address, port, t))
+		keys, _, err := keyscan(ctx, r, keyscanTyped(address, port, t, tm))
 		if err == nil {
 			found = append(found, keys...)
 		}
@@ -403,23 +478,32 @@ func scanOneByOne(ctx context.Context, r execx.Runner, address string, port int,
 	return sortKeys(found), nil
 }
 
-// keyscan runs one ssh-keyscan: its keys, whether the device was reached
-// (Reached) and the error: ErrNoAnswer when it read no key, another when
+// keyscanSeen is what an ssh-keyscan printed on standard error shows of the
+// device.
+type keyscanSeen struct {
+	reached bool // Reached
+	down    bool // Down
+}
+
+// keyscan runs one ssh-keyscan: its keys, what its standard error shows of
+// the device and the error: ErrNoAnswer when it read no key, another when
 // ssh-keyscan could not be run, the context's own when it ended.
-func keyscan(ctx context.Context, r execx.Runner, c execx.Cmd) (keys []HostKey, reached bool, err error) {
+func keyscan(ctx context.Context, r execx.Runner, c execx.Cmd) (keys []HostKey, seen keyscanSeen, err error) {
 	res, err := r.Run(ctx, c)
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, false, ctx.Err()
+			return nil, seen, ctx.Err()
 		}
-		return nil, false, fail("ssh-keyscan could not be run (" + firstLine(err.Error()) + "); it comes with the openssh-client package.")
+		return nil, seen, fail("ssh-keyscan could not be run (" + firstLine(err.Error()) + "); it comes with the openssh-client package.")
 	}
-	reached = Reached(res.Stderr)
+	seen.reached = Reached(res.Stderr)
+	seen.down = !seen.reached && Down(res.Stderr)
 	keys = ParseKeyscan(res.Stdout)
 	if len(keys) == 0 {
-		return nil, reached, ErrNoAnswer
+		return nil, seen, ErrNoAnswer
 	}
-	return keys, true, nil
+	seen.reached = true
+	return keys, seen, nil
 }
 
 var reFingerprint = regexp.MustCompile(`^SHA256:[A-Za-z0-9+/]{43}$`)

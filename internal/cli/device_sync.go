@@ -43,7 +43,7 @@ import (
 )
 
 // syncUse is the usage line of the verb.
-const syncUse = "Usage: tacctl device sync <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> [--apply] [--overwrite] [--json] [-y]"
+const syncUse = "Usage: tacctl device sync <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> [--apply] [--overwrite] [--json] [--yes]"
 
 // syncResolveTimeout bounds one lookup of a reported host name.
 const syncResolveTimeout = 5 * time.Second
@@ -112,13 +112,13 @@ func (inv *invocation) deviceSync(args []string) error {
 		return err
 	}
 	s := &deviceSyncRun{inv: inv, user: inv.sudoUser(), apply: p.Has("--apply"), overwrite: p.Has("--overwrite"),
-		asJSON: p.Has("--json"), yes: p.Has("-y")}
+		asJSON: p.Has("--json"), yes: p.Has("--yes")}
 	sel, err := s.selection(p)
 	if err != nil {
 		return err
 	}
 	if s.apply && !s.yes && !inv.app.Prompter().Interactive() {
-		return inv.argErr("No terminal to answer the question on: --apply without one needs -y (the preview needs neither).", syncUse)
+		return inv.argErr("No terminal to answer the question on: --apply without one needs --yes (the preview needs neither).", syncUse)
 	}
 	if err := s.collect(sel); err != nil {
 		return err

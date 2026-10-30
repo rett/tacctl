@@ -220,7 +220,7 @@ func TestConfigValidateJSONUsage(t *testing.T) {
 	sb := newSandbox(t, true)
 	out := sb.run("", []string{"config", "validate", "--jsno"})
 	if sb.code != 1 || out != "" || !strings.Contains(sb.stderr(), "Unknown option: '--jsno'") ||
-		!strings.Contains(sb.stderr(), "Usage: tacctl config validate [--json | --fix-names [-y]]") {
+		!strings.Contains(sb.stderr(), "Usage: tacctl config validate [--json | --fix-names [--yes]]") {
 		t.Errorf("exit %d, stdout %q, stderr %q", sb.code, out, sb.stderr())
 	}
 }

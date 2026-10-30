@@ -97,7 +97,7 @@ nothing_secret() {
     unregistered
 }
 
-@test "collect: without a terminal it needs --host-key, one address, and -y for --register" {
+@test "collect: without a terminal it needs --host-key, one address, and --yes for --register" {
     collect "$ADDR"
     assert_failure 2
     assert_output --partial "No terminal to answer the host-key question on"
@@ -106,7 +106,7 @@ nothing_secret() {
     assert_output --partial "--host-key names the key of ONE device"
     collect "$ADDR" --host-key "$FP" --register
     assert_failure 2
-    assert_output --partial "--register without one needs -y"
+    assert_output --partial "--register without one needs --yes"
     collect --host-key "$FP"
     assert_failure 2
     assert_output --partial "Name the addresses to collect from"
@@ -150,8 +150,8 @@ assert d["add"].startswith("tacctl device add example-sw5 "), d
     assert_success
 }
 
-@test "collect --register -y: registered through device add, the key pinned, the first record kept" {
-    collect "$ADDR" --host-key "$FP" --register -y
+@test "collect --register --yes: registered through device add, the key pinned, the first record kept" {
+    collect "$ADDR" --host-key "$FP" --register --yes
     assert_success
     assert_output --partial "Device 'example-sw5' registered: ${ADDR}, juniper."
     assert_output --partial "the read is kept as its first pull record"
@@ -206,7 +206,7 @@ assert d["add"].startswith("tacctl device add example-sw5 "), d
 }
 
 @test "collect: a refused password is the one attempt and nothing is registered" {
-    TACCTL_TEST_DEVICE_PASSWORD=wrong-password collect "$ADDR" --host-key "$FP" --register -y
+    TACCTL_TEST_DEVICE_PASSWORD=wrong-password collect "$ADDR" --host-key "$FP" --register --yes
     assert_failure 1
     assert_output --regexp "${ADDR} +- +- +- +- +- +- +- +- +- +auth-failed"
     assert_output --partial "the device refused the password"
@@ -219,7 +219,7 @@ assert d["add"].startswith("tacctl device add example-sw5 "), d
     OTHER=$(cut -d' ' -f1,2 "${BATS_TEST_TMPDIR}/other.pub")
     stub_cmd ssh-keyscan "echo \"\${!#} ${OTHER}\""
     OFP=$(ssh-keygen -lf "${BATS_TEST_TMPDIR}/other.pub" | awk '{print $2}')
-    collect "$ADDR" --host-key "$OFP" --register -y
+    collect "$ADDR" --host-key "$OFP" --register --yes
     assert_failure 1
     assert_output --partial "it presented a host key that is not the trusted one"
     unregistered
@@ -250,7 +250,7 @@ assert d["add"].startswith("tacctl device add example-sw5 "), d
     fakedev_start "$IDIR"
     stub_cmd ssh-keyscan "echo \"\${!#} ${FAKEDEV_KEY}\""
     FP=$(ssh-keygen -lf - <<< "$FAKEDEV_KEY" | awk '{print $2}')
-    collect "$ADDR" --host-key "$FP" --register -y
+    collect "$ADDR" --host-key "$FP" --register --yes
     assert_failure 1
     assert_output --regexp "${ADDR} +- +- +- +- +- +- +- +- +- +not-junos"
     assert_output --partial "not a Junos device"

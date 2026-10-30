@@ -155,7 +155,7 @@ func grepFile(w io.Writer, path string, re *regexp.Regexp) bool {
 // logClear is _radius_log_clear: truncate the three logs in place (the
 // daemon keeps writing to the same files), after a yes unless forced.
 func (m *Module) logClear(out ui.Output, flag string) {
-	force := flag == "-y" || flag == "--force" || flag == "--yes"
+	force := flag == "--force" || flag == "--yes"
 	w := out.Stdout
 	echo(w, "")
 	echo(w, ui.Bold+"Clear RADIUS logs"+ui.NC)

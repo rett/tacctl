@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/rett/tacctl/internal/backend"
+	"github.com/rett/tacctl/internal/devssh"
 	"github.com/rett/tacctl/internal/execx"
 )
 
@@ -132,6 +133,9 @@ type KeyTarget struct {
 	Address string
 	Port    int
 	Legacy  bool
+	// Timing is the timing of the target's reads (zero fields: the
+	// defaults of devssh.DefaultScanTiming).
+	Timing devssh.ScanTiming
 }
 
 // KeyResult is one re-scan: the keys offered, ErrNoAnswer, or another error
@@ -157,7 +161,7 @@ func RescanKeys(ctx context.Context, r execx.Runner, targets []KeyTarget, fallba
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			keys, err := ScanWith(ctx, r, t.Address, t.Port, t.Legacy, fallback)
+			keys, err := ScanWithTiming(ctx, r, t.Address, t.Port, t.Legacy, fallback, t.Timing)
 			out[i] = KeyResult{Target: t, Keys: keys, Err: err}
 		}()
 	}

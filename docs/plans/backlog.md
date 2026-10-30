@@ -29,6 +29,8 @@ Planned 2026-10-08; **solidified 2026-10-09 with the 0.2.4 plan** (`0.2.4-plan.m
 | **0.2.19 (released 2026-10-25; CHANGELOG `## 0.2.19`, items 1-18)** | **Junos and IOS fixes and the system blocks:** a mixed virtual chassis and older Junos releases pass the pre-flight, the login's permissions are read from each row's name, and an unknown command is answered before `sudo` asks for a password. Engineers enroll, collect, onboard, sync and apply on their own scopes' devices, and `device support-bundle` collects what a developer needs. The blocks hold their own hierarchy only, say which block a statement comes from, and the Junos and IOS `system` blocks are closed rule tables (syslog, announcement, login and password policy, ssh, summer time, timestamps, IOS `banner motd` and `exec`) with `absent` lines for services a scope requires to be off. `tacctl emergency lockdown <scope> enable|disable|status` (superuser only) refuses the logins of groups on a scope. Host names may hold dots. `?` describes the words of `scope block` and `device block`. `tacctl rollback 0.2.18` is a target; every rollback refuses while a lockdown locks a group and warns of system blocks that use 0.2.19's statements. |
 | **0.2.20 (released 2026-10-28; CHANGELOG `## 0.2.20`, items 1-42)** | **The required password change and the console as the login shell:** a user can be required to change the password before logging in to anything but the tacctl server (`user add` and an administrator's `user passwd` require it by default, `--no-change-required` skips it, superusers are never held; no device or enrolled host accepts the user until it is made); the console is the login shell of every managed user with no switch, the system shell is a superuser-set opt-in per tier or user, the password cache is each user's choice, and `console color`, `console list-max`, `-h`/`--help` and a bash help key share one renderer. **Junos:** a strict, deny-by-default mode for the management filter, `root` as a break-glass account, the pre-flight reads every commit spelling and the members of a virtual chassis, the plan treats the device's own statements as kept, and a host key scan retries one type at a time. `tacctl man` opens the manual page. `tacctl rollback 0.2.19` is a target and every target warns of users who gain a system shell or the password cache and of `root` break-glass entries. **Open:** the emergency lockdown does not reach enrolled Linux hosts, and a flagged user in a non-default forwarding tier can still forward ports. |
 | **0.2.21 (released 2026-10-28; CHANGELOG `## 0.2.21`, items 1-9)** | **The managed server login:** every user can log in to the tacctl server and its console through the reserved scope `tacctl` (hidden, not editable); `install` and `upgrade` set up the machine's own login, `host enroll --local` stays for rebuild, move and repair; the setting `server.addresses` and `tacctl server addresses`; the device walkthroughs, the Linux script and host enrolment default to the recorded address and follow the configured listener ports; `ssh` and `device ssh` ask for the password once, before they connect; a Junos virtual chassis of one member is applied to like a single device; `tacctl rollback 0.2.20`. **Open:** `server show`, `server name`, `server syslog address`, `config listen` and `config metrics address` under `server`, several server addresses (csv, failover) and a manual failover pair, the container case of a flagged user on a host that is not the server, the emergency lockdown not reaching Linux hosts, and a flagged user in a non-default forwarding tier. |
+| **0.2.22 (released 2026-10-29; CHANGELOG `## 0.2.22`, items 1-21)** | **Defects found on a live network and the `server` family:** a device `ssh-keyscan` reads nothing from gets its host key read by the built-in client; a Junos virtual chassis whose master answers without a label is applied to; user names are letters, digits, `_` and `-`; `host list` takes the columns and filters of `device list` and `device list` shows network devices only (`--differs`); `-y` is gone (`--yes` only); `host sync|check --concurrency`; one short answer for an unknown sub-command, given before sudo below the first word; `server show|listen|metrics|name` and `rollback 0.2.21`; the generated drop-in names the current commands; teal command names; the per-device timeout scale (`timeout-scale`) and `--timing`. |
+| **0.2.23 (planned)** | **Lockdown on enrolled hosts** (a static sshd `Match Group` drop-in), **naming a device from its configuration** (a provisional name, lower-cased, an address update offered when the host key matches), **`device clone` and `rename --replace`** with the scope staging address, the **SNMPv3 user pool** (section 3j), **an email address on users**. Not started. |
 | **0.2.10 (released 2026-10-15; `0.2.10-plan.md`, `0.2.10-lab.md`)** | **Apply over NETCONF as the second transport (pulled into 0.2.10 by the user, 2026-10-14; NETCONF is opt-in, the command line stays the default, `device config rollback` stays deferred) and the NETCONF service setting below; the account, break-glass and drift-detection items that follow are dropped (2026-10-15, `0.2.12-plan.md` section 2).** **A NETCONF service setting for Junos (decided with the user, 2026-10-14).** Three states, default `leave`: `enable` renders and plans `set system services netconf ssh` (with the optional connection-limit and rate-limit), `disable` plans `delete system services netconf`, `leave` plans and compares nothing (today's behaviour). Per scope with a per-device override, layered as SNMP and the blocks are: `scope netconf <scope> enable|disable|leave`, `device netconf <name> enable|disable|leave`. The apply allow-list admits only those exact `system services netconf` statements; everything else under `system services` stays on the never-list (D133). Built, reviewed and run on the lab switch (`0.2.10-lab.md`). It supersedes `device config enable-netconf` (D93 of `apply-deferred.md`). **Provisioning/break-glass account rotation on devices** (new local user, proven by a fresh login, target switched, old one optionally removed last; new passwords generated and shown once unless decided otherwise); the rest of the per-user password handling, if any is left after 0.2.4. **From 0.2.4:** unattended drift detection (a timer running `device config pull --stale`) needs a credential no person types, which the never-stored rule forbids for users' passwords; it is designed here as a read-only service account on the devices (an ssh key held by the tacctl server, proved and rotated like the provisioning accounts), not before. **Break-glass users as a configuration block (filed 2026-10-12; open question, decide with the rotation design):** a vendor-native `login` block could carry a scope's break-glass accounts (Junos `system login user <name> class <C> authentication encrypted-password`, Cisco `username <name> privilege <n> secret 9 <hash>`), so every device of a scope gets the same account with compare, plan, back-out and the existing secret elision. *Gain:* consistent accounts, central rotation. *Cost:* it reverses the never-stored rule for a credential hash (at rest under `/etc/tacctl/blocks` and in every backup), makes one shared local-admin password per scope the easy path where a unique one per device is the usual practice, and a bad hash pasted fleet-wide breaks the one account meant for recovery (the helper's region check refuses login-user authentication today, and plans never emit the `breakglass` section, both on purpose). *Decide first:* store the hash (opt-in per scope, in a block, read-protected like an SNMP community) or keep it generated and shown once, which the rotation design above assumes; the two do not fit together. Until then: `scope breakglass` names and roles plus the walkthrough placeholder. Needs 0.2.9's apply to push a rotated account. |
 | **Apply (deferred, no release number)** | **NETCONF apply and rollback**, set aside by the user on 2026-10-10 ("stop netconf for now"). The approved plan is kept whole in `apply-deferred.md` (D77-D93: the transport interface with `Confirms()`, the private-session transaction, the ownership rule, the confirmed commit held on one session through a fresh login, the two-phase review, the canary, the records, `device config rollback`, the engineer pre-flight, `device config enable-netconf`; WP12.x). 0.2.5 reuses its planner and its guards as warnings; the NETCONF transport itself moved into 0.2.10 on 2026-10-14 (`0.2.10-plan.md`), the rest (rollback from history) waits. The 0.2.4 spike facts it rests on are in `0.2.4-spike.md` (d) and "Junos apply mechanics". **Amended by D129 (2026-10-13):** the transport interface is built in 0.2.9 with the Junos command line as its first implementation; what this plan keeps is the NETCONF transport (D78, D82), `enable-netconf` (D93, superseded by the 0.2.10 NETCONF service setting) and `rollback` from history (D86). |
 | **0.3.0** | State-format changes (§5): the built-in `engineer` group with its migration (D49 of `0.2.3-plan.md`), merging the `linux-hosts` registry into the device registry, device data inside `store.yaml`, and dropping the legacy regex migrations. **From 0.2.4:** a free `tag` field on devices for batch selection, if scope and vendor prove too coarse; NETCONF on a non-default port as a device field. |
@@ -259,6 +261,93 @@ pieces of tacctl itself were open; both are built in 0.2.8:
   only when a real device refuses a statement, with a fixture of the
   refusal; there is no model or version matrix, because the device's check
   already refuses what it cannot take.
+
+## 3i. Device reports (proposal, filed 2026-10-29; not scheduled)
+
+A report is a saved, dated document about the registered devices, made on demand from data tacctl already holds or reads on the operator's word. Proposal only; nothing here is decided.
+
+- **Verbs:** `tacctl device reports generate --type <type> [--scope <scope>] [--vendor <vendor>] [--format text|csv|json|pdf] [--name <name>]`, `list`, `show <report>`, `rename <report> <new>`, `remove <report>`. Names carry the date (`inventory-20261028`).
+- **Contents by type** (a short catalogue, one row per device): inventory (model, serial number, hardware revision, chassis members), software (release, the version-gate state of backlog 3h), chassis alerts, uptime, licence status, notices and host-key state, configuration state (the `device config list` states: ok, differs, never, failed). Further filters by scope, vendor, the user that generated it and the age of the data.
+- **Source:** the pull records and the device facts already stored (no login). `--pull` reads the devices first, as `device config pull` does, with the operator's own password and no stored credential; a report is never scheduled and no device is contacted by a timer.
+- **Storage:** the invoking user's home, `~/reports/devices/`, mode 0600. A dotted user has no Linux account and no home: decide where their reports go or whether they get the verb at all.
+- **`show <report>`:** the date and time, the user, the exact command line that generated it, the filters, the age of the oldest datum, the size, and an example `scp` line to download it (generic host: `scp alice@tacctl.example.net:reports/devices/<file> .`).
+- **Open points:** a PDF needs a vendored pure-Go writer (the build has no network, `vendor/`), so the first format could be text, CSV and JSON; the tier of each verb (read-only reports for operators, `--pull` for engineers); retention and a size cap; whether a report may carry the SNMP location and description (no secret, hash or community string in any report); the new verbs need completion, man page, docs page and a CHANGELOG item like any other.
+
+## 3j. Filed 2026-10-29 for 0.2.23 and later (designs, nothing built)
+
+- **Lockdown on enrolled hosts (0.2.23).** `emergency lockdown` closes TACACS+
+  and RADIUS logins on devices but not an ssh key login or a forwarded port on
+  a Linux host (`lockdownResidual` in `internal/cli/emergency.go`). Design: a
+  static sshd drop-in on each host, named to sort first, with `Match Group
+  <lockdown group>` setting `PubkeyAuthentication no` and `AllowTcpForwarding`,
+  `AllowStreamLocalForwarding`, `X11Forwarding` and `AllowAgentForwarding` to
+  `no`; enabling a lockdown changes group membership through `host sync`, the
+  drop-in is checked with `sshd -t` and `sshd -T -C user=...` (a host without
+  the `Include` of `sshd_config.d` fails open) and removed to lift. Exclude
+  superusers, the provisioner account and the running user; end live sessions
+  separately; a host unreachable at `disable` keeps the drop-in. The server's
+  own console drop-in needs the lockdown block before the tier blocks. The
+  script protocol of `internal/hosts` and `client-remove.sh` carry it.
+- **Naming a device from its configuration (0.2.23).** For a device SNMP
+  cannot name, an opt-in registers it under a random provisional name with a
+  common prefix, reads the host name from the first pull and takes it over
+  (`takeName`), lower-cased. A name that is registered with a different pinned
+  host key is a conflict; with the same key it is the same device seen from
+  another address and the address update is offered, never applied alone.
+  Writing a host name to a device goes through the apply review (Junos) or a
+  paste-ready line (others); `system host-name` has no render path yet.
+- **`device clone` and `rename --replace` (0.2.23).** `device clone <old>
+  <new> [--staging <bench-ip>]` copies a device's intent (blocks, SNMP
+  settings and credentials, plain fields; not the pull record, host keys,
+  acknowledged notices, hold, address or name) and registers it at a bench
+  address with the existing scope staging `/32`. A rename with `--replace`
+  (a distinct flag name: `device import --replace` exists) removes the
+  original after a snapshot and confirmation, shows and clears its hold,
+  moves the replacement to the original's address, which ends the staging.
+  `renameDevice` must carry the staging line; engineers may clone within
+  their own scopes, so the clone is audited and the tiers sudoers gain a row.
+- **SNMPv3 user pool (0.2.23).** Today a level (config, scope, device) holds
+  one setting and `v3-user` sets the version to v3 for everything below it.
+  Design: the version stays a per-level setting; each level keeps a pool of v3
+  users and a default user or none; adding a user changes nothing; a device on
+  v3 uses its own user, else its scope's default, else the config default; the
+  pool a device picks from is its scope's users plus the config's. A level on
+  v3 with its one user keeps both on upgrade, the user becoming its default.
+  The credential files change shape: a rollback step.
+- **An email address on users (0.2.23).** An optional `email` field validated
+  as a plain address, set by superusers (`user add --email`, `user email`),
+  shown by `user show` and `--json`, never in audit lines, no SMTP. The store
+  changes: a rollback step that removes it or refuses while one is set.
+- **Several addresses per device.** The registry holds one `address`, the AAA
+  identity, in about 40 places. Keep it as the management address and add a
+  list of further addresses (AAA source addresses, loopbacks), unique across
+  devices and hosts, used for log attribution, holds and known_hosts. An
+  opt-in `device scan` option reads the host key of unknown log addresses and
+  raises a notice on the one device that pins it; accepting asks whether the
+  new address becomes the management one. A source-address change by apply
+  must be a registered address of the device inside its scope's prefixes
+  (else AAA fails). Older builds refuse unknown `devices.yaml` keys.
+- **Multiple shared secrets for phased roll-outs.** TACACS+ has no message
+  authentication, so two secrets for one address cannot be told apart
+  without a daemon patch. Mechanism without one: a scope holds labelled
+  secrets with one primary; a device (or host) selects one; the render emits
+  an extra provider per non-primary secret with the `/32` of its devices; the
+  new secret is made primary and the old removed when no device uses it. Check
+  first which provider tacquito takes when a `/32` and the scope prefix both
+  match and whether FreeRADIUS picks the most specific client.
+- **The logging release.** A small hardened built-in logging server
+  (standard library, reproducible, auditable) writing to local files, a local
+  logger or a remote server over TCP or UDP, with a disk spool bounded by
+  size, age and free space, per-scope targets, RFC 5424 with a tag per stream
+  and an optional collector or relay for replica servers; rsyslog or another
+  forwarder only as an opt-in plugin with a stated disclaimer. Plan it with
+  the replica and failover work.
+- **Replica and failover.** Several server addresses, a manual failover pair,
+  primary and backup, mirror and sync per site or scope, possibly corosync;
+  nothing is built.
+- **Completion single source, phase 2.** Move the flags and words family by
+  family into `Spec`/`Flag` and generate the usage rows; after the feature
+  work of a release so it conflicts with nothing.
 
 ## 4. Linux hosts: considered, not pursued
 

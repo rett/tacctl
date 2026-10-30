@@ -25,4 +25,27 @@ tacctl ssh core-sw1 -- show version # one remote command
 4. **Plain `ssh`.** `tacctl device client-config > ~/.ssh/tacctl.conf` and `Include ~/.ssh/tacctl.conf` at the top of `~/.ssh/config` give a plain `ssh core-sw1` (and `scp`) the same options and the same pin. The fragment has one `Host` block per device you may see and no `User` line, so ssh logs in with your local username: a tacctl user whose local account has another name adds `User <tacctl name>` to its own `~/.ssh/config`. Re-run it after the registry changes.
 5. **A key that changed.** When a device was replaced or reset, ssh is refused and tacctl prints the pinned and offered fingerprints and the console command that shows the key. After verifying on the console, an administrator re-pins with `tacctl device hostkey core-sw1 accept` (or `set SHA256:<fp>`).
 
+## Slow or distant devices
+
+A device behind a satellite circuit (a round trip of 600 ms) or with a slow CPU (one measured needs about 4 s for each ssh connection) can miss the timings tacctl uses to reach a device. One whole number from 1 to 10, the timing scale, multiplies all of them; 1, the default, is every timing as it has always been.
+
+```
+tacctl device timeout-scale sat-rtr1 3     # this device
+tacctl scope timeout-scale site-a 3        # every device of the scope
+tacctl config devices timeout-scale 2      # every device of the server
+```
+
+The scale in force for a device is its own, else its scope's, else the server's, else 1 (the order of the NETCONF service setting); `clear` removes a device's or a scope's own, and a verb with no value prints the scale in force, where it comes from and what it makes of each timing. `device show` has a `Timeout scale` row (and `--json` a `timeout_scale` object) and `scope show` a row when the scale in force is not 1.
+
+| What | At scale 1 | Multiplied |
+| --- | --- | --- |
+| The connect, handshake and first prompt of an ssh or NETCONF session (`device config pull`, `diff --pull`, `plan --pull`, `apply`, `enroll`, `onboard`, `collect`, `support-bundle`) | 10 s | yes |
+| The ConnectTimeout of `tacctl ssh` and `device ssh` | 10 s | yes |
+| The host-key scans (`device add`, `hostkey`, `scan`, `check`, `enroll`, `collect`, `onboard`, and the diagnosis after a failed `ssh`): ssh-keyscan's `-T`, the built-in client's connect, handshake and per-type attempt | 5 s and 3 s; 3 s, 10 s and 5 s | yes |
+| The SNMP timeout (`snmp.timeout`, `scope snmp timeout`, `device snmp timeout`) | 2 s | yes, never above its maximum of 10 s |
+| The per-device time of a pull or an apply (`device.config.timeout`) | 90 s | yes, kept between 10 s and 600 s |
+| The confirmed-commit windows (`device.config.confirm_timeout`, `device.apply.confirm_timeout`) | minutes | no: they are timers on the device |
+
+An option typed on the command line wins over the scale: `--timeout` of a pull or an apply is the time of every device of that run, as typed (the scale only replaces the default, `device.config.timeout`). Where one run covers devices with different scales, each device has the time its own scale gives. A scale cannot make a lost packet arrive: a device that is down is still found out, only later.
+
 From `tacctl shell`, `ssh core-sw1` is the same line. Every verb is in [Device Commands](../cli/device.md#device-commands--tacctl-device).

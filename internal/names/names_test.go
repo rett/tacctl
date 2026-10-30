@@ -18,7 +18,7 @@ func msg(t *testing.T, err error) string {
 // --- validate_username ---
 
 func TestValidateUsernameAccepts(t *testing.T) {
-	for _, s := range []string{"jsmith", "j_smith-2", "A1"} {
+	for _, s := range []string{"jsmith", "j_smith-2", "A1", "1", "-", "_x"} {
 		if err := ValidateUsername(s); err != nil {
 			t.Errorf("%q: %v", s, err)
 		}
@@ -33,26 +33,14 @@ func TestValidateUsernameRejects(t *testing.T) {
 	}
 }
 
-const usernameWant = "Username must contain only letters, numbers, underscores, hyphens, and periods (not first, not last, not two in a row)."
+const usernameWant = "Username must contain only letters, numbers, underscores and hyphens (a period cannot be part of a Linux account name)."
 
-// TestValidateUsernameDots: a period is allowed between runs of letters,
-// digits, '_' and '-', and nowhere else.
-func TestValidateUsernameDots(t *testing.T) {
+// TestValidateUsernameNoDots: a new user name is letters, digits, '_' and
+// '-' and nothing else; a period is refused with the reason.
+func TestValidateUsernameNoDots(t *testing.T) {
 	for _, s := range []string{
-		"alice.smith", "a.b-c_d", "a.b", "a.b.c", "j.smith2", "A.B", "1.2", "-.-", "_._", "a-.-b", "alice-.smith",
-		"first.last.example",
-	} {
-		if err := ValidateUsername(s); err != nil {
-			t.Errorf("%q refused: %v", s, err)
-		}
-		if !MatchUser(s) {
-			t.Errorf("MatchUser(%q) = false", s)
-		}
-	}
-	for _, s := range []string{
-		".alice", "alice.", "alice..smith", ".", "..", "...", ".a.", "a...b", "alice.smith.", ".alice.smith",
-		"alice. smith", "alice.smith\n", "alice\n.smith", "alice.sm/th", "alice.é", "alice,smith", "alice:smith",
-		"alice.smith;x", "al ice.smith", "alice\x00.smith",
+		"alice.smith", "a.b-c_d", "a.b", "a.b.c", "1.2", "first.last.example",
+		".alice", "alice.", "alice..smith", ".", "..", "alice.smith\n",
 	} {
 		if got := msg(t, ValidateUsername(s)); got != usernameWant {
 			t.Errorf("%q: %q", s, got)
@@ -63,9 +51,33 @@ func TestValidateUsernameDots(t *testing.T) {
 	}
 }
 
-// TestUsernameDotsLeaveOtherNamesAlone: the period is for user names only;
-// Juniper class names (RE_CLASS has the shape a username had), groups and
-// scopes keep their patterns.
+// TestExistingUsernameKeepsDots: a store written by 0.2.20 or 0.2.21 can
+// hold a name with periods between its parts; it is read, shown, renamed
+// from and removed, and only a bad shape is refused.
+func TestExistingUsernameKeepsDots(t *testing.T) {
+	for _, s := range []string{"alice.smith", "a.b-c_d", "a.b.c", "1.2", "-.-", "jsmith", "A.B"} {
+		if err := ValidateExistingUsername(s); err != nil {
+			t.Errorf("%q refused: %v", s, err)
+		}
+		if !MatchExistingUser(s) {
+			t.Errorf("MatchExistingUser(%q) = false", s)
+		}
+	}
+	for _, s := range []string{
+		"", ".alice", "alice.", "alice..smith", ".", "..", "alice. smith", "alice.smith\n", "alice.sm/th", "alice.\u00e9",
+		"al ice.smith", "alice\x00.smith",
+	} {
+		if got := msg(t, ValidateExistingUsername(s)); got != usernameWant {
+			t.Errorf("%q: %q", s, got)
+		}
+		if MatchExistingUser(s) {
+			t.Errorf("MatchExistingUser(%q) = true", s)
+		}
+	}
+}
+
+// TestUsernameDotsLeaveOtherNamesAlone: the reserved names stay reserved and
+// Juniper class names, groups and scopes keep their patterns.
 func TestUsernameDotsLeaveOtherNamesAlone(t *testing.T) {
 	if MatchClass("ops.rw") || ValidateClassName("ops.rw") == nil {
 		t.Error("a class name must not hold a period")
@@ -82,11 +94,6 @@ func TestUsernameDotsLeaveOtherNamesAlone(t *testing.T) {
 	for _, s := range []string{"root", "tacquito"} {
 		if RejectReservedUsername(s) == nil {
 			t.Errorf("%q must stay reserved", s)
-		}
-	}
-	for _, s := range []string{"root.x", "tacquito.x", "alice.root"} {
-		if err := RejectReservedUsername(s); err != nil {
-			t.Errorf("%q: %v", s, err)
 		}
 	}
 }
@@ -160,7 +167,7 @@ func TestValidateScopeName(t *testing.T) {
 }
 
 func TestMatchers(t *testing.T) {
-	if !MatchUser("a-b_1") || !MatchUser("a.b") || MatchUser("a..b") || MatchUser("") || MatchUser("a b") {
+	if !MatchUser("a-b_1") || MatchUser("a.b") || MatchUser("a..b") || MatchUser("") || MatchUser("a b") {
 		t.Error("MatchUser")
 	}
 	if !MatchGroup("a1") || MatchGroup("A1") {

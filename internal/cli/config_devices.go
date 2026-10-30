@@ -15,7 +15,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/devapply"
+	"github.com/rett/tacctl/internal/policy"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -25,7 +27,7 @@ func init() {
 
 // configDevicesFamilySpec is the spec of 'config devices' as
 // registerConfigVerb takes it.
-var configDevicesFamilySpec = Spec{MaxArgs: 2, Args: []string{"show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause|apply-transport", ""}}
+var configDevicesFamilySpec = Spec{MaxArgs: 2, Args: []string{"show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause|apply-transport|timeout-scale", ""}}
 
 // configDevicesSpecs are the arguments of each verb.
 var configDevicesSpecs = map[string]Spec{
@@ -39,6 +41,8 @@ var configDevicesSpecs = map[string]Spec{
 	"apply-pause":           {MaxArgs: 1, Args: []string{""}},
 	// How 'device config apply' reaches a device (0.2.10, D150).
 	"apply-transport": {MaxArgs: 1, Args: []string{"cli|auto|netconf"}},
+	// The timing scale of the whole server (0.2.22).
+	"timeout-scale": {MaxArgs: 1, Args: []string{""}},
 }
 
 // The values of device.apply.transport and of --transport on 'device config
@@ -69,6 +73,7 @@ var configDevicesVerbs = [][2]string{
 	{"apply-confirm-timeout [<minutes>]", "Show or set the minutes of the 'commit confirmed' of 'device config apply', 3-60 (default 10)"},
 	{"apply-pause [<seconds>]", "Show or set the seconds 'device config apply' waits between the devices of a batch after the canary, 0-3600 (default 60)"},
 	{"apply-transport [cli|auto|netconf]", "Show or set how 'device config apply' reaches a Junos device (cli: the command line, the default; auto: NETCONF where the device answers and confirms, else the command line)"},
+	{"timeout-scale [<n>]", "Show or set the timing scale of every device, 1-10 (default 1)"},
 }
 
 func configDevicesCmd(inv *invocation) *cobra.Command {
@@ -86,7 +91,7 @@ func configDevicesCmd(inv *invocation) *cobra.Command {
 // configDevicesUsage is the usage of 'config devices'.
 func configDevicesUsage() string {
 	var b strings.Builder
-	b.WriteString("\n" + ui.Bold + "Device reads" + ui.NC + "\n\nUsage: tacctl config devices [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause|apply-transport] [<value>]\n\n")
+	b.WriteString("\n" + ui.Bold + "Device reads" + ui.NC + "\n\nUsage: tacctl config devices [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause|apply-transport|timeout-scale] [<value>]\n\n")
 	for _, v := range configDevicesVerbs {
 		fmt.Fprintf(&b, "  %-38s  %s\n", v[0], v[1])
 	}
@@ -111,6 +116,14 @@ login may commit, else the command line and says why; 'netconf' never falls
 back.
 --transport of one run replaces it. A change to the NETCONF service itself
 (see 'scope netconf') is always made over the command line.
+'timeout-scale' (device.timeout_scale) multiplies every network timing used to
+reach a device, for devices behind a long round trip or with a slow CPU: the
+connect and handshake of the sessions, the host-key scans, the SNMP timeout
+(never above 10 s) and the per-device time of a pull or an apply (kept inside
+10 to 600 s). 1, the default, is the timings as they have always been; the
+scale of a scope ('tacctl scope timeout-scale') and of a device ('tacctl
+device timeout-scale') win, in that order. The confirmed-commit windows are
+never scaled, and --timeout of one run replaces the scaled time.
 The setters are for administrators.
 
 Examples:
@@ -122,6 +135,7 @@ Examples:
   tacctl config devices apply-confirm-timeout 15
   tacctl config devices apply-pause 120
   tacctl config devices apply-transport cli
+  tacctl config devices timeout-scale 3
 
 `)
 	return b.String()
@@ -162,17 +176,18 @@ func (inv *invocation) configDevices(args []string) error {
 	case "apply-transport":
 		return inv.configDevicesSet(rest, "device.apply.transport", "Apply transport",
 			"  Usage: tacctl config devices apply-transport cli|auto|netconf", "The transport of an apply set to %v.")
+	case "timeout-scale":
+		return inv.configDevicesSet(rest, conf.TimeoutScaleKey, "Timeout scale",
+			"  Usage: tacctl config devices timeout-scale <1-10>", "The timeout scale of the whole server set to %v.")
 	default:
-		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-		inv.write(configDevicesUsage())
-		return exit(1)
+		return inv.unknownSub(sub)
 	}
 }
 
 // configDevicesShow prints the settings.
 func (inv *invocation) configDevicesShow(rest []string) error {
 	if len(rest) > 0 {
-		return inv.usageErr("Unknown argument: '"+rest[0]+"'", "Usage: tacctl config devices [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause|apply-transport] [<value>]")
+		return inv.usageErr("Unknown argument: '"+rest[0]+"'", "Usage: tacctl config devices [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause|apply-transport|timeout-scale] [<value>]")
 	}
 	s := inv.deviceConfigSettings()
 	src := func(path string) string {
@@ -195,6 +210,9 @@ func (inv *invocation) configDevicesShow(rest []string) error {
 	inv.echo("  apply-confirm-timeout: " + strconv.Itoa(confirm) + " min   (" + src("device.apply.confirm_timeout") + "; 3-60, the N of 'commit confirmed N' of every apply)")
 	inv.echo("  apply-pause:           " + strconv.Itoa(int(pause.Seconds())) + " s   (" + src("device.apply.pause") + "; 0-3600, between the devices of a batch after the canary)")
 	inv.echo("  apply-transport:       " + inv.applyTransport() + "   (" + src("device.apply.transport") + "; auto, cli or netconf)")
+	inv.echo("")
+	inv.echo("  Timing of every access to a device")
+	inv.echo("  timeout-scale:   " + strconv.Itoa(max(policy.TimeoutScaleDefault(inv.app.Conf()), conf.TimeoutScaleMin)) + "   (" + src(conf.TimeoutScaleKey) + "; 1-10, multiplies every network timing; a scope's and a device's own win)")
 	inv.echo("")
 	return nil
 }
@@ -234,7 +252,7 @@ func (inv *invocation) configDevicesSet(rest []string, path, label, usage, done 
 	}
 	def := map[string]string{"device.config.max_concurrency": "8", "device.config.transport": transportAuto, "device.config.timeout": "90",
 		"device.config.confirm_timeout": "5", "device.apply.confirm_timeout": strconv.Itoa(applyConfirmDefault),
-		"device.apply.pause": strconv.Itoa(applyPauseDefault), "device.apply.transport": applyTransportCLI}[path]
+		"device.apply.pause": strconv.Itoa(applyPauseDefault), "device.apply.transport": applyTransportCLI, conf.TimeoutScaleKey: strconv.Itoa(conf.TimeoutScaleMin)}[path]
 	if len(rest) == 0 {
 		inv.echo("")
 		inv.echo("  " + label + ": " + inv.confGet(path, def))

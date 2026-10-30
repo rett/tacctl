@@ -282,7 +282,7 @@ var statCounters = [][2]string{
 // scraped.
 func (b *Backend) statusStats(ctx context.Context, w io.Writer, addr string) {
 	if addr == rtacacs.MetricsSink {
-		echoLine(w, "    "+ui.Yellow+"Metrics exporter disabled (tacctl config metrics enable)"+ui.NC)
+		echoLine(w, "    "+ui.Yellow+"Metrics exporter disabled (tacctl server metrics enable)"+ui.NC)
 		return
 	}
 	url := scrapeURL(addr)

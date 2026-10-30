@@ -1,27 +1,31 @@
 package cli
 
-// 'device list' selection: the rows are sorted by name and may be narrowed
-// by name, address, vendor and scope. Each option takes one value or a
-// comma-separated list (any of them matches); different options must all
-// match; the optional word matches the name, the address, the vendor or the
-// scope. Nothing here reads state: it is a pure function of the entries.
+// The selection of 'device list' and 'host list': the rows are sorted by
+// name and may be narrowed by name, address, vendor and scope. Each option
+// takes one value or a comma-separated list (any of them matches); different
+// options must all match; the optional word matches the name, the address,
+// the vendor or the scope. Nothing here reads state: it is a pure function
+// of the entries. A list whose spec lacks an option (the host list has no
+// --vendor and no word) leaves that part of the filter empty.
 
 import (
+	"fmt"
 	"net/netip"
 	"sort"
 	"strings"
 
 	"github.com/rett/tacctl/internal/devreg"
+	"github.com/rett/tacctl/internal/ui"
 )
 
-// deviceListFilter is what a 'device list' was narrowed by.
-type deviceListFilter struct {
+// listFilter is what a 'device list' or a 'host list' was narrowed by.
+type listFilter struct {
 	names, addrs, vendors, scopes []string
 	word                          string
 }
 
 // empty reports a filter that selects everything.
-func (f deviceListFilter) empty() bool {
+func (f listFilter) empty() bool {
 	return len(f.names)+len(f.addrs)+len(f.vendors)+len(f.scopes) == 0 && f.word == ""
 }
 
@@ -39,9 +43,9 @@ func splitList(values []string) []string {
 	return out
 }
 
-// newDeviceListFilter builds the filter of one invocation.
-func newDeviceListFilter(p Parsed) deviceListFilter {
-	f := deviceListFilter{
+// newListFilter builds the filter of one invocation.
+func newListFilter(p Parsed) listFilter {
+	f := listFilter{
 		names:   splitList(p.Values("--name")),
 		addrs:   splitList(p.Values("--ip")),
 		vendors: splitList(p.Values("--vendor")),
@@ -90,7 +94,7 @@ func anyEquals(v string, wants []string) bool {
 }
 
 // match says whether the entry passes every option that was given.
-func (f deviceListFilter) match(e devreg.Entry) bool {
+func (f listFilter) match(e devreg.Entry) bool {
 	if len(f.names) > 0 && !anyContains(e.Name, f.names) {
 		return false
 	}
@@ -131,4 +135,53 @@ func sortEntriesByName(es []devreg.Entry) {
 		}
 		return es[i].Address < es[j].Address
 	})
+}
+
+// --- the cells and lines the two lists share ---------------------------------
+
+// listStateCell is the STATE cell of a row: the entry's state, marked stale
+// when the seen data says so; a device or host the server has been told not
+// to answer is marked BREAK-GLASS in red in place of what the scopes say.
+func listStateCell(state string, stale, held bool) any {
+	if held {
+		state = "BREAK-GLASS"
+	}
+	if stale {
+		state += " stale"
+	}
+	if held {
+		return ui.Styled(ui.Red, state)
+	}
+	return state
+}
+
+// listHead is the heading of a list: the label and the number shown, and,
+// when the list was narrowed, how many there were before.
+func listHead(label string, shown, total int, narrowed bool) string {
+	head := fmt.Sprintf("%s (%d)", label, shown)
+	if narrowed {
+		head += fmt.Sprintf(", of %d", total)
+	}
+	return head
+}
+
+// listNone prints the heading of a list with no row and one line under it:
+// "None match." for a narrowed list, else none, which says how to make the
+// first one.
+func (inv *invocation) listNone(head string, narrowed bool, none string) {
+	inv.echoE(ui.Bold + head + ui.NC)
+	inv.echo(ui.Rule(head))
+	if narrowed {
+		inv.echo("  None match.")
+	} else {
+		inv.echo("  " + none)
+	}
+	inv.echo("")
+}
+
+// listOpenNotices is the line of a list that points to the open notices.
+func (inv *invocation) listOpenNotices(open int) {
+	if open > 0 {
+		inv.echo(fmt.Sprintf("  %d open notice(s): tacctl device notice list", open))
+	}
 }

@@ -7,11 +7,12 @@
 # usage and unknown subcommands
 @known 0.2.1 item 74: the user usage lists 'scope <user> remove --all'
 user
-@known 0.2.1 item 74: the user usage lists 'scope <user> remove --all'
+@known 0.2.1 item 74: the user usage lists 'scope <user> remove --all'; 0.2.22 item 11: an unknown sub-command is one error line, the closest verbs and a pointer to the help (-h), not the usage
 user bogus
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID
 user list
 hash
+@known 0.2.22 item 11: an unknown sub-command is one error line, the closest verbs and a pointer to the help (-h), not the usage
 hash bogus
 hash commands
 
@@ -198,7 +199,7 @@ user add alice superuser --hash {HASH} --scopes lab ;; user scope alice remove -
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice set lab
 @known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice clear
-@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.3 item 50: readonly and operator ship new command rules and privileges, and every match is rendered whole (item 48); 0.2.5 item 56: the operator rules and privileges no longer hold clear, monitor capture or the unbounded and interactive forms of ping and traceroute (the engineer's); 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.22 item 11: an unknown sub-command is one error line, the closest verbs and a pointer to the help (-h), not the usage
 user add alice superuser --hash {HASH} --scopes lab ;; user scope alice bogus
 
 # hash generate
@@ -228,6 +229,7 @@ hash help
 hash -h
 @known 0.2.20 item 10: -h and --help print the help that ? prints
 hash --help
+@known 0.2.22 item 11: an unknown sub-command is one error line, the closest verbs and a pointer to the help (-h), not the usage
 hash bogus extra
 hash generate extra <<< CorrectHorse99\nCorrectHorse99
 

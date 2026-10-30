@@ -135,7 +135,7 @@ func TestSecretConstraintsAndDeviceVars(t *testing.T) {
 	}
 }
 
-// TACACS_PORT is the default listener's port, as 'config listen' sets it: an
+// TACACS_PORT is the default listener's port, as 'server listen' sets it: an
 // extra listener is nobody's answer, and an install that is not converted has
 // the port its hand-managed drop-in says.
 func TestDeviceVarsFollowTheDefaultListener(t *testing.T) {

@@ -115,6 +115,7 @@ func TestRollback0216RefusesTheReleasesBetween(t *testing.T) {
 func TestRollbackRealOldBinary0216(t *testing.T) {
 	bin := oldBinaryOf(t, "0.2.16", old0216Flag)
 	hs := rollback0216State(t, "true")
+	hs.withTimeoutScale()
 	stubs := t.TempDir()
 	for _, name := range []string{"systemctl", "logger", "chown"} {
 		if err := os.WriteFile(filepath.Join(stubs, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
@@ -135,6 +136,17 @@ func TestRollbackRealOldBinary0216(t *testing.T) {
 	}
 	hs.run(hs.runner(), "rollback", "0.2.16", "--apply", "--yes")
 	hs.expect(0, "Applying.", "")
+	if out, code := run("device", "list"); code != 0 || !strings.Contains(out, "sw1") {
+		t.Errorf("0.2.16 device list after: %d\n%s", code, out)
+	}
+	// the drop-in this release rendered carries a newer comment than the one the
+	// older release renders: it says so until its first render rewrites it
+	if out, code = run("config", "validate"); code != 1 || !strings.Contains(out, "is out of date with the store") {
+		t.Errorf("0.2.16 config validate before its first render: %d\n%s", code, out)
+	}
+	if out, code = run("config", "render"); code != 0 {
+		t.Errorf("0.2.16 config render after: %d\n%s", code, out)
+	}
 	out, code = run("config", "validate")
 	if code != 0 || strings.Contains(out, "unknown config key") || !strings.Contains(out, "Configuration is valid.") {
 		t.Errorf("0.2.16 config validate after: %d\n%s", code, out)

@@ -12,7 +12,7 @@ import (
 	"github.com/rett/tacctl/internal/snapshot"
 )
 
-// 'tacctl config loglevel' and 'tacctl config metrics' below their
+// 'tacctl config loglevel' and 'tacctl server metrics' below their
 // argument parsing (tests/integration/config_setters.bats,
 // config_metrics_sudoers.bats, listeners.bats "loglevel and metrics are per
 // backend"), and the conversion of an install from before the listener
@@ -96,7 +96,7 @@ func TestMetrics(t *testing.T) {
 	mustContain(t, e.stdout.String(), "  Address:  127.0.0.1:8080  (default)")
 	_ = run("show", "")
 	mustContain(t, e.stdout.String(), "  Scrape URL: http://127.0.0.1:8080/metrics")
-	mustContain(t, e.stdout.String(), "tacctl config metrics reset                Clear override (revert to unit default)")
+	mustContain(t, e.stdout.String(), "tacctl server metrics reset                Clear override (revert to unit default)")
 
 	// "enable: no-op on fresh install".
 	_ = run("enable", "")
@@ -118,7 +118,7 @@ func TestMetrics(t *testing.T) {
 	mustContain(t, e.stdout.String(), "enabled (externally reachable)")
 	mustContain(t, e.stdout.String(), "10.1.0.1:9090  (override)")
 
-	// listeners.bats "config metrics: a bad address is refused with
+	// listeners.bats "server metrics: a bad address is refused with
 	// everything as it was".
 	before := state(dropin, e.p.Overrides)
 	wantCode(t, run("address", "bad host:9090"), 1)

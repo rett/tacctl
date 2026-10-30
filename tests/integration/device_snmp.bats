@@ -78,7 +78,7 @@ snmp_agent() {
     run grep -c "core-sw1: {address: 127.0.0.1" "$DEVICES"
     assert_output "1"
     # A matching --hostname is a match.
-    "$TACCTL_BIN_SCRIPT" device remove core-sw1 -y > /dev/null
+    "$TACCTL_BIN_SCRIPT" device remove core-sw1 --yes > /dev/null
     run "$TACCTL_BIN_SCRIPT" device add core-sw1 127.0.0.1 --hostname sw1.site-a.example --no-host-key
     assert_success
     refute_output --partial "!"
@@ -93,7 +93,7 @@ snmp_agent() {
     assert_line "[INFO] No SNMP answer from 127.0.0.1; no name hint."
     run grep -c "core-sw1" "$DEVICES"
     assert_output "1"
-    "$TACCTL_BIN_SCRIPT" device remove core-sw1 -y > /dev/null
+    "$TACCTL_BIN_SCRIPT" device remove core-sw1 --yes > /dev/null
     run "$TACCTL_BIN_SCRIPT" device add core-sw1 127.0.0.1 --no-host-key --no-lookup
     assert_success
     refute_output --partial "SNMP"
@@ -168,7 +168,7 @@ EOF
     run "$TACCTL_BIN_SCRIPT" device location sw1
     assert_output "Site A, rack 4"
     # --snmp-location wins, and --no-lookup reads nothing.
-    "$TACCTL_BIN_SCRIPT" device remove sw1 -y > /dev/null
+    "$TACCTL_BIN_SCRIPT" device remove sw1 --yes > /dev/null
     run "$TACCTL_BIN_SCRIPT" device add sw1 127.0.0.1 --no-host-key --snmp-location "Mine"
     assert_success
     refute_output --partial "read from the device"
@@ -215,7 +215,7 @@ EOF
     assert_output "Elsewhere"
 }
 
-@test "device location --from-device: stores the device's reading; a different one needs -y without a terminal" {
+@test "device location --from-device: stores the device's reading; a different one needs --yes without a terminal" {
     snmp_agent sw1.site-a.example "Site A"
     "$TACCTL_BIN_SCRIPT" device add sw1 127.0.0.1 --no-host-key --no-lookup > /dev/null
     run "$TACCTL_BIN_SCRIPT" device location sw1 --from-device
@@ -231,8 +231,8 @@ EOF
     plain
     assert_line "  Registry: Old place"
     assert_line "  Device:   Site A"
-    assert_output --partial "Give -y to replace it with the device's."
-    run "$TACCTL_BIN_SCRIPT" device location sw1 --from-device -y
+    assert_output --partial "Give --yes to replace it with the device's."
+    run "$TACCTL_BIN_SCRIPT" device location sw1 --from-device --yes
     assert_success
     run "$TACCTL_BIN_SCRIPT" device location sw1
     assert_output "Site A"
@@ -260,12 +260,12 @@ EOF
     plain
     assert_output --partial "Vendor:      differs: device says cisco (Cisco IOS Software), registered other (tacctl device vendor sw1 --from-device)"
     assert_output --partial "vendor-differs: 127.0.0.1 says it is cisco"
-    # Without a terminal or -y nothing changes; with -y it is set.
+    # Without a terminal or --yes nothing changes; with --yes it is set.
     run "$TACCTL_BIN_SCRIPT" device vendor sw1 --from-device
     assert_failure
     run grep -c "sw1: {address: 127.0.0.1, vendor: other}" "$DEVICES"
     assert_output "1"
-    run "$TACCTL_BIN_SCRIPT" device vendor sw1 --from-device -y
+    run "$TACCTL_BIN_SCRIPT" device vendor sw1 --from-device --yes
     assert_success
     plain
     assert_output --partial "Device 'sw1' vendor set to cisco."
@@ -276,7 +276,7 @@ EOF
 @test "device vendor --from-device: an enterprise-9 answer that is not IOS is refused with what was read" {
     SNMP_OBJECTID=1.3.6.1.4.1.9.1.9997 SNMP_DESCR="Cisco SYNTHETIC security appliance" snmp_agent fw1
     "$TACCTL_BIN_SCRIPT" device add fw1 127.0.0.1 --no-host-key --no-lookup > /dev/null
-    run "$TACCTL_BIN_SCRIPT" device vendor fw1 --from-device -y
+    run "$TACCTL_BIN_SCRIPT" device vendor fw1 --from-device --yes
     assert_failure
     plain
     assert_output --partial "The device names no vendor tacctl reads: Cisco device, sysDescr not recognised as IOS or IOS-XE (SNMP sysObjectID 1.3.6.1.4.1.9.1.9997, sysDescr 'Cisco SYNTHETIC security appliance'). Nothing was changed."
@@ -292,16 +292,16 @@ EOF
     assert_success
     plain
     assert_line "  ! It is registered as other: tacctl device vendor sw1 juniper"
-    run "$TACCTL_BIN_SCRIPT" device vendor sw1 --from-device -y
+    run "$TACCTL_BIN_SCRIPT" device vendor sw1 --from-device --yes
     assert_success
     assert_output --partial "Device 'sw1' vendor set to juniper."
     run grep -c "sw1: {address: 127.0.0.1, vendor: juniper}" "$DEVICES"
     assert_output "1"
-    "$TACCTL_BIN_SCRIPT" device remove sw1 -y > /dev/null
+    "$TACCTL_BIN_SCRIPT" device remove sw1 --yes > /dev/null
     kill "$SNMP_PID" 2> /dev/null || true
     SNMP_OBJECTID=1.3.6.1.4.1.2634.1.8 SNMP_DESCR="Linux localhost 5.4.0 #1 Tue Mar 24 13:05:15 PDT 2026 armv7l" snmp_agent WTI
     "$TACCTL_BIN_SCRIPT" device add pdu1 127.0.0.1 --no-host-key --no-lookup > /dev/null
-    run "$TACCTL_BIN_SCRIPT" device vendor pdu1 --from-device -y
+    run "$TACCTL_BIN_SCRIPT" device vendor pdu1 --from-device --yes
     assert_success
     assert_output --partial "Device 'pdu1' vendor set to wti."
 }

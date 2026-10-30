@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/rett/tacctl/internal/cidr"
+	"github.com/rett/tacctl/internal/devssh"
 	"github.com/rett/tacctl/internal/names"
 )
 
@@ -56,6 +57,13 @@ type Device struct {
 	// wins over its scope's. The zero value is "nothing of its own" (the
 	// scope's decides); the file has the map only when it is set.
 	Netconf Netconf
+	// TimeoutScale is the device's own timing scale (0.2.22, 'tacctl device
+	// timeout-scale'): a whole number from devssh.MinTimeoutScale to
+	// devssh.MaxTimeoutScale that multiplies the timings of every network
+	// access to the device; it wins over its scope's and the default's. 0 is
+	// "nothing of its own" (the scope's decides), and the only value never
+	// written to the file.
+	TimeoutScale int
 }
 
 // Netconf is a device's own NETCONF service setting (Junos only). The zero
@@ -426,6 +434,10 @@ func (d Device) validate() error {
 	}
 	if err := d.Netconf.validate(); err != nil {
 		return err
+	}
+	if d.TimeoutScale != 0 && !devssh.ValidTimeoutScale(d.TimeoutScale) {
+		return fail("Invalid timeout_scale " + strconv.Itoa(d.TimeoutScale) + ": expected " +
+			strconv.Itoa(devssh.MinTimeoutScale) + "-" + strconv.Itoa(devssh.MaxTimeoutScale) + ".")
 	}
 	return d.SNMP.validate()
 }

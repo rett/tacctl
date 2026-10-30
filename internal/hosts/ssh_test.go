@@ -211,3 +211,20 @@ func contains(list []string, s string) bool {
 	}
 	return false
 }
+
+// NoTerminal is a run beside others: ssh in BatchMode, sudo -n, and nothing
+// read from standard input, whatever the terminals the Env was given.
+func TestEnvNoTerminal(t *testing.T) {
+	yes := func() bool { return true }
+	e := &Env{TTY: yes, StdinTTY: yes, Stdin: strings.NewReader("secret\n")}
+	if e.ssh("", "").Batch || !e.tty() || !e.stdinTTY() {
+		t.Fatal("the Env was not given a terminal")
+	}
+	e.NoTerminal()
+	if !e.ssh("", "").Batch || e.tty() || e.stdinTTY() {
+		t.Errorf("terminal left: batch %v tty %v stdin tty %v", e.ssh("", "").Batch, e.tty(), e.stdinTTY())
+	}
+	if b, _ := io.ReadAll(e.Stdin); len(b) != 0 {
+		t.Errorf("stdin still holds %q", b)
+	}
+}

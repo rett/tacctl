@@ -28,6 +28,7 @@ import (
 	"github.com/rett/tacctl/internal/blocks"
 	"github.com/rett/tacctl/internal/cidr"
 	"github.com/rett/tacctl/internal/conf"
+	"github.com/rett/tacctl/internal/devssh"
 	"github.com/rett/tacctl/internal/mgmtacl"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/names"
@@ -72,6 +73,8 @@ var scopeSpecs = map[string]Spec{
 	"block": scopeBlockCompletion,
 	// The NETCONF service of the scope's Junos devices (0.2.10, D145).
 	"netconf": {MinArgs: 1, MaxArgs: 2, Args: []string{KindScopes, scopeNetconfWords}, Flags: scopeNetconfFlags},
+	// The timing scale of the scope's devices (0.2.22).
+	"timeout-scale": {MinArgs: 1, MaxArgs: 2, Args: []string{KindScopes, timeoutScaleWords}},
 	"snmp": {MinArgs: 1, MaxArgs: -1, Args: []string{KindScopes, "show|version|community|v3-user|clients|contact|port|timeout|clear|test",
 		After("clients", "list|add|remove"), ""}, Flags: []Flag{
 		{Names: []string{"--reveal"}, Only: "show"}, {Names: []string{"--clear"}, Only: "contact"},
@@ -140,6 +143,7 @@ func scopeCmd(inv *invocation) *cobra.Command {
 			"Per-scope break-glass local users (names and roles; no credential is stored): the accounts a breakglass hold makes usable"), r(inv.scopeBreakGlass)),
 		withRun(verb(scopeSNMPUse, scopeSNMPShort), nn("snmp", inv.scopeSNMP)),
 		withRun(verb(scopeNetconfUse, scopeNetconfShort), nn("netconf", inv.scopeNetconf)),
+		withRun(verb(scopeTimeoutScaleUse, scopeTimeoutScaleShort), r(inv.scopeTimeoutScale)),
 		withRun(verb(scopeBlockUse, scopeBlockShort), nn("block", inv.scopeBlock)),
 	)
 	// No sub-command, help, -h, --help: the usage, exit 0; anything else:
@@ -150,11 +154,7 @@ func scopeCmd(inv *invocation) *cobra.Command {
 		case "", "-h", "--help", "help":
 			return inv.scopeUsage()
 		}
-		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-		if err := inv.scopeUsage(); err != nil {
-			return err
-		}
-		return exit(1)
+		return inv.unknownSub(sub)
 	})
 	return c
 }
@@ -170,7 +170,8 @@ var (
 // scope's name (<key>.<scope>). 'scope rename' moves them and 'scope
 // remove' drops them (scopeConfKeysMove).
 var scopeConfKeys = []string{"aaa.order", "exec_timeout", "tacacs_group", "radius_group", "scope_auth_method",
-	"scope_mgmt_acl.names.cisco", "scope_mgmt_acl.names.juniper", "scope_mgmt_acl.permits", "scope_mgmt_acl.mode", "cisco.source_interface"}
+	"scope_mgmt_acl.names.cisco", "scope_mgmt_acl.names.juniper", "scope_mgmt_acl.permits", "scope_mgmt_acl.mode", "cisco.source_interface",
+	conf.TimeoutScaleScopeFamily}
 
 // The ACL / filter names the device configs use when none is set
 // (CISCO_ACL_NAME_DEFAULT, JUNIPER_ACL_NAME_DEFAULT).
@@ -814,6 +815,10 @@ func (inv *invocation) scopeShow(args []string) error {
 	inv.echoE("  " + b + "Vendor attributes:" + nc + " " + vendorAttrs + "   (RADIUS; tacctl scope vendor-attrs " + name + ")")
 	inv.echoE("  " + b + "AAA order:" + nc + "     " + aaaOrder)
 	inv.echoE("  " + b + "Exec timeout:" + nc + "  " + execDisplay)
+	// the timing scale of the scope's devices, when it is not 1 (0.2.22)
+	if ts := inv.timeoutScaleOf(name, 0); ts.N != devssh.MinTimeoutScale {
+		inv.echoE("  " + b + "Timeout scale:" + nc + "  " + ts.text("") + "   (tacctl scope timeout-scale " + name + ")")
+	}
 	inv.echoE("  " + b + "TACACS group:" + nc + "  " + tacacsGroup)
 	inv.echoE("  " + b + "RADIUS group:" + nc + "  " + radiusGroup)
 	inv.echoE("  " + b + "Cisco ACL:" + nc + "     " + ciscoACL)
@@ -1495,7 +1500,7 @@ func (inv *invocation) scopePrefixes(args []string) error {
 	case "move":
 		return inv.scopePrefixesMove(m, scope, argv, arg(args, 3))
 	default:
-		return inv.usageErr("Unknown subcommand: '"+sub+"'", "Run 'tacctl scope prefixes "+scope+"' for usage.")
+		return inv.unknownSub(sub, "list", "add", "remove", "move")
 	}
 
 	if removeAll {
@@ -1921,7 +1926,7 @@ func (inv *invocation) scopeSecret(args []string) error {
 		a.Out.Warn("Update ALL devices in scope '" + scope + "' with the new secret above.")
 		inv.echo("")
 	default:
-		return inv.usageErr("Unknown subcommand: '"+sub+"'", "Run 'tacctl scope secret "+scope+"' for usage.")
+		return inv.unknownSub(sub, "show", "set", "generate")
 	}
 	return nil
 }
@@ -1931,7 +1936,6 @@ func (inv *invocation) scopeSecret(args []string) error {
 func (inv *invocation) scopeProtocols(args []string) error {
 	a := inv.app
 	scope, sub, value := arg(args, 0), arg(args, 1), arg(args, 2)
-	usage := usageLinesOf("scope protocols "+scope, scopeProtocolsRows...)
 	if scope == "" {
 		return inv.usageErr(usageLinesOf("scope protocols <scope>", scopeProtocolsRows...)...)
 	}
@@ -2023,7 +2027,7 @@ func (inv *invocation) scopeProtocols(args []string) error {
 		a.Out.Info("Scope '" + scope + "' protocols filter cleared (every enabled backend serves it).")
 		inv.echo("")
 	default:
-		return inv.usageErr(withUsage("Unknown subcommand: '"+sub+"'", usage)...)
+		return inv.unknownSub(sub, "list", "set", "clear")
 	}
 	return nil
 }
@@ -2096,7 +2100,7 @@ func (inv *invocation) scopeVendorAttrs(args []string) error {
 		return nil
 	case "enable", "disable":
 	default:
-		return inv.usageErr(withUsage("Unknown subcommand: '"+sub+"'. The verbs are enable and disable: nothing is sent until a vendor is enabled.", usage)...)
+		return inv.unknownSubNote(". The verbs are enable and disable: nothing is sent until a vendor is enabled.", sub, "enable", "disable")
 	}
 
 	if value == "" {
@@ -2230,7 +2234,7 @@ func (inv *invocation) scopeDevices(args []string) error {
 		return nil
 	case "set", "unset":
 	default:
-		return inv.usageErr(withUsage("Unknown subcommand: '"+sub+"'", usage)...)
+		return inv.unknownSub(sub, "set", "unset")
 	}
 
 	if addr == "" || (sub == "set" && vendor == "") || (sub == "unset" && vendor != "") {
@@ -2715,7 +2719,7 @@ func (inv *invocation) scopeMgmtACL(args []string) error {
 		}
 		return inv.scopeMgmtACLMode(scope, value)
 	default:
-		return inv.usageErr("Unknown subcommand '" + sub + "'. Use: list | add | remove | clear | cisco-name | juniper-name | mode.")
+		return inv.unknownSub(sub, "list", "add", "remove", "clear", "cisco-name", "juniper-name", "mode")
 	}
 	return nil
 }

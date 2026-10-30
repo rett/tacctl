@@ -43,7 +43,7 @@ func TestReexecTablesForSSHDeviceAndShell(t *testing.T) {
 		want []string
 	}{
 		{[]string{"scope", "block", "lab", "juniper", "edit", "snmp"}, []string{"sudo", "VISUAL=/usr/bin/vim", "EDITOR=nano", "/x", "scope", "block", "lab", "juniper", "edit", "snmp"}},
-		{[]string{"scope", "block", "lab", "juniper", "adopt", "jsw1", "snmp", "-y"}, []string{"sudo", "VISUAL=/usr/bin/vim", "EDITOR=nano", "/x", "scope", "block", "lab", "juniper", "adopt", "jsw1", "snmp", "-y"}},
+		{[]string{"scope", "block", "lab", "juniper", "adopt", "jsw1", "snmp", "--yes"}, []string{"sudo", "VISUAL=/usr/bin/vim", "EDITOR=nano", "/x", "scope", "block", "lab", "juniper", "adopt", "jsw1", "snmp", "--yes"}},
 		{[]string{"device", "block", "jsw1", "edit", "system"}, []string{"sudo", "VISUAL=/usr/bin/vim", "EDITOR=nano", "/x", "device", "block", "jsw1", "edit", "system"}},
 		{[]string{"device", "block", "jsw1", "adopt", "snmp"}, []string{"sudo", "VISUAL=/usr/bin/vim", "EDITOR=nano", "/x", "device", "block", "jsw1", "adopt", "snmp"}},
 		{[]string{"scope", "block", "lab", "juniper", "show", "snmp"}, []string{"sudo", "/x", "scope", "block", "lab", "juniper", "show", "snmp"}},

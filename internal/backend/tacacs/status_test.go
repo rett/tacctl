@@ -193,7 +193,7 @@ func TestStatusActivity(t *testing.T) {
 		"    mgmt: {network: tcp, address: '127.0.0.1:4949', metrics_address: '127.0.0.1:9100'}\n" +
 		"    zz: {network: tcp, address: '127.0.0.1:4950'}\n")
 	out = e.status(backend.StatusActivity)
-	mustContain(t, out, ui.Yellow+"Metrics exporter disabled (tacctl config metrics enable)"+ui.NC)
+	mustContain(t, out, ui.Yellow+"Metrics exporter disabled (tacctl server metrics enable)"+ui.NC)
 	mustContain(t, out, ui.Bold+"Authentication Stats, listener mgmt (since last restart):"+ui.NC+"\n    "+ui.Yellow+
 		"Metrics unavailable (http://127.0.0.1:9100/metrics)"+ui.NC)
 	mustContain(t, out, ui.Bold+"Authentication Stats, listener zz:"+ui.NC+" no metrics exporter (listeners.tacacs.zz.metrics_address)")

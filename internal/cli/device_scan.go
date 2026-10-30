@@ -21,6 +21,7 @@ import (
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devreg"
+	"github.com/rett/tacctl/internal/devssh"
 	"github.com/rett/tacctl/internal/shellquote"
 	"github.com/rett/tacctl/internal/snmp"
 	"github.com/rett/tacctl/internal/tier"
@@ -190,7 +191,7 @@ func (inv *invocation) scanBackends(only string) ([]devreg.ScanSource, error) {
 
 // keyTargets are the entries whose host keys a scan reads again: every
 // entry with a pinned key (all, with unpinned too) and a target to scan.
-func keyTargets(entries []devreg.Entry, unpinned bool) []devreg.KeyTarget {
+func (inv *invocation) keyTargets(entries []devreg.Entry, unpinned bool) []devreg.KeyTarget {
 	var out []devreg.KeyTarget
 	for _, e := range entries {
 		if len(e.HostKeys) == 0 && !unpinned {
@@ -200,7 +201,8 @@ func keyTargets(entries []devreg.Entry, unpinned bool) []devreg.KeyTarget {
 		if !ok || addr == "" {
 			continue
 		}
-		out = append(out, devreg.KeyTarget{Name: e.Name, Address: addr, Port: port, Legacy: legacy})
+		out = append(out, devreg.KeyTarget{Name: e.Name, Address: addr, Port: port, Legacy: legacy,
+			Timing: devssh.ScanTiming{}.Scaled(inv.scaleOfEntry(e))})
 	}
 	return out
 }
@@ -246,7 +248,7 @@ func (inv *invocation) runScan(rq scanRequest) (*scanResult, error) {
 	out.reports = devreg.ScanSources(inv.ctx, seen, srcs, devreg.ScanOptions{
 		Now: now, StaleDays: f.StaleDays, Full: rq.full || out.rebuilt, Since: rq.since})
 	all := res.All()
-	targets := keyTargets(all, false)
+	targets := inv.keyTargets(all, false)
 	if rq.ifStale {
 		var due []devreg.KeyTarget
 		for _, t := range targets {
@@ -619,7 +621,7 @@ func (inv *invocation) deviceCheck(args []string) error {
 	}
 	// Host keys and reachability, all at once; the keys are kept in the
 	// seen cache for the notices.
-	targets := keyTargets(entries, true)
+	targets := inv.keyTargets(entries, true)
 	var probes []devreg.ProbeTarget
 	var probeOf []int
 	for i, e := range entries {

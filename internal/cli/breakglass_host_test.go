@@ -241,7 +241,7 @@ func TestBreakglassHostHoldRoundTrip(t *testing.T) {
 	}
 	// 'device address' is for devices.
 	devs, rec := sb.devices(), sb.overrides()
-	sb.run("", []string{"device", "address", "web1", "192.168.1.50", "-y"})
+	sb.run("", []string{"device", "address", "web1", "192.168.1.50", "--yes"})
 	if sb.code != 1 || sb.devices() != devs || sb.overrides() != rec {
 		t.Errorf("device address on a host: %d %q", sb.code, sb.stderr())
 	}
@@ -278,7 +278,7 @@ func TestBreakglassHostHoldRoundTrip(t *testing.T) {
 	if !hasAuditMatch(sb.runner, "auth.info", `breakglass release host=web1 addr=192\.168\.1\.10 held=\S+ by=root`) {
 		t.Errorf("no release audit line: %v", sb.runner.Argvs())
 	}
-	if got := plain(sb.run("", []string{"host", "list"})); strings.Contains(got, "BREAK-GLASS") || strings.Contains(got, "STATE") {
+	if got := plain(sb.run("", []string{"host", "list"})); strings.Contains(got, "BREAK-GLASS") {
 		t.Errorf("host list after the release:\n%s", got)
 	}
 }
@@ -385,7 +385,7 @@ func TestBreakglassHostHoldRefusals(t *testing.T) {
 	if out := sb.hold(t, "lab-sw", "x", "lab-sw"); sb.code != 0 {
 		t.Fatalf("hold lab-sw: %q %q", out, sb.stderr())
 	}
-	sb.run("", []string{"device", "address", "lab-sw", "192.168.1.10", "-y"})
+	sb.run("", []string{"device", "address", "lab-sw", "192.168.1.10", "--yes"})
 	if sb.code != 1 || !strings.Contains(sb.stderr(), "192.168.1.10 is the address of the enrolled host 'web1'") || !strings.Contains(sb.stderr(), "Nothing was changed.") {
 		t.Errorf("device address onto a host: %d %q", sb.code, sb.stderr())
 	}

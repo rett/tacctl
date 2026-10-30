@@ -7,7 +7,7 @@ sudo bash -c 'git clone https://github.com/rett/tacctl.git /opt/tacctl &&
   /opt/tacctl/bin/tacctl.sh install'
 
 tacctl install                          # an installed tacctl: the plan, then [y/N]
-tacctl install -y                       # answer yes to every confirmation
+tacctl install --yes                    # answer yes to every confirmation
 tacctl install --server 192.0.2.10      # the address devices and hosts reach this
                                         # server at
 tacctl install --branch develop         # install from a branch
@@ -26,7 +26,7 @@ machinery of `tacctl host enroll --local`: the scope tacctl manages for it
 (`tacctl`, which no listing shows), this server's entry in the host registry,
 the PAM client and sshd's drop-in, and the accounts of the users. It asks
 once, after the services are started, with the server address in the question
-(`-y` answers it):
+(`--yes` answers it):
 
 ```
 [INFO] Using 192.0.2.10 as the server address (the address of eth0); pass --server to

@@ -140,7 +140,7 @@ func (inv *invocation) parsePlanOptions(p Parsed) (planOptions, error) {
 		}
 	}
 	if !o.pull {
-		for _, f := range []string{"--transport", "--concurrency", "--timeout", "--max-failures"} {
+		for _, f := range []string{"--transport", "--concurrency", "--timeout", "--max-failures", "--timing"} {
 			if p.Has(f) {
 				return bad(f + " is for --pull: the plan alone reads no device.")
 			}
@@ -1021,6 +1021,11 @@ func (inv *invocation) deviceConfigPlan(args []string) error {
 		}
 		if !opt.asJSON {
 			inv.stderrLine("")
+		}
+		// standard output is the plan alone: the timing goes with the pull's
+		// progress, to standard error
+		if pa.timing {
+			inv.printTiming(sum.Timings(), opt.asJSON, true)
 		}
 		// the record changed: what the render knows of it is read again
 		chosen.render.prepare(chosen.entries)

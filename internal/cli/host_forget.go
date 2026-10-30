@@ -24,7 +24,7 @@ import (
 )
 
 // hostForgetUsage is the usage line of 'host forget'.
-const hostForgetUsage = "Usage: tacctl host forget <name> [-y]"
+const hostForgetUsage = "Usage: tacctl host forget <name> [--yes]"
 
 // hostPieces is what the state of one host name holds besides its registry
 // line.
@@ -56,14 +56,14 @@ func (inv *invocation) hostPiecesOf(f *devreg.File, name string) hostPieces {
 	return p
 }
 
-// hostForget is 'host forget <name> [-y]'.
+// hostForget is 'host forget <name> [--yes]'.
 func (inv *invocation) hostForget(args []string) error {
 	a := inv.app
 	yes := false
 	var pos []string
 	for _, w := range args {
 		switch {
-		case w == "-y" || w == "--yes":
+		case w == "--yes":
 			yes = true
 		case strings.HasPrefix(w, "-"):
 			return inv.usageErr("Unknown option: '"+w+"'", hostForgetUsage)

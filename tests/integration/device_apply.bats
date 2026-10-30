@@ -105,7 +105,7 @@ nothing_secret() {
     assert_failure
     assert_output --partial "not permitted"
     printf 'tier:\n  superuser: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
-    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config shapes seed example-sw1 -y
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config shapes seed example-sw1 --yes
     assert_failure
     assert_output --partial "not permitted for the engineer tier"
     # nothing was dialled or written
@@ -322,7 +322,7 @@ EOF
     assert_line "  Nothing was applied: every device was skipped."
     [[ "$(committed)" == "$before" ]]
     # the person's word that the device has the shape, one question
-    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config shapes seed example-sw1 -y
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config shapes seed example-sw1 --yes
     plain
     assert_success
     assert_output --partial "This is your word that each shape above was applied"
@@ -504,7 +504,7 @@ EOF
     # both devices are the same fake: seed the shape, then the batch
     apply example-sw1 --check
     assert_success
-    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config shapes seed example-sw1 -y
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config shapes seed example-sw1 --yes
     assert_success
     apply example-sw1,example-sw2 --concurrency 1 --confirmed --yes --max 1 --pause 0
     assert_success
@@ -551,7 +551,7 @@ print(sorted(d))' "${TACCTL_VAR_LIB}/devices-config.json"
     plain
     assert_success
     assert_output --partial "None. A check or an apply of a device that needs a change files its shape"
-    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config shapes seed example-sw1 -y
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config shapes seed example-sw1 --yes
     plain
     assert_failure 1
     assert_output --partial "has no check or apply on record that found a change"

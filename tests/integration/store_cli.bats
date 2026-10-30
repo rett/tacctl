@@ -25,7 +25,8 @@ setup() {
 @test "store: unknown subcommand fails" {
     run "$TACCTL_BIN_SCRIPT" store frobnicate
     assert_failure
-    assert_output --partial "Unknown store subcommand 'frobnicate'"
+    assert_output --partial "Unknown subcommand: 'frobnicate'"
+    assert_output --partial "Run 'tacctl store -h' for usage."
 }
 
 @test "store show: legacy mode prints the model derived from tacquito.yaml as YAML" {

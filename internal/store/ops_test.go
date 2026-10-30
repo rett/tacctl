@@ -80,20 +80,33 @@ func TestUserSetBadNames(t *testing.T) {
 	}
 }
 
-// A period between two runs of letters, digits, '_' and '-' is in a user
-// name, in the store and out of it, and in a rename.
-func TestUserNamesWithPeriods(t *testing.T) {
+// A store written by 0.2.20 or 0.2.21 can hold a user name with periods. It
+// still loads and validates (so that every store command, 'user rename'
+// included, runs), the user is changed, renamed to a valid name and removed.
+// The store ops leave the shape of a new name to the commands that call
+// them, which refuse a period.
+func TestUserNamesWithPeriodsInAnOldStore(t *testing.T) {
 	e := newEnv(t)
 	e.useFixture("store.multiscope.yaml")
-	e.mustMutate(userSet("alice.smith", "group=readonly", "scopes=lab"))
-	e.mustMutate(userSet("1.5", "group=readonly", "scopes=lab"))
+	body := string(readFile(t, e.path))
+	body = strings.Replace(body, "users:\n", "users:\n  alice.smith:\n    group: readonly\n    scopes: [lab]\n    hash: null\n    disabled: true\n  a.b-c_d:\n    group: readonly\n    scopes: [lab]\n    hash: null\n    disabled: true\n", 1)
+	if err := os.WriteFile(e.path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if msgs, err := store.ValidateFile(e.path); err != nil || len(msgs) != 0 {
+		t.Fatalf("an old store with dotted users: %v %v", msgs, err)
+	}
 	equal(t, e.mustGet("users", "alice.smith", "group"), "readonly")
-	equal(t, e.mustGet("users", "1.5", "group"), "readonly")
-	e.mustMutate(func(s *store.Store) error { return s.UserRename("bob", "bob.jones") })
-	equal(t, e.mustGet("users", "bob.jones", "group"), "operator")
-	e.mustMutate(func(s *store.Store) error { return s.UserDel("alice.smith") })
-	if _, code := e.get("users", "alice.smith"); code != 1 {
-		t.Error("alice.smith still exists")
+	// another user is changed in a store that has them
+	e.mustMutate(userSet("bob", "group=readonly"))
+	// the dotted user is changed, renamed to a valid name and removed
+	e.mustMutate(userSet("alice.smith", "group=operator"))
+	equal(t, e.mustGet("users", "alice.smith", "group"), "operator")
+	e.mustMutate(func(s *store.Store) error { return s.UserRename("alice.smith", "alice-smith") })
+	equal(t, e.mustGet("users", "alice-smith", "group"), "operator")
+	e.mustMutate(func(s *store.Store) error { return s.UserDel("a.b-c_d") })
+	if _, code := e.get("users", "a.b-c_d"); code != 1 {
+		t.Error("a.b-c_d still exists")
 	}
 }
 

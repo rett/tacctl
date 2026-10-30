@@ -16,7 +16,8 @@ import (
 
 // rollback0221State is rollbackState with this server enrolled in the scope
 // tacctl manages: every user logs in to it without the scope in their own
-// list, and tacctl.yaml holds the server address.
+// list, and tacctl.yaml holds the server address (also the state of the
+// rollback to 0.2.21).
 func rollback0221State(t *testing.T) *hostSandbox {
 	t.Helper()
 	hs := rollbackState(t)
@@ -84,6 +85,7 @@ func TestRollbackOlderTargetsAddTheManagedScope(t *testing.T) {
 func TestRollbackRealOldBinary0220(t *testing.T) {
 	bin := oldBinaryOf(t, "0.2.20", old0220Flag)
 	hs := rollback0221State(t)
+	hs.withTimeoutScale()
 	stubs := t.TempDir()
 	for _, name := range []string{"systemctl", "logger", "chown"} {
 		if err := os.WriteFile(filepath.Join(stubs, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
@@ -103,6 +105,9 @@ func TestRollbackRealOldBinary0220(t *testing.T) {
 	}
 	hs.run(hs.runner(), "rollback", "0.2.20", "--apply", "--yes")
 	hs.expect(0, "Applying.", "")
+	if out, code := run("device", "list"); code != 0 || !strings.Contains(out, "sw1") {
+		t.Errorf("0.2.20 device list after: %d\n%s", code, out)
+	}
 	if out, code := run("config", "render"); code != 0 {
 		t.Errorf("0.2.20 config render after: %d\n%s", code, out)
 	}

@@ -138,3 +138,22 @@ func TestSSHConfigGolden(t *testing.T) {
 		t.Error("an empty fragment is the header alone")
 	}
 }
+
+// The connect timeout of 'tacctl ssh' is multiplied by the timing scale; a
+// scale of 1 is the options as they were, and a scale outside the bounds
+// never shrinks or inflates it.
+func TestSSHOptionsScaled(t *testing.T) {
+	e := Entry{Device: Device{Name: "d1", Address: "192.0.2.1", Vendor: "cisco"}, Source: SourceDevice}
+	if !slices.Equal(SSHOptionsScaled(e, testKnownHosts, 1), SSHOptions(e, testKnownHosts)) {
+		t.Error("scale 1 is not SSHOptions")
+	}
+	for scale, want := range map[int]string{1: "10", 3: "30", 10: "100", 0: "10", -4: "10", 11: "100", 99: "100"} {
+		opts := SSHOptionsScaled(e, testKnownHosts, scale)
+		if opts[0].Key != "ConnectTimeout" || opts[0].Value != want {
+			t.Errorf("scale %d: %+v, want ConnectTimeout %s", scale, opts[0], want)
+		}
+		if len(opts) != len(SSHOptions(e, testKnownHosts)) {
+			t.Errorf("scale %d changes the other options: %+v", scale, opts)
+		}
+	}
+}

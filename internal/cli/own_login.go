@@ -17,7 +17,7 @@ package cli
 // half applied.
 //
 //   - a server with no registry entry is set up when the operator agrees
-//     (install -y; a question otherwise, which an upgrade asks only on a
+//     (install --yes; a question otherwise, which an upgrade asks only on a
 //     terminal);
 //   - an entry that is not in the managed scope, or whose scope, secret,
 //     address or PAM files are gone (a rebuilt server), is set up again by

@@ -67,7 +67,7 @@ func TestScopeBlockSetShowCheckListRemove(t *testing.T) {
 	}
 	sb.blk("", "lab", "juniper", "show", "snmp")
 	sb.expect(1, "", "Scope 'lab' has no snmp block.")
-	sb.blk("", "lab", "juniper", "remove", "snmp", "-y")
+	sb.blk("", "lab", "juniper", "remove", "snmp", "--yes")
 	sb.expect(1, "", "Scope 'lab' has no snmp block to remove.")
 
 	// check of a file: findings with lines, the owned objects, the secrets
@@ -125,7 +125,7 @@ func TestScopeBlockSetShowCheckListRemove(t *testing.T) {
 
 	// the same text again is no change, and takes no snapshot
 	n := sb.snapshots()
-	sb.blk("", "lab", "juniper", "set", "snmp", "--file", f, "-y")
+	sb.blk("", "lab", "juniper", "set", "snmp", "--file", f, "--yes")
 	sb.expect(0, "is this text already; nothing was changed", "")
 	if sb.snapshots() != n {
 		t.Errorf("a no-change set took a snapshot")
@@ -210,7 +210,7 @@ func TestScopeBlockSetShowCheckListRemove(t *testing.T) {
 func TestScopeBlockSystemIsElidedAndRevealed(t *testing.T) {
 	sb := newSandbox(t, true)
 	f := sb.blockFile("system.txt", verbSystemFile)
-	out := sb.blk("", "lab", "juniper", "set", "system", "--file", f, "-y")
+	out := sb.blk("", "lab", "juniper", "set", "system", "--file", f, "--yes")
 	if sb.code != 0 {
 		t.Fatalf("set: %d\n%s%s", sb.code, out, sb.stderr())
 	}
@@ -264,25 +264,25 @@ func TestScopeBlockSetRefusals(t *testing.T) {
 		args  []string
 		err   string
 	}{
-		{"unknown scope", "", []string{"nowhere", "juniper", "set", "snmp", "--file", good, "-y"}, "Scope 'nowhere' does not exist."},
-		{"cisco takes IOS syntax only", "", []string{"lab", "cisco", "set", "snmp", "--file", good, "-y"}, "a block holds 'snmp-server', 'ip access-list standard' and 'no' statements only"},
-		{"cisco takes IOS system syntax only", "", []string{"lab", "cisco", "set", "system", "--file", good, "-y"}, "Nothing was written."},
-		{"wti has no blocks", "", []string{"lab", "wti", "set", "snmp", "--file", good, "-y"}, "A WTI unit has no configuration blocks"},
+		{"unknown scope", "", []string{"nowhere", "juniper", "set", "snmp", "--file", good, "--yes"}, "Scope 'nowhere' does not exist."},
+		{"cisco takes IOS syntax only", "", []string{"lab", "cisco", "set", "snmp", "--file", good, "--yes"}, "a block holds 'snmp-server', 'ip access-list standard' and 'no' statements only"},
+		{"cisco takes IOS system syntax only", "", []string{"lab", "cisco", "set", "system", "--file", good, "--yes"}, "Nothing was written."},
+		{"wti has no blocks", "", []string{"lab", "wti", "set", "snmp", "--file", good, "--yes"}, "A WTI unit has no configuration blocks"},
 		{"another vendor", "", []string{"lab", "arista", "list"}, "Unknown vendor 'arista' for a block: cisco or juniper."},
 		{"vendor missing", "", []string{"lab", "set", "snmp", "--file", good}, "The vendor comes before the verb"},
-		{"unknown block", "", []string{"lab", "juniper", "set", "banner", "--file", good, "-y"}, "Unknown block 'banner'"},
-		{"bad block name", "", []string{"lab", "juniper", "set", "../x", "--file", good, "-y"}, "Invalid block name"},
-		{"no source", "", []string{"lab", "juniper", "set", "snmp", "-y"}, "Give the block's text with --file <path>, or - for standard input."},
-		{"two sources", "x", []string{"lab", "juniper", "set", "snmp", "--file", good, "-", "-y"}, "two sources"},
-		{"no such file", "", []string{"lab", "juniper", "set", "snmp", "--file", "/nonexistent/snmp.txt", "-y"}, "Cannot read the file"},
-		{"a directory", "", []string{"lab", "juniper", "set", "snmp", "--file", "/", "-y"}, "is not a regular file"},
-		{"empty", "", []string{"lab", "juniper", "set", "snmp", "--file", sb.blockFile("empty", ""), "-y"}, "The text is empty. To take a block away"},
-		{"comments only", "", []string{"lab", "juniper", "set", "snmp", "--file", sb.blockFile("c", "# nothing\n\n"), "-y"}, "states nothing"},
-		{"stdin needs -y", "set snmp community x-community authorization read-only\nset snmp community x-community clients 192.0.2.1/32\n",
-			[]string{"lab", "juniper", "set", "snmp", "-"}, "add -y to set it"},
-		{"errors", "", []string{"lab", "juniper", "set", "snmp", "--file", sb.blockFile("bad", "set snmp community short authorization read-only\n"), "-y"}, "Nothing was written."},
-		{"tacctl's own name", "", []string{"lab", "juniper", "set", "snmp", "--file", sb.blockFile("own", "set snmp community TACCTL-SNMP authorization read-only\nset snmp community TACCTL-SNMP clients 192.0.2.1/32\n"), "-y"}, "Nothing was written."},
-		{"too big", "", []string{"lab", "juniper", "set", "snmp", "--file", sb.blockFile("big", strings.Repeat("# x\n", 70000)), "-y"}, "is at most"},
+		{"unknown block", "", []string{"lab", "juniper", "set", "banner", "--file", good, "--yes"}, "Unknown block 'banner'"},
+		{"bad block name", "", []string{"lab", "juniper", "set", "../x", "--file", good, "--yes"}, "Invalid block name"},
+		{"no source", "", []string{"lab", "juniper", "set", "snmp", "--yes"}, "Give the block's text with --file <path>, or - for standard input."},
+		{"two sources", "x", []string{"lab", "juniper", "set", "snmp", "--file", good, "-", "--yes"}, "two sources"},
+		{"no such file", "", []string{"lab", "juniper", "set", "snmp", "--file", "/nonexistent/snmp.txt", "--yes"}, "Cannot read the file"},
+		{"a directory", "", []string{"lab", "juniper", "set", "snmp", "--file", "/", "--yes"}, "is not a regular file"},
+		{"empty", "", []string{"lab", "juniper", "set", "snmp", "--file", sb.blockFile("empty", ""), "--yes"}, "The text is empty. To take a block away"},
+		{"comments only", "", []string{"lab", "juniper", "set", "snmp", "--file", sb.blockFile("c", "# nothing\n\n"), "--yes"}, "states nothing"},
+		{"stdin needs --yes", "set snmp community x-community authorization read-only\nset snmp community x-community clients 192.0.2.1/32\n",
+			[]string{"lab", "juniper", "set", "snmp", "-"}, "add --yes to set it"},
+		{"errors", "", []string{"lab", "juniper", "set", "snmp", "--file", sb.blockFile("bad", "set snmp community short authorization read-only\n"), "--yes"}, "Nothing was written."},
+		{"tacctl's own name", "", []string{"lab", "juniper", "set", "snmp", "--file", sb.blockFile("own", "set snmp community TACCTL-SNMP authorization read-only\nset snmp community TACCTL-SNMP clients 192.0.2.1/32\n"), "--yes"}, "Nothing was written."},
+		{"too big", "", []string{"lab", "juniper", "set", "snmp", "--file", sb.blockFile("big", strings.Repeat("# x\n", 70000)), "--yes"}, "is at most"},
 	} {
 		sb.blk(c.stdin, c.args...)
 		if sb.code != 1 || !strings.Contains(sb.stderr()+plain(sb.out.String()), c.err) {
@@ -292,7 +292,7 @@ func TestScopeBlockSetRefusals(t *testing.T) {
 	}
 	// a block with errors shows the lines and no string
 	bad := "set snmp community short-c authorization read-only\n"
-	sb.blk("", "lab", "juniper", "set", "snmp", "--file", sb.blockFile("bad2", bad), "-y")
+	sb.blk("", "lab", "juniper", "set", "snmp", "--file", sb.blockFile("bad2", bad), "--yes")
 	if all := plain(sb.out.String()); !strings.Contains(all, "line 1: error:") || strings.Contains(all, "short-c") {
 		t.Errorf("errors:\n%s", all)
 	}
@@ -317,7 +317,7 @@ func TestScopeBlockRefusesWhenTacctlYAMLCannotBeWritten(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(sb.path("state"), 0o700) })
-	sb.blk("", "lab", "juniper", "set", "snmp", "--file", good, "-y")
+	sb.blk("", "lab", "juniper", "set", "snmp", "--file", good, "--yes")
 	sb.expect(1, "", "tacctl.yaml cannot be written")
 	if _, err := os.Stat(sb.path("state/blocks")); !os.IsNotExist(err) {
 		t.Errorf("a refused set wrote the store: %v", err)
@@ -327,7 +327,7 @@ func TestScopeBlockRefusesWhenTacctlYAMLCannotBeWritten(t *testing.T) {
 		t.Fatal(err)
 	}
 	sb.write("state/tacctl.yaml", "blocks: [unclosed\n", 0o640)
-	sb.blk("", "lab", "juniper", "set", "snmp", "--file", good, "-y")
+	sb.blk("", "lab", "juniper", "set", "snmp", "--file", good, "--yes")
 	sb.expect(1, "", "tacctl.yaml cannot be read")
 }
 
@@ -342,7 +342,7 @@ func TestScopeBlockRefusesTheScopesOwnCommunity(t *testing.T) {
 		t.Errorf("check: %d\n%s", sb.code, out)
 	}
 	noneOf(t, "check", out+sb.stderr(), "lab-community-9")
-	sb.blk("", "lab", "juniper", "set", "snmp", "--file", f, "-y")
+	sb.blk("", "lab", "juniper", "set", "snmp", "--file", f, "--yes")
 	if sb.code != 1 {
 		t.Errorf("set: %d", sb.code)
 	}
@@ -378,12 +378,12 @@ func TestScopeBlockUnlistedAndMissing(t *testing.T) {
 		t.Errorf("check of an unlisted file: %d\n%s", sb.code, out)
 	}
 	// remove takes either
-	sb.blk("", "lab", "juniper", "remove", "snmp", "-y")
+	sb.blk("", "lab", "juniper", "remove", "snmp", "--yes")
 	sb.expect(0, "The snmp block of scope 'lab' is removed.", "")
 	if _, err := os.Stat(sb.path("state/blocks")); !os.IsNotExist(err) {
 		t.Errorf("the unlisted file is left: %v", err)
 	}
-	sb.blk("", "lab", "juniper", "remove", "system", "-y")
+	sb.blk("", "lab", "juniper", "remove", "system", "--yes")
 	sb.expect(0, "The system block of scope 'lab' is removed.", "")
 	if strings.Contains(sb.overrides(), "blocks") {
 		t.Errorf("the manifest is left:\n%s", sb.overrides())
@@ -444,9 +444,9 @@ func TestScopeBlockEngineer(t *testing.T) {
 
 	before, snaps := sb.read("state/blocks/lab/juniper/snmp")+sb.overrides(), sb.snapshots()
 	for _, args := range [][]string{
-		{"lab", "juniper", "set", "snmp", "--file", f, "-y"},
-		{"lab", "juniper", "set", "snmp", "-", "-y"},
-		{"lab", "juniper", "remove", "snmp", "-y"},
+		{"lab", "juniper", "set", "snmp", "--file", f, "--yes"},
+		{"lab", "juniper", "set", "snmp", "-", "--yes"},
+		{"lab", "juniper", "remove", "snmp", "--yes"},
 	} {
 		sb.asEngineer(verbSNMPFile, append([]string{"scope", "block"}, args...)...)
 		if sb.code != 1 || !strings.Contains(sb.stderr(), "The engineer tier reads the configuration blocks of scope 'lab' (list, show, check); ") ||
@@ -459,7 +459,7 @@ func TestScopeBlockEngineer(t *testing.T) {
 	}
 	for _, args := range [][]string{
 		{"prod", "juniper", "list"}, {"prod", "juniper", "show", "snmp"}, {"prod", "juniper", "show", "snmp", "--reveal"},
-		{"prod", "juniper", "check", "snmp"}, {"prod", "juniper", "set", "snmp", "--file", f, "-y"}, {"prod", "juniper", "remove", "snmp", "-y"},
+		{"prod", "juniper", "check", "snmp"}, {"prod", "juniper", "set", "snmp", "--file", f, "--yes"}, {"prod", "juniper", "remove", "snmp", "--yes"},
 	} {
 		out = sb.asEngineer("", append([]string{"scope", "block"}, args...)...)
 		if sb.code != 1 || !strings.Contains(sb.stderr(), "Scope 'prod' does not exist.") || out != "" {
@@ -485,7 +485,7 @@ func TestConfigValidateReportsBlocks(t *testing.T) {
 	if sb.code != 0 || strings.Contains(out, "Config blocks:") {
 		t.Fatalf("no blocks: %d\n%s", sb.code, out)
 	}
-	sb.run("", []string{"scope", "block", "lab", "juniper", "set", "snmp", "--file", sb.blockFile("s.txt", verbSNMPFile), "-y"})
+	sb.run("", []string{"scope", "block", "lab", "juniper", "set", "snmp", "--file", sb.blockFile("s.txt", verbSNMPFile), "--yes"})
 	sb.expect(0, "is set", "")
 	out = plain(sb.run("", []string{"config", "validate"}))
 	if sb.code != 0 || !strings.Contains(out, "Config blocks:        valid") {

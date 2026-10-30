@@ -549,6 +549,7 @@ func TestRollbackHostsIsAccepted(t *testing.T) {
 func TestRollbackRealOldBinary(t *testing.T) {
 	bin := oldBinary(t)
 	hs := rollbackState(t)
+	hs.withTimeoutScale()
 	// A system-shell setting of a single user (0.2.20) is a key 0.2.3 rejects
 	// as well: the rollback takes it out with the others.
 	hs.step("", "console", "system-shell", "user", "bob", "enable")
@@ -707,7 +708,7 @@ func TestRollbackCompletion(t *testing.T) {
 		words []string
 		want  []string
 	}{
-		{[]string{"rollback", ""}, []string{"0.2.20", "0.2.19", "0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3"}},
+		{[]string{"rollback", ""}, []string{"0.2.21", "0.2.20", "0.2.19", "0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3"}},
 		{[]string{"rollback", "0.2.3", ""}, []string{"--apply", "--yes", "--hosts"}},
 		{[]string{"rollback", "0.2.3", "--apply", ""}, []string{"--yes", "--hosts"}},
 		{[]string{"rollback", "0.2.3", "--apply", "--yes", "--hosts", ""}, nil},

@@ -3,7 +3,11 @@
 
 Usage: tacctl host <subcommand> [arguments]
 
-  list [--json]                        Show enrolled hosts, with the address recorded for each
+  list [options]                       Show enrolled hosts: scope, state, last seen, notices
+      --stale                          (list) Only the hosts not seen for stale-days
+      --name <text>                    (list) Only names containing the text (comma list: any)
+      --ip <addr|cidr|text>            (list) Only an address equal to, inside or containing it
+      --scope <scope>                  (list) Only the hosts that scope answers (comma list)
   show <name> [--all] [--json]         One enrolled host in full: connection, scope, address, host keys, sightings,
                                        notices, accounts, last sync and host facts
       --all                            (show) The acknowledged notices too
@@ -23,7 +27,7 @@ Usage: tacctl host <subcommand> [arguments]
       --name <name>                    Registry name (default: short hostname, lowercased; lower case, not a tacctl word)
       --port <n>, --identity <file>    SSH port and key
       --build-on-host                  (tacplus) Compile pam_tacplus on the host instead of in a container here
-      -y, --yes                        (enroll and move) Move a registered host to another scope even when that deletes accounts
+      --yes                            (enroll and move) Move a registered host to another scope even when that deletes accounts
       --staging                        (enroll, with --scope) Provisioned off-site: the host's bench address joins the scope as a
                                        /32 (its secret and users) until the host is seen in place (tacctl scope staging)
   sync <name>... | --all               Push account adds, renames, deletions, expiries and tier changes
@@ -31,11 +35,13 @@ Usage: tacctl host <subcommand> [arguments]
       --allow-uid-mismatch             (enroll, sync and move) Accept a UID conflict on the host instead of stopping
       --remove-home                    (enroll, sync and move) Delete removed users' home directories without asking
                                        (on a terminal each one is asked; without one they are kept)
+      --concurrency <n>                Sync n hosts at once; no home question is asked then (default 1)
   check <name>... | --all [--json]     Compare hosts with what tacctl would make them, read-only: one line per
                                        difference with the command that fixes it; exit 1 when any differs or
                                        cannot be checked. A held host is skipped (superuser only)
       --all                            Every enrolled host
       --json                           Print a JSON array (check: one object per host) and nothing else on standard output
+      --concurrency <n>                Check n hosts at once (default 1)
   move <name> [<scope>] | --all        Move an enrolled host to another scope (default: the one answering its address);
                                        --all: every host another scope answers. Asks before deleting accounts
   target <name> [<[user@]host>]        Show, or change and test, how tacctl reaches an enrolled host over ssh
@@ -52,16 +58,16 @@ Usage: tacctl host <subcommand> [arguments]
                                        out of reach unless --remove-home. Needs a registry target with an explicit user@
       --remove-home                    (provisioner) With --remove-old: also delete the old account's home directory, without asking
                                        (otherwise it is moved out of reach, made root's)
-      -y, --yes                        (provisioner) Rotate without asking, and continue with the host keys shown when none is pinned
+      --yes                            (provisioner) Rotate without asking, and continue with the host keys shown when none is pinned
       --dry-run                        (provisioner) Print the plan and test the current login; change nothing
   rename <old> <new>                   Give an enrolled host another name: registry line, pinned keys, record, staging
                                        addresses and break-glass hold follow; nothing is sent to the host. When the host
                                        is the only user of scope linux-<old>, asks whether to rename that scope too
-      -y, --yes                        (rename) Replace what an earlier host of the new name left, and rename the scope
+      --yes                            (rename) Replace what an earlier host of the new name left, and rename the scope
   forget <name>                        Drop the host's registration from this server (registry line, pinned keys,
                                        record, staging addresses) and run nothing on the host; also what a registry
                                        line no longer has. Refused for a held host
-      -y, --yes                        (forget) Forget the host without asking
+      --yes                            (forget) Forget the host without asking
   unenroll <name> [--force]            Remove the login method from the host (accounts and homes are kept)
       --force                          Forget the host even when the removal there failed
   default-method [tacplus|radius]      Show or set the method for hosts enrolled without --method

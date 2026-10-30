@@ -15,6 +15,8 @@ import (
 	"unicode"
 
 	"golang.org/x/crypto/ssh"
+
+	"github.com/rett/tacctl/internal/devconf/batch"
 )
 
 // The vendors a CLI session knows (the names of devreg's registry).
@@ -203,7 +205,12 @@ func (c *Client) CLI(vendor string, opts ...CLIOption) (CLISession, error) {
 	}
 	ctx, cancel := context.WithTimeout(c.ctx, c.timeout)
 	defer cancel()
-	return c.openShell(ctx, prof, cfg)
+	sh, err := c.openShell(ctx, prof, cfg)
+	if err != nil {
+		return nil, err
+	}
+	batch.Mark(c.ctx, "session")
+	return sh, nil
 }
 
 // checkCommand refuses a command that is more than one line or holds a

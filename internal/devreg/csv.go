@@ -213,6 +213,10 @@ func (f *File) Import(rows []Row, replace, allowGeneric bool, hostEntries []Entr
 		if merged.Netconf.Empty() && merged.Vendor == "juniper" {
 			merged.Netconf = old.Netconf
 		}
+		// Nor its timing scale (0.2.22): the file has no column for it.
+		if merged.TimeoutScale == 0 {
+			merged.TimeoutScale = old.TimeoutScale
+		}
 		merged.Name = old.Name
 		if len(merged.Ack) == 0 {
 			merged.Ack = slices.Clone(old.Ack)
@@ -300,6 +304,8 @@ type jsonDevice struct {
 	// Netconf is the device's own NETCONF service setting (D145), only when
 	// set.
 	Netconf *jsonNetconf `json:"netconf,omitempty"`
+	// TimeoutScale is the device's own timing scale (0.2.22), only when set.
+	TimeoutScale int `json:"timeout_scale,omitempty"`
 }
 
 // jsonNetconf is the JSON form of a device's NETCONF service setting.
@@ -320,7 +326,8 @@ type jsonSNMP struct {
 // JSONDevice is d as the value 'export --json' and 'list --json' print.
 func JSONDevice(d Device) any {
 	j := jsonDevice{Name: d.Name, Address: d.Address, Hostname: d.Hostname, Vendor: d.Vendor, Port: d.SSHPort(),
-		LegacySSH: d.LegacySSH, IOSSyntax: d.IOSSyntax, Description: d.Description, Location: d.Location, HostKeys: d.HostKeys, Ack: d.Ack}
+		LegacySSH: d.LegacySSH, IOSSyntax: d.IOSSyntax, Description: d.Description, Location: d.Location, HostKeys: d.HostKeys, Ack: d.Ack,
+		TimeoutScale: d.TimeoutScale}
 	if !d.SNMP.Empty() {
 		j.SNMP = &jsonSNMP{Version: d.SNMP.Version, Port: d.SNMP.Port, Timeout: d.SNMP.Timeout, Clients: slices.Clone(d.SNMP.Clients)}
 	}

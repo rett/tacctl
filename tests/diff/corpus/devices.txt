@@ -287,7 +287,7 @@ device config forget
 device config forget nosuch
 @known 0.2.4 item 3: device config forget is new
 device config forget --all
-@known 0.2.4 item 3: device config forget is new; 0.2.9 item 4: the usage lists apply and shapes; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
+@known 0.2.4 item 3: device config forget is new; 0.2.9 item 4: the usage lists apply and shapes; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital; 0.2.22 item 11: an unknown sub-command is one error line, the closest verbs and a pointer to the help (-h), not the usage
 device config frob
 @known 0.2.9 item 4: device config apply is new
 device config apply
@@ -298,7 +298,7 @@ device config apply --check --max 0 --all
 @known 0.2.9 item 5: device config shapes is new
 device config shapes
 @known 0.2.9 item 5: device config shapes is new
-device config shapes seed nosuch -y
+device config shapes seed nosuch --yes
 @known 0.2.9 item 12: device collect is new
 device collect
 @known 0.2.9 item 12: device collect is new
@@ -363,7 +363,7 @@ config devices max-concurrency 65
 config devices transport pigeon
 @known 0.2.4 item 6: config devices is new
 config devices timeout 9
-@known 0.2.4 item 6: config devices is new; 0.2.9 item 1: config devices lists apply-confirm-timeout and apply-pause; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
+@known 0.2.4 item 6: config devices is new; 0.2.9 item 1: config devices lists apply-confirm-timeout and apply-pause; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital; 0.2.22 item 11: an unknown sub-command is one error line, the closest verbs and a pointer to the help (-h), not the usage
 config devices frob
 @known 0.2.4 item 6: the config usage lists devices; 0.2.18 item 1: --legacy names the device's ios-syntax; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 config
@@ -393,7 +393,7 @@ device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 timeout 11
 @known 0.2.4 item 13: device snmp is new; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 clients add 0.0.0.0/0
-@known 0.2.4 item 13: device snmp is new; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.4 item 13: device snmp is new; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.22 item 11: an unknown sub-command is one error line, the closest verbs and a pointer to the help (-h), not the usage
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 bogus
 @known 0.2.4 item 13: device snmp is new; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 version v3 ;; device snmp core-sw1 port 2161 ;; device snmp core-sw1 clients add 192.0.2.0/24 ;; device snmp core-sw1 show
@@ -402,7 +402,7 @@ device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device
 @known 0.2.4 item 13: device snmp is new; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 version v3 ;; device snmp core-sw1 clear ;; device export
 @known 0.2.4 item 13: device snmp is new; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
-device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 community --stdin <<< dev-community-1 ;; device rename core-sw1 dc1-core1 ;; device snmp dc1-core1 show --reveal ;; device remove dc1-core1 -y
+device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 community --stdin <<< dev-community-1 ;; device rename core-sw1 dc1-core1 ;; device snmp dc1-core1 show --reveal ;; device remove dc1-core1 --yes
 @known 0.2.4 item 13: the registry has the snmp map; 0.2.4 item 14: device show has the SNMP rows and scope snmp show says the order; 0.2.5 item 25: a Cisco device's show has a Config syntax row; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 device add core-sw1 10.99.0.1 --vendor cisco --no-host-key --no-lookup ;; device snmp core-sw1 version v2c ;; device show core-sw1 ;; scope snmp lab show
 

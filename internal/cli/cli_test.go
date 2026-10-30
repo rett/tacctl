@@ -270,11 +270,11 @@ func TestCompleteReachesValidArgsWithFlagParsingOff(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&bytes.Buffer{})
-	root.SetArgs([]string{"__complete", "user", "add", "alice", "--hash", "x", "-y", "o"})
+	root.SetArgs([]string{"__complete", "user", "add", "alice", "--hash", "x", "--yes", "o"})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(gotArgs, []string{"alice", "--hash", "x", "-y"}) || gotToComplete != "o" {
+	if !reflect.DeepEqual(gotArgs, []string{"alice", "--hash", "x", "--yes"}) || gotToComplete != "o" {
 		t.Errorf("ValidArgsFunction got %q, %q", gotArgs, gotToComplete)
 	}
 	if !strings.HasPrefix(out.String(), "ops\nadmins\n:4\n") {

@@ -62,14 +62,14 @@ func (o listenerOps) List() ([]backend.Listener, error) {
 	return out, nil
 }
 
-// Show is _radius_listener_show: the listener 'tacctl config listen' prints
+// Show is _radius_listener_show: the listener 'tacctl server listen' prints
 // ("default" for every one of them), the lines ending in newlines. An unknown
 // name is written as an error and ErrFailed.
 func (o listenerOps) Show(_ context.Context, name string) (string, error) {
 	m := o.m
 	if name != "default" {
 		if _, _, ok := m.listener(name); !ok {
-			m.env.Out.Error("No RADIUS listener '" + name + "'. Create it: tacctl config listen --backend radius --listener " + name + " udp <address>")
+			m.env.Out.Error("No RADIUS listener '" + name + "'. Create it: tacctl server listen --backend radius --listener " + name + " udp <address>")
 			return "", backend.ErrFailed
 		}
 	}
@@ -135,11 +135,11 @@ func (o listenerOps) Set(ctx context.Context, name, network, address string) err
 		return backend.ErrFailed
 	}
 	if network != "udp" && network != "udp6" {
-		out.Error("Invalid network '" + network + "': the RADIUS backend listens on udp or udp6. Usage: tacctl config listen --backend radius --listener <name> <udp|udp6> <address>")
+		out.Error("Invalid network '" + network + "': the RADIUS backend listens on udp or udp6. Usage: tacctl server listen --backend radius --listener <name> <udp|udp6> <address>")
 		return backend.ErrFailed
 	}
 	if address == "" {
-		out.Error("Missing address. Example: tacctl config listen --backend radius --listener " + name + " " + network + " :1812")
+		out.Error("Missing address. Example: tacctl server listen --backend radius --listener " + name + " " + network + " :1812")
 		return backend.ErrFailed
 	}
 	if conf.ListenAddressProblem(network, address) != "" {

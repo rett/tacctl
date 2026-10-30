@@ -58,8 +58,10 @@ func TestConsoleUsageAndUnknown(t *testing.T) {
 			t.Errorf("%v: exit %d, %q", args, sb.code, out)
 		}
 	}
-	sb.con("frobnicate")
-	sb.expect(1, "Usage: tacctl console", "Unknown subcommand: 'frobnicate'")
+	if out := sb.con("frobnicate"); out != "" {
+		t.Errorf("frobnicate printed the usage: %q", out)
+	}
+	sb.expect(1, "", "Unknown subcommand: 'frobnicate'")
 	if sb.consoleYAML() != "" {
 		t.Error("console.yaml written by a usage")
 	}
@@ -167,16 +169,19 @@ func TestConsoleShowSSHDWarning(t *testing.T) {
 }
 
 // There is no switch for the console: the verbs 'tiers' and 'user' are gone
-// (an unknown sub-command, with the usage), and the file a setting writes
-// has no tiers and no users mapping.
+// (an unknown sub-command, and the usage does not list them), and the file a
+// setting writes has no tiers and no users mapping.
 func TestConsoleHasNoSwitch(t *testing.T) {
 	sb := consoleSandbox(t)
 	for _, args := range [][]string{{"tiers"}, {"tiers", "readonly", "disable"}, {"user", "bob", "enable"}, {"user", "bob"}} {
 		out := sb.con(args...)
-		sb.expect(1, "Usage: tacctl console <subcommand>", "Unknown subcommand: '"+args[0]+"'")
-		if strings.Contains(out, "\n  tiers [<tier>") || strings.Contains(out, "\n  user <name>") {
-			t.Errorf("%v: the usage still lists the verb:\n%s", args, out)
+		sb.expect(1, "", "Unknown subcommand: '"+args[0]+"'")
+		if out != "" {
+			t.Errorf("%v: stdout %q", args, out)
 		}
+	}
+	if out := sb.con(); strings.Contains(out, "\n  tiers [<tier>") || strings.Contains(out, "\n  user <name>") {
+		t.Errorf("the usage still lists the verb:\n%s", out)
 	}
 	if sb.consoleYAML() != "" {
 		t.Errorf("a refused verb wrote console.yaml:\n%s", sb.consoleYAML())

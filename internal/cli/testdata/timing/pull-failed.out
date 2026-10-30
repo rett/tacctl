@@ -1,0 +1,8 @@
+  lab-j  failed: authentication failed
+
+  1 failed
+  stopped at the first authentication failure: 0 not started
+  timing:
+    lab-j  connect 200ms  auth-failed 300ms  total 500ms
+  slowest: lab-j (500ms)
+

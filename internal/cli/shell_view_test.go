@@ -278,7 +278,7 @@ func TestViewTopHelp(t *testing.T) {
 		}
 	}
 	// The option rows of a hidden command go with it.
-	if strings.Contains(ro, "-y, --yes") {
+	if strings.Contains(ro, "--yes") {
 		t.Errorf("the options of a hidden command are listed:\n%s", ro)
 	}
 	op := topFor(tier.Operator)

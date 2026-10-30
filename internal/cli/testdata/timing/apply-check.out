@@ -1,0 +1,8 @@
+  example-sw1  checked: shape 249aecb82c59 (new) (roles, aaa: 17 set, 1 delete); kept 2; check ok
+
+  1 checked
+  timing:
+    example-sw1  connect 200ms  login 300ms  session 1.9s  preflight 500ms  read 600ms  load 900ms  check 1.0s  total 6.5s
+  slowest: example-sw1 (6.5s)
+  Nothing was committed: --check ends after the device's own commit check.
+

@@ -188,22 +188,22 @@ func TestDeviceLocationFromDevice(t *testing.T) {
 	// The same value: nothing to do.
 	sb.dev("", "location", "sw5", "--from-device")
 	sb.expect(0, "location is already 'Same'; nothing to change.", "")
-	// A different one, no terminal, no -y: both shown, refused.
+	// A different one, no terminal, no --yes: both shown, refused.
 	out := sb.dev("", "location", "sw2", "--from-device")
 	if !strings.Contains(out, "  Registry: Old place\n  Device:   New place\n") {
 		t.Errorf("both values: %q", out)
 	}
-	sb.expect(1, "", "Give -y to replace it with the device's.")
+	sb.expect(1, "", "Give --yes to replace it with the device's.")
 	if got := sb.dev("", "location", "sw2"); got != "Old place\n" {
-		t.Errorf("changed without -y: %q", got)
+		t.Errorf("changed without --yes: %q", got)
 	}
-	sb.dev("", "location", "sw2", "--from-device", "-y")
+	sb.dev("", "location", "sw2", "--from-device", "--yes")
 	sb.expect(0, "location set to New place (read from the device).", "")
 	// Argument errors.
 	sb.dev("", "location", "sw2", "text", "--from-device")
 	sb.expect(1, "", "--from-device takes the device's name only.")
-	sb.dev("", "location", "sw2", "-y")
-	sb.expect(1, "", "-y answers the question of --from-device.")
+	sb.dev("", "location", "sw2", "--yes")
+	sb.expect(1, "", "--yes answers the question of --from-device.")
 	sb.dev("", "location", "nope", "--from-device")
 	sb.expect(1, "", "Device 'nope' not found.")
 	// A value the registry rejects.

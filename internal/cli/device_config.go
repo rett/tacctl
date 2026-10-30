@@ -43,6 +43,7 @@ var deviceConfigSpecs = func() map[string]Spec {
 		{Names: []string{"--concurrency"}, Value: true},
 		{Names: []string{"--timeout"}, Value: true},
 		{Names: []string{"--max-failures"}, Value: true},
+		{Names: []string{"--timing"}},
 		{Names: []string{"--server"}, Value: true},
 		{Names: []string{"--source"}, Value: true},
 		// the one-shot local login (0.2.9, D136): engineers, one device
@@ -88,7 +89,8 @@ var deviceConfigSpecs = func() map[string]Spec {
 			Flags: join(selectors, []Flag{
 				{Names: []string{"--transport"}, Value: true, Kind: "auto|cli|netconf"},
 				{Names: []string{"--concurrency"}, Value: true}, {Names: []string{"--timeout"}, Value: true},
-				{Names: []string{"--max-failures"}, Value: true}, {Names: []string{"--server"}, Value: true},
+				{Names: []string{"--max-failures"}, Value: true}, {Names: []string{"--timing"}},
+				{Names: []string{"--server"}, Value: true},
 				{Names: []string{"--source"}, Value: true},
 				{Names: []string{"--check"}}, {Names: []string{"--confirmed"}},
 				{Names: []string{"--max"}, Value: true}, {Names: []string{"--pause"}, Value: true},
@@ -101,7 +103,7 @@ var deviceConfigSpecs = func() map[string]Spec {
 		// 'shapes' (0.2.9, D135): 'list' (the default) and 'seed'.
 		"shapes": {MaxArgs: -1, Args: []string{"list|seed", KindDevices + KindList}, Flags: []Flag{
 			{Names: []string{"--show"}, Value: true, Only: "list", Kind: KindShapes},
-			{Names: []string{"--json"}, Only: "list"}, {Names: []string{"-y", "--yes"}, Only: "seed"}}},
+			{Names: []string{"--json"}, Only: "list"}, {Names: []string{"--yes"}, Only: "seed"}}},
 	}
 }()
 
@@ -361,7 +363,7 @@ Ctrl-C starts no more devices, the second cancels the running ones).
 'shapes' lists the shapes seen and which were confirmed by an apply, with
 --show <hash> one shape's statements; 'shapes seed <name>' files the shape of
 the device's last check or apply as confirmed on your word (one question,
--y answers it), for a device that was applied and verified by hand.
+--yes answers it), for a device that was applied and verified by hand.
 
 'list' shows each device's state: ok (every managed section agrees), differs,
 never (not pulled), failed (the last pull failed) or pull (a Cisco device whose
@@ -433,9 +435,7 @@ func (inv *invocation) deviceConfig(args []string) error {
 				return err
 			}
 		}
-		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-		inv.write(deviceConfigUsage())
-		return exit(1)
+		return inv.unknownSub(sub)
 	}
 }
 

@@ -169,7 +169,7 @@ func TestDeviceAddOfferedNameAndVendor(t *testing.T) {
 		t.Errorf("folded: %d %q %q", sb.code, out, sb.stderr())
 	}
 	// With --vendor the question is the name's alone.
-	sb.dev("", "remove", "sw10.site-a.example", "-y")
+	sb.dev("", "remove", "sw10.site-a.example", "--yes")
 	typeIn("y\n")
 	sb.dev("", "add", "192.0.2.10", "--no-host-key", "--vendor", "cisco")
 	if sb.code != 0 || !strings.Contains(sb.stderr(), "Register 192.0.2.10 as 'sw10.site-a.example'? [y/N]: ") {
@@ -281,44 +281,44 @@ func TestDeviceVendorFromDevice(t *testing.T) {
 		return strings.TrimSpace(sb.out.String())
 	}
 	// An ambiguous read is refused with the reason; nothing changes.
-	sb.dev("", "vendor", "fw2", "--from-device", "-y")
+	sb.dev("", "vendor", "fw2", "--from-device", "--yes")
 	sb.expect(1, "", "The device names no vendor tacctl reads: Cisco device, sysDescr not recognised as IOS or IOS-XE (SNMP sysObjectID 1.3.6.1.4.1.9.1.9997")
 	sb.expect(1, "", "Set it by hand: tacctl device vendor fw2 cisco|juniper|wti|other")
 	if v := vendorOf("fw2"); v != "other" {
 		t.Errorf("fw2 is %q", v)
 	}
 	// No answer.
-	sb.dev("", "vendor", "sw4", "--from-device", "-y")
+	sb.dev("", "vendor", "sw4", "--from-device", "--yes")
 	sb.expect(1, "", "The vendor of 'sw4' (192.0.2.4) was not read: no answer. Nothing was changed.")
 	// Already the device's.
 	sb.dev("", "vendor", "sw3", "--from-device")
 	sb.expect(0, "Device 'sw3' vendor is already cisco (Cisco IOS Software); nothing to change.", "")
-	// Without a terminal or -y: refused, and the read is kept for the notice.
+	// Without a terminal or --yes: refused, and the read is kept for the notice.
 	sb.dev("", "vendor", "sw1", "--from-device")
-	sb.expect(1, "  Device:   cisco (Cisco IOS Software; SNMP sysObjectID 1.3.6.1.4.1.9.1.9999", "Give -y to set the vendor of 'sw1' to cisco without a terminal.")
+	sb.expect(1, "  Device:   cisco (Cisco IOS Software; SNMP sysObjectID 1.3.6.1.4.1.9.1.9999", "Give --yes to set the vendor of 'sw1' to cisco without a terminal.")
 	if out := sb.dev("", "notice", "list"); !strings.Contains(out, "vendor-differs: 192.0.2.1 says it is cisco") {
 		t.Errorf("notices:\n%s", out)
 	}
-	// -y sets it through the setter; the notice is gone.
-	out := sb.dev("", "vendor", "sw1", "--from-device", "-y")
+	// --yes sets it through the setter; the notice is gone.
+	out := sb.dev("", "vendor", "sw1", "--from-device", "--yes")
 	if sb.code != 0 || !strings.Contains(out, "Device 'sw1' vendor set to cisco.") || vendorOf("sw1") != "cisco" {
-		t.Errorf("-y: %d %q", sb.code, out)
+		t.Errorf("--yes: %d %q", sb.code, out)
 	}
 	if out := sb.dev("", "notice", "list"); strings.Contains(out, "192.0.2.1 says") {
 		t.Errorf("notice after the set:\n%s", out)
 	}
 	// Junos and WTI are set the same way.
-	out = sb.dev("", "vendor", "rtr5", "--from-device", "-y")
+	out = sb.dev("", "vendor", "rtr5", "--from-device", "--yes")
 	if sb.code != 0 || !strings.Contains(out, "Device 'rtr5' vendor set to juniper.") || vendorOf("rtr5") != "juniper" {
 		t.Errorf("Junos: %d %q", sb.code, out)
 	}
-	out = sb.dev("", "vendor", "pdu6", "--from-device", "-y")
+	out = sb.dev("", "vendor", "pdu6", "--from-device", "--yes")
 	if sb.code != 0 || !strings.Contains(out, "Device 'pdu6' vendor set to wti.") || vendorOf("pdu6") != "wti" {
 		t.Errorf("WTI: %d %q", sb.code, out)
 	}
 	// The usage of the flag.
-	sb.dev("", "vendor", "sw1", "-y")
-	sb.expect(1, "", "-y answers the question of --from-device.")
+	sb.dev("", "vendor", "sw1", "--yes")
+	sb.expect(1, "", "--yes answers the question of --from-device.")
 	sb.dev("", "vendor", "sw1", "cisco", "--from-device")
 	sb.expect(1, "", "--from-device takes the device's name only.")
 	// At a terminal: 'y' sets it.

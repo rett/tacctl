@@ -19,13 +19,13 @@ Copyright (c) 2026 Everett C. Haimes III · MIT License · https://github.com/re
 Usage: tacctl <command> [arguments]
 
 Commands:
-  <b>install</b> [<o>--branch <name></o>] [<o>-y</o>|<o>--yes</o>]  Install tacctl and the TACACS+ backend (tacquito) from scratch
+  <b>install</b> [<o>--branch <name></o>] [<o>--yes</o>]     Install tacctl and the TACACS+ backend (tacquito) from scratch
       <o>--branch <name></o>                   The tacctl repo branch to install or upgrade from (default: the current one)
       <o>--server <ip></o>                     The address devices and hosts reach this server at
-      <o>-y</o>, <o>--yes</o>                         Answer yes to the confirmations
+      <o>--yes</o>                             Answer yes to the confirmations
   <b>upgrade</b> [<o>--branch <name></o>]             Pull latest source, rebuild, update scripts and every enabled backend
-  <b>uninstall</b> [<o>-y</o>|<o>--yes</o>]                  Remove tacctl, its backends' services and all associated files
-  <b>rollback</b> <o><version></o> [options]          Prepare the state for the release before this one (0.2.19), for 0.2.18, 0.2.17, 0.2.16, 0.2.9 or 0.2.3: a dry run unless <o>--apply</o>
+  <b>uninstall</b> [<o>--yes</o>]                     Remove tacctl, its backends' services and all associated files
+  <b>rollback</b> <o><version></o> [options]          Prepare the state for the release before this one (0.2.21), for 0.2.20, 0.2.19, 0.2.18, 0.2.17, 0.2.16, 0.2.9 or 0.2.3: a dry run unless <o>--apply</o>
       <o>--apply</o>                           Take a snapshot, then convert the files the target cannot read (tacctl.yaml, sudoers; for 0.2.3 also console.yaml, devices.yaml)
       <o>--yes</o>                             Acknowledge the warnings that <o>--apply</o> refuses to go on without
       <o>--hosts</o>                           Accepted; the hosts need nothing for this target (no host is synced)
@@ -38,7 +38,7 @@ Commands:
   <b>device</b> <o><subcommand></o>                   Device registry: list, add, enroll, scan, discover, check, host keys (client-config)
   <b>breakglass</b> <o><subcommand></o>               Break-glass hold: make the server stop answering one device or host (hold, release, list)
   <b>emergency</b> <o><subcommand></o>                Emergency measures (lockdown: refuse the logins of groups on a scope)
-  <b>server</b> <o><subcommand></o>                   This server's settings (addresses: where devices and hosts reach it)
+  <b>server</b> <o><subcommand></o>                   This server's settings (show, name, addresses, listen, metrics)
   <b>ssh</b> <o><name|address></o> [<o>-p <port></o>]        Open an ssh session to a registered device or enrolled host, as you
       <o>-p <port></o>                         Connect to this port (default: the device's port, else 22)
   <b>shell</b> [<o>--idle <min></o>] [<o>-c <line></o>]      An interactive tacctl prompt with history and completion
@@ -337,6 +337,7 @@ Usage:
                                                            NETCONF service of the scope's Junos devices (default leave: nothing is planned or compared; a device's own setting wins)
       <o>--connection-limit <n>|none</o>                          (enable) The connection limit of the service, 1 to 250; none removes it
       <o>--rate-limit <n>|none</o>                                (enable) The rate limit of the service, 1 to 250; none removes it
+  <b>tacctl scope timeout-scale</b> <o><scope></o> [<o><n></o>|clear]           Timing scale of the scope's devices, 1 to 10, for slow or distant devices (default: the server's; a device's own wins)
   <b>tacctl scope block</b> <o><scope></o> cisco|juniper list|show|check|set|remove|edit|adopt [<o><block></o>]
                                                            Configuration blocks of a scope (snmp and system, for Junos and IOS): community strings, trap groups and hosts, access lists, login message, domain, time zone, name servers, NTP
 
@@ -413,10 +414,10 @@ Subcommands:
   <b>defaults</b>                             Print canonical tacctl defaults (shipped)
   <b>get</b> <o><path></o> [<o><fallback></o>]              Read a dotted-path value from the merged config
   <b>get-list</b> <o><path></o>                      Read a list value (one item per line)
-  <b>validate</b> [<o>--json</o> | <o>--fix-names</o> [<o>-y</o>]]  Validate config syntax and structure
+  <b>validate</b> [<o>--json</o> | <o>--fix-names</o> [<o>--yes</o>]]  Validate config syntax and structure
       <o>--json</o>                           Print the findings as one JSON object and nothing else on standard output; exit 1 when one is an error
       <o>--fix-names</o>                      After the report, offer to rename each device, host, user and scope that has upper case in its name to its lower-case spelling (superuser; needs the store)
-      -y, --yes                        With <o>--fix-names</o>: answer yes to every rename
+      --yes                            With <o>--fix-names</o>: answer yes to every rename
   <b>render</b> [<o>--force</o>]                     Regenerate every enabled backend's config from the store (<o>--force</o> overwrites hand edits)
       <o>--force</o>                          Overwrite a generated file that was edited by hand
   <b>render</b> <o>--dry-run</o> <o>--out <dir></o>         Render into a new, empty directory at the live paths; nothing live is written
@@ -425,10 +426,6 @@ Subcommands:
       <o>--legacy</o>                         The timestamp names an old-style backup (backups/legacy)
       <o>--keep-uids</o>                      Leave the UID ledger (linux-uids) as it is; the registry, records and staging come back
   <b>loglevel</b> [debug|info|error]          Show or change log level
-  <b>listen</b> [show|tcp|tcp6|reset] [<o><addr></o>]  Show, change, or reset a listen address (default: tacacs, listener 'default')
-      <o>--listener <name></o>                Act on another listener than 'default' (its own tacquito@<name> unit; reset removes it)
-      <o>--backend <id></o>                   Act on another backend (see 'tacctl backend list'); radius: <o>--listener</o> auth|acct udp|udp6 <o><addr></o>
-  <b>metrics</b> show|enable|disable|reset|address <o><host:port></o>    Prometheus exporter control
   <b>sudoers</b> [show|install|remove] [<o><group></o>]  Manage NOPASSWD sudoers drop-in for tacctl
   <b>sudoers</b> tiers [show|install|remove]  Manage per-tier (RO/OP/SU) sudoers rules for tacctl users with local accounts
   <b>password-age</b> [<o><days></o>]                Show or set password age warning threshold
@@ -460,14 +457,13 @@ Subcommands:
       <o>--snmp-location <text></o>           (cisco, juniper, wti) The SNMP location for this paste; not stored (a device's own: tacctl device location)
   <b>linux</b>   build|script|remove-script|uid|builds  TACACS+ or RADIUS login for Linux hosts (install/removal scripts)
   <b>snmp</b>    show|community|v3-user|port|timeout|clear|test  SNMP for the name hint of 'device add' (sysName)
-  <b>devices</b> [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause|apply-transport] [<o><value></o>]  How 'device config pull' reads the devices (default 8 at once, auto, 90 s), the confirm timeout of 'plan' (5 min) and how 'device config apply' runs (confirm 10 min, pause 60 s, transport cli)
+  <b>devices</b> [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause|apply-transport|timeout-scale] [<o><value></o>]  How 'device config pull' reads the devices (default 8 at once, auto, 90 s), the confirm timeout of 'plan' (5 min), how 'device config apply' runs (confirm 10 min, pause 60 s, transport cli) and the timing scale (1)
   <b>branch</b> [<o><name></o>]                      Show or change the tacctl repo branch
 
 Examples:
   tacctl config show
   tacctl config validate
   tacctl config loglevel debug
-  tacctl config listen tcp6 [::]:49
   tacctl config sudoers install adm
   tacctl config cisco --scope prod
   tacctl config cisco --scope prod --legacy   # legacy IOS 12.x syntax
@@ -542,7 +538,11 @@ server's own tacctl users comes with 'host enroll --local' and 'host sync'.
 
 Usage: tacctl host <subcommand> [arguments]
 
-  list [--json]                        Show enrolled hosts, with the address recorded for each
+  list [options]                       Show enrolled hosts: scope, state, last seen, notices
+      --stale                          (list) Only the hosts not seen for stale-days
+      --name <text>                    (list) Only names containing the text (comma list: any)
+      --ip <addr|cidr|text>            (list) Only an address equal to, inside or containing it
+      --scope <scope>                  (list) Only the hosts that scope answers (comma list)
   show <name> [--all] [--json]         One enrolled host in full: connection, scope, address, host keys, sightings,
                                        notices, accounts, last sync and host facts
       --all                            (show) The acknowledged notices too
@@ -562,7 +562,7 @@ Usage: tacctl host <subcommand> [arguments]
       --name <name>                    Registry name (default: short hostname, lowercased; lower case, not a tacctl word)
       --port <n>, --identity <file>    SSH port and key
       --build-on-host                  (tacplus) Compile pam_tacplus on the host instead of in a container here
-      -y, --yes                        (enroll and move) Move a registered host to another scope even when that deletes accounts
+      --yes                            (enroll and move) Move a registered host to another scope even when that deletes accounts
       --staging                        (enroll, with --scope) Provisioned off-site: the host's bench address joins the scope as a
                                        /32 (its secret and users) until the host is seen in place (tacctl scope staging)
   sync <name>... | --all               Push account adds, renames, deletions, expiries and tier changes
@@ -570,11 +570,13 @@ Usage: tacctl host <subcommand> [arguments]
       --allow-uid-mismatch             (enroll, sync and move) Accept a UID conflict on the host instead of stopping
       --remove-home                    (enroll, sync and move) Delete removed users' home directories without asking
                                        (on a terminal each one is asked; without one they are kept)
+      --concurrency <n>                Sync n hosts at once; no home question is asked then (default 1)
   check <name>... | --all [--json]     Compare hosts with what tacctl would make them, read-only: one line per
                                        difference with the command that fixes it; exit 1 when any differs or
                                        cannot be checked. A held host is skipped (superuser only)
       --all                            Every enrolled host
       --json                           Print a JSON array (check: one object per host) and nothing else on standard output
+      --concurrency <n>                Check n hosts at once (default 1)
   move <name> [<scope>] | --all        Move an enrolled host to another scope (default: the one answering its address);
                                        --all: every host another scope answers. Asks before deleting accounts
   target <name> [<[user@]host>]        Show, or change and test, how tacctl reaches an enrolled host over ssh
@@ -591,16 +593,16 @@ Usage: tacctl host <subcommand> [arguments]
                                        out of reach unless --remove-home. Needs a registry target with an explicit user@
       --remove-home                    (provisioner) With --remove-old: also delete the old account's home directory, without asking
                                        (otherwise it is moved out of reach, made root's)
-      -y, --yes                        (provisioner) Rotate without asking, and continue with the host keys shown when none is pinned
+      --yes                            (provisioner) Rotate without asking, and continue with the host keys shown when none is pinned
       --dry-run                        (provisioner) Print the plan and test the current login; change nothing
   rename <old> <new>                   Give an enrolled host another name: registry line, pinned keys, record, staging
                                        addresses and break-glass hold follow; nothing is sent to the host. When the host
                                        is the only user of scope linux-<old>, asks whether to rename that scope too
-      -y, --yes                        (rename) Replace what an earlier host of the new name left, and rename the scope
+      --yes                            (rename) Replace what an earlier host of the new name left, and rename the scope
   forget <name>                        Drop the host's registration from this server (registry line, pinned keys,
                                        record, staging addresses) and run nothing on the host; also what a registry
                                        line no longer has. Refused for a held host
-      -y, --yes                        (forget) Forget the host without asking
+      --yes                            (forget) Forget the host without asking
   unenroll <name> [--force]            Remove the login method from the host (accounts and homes are kept)
       --force                          Forget the host even when the removal there failed
   default-method [tacplus|radius]      Show or set the method for hosts enrolled without --method
@@ -618,10 +620,10 @@ Usage: tacctl backend <subcommand> [arguments]
 Subcommands:
   <b>list</b>                    Every backend: protocol, implementation, installed, enabled, service
   <b>status</b> [<o><id></o>]           Service and listener state of every backend (or one)
-  <b>enable</b> <o><id></o> [<o>-y</o>]        Install the backend if needed, enable it, render its config, start it
-  <b>disable</b> <o><id></o> [<o>-y</o>]       Stop and disable it, take it out of backends.enabled (confirms);
+  <b>enable</b> <o><id></o> [<o>--yes</o>]     Install the backend if needed, enable it, render its config, start it
+  <b>disable</b> <o><id></o> [<o>--yes</o>]    Stop and disable it, take it out of backends.enabled (confirms);
                           its package and rendered files stay
-      <o>-y</o>, <o>--yes</o>           Answer yes to the confirmation
+      <o>--yes</o>               Answer yes to the confirmation
 
 Backends: {{backends}}
 
@@ -654,9 +656,9 @@ Subcommands:
   <b>search</b> <o><term></o>         Search the logs for a username or keyword
   <b>failures</b>              Show auth failures from the last 24 hours
   <b>accounting</b> [<o><n></o>]      Show the last <n> accounting log entries
-  <b>clear</b> [<o>--force</o>|<o>-y</o>]    Purge each backend's logs: journal or auth log, accounting log (confirms)
+  <b>clear</b> [<o>--force</o>|<o>--yes</o>]  Purge each backend's logs: journal or auth log, accounting log (confirms)
       <o>--backend <id></o>    Only that backend's log (every subcommand)
-      <o>--force</o>, <o>-y</o>       (clear) Purge without asking
+      <o>--force</o>, <o>--yes</o>    (clear) Purge without asking
 
 With more than one backend enabled each subcommand shows every backend's log in a
 section of its own; --backend <id> shows only that backend's.

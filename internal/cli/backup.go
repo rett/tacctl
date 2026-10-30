@@ -75,7 +75,10 @@ func backupCmd(inv *invocation) *cobra.Command {
 		withRun(verb("restore <timestamp> [--legacy|--keep-uids]", "Restore a snapshot (with confirmation)"), n(inv.backupRestore)),
 	)
 	// No sub-command or an unknown one: the usage, exit 1.
-	c.RunE = n(func([]string) error {
+	c.RunE = n(func(args []string) error {
+		if sub := arg(args, 0); plainWord(sub) {
+			return inv.unknownSub(sub)
+		}
 		inv.write(Usage("backup", nil))
 		return exit(1)
 	})

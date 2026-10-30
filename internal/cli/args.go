@@ -15,7 +15,7 @@ import (
 
 // Flag is one flag of a verb.
 type Flag struct {
-	// Names are the spellings, e.g. {"--yes", "-y"}; the first is the key
+	// Names are the spellings, e.g. {"--force", "--yes"}; the first is the key
 	// in Parsed.
 	Names []string
 	// Value: the flag takes a value, given as "--name value" or

@@ -366,6 +366,8 @@ func (r *run) transaction(reviewed *plan.Delta) {
 		return
 	}
 
+	batch.Mark(ctx, "preflight")
+
 	// READ
 	r.step("read")
 	raw, err := t.Read(ctx)
@@ -381,6 +383,7 @@ func (r *run) transaction(reviewed *plan.Delta) {
 	for _, l := range delta.Lines {
 		r.m.add(l)
 	}
+	batch.Mark(ctx, "read")
 	r.delta = delta
 	r.o.Sections = delta.Planned()
 	r.o.Shape, r.o.ShapeLines = plan.Shape(delta)
@@ -508,6 +511,8 @@ func (r *run) transaction(reviewed *plan.Delta) {
 		}
 	}
 
+	batch.Mark(ctx, "load")
+
 	// COMPARE
 	r.step("compare")
 	c, err := t.Compare(ctx, delta)
@@ -561,6 +566,7 @@ func (r *run) transaction(reviewed *plan.Delta) {
 		r.discard(ExitFailedCheck, "check: "+msg)
 		return
 	}
+	batch.Mark(ctx, "check")
 	if !apply {
 		r.discard(ExitChecked, "")
 		return
@@ -605,6 +611,7 @@ func (r *run) transaction(reviewed *plan.Delta) {
 		r.readState("the confirmed commit's answer: "+r.errText(err), true)
 		return
 	}
+	batch.Mark(ctx, "commit")
 	batch.Progress(ctx, "committed, verifying")
 
 	// VERIFY
@@ -618,6 +625,7 @@ func (r *run) transaction(reviewed *plan.Delta) {
 		r.cancel(why)
 		return
 	}
+	batch.Mark(ctx, "verify")
 	if r.noBanner {
 		r.confirmedByOther()
 		return
@@ -642,9 +650,12 @@ func (r *run) transaction(reviewed *plan.Delta) {
 		return
 	}
 
+	batch.Mark(ctx, "confirm")
+
 	// RECORD
 	r.step("record")
 	r.record()
+	batch.Mark(ctx, "record")
 }
 
 // interruptBeforeCommit is the second interrupt before the confirmed
@@ -688,7 +699,9 @@ func (r *run) noPendingWord() string {
 // verify is D131 step 9 on a fresh login; it returns why it failed ("" it
 // passed).
 func (r *run) verify() string {
-	ctx := r.ctx
+	// the fresh login is a part of the verification, not a connection and
+	// a login of the device's own to time apart
+	ctx := batch.Quiet(r.ctx)
 	vr, err := r.in.Verify(ctx)
 	if err != nil {
 		if errors.Is(err, devssh.ErrAuth) {

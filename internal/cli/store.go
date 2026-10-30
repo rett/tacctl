@@ -59,9 +59,7 @@ func storeCmd(inv *invocation) *cobra.Command {
 			inv.write(storeUsage())
 			return nil
 		default:
-			inv.app.Out.ErrorE("Unknown store subcommand '" + sub + "'.")
-			inv.write(storeUsage())
-			return exit(1)
+			return inv.unknownSub(sub)
 		}
 	})
 	return c

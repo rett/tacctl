@@ -224,7 +224,7 @@ func (ob *onboard) run() (int, error) {
 	ob.local.mu.Lock()
 	ob.local.secret = pw
 	ob.local.mu.Unlock()
-	ctx, stop := ob.interruptible(false, 2*inv.deviceConfigSettings().timeout)
+	ctx, stop := ob.interruptible(false, 2*inv.deviceTimeoutAt(ob.addr))
 	defer stop()
 	j, id, raw, err := ob.preflight(ctx)
 	if err != nil {
@@ -584,7 +584,7 @@ func (ob *onboard) keyLogged(device string, k devreg.HostKey, source string) err
 // step 1 (or, after the registration, the pinned ones: the same).
 func (ob *onboard) target(keys []string) devssh.Target {
 	return devssh.Target{Host: ob.addr, Port: ob.port, User: ob.local.account, HostKeys: keys, Legacy: ob.legacy,
-		Password: ob.local.eachConnection(), ConnectTimeout: devssh.DefaultConnectTimeout, Dialer: ob.inv.deviceDialer()}
+		Password: ob.local.eachConnection(), ConnectTimeout: devssh.ConnectTimeoutFor(ob.inv.scaleAt(ob.addr)), Dialer: ob.inv.deviceDialer()}
 }
 
 // dialLocal is the local account's transport; a handshake that fails on the
@@ -1041,7 +1041,7 @@ func (ob *onboard) commit(ctx context.Context, ar *applyRun, e devreg.Entry, exp
 	in := ob.input(ar, e, expected, j, st, minutes, func() *devapply.JunosCLI { return fresh })
 	var accept sync.Once
 	verify := devssh.Target{Host: e.Address, Port: e.SSHPort(), User: ob.user, HostKeys: e.HostKeys, Legacy: e.LegacySSH,
-		Password: func() (string, error) { return tacacs(), nil }, ConnectTimeout: devssh.DefaultConnectTimeout, Dialer: inv.deviceDialer()}
+		Password: func() (string, error) { return tacacs(), nil }, ConnectTimeout: devssh.ConnectTimeoutFor(inv.scaleOfEntry(e)), Dialer: inv.deviceDialer()}
 	in.Verify = func(ctx context.Context) (devapply.Reader, error) {
 		v, err := devapply.DialJunos(ctx, verify)
 		if err != nil {

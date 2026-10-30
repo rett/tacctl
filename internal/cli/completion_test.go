@@ -73,7 +73,7 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"backend", "enable", ""}, []string{"tacacs", "radius"}},
 		{[]string{"backend", "status", "r"}, []string{"radius"}},
 		{[]string{"backend", "disable", ""}, []string{"tacacs"}},
-		{[]string{"backend", "enable", "radius", ""}, []string{"-y", "--yes"}},
+		{[]string{"backend", "enable", "radius", ""}, []string{"--yes"}},
 		{[]string{"backend", "list", ""}, nil},
 		{[]string{"store", ""}, []string{"import", "rollback", "show"}},
 		{[]string{"store", "show", "-"}, []string{"--json"}},
@@ -82,10 +82,10 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"config", "ren"}, []string{"render"}},
 		{[]string{"config", "render", ""}, []string{"--force", "--dry-run", "--out"}},
 		{[]string{"config", "render", "--dry-run", ""}, []string{"--force", "--out"}},
-		{[]string{"config", "listen", "--backend", ""}, []string{"tacacs", "radius"}},
-		{[]string{"config", "listen", "--backend", "radius", "--listener", ""}, []string{"auth", "acct"}},
-		{[]string{"config", "listen", "--listener", ""}, []string{"default"}},
-		{[]string{"config", "listen", "--backend", "radius", ""}, []string{"show", "reset", "tcp", "tcp6", "udp", "udp6", "--listener"}},
+		{[]string{"server", "listen", "--backend", ""}, []string{"tacacs", "radius"}},
+		{[]string{"server", "listen", "--backend", "radius", "--listener", ""}, []string{"auth", "acct"}},
+		{[]string{"server", "listen", "--listener", ""}, []string{"default"}},
+		{[]string{"server", "listen", "--backend", "radius", ""}, []string{"show", "reset", "tcp", "tcp6", "udp", "udp6", "--listener"}},
 		{[]string{"config", "cisco", ""}, []string{"--scope", "--protocol", "--staging", "--name", "--server", "--source", "--snmp-location", "--legacy"}},
 		{[]string{"config", "juniper", ""}, []string{"--scope", "--protocol", "--staging", "--name", "--server", "--source", "--snmp-location"}},
 		{[]string{"config", "cisco", "--protocol", ""}, []string{"tacacs", "radius"}},
@@ -113,8 +113,8 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"scope", "add", "edge", "--prefixes", "10.0.0.0/8", "--vendor-attrs", "cisco", ""}, []string{"--secret", "--protocols", "--default"}},
 		{[]string{"log", "tail", "--"}, []string{"--backend", "--follow"}},
 		{[]string{"log", "tail", "--backend", ""}, []string{"tacacs", "radius"}},
-		{[]string{"log", "clear", ""}, []string{"--backend", "--force", "-y", "--yes"}},
-		{[]string{"log", "clear", "--backend", "tacacs", ""}, []string{"--force", "-y", "--yes"}},
+		{[]string{"log", "clear", ""}, []string{"--backend", "--force", "--yes"}},
+		{[]string{"log", "clear", "--backend", "tacacs", ""}, []string{"--force", "--yes"}},
 		{[]string{"scope", "protocols", "lab", ""}, []string{"list", "set", "clear"}},
 		{[]string{"scope", "protocols", "lab", "set", ""}, []string{"tacacs", "radius"}},
 		{[]string{"scope", "breakglass", "lab", ""}, []string{"list", "add", "remove"}},
@@ -129,12 +129,12 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"scope", "block", "lab", "juniper", "s"}, []string{"show", "set"}},
 		{[]string{"scope", "block", "lab", "juniper", "e"}, []string{"edit"}},
 		// edit takes a block; adopt takes a device, then a block
-		{[]string{"scope", "block", "lab", "juniper", "edit", ""}, []string{"snmp", "system", "-y", "--yes"}},
-		{[]string{"scope", "block", "lab", "juniper", "adopt", ""}, []string{"jsw1", "sw1", "-y", "--yes"}},
-		{[]string{"scope", "block", "lab", "juniper", "adopt", "jsw1", ""}, []string{"snmp", "system", "-y", "--yes"}},
-		{[]string{"scope", "block", "lab", "juniper", "adopt", "jsw1", "snmp", ""}, []string{"-y", "--yes"}},
+		{[]string{"scope", "block", "lab", "juniper", "edit", ""}, []string{"snmp", "system", "--yes"}},
+		{[]string{"scope", "block", "lab", "juniper", "adopt", ""}, []string{"jsw1", "sw1", "--yes"}},
+		{[]string{"scope", "block", "lab", "juniper", "adopt", "jsw1", ""}, []string{"snmp", "system", "--yes"}},
+		{[]string{"scope", "block", "lab", "juniper", "adopt", "jsw1", "snmp", ""}, []string{"--yes"}},
 		{[]string{"scope", "block", "lab", "juniper", "show", ""}, []string{"snmp", "system", "--reveal"}},
-		{[]string{"scope", "block", "lab", "juniper", "set", "snmp", ""}, []string{"--file", "-y", "--yes"}},
+		{[]string{"scope", "block", "lab", "juniper", "set", "snmp", ""}, []string{"--file", "--yes"}},
 		{[]string{"scope", "block", "lab", "juniper", "check", "snmp", "--against", ""}, []string{"jsw1", "sw1"}},
 		{[]string{"scope", "block", "lab", "juniper", "check", "snmp", ""}, []string{"--file", "--against"}},
 		// --restore-point takes its value after '=' only: the bare flag is a
@@ -148,8 +148,8 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"device", "config", "plan", "--restore-point=disk0:", "--restore"}, nil},
 		{[]string{"device", "block", ""}, []string{"jsw1", "sw1"}},
 		{[]string{"device", "block", "jsw1", ""}, []string{"list", "show", "check", "set", "remove", "edit", "adopt"}},
-		{[]string{"device", "block", "jsw1", "adopt", ""}, []string{"snmp", "system", "-y", "--yes"}},
-		{[]string{"device", "block", "jsw1", "edit", "snmp", ""}, []string{"-y", "--yes"}},
+		{[]string{"device", "block", "jsw1", "adopt", ""}, []string{"snmp", "system", "--yes"}},
+		{[]string{"device", "block", "jsw1", "edit", "snmp", ""}, []string{"--yes"}},
 		{[]string{"device", "block", "jsw1", "show", ""}, []string{"snmp", "system", "--reveal", "--effective"}},
 		{[]string{"device", "block", "jsw1", "check", "system", ""}, []string{"--file", "--against"}},
 		{[]string{"scope", "prefixes", "lab", ""}, []string{"list", "add", "remove", "move"}},
@@ -198,22 +198,22 @@ func TestCompleteScenarios(t *testing.T) {
 		// name (nothing to complete), then the one flag.
 		{[]string{"host", "rename", ""}, []string{"web1", "web2"}},
 		{[]string{"host", "rename", "web1", ""}, nil},
-		{[]string{"host", "rename", "web1", "web9", ""}, []string{"-y", "--yes"}},
+		{[]string{"host", "rename", "web1", "web9", ""}, []string{"--yes"}},
 		{[]string{"host", "rename", "web1", "web9", "--yes", ""}, nil},
 		// host forget: an enrolled host, then the one flag.
 		{[]string{"host", "forget", ""}, []string{"web1", "web2"}},
-		{[]string{"host", "forget", "web1", ""}, []string{"-y", "--yes"}},
+		{[]string{"host", "forget", "web1", ""}, []string{"--yes"}},
 		// host sync: hosts at every position, then the flags.
-		{[]string{"host", "sync", ""}, []string{"web1", "web2", "--all", "--allow-uid-mismatch", "--remove-home"}},
-		{[]string{"host", "sync", "web1", ""}, []string{"web1", "web2", "--all", "--allow-uid-mismatch", "--remove-home"}},
+		{[]string{"host", "sync", ""}, []string{"web1", "web2", "--all", "--allow-uid-mismatch", "--remove-home", "--concurrency"}},
+		{[]string{"host", "sync", "web1", ""}, []string{"web1", "web2", "--all", "--allow-uid-mismatch", "--remove-home", "--concurrency"}},
 		{[]string{"host", "sync", "web1", "web2", "w"}, []string{"web1", "web2"}},
 		// host check: hosts at every position, then the flags.
-		{[]string{"host", "check", ""}, []string{"web1", "web2", "--all", "--json"}},
-		{[]string{"host", "check", "web1", ""}, []string{"web1", "web2", "--all", "--json"}},
+		{[]string{"host", "check", ""}, []string{"web1", "web2", "--all", "--json", "--concurrency"}},
+		{[]string{"host", "check", "web1", ""}, []string{"web1", "web2", "--all", "--json", "--concurrency"}},
 		{[]string{"host", ""}, []string{"check", "default-method", "enroll", "forget", "list", "move", "provisioner", "rename", "show", "sync", "target", "unenroll"}},
-		{[]string{"install", ""}, []string{"--branch", "--server", "-y", "--yes"}},
+		{[]string{"install", ""}, []string{"--branch", "--server", "--yes"}},
 		{[]string{"upgrade", ""}, []string{"--branch"}},
-		{[]string{"uninstall", ""}, []string{"-y", "--yes"}},
+		{[]string{"uninstall", ""}, []string{"--yes"}},
 		{[]string{"version", ""}, []string{"--long"}},
 		{[]string{"shell", "-c", "sta"}, []string{"status"}},
 		{[]string{"shell", "-c", "status", ""}, []string{"--no-history", "--idle", "--space-completion", "--password-cache"}},
@@ -301,7 +301,7 @@ func TestCompleteWithoutTheBridge(t *testing.T) {
 
 // The listeners of the backend named on the line, else every backend's.
 func TestCompleteAsksForTheListenersOfTheBackendOnTheLine(t *testing.T) {
-	h := newHarness(t, []string{"__completeNoDesc", "config", "listen", "--backend", "radius", "--listener", ""})
+	h := newHarness(t, []string{"__completeNoDesc", "server", "listen", "--backend", "radius", "--listener", ""})
 	if err := h.run(); err != nil {
 		t.Fatal(err)
 	}
@@ -528,7 +528,7 @@ func TestCompleteThisReleasesWords(t *testing.T) {
 		{[]string{"scope", "secret", "lab", "set", "--"}, []string{"--stdin"}, false},
 		{[]string{"user", "add", "x", "--"}, []string{"--hash"}, false},
 		{[]string{"user", "passwd", "x", "--"}, []string{"--hash"}, false},
-		{[]string{"rollback", ""}, []string{"0.2.20", "0.2.19", "0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3"}, true},
+		{[]string{"rollback", ""}, []string{"0.2.21", "0.2.20", "0.2.19", "0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3"}, true},
 	}
 	for _, c := range cases {
 		got, _ := completeWords(t, liveNames, c.words...)

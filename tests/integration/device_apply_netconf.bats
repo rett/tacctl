@@ -121,7 +121,7 @@ print("ok")' <<< "$output"
     start
     apply example-sw1 --check
     assert_success
-    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config shapes seed example-sw1 -y
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config shapes seed example-sw1 --yes
     assert_success
     before=$(committed)
     apply example-sw1 --confirmed --yes --transport netconf
@@ -193,7 +193,7 @@ set_netconf() {
 seed() {
     apply example-sw1 --check
     assert_success
-    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config shapes seed example-sw1 -y
+    SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config shapes seed example-sw1 --yes
     assert_success
 }
 

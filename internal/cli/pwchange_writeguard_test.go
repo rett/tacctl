@@ -82,7 +82,7 @@ func TestBackendOfTheServerLoginsCountsForTheStanding(t *testing.T) {
 		t.Errorf("user show:\n%s", out)
 	}
 	sb.write("state/tacctl.yaml", "backends:\n  enabled: [tacacs, radius]\n", 0o600)
-	sb.run("", []string{"backend", "disable", "tacacs", "-y"})
+	sb.run("", []string{"backend", "disable", "tacacs", "--yes"})
 	refusedStranding(t, sb, "This change", "bob")
 	if got := sb.read("state/tacctl.yaml"); got != "backends:\n  enabled: [tacacs, radius]\n" {
 		t.Errorf("tacctl.yaml: %q", got)

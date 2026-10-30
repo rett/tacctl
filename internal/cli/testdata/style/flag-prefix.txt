@@ -31,14 +31,14 @@ config wti --staging
 device add --allow-generic
 device add --ios-syntax
 device address --apply
-device address -y
+device address --yes
 device block --file
-device block -y
+device block --yes
 device check --all
 device check --json
 device collect --login
 device collect --register
-device collect -y
+device collect --yes
 device config apply --all
 device config apply --differs
 device config apply --exit-code
@@ -50,7 +50,7 @@ device config apply --scope
 device config apply --stale
 device config apply --transport
 device config apply --vendor
-device config apply -y
+device config apply --yes
 device config diff --all
 device config diff --differs
 device config diff --ip
@@ -90,7 +90,7 @@ device config pull --stale
 device config pull --transport
 device config pull --vendor
 device config shapes --show
-device config shapes -y
+device config shapes --yes
 device config show --legacy
 device description --apply
 device discover --backend
@@ -99,21 +99,21 @@ device enroll --legacy-ssh
 device enroll --name
 device enroll --vendor
 device export --json
-device hostkey -y
+device hostkey --yes
 device import --allow-generic
-device import -y
+device import --yes
 device ios-syntax --apply
 device list --json
 device location --apply
 device location --from-device
-device location -y
+device location --yes
 device netconf --apply
 device netconf --connection-limit
 device netconf --rate-limit
 device onboard --check
 device onboard --login
 device remove --all
-device remove -y
+device remove --yes
 device rename --allow-generic
 device scan --backend
 device show --json
@@ -123,9 +123,9 @@ device support-bundle --login
 device support-bundle --out
 device support-bundle --vendor
 device sync --apply
-device sync -y
+device sync --yes
 device vendor --from-device
-device vendor -y
+device vendor --yes
 emergency lockdown --all-scopes
 emergency lockdown --dry-run
 emergency lockdown --json
@@ -156,19 +156,19 @@ host enroll --allow-uid-mismatch
 host enroll --build-on-host
 host enroll --remove-home
 host enroll --staging
-host enroll -y
-host forget -y
+host enroll --yes
+host forget --yes
 host list --json
 host move --allow-uid-mismatch
 host move --remove-home
-host move -y
+host move --yes
 host provisioner --dry-run
 host provisioner --key
 host provisioner --password
 host provisioner --remove-home
 host provisioner --remove-old
 host provisioner --yes
-host rename -y
+host rename --yes
 host show --all
 host show --check
 host show --json
@@ -182,7 +182,7 @@ scope add --protocols
 scope add --secret
 scope add --vendor-attrs
 scope block --file
-scope block -y
+scope block --yes
 scope breakglass --role
 scope netconf --connection-limit
 scope netconf --rate-limit

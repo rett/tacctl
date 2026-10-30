@@ -100,7 +100,7 @@ func (inv *invocation) applyArgsOf(p Parsed) (applyArgs, error) {
 	}
 	a.pull = pa
 	a.check, a.confirmed, a.hold = p.Has("--check"), p.Has("--confirmed"), p.Has("--hold")
-	a.noCanary, a.yes, a.exitCode = p.Has("--no-canary"), p.Has("-y"), p.Has("--exit-code")
+	a.noCanary, a.yes, a.exitCode = p.Has("--no-canary"), p.Has("--yes"), p.Has("--exit-code")
 	a.pullFirst = p.Has("--pull")
 	a.mode = "attended"
 	if a.yes {
@@ -1106,11 +1106,13 @@ func (c *applyCtl) pullFirst(junos []devreg.Entry, sel selection) ([]devreg.Entr
 	inv, aa, run := c.inv, c.aa, c.run
 	view := inv.newPullView(junos, aa.pull.json, c.user, false)
 	view.phase = "pull"
+	view.timing = aa.pull.timing
 	sum, outs, err := inv.runPull(pullBatch{entries: junos, render: c.chosen.render, args: aa.pull, user: c.user, view: view,
 		pass: &runPassword{src: run.passwd, password: run.password}})
 	if err != nil {
 		return nil, true, err
 	}
+	c.addTiming(sum)
 	inv.hooks.pullDone()
 	var pulled []devreg.Entry
 	for i, e := range junos {
@@ -1192,6 +1194,16 @@ type applyCtl struct {
 	usage    string
 	// rows are the devices' final outcomes in the order they were decided.
 	rows []*applyOutcome
+	// timings are the phases of each device over every batch of the run (the
+	// pull of --pull, the check, the apply), with --timing.
+	timings []batch.Timing
+}
+
+// addTiming adds the phases of a batch to the run's, with --timing.
+func (c *applyCtl) addTiming(sum batch.Summary) {
+	if c.aa.pull.timing {
+		c.timings = batch.MergeTimings(c.timings, sum.Timings())
+	}
 }
 
 // run2 is Phase A, the review and Phase B over the Junos devices.
@@ -1206,13 +1218,17 @@ func (c *applyCtl) run2(junos []devreg.Entry) error {
 	for i, e := range junos {
 		jobs[i] = run.jobOf(e, nil, "")
 	}
+	// The time of a device is the setting scaled for it unless one was typed.
+	timeoutA, jobs := inv.scaleJobTimeouts(junos, jobs, aa.pull.timeout, aa.pull.timeoutTyped)
 	ctx, interrupts, stop := inv.batchInterrupts()
 	view := inv.newApplyView(junos, "check", aa.pull.json, c.user)
+	view.timing = aa.pull.timing
 	sumA := batch.Run(ctx, batch.Options{
-		Concurrency: aa.pull.concurrency, Cap: c.settings.maxConcurrency, Timeout: aa.pull.timeout,
-		MaxFailures: aa.pull.maxFailures, StopOnAuthFailure: true, Interrupts: interrupts, Clock: inv.app.Knobs.Now,
+		Concurrency: aa.pull.concurrency, Cap: c.settings.maxConcurrency, Timeout: timeoutA,
+		MaxFailures: aa.pull.maxFailures, StopOnAuthFailure: true, Interrupts: interrupts, Clock: inv.batchClock(),
 	}, jobs, view)
 	stop()
+	c.addTiming(sumA)
 	byName := map[string]*applyOutcome{}
 	for i, en := range sumA.Entries {
 		o, _ := en.Result.Value.(*applyOutcome)
@@ -1284,12 +1300,14 @@ func (c *applyCtl) run2(junos []devreg.Entry) error {
 	c.audit(rv.approved)
 	viewB := inv.newApplyView(entries, "apply", aa.pull.json, c.user)
 	viewB.mode = aa.reviewMode()
+	viewB.timing = aa.pull.timing
 	sumB := batch.Run(ctxB, batch.Options{
 		Concurrency: concurrency, Cap: c.settings.maxConcurrency, Timeout: time.Duration(run.minutes+2) * time.Minute,
-		MaxFailures: maxFail, StopOnAuthFailure: true, Interrupts: interruptsB, Clock: inv.app.Knobs.Now,
+		MaxFailures: maxFail, StopOnAuthFailure: true, Interrupts: interruptsB, Clock: inv.batchClock(),
 		Canary: !aa.noCanary, Pause: aa.pause,
 	}, jobsB, viewB)
 	stopB()
+	c.addTiming(sumB)
 	// what Phase B did replaces what Phase A said of the same device
 	for i, en := range sumB.Entries {
 		name := strings.ToLower(entries[i].Name)

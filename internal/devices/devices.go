@@ -116,7 +116,7 @@ type Data struct {
 	// Radius is Prepare's result; required when Protocol is radius.
 	Radius *Radius
 	// TACACSPort is the port the TACACS+ server listens on, as the default
-	// listener of 'tacctl config listen' has it (the tacacs backend's
+	// listener of 'tacctl server listen' has it (the tacacs backend's
 	// TACACS_PORT device variable); "" is the default, 49. The TACACS+
 	// walkthroughs state it where the device's configuration takes a port
 	// (and only then: 49 is what a device uses when none is written), and

@@ -150,12 +150,30 @@ print("fine")' <<< "$output"
     assert_line --regexp '^ *lab-j .* ok +'
     alice device config list --stale
     assert_output --partial "None: every device"
+    alice device list --differs
+    assert_success
+    assert_output --partial "None match."
     # The store changes: the management ACL gains a permit. Nothing was pulled.
     run "$TACCTL_BIN_SCRIPT" config mgmt-acl add 198.51.100.0/24
     assert_success
     alice device config list --differs
     assert_success
     assert_line --regexp '^ *lab-j .* differs .*mgmt-acl'
+    # 'device list --differs' is the same devices, from the same records.
+    alice device list --differs
+    assert_success
+    assert_output --partial "Registered devices (2), of 2"
+    assert_line --regexp '^ *lab-j .* differs +'
+    assert_line --regexp '^ *lab-k .* differs +'
+    alice device list --differs --json
+    assert_success
+    run python3 -c '
+import json, sys
+d = json.loads(sys.stdin.read())
+assert sorted(x["name"] for x in d) == ["lab-j", "lab-k"], d
+assert all(x["config"] == "differs" and x["differs_in"] == ["mgmt-acl"] for x in d), d
+print("fine")' <<< "$output"
+    assert_output "fine"
     alice device config list --transport netconf --json
     assert_success
     run python3 -c '
@@ -206,7 +224,7 @@ print("fine")' <<< "$output"
     assert_success
     [[ -f "${TACCTL_VAR_LIB}/device-config/lab-j.yaml" ]]
     [[ -f "${TACCTL_VAR_LIB}/device-config/lab-k.yaml" ]]
-    run bash -c 'printf "lab-j,192.168.1.20,juniper\npdu1,192.168.1.40,wti\n" | "$1" device import - --replace -y' _ "$TACCTL_BIN_SCRIPT"
+    run bash -c 'printf "lab-j,192.168.1.20,juniper\npdu1,192.168.1.40,wti\n" | "$1" device import - --replace --yes' _ "$TACCTL_BIN_SCRIPT"
     assert_success
     [[ -f "${TACCTL_VAR_LIB}/device-config/lab-j.yaml" ]]
     [[ ! -e "${TACCTL_VAR_LIB}/device-config/lab-k.yaml" ]]

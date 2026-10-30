@@ -32,24 +32,24 @@ func TestRollbackTablesMatchTheSchema(t *testing.T) {
 		}
 	}
 	for _, f := range schema {
-		in022, in023, in024, in025, in027, in029, in0210, in0217, in0219, in0220, in0221 := slices.Contains(Known022, f), slices.Contains(Added023, f), slices.Contains(Added024, f), slices.Contains(Added025, f), slices.Contains(Added027, f), slices.Contains(Added029, f), slices.Contains(Added0210, f), slices.Contains(Added0217, f), slices.Contains(Added0219, f), slices.Contains(Added0220, f), slices.Contains(Added0221, f)
+		in022, in023, in024, in025, in027, in029, in0210, in0217, in0219, in0220, in0221, in0222 := slices.Contains(Known022, f), slices.Contains(Added023, f), slices.Contains(Added024, f), slices.Contains(Added025, f), slices.Contains(Added027, f), slices.Contains(Added029, f), slices.Contains(Added0210, f), slices.Contains(Added0217, f), slices.Contains(Added0219, f), slices.Contains(Added0220, f), slices.Contains(Added0221, f), slices.Contains(Added0222, f)
 		n := 0
-		for _, in := range []bool{in022, in023, in024, in025, in027, in029, in0210, in0217, in0219, in0220, in0221} {
+		for _, in := range []bool{in022, in023, in024, in025, in027, in029, in0210, in0217, in0219, in0220, in0221, in0222} {
 			if in {
 				n++
 			}
 		}
 		switch {
 		case n > 1:
-			t.Errorf("%+v is in more than one of Known022, Added023, Added024, Added025, Added027, Added029, Added0210, Added0217, Added0219 and Added0220", f)
+			t.Errorf("%+v is in more than one of Known022, Added023, Added024, Added025, Added027, Added029, Added0210, Added0217, Added0219, Added0220, Added0221 and Added0222", f)
 		case n == 0:
-			t.Errorf("schema.go has the key family %+v, which rollback.go lists in none of Known022 (0.2.2 has it), Added023 (0.2.3 added it), Added024 (0.2.4 added it), Added025 (0.2.5 added it), Added027 (0.2.7 added it), Added029 (0.2.9 added it) and Added0210 (0.2.10 added it), Added0217 (0.2.17 added it), Added0219 (0.2.19 added it), Added0220 (0.2.20 added it) and Added0221 (0.2.21 added it): decide, so a rollback knows what to remove", f)
+			t.Errorf("schema.go has the key family %+v, which rollback.go lists in none of Known022 (0.2.2 has it), Added023 (0.2.3 added it), Added024 (0.2.4 added it), Added025 (0.2.5 added it), Added027 (0.2.7 added it), Added029 (0.2.9 added it) and Added0210 (0.2.10 added it), Added0217 (0.2.17 added it), Added0219 (0.2.19 added it), Added0220 (0.2.20 added it), Added0221 (0.2.21 added it) and Added0222 (0.2.22 added it): decide, so a rollback knows what to remove", f)
 		}
 	}
 	for _, tbl := range []struct {
 		name string
 		list []Family
-	}{{"Known022", Known022}, {"Added023", Added023}, {"Added024", Added024}, {"Added025", Added025}, {"Added027", Added027}, {"Added029", Added029}, {"Added0210", Added0210}, {"Added0217", Added0217}, {"Added0219", Added0219}, {"Added0220", Added0220}, {"Added0221", Added0221}} {
+	}{{"Known022", Known022}, {"Added023", Added023}, {"Added024", Added024}, {"Added025", Added025}, {"Added027", Added027}, {"Added029", Added029}, {"Added0210", Added0210}, {"Added0217", Added0217}, {"Added0219", Added0219}, {"Added0220", Added0220}, {"Added0221", Added0221}, {"Added0222", Added0222}} {
 		for _, f := range tbl.list {
 			if !slices.Contains(schema, f) {
 				t.Errorf("%s lists %+v, which schema.go no longer has", tbl.name, f)
@@ -498,5 +498,45 @@ func TestRollbackKeysOfAuditStrict(t *testing.T) {
 	}
 	if keys := Load(path, DefaultBackends).RollbackKeys0216(); len(keys) != 0 {
 		t.Errorf("an empty audit mapping yields %q", keys)
+	}
+}
+
+// Where the 0.2.21 tag is here, Added0222 holds nothing its schema has, so a
+// 0.2.21 binary refuses server.name; every rollback lists the key, and 0.2.3
+// lists it as a key it does not know. The keys 0.2.21 added (server.addresses)
+// are ones the rollback to 0.2.21 keeps.
+func TestAdded0222IsNotInTheSchemaOfTheTag(t *testing.T) {
+	want := tagSchemaKeys(t, "0.2.21")
+	for _, f := range Added0222 {
+		if slices.Contains(want, f.Path) {
+			t.Errorf("Added0222 lists %q, which the schema of 0.2.21 has", f.Path)
+		}
+	}
+	if !slices.Contains(want, "server.addresses") {
+		t.Error("the schema of 0.2.21 lacks server.addresses")
+	}
+	if !Added0222Key("server.name") || Added0222Key("server.names") || Added0222Key("server.addresses") || Added0222Key("server") {
+		t.Error("Added0222Key is not server.name")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tacctl.yaml")
+	if err := os.WriteFile(path, []byte("audit:\n  strict: true\nserver:\n  addresses: [192.0.2.10]\n  name: core-1\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	c := Load(path, DefaultBackends)
+	if got := c.RollbackKeys0221(); !slices.Equal(got, []string{"server.name"}) {
+		t.Errorf("RollbackKeys0221 = %v", got)
+	}
+	for name, got := range map[string][]string{"0.2.20": c.RollbackKeys0220(), "0.2.18": c.RollbackKeys0218(), "0.2.16": c.RollbackKeys0216(), "0.2.9": c.RollbackKeys029(), "0.2.3": c.RollbackKeys023()} {
+		if !slices.Contains(got, "server.name") || !slices.Contains(got, "server.addresses") {
+			t.Errorf("RollbackKeys for %s = %v", name, got)
+		}
+	}
+	if err := c.UnsetMany(c.RollbackKeys0221()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(path)
+	if strings.Contains(string(got), "name") || !strings.Contains(string(got), "192.0.2.10") {
+		t.Errorf("after:\n%s", got)
 	}
 }

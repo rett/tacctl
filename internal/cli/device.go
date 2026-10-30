@@ -27,8 +27,10 @@ import (
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devreg"
+	"github.com/rett/tacctl/internal/devssh"
 	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/shellquote"
+	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -55,7 +57,7 @@ func init() {
 }
 
 var (
-	flagYes          = Flag{Names: []string{"-y", "--yes"}}
+	flagYes          = Flag{Names: []string{"--yes"}}
 	flagJSON         = Flag{Names: []string{"--json"}}
 	flagApply        = Flag{Names: []string{"--apply"}}
 	flagAllowGeneric = Flag{Names: []string{"--allow-generic"}}
@@ -66,7 +68,7 @@ var (
 // deviceSpecs are the arguments of each verb, for the parser and for
 // completion (args.go).
 var deviceSpecs = map[string]Spec{
-	"list": {MaxArgs: 1, Args: []string{""}, Flags: []Flag{{Names: []string{"--stale"}}, {Names: []string{"--unconfigured"}},
+	"list": {MaxArgs: 1, Args: []string{""}, Flags: []Flag{{Names: []string{"--stale"}}, {Names: []string{"--unconfigured"}}, {Names: []string{"--differs"}},
 		{Names: []string{"--name"}, Value: true}, {Names: []string{"--ip"}, Value: true},
 		{Names: []string{"--vendor"}, Value: true, Kind: KindVendors}, {Names: []string{"--scope"}, Value: true, Kind: KindScopes},
 		{Names: []string{"--scan"}}, {Names: []string{"--probe"}}, flagJSON}},
@@ -135,6 +137,8 @@ var deviceSpecs = map[string]Spec{
 	// The NETCONF service of a Junos device (0.2.10, D145).
 	"netconf":    {MinArgs: 1, MaxArgs: 2, Args: []string{KindJuniperDevices, "show|enable|disable|leave|clear"}, Flags: deviceNetconfFlags},
 	"stale-days": {MaxArgs: 1, Args: []string{""}},
+	// The timing scale of a device (0.2.22).
+	"timeout-scale": {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, timeoutScaleWords}},
 	// 'notice list [<name>] [--all]' and 'notice <name> ack|unack <kind>'
 	// (0.2.18, D274): three words are the second form, so a device named
 	// 'list' still takes ack and unack.
@@ -168,31 +172,32 @@ var deviceSpecs = map[string]Spec{
 
 // deviceVerbs are the verbs ({Use, Short}), in usage order.
 var deviceVerbs = [][2]string{
-	{"list [<word>] [--name <text>] [--ip <addr|cidr|text>] [--vendor <vendor>] [--scope <scope>] [--stale] [--unconfigured] [--scan] [--probe] [--json]", "Registered devices and enrolled hosts, by name: scope, state, last seen, notices; the options narrow the list"},
+	{"list [<word>] [--name <text>] [--ip <addr|cidr|text>] [--vendor <vendor>] [--scope <scope>] [--stale] [--unconfigured] [--differs] [--scan] [--probe] [--json]", "Registered devices, by name: scope, state, last seen, notices; the options narrow the list"},
 	{"show <name|address> [--all] [--json]", "One device or host in full (--all: the acknowledged notices too)"},
 	{"add [<name>] <address> [options]", "Register a device (no name: offer the one it gives itself by SNMP); the vendor the device names by SNMP is shown, and offered at a terminal"},
 	{"onboard <address> --login <local-user> [--name <name>] [--host-key SHA256:<fp>] [--legacy-ssh] [--check] [--section <list>] [--json]", "Engineers, Junos devices: register a blank device reached with one of its local accounts (its host key accepted first by typing its name) and commit its first configuration as that account, kept only after your own TACACS+ login proves it"},
-	{"collect <address>... | --discovered [--login <local-user>] [--host-key SHA256:<fp>] [--register [-y]] [--json]", "Engineers, Junos devices: log in once to each address nobody registered and read what it is (each one's host key shown and accepted first by typing its name or address; show version and the configuration, nothing else), as one table; --register registers them through 'device add' and keeps the read as their first record"},
+	{"collect <address>... | --discovered [--login <local-user>] [--host-key SHA256:<fp>] [--register [--yes]] [--json]", "Engineers, Junos devices: log in once to each address nobody registered and read what it is (each one's host key shown and accepted first by typing its name or address; show version and the configuration, nothing else), as one table; --register registers them through 'device add' and keeps the read as their first record"},
 	{"enroll <address>... | --discovered [--host-key SHA256:<fp>] [--vendor cisco|juniper|wti|other] [--name <name>] [--legacy-ssh] [--json]", "Engineers: per address, accept the one host key shown by typing the device's name, read its name and vendor by SNMP (asking for what cannot be read), register it, pull it as you, take the name it is configured with, plan it and, for Junos devices, offer the apply review"},
 	{"support-bundle <name> [--vendor cisco|juniper|wti] [--login <local-user>] [--out <dir>]", "Engineers: log in once to a registered device and collect what a developer needs to make tacctl read it right (the version, hardware or inventory, stack, the login's permissions and the commit history of a Junos device, the screens of a WTI unit, the SNMP system group; the configuration itself is not collected), scrubbed: names, users, addresses, serial numbers and time zones become examples and secrets are removed; what was replaced is kept in a private file beside the directory"},
-	{"sync <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> [--apply] [--overwrite] [--json] [-y]", "Engineers: fill the registry's empty hostname, location and description from what each device's last pull record says of itself (no login; the preview first, --apply writes after one question)"},
-	{"remove <name>[,<name>...] | --all [-y]", "Remove devices from the registry (confirms)"},
+	{"sync <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> [--apply] [--overwrite] [--json] [--yes]", "Engineers: fill the registry's empty hostname, location and description from what each device's last pull record says of itself (no login; the preview first, --apply writes after one question)"},
+	{"remove <name>[,<name>...] | --all [--yes]", "Remove devices from the registry (confirms)"},
 	{"rename <old> <new> [--allow-generic]", "Rename a device"},
-	{"address <name> [<address>] [-y]", "Show or set the address (--apply: then run 'device config apply' for the device); on a device with a break-glass hold, the hold moves with it after one question (-y: no question)"},
+	{"address <name> [<address>] [--yes]", "Show or set the address (--apply: then run 'device config apply' for the device); on a device with a break-glass hold, the hold moves with it after one question (--yes: no question)"},
 	{"hostname <name> [<dns>|clear]", "Show, set or clear the DNS name"},
-	{"vendor <name> [cisco|juniper|wti|other|--from-device [-y]]", "Show or set the vendor (--from-device: read it from the device by SNMP)"},
+	{"vendor <name> [cisco|juniper|wti|other|--from-device [--yes]]", "Show or set the vendor (--from-device: read it from the device by SNMP)"},
 	{"port <name> [<n>|clear]", "Show, set or clear the ssh port"},
 	{"description <name> [<text>|clear]", "Show, set or clear the description (--apply: then run 'device config apply' for the device)"},
-	{"location <name> [<text>|clear|--from-device [-y]]", "Show, set or clear the place, for the SNMP location in the walkthroughs (--from-device: read it from the device; --apply: then run 'device config apply' for the device)"},
+	{"location <name> [<text>|clear|--from-device [--yes]]", "Show, set or clear the place, for the SNMP location in the walkthroughs (--from-device: read it from the device; --apply: then run 'device config apply' for the device)"},
 	{"legacy-ssh <name> [enable|disable]", "Opt in to the legacy ssh algorithms (SHA-1 key exchange, CBC ciphers, ssh-rsa)"},
 	{"ios-syntax <name> [auto|ios12|modern]", "Show or set the Cisco configuration syntax (IOS 12.x or modern) of the walkthrough and the comparison (--apply: then run 'device config apply' for the device)"},
 	{"stale-days [<n>]", "Show or set the days after which a device counts as stale"},
 	{"notice list [<name>] [--all]", "The open notices, with what to do about each (--all: the acknowledged ones too)"},
 	{"notice <name> ack|unack <kind>", "Acknowledge or reopen a notice"},
-	{"import [--check] [--replace] [--allow-generic] [-y] <file|->", "Import devices from CSV or the registry's YAML (an engineer: from standard input only, `-` first)"},
+	{"import [--check] [--replace] [--allow-generic] [--yes] <file|->", "Import devices from CSV or the registry's YAML (an engineer: from standard input only, `-` first)"},
 	{"export [--csv|--json]", "Print the registry (YAML by default)"},
-	{"hostkey <name> [show|accept [-y]|set SHA256:<fp>]", "Show the pinned ssh host keys, or re-pin them after a verified change"},
+	{"hostkey <name> [show|accept [--yes]|set SHA256:<fp>]", "Show the pinned ssh host keys, or re-pin them after a verified change"},
 	{deviceNetconfUse, deviceNetconfShort},
+	{deviceTimeoutScaleUse, deviceTimeoutScaleShort},
 	// 'device snmp': one row for each verb.
 	{"snmp <name> show [--reveal]", "A device's own SNMP settings over its scope's: version, port, timeout, allowed clients and credentials, and where each comes from"},
 	{"snmp <name> version [v2c|v3]", "Show or set the device's own SNMP version"},
@@ -210,10 +215,10 @@ var deviceVerbs = [][2]string{
 	{"check <name>|--all [--json]", "Checklist: scope, tag, seen, reachable, host key, SNMP name, location and vendor"},
 	{"config show <name> [--protocol tacacs|radius] [--legacy] [--server <address|name>] [--source <address>]", "The device's data, then its vendor walkthrough for its scope"},
 	{"config pull <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale | --differs | --name <text> | --ip <addr|cidr|text> [options]", "Read the devices' configuration as you and compare the managed sections with what tacctl renders"},
-	{"config diff <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale | --differs | --name <text> | --ip <addr|cidr|text> [--pull] [--section <list>] [--exit-code] [--json]", "The last pull against what tacctl renders now, section by section"},
-	{"config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale | --differs | --name <text> | --ip <addr|cidr|text> [--pull] [--section <list>] [--converge] [--secrets|--no-secrets] [--plain|--json|--backout] [--out <file>|--out-dir <dir>] [--force] [--from <address>] [--restore-point[=<fs>]] [--exit-code]", "What to paste (a WTI unit: what to type) to make each device match what tacctl renders: the report, the region or the steps, the check and the back-out"},
-	{"config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale | --differs | --name <text> | --ip <addr|cidr|text> [--check] [--confirmed] [--max <n>] [--pause <seconds>] [--hold] [--no-canary] [--section <list>] [--pull] [--json] [-y]", "Engineers, Junos devices: check each device's plan on the device (--check stops there; --pull reads the devices first), then, after a review that asks for each device's name typed back, commit it under a confirmed commit, prove it with a fresh login and the landed change, and confirm it"},
-	{"config shapes [list [--show <hash>] [--json] | seed <name>[,<name>...] [-y]]", "Superusers: the shapes of the changes 'apply' has seen and which a verified apply confirmed; 'seed' files a device's shape as confirmed on your word"},
+	{"config diff <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale | --differs | --name <text> | --ip <addr|cidr|text> [--pull] [--timing] [--section <list>] [--exit-code] [--json]", "The last pull against what tacctl renders now, section by section"},
+	{"config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale | --differs | --name <text> | --ip <addr|cidr|text> [--pull] [--timing] [--section <list>] [--converge] [--secrets|--no-secrets] [--plain|--json|--backout] [--out <file>|--out-dir <dir>] [--force] [--from <address>] [--restore-point[=<fs>]] [--exit-code]", "What to paste (a WTI unit: what to type) to make each device match what tacctl renders: the report, the region or the steps, the check and the back-out"},
+	{"config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale | --differs | --name <text> | --ip <addr|cidr|text> [--check] [--confirmed] [--max <n>] [--pause <seconds>] [--hold] [--no-canary] [--section <list>] [--pull] [--timing] [--json] [--yes]", "Engineers, Junos devices: check each device's plan on the device (--check stops there; --pull reads the devices first), then, after a review that asks for each device's name typed back, commit it under a confirmed commit, prove it with a fresh login and the landed change, and confirm it"},
+	{"config shapes [list [--show <hash>] [--json] | seed <name>[,<name>...] [--yes]]", "Superusers: the shapes of the changes 'apply' has seen and which a verified apply confirmed; 'seed' files a device's shape as confirmed on your word"},
 	{"config list [--stale] [--never] [--failed] [--differs] [--name <text>] [--ip <addr|cidr|text>] [--transport netconf|ssh|none] [--scope <scope>] [--vendor <vendor>] [--json]", "Each device's configuration state, when it was read, by whom and over what"},
 	{"config forget <name>[,<name>...] | --all", "Delete the pull records (a pull makes them again)"},
 }
@@ -224,9 +229,10 @@ var deviceOptions = map[string][][2]string{
 	"list": {
 		{"--stale", "Only the devices not seen for stale-days"},
 		{"--unconfigured", "Only the devices no scope's prefixes cover"},
+		{"--differs", "Only the devices whose last pull differs from what is rendered now"},
 		{"--name <text>", "Only names containing the text (a comma list: any of them)"},
 		{"--ip <addr|cidr|text>", "Only an address equal to, inside, or containing it (a comma list)"},
-		{"--vendor <vendor>", "Only that vendor: cisco, juniper, wti, other or linux (a comma list)"},
+		{"--vendor <vendor>", "Only that vendor: cisco, juniper, wti or other (a comma list)"},
 		{"--scope <scope>", "Only the devices that scope answers (a comma list)"},
 		{"--scan", "Scan the logs first (as 'device scan')"},
 		{"--probe", "Add REACH: a TCP connect to each ssh port (3 s)"},
@@ -255,7 +261,7 @@ var deviceOptions = map[string][][2]string{
 		{"--discovered", "The addresses of 'device discover' (the seen cache: unregistered, authenticated) that no registry entry holds"},
 		{"--host-key SHA256:<fp>", "Accept only this key, read on the device's console (no question; needed without a terminal, with one address)"},
 		{"--register", "(collect) Register each device collected through 'device add', the key accepted pinned, and keep the read as its first pull record (one question; the key's question takes its SNMP sysName)"},
-		{"-y, --yes", "(collect) Answer yes to the registration question of --register (needed without a terminal); never a host key's question"},
+		{"--yes", "(collect) Answer yes to the registration question of --register (needed without a terminal); never a host key's question"},
 	},
 	"enroll": {
 		{"--host-key SHA256:<fp>", "(enroll) Pin this key of ONE address, read on its console: no question (the only form without a terminal)"},
@@ -271,11 +277,11 @@ var deviceOptions = map[string][][2]string{
 	"sync": {
 		{"--apply", "(sync) Write the fields, in one registry write, after one question"},
 		{"--overwrite", "Also replace a field that is set, showing the old value"},
-		{"-y, --yes", "(sync) Answer yes to the question of --apply (needed without a terminal)"},
+		{"--yes", "(sync) Answer yes to the question of --apply (needed without a terminal)"},
 	},
 	"remove": {
 		{"--all", "(remove, check) Every device; (show, notice list) the acknowledged notices too"},
-		{"-y, --yes", "(remove, import, hostkey, location, vendor, address) Answer yes to the confirmation"},
+		{"--yes", "(remove, import, hostkey, location, vendor, address) Answer yes to the confirmation"},
 	},
 	"location": {
 		{"--from-device", "(location, vendor) Read the location (SNMP sysLocation) or the vendor (sysObjectID and sysDescr) from the device and store it"},
@@ -294,7 +300,7 @@ var deviceOptions = map[string][][2]string{
 		{"--effective", "(block show) The block as rendered for the device, with the layer each object is from"},
 		{"--reveal", "(block show) Print the strings (an engineer: their own scopes' devices; logged)"},
 		{"--file <path>", "(block check, set) The text to look at, read as you"},
-		{"-y, --yes", "(block set, remove, edit, adopt) Answer yes to the question"},
+		{"--yes", "(block set, remove, edit, adopt) Answer yes to the question"},
 		{"--against", "(block check) Plan the device with the text in force and print its section's statements"},
 	},
 	"ssh": {
@@ -334,6 +340,7 @@ var deviceOptions = map[string][][2]string{
 		{"--concurrency <n>", "Read at most n devices at once (never above device.config.max_concurrency)"},
 		{"--timeout <seconds>", "Per device, connect included (10-600; default device.config.timeout)"},
 		{"--max-failures <n>", "Stop starting devices after n failures"},
+		{"--timing", "Show where each device's time went and the slowest device"},
 		{"--diff", "Print the differences after the summary"},
 		{"--server <address|name>", "The address the devices are told to authenticate against (not stored)"},
 		{"--source <address>", "The address this server reaches the devices from (not stored)"},
@@ -374,11 +381,11 @@ var deviceOptions = map[string][][2]string{
 		{"--section <list>", "Only these sections: aaa, roles, mgmt-acl, snmp, system, netconf"},
 		{"--json", "(apply) One object per device and phase, then the summary; the review goes to standard error"},
 		{"--exit-code", "(apply) With --check: exit 2 when a device needs a change (and none failed)"},
-		{"-y, --yes", "(apply) With --confirmed: answer the review (no terminal needed)"},
+		{"--yes", "(apply) With --confirmed: answer the review (no terminal needed)"},
 	},
 	"config shapes": {
 		{"--show <hash>", "(list) The statements of one shape, who confirmed it and the devices at it now"},
-		{"-y, --yes", "(seed) Answer the question: mark the shape confirmed on your word"},
+		{"--yes", "(seed) Answer the question: mark the shape confirmed on your word"},
 	},
 	"config list": {
 		{"--never", "Only the devices not pulled yet"},
@@ -488,7 +495,7 @@ to enter one (blank skips). A location the registry does not accept is shown
 and not stored. 'check' compares the device's location with the registry's in
 a Location row and writes nothing. 'location <name> --from-device' reads it
 now and stores it: an empty answer is refused, and a different registered
-location is shown beside the new one and asked about (-y answers yes).
+location is shown beside the new one and asked about (--yes answers yes).
 
 Pulling: 'add --pull' registers the device and then runs 'config pull' for it,
 as you (the pull's own output follows the add's). It needs the vendor cisco,
@@ -571,7 +578,7 @@ func (inv *invocation) device(args []string) error {
 	}
 	run := map[string]func([]string) error{
 		"list": inv.deviceList, "show": inv.deviceShow, "add": inv.deviceAdd, "remove": inv.deviceRemove,
-		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "ios-syntax": inv.deviceIOSSyntax, "netconf": inv.deviceNetconf, "stale-days": inv.deviceStaleDays,
+		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "ios-syntax": inv.deviceIOSSyntax, "netconf": inv.deviceNetconf, "timeout-scale": inv.deviceTimeoutScale, "stale-days": inv.deviceStaleDays,
 		"notice": inv.deviceNotice, "import": inv.deviceImport, "export": inv.deviceExport,
 		"hostkey": inv.deviceHostkey, "onboard": inv.deviceOnboard, "collect": inv.deviceCollect, "enroll": inv.deviceEnroll, "sync": inv.deviceSync, "support-bundle": inv.deviceSupportBundle, "snmp": inv.deviceSNMP, "block": inv.deviceBlock, "ssh": inv.ssh, "client-config": inv.deviceClientConfig, "config": inv.deviceConfig,
 		"scan": inv.deviceScan, "discover": inv.deviceDiscover, "check": inv.deviceCheck,
@@ -586,9 +593,7 @@ func (inv *invocation) device(args []string) error {
 		if f, ok := run[sub]; ok {
 			return f(rest)
 		}
-		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-		inv.write(deviceRegUsage())
-		return exit(1)
+		return inv.unknownSub(sub)
 	}
 }
 
@@ -894,6 +899,9 @@ type deviceJSON struct {
 	// Netconf is a Junos device's NETCONF service setting (0.2.10), only
 	// when it is not the default.
 	Netconf *netconfJSON `json:"netconf,omitempty"`
+	// TimeoutScale is the timing scale in force for the device and where it
+	// comes from (0.2.22), only when it is not 1.
+	TimeoutScale *timeoutScaleJSON `json:"timeout_scale,omitempty"`
 	// Applied is what 'device config apply' last did to the device (a
 	// check or an apply), for the tiers that see the configuration state.
 	Applied        *appliedJSON       `json:"applied,omitempty"`
@@ -914,6 +922,9 @@ type deviceJSON struct {
 	// Config is the state of the configuration pull: ok, differs, never or
 	// failed (none for a host and for a vendor that is not read).
 	Config string `json:"config,omitempty"`
+	// DiffersIn names the sections of the last pull that differ from what
+	// tacctl renders now; present only for 'device list --differs'.
+	DiffersIn []string `json:"differs_in,omitempty"`
 	// Release, Model and Serial are what the last good pull read from the
 	// device about itself (read-only facts of the pull, shown to whoever is
 	// shown Config; each is absent when the pull did not read it).
@@ -984,6 +995,9 @@ func deviceJSONOf(inv *invocation, res *devreg.Resolver, e devreg.Entry, recs *d
 		if eff := inv.netconfOf(e.Scope, e.Netconf); eff.shown(e.Netconf) {
 			j.Netconf = eff.json()
 		}
+	}
+	if ts := inv.timeoutScaleOf(e.Scope, e.TimeoutScale); ts.N != devssh.MinTimeoutScale {
+		j.TimeoutScale = ts.json()
 	}
 	if e.Source == devreg.SourceDevice && (e.Vendor == "cisco" || e.IOSSyntax != "") {
 		j.IOSSyntax = devreg.SyntaxAuto
@@ -1057,12 +1071,32 @@ func (inv *invocation) deviceList(args []string) error {
 	} else if _, res, err = inv.deviceLoad(); err != nil {
 		return err
 	}
-	var shown []devreg.Entry
-	narrow := newDeviceListFilter(p)
-	total := 0
+	var devices []devreg.Entry
 	for _, e := range res.Visible(inv.deviceFilter()) {
+		// The enrolled hosts are listed by 'host list'.
+		if e.Source == devreg.SourceDevice {
+			devices = append(devices, e)
+		}
+	}
+	// --differs: the state of each device's last pull against what tacctl
+	// renders now, from the records with no login, as 'device config list'
+	// computes it.
+	var now map[string]configNowState
+	if p.Has("--differs") {
+		if err := inv.deviceVerbAllowed("device", "list --differs", tier.Operator); err != nil {
+			return err
+		}
+		now = inv.configNowStates(devices)
+	}
+	var shown []devreg.Entry
+	narrow := newListFilter(p)
+	total := 0
+	for _, e := range devices {
 		_, _, _, stale := deviceSeenCols(inv, res, e)
 		if (p.Has("--unconfigured") && e.Configured) || (p.Has("--stale") && !stale) {
+			continue
+		}
+		if p.Has("--differs") && (!e.Configured || now[e.Name].state != string(devconf.StaleDiffers)) {
 			continue
 		}
 		total++
@@ -1081,32 +1115,20 @@ func (inv *invocation) deviceList(args []string) error {
 	if p.Has("--json") {
 		out := []deviceJSON{}
 		for _, e := range shown {
-			out = append(out, deviceJSONOf(inv, res, e, configs))
+			j := deviceJSONOf(inv, res, e, configs)
+			if n, ok := now[e.Name]; ok {
+				j.Config, j.DiffersIn = n.state, n.differs
+			}
+			out = append(out, j)
 		}
 		return inv.printJSON(out)
 	}
-	nd, nh := 0, 0
-	for _, e := range shown {
-		if e.Source == devreg.SourceHost {
-			nh++
-		} else {
-			nd++
-		}
-	}
-	head := fmt.Sprintf("Registered devices (%d) and enrolled hosts (%d)", nd, nh)
-	if !narrow.empty() {
-		head += fmt.Sprintf(", of %d", total)
-	}
+	// --stale, --unconfigured and --differs narrow the list as the filters do.
+	narrowed := !narrow.empty() || p.Has("--stale") || p.Has("--unconfigured") || p.Has("--differs")
+	head := listHead("Registered devices", len(shown), total, narrowed)
 	inv.echo("")
 	if len(shown) == 0 {
-		inv.echoE(ui.Bold + head + ui.NC)
-		inv.echo(ui.Rule(head))
-		if narrow.empty() {
-			inv.echo("  None. Register one with: tacctl device add <name> <address>")
-		} else {
-			inv.echo("  None match.")
-		}
-		inv.echo("")
+		inv.listNone(head, narrowed, "None. Register one with: tacctl device add <name> <address>")
 		return nil
 	}
 	cols := []ui.Col{ui.Left("NAME"), ui.Left("ADDRESS"), ui.Left("VENDOR"), ui.Left("SCOPE"), ui.Left("STATE"), ui.Left("LAST SEEN"), ui.Left("BY"), ui.Left("VIA"), ui.Left("NOTICES")}
@@ -1119,31 +1141,24 @@ func (inv *invocation) deviceList(args []string) error {
 		reach = inv.probeEntries(shown)
 	}
 	tb := ui.NewTable(head, cols...)
-	open, held := 0, 0
+	open, heldCount := 0, 0
 	for i, e := range shown {
 		last, by, via, stale := deviceSeenCols(inv, res, e)
-		var state any = e.State()
-		if stale {
-			state = e.State() + " stale"
+		_, held := inv.holdOf(e.Name, e.Address)
+		if held {
+			heldCount++
 		}
-		// A device the server has been told not to answer is marked, in
-		// place of what the scopes would say of it.
-		if e.Source == devreg.SourceDevice {
-			if _, isHeld := inv.holdOf(e.Name, e.Address); isHeld {
-				held++
-				text := "BREAK-GLASS"
-				if stale {
-					text += " stale"
-				}
-				state = ui.Styled(ui.Red, text)
-			}
-		}
+		state := listStateCell(e.State(), stale, held)
 		ns := res.NoticesFor(e)
 		open += len(devreg.Open(ns))
 		row := []any{e.Name, dash(e.Address), e.Vendor, dash(e.Scope), state, last, by, via, dash(kinds(ns))}
 		if configs != nil {
 			rec, _ := configs.Of(e.Name)
-			row = slices.Insert(row, 8, any(inv.configStateOf(e, rec)))
+			cell := inv.configStateOf(e, rec)
+			if n, ok := now[e.Name]; ok {
+				cell = n.state
+			}
+			row = slices.Insert(row, 8, any(cell))
 		}
 		if reach != nil {
 			row = slices.Insert(row, len(row)-1, any(reach[i]))
@@ -1156,11 +1171,9 @@ func (inv *invocation) deviceList(args []string) error {
 	if reach != nil {
 		inv.echo("  REACH: a TCP connect to the ssh port; this server often has no path to management ports, so a timeout may be a false alarm")
 	}
-	if open > 0 {
-		inv.echo(fmt.Sprintf("  %d open notice(s): tacctl device notice list", open))
-	}
-	if held > 0 {
-		inv.echoE(fmt.Sprintf("  %s%d device(s) held for break-glass%s: tacctl breakglass list", ui.Red, held, ui.NC))
+	inv.listOpenNotices(open)
+	if heldCount > 0 {
+		inv.echoE(fmt.Sprintf("  %s%d device(s) held for break-glass%s: tacctl breakglass list", ui.Red, heldCount, ui.NC))
 	}
 	inv.echo("")
 	return nil
@@ -1227,6 +1240,10 @@ func (inv *invocation) deviceShow(args []string) error {
 		}
 		row("Description", dash(e.Description))
 		row("Location", dash(e.Location))
+	}
+	// the timing scale, when it is not 1 (0.2.22)
+	if ts := inv.timeoutScaleOf(e.Scope, e.TimeoutScale); ts.N != devssh.MinTimeoutScale {
+		row("Timeout scale", ts.text(e.Scope))
 	}
 	switch {
 	case e.Source == devreg.SourceHost && e.Configured:
@@ -1595,7 +1612,7 @@ func (inv *invocation) deviceRemove(args []string) error {
 	var targets []string
 	switch {
 	case p.Has("--all") && len(p.Args) > 0:
-		return inv.usageErr("--all takes no names.", "Usage: tacctl device remove <name>[,<name>...] | --all [-y]")
+		return inv.usageErr("--all takes no names.", "Usage: tacctl device remove <name>[,<name>...] | --all [--yes]")
 	case p.Has("--all"):
 		// The caller's devices: every one, or an engineer's own scopes'.
 		for _, e := range res.Visible(inv.deviceFilter()) {
@@ -1608,7 +1625,7 @@ func (inv *invocation) deviceRemove(args []string) error {
 			return nil
 		}
 	case len(p.Args) == 0:
-		return inv.usageErr("Usage: tacctl device remove <name>[,<name>...] | --all [-y]")
+		return inv.usageErr("Usage: tacctl device remove <name>[,<name>...] | --all [--yes]")
 	default:
 		for _, a := range p.Args {
 			for _, n := range strings.Split(a, ",") {
@@ -1642,7 +1659,7 @@ func (inv *invocation) deviceRemove(args []string) error {
 	if note := inv.deviceBlocksRemovalNote(targets); note != "" {
 		a.Out.Warn(note)
 	}
-	if !p.Has("-y") && !a.Prompter().ConfirmPrefix("  Confirm removal? [y/N]: ") {
+	if !p.Has("--yes") && !a.Prompter().ConfirmPrefix("  Confirm removal? [y/N]: ") {
 		a.Out.Info("Aborted.")
 		return nil
 	}
@@ -1752,10 +1769,10 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 		case applyReq && len(p.Args) == 1:
 			return inv.usageErr("--apply goes with a value to set: tacctl device " + field + " <name> <value> --apply")
 		}
-		if field == "location" && (p.Has("--from-device") || p.Has("-y")) {
+		if field == "location" && (p.Has("--from-device") || p.Has("--yes")) {
 			return inv.deviceLocationFromDevice(p, f, res)
 		}
-		if field == "vendor" && (p.Has("--from-device") || p.Has("-y")) {
+		if field == "vendor" && (p.Has("--from-device") || p.Has("--yes")) {
 			return inv.deviceVendorFromDevice(p, f, res)
 		}
 		if len(p.Args) == 1 {
@@ -1791,7 +1808,7 @@ func (inv *invocation) deviceSetter(field string) func([]string) error {
 			if applyReq {
 				return inv.usageErr("--apply does not go with a held device: the device does not authenticate your login until the hold is released (tacctl breakglass release " + name + "). Nothing was changed.")
 			}
-			if err := inv.holdMove(f, res, d, probe.Address, p.Has("-y")); err != nil {
+			if err := inv.holdMove(f, res, d, probe.Address, p.Has("--yes")); err != nil {
 				return err
 			}
 			// No configuration nudge: pull, plan and apply refuse a held
@@ -2253,7 +2270,7 @@ func (inv *invocation) deviceImport(args []string) error {
 		if note := inv.deviceBlocksRemovalNote(plan.Removed); note != "" {
 			a.Out.Warn(note)
 		}
-		if !p.Has("-y") && !a.Prompter().ConfirmPrefix("  Confirm import? [y/N]: ") {
+		if !p.Has("--yes") && !a.Prompter().ConfirmPrefix("  Confirm import? [y/N]: ") {
 			a.Out.Info("Aborted.")
 			return nil
 		}

@@ -23,7 +23,7 @@ func (b *Backend) FollowArgv() [][]string {
 }
 
 // Log is backend_tacacs_log: 'tacctl log tail [n]', 'search <term>',
-// 'failures' and 'clear [-y|--yes|--force]' over the journal of every
+// 'failures' and 'clear [--yes|--force]' over the journal of every
 // listener's unit (just 'tacquito' with only the default listener), written
 // to w; ErrUnsupported for another sub-command.
 func (b *Backend) Log(ctx context.Context, sub string, args []string, w io.Writer) error {
@@ -100,10 +100,10 @@ func (b *Backend) journal(ctx context.Context, since string) []string {
 }
 
 // logClear is cmd_log_clear: purge the tacquito journal and truncate every
-// accounting log, after a confirmation that -y, --yes and --force skip.
+// accounting log, after a confirmation that --yes and --force skip.
 func (b *Backend) logClear(ctx context.Context, flag string, w io.Writer) {
 	out := ui.Output{Stdout: w, Stderr: b.env.Out.Stderr}
-	force := flag == "-y" || flag == "--force" || flag == "--yes"
+	force := flag == "--force" || flag == "--yes"
 	acct := b.env.Paths.AcctLog
 	others := b.acctLogs(false)
 

@@ -36,7 +36,7 @@ import (
 )
 
 // collectUse is the usage line of the verb.
-const collectUse = "Usage: tacctl device collect <address>... | --discovered [--login <local-user>] [--host-key SHA256:<fp>] [--register [-y]] [--json]"
+const collectUse = "Usage: tacctl device collect <address>... | --discovered [--login <local-user>] [--host-key SHA256:<fp>] [--register [--yes]] [--json]"
 
 // The results of one address.
 const (
@@ -133,7 +133,7 @@ func (inv *invocation) deviceCollect(args []string) error {
 		return err
 	}
 	c := &collect{inv: inv, user: user, pr: inv.app.Prompter(), hostKey: p.Value("--host-key"), discovered: p.Has("--discovered"),
-		register: p.Has("--register"), yes: p.Has("-y"), asJSON: p.Has("--json")}
+		register: p.Has("--register"), yes: p.Has("--yes"), asJSON: p.Has("--json")}
 	if err := c.args(p); err != nil {
 		return err
 	}
@@ -199,7 +199,7 @@ func (c *collect) args(p Parsed) error {
 		return inv.argErr("No terminal to answer the host-key question on: the key of an address nobody registered is accepted by a person, "+
 			"device by device, by typing its name or address. Give --host-key SHA256:<fp> with one address (the fingerprint read on the device's console). Nothing was sent.", collectUse)
 	case c.register && !c.pr.Interactive() && !c.yes:
-		return inv.argErr("No terminal to answer the registration question on: --register without one needs -y. Nothing was sent.", collectUse)
+		return inv.argErr("No terminal to answer the registration question on: --register without one needs --yes. Nothing was sent.", collectUse)
 	}
 	return nil
 }
@@ -575,13 +575,13 @@ func (c *collect) target(r *collectRow, legacy bool) devssh.Target {
 		user, pw = c.local.account, c.local.eachConnection()
 	}
 	return devssh.Target{Host: r.Address, Port: devssh.DefaultPort, User: user, HostKeys: devreg.KeyStrings(r.keys), Legacy: legacy,
-		Password: pw, ConnectTimeout: devssh.DefaultConnectTimeout, Dialer: c.inv.deviceDialer()}
+		Password: pw, ConnectTimeout: devssh.ConnectTimeoutFor(c.inv.scaleAt(r.Address)), Dialer: c.inv.deviceDialer()}
 }
 
 // one is one address: the login, 'show version', the read, nothing else.
 func (c *collect) one(ctx context.Context, r *collectRow) {
 	inv := c.inv
-	dctx, cancel := context.WithTimeout(ctx, inv.deviceConfigSettings().timeout)
+	dctx, cancel := context.WithTimeout(ctx, inv.deviceTimeoutAt(r.Address))
 	defer cancel()
 	client, err := devssh.Dial(dctx, c.target(r, r.Legacy))
 	var ae devssh.AlgorithmError

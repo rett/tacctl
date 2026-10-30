@@ -93,7 +93,6 @@ func TestUserAddDoesNotRequireWhatCannotBeMet(t *testing.T) {
 	}{
 		{"root2", "superuser", "srv", "a superuser is never required to change the password"},
 		{"ivan", "operator", "lab", "it is not in scope 'srv', the scope of this server"},
-		{"jane.doe", "operator", "srv", "its name is no Linux account name (a period)"},
 	} {
 		sb.asAlice("", "user", "add", c.name, c.group, "--hash", h, "--scopes", c.scopes)
 		sb.expect(0, "No password change is required of '"+c.name+"': "+c.why, "")

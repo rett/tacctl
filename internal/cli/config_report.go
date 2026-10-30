@@ -15,6 +15,7 @@ import (
 
 	"github.com/rett/tacctl/internal/applylock"
 	"github.com/rett/tacctl/internal/backend"
+	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/policy"
@@ -241,8 +242,8 @@ func (inv *invocation) configValidate(args []string) error {
 	switch {
 	case fix && p.Has("--json"):
 		return inv.usageErr("--fix-names asks questions and renames; it does not go with --json.", configValidateUsage)
-	case p.Has("-y") && !fix:
-		return inv.usageErr("-y goes with --fix-names.", configValidateUsage)
+	case p.Has("--yes") && !fix:
+		return inv.usageErr("--yes goes with --fix-names.", configValidateUsage)
 	}
 	if fix {
 		if err := inv.fixNamesAllowed(); err != nil {
@@ -260,7 +261,7 @@ func (inv *invocation) configValidate(args []string) error {
 	inv.printValidateTextEnd(r)
 	failed := r.textErrors() > 0
 	if fix {
-		left, err := inv.fixNames(p.Has("-y"))
+		left, err := inv.fixNames(p.Has("--yes"))
 		if err != nil {
 			return err
 		}
@@ -273,7 +274,7 @@ func (inv *invocation) configValidate(args []string) error {
 }
 
 // configValidateUsage is the usage line of 'config validate'.
-const configValidateUsage = "Usage: tacctl config validate [--json | --fix-names [-y]]"
+const configValidateUsage = "Usage: tacctl config validate [--json | --fix-names [--yes]]"
 
 // collectValidate runs the checks of 'config validate' and adds what they
 // print, and the findings that are, to r in the order the text report has
@@ -350,6 +351,15 @@ func (inv *invocation) collectValidate(r *validateReport) {
 			why += ": " + first
 		}
 		r.found(howEchoE, "  "+R+"tacctl.yaml:"+NC+"          INVALID — "+first, validateFinding{Section: "overrides", Level: levelError, Text: why})
+	}
+
+	// devices.yaml: does it load (a device's timing scale, 0.2.22, among the
+	// rest). Nothing is printed for a registry that loads.
+	if cfgIsFile(a.Paths.DevicesFile) {
+		if _, err := devreg.Load(a.Paths.DevicesFile); err != nil {
+			text := strings.Join(msgs(err), " ")
+			r.found(howEchoE, "  "+R+"devices.yaml:"+NC+"         "+text, validateFinding{Section: "devices", Level: levelError, Text: text})
+		}
 	}
 
 	// Command rules that cannot work as written (an empty or invalid match,
@@ -431,6 +441,13 @@ func (inv *invocation) collectValidate(r *validateReport) {
 		r.found(howEchoE, "  "+Y+"Names:"+NC+"                "+fnd.String(), validateFinding{
 			Section: "names", Level: levelWarning, Text: fnd.Text, Fix: fnd.Fix, Hosts: fnd.Hosts,
 			Kind: fnd.Kind, Name: fnd.Name, To: fnd.To, Verb: fnd.Verb})
+	}
+
+	// A user whose name has a period (0.2.20 and 0.2.21 allowed it): an
+	// error with the verb that renames it. `tacctl upgrade` refuses while
+	// one stands.
+	for _, fnd := range inv.dottedUserFindings() {
+		r.found(howEchoE, "  "+R+"Names:"+NC+"                "+fnd.Text+" ("+fnd.Fix+")", fnd)
 	}
 
 	// Break-glass local users (D55): a scope without one is a lockout risk

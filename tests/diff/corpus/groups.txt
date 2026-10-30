@@ -4,7 +4,7 @@
 
 @known 0.2.2 item 9: the group usage lists show, junos, preset and wti-level; 0.2.3 item 2: and show names the Junos patterns; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 group
-@known 0.2.2 item 9: the group usage lists show, junos, preset and wti-level; 0.2.3 item 2: and show names the Junos patterns; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
+@known 0.2.2 item 9: the group usage lists show, junos, preset and wti-level; 0.2.3 item 2: and show names the Junos patterns; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital; 0.2.22 item 11: an unknown sub-command is one error line, the closest verbs and a pointer to the help (-h), not the usage
 group bogus
 @known 0.2.1 item 54: list tables have rules as wide as the table; user list shows UID; 0.2.11 item 3: group list ends with a line when no group has the engineer tier
 group list
@@ -69,7 +69,7 @@ group add helpdesk 5 HELPDESK-CLASS ;; user add alice helpdesk --hash {HASH} --s
 # commands
 @known 0.2.1 item 56: the usage has one line per option; 0.2.2 item 4: the group commands usage lists --before/--first and remove's --match/--action/--all, and says how a --match is tested; 0.2.2 item 5: the commands usage says Junos devices get their own deny sets; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 group commands
-@known 0.2.1 item 56: the usage has one line per option; 0.2.2 item 4: the group commands usage lists --before/--first and remove's --match/--action/--all, and says how a --match is tested; 0.2.2 item 5: the commands usage says Junos devices get their own deny sets; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
+@known 0.2.1 item 56: the usage has one line per option; 0.2.2 item 4: the group commands usage lists --before/--first and remove's --match/--action/--all, and says how a --match is tested; 0.2.2 item 5: the commands usage says Junos devices get their own deny sets; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital; 0.2.22 item 11: an unknown sub-command is one error line, the closest verbs and a pointer to the help (-h), not the usage
 group commands bogus operator
 group commands list
 group commands list nosuchgroup
@@ -131,7 +131,7 @@ group commands seed --force
 # privilege
 @known 0.2.1 item 56: the usage has one line per option; 0.2.2 item 6: the privilege usage names the modes; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
 group privilege
-@known 0.2.1 item 56: the usage has one line per option; 0.2.2 item 6: the privilege usage names the modes; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital
+@known 0.2.1 item 56: the usage has one line per option; 0.2.2 item 6: the privilege usage names the modes; 0.2.18 item 7: the usage writes placeholders as <name>, describes each option of its own verb and begins descriptions with a capital; 0.2.22 item 11: an unknown sub-command is one error line, the closest verbs and a pointer to the help (-h), not the usage
 group privilege bogus operator
 group privilege list
 group privilege list nosuchgroup

@@ -27,8 +27,8 @@ const (
 var backendSpecs = map[string]Spec{
 	"list":    {},
 	"status":  {MaxArgs: 1, Args: []string{KindBackends}},
-	"enable":  {MinArgs: 1, MaxArgs: 1, Args: []string{KindBackends}, Flags: []Flag{{Names: []string{"-y", "--yes"}}}},
-	"disable": {MinArgs: 1, MaxArgs: 1, Args: []string{KindEnabledBackends}, Flags: []Flag{{Names: []string{"-y", "--yes"}}}},
+	"enable":  {MinArgs: 1, MaxArgs: 1, Args: []string{KindBackends}, Flags: []Flag{{Names: []string{"--yes"}}}},
+	"disable": {MinArgs: 1, MaxArgs: 1, Args: []string{KindEnabledBackends}, Flags: []Flag{{Names: []string{"--yes"}}}},
 }
 
 func backendCmd(inv *invocation) *cobra.Command {
@@ -44,7 +44,10 @@ func backendCmd(inv *invocation) *cobra.Command {
 	)
 	replaceRegistered(inv, c, backendVerbs)
 	// No sub-command or an unknown one: the usage, exit 1.
-	c.RunE = n(func([]string) error {
+	c.RunE = n(func(args []string) error {
+		if sub := arg(args, 0); plainWord(sub) {
+			return inv.unknownSub(sub)
+		}
 		inv.write(backendUsage(inv.app.Backends().IDs()))
 		return exit(1)
 	})

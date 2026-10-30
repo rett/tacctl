@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/rett/tacctl/internal/devreg"
+	"github.com/rett/tacctl/internal/devssh"
 )
 
 // newTestHooks are the hooks of a test's invocations: the real ones, except
@@ -21,7 +22,7 @@ func newTestHooks() *hooks {
 	return &hooks{
 		askpassFromApp: true,
 		keyFallback: func(*invocation) devreg.KeyFallback {
-			return func(_ context.Context, address string, port int) ([]devreg.HostKey, error) {
+			return func(_ context.Context, address string, port int, _ bool, _ devssh.ScanTiming) ([]devreg.HostKey, error) {
 				return nil, errors.New("tests do not dial " + address + ":" + strconv.Itoa(port))
 			}
 		},

@@ -78,7 +78,7 @@ func (inv *invocation) hostProvisioner(args []string) error {
 	}
 	// 'rotate' is the only subcommand.
 	if len(pos) >= 2 && pos[1] != "rotate" {
-		return inv.usageErr("Unknown subcommand: 'provisioner "+pos[1]+"'. The only one is 'rotate'.", hostProvisionerUsage)
+		return inv.unknownSub(pos[1], "rotate")
 	}
 	if len(pos) < 3 {
 		return inv.usageErr(hostProvisionerUsage)

@@ -39,6 +39,8 @@ type diffDeviceJSON struct {
 	SecretsVisible *bool             `json:"secrets_visible,omitempty"`
 	DiffersIn      []string          `json:"differs_in,omitempty"`
 	Sections       []pullSectionJSON `json:"sections,omitempty"`
+	// Timings is the time of each phase of the pull of the device (--timing).
+	Timings *timingsJSON `json:"timings,omitempty"`
 }
 
 // diffText is the lines of one section's comparison that are worth reading:
@@ -128,7 +130,7 @@ func (inv *invocation) deviceConfigDiff(args []string) error {
 	}
 	pull := p.Has("--pull")
 	if !pull {
-		for _, f := range []string{"--transport", "--concurrency", "--timeout", "--max-failures"} {
+		for _, f := range []string{"--transport", "--concurrency", "--timeout", "--max-failures", "--timing"} {
 			if p.Has(f) {
 				return inv.argErr(f+" is for --pull: the diff alone reads no device.", "Usage: tacctl device config "+deviceConfigUse("diff"))
 			}
@@ -175,6 +177,7 @@ func (inv *invocation) deviceConfigDiff(args []string) error {
 	pulled := map[string]*pullOutcome{}
 	pullFailed := map[string]string{}
 	interrupted := false
+	var timings []batch.Timing
 	if pull {
 		view := inv.newPullView(chosen.entries, false, user, asJSON)
 		sum, outs, err := inv.runPull(pullBatch{entries: chosen.entries, render: chosen.render, args: pa, user: user, view: view, local: local})
@@ -182,6 +185,9 @@ func (inv *invocation) deviceConfigDiff(args []string) error {
 			return err
 		}
 		interrupted = sum.Interrupted
+		if pa.timing {
+			timings = sum.Timings()
+		}
 		for i, o := range outs {
 			e := chosen.entries[i]
 			st := sum.Entries[i].Result
@@ -204,10 +210,11 @@ func (inv *invocation) deviceConfigDiff(args []string) error {
 	var (
 		failed, differ int
 		js             = []diffDeviceJSON{}
+		timingFor      = timingsByName(timings)
 	)
 	for _, e := range chosen.entries {
 		key := strings.ToLower(e.Name)
-		d := diffDeviceJSON{Name: e.Name, Scope: e.Scope, Vendor: e.Vendor}
+		d := diffDeviceJSON{Name: e.Name, Scope: e.Scope, Vendor: e.Vendor, Timings: timingFor[e.Name]}
 		meta := deviceDiffMeta{}
 		var results []devconf.SectionResult
 		var secrets bool
@@ -297,6 +304,7 @@ func (inv *invocation) deviceConfigDiff(args []string) error {
 			summary = append(summary, strconv.Itoa(failed)+" failed")
 		}
 		inv.echo("  " + strings.Join(summary, ", "))
+		inv.printTiming(timings, false, false)
 		chosen.printSkipped(inv)
 		inv.echo("")
 	}

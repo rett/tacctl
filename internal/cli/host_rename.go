@@ -22,7 +22,7 @@ import (
 )
 
 // hostRenameUsage is the usage line of 'host rename'.
-const hostRenameUsage = "Usage: tacctl host rename <old> <new> [-y]"
+const hostRenameUsage = "Usage: tacctl host rename <old> <new> [--yes]"
 
 // hostRenamePlan is what a rename has found out before it writes anything.
 type hostRenamePlan struct {
@@ -43,14 +43,14 @@ type hostRenamePlan struct {
 	stays string
 }
 
-// hostRename is 'host rename <old> <new> [-y]'.
+// hostRename is 'host rename <old> <new> [--yes]'.
 func (inv *invocation) hostRename(args []string) error {
 	a := inv.app
 	yes := false
 	var pos []string
 	for _, w := range args {
 		switch {
-		case w == "-y" || w == "--yes":
+		case w == "--yes":
 			yes = true
 		case strings.HasPrefix(w, "-"):
 			return inv.usageErr("Unknown option: '"+w+"'", hostRenameUsage)

@@ -1,0 +1,39 @@
+  example-sw1  checked: shape 249aecb82c59 (confirmed on example-sw1) (roles, aaa: 17 set, 1 delete); kept 2; check ok
+
+Shape 249aecb82c59, 1 device (example-sw1), confirmed on example-sw1:
+  roles    the login classes tacctl renders (every leaf of a rendered class, allow-*/deny-* included); the class of the template users
+    set system login class RO-CLASS permissions network
+    set system login class RO-CLASS permissions view
+    set system login class RO-CLASS permissions view-configuration
+    set system login user RO-CLASS class RO-CLASS
+    set system login class OP-CLASS permissions network
+    set system login class OP-CLASS permissions trace
+    set system login class OP-CLASS permissions view
+    set system login class OP-CLASS permissions view-configuration
+    set system login user OP-CLASS class OP-CLASS
+    set system login class RW-CLASS permissions all
+    set system login user RW-CLASS class RW-CLASS
+  aaa      the authentication order tacctl renders; the accounting events tacctl renders; the accounting destination tacctl renders; tacctl's TACACS+ server
+    delete system authentication-order
+    set system authentication-order tacplus
+    set system tacplus-server 10.0.0.42 secret <secret>
+    set system tacplus-server 10.0.0.42 single-connection
+    set system accounting events login
+    set system accounting events change-log
+    set system accounting destination tacplus
+  kept: 2 statements of the managed sections that the plan leaves alone
+    set system tacplus-server 192.0.2.10 secret
+    set system tacplus-server 192.0.2.10 source-address 192.0.2.77
+
+Apply to example-sw1 under commit confirmed 10 and kept only after a fresh login as alice works and what landed is what the check showed?
+  --yes: every shape is one another device confirmed; going on.
+  example-sw1  checked ...
+  example-sw1  committed, verifying ...
+  example-sw1  confirming ...
+  example-sw1  applied (roles,aaa: 17 set, 1 delete) [<id>]
+
+  1 applied
+  timing:
+    example-sw1  connect 1.5s  login 1.7s  session 7.1s  preflight 2.1s  read 2.3s  load 2.9s  check 3.1s  commit 4.5s  verify 4.9s  confirm 5.3s  record 2.8s  total 42.2s
+  slowest: example-sw1 (42.2s)
+

@@ -1,6 +1,6 @@
 .\" Manual page for tacctl, the management CLI for pluggable network-device AAA.
 .\" Render locally with: groff -man -Tascii man/tacctl.1 | less
-.TH TACCTL 1 "2026-10-28" "tacctl 0.2.21" "tacctl Manual"
+.TH TACCTL 1 "2026-10-29" "tacctl 0.2.22" "tacctl Manual"
 .SH NAME
 tacctl \- manage pluggable network-device AAA: users, groups, scopes and devices
 .SH SYNOPSIS
@@ -47,7 +47,7 @@ are deliberate exceptions: they run as the invoking user.
 .SH COMMANDS
 .SS System lifecycle
 .TP
-.BI "install [--branch " name "] [--server " ip "] [-y|--yes]"
+.BI "install [--branch " name "] [--server " ip "] [--yes]"
 Install tacctl and the TACACS+ backend. Builds the tacquito binary with the
 Go toolchain (installed by
 .I /opt/tacctl/bin/tacctl.sh
@@ -83,7 +83,7 @@ this server's registry entry, the PAM client and sshd's drop-in, and the
 accounts, so that every user can log in to this server and its console. It
 asks once
 .RB ( "Set up this machine's own login now, with <address> as the server address? [y/N]" ;
-.B \-y
+.B \-\-yes
 answers it) and prints nothing more when the login is there already. The
 server address is
 .BR \-\-server ,
@@ -144,7 +144,7 @@ The tacctl repo branch to install or upgrade from (default: the current one).
 \fB\-\-server\fR \fI<ip>\fR
 The address devices and hosts reach this server at.
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 Answer yes to the confirmations.
 .RE
 .\" END GENERATED: command install
@@ -175,6 +175,18 @@ template restarts nothing, and neither does an upgrade with nothing new.
 Listener, log-level and metrics settings in
 .I tacctl.yaml
 survive.
+.IP
+The upgrade is refused while the store has a user whose name has a period
+(0.2.20 and 0.2.21 allowed one; a user name is letters, digits, \&'_' and \&'\-'):
+the refusal lists each, with
+.B "user rename <name> <new\-name>"
+as the way out. Rename such a user before upgrading from 0.2.20 or 0.2.21: the
+upgrade of those releases has already replaced tacctl and the tacquito build
+when the new tacctl refuses, and the refusal says so (the store, the
+configuration and the services are not changed); run
+.B "tacctl upgrade"
+again after the rename to finish. Run on 0.2.22 itself, the refusal comes before
+anything is changed. A store that cannot be read does not hold it up.
 .IP
 The shell completion is rewritten only when its content changed (the output
 says
@@ -257,8 +269,9 @@ The tacctl repo branch to install or upgrade from (default: the current one).
 Prepare tacctl's state for the release before this one; run on the newer
 release, before the older one is installed. A dry run by default: it lists
 every step and every warning and changes nothing. The versions it takes are
-.B 0.2.20
+.B 0.2.21
 (the release before this one),
+.BR 0.2.20 ,
 .BR 0.2.19 ,
 .BR 0.2.18 ,
 .BR 0.2.17 ,
@@ -273,7 +286,7 @@ and older are refused, with the way there (one release at a time: this
 rollback,
 .BR "tacctl upgrade \-\-branch 0.2.9" ,
 then the rollback of that release), and so is any other word (0.2.10 to
-0.2.15 included: the refusal names the targets). Every target but 0.2.20 and
+0.2.15 included: the refusal names the targets). Every target but 0.2.21, 0.2.20 and
 0.2.19 is refused while an emergency lockdown locks a group (the refusal lists each
 one and
 .B "emergency lockdown <scope> disable"
@@ -288,7 +301,7 @@ or
 .B "device config apply <name> \-\-check"
 or
 .B "device config forget <name>"
-settles it), and every target but 0.2.20 while the store has a user whose name
+settles it), and every target but 0.2.21 and 0.2.20 while the store has a user whose name
 has a period (no other target reads such a name: the refusal lists each, with
 .B "user rename <name> <new\-name>"
 as the way out, and changes nothing; an override under such a name in the
@@ -323,7 +336,8 @@ stay, for the releases that have them) are removed and a
 of \-1 (never ask) is written as 1000, with every other setting kept and a
 snapshot first.
 .IP
-Every target keeps every user's login to this server: an older release answers
+Every target but 0.2.21, which has it itself, keeps every user's login to this
+server: an older release answers
 it only for the users that have the server's scope
 .RB ( tacctl )
 in their own scopes, so the plan adds it to the scopes of each user who logs in
@@ -332,16 +346,52 @@ to the server and lacks it (it counts and names them; a warning, so
 needs
 .BR \-\-yes ),
 after a snapshot. Every target removes
+.B server.name
+(the name of
+.BR "server name" ),
+and every target but 0.2.21
 .B server.addresses
-from
+as well, from
 .IR tacctl.yaml ,
 which no older release knows; the host registry keeps the address in this
-server's entry.
+server's entry. Every target also removes the timing scale:
+.B device.timeout_scale
+and
+.B timeout_scale_scope.\fIscope\fR
+from
+.I tacctl.yaml
+and the
+.B timeout_scale
+of each device from
+.IR devices.yaml ,
+because no older release knows the keys (an older parser refuses a device with a
+key it does not know). It is a note in the plan, not a warning: the older
+release connects to every device with its fixed timings again, which a slow or
+distant device may not meet, and the values stay in the snapshot.
+.IP
+.B "rollback 0.2.21"
+removes
+.B server.name
+and the timing scale and converts nothing else: no scope is added to the users, and a user name with
+a period and an emergency lockdown stay, as 0.2.21 reads both. It needs no
+.B \-\-yes
+(it has no warning), and
+.B \-\-hosts
+is accepted and does nothing. The command ends with the next step,
+.BR "tacctl upgrade \-\-branch 0.2.21" ,
+and names the verbs that write a key 0.2.21 refuses until then
+.RB ( "server name" ,
+.BR "device timeout\-scale" ,
+.B "scope timeout\-scale"
+and
+.BR "config devices timeout\-scale" ).
 .IP
 .B "rollback 0.2.20"
 removes
 .B server.addresses
-and adds the scope to the users (above); 0.2.20 reads every other file this
+and
+.B server.name
+and the timing scale, and adds the scope to the users (above); 0.2.20 reads every other file this
 release writes, so nothing else is converted, and
 .B \-\-hosts
 is accepted and does nothing. The command ends with the next step,
@@ -722,7 +772,7 @@ Accepted; the hosts need nothing for this target (no host is synced).
 .RE
 .\" END GENERATED: command rollback
 .TP
-.BR "uninstall " [ -y | --yes ]
+.BR "uninstall " [ --yes ]
 Remove tacctl and every backend that is enabled or installed: the tacquito
 service, units, binaries, configuration and logs; tacctl's FreeRADIUS
 configuration, unit drop-in and logs (the FreeRADIUS package stays, with its
@@ -730,9 +780,7 @@ own configuration as shipped); the state directory, sudoers rules,
 completion, man page and management repository. Offers to preserve backups
 and each backend's logs by archiving them to
 .IR /root/ .
-.B -y
-(or
-.BR --yes )
+.B --yes
 skips the confirmation and answers
 .B no
 to both offers: nothing is preserved.
@@ -743,7 +791,7 @@ Requires: \fBsuperuser\fR.
 .PP
 Options:
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 Answer yes to the confirmations.
 .RE
 .\" END GENERATED: command uninstall
@@ -1024,24 +1072,12 @@ Requires: \fBreadonly\fR.
 .TP
 .BI "user add " "name group " [ "--hash " hash ] [ "--scopes " name[,name...] ] [ --no\-change\-required ]
 Add a user. The name is lower case (lower\-case letters, digits,
-.BR _ ", " \- " and " .\& ):
+.BR _ " and " \- ):
 a name with upper case is refused with the lower\-case spelling to use, and a
 user that exists with upper case keeps working as it is
 .RB ( "tacctl config validate"
-lists it). A period may join two parts of a name
-.RB ( alice.smith ):
-it is never the first or the last character and never follows another period
-.RB ( .alice ", " alice. ", " alice..smith ", " . " and " ..
-are refused). A name with a period is no Linux account name: a host sync skips
-it with a warning, so the user has no account on enrolled hosts and logs in at
-devices only, and
-.B user rename
-and
-.B config linux uid
-refuse to give one to it. A release before 0.2.20 refuses a store that has such
-a name, so
-.B "tacctl rollback"
-is refused while one stands: rename those users first.
+lists it). A period is refused: it cannot be part of a Linux account name, and
+every user has an account on the tacctl server.
 Prompts for the password with confirmation. If
 .BI --hash " hash"
 is given, the bcrypt hash is used directly and no password is prompted
@@ -1068,8 +1104,9 @@ until then no device accepts the user.
 .B \-\-no\-change\-required
 skips the requirement. It is not set, and the command says why, for a
 superuser (never held to it) and for a user with no login on this server (the
-server is not enrolled, the user is not in its scope, or its name is no Linux
-account name), who could never change the password.
+server is not enrolled, its name is no Linux account name, its group has no
+privilege level, or, for a server still registered in a scope it shares with
+devices, the user is not in that scope), who could never change the password.
 .PP
 Reserved usernames
 .RB ( root
@@ -1190,9 +1227,20 @@ Requires: \fBsuperuser\fR.
 .BI "user rename " "old new"
 Rename a user. The user's
 .B "console system\-shell user"
-setting moves to the new name, and the command says so. The new name is lower case, and may hold periods as for
-.B user add
-(but see below); changing only the spelling
+setting moves to the new name, and the command says so. The new name is lower case and follows the rules of
+.BR "user add" ;
+the old name may be one with a period, which 0.2.20 and 0.2.21 allowed. Until
+it is renamed, such a user is refused by
+.BR passwd ,
+.B "user passwd"
+and
+.B "user require\-password\-change"
+(with the line
+.BR "rename it first: tacctl user rename <name> <new\-name>" ),
+and
+.B "host sync"
+skips it with a warning, since it has no account on the hosts.
+Changing only the spelling
 .RB ( "user rename Alice alice" )
 is how a name from before is fixed. A device matches the typed login name
 exactly, so the rename changes what the person types at the device. The user
@@ -1216,15 +1264,7 @@ builds its script from the ledger under the same lock, so it sends the names as
 they were before the rename or after it, never a mix; an account created under
 the old name is renamed at that host's next sync. When another command keeps
 the lock for 30 seconds the rename stops at the pre\-change snapshot, which
-copies the ledger under it, with nothing changed. A user that has a UID in the
-ledger, or an account on an enrolled host, is not renamed to a name with a
-period, which is no Linux account name: the next sync would remove the account.
-The command says so, changes nothing and names the two ways forward: a name
-without a period, or a new user (\fBuser remove\fR, \fBhost sync \-\-all\fR,
-which removes the accounts, then \fBuser add\fR under the new name with the
-group and scopes it prints), which gets a new password and no UID (the old
-number stays reserved). A user whose name has a period has no Linux account on
-any host, this server included, so no console login.
+copies the ledger under it, with nothing changed.
 .\" BEGIN GENERATED: command user rename
 .RS
 .PP
@@ -1374,8 +1414,10 @@ see
 .PP
 .B on
 skips, and names with the reason, a superuser and a user with no login on this
-server (the server is not enrolled, the user is not in its scope, the name is
-no Linux account name, or the user is disabled), and ends with
+server (the server is not enrolled, the name is no Linux account name, the
+user is disabled, the group has no privilege level, or, for a server still
+registered in a scope it shares with devices, the user is not in that scope),
+and ends with
 .BR "Flagged N, skipped M, already required K." ;
 .B off
 clears the requirement of the one user or of every user who has it, a
@@ -2301,7 +2343,7 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config get-list
 .TP
-.B "config validate [ \-\-json | \-\-fix\-names [ \-y ] ]"
+.B "config validate [ \-\-json | \-\-fix\-names [ \-\-yes ] ]"
 Validate the store
 .RI ( store.yaml :
 names, every user's group and scopes exist, each prefix owned by one scope),
@@ -2364,7 +2406,13 @@ or
 older than ten minutes, with no command holding the apply lock) is a warning
 as well, a
 .B Leftovers:
-line naming it. Registrations of Linux hosts that cannot all be right are
+line naming it. A
+.I devices.yaml
+that does not load, a device's
+.B timeout_scale
+outside 1 to 10 among the reasons, is an error, a
+.B devices.yaml:
+line. Registrations of Linux hosts that cannot all be right are
 warnings under
 .BR "Linux hosts:" ,
 each naming its fix: two enrolled names equal ignoring case
@@ -2381,8 +2429,13 @@ case) is a warning under
 naming the rename that fixes it
 .RB ( "tacctl user rename Alice alice" ,
 and the like); the one for a user adds that devices match the typed login name
-exactly, so the rename changes what the person types at the device. Only the
-superuser's view has these warnings.
+exactly, so the rename changes what the person types at the device. A user whose
+name has a period (a leftover of 0.2.20 or 0.2.21; a user name is letters, digits,
+\&'_' and \&'\-') is an error under
+.BR "Names:" ,
+naming
+.BR "tacctl user rename <name> <new\-name>" ;
+\fB\-\-fix\-names\fR does not offer it. Only the superuser's view has these findings.
 .IP
 Then, for every enabled backend, whether its rendered config is up to date
 with the store and whether any of its files was edited by hand (drift). With
@@ -2422,7 +2475,7 @@ has a
 .BR store ", " yaml ", " overrides ", " command_rules ", " structure ", "
 .BR scope_default ", " linux_hosts ", " names ", " breakglass ", " breakglass_hold ", "
 .BR emergency_lockdown ", " config_blocks ", " operator_policy ", " group_settings ", " orphan_settings ", "
-.BR orphan_files ", " leftovers ", " backends ", " rendered ", " drift " and "
+.BR orphan_files ", " leftovers ", " devices ", " backends ", " rendered ", " drift " and "
 .BR vendor_attrs ),
 a
 .B level
@@ -2468,7 +2521,7 @@ or
 renames, a piped
 .B y
 works and no terminal is required, and
-.B \-y
+.B \-\-yes
 answers yes to every question. On yes the verb that renames that kind of name
 runs as when typed
 .RB ( "device rename" ,
@@ -2477,7 +2530,7 @@ runs as when typed
 and
 .BR "scope rename" ),
 prints what it prints and takes its own snapshot, one undo point per rename.
-.B \-y
+.B \-\-yes
 is passed on to
 .B "host rename"
 only when it was given here; without it that verb asks its own questions
@@ -2519,7 +2572,7 @@ Print the findings as one JSON object and nothing else on standard output; exit 
 \fB\-\-fix\-names\fR
 After the report, offer to rename each device, host, user and scope that has upper case in its name to its lower\-case spelling (superuser; needs the store).
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 With \-\-fix\-names: answer yes to every rename.
 .RE
 .\" END GENERATED: command config validate
@@ -2608,136 +2661,25 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config loglevel
 .TP
-.B "config listen " "[ \-\-backend \fIid\fR ] [ \-\-listener \fIname\fR ] { show | tcp | tcp6 | udp | udp6 | reset } " [ address ]
-Show, change, or reset a listen address (default: the
-.B tacacs
-backend's listener
-.BR default ;
-the backend ids are listed by
-.BR "backend list" ).
-Stored in
-.I tacctl.yaml
-.RB ( listeners. \fIbackend\fB. \fIname\fR),
-from which tacctl renders the TACACS+ units' systemd drop-ins and the
-RADIUS
-.B listen
-sections.
-.B reset
-clears the override and falls back to the built-in default.
-A TACACS+ listener named with
-.BI \-\-listener " name"
-runs as its own unit
-.BI tacquito@ name .service
-with its own accounting log; for such a listener
-.B reset
-removes it. TACACS+ listeners take
-.B tcp
-or
-.BR tcp6 ;
-RADIUS ones
-.RB ( "\-\-backend radius" )
-take
-.B udp
-or
-.B udp6
-and are named: the built-in
-.B auth
-(udp :1812) and
-.B acct
-(udp :1813); a further name is an authentication listener. The unit is
-restarted and must stay up, or
-.I tacctl.yaml
-and the drop-ins are put back. A listener's
-.B tls
-block in
-.I tacctl.yaml
-is reserved:
-.B "tls.enabled: true"
-is rejected (TACACS+ over TLS is not implemented).
-.B
-Switching to tcp6
-prompts for confirmation because dual-stack sockets accept IPv4
-clients via mapped addresses
-.RB ( ::ffff:x.x.x.x )
-that silently bypass IPv4 prefix ACLs; see
-.B NOTES.
-.\" BEGIN GENERATED: command config listen
-.RS
-.PP
-Requires: \fBsuperuser\fR.
-.PP
-Options:
-.TP
-\fB\-\-backend\fR \fI<id>\fR
-Act on another backend (see 'tacctl backend list'); radius: \-\-listener auth|acct udp|udp6 <addr>.
-.TP
-\fB\-\-listener\fR \fI<name>\fR
-Act on another listener than 'default' (its own tacquito@<name> unit; reset removes it).
-.RE
-.\" END GENERATED: command config listen
-.TP
-.B "config metrics " "{ show | enable | disable | address " \fIhost:port\fR " | reset }"
-Control tacquito's prometheus HTTP exporter's listen address (TACACS+ only;
-FreeRADIUS has no exporter). Stored as
-.BR backends.tacacs.metrics_address .
-.B show
-(no arg) prints current state and address.
-.B enable
-clears the override and reverts to the unit default
-.RB ( 127.0.0.1:8080 ,
-loopback-only).
-.B disable
-sinks the exporter to
-.BR 127.0.0.1:0 ,
-an ephemeral loopback port that no scraper can discover (tacquito's
-.B -export-promhttp=false
-would stop the whole daemon, so it is not used).
-.B "address " \fIhost:port\fR
-binds explicitly (e.g.
-.B 10.1.0.1:8080
-to expose to external scrapers); non-loopback binds print a warning.
-.B reset
-clears the override and falls back to the unit default.
-.\" BEGIN GENERATED: command config metrics address
-.RS
-.PP
-Requires: \fBsuperuser\fR.
-.RE
-.\" END GENERATED: command config metrics address
-.\" BEGIN GENERATED: command config metrics disable
-.RS
-.PP
-Requires: \fBsuperuser\fR.
-.RE
-.\" END GENERATED: command config metrics disable
-.\" BEGIN GENERATED: command config metrics enable
-.RS
-.PP
-Requires: \fBsuperuser\fR.
-.RE
-.\" END GENERATED: command config metrics enable
-.\" BEGIN GENERATED: command config metrics reset
-.RS
-.PP
-Requires: \fBsuperuser\fR.
-.RE
-.\" END GENERATED: command config metrics reset
-.\" BEGIN GENERATED: command config metrics show
-.RS
-.PP
-Requires: \fBsuperuser\fR.
-.RE
-.\" END GENERATED: command config metrics show
-.TP
-.B "host list [ \-\-json ]"
-Show enrolled Linux hosts with their SSH target, the address recorded for the
-host at its last enroll or sync (a dash when none is), scope, server address,
-method and user count. A host with a break\-glass hold is marked
+.BI "host list [ \-\-name " text " ] [ \-\-ip " address|cidr|text " ] [ \-\-scope " scope " ] [ \-\-stale ] [ \-\-json ]"
+Show enrolled Linux hosts, sorted by name, as
+.B "device list"
+shows devices: the SSH target, the address (the one recorded at the host's last
+enroll or sync, else the single address of its scope, a dash when neither is
+known), scope, state
+.RB ( configured :
+the host's scope exists;
+.BR unconfigured ;
+.BR stale :
+not seen for stale\-days), last seen and by (from the seen cache that
+.B "device scan"
+refreshes), server address, method, user count and open notices. A host with a
+break\-glass hold is marked
 .B BREAK\-GLASS
-in a
-.B STATE
-column, which is there while one is held in the caller's scopes, and a footer
-counts them. For the superuser a last line,
+in the state column and a footer counts them. A line under the table gives the
+age of the seen data and, when the hosts have open notices, how many
+.RB ( "device notice list" ).
+For the superuser a last line,
 .BR "N finding(s): see tacctl config validate" ,
 says that the registrations have findings
 .RB ( "config validate" ;
@@ -2747,13 +2689,36 @@ among them the names with upper case that
 .B "config validate"
 lists under
 .BR "Names:" .
+The options narrow the list as those of
+.B "device list"
+do; all must match. The heading counts the hosts
+.RB ( "Enrolled Linux hosts (2), of 5" :
+the second number appears when the list is narrowed), and a narrowed list with
+no host says
+.BR "None match." .
+.B \-\-name
+keeps the names that contain the text,
+.B \-\-ip
+the addresses equal to, inside or containing it, and
+.B \-\-scope
+the hosts that scope answers (each takes a comma list: any of them);
+.B \-\-stale
+keeps the hosts not seen for stale\-days. This server's own login has no scope
+in the table.
 .B \-\-json
 prints a JSON array instead, empty (\fB[]\fR) when there is no host: for each
 host its
 .BR name ", " local ", " target ", " port " (22 unless the registry gives one; 0 for this server's own host), " scope ", " server ", " method ", " identity " (the path only), " address
-(the recorded one, empty when unknown),
-.B users
-and
+(empty when unknown),
+.BR users ,
+.B state
+(configured or unconfigured),
+.B seen
+(first, last, count, last user, outcome, via, NAS identifier and stale, as
+.B "device list \-\-json"
+has it; absent when the address was never seen),
+.B notices
+(kind, text and acknowledged) and
 .B drift
 (the scope warning the table prints, empty when none), a
 .B breakglass
@@ -2774,6 +2739,18 @@ both forms.
 Requires: \fBengineer\fR.
 .PP
 Options:
+.TP
+\fB\-\-stale\fR
+Only the hosts not seen for stale\-days.
+.TP
+\fB\-\-name\fR \fI<text>\fR
+Only names containing the text (comma list: any).
+.TP
+\fB\-\-ip\fR \fI<addr|cidr|text>\fR
+Only an address equal to, inside or containing it.
+.TP
+\fB\-\-scope\fR \fI<scope>\fR
+Only the hosts that scope answers (comma list).
 .TP
 \fB\-\-json\fR
 (list and show) Print JSON (show: every field, and \-\-check's findings under 'check').
@@ -2918,7 +2895,7 @@ address to a scope or give the host a scope of its own
 Naming another scope for a registered host moves it: enroll names the users
 whose accounts the move deletes and asks on a terminal; without one it stops
 unless given
-.BR \-y .
+.BR \-\-yes .
 tacctl never moves a host itself:
 .BR "host sync" ,
 .B "host list"
@@ -3169,7 +3146,7 @@ pam_tacplus against the TACACS+ backend, or the host's pam_radius_auth package a
 \fB\-\-build\-on\-host\fR
 (tacplus) Compile pam_tacplus on the host instead of in a container here.
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (enroll and move) Move a registered host to another scope even when that deletes accounts.
 .TP
 \fB\-\-staging\fR
@@ -3183,14 +3160,14 @@ pam_tacplus against the TACACS+ backend, or the host's pam_radius_auth package a
 .RE
 .\" END GENERATED: command host enroll
 .TP
-.B "host move " "{ " name " [ " scope " ] | \-\-all } [ \-y ] [ \-\-remove\-home ] [ \-\-allow\-uid\-mismatch ]"
+.B "host move " "{ " name " [ " scope " ] | \-\-all } [ \-\-yes ] [ \-\-remove\-home ] [ \-\-allow\-uid\-mismatch ]"
 Move an enrolled host to another scope: an enroll with its registered
 target, port, identity, server and method, into
 .I scope
 or, without one, the scope that answers its address. As an enroll that names
 a scope does, it names the users whose accounts the move deletes and asks
 first (without a terminal it stops unless given
-.BR \-y ).
+.BR \-\-yes ).
 With
 .B \-\-all
 one snapshot is taken before the first move and none per host, so a long batch
@@ -3205,7 +3182,7 @@ Options:
 \fB\-\-all\fR
 (move) Every host that another scope answers; asks before deleting accounts.
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (enroll and move) Move a registered host to another scope even when that deletes accounts.
 .TP
 \fB\-\-allow\-uid\-mismatch\fR
@@ -3216,7 +3193,7 @@ Options:
 .RE
 .\" END GENERATED: command host move
 .TP
-.B "host sync " "{ " name "... | \-\-all } [ \-\-allow\-uid\-mismatch ] [ \-\-remove\-home ]"
+.B "host sync " "{ " name "... | \-\-all } [ \-\-allow\-uid\-mismatch ] [ \-\-remove\-home ] [ \-\-concurrency " n " ]"
 Push the scope's current user list to the host: new users get accounts, a
 renamed user's account is renamed (its UID and home are kept), tier changes
 move group membership, disabled users' accounts are expired
@@ -3236,7 +3213,9 @@ held while the script is built and never while it runs on the host, so two syncs
 at once give a user one number; when another command keeps the lock for 30
 seconds the sync stops with nothing changed.
 .IP
-Several names run in one command, in the order typed, each as
+Several names run in one command, in the order typed (with
+.B \-\-concurrency
+they start in that order and their output is printed in that order), each as
 .B \-\-all
 would run it. Every name is checked before the first host is touched: an
 unknown name refuses the run (nothing is synced), a name given twice counts
@@ -3244,6 +3223,34 @@ once, and names with
 .B \-\-all
 are a usage error. A host that fails does not stop the others; the exit status
 is 1 when any failed.
+.IP
+.BI \-\-concurrency " n"
+syncs n hosts at once (a whole number, 1 or more; the default, 1, is one host
+after the other). With more than one host at once, each host's output is held
+and printed whole, in the order typed, when it and the hosts before it have
+ended; the lines and the exit status are those of a run one host after the
+other. What the hosts write on this server (the UID ledger, the
+host records, the device registry, the staging addresses) is written one host
+at a time. No terminal is used: ssh runs with
+.B BatchMode
+(a key or the agent; no password or passphrase is asked) and the remote sudo
+with
+.BR "sudo \-n" ,
+so the login must be root or have passwordless sudo, as in a run with no
+terminal. The questions about the home directories of removed users are not
+asked, and every home is kept (as with no terminal); a host with removed users
+says so after the line that names them, and
+.B \-\-remove\-home
+deletes them. Registrations that share an ssh target (and port) are synced one
+after the other, since they share one connection. An interrupt (Ctrl\-C, or
+any SIGINT) stops the run as it stops a run one host after the other: no
+further host is started, the connections of the hosts under way are ended and
+those hosts are reported, recorded and audited as interrupted, the hosts not
+started are named, and the status is 130. Nothing carries the interrupt to a
+script already running on a host, as a terminal does in a run one host after
+the other, so that script may finish. With one host
+.B \-\-concurrency
+changes nothing. There is no per\-host time limit and no limit on failures.
 .IP
 tacctl's groups have fixed GIDs, the first numbers of the range:
 .B tac\-users
@@ -3418,10 +3425,13 @@ Options:
 .TP
 \fB\-\-remove\-home\fR
 (enroll, sync and move) Delete removed users' home directories without asking (on a terminal each one is asked; without one they are kept).
+.TP
+\fB\-\-concurrency\fR \fI<n>\fR
+Sync n hosts at once; no home question is asked then (default 1).
 .RE
 .\" END GENERATED: command host sync
 .TP
-.B "host check " "{ " name "... | \-\-all } [ \-\-json ]"
+.B "host check " "{ " name "... | \-\-all } [ \-\-json ] [ \-\-concurrency " n " ]"
 Compare each host named, or every enrolled host with
 .BR \-\-all ,
 with what tacctl would make it, read\-only: for each, what
@@ -3442,8 +3452,25 @@ there is nothing to refuse), or
 with the reason. What a host prints besides the check goes to standard error.
 With more than one host a last line counts the hosts in each state. The exit
 status is 1 when a host has a difference or could not be checked, else 0 (a
-skipped host is not a failure); an interrupt ends the run after the host in
-progress. With
+skipped host is not a failure); an interrupt ends the run (status 130) with the
+read under way ended.
+.B \-\-concurrency
+.I n
+checks n hosts at once (a whole number, 1 or more; the default, 1, is one host
+after the other). Each host's text, standard error included, is held and
+printed whole, in the order typed, when it and the hosts before it have ended,
+so the report, the count and the exit status are those of a run one host after
+the other. No terminal is used: the login runs in BatchMode
+(a key or the agent; no password or passphrase is asked) and the remote sudo
+with
+.BR "sudo \-n" ,
+so the login must be root or have passwordless sudo. Hosts that share an ssh
+target (and port) are checked one after the other. An interrupt (Ctrl\-C, or any
+SIGINT) stops the run as it stops a run one host after the other: no further
+host is started, the reads under way are ended and give no result, the hosts
+not started are named, and the status is 130. With one host
+.B \-\-concurrency
+changes nothing. There is no per\-host time limit. With
 .B \-\-json
 standard output is a JSON array (empty for no host) with, for each host,
 .BR name ,
@@ -3477,6 +3504,9 @@ Options:
 .TP
 \fB\-\-json\fR
 (check) Print a JSON array (one object per host) and nothing else on standard output.
+.TP
+\fB\-\-concurrency\fR \fI<n>\fR
+Check n hosts at once (default 1).
 .RE
 .\" END GENERATED: command host check
 .TP
@@ -3702,7 +3732,7 @@ Options:
 .RE
 .\" END GENERATED: command host provisioner
 .TP
-.B "host rename " old " " new " [ \-y ]"
+.B "host rename " old " " new " [ \-\-yes ]"
 Give the enrolled host
 .I old
 the name
@@ -3737,7 +3767,7 @@ removes a hold.
 What an earlier host of the new name left (a pin and address in
 .IR devices.yaml ,
 a record, staging addresses) is listed and replaced after a confirmation
-.RB ( \-y
+.RB ( \-\-yes
 skips it); declining changes nothing.
 .IP
 After every refusal and the questions, a snapshot is taken
@@ -3777,7 +3807,7 @@ exists and
 would accept the new name, both questions come first and
 .RI "\(lqScope 'linux\-" old "' is this host's own (no other host uses it). Rename it to 'linux\-" new "' too? [y/N]\(rq"
 is asked.
-.B \-y
+.B \-\-yes
 answers both questions yes. The host rename runs whole; then the scope is
 renamed as
 .B "scope rename"
@@ -3799,12 +3829,12 @@ Requires: \fBsuperuser\fR.
 .PP
 Options:
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (rename) Answer both questions yes: replace what an earlier host of the new name left, and rename the host's own linux\-<name> scope.
 .RE
 .\" END GENERATED: command host rename
 .TP
-.B "host forget " name " [ \-y ]"
+.B "host forget " name " [ \-\-yes ]"
 Drop the registration of the host
 .I name
 from this server, and nothing else. It is local: nothing is sent to the host and
@@ -3817,7 +3847,7 @@ the host's entries in the
 .I staging
 file and the host\-key scan result of the seen cache. It lists what it would drop
 and asks; the question is skipped with
-.BR \-y .
+.BR \-\-yes .
 The host itself is not touched: its accounts, secrets and PAM setup stay
 .RB ( "host unenroll"
 cleans a host that can be reached, and drops its staging entries and record
@@ -3867,7 +3897,7 @@ Requires: \fBsuperuser\fR.
 .PP
 Options:
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (forget) Forget the host without asking.
 .RE
 .\" END GENERATED: command host forget
@@ -3964,7 +3994,7 @@ that user gets no account. It refuses
 to run when no local administrator with a usable password exists outside
 the TACACS+ user list, and puts the PAM files back if any step fails.
 The server's port in it is the configured listener's
-.RB ( "config listen" ):
+.RB ( "server listen" ):
 the TACACS+
 .B default
 listener for tacplus (the
@@ -4010,8 +4040,9 @@ after the highest one given, never reused, not even after the user is
 removed), and kept in
 .IR /etc/tacctl/linux\-uids ,
 whose first line records the range it is numbered for.
-A user whose name has a period is refused: it has no Linux account, so a
-number would never be used. A value outside that range is refused; an existing entry outside it is
+A user whose name has a period (a leftover of 0.2.20 or 0.2.21) has no Linux
+account: its number is printed if the ledger has one, and a new one is refused,
+since it would never be used. A value outside that range is refused; an existing entry outside it is
 listed as not used on hosts, and its user gets no account until
 given a number in the range. When the range is used up, the script refuses
 the next user.
@@ -4433,6 +4464,26 @@ A change to the NETCONF service is always made over the command line.
 Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config devices apply-transport
+.TP
+.BI "config devices timeout\-scale " "[ n ]"
+Show or set the timing scale of every device, a whole number from 1 to 10 (default 1,
+every timing as it has always been). It multiplies each network timing used to reach a device, for
+devices behind a long round trip or with a slow CPU; a scope's
+.RB ( "scope timeout\-scale" )
+and a device's own
+.RB ( "device timeout\-scale" )
+win, in that order. See
+.B Timing scale
+below for what it multiplies. The value is
+.B device.timeout_scale
+in
+.IR tacctl.yaml .
+.\" BEGIN GENERATED: command config devices timeout-scale
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config devices timeout-scale
 .TP
 .B "config devices show"
 Show the settings.
@@ -4966,7 +5017,7 @@ server IP, shared secret, current group-to-privilege mappings, and
 the VTY-ACL built from
 .B config mgmt-acl
 pre-filled. Over TACACS+ the server's port is the configured listener's
-.RB ( "config listen" ;
+.RB ( "server listen" ;
 default 49): a
 .B tacacs server
 block of a listener that is not on 49 has a
@@ -5472,8 +5523,8 @@ Requires: \fBreadonly\fR.
 .RE
 .\" END GENERATED: command backend status
 .TP
-.BI "backend enable " "id " [ \-y ]
-Enable a backend. If it is not installed, confirms (\fB\-y\fR skips) and runs its
+.BI "backend enable " "id " [ \-\-yes ]
+Enable a backend. If it is not installed, confirms (\fB\-\-yes\fR skips) and runs its
 install steps (packages, service account, unit). Then, as one step: every
 backend that will be enabled has its gate checked (a hand-edited rendered file
 refuses the command, exit 3), a snapshot is taken, the id is added to
@@ -5493,15 +5544,15 @@ Requires: \fBsuperuser\fR.
 .PP
 Options:
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command backend enable
 .TP
-.BI "backend disable " "id " [ \-y ]
+.BI "backend disable " "id " [ \-\-yes ]
 Take a backend out of
 .BR backends.enabled ,
-stop its service and disable it at boot. Asks for confirmation (\fB\-y\fR
+stop its service and disable it at boot. Asks for confirmation (\fB\-\-yes\fR
 skips) because clients of that protocol stop authenticating. Its package and
 the files it rendered stay where they are (and are no longer rendered or
 reported as drift);
@@ -5538,7 +5589,7 @@ Requires: \fBsuperuser\fR.
 .PP
 Options:
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command backend disable
@@ -5730,7 +5781,7 @@ accounting and daemon logs.
 Prompts for confirmation;
 .B --force
 (or
-.BR -y )
+.BR --yes )
 skips the prompt for scripted use. Destructive: cleared auth and
 accounting records are irrecoverable.
 .\" BEGIN GENERATED: command log clear
@@ -5743,7 +5794,7 @@ Options:
 \fB\-\-backend\fR \fI<id>\fR
 Only that backend's log (every subcommand).
 .TP
-\fB\-\-force\fR, \fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-force\fR, \fB\-\-yes\fR
 (clear) Purge without asking.
 .RE
 .\" END GENERATED: command log clear
@@ -6070,7 +6121,7 @@ and names (users, groups, scopes, hosts, devices, ..., asked of
 .B sudo \-n tacctl _completion-names
 and kept for 5 seconds); a second Tab lists the matching words alone. ?
 inserts nothing and shows help for the cursor's position (\fB\-h\fR or \fB\-\-help\fR after the words of a command prints the same help): the words that can
-come (\(lqPossible completions:\(rq in colour on a terminal: command names bright white, sub-commands, fixed words and options teal, live names bold, with each one's argument column, at most 40
+come (\(lqPossible completions:\(rq in colour on a terminal: command names, sub-commands, fixed words and options teal, live names bold, with each one's argument column, at most 40
 characters and cut with \(lq...\(rq when longer, as a name with no column is, and its description, which goes
 on under its column when it does not fit, the blanks that align a name's vendor, address and scope kept; a fixed word such as priv\-lvl after
 .B group edit
@@ -6235,7 +6286,7 @@ history, and stops at the first line that ends with a non-zero status,
 exiting with that status. The commands of such a batch get no standard input
 (it is the script), so a command that asks a question cannot be answered
 from it: use its
-.B \-y
+.B \-\-yes
 flag where it has one.
 Over ssh, ask for a terminal to get the interactive shell:
 .BR "ssh \-t " "host tacctl shell" ;
@@ -6920,6 +6971,94 @@ Options:
 (enable) The rate limit of the service, 1 to 250; none removes it.
 .RE
 .\" END GENERATED: command scope netconf
+.SS Timing scale \fB(tacctl scope timeout\-scale)\fR
+.TP
+.BI "scope timeout\-scale " scope " [ " n " | clear ]"
+The timing scale of the devices of a scope: a whole number from 1 to 10 that
+multiplies every network timing used to reach a device, for devices behind a long
+round trip (a satellite circuit) or with a slow CPU. 1, the default, is every
+timing as it has always been. The scale in force for a device is its own
+.RB ( "device timeout\-scale" ),
+else its scope's, else the server's
+.RB ( "config devices timeout\-scale" ),
+else 1; the same order as the NETCONF service setting. With no value the verb
+prints the scale in force for the scope and where it comes from, and, for a scale
+above 1, what it makes of each timing.
+.I n
+sets the scope's own scale and
+.B clear
+removes it, so the server's applies again. The scale multiplies:
+.IP \(bu 2
+the connect and handshake budget of every ssh and NETCONF session to a device
+(10 s), as
+.BR "device config pull" ,
+.BR "device config apply" ,
+.BR "device onboard" ,
+.BR "device collect"
+and
+.B "device support\-bundle"
+use it, and of
+.B "tacctl ssh"
+(its
+.B ConnectTimeout
+of 10 s);
+.IP \(bu 2
+the host\-key scans of
+.BR "device add" ,
+.BR "device hostkey" ,
+.BR "device scan" ,
+.BR "device check" ,
+.B "device enroll"
+and the others: ssh\-keyscan's
+.B \-T
+(5 s and 3 s) and the built\-in client's connect (3 s), handshake (10 s) and
+per\-type attempt (5 s);
+.IP \(bu 2
+the SNMP timeout
+.RB ( snmp.timeout ,
+.BR "device snmp timeout" ,
+.BR "scope snmp timeout" ,
+default 2 s), but never above its maximum of 10 s;
+.IP \(bu 2
+the per\-device time of a pull and of an apply (the default
+.BR device.config.timeout ,
+90 s), kept between 10 and 600 s.
+.PP
+An option typed on the command line wins over the scale:
+.B \-\-timeout
+of a pull or an apply is the time of every device of that run, as typed; the
+scale replaces only the default,
+.BR device.config.timeout .
+The confirmed\-commit windows
+.RB ( device.config.confirm_timeout ,
+.BR device.apply.confirm_timeout )
+are timers on the device and are never scaled. The scale is
+.B timeout_scale_scope.\fIscope\fR
+in
+.IR tacctl.yaml ,
+written only when set; a rename moves it, a removal deletes it. A scale above 1 is
+shown by
+.B "device show"
+(a
+.B "Timeout scale"
+row, and
+.B timeout_scale
+in
+.BR \-\-json ,
+with where it comes from) and by
+.BR "scope show" ;
+.B "config validate"
+checks the stored values. The verb is the superuser's; an engineer reads the
+scale in
+.B "device show"
+and
+.BR "scope show" .
+.\" BEGIN GENERATED: command scope timeout-scale
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command scope timeout-scale
 .SS Per-scope SNMP \fB(tacctl scope snmp)\fR
 .PP
 The SNMP settings of the devices of a scope. A setting the scope does not set
@@ -7360,7 +7499,7 @@ Print the strings (an engineer: their own scopes; logged).
 \fB\-\-against\fR \fI<device>\fR
 Plan the device of this scope with this text in force and print the statements of its section (from its last pull; nothing is written and no device is reached).
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (set, remove, edit, adopt) Answer yes to the question (a block read from standard input needs it).
 .RE
 .\" END GENERATED: command scope block
@@ -7391,11 +7530,11 @@ pull: nothing is written, no back\-out is kept and no device is reached. A
 device that has not been pulled is told to be pulled first, and a system block
 that was not in force at the last pull is told to be set and pulled.
 .TP
-.BI "scope block " scope " cisco|juniper set " block " { \-\-file " path " | \- } [ \-y ]"
+.BI "scope block " scope " cisco|juniper set " block " { \-\-file " path " | \- } [ \-\-yes ]"
 Superuser only. Check the text as
 .B check
 does (an error refuses it and nothing is written), show the owned objects and
-the difference, ask (\fB\-y\fR, \fB\-\-yes\fR, answers yes; a text read from
+the difference, ask (\fB\-\-yes\fR answers yes; a text read from
 standard input needs it unless standard input is a terminal), take the
 configuration snapshot, write the file (0600, atomically) and put the block in
 force in
@@ -7408,15 +7547,15 @@ as the file in force is no change. A change that cannot be made because
 cannot be read or written is refused before anything is. Logged as
 .BR "block\-set name=" \fIscope\fR/\fIvendor\fR/\fIblock\fR .
 .TP
-.BI "scope block " scope " cisco|juniper remove " block " [ \-y ]"
+.BI "scope block " scope " cisco|juniper remove " block " [ \-\-yes ]"
 Superuser only. Take the block out of force and delete its file (a file no list
-names is removable too), after a question (\fB\-y\fR answers it) and a
+names is removable too), after a question (\fB\-\-yes\fR answers it) and a
 snapshot. Nothing is deleted from a device: what the block set is no longer
 rendered, and the next compare lists those statements as the device's own,
 kept. Logged as
 .BR block\-remove .
 .TP
-.BI "scope block " scope " cisco|juniper edit " block " [ \-y ]"
+.BI "scope block " scope " cisco|juniper edit " block " [ \-\-yes ]"
 Superuser only, and only at a terminal (a refusal without one changes nothing).
 Open the block in the editor of the invoking user, as
 .BR visudo (8)
@@ -7464,7 +7603,7 @@ ignored), checked as
 checks it, and installed as
 .B set
 installs it: the owned objects and the difference, the question
-(\fB\-y\fR answers it), the snapshot, one atomic write and the entry in
+(\fB\-\-yes\fR answers it), the snapshot, one atomic write and the entry in
 .IR tacctl.yaml .
 A text that fails the check is offered back to the editor, up to five times,
 with the errors as
@@ -7488,7 +7627,7 @@ opening a block in force, or a device's new block with the scope's objects,
 is logged before the editor starts as
 .BR "secret\-read kind=block" .
 .TP
-.BI "scope block " scope " cisco|juniper adopt " device " " block " [ \-y ]"
+.BI "scope block " scope " cisco|juniper adopt " device " " block " [ \-\-yes ]"
 Superuser only, at a terminal, with the rules of
 .BR edit .
 Read the registered
@@ -7858,14 +7997,17 @@ limits the simultaneous connections
 opens or drops its long offer, is asked again one key type at a time,
 ed25519, ecdsa, rsa, each with
 .BR "\-T 3" ,
-and the keys of every type that answers are pinned; a device that refuses the
-connection or does not answer is not asked again; for a
+and the keys of every type that answers are pinned; a device whose name
+.B ssh\-keyscan
+reports as not resolving is not asked again; for a
 .B legacy\-ssh
 device that
 .B ssh\-keyscan
 cannot read, because it cannot do the SHA-1 key exchange and CBC ciphers
-such a device offers, and for any device that accepted the connection but gave
-no key even one type at a time, with tacctl's own ssh client, which stops at the
+such a device offers, for any device that accepted the connection but gave
+no key even one type at a time, and for a device it reads nothing from and
+prints nothing about (a server slow to greet, a refused or filtered address),
+with tacctl's own ssh client, which stops at the
 host key, before authentication), keeps them in
 .IR devices.yaml ,
 and prints their
@@ -7976,6 +8118,7 @@ it.
 Notices appear in the scan output,
 .BR "tacctl status" ,
 .BR "device list" ,
+.BR "host list" ,
 .B "device notice list"
 and
 .B "device show"
@@ -7998,7 +8141,7 @@ administrators only.
 .BR discover ,
 .B check
 and
-.B "list \-\-scan" | "\-\-probe"
+.B "list \-\-scan" | "\-\-probe" | "\-\-differs"
 are operator-level (the scan output's notices are filtered the same way;
 .B discover
 lists every address). Everything else needs an administrator.
@@ -8009,10 +8152,14 @@ With no subcommand (or with
 .BR help ),
 prints a usage summary and exits 0.
 .TP
-.BI "device list " "[ word ] [ \-\-name " text " ] [ \-\-ip " address|cidr|text " ] [ \-\-vendor " vendor " ] [ \-\-scope " scope " ] [ \-\-stale ] [ \-\-unconfigured ] [ \-\-scan ] [ \-\-probe ] [ \-\-json ]"
-One row per registered device, then per enrolled host, sorted by name
+.BI "device list " "[ word ] [ \-\-name " text " ] [ \-\-ip " address|cidr|text " ] [ \-\-vendor " vendor " ] [ \-\-scope " scope " ] [ \-\-stale ] [ \-\-unconfigured ] [ \-\-differs ] [ \-\-scan ] [ \-\-probe ] [ \-\-json ]"
+One row per registered device, sorted by name
 (upper and lower case alike): name, address, vendor,
-scope, state, last seen, by, via, config, and the open notices.
+scope, state, last seen, by, via, config, and the open notices. The enrolled
+Linux hosts are not listed here but by
+.BR "host list" ;
+.B device show
+and the other verbs that take a device still take a host by name.
 .B \-\-name
 keeps the names that contain the text,
 .B \-\-ip
@@ -8024,27 +8171,53 @@ the vendors named, and
 the devices that scope answers; each takes one value or a comma list (any of
 them matches), and different options must all match. A
 .I word
-alone keeps the entries whose name or address contains it or whose vendor or
-scope it is. The heading says how many of the visible entries are shown. The config
+alone keeps the devices whose name or address contains it or whose vendor or
+scope it is. The heading counts the devices shown and, when the list is narrowed
+(by an option or a word), how many there were
+.RB ( "Registered devices (1), of 5" ):
+nothing left says
+.BR "None match." .
+The config
 column (the operator tier's: a read-only user's list has none, in the table
 or in the JSON) is the state of the device's last configuration pull
 .RB ( "device config pull" ):
 .BR ok ,
 .BR differs ,
-.B never
+.BR never ,
+.B failed
 or
-.BR failed ,
-from the pull's record without rendering; it is
+.B pull
+(a Cisco device whose configuration syntax is unknown, or whose vendor changed
+since its last pull: the stored pull cannot be compared until it is pulled
+again), from the pull's record without rendering; it is
 .B \-
-for a host, a vendor
+for a vendor
 .B other
 and a device no scope covers. The state is
 .B configured
-when a scope's prefixes cover the address (a host: when its scope exists) and
+when a scope's prefixes cover the address and
 .B unconfigured
-otherwise.
+otherwise
+.RB ( stale :
+not seen for stale\-days;
+.BR BREAK\-GLASS :
+the device has a break\-glass hold, and a footer counts them).
 .B \-\-unconfigured
 lists only those;
+.B \-\-differs
+lists the devices whose last pull differs from what tacctl renders now,
+computed from the pull records with no login, as
+.B "device config list \-\-differs"
+does (the operator tier's; an engineer gets the devices of their own scopes):
+the config column says
+.B differs
+for them, and
+.B \-\-json
+has config
+.B differs
+and
+.BR differs_in ,
+the sections that differ;
 .B \-\-stale
 lists the devices whose last sighting is older than
 .BR stale\-days ,
@@ -8088,6 +8261,9 @@ Only the devices not seen for stale\-days.
 \fB\-\-unconfigured\fR
 Only the devices no scope's prefixes cover.
 .TP
+\fB\-\-differs\fR
+Only the devices whose last pull differs from what is rendered now.
+.TP
 \fB\-\-name\fR \fI<text>\fR
 Only names that contain the text (a comma list: any of them).
 .TP
@@ -8095,7 +8271,7 @@ Only names that contain the text (a comma list: any of them).
 Only addresses equal to, inside, or containing it (an address, a CIDR or a text; a comma list).
 .TP
 \fB\-\-vendor\fR \fI<vendor>\fR
-Only that vendor: cisco, juniper, wti, other or linux (a comma list).
+Only that vendor: cisco, juniper, wti or other (a comma list).
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
 Only the devices that scope answers (a comma list).
@@ -8182,12 +8358,20 @@ and ssh port are read with
 is asked for by name too; a device that accepts the connection but gives no
 key is asked again one key type at a time, each with
 .BR "\-T 3" ,
-and the keys of every type that answers are pinned; and when
+and the keys of every type that answers are pinned; a device whose name
+.B ssh\-keyscan
+reports as not resolving is not asked again; and when
 .B ssh\-keyscan
 reads no key from a device with
 .B \-\-legacy\-ssh
-or one that accepted the connection, tacctl's own ssh client reads them,
-stopping at the host key without sending a password) and pinned. Their
+or one that accepted the connection, or reads no key and prints nothing about
+the device (a server slow to greet, which plain
+.B ssh
+waits longer for, or a refused or filtered address), tacctl's own ssh client
+reads them, stopping at the host key without sending a password; for a device
+that printed nothing it is tried once, without the one-type retry, with a
+3-second TCP connect and a 10-second handshake, and a device slow to greet can
+take several seconds) and pinned. Their
 .B SHA256:
 fingerprints are printed with the command that shows them on the device's
 console; compare them before the first connection. With
@@ -8203,7 +8387,15 @@ is refused and nothing is written; when the device accepted the connection but
 no read gave a key, the refusal names the reads that were made and gives
 .BI "ssh\-keyscan \-t ed25519 " address
 to see the key by hand, and the ways to accept a key by its fingerprint
-.RB ( "\-\-host\-key SHA256:" "<fp>, or " "device hostkey " "<name>" " set SHA256:" "<fp>" ).
+.RB ( "\-\-host\-key SHA256:" "<fp>, or " "device hostkey " "<name>" " set SHA256:" "<fp>" );
+when
+.B ssh\-keyscan
+printed nothing about the device, the refusal names
+.B ssh\-keyscan
+and tacctl's own ssh client, gives
+.BI "ssh\-keyscan \-T 30 \-t ed25519 " address
+to see the key by hand, and the same two ways to accept a key by its
+fingerprint.
 The output says which scope, if any, answers the address.
 .IP
 Next to the scan,
@@ -8381,7 +8573,7 @@ question asks for the name to register it as, checked as every new name
 (lower case, not taken, not generic), and the name typed is the name it is
 registered under. Enter, the end of input or any other answer sends nothing,
 with no second try (exit 1). There is no
-.B \-y
+.B \-\-yes
 and no trust on first use. A device an earlier onboard registered is asked
 for its registered name; nothing new is pinned: its pinned keys are listed and
 the key is shown under
@@ -8540,7 +8732,7 @@ One object at the end (the progress goes to standard error).
 .RE
 .\" END GENERATED: command device onboard
 .TP
-.BI "device collect " "address... | \-\-discovered " "[ \-\-login " "local-user " "] [ \-\-host\-key SHA256:" fingerprint " ] [ \-\-register [ \-y ] ] [ \-\-json ]"
+.BI "device collect " "address... | \-\-discovered " "[ \-\-login " "local-user " "] [ \-\-host\-key SHA256:" fingerprint " ] [ \-\-register [ \-\-yes ] ] [ \-\-json ]"
 Superusers, Junos devices: read what an address nobody registered is, with one
 login. For each address that no registry entry holds (a registered one is
 refused before anything is sent, with the normal flow named; so is an address
@@ -8624,7 +8816,7 @@ and
 .B "device config plan"
 have one at once; no plain view was read, so a plan says the groups'
 inheritance was not checked until a pull reads it.
-.B \-y
+.B \-\-yes
 answers the question of
 .BR \-\-register ,
 which without a terminal it needs, and never a key's question.
@@ -8664,7 +8856,7 @@ Accept only this key, read on the device's console (no question; needed without 
 \fB\-\-register\fR
 After the table, register each collected device through 'device add' with the key accepted pinned (one question) and keep the read as its first pull record; the key's question takes the device's SNMP sysName when it gives one that is not taken.
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (collect) Answer yes to the registration question of \-\-register (needed without a terminal); never a host key's question.
 .TP
 \fB\-\-json\fR
@@ -8699,7 +8891,7 @@ is the device's SNMP sysName (lower case); when SNMP gives none, the name
 typed is the name the device is registered as, checked as every new name
 (lower case, not taken, not generic). Enter, or the end of input, skips the
 device; any other answer refuses it, with no second try. There is no
-.BR \-y ,
+.BR \-\-yes ,
 no answer for several devices and no trust on first use.
 .BI "\-\-host\-key SHA256:" fingerprint
 (one address; the fingerprint read on the console) answers it instead and is
@@ -8807,7 +8999,7 @@ The pull's lines and the plan's objects, then one object of the run; the questio
 .RE
 .\" END GENERATED: command device enroll
 .TP
-.BI "device sync " "name[,name...] | \-\-all | \-\-scope " "scope " "| \-\-vendor " "vendor " "[ \-\-apply ] [ \-\-overwrite ] [ \-\-json ] [ \-y ]"
+.BI "device sync " "name[,name...] | \-\-all | \-\-scope " "scope " "| \-\-vendor " "vendor " "[ \-\-apply ] [ \-\-overwrite ] [ \-\-json ] [ \-\-yes ]"
 Superusers: fill the registry's empty
 .BR hostname ,
 .B location
@@ -8834,7 +9026,7 @@ and one of the facts of the records (model, release and serial number: the
 record's, never written to the registry).
 .B \-\-apply
 writes, after one question
-.RB ( \-y
+.RB ( \-\-yes
 answers it; without a terminal it is needed), in ONE registry write under the
 registry's lock, each field checked again against the live file: a value set
 since the preview is left as it is.
@@ -8883,7 +9075,7 @@ Only that vendor's devices (only Junos records are read).
 \fB\-\-overwrite\fR
 Also replace a field that is set, showing the old value.
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (sync) Answer yes to the question of \-\-apply (needed without a terminal).
 .TP
 \fB\-\-json\fR
@@ -8930,9 +9122,9 @@ Options:
 .RE
 .\" END GENERATED: command device support-bundle
 .TP
-.BI "device remove " "name[,name...] | \-\-all " [ \-y ]
+.BI "device remove " "name[,name...] | \-\-all " [ \-\-yes ]
 Remove devices from the registry, after confirmation (\c
-.B \-y
+.B \-\-yes
 skips it; a closed stdin cancels). Enrolled hosts, scopes and vendor tags are
 not touched.
 .\" BEGIN GENERATED: command device remove
@@ -8945,7 +9137,7 @@ Options:
 \fB\-\-all\fR
 Remove every device (an engineer: those of their own scopes).
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device remove
@@ -8968,7 +9160,7 @@ Options:
 .RE
 .\" END GENERATED: command device rename
 .TP
-.BI "device address " "name " [ address " [" \-\-apply "] [" \-y ] ]
+.BI "device address " "name " [ address " [" \-\-apply "] [" \-\-yes ] ]
 Show or set the address, the AAA identity of the device, stored canonically. It
 cannot be cleared or be one another device holds. Pinned host keys belong
 to the old address and are dropped. The address decides which scope covers the
@@ -8978,7 +9170,7 @@ superuser (an engineer is refused): the new address must pass what a new hold
 passes (not a loopback address, not an address a listener of either backend
 binds, not the address of an enrolled host, not held by another record, covered
 by a scope), and one line names both addresses and asks to confirm
-.RB ( \-y
+.RB ( \-\-yes
 skips the question); the registry and the record are then written together,
 rendered once and each backend whose rendered file changed restarted once (a
 restart that failed is reported as
@@ -9017,7 +9209,7 @@ Options:
 \fB\-\-apply\fR
 (address, description, location, ios\-syntax, netconf) After the change, run 'device config apply' for the device: the same review and confirmed commit; engineers, Junos devices; (sync) write the fields, after one question.
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device address
@@ -9031,7 +9223,7 @@ Requires: \fBengineer\fR.
 .RE
 .\" END GENERATED: command device hostname
 .TP
-.BI "device vendor " "name " [ cisco | juniper | wti | other " | " "\-\-from\-device " [ \-y ] ]
+.BI "device vendor " "name " [ cisco | juniper | wti | other " | " "\-\-from\-device " [ \-\-yes ] ]
 Show or set the vendor;
 .B clear
 sets
@@ -9046,7 +9238,7 @@ with the credentials of its scope, as
 does), shows it beside the registered one and sets it after a
 .B y
 at a terminal, or with
-.BR \-y ", " \-\-yes ;
+.B \-\-yes ;
 without either it is refused. A read that names no vendor, no answer and SNMP
 not set up are refused with the reason and change nothing. The set is the
 setter's: a device that stops being Cisco loses its configuration syntax, one
@@ -9070,7 +9262,7 @@ Options:
 \fB\-\-from\-device\fR
 (location, vendor) Read the location (SNMP sysLocation) or the vendor (sysObjectID and sysDescr) from the device and store it.
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device vendor
@@ -9109,7 +9301,7 @@ Options:
 .RE
 .\" END GENERATED: command device description
 .TP
-.BI "device location " "name " [ text | clear " [" \-\-apply "] | " "\-\-from\-device " [ \-y ] ]
+.BI "device location " "name " [ text | clear " [" \-\-apply "] | " "\-\-from\-device " [ \-\-yes ] ]
 Show, set or clear the place of the device (up to 120 characters, no control
 characters, no
 .BR ? ),
@@ -9133,7 +9325,7 @@ and change nothing. When the registry holds a different location, both are
 shown and the device's replaces it after a
 .B y
 at a terminal, or with
-.BR \-y ", " \-\-yes ;
+.B \-\-yes ;
 without either it is refused. The name is the only argument.
 A setter that changes what is rendered says, when the stored pull would now
 change, how to look at it (see
@@ -9153,7 +9345,7 @@ Options:
 \fB\-\-from\-device\fR
 (location, vendor) Read the location (SNMP sysLocation) or the vendor (sysObjectID and sysDescr) from the device and store it.
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .TP
 \fB\-\-apply\fR
@@ -9317,6 +9509,39 @@ Options:
 .RE
 .\" END GENERATED: command device netconf
 .TP
+.BI "device timeout\-scale " name " [ " n " | clear ]"
+The timing scale of one registered device: a whole number from 1 to 10 that
+multiplies every network timing used to reach it, for a device behind a long
+round trip or with a slow CPU (see
+.B "scope timeout\-scale"
+for what it multiplies, and for the order: the device's own, its scope's, the
+server's, 1).
+.I n
+sets the device's own scale and
+.B clear
+removes it, so its scope's applies again. With no value the verb prints the scale
+in force and where it comes from. The value is the device's
+.B timeout_scale
+key in
+.IR devices.yaml ,
+written only when set; an enrolled Linux host has none, its scope's applies.
+.B "device show"
+has a
+.B "Timeout scale"
+row and
+.B \-\-json
+a
+.B timeout_scale
+object (the scale and where it comes from), when the scale in force is not 1.
+Tab completion offers the devices of the caller's scopes. The verb is the
+superuser's.
+.\" BEGIN GENERATED: command device timeout-scale
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command device timeout-scale
+.TP
 .BI "device snmp " "name " "[ show [ \-\-reveal ] | version v2c|v3 | port " n " | timeout " seconds " | clients { list | add | remove } " "[ cidr [ , cidr ...]] | community [ \-\-stdin ] | v3\-user " "user [ \-\-stdin ] | clear ]"
 The SNMP settings of one registered device, over its scope's and the default's:
 one setting at a time, the device's value, then its scope's, then the default's,
@@ -9417,7 +9642,7 @@ Options:
 .RE
 .\" END GENERATED: command device snmp
 .TP
-.BI "device block " "name " "{ list | show " "block " "[ \-\-effective ] [ \-\-reveal ] | check " "block " "[ \-\-file " "path " "| \- ] [ \-\-against ] | set " "block " "{ \-\-file " "path " "| \- } [ \-y ] | remove " "block " "[ \-y ] | edit " "block " "[ \-y ] | adopt " "block " "[ \-y ] }"
+.BI "device block " "name " "{ list | show " "block " "[ \-\-effective ] [ \-\-reveal ] | check " "block " "[ \-\-file " "path " "| \- ] [ \-\-against ] | set " "block " "{ \-\-file " "path " "| \- } [ \-\-yes ] | remove " "block " "[ \-\-yes ] | edit " "block " "[ \-\-yes ] | adopt " "block " "[ \-\-yes ] }"
 One registered Junos or IOS device's own configuration blocks, laid over its scope's
 (see
 .BR "Per\-scope configuration blocks" ):
@@ -9477,7 +9702,7 @@ The block as rendered for the device, with the layer of each object.
 \fB\-\-against\fR
 Plan the device with this text in force and print the statements of its section (from its last pull; nothing is written and no device is reached).
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (set, remove, edit, adopt) Answer yes to the question (a block read from standard input needs it).
 .RE
 .\" END GENERATED: command device block
@@ -9543,7 +9768,7 @@ The acknowledged notices too.
 .RE
 .\" END GENERATED: command device notice
 .TP
-.BI "device import " "[ \-\-check ] [ \-\-replace ] [ \-\-allow\-generic ] [ \-y ] " "file|\-"
+.BI "device import " "[ \-\-check ] [ \-\-replace ] [ \-\-allow\-generic ] [ \-\-yes ] " "file|\-"
 Import devices from CSV
 .RB ( name,address[,vendor[,port[,description]]] ;
 blank lines, lines starting with
@@ -9567,7 +9792,7 @@ leaves the registered configuration syntax alone; a changed address
 drops the pinned host keys); the rest stay. With
 .B \-\-replace
 the registry becomes exactly the file, after confirmation (\c
-.B \-y
+.B \-\-yes
 skips it), and the devices it removes lose their configuration records and SNMP
 credentials, as with
 .BR remove .
@@ -9593,7 +9818,7 @@ Replace the registry instead of merging into it.
 \fB\-\-allow\-generic\fR
 (add, rename, import) Allow a generic name such as 'switch'.
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device import
@@ -9618,7 +9843,7 @@ Print CSV instead of YAML.
 .RE
 .\" END GENERATED: command device export
 .TP
-.BI "device hostkey " name " [ show | accept [ \-y ] | set SHA256:" fingerprint " ]"
+.BI "device hostkey " name " [ show | accept [ \-\-yes ] | set SHA256:" fingerprint " ]"
 The pinned ssh host keys of a device or an enrolled host, and the only way to
 change them. With no action (or
 .BR show )
@@ -9627,7 +9852,7 @@ console command that shows them on the device.
 .B accept
 reads the keys the device offers now, prints them beside the pinned ones, and
 pins them all after confirmation (\c
-.B \-y
+.B \-\-yes
 skips it; a closed stdin cancels): run it only after comparing them with the
 device console.
 .BI "set SHA256:" fingerprint
@@ -9641,7 +9866,7 @@ Requires: \fBengineer\fR.
 .PP
 Options:
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (remove, import, hostkey, location, vendor, address) Answer yes to the confirmation.
 .RE
 .\" END GENERATED: command device hostkey
@@ -10360,6 +10585,9 @@ Per device, connect included (10\-600; default device.config.timeout).
 \fB\-\-max\-failures\fR \fI<n>\fR
 Stop starting devices after n failures.
 .TP
+\fB\-\-timing\fR
+After the summary, print how long each phase took for each device (connect, login, session, read, compare, record: a phase the device did not reach is left out; one that failed shows the time it was in) and its total, then the slowest device. With \-\-json each device's object has a "timings" object (the steps in order with their milliseconds, and the total) and the summary object names the slowest device. Nothing is stored.
+.TP
 \fB\-\-server\fR \fI<address|name>\fR
 The address the devices are told to authenticate against, for devices behind a translating firewall (not stored).
 .TP
@@ -10577,6 +10805,9 @@ Per device, connect included (10\-600; default device.config.timeout).
 .TP
 \fB\-\-max\-failures\fR \fI<n>\fR
 Stop starting devices after n failures.
+.TP
+\fB\-\-timing\fR
+With \-\-pull: after the summary, print how long each phase of the pull took for each device, as 'device config pull \-\-timing' does; with \-\-json each device's object has the "timings" object, and the slowest device's says so ("slowest": true).
 .TP
 \fB\-\-server\fR \fI<address|name>\fR
 The address the devices are told to authenticate against (with \-\-pull; not stored).
@@ -11259,6 +11490,9 @@ Per device, connect included (10\-600; default device.config.timeout).
 \fB\-\-max\-failures\fR \fI<n>\fR
 Stop starting devices after n failures.
 .TP
+\fB\-\-timing\fR
+With \-\-pull: print how long each phase of the pull took for each device, as 'device config pull \-\-timing' does, on standard error (with \-\-json one "timings" object there, with the devices and the slowest); standard output stays the plan.
+.TP
 \fB\-\-server\fR \fI<address|name>\fR
 The address the devices are told to authenticate against, for devices behind a translating firewall (not stored).
 .TP
@@ -11312,7 +11546,7 @@ Exit 2 when a device needs a change (and none could not be planned).
 .RE
 .\" END GENERATED: command device config plan
 .TP
-.BI "device config apply " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor juniper | \-\-stale | \-\-differs | \-\-name " text " | \-\-ip " addr|cidr|text " [ \-\-check ] [ \-\-confirmed ] [ \-\-max " n " ] [ \-\-pause " seconds " ] [ \-\-hold ] [ \-\-no\-canary ] [ \-\-section " list " ] [ \-\-pull ] [ \-\-transport " auto | cli | netconf " ] [ \-\-concurrency " n " ] [ \-\-timeout " seconds " ] [ \-\-max\-failures " n " ] [ \-\-server " address " ] [ \-\-source " address " ] [ \-\-exit\-code ] [ \-\-json ] [ \-y ]"
+.BI "device config apply " "name[,name...] | \-\-all | \-\-scope " scope " | \-\-vendor juniper | \-\-stale | \-\-differs | \-\-name " text " | \-\-ip " addr|cidr|text " [ \-\-check ] [ \-\-confirmed ] [ \-\-max " n " ] [ \-\-pause " seconds " ] [ \-\-hold ] [ \-\-no\-canary ] [ \-\-section " list " ] [ \-\-pull ] [ \-\-transport " auto | cli | netconf " ] [ \-\-concurrency " n " ] [ \-\-timeout " seconds " ] [ \-\-max\-failures " n " ] [ \-\-server " address " ] [ \-\-source " address " ] [ \-\-exit\-code ] [ \-\-json ] [ \-\-yes ]"
 Write the plan to Junos devices: what
 .B "device config plan"
 would have a person paste, typed by tacctl, under a confirmed commit and
@@ -11399,7 +11633,24 @@ and the answers of
 .B "commit check"
 and of the commits must name exactly those, each with its own success; a member
 that is missing, unexpected or answers otherwise fails the step, and the error
-names the member and its text. A chassis of one member answers like a single
+names the member and its text. The local (master) member of a virtual chassis
+answers without a label: its success comes first, the other members follow with
+their header
+.RB ( fpc1: ),
+and on a commit its
+.B "commit complete"
+is the last line, after theirs. It is read as the member the labelled blocks
+leave out (exactly one member of
+.B "show version"
+may lack a block), and held to rules like the others': its lines are the check
+(a commit leaves it out or prints it) and, on a confirmed commit only, the note,
+then
+.B "commit complete"
+last; a member's block is the check (optional on a commit),
+.B "commit complete"
+and, on a confirmed commit only, the note, which every member of a confirmed
+commit must print; each line once and in that order. A line that is none of
+these, a label twice and two members without a block fail the step. A chassis of one member answers like a single
 device:
 .B "show version"
 prints its header
@@ -11416,9 +11667,10 @@ more members that names no member is refused, because nothing proves the other
 members committed (a confirmed commit rolls back by itself), and the command
 line transport (the default) can be used; a chassis of one member is read like
 a single device, with no member element or one named by that member, and
-another name is refused. The shape of these replies over NETCONF, and the
-commits' replies of a chassis of several members on the command line, are
-inferred: no capture of them exists. A proof that fails cancels the commit
+another name is refused. The shape of these replies over NETCONF is inferred:
+no capture of it exists, nor of the commits' replies of a chassis in which every
+member has a label on the command line (the shape with an unlabelled master was
+captured from a real three-member chassis). A proof that fails cancels the commit
 .RB ( "rollback 1" ,
 .BR commit )
 and the device is
@@ -11523,9 +11775,9 @@ exit 2 when a device needs a change).
 applies only shapes an earlier apply confirmed and skips the others
 .RB ( "unknown shape <hash>: review and apply it by hand first" ),
 and is the one form
-.B \-y
+.B \-\-yes
 answers the review for (every device's question, with no terminal);
-.B \-y
+.B \-\-yes
 without it is refused (exit 2).
 .B \-\-max
 (default 5) caps the devices of every apply run. The first device of every shape is
@@ -11712,6 +11964,9 @@ Per device check, connect included (10\-600; default device.config.timeout); an 
 \fB\-\-max\-failures\fR \fI<n>\fR
 Stop starting devices after n failures (an apply: default 1).
 .TP
+\fB\-\-timing\fR
+After the summary, print how long each phase took for each device over the whole run (the pull of \-\-pull, the check and the apply: connect, login, session, preflight, read, load, check, commit, verify, confirm, record; a phase that was not reached is left out, and one that failed shows the time it was in) and its total, then the slowest device. With \-\-json each device's object of a phase has a "timings" object and the summary object names the slowest device. Nothing is stored.
+.TP
 \fB\-\-server\fR \fI<address|name>\fR
 The address the devices are told to authenticate against, for devices behind a translating firewall (not stored).
 .TP
@@ -11748,12 +12003,12 @@ One object per device and phase, then the summary; the review goes to standard e
 \fB\-\-exit\-code\fR
 With \-\-check: exit 2 when a device needs a change (and none failed).
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 Answer the review (only with \-\-confirmed: every shape is one an earlier apply confirmed; no terminal needed).
 .RE
 .\" END GENERATED: command device config apply
 .TP
-.BI "device config shapes " "[ list [ \-\-show " hash " ] [ \-\-json ] | seed " name "[," name "...] [ \-y ] ]"
+.BI "device config shapes " "[ list [ \-\-show " hash " ] [ \-\-json ] | seed " name "[," name "...] [ \-\-yes ] ]"
 The shapes of the changes
 .B "device config apply"
 has seen: two devices that need the same change have one shape, a hash of
@@ -11774,7 +12029,7 @@ prints one shape's statements. It contacts no device; the store is
 files the shape of each named device's last check or apply as confirmed on
 your word, for a device that was applied and verified by hand: it shows the
 shapes, asks once
-.RB ( \-y
+.RB ( \-\-yes
 answers it) and logs
 .BR "auth.notice device config shapes seed user= device= shape=" .
 It refuses a device with nothing checked.
@@ -11791,7 +12046,7 @@ Options:
 \fB\-\-json\fR
 (list) One object per shape: its state, devices, confirmations and the nearest confirmed shape.
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
+\fB\-\-yes\fR
 (seed) Answer the question: file the shapes as confirmed on your word.
 .RE
 .\" END GENERATED: command device config shapes
@@ -12282,7 +12537,7 @@ of the device is refused,
 moves the record to the new address (the registry and the record in one write,
 one render, one restart of each backend that changed; the new address passes
 the checks a new hold passes, and one question names both addresses unless
-.B \-y
+.B \-\-yes
 is given),
 .B "device rename"
 and
@@ -12549,6 +12804,76 @@ Options:
 .BI "emergency lockdown " scope
 The lockdowns that stand: scope, groups, since, how long, by whom, why, the users locked out, the superusers who keep access and the ways a device's local accounts stay usable. \fB\-\-json\fR prints an array with \fBlocked_users\fR and \fBexempt\fR.
 .SS Server settings \fB(tacctl server)\fR
+This server's own settings: an overview
+.RB ( "server show" ),
+the name the console shows for it
+.RB ( "server name" ),
+the addresses devices and hosts reach it at, where its backends listen
+.RB ( "server listen" )
+and the Prometheus exporter
+.RB ( "server metrics" ).
+The family is the superuser's alone (the tier table has no row for it).
+.TP
+.BI "server show [\-\-json]"
+Show this server in one place, and change nothing: the address devices and
+hosts reach it at (the setting, else the copy in this server's registry entry,
+as
+.B "server addresses"
+shows it), its name (the setting or the host name), the default method of
+.BR "host enroll" ,
+the Prometheus exporter (its address, whether it is enabled and whether it is
+reachable from this machine only), each backend with whether it is installed
+and enabled and the state of its service, and each listener with its network,
+address, port and the state of its unit.
+.B \-\-json
+prints the same as a document with \fBaddresses\fR, \fBaddress_source\fR
+(\fBsetting\fR, \fBregistry\fR or empty), \fBname\fR (\fBvalue\fR,
+\fBsource\fR: \fBsetting\fR or \fBhost name\fR), \fBdefault_method\fR, \fBmetrics\fR
+(\fBaddress\fR, \fBstate\fR, \fBreach\fR) and \fBbackends\fR (\fBid\fR,
+\fBprotocol\fR, \fBinstalled\fR, \fBenabled\fR, \fBservice\fR and
+\fBlisteners\fR with \fBname\fR, \fBnetwork\fR, \fBaddress\fR, \fBport\fR and
+\fBunit\fR).
+.\" BEGIN GENERATED: command server show
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-json\fR
+Print the overview as a JSON document.
+.RE
+.\" END GENERATED: command server show
+.TP
+.BI "server name [" label "|unset]"
+Show, set or remove the name of this server in the console: the prompt
+.RB ( "<name>> " )
+and the notices of a session (its banner, the header of
+.BR "device client\-config" )
+show it in place of the host name. With no word it shows the name in effect and
+whether it is the setting or the host name;
+.I label
+sets it and
+.B unset
+removes it. A name is 1 to 63 characters of lower\-case letters, digits and
+hyphens, a letter first and no hyphen last; upper case, a period, an
+underscore and a digit first are refused, and so is
+.B unset
+(the word that removes it). It is the setting
+.B server.name
+of
+.IR tacctl.yaml ;
+nothing else is renamed. A console session reads it once, when it starts.
+Only the superuser runs it, and a change writes
+.BI "server name from=" old " to=" new
+beside the command's own pair of lines.
+.\" BEGIN GENERATED: command server name
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command server name
+.PP
 The addresses devices and hosts reach this server at. The setting is
 .B server.addresses
 in
@@ -12614,6 +12939,127 @@ beside the command's own pair of lines.
 Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command server addresses
+.TP
+.B "server listen " "[ \-\-backend \fIid\fR ] [ \-\-listener \fIname\fR ] { show | tcp | tcp6 | udp | udp6 | reset } " [ address ]
+Show, change, or reset a listen address (default: the
+.B tacacs
+backend's listener
+.BR default ;
+the backend ids are listed by
+.BR "backend list" ).
+Stored in
+.I tacctl.yaml
+.RB ( listeners. \fIbackend\fB. \fIname\fR),
+from which tacctl renders the TACACS+ units' systemd drop-ins and the
+RADIUS
+.B listen
+sections.
+.B reset
+clears the override and falls back to the built-in default.
+A TACACS+ listener named with
+.BI \-\-listener " name"
+runs as its own unit
+.BI tacquito@ name .service
+with its own accounting log; for such a listener
+.B reset
+removes it. TACACS+ listeners take
+.B tcp
+or
+.BR tcp6 ;
+RADIUS ones
+.RB ( "\-\-backend radius" )
+take
+.B udp
+or
+.B udp6
+and are named: the built-in
+.B auth
+(udp :1812) and
+.B acct
+(udp :1813); a further name is an authentication listener. The unit is
+restarted and must stay up, or
+.I tacctl.yaml
+and the drop-ins are put back. A listener's
+.B tls
+block in
+.I tacctl.yaml
+is reserved:
+.B "tls.enabled: true"
+is rejected (TACACS+ over TLS is not implemented).
+.B
+Switching to tcp6
+prompts for confirmation because dual-stack sockets accept IPv4
+clients via mapped addresses
+.RB ( ::ffff:x.x.x.x )
+that silently bypass IPv4 prefix ACLs; see
+.B NOTES.
+.\" BEGIN GENERATED: command server listen
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-backend\fR \fI<id>\fR
+Act on another backend (tacctl backend list).
+.TP
+\fB\-\-listener\fR \fI<name>\fR
+Act on another listener than 'default' (reset removes it).
+.RE
+.\" END GENERATED: command server listen
+.TP
+.B "server metrics " "{ show | enable | disable | address " \fIhost:port\fR " | reset }"
+Control tacquito's prometheus HTTP exporter's listen address (TACACS+ only;
+FreeRADIUS has no exporter). Stored as
+.BR backends.tacacs.metrics_address .
+.B show
+(no arg) prints current state and address.
+.B enable
+clears the override and reverts to the unit default
+.RB ( 127.0.0.1:8080 ,
+loopback-only).
+.B disable
+sinks the exporter to
+.BR 127.0.0.1:0 ,
+an ephemeral loopback port that no scraper can discover (tacquito's
+.B -export-promhttp=false
+would stop the whole daemon, so it is not used).
+.B "address " \fIhost:port\fR
+binds explicitly (e.g.
+.B 10.1.0.1:8080
+to expose to external scrapers); non-loopback binds print a warning.
+.B reset
+clears the override and falls back to the unit default.
+.\" BEGIN GENERATED: command server metrics address
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command server metrics address
+.\" BEGIN GENERATED: command server metrics disable
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command server metrics disable
+.\" BEGIN GENERATED: command server metrics enable
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command server metrics enable
+.\" BEGIN GENERATED: command server metrics reset
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command server metrics reset
+.\" BEGIN GENERATED: command server metrics show
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command server metrics show
 .SS Login console \fB(tacctl console)\fR
 The login console
 .RB ( tacctl\-console )
@@ -13169,7 +13615,9 @@ tacctl is the console: the interactive shell
 .RB ( "tacctl shell" )
 with the prompt
 .IB host "> "
-(the server's short host name) and the banner
+(the server's short host name, or the name
+.B "server name"
+sets) and the banner
 .IR "tacctl\~console on host \(em type 'help'. Devices: device list. This session is logged." ,
 whose lines run as
 .PP
@@ -13351,7 +13799,7 @@ The server address, the authentication and accounting ports (the
 and
 .B acct
 listeners shown by
-.BR "config listen --backend radius show" )
+.BR "server listen --backend radius show" )
 and the scope's shared secret are filled in; the management ACL, the
 exec timeout, the scope's
 .B aaa-order
@@ -13625,8 +14073,8 @@ store rollback, uninstall, upgrade
 .B "mixed"
 config allow, config bcrypt\-cost, config branch, config cisco,
 config deny, config devices, config juniper, config linux,
-config listen, config loglevel, config metrics, config mgmt\-acl,
-config password\-age, config password\-min\-length, config render,
+config loglevel, config mgmt\-acl, config password\-age,
+config password\-min\-length, config render,
 config secret\-min\-length, config snmp, config validate, config wti,
 console agent\-forwarding, console color, console forwarding,
 console idle\-timeout, console list\-max, console password\-cache,
@@ -13635,13 +14083,15 @@ device block, device collect, device config, device description,
 device hostkey, device hostname, device import, device ios\-syntax,
 device legacy\-ssh, device location, device netconf, device onboard,
 device port, device snmp, device stale\-days, device sync,
-device vendor, group commands, group junos, group preset,
-group privilege, group reset, host default\-method, host provisioner,
-host target, scope aaa\-order, scope auth\-method, scope block,
-scope breakglass, scope default, scope devices, scope exec\-timeout,
-scope mgmt\-acl, scope netconf, scope prefixes, scope protocols,
-scope radius\-group, scope secret, scope snmp, scope staging,
-scope tacacs\-group, scope vendor\-attrs, user scope
+device timeout\-scale, device vendor, group commands, group junos,
+group preset, group privilege, group reset, host default\-method,
+host provisioner, host target, scope aaa\-order, scope auth\-method,
+scope block, scope breakglass, scope default, scope devices,
+scope exec\-timeout, scope mgmt\-acl, scope netconf, scope prefixes,
+scope protocols, scope radius\-group, scope secret, scope snmp,
+scope staging, scope tacacs\-group, scope timeout\-scale,
+scope vendor\-attrs, server listen, server metrics, server name,
+user scope
 .TP
 .B "mixed, auth.notice"
 config audit\-strict, config sudoers, console system\-shell, rollback,
@@ -13873,11 +14323,14 @@ scope, file. config linux script wrote a file that holds the scope's secret.
 .B "config allow, config deny, config mgmt\-acl"
 op (add, remove, clear, cisco\-name or juniper\-name), value.
 .TP
-.B "config password\-age, config bcrypt\-cost, config password\-min\-length, config secret\-min\-length, config loglevel, config metrics, config branch"
+.B "config password\-age, config bcrypt\-cost, config password\-min\-length, config secret\-min\-length, config loglevel, config branch, server metrics, server name"
 from, to.
 .TP
-.B "config listen"
+.B "server listen"
 backend, listener, from, to.
+.TP
+.B "server addresses"
+op (add or replace), address.
 .TP
 .B "config devices"
 key, from, to.
@@ -14370,8 +14823,8 @@ or
 print their own usage and return without side effects.
 Scalar getter/setters
 .RB ( "config loglevel" ,
-.BR "config listen" ,
-.BR "config metrics" ,
+.BR "server listen" ,
+.BR "server metrics" ,
 .BR "config password-age" ,
 .BR "config bcrypt-cost" ,
 .BR "config password-min-length" ,
@@ -14537,9 +14990,8 @@ restart nothing.
 .B Prompts
 Every confirmation prompt cancels, with a message, when standard input is
 closed.
-.B \-y
+.B \-\-yes
 (or
-.BR \-\-yes ,
 .B \-\-force
 where documented) answers yes.
 .TP
@@ -14579,7 +15031,7 @@ take a single argument;
 .IR --hosts ,
 .I --remove-home
 and
-.I -y
+.I --yes
 take none. Required positional arguments come before flags.
 .TP
 .B Audit lines
@@ -14615,7 +15067,7 @@ are
 .BI listeners. backend . name
 in
 .I tacctl.yaml
-.RB ( "config listen" ).
+.RB ( "server listen" ).
 The TACACS+ listener
 .B default
 (tcp :49; the port the device walkthroughs and the Linux host scripts name for TACACS+, and the pulls and plans compare, is its
@@ -14716,7 +15168,8 @@ and the services were not changed and to run the command again). Every write of
 .IR tacctl.yaml ,
 the store commands,
 .BR "config render" ,
-.BR "config listen|loglevel|metrics" ,
+.BR "config loglevel" ,
+.BR "server listen|metrics" ,
 the RADIUS listener changes,
 .BR "backend enable|disable" ,
 .BR "store import" ,
@@ -14973,7 +15426,7 @@ Log level of tacquito. Set with \fBtacctl config loglevel\fR.
 .TP
 .B backends.tacacs.metrics_address
 host:port. Default: 127.0.0.1:8080.
-Where tacquito's Prometheus exporter listens. Set with \fBtacctl config metrics address\fR.
+Where tacquito's Prometheus exporter listens. Set with \fBtacctl server metrics address\fR.
 .TP
 .B bcrypt.cost
 integer, 10 to 14. Default: 12.
@@ -15006,6 +15459,10 @@ Seconds one device may take in a pull, connect included. Set with \fBtacctl conf
 .B device.config.transport
 one of auto, netconf, ssh. Default: auto.
 How device config pull reads a device: NETCONF where it answers and the ssh command line otherwise (auto), NETCONF only, or ssh only. Set with \fBtacctl config devices transport\fR.
+.TP
+.B device.timeout_scale
+integer, 1 to 10. Default: 1.
+The timing scale of every device: a whole number from 1 to 10 that multiplies each network timing used to reach a device (the connect and handshake of the sessions, the host-key scans, the SNMP timeout up to its maximum, the per-device time of a pull or an apply within its bounds); a scope's and a device's own win. Set with \fBtacctl config devices timeout\-scale\fR.
 .TP
 .B host.default_method
 one of tacplus, radius. Default: tacplus.
@@ -15054,6 +15511,10 @@ Shortest shared secret an operator may type. Set with \fBtacctl config secret\-m
 .B server.addresses
 list of one IP address (not a host name, unspecified, loopback, link\-local, broadcast or IPv4\-mapped IPv6). Default: none (unset).
 The address devices and hosts reach this server at, a list that holds one address for now; the enrolment of this server and install record it (detected from the interface with the default route when none is recorded and none is given), and server addresses changes it. Set with \fBtacctl server addresses\fR.
+.TP
+.B server.name
+name of 1 to 63 characters in lower case (a letter, then letters, digits or hyphens, not ending in a hyphen); not unset. Default: none (unset).
+The name of this server in the console prompt and its notices, in place of the host name; unset: the host name. Set with \fBtacctl server name\fR.
 .TP
 .B snmp.port
 integer, 1 to 65535. Default: 161.
@@ -15125,7 +15586,7 @@ The mode of the scope's Junos management filter: strict accepts every protocol f
 .TP
 .B listeners.<backend>.<name>
 mapping with network, address, role, metrics_address, tls (tls is reserved). Default: tacacs.default is tcp :49; radius.auth is udp :1812; radius.acct is udp :1813.
-Where a backend's daemon listens; the built-in listeners can be changed and reset, not removed. Set with \fBtacctl config listen\fR.
+Where a backend's daemon listens; the built-in listeners can be changed and reset, not removed. Set with \fBtacctl server listen\fR.
 .TP
 .B junos.<group>.deny_commands
 list of regular expressions. Default: none (unset).
@@ -15226,6 +15687,10 @@ The connection limit of an enabled NETCONF service (1 to 250); unset: none state
 .B netconf_scope.<scope>.rate_limit
 integer, 1 to 250. Default: none (unset).
 The rate limit of an enabled NETCONF service (1 to 250); unset: none stated. Set with \fBtacctl scope netconf\fR.
+.TP
+.B timeout_scale_scope.<scope>
+integer, 1 to 10. Default: none (unset).
+The timing scale of the scope's devices, 1 to 10, in place of device.timeout_scale; a device's own wins. Set with \fBtacctl scope timeout\-scale\fR.
 .\" END GENERATED: config-keys
 .SS console.yaml
 .I /etc/tacctl/console.yaml
@@ -15325,8 +15790,39 @@ failed, rolled back or left pending (and a review that was not answered, and
 an apply that applied none of its devices and found none already applied:
 .B "\-\-confirmed \-\-yes"
 that skipped them all), a step of a lifecycle phase that failed. An unknown
-sub-command prints the
-usage of its family and ends with 1 as well. An unknown command
+sub-command prints on standard error one error line that names it
+.RB ( "[ERROR] Unknown subcommand: 'seed'" ),
+a
+.B Did you mean
+line with the sub-commands of that command it may have meant when something
+fits (within two letters of the word, or the commands that have it as a verb
+further down:
+.B "device config seed"
+names
+.BR "device config shapes seed" ;
+in the shell and the console only the commands the caller's tier can run)
+and a pointer
+.RB ( "Run 'tacctl <command> \-h' for usage." ),
+not the usage, and ends with 1 as well. No word,
+.B help
+and a word that starts with
+.B \-
+still print the usage of a command that has them
+.RB ( host
+has no
+.B help
+word). When the word is a sub-command of a
+command that has fixed sub-commands
+.RB ( "device config seed jr1" )
+it is answered before
+.B sudo
+runs, like an unknown command, so it asks for no password; a word that follows
+a name or a value
+.RB ( "scope secret lab shwo" ),
+a flag and its value, a verb of another family and a verb the tier cannot run
+are left to
+.BR sudo ,
+which asks first. An unknown command
 .RB ( "tacctl enroll" )
 prints on standard error one error line that names it, the commands it
 may have meant (the verbs of that name,
@@ -15541,7 +16037,7 @@ and
 .B \-h
 and
 .B \-\-help
-use one palette: command names bright white, sub-commands, fixed words and
+use one palette: command names, sub-commands, fixed words and
 options teal, live names (users, groups, devices, hosts) bold, descriptions
 plain. Styling appears only on a terminal, decided
 for standard output and standard error separately: a stream is styled when it is
@@ -16101,9 +16597,9 @@ Template unit, one instance per further listener.
 Systemd drop-in holding the listen address, log level, metrics address
 and accounting log of the unit. Rendered by tacctl from
 .I tacctl.yaml
-.RB ( "tacctl config listen" ,
+.RB ( "tacctl server listen" ,
 .BR "tacctl config loglevel" ,
-.BR "tacctl config metrics" );
+.BR "tacctl server metrics" );
 edits are overwritten. Instances have
 .IR tacquito@<name>.service.d/tacctl.conf .
 .TP
@@ -16225,15 +16721,15 @@ Enroll a Linux host with pam_radius_auth, then switch it to pam_tacplus:
 .TP
 Bind the listeners to a specific management IP:
 .nf
-.B "  tacctl config listen tcp 10.1.0.1:49"
-.B "  tacctl config listen --backend radius --listener auth udp 10.1.0.1:1812"
+.B "  tacctl server listen tcp 10.1.0.1:49"
+.B "  tacctl server listen --backend radius --listener auth udp 10.1.0.1:1812"
 .fi
 .TP
 Check, without writing anything, whether a tacquito.yaml can move into the store:
 .B tacctl store import --check
 .TP
 Expose the Prometheus exporter to an external scraper (default is loopback-only):
-.B tacctl config metrics address 10.1.0.1:8080
+.B tacctl server metrics address 10.1.0.1:8080
 .TP
 Enable passwordless invocation for members of the adm group:
 .B tacctl config sudoers install adm

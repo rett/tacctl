@@ -109,7 +109,10 @@ func groupCmd(inv *invocation) *cobra.Command {
 		cmds, priv, preset,
 	)
 	// No sub-command, help or an unknown word: the usage, exit 1.
-	c.RunE = n(func([]string) error {
+	c.RunE = n(func(args []string) error {
+		if sub := arg(args, 0); plainWord(sub) {
+			return inv.unknownSub(sub)
+		}
 		inv.write(groupUsage())
 		return exit(1)
 	})
@@ -615,9 +618,7 @@ func (inv *invocation) groupCommands(args []string) error {
 		return inv.groupSectionReset(sectionCommands, args[1:])
 	case "list", "default", "add", "remove":
 	default:
-		a.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-		inv.write(groupCommandsUsage(a.Paths.Overrides))
-		return exit(1)
+		return inv.unknownSub(sub)
 	}
 	group := arg(args, 1)
 	rest := args[min(2, len(args)):]
@@ -1061,9 +1062,7 @@ func (inv *invocation) groupPrivilege(args []string) error {
 		return inv.groupSectionReset(sectionPrivileges, args[1:])
 	case "list", "add", "remove":
 	default:
-		a.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-		inv.write(groupPrivilegeUsage())
-		return exit(1)
+		return inv.unknownSub(sub)
 	}
 	group, input := arg(args, 1), arg(args, 2)
 	if group == "" {

@@ -6,9 +6,10 @@
 
 These patterns apply across every subcommand family:
 
-- **No arguments** — dispatcher commands (`user`, `group`, `config`, `scope`, `host`, `device`, `console`, `backend`, `store`, `log`, `backup`, `hash`, and nested dispatchers like `scope prefixes` / `scope secret` / `scope aaa-order` / `scope exec-timeout` / `scope tacacs-group` / `scope radius-group` / `scope auth-method` / `scope vendor-attrs` / `scope devices` / `scope mgmt-acl` / `scope snmp` / `scope block` / `user scope` / `group privilege` / `config linux`) print their own usage and exit without side effects. Scalar getter/setters (`config loglevel`, `config listen`, `config metrics`, `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config branch`, `scope default`, `host default-method`, `device address|hostname|vendor|port|description|location|legacy-ssh|stale-days`, `console idle-timeout|agent-forwarding|ssh-escape`) print the current value when called with no arguments.
+- **No arguments** — dispatcher commands (`user`, `group`, `config`, `scope`, `host`, `device`, `console`, `backend`, `store`, `log`, `backup`, `hash`, and nested dispatchers like `scope prefixes` / `scope secret` / `scope aaa-order` / `scope exec-timeout` / `scope tacacs-group` / `scope radius-group` / `scope auth-method` / `scope vendor-attrs` / `scope devices` / `scope mgmt-acl` / `scope snmp` / `scope block` / `user scope` / `group privilege` / `config linux`) print their own usage and exit without side effects. Scalar getter/setters (`config loglevel`, `server listen`, `server metrics`, `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config branch`, `scope default`, `host default-method`, `device address|hostname|vendor|port|description|location|legacy-ssh|stale-days`, `console idle-timeout|agent-forwarding|ssh-escape`) print the current value when called with no arguments.
 - **Help** — `-h` or `--help` as the last word after the words of a command (`tacctl user --help`, `tacctl user add -h`, `tacctl device config pull --help`) prints the help of that command: the text `?` prints in [the shell and the console](shell.md), from the same code. A command with sub-commands lists each with its arguments and description; any other prints its usage lines, its options with their values and descriptions, and what comes next (`Next: <username> <group>`). It exits 0, runs as you (no `sudo`, no password) and lists no live names (`user show --help` is the usage of `show`, not the users). On a terminal the help is in colour; piped, with `NO_COLOR` set or with `TACCTL_COLOR=never` it is plain. No verb has a flag of its own named `-h` or `--help`. `tacctl --help` alone is the top-level usage (below), and the word is a value after `--` or as the value of a flag.
 - **Unknown command** — a first word that is no command (`tacctl enroll`) prints one error line naming it, the commands it may have meant (the verbs of that name, `device enroll` and `host enroll`, or a command within two letters of it, `devce` → `device`) and `Run 'tacctl' for the commands.` on standard error, and exits 1. It is answered before `sudo` runs, so it never asks for a password (typed on the command line, in `tacctl shell` or at the console). `tacctl`, `tacctl help`, `-h` and `--help` print the top-level usage and exit 1.
+- **Unknown sub-command** — a word below the first that is none of the sub-commands of its command (`tacctl device config seed jr1`; `tacctl user lst`; `tacctl scope secret lab shwo`, where the verbs come after a name) prints on standard error one error line naming it, the commands it may have meant, and `Run 'tacctl <command> -h' for usage.`, and exits 1; the usage page is not printed. The hint names the sub-commands of that command within two letters of the word (`lst` → `tacctl scope list`), or, when the word is a verb further down, the commands that have it (`seed` → `tacctl device config shapes seed`); in `tacctl shell` and the console only the commands the tier can run. It is answered before `sudo` runs, like an unknown command, so it asks for no password (on the command line, in `tacctl shell` or at the console), when the word is a sub-command of a command that has fixed sub-commands (`tacctl device config seed jr1`, `tacctl user lst`): `tacctl` walks the command tree with the words typed and stops at the first command with sub-commands that is given a word that is none of them. A word that follows a name or a value (`tacctl scope secret lab shwo`: `lab` is a scope), a flag and its value, a verb of another family and a verb the tier cannot run are left to `sudo`, which asks for the password first; the command then answers as above, or the tier check refuses. No word, `help`, `-h` and `--help` still print the usage of the command where it has them (`host` has no `help` word: it is an unknown sub-command like any other).
 - **Filters and opt-ins** — a setting that narrows something down is a *filter*: its verbs are `set` and `clear`, and empty (cleared) means everything (`scope protocols`, `config allow`, `config deny`). A setting that turns something on is an *opt-in*: its verbs are `enable` and `disable`, and nothing is on until it is enabled (`backend enable|disable`, `scope vendor-attrs`). An opt-in has no verb that could read as "empty means all".
 - **Membership lists** — a list that names exactly what is in is a *membership list*, and empty means nothing, not everything (`user scope`, the scopes a user can authenticate from: none means nowhere; `scope prefixes`, the clients a scope serves: emptying it removes the scope). Its verbs are `add` and `remove`: `remove --all` empties it, and `user scope` replaces its whole list with `replace`.
 - **Multi-item input** — every `add` / `remove` that takes a CIDR, a scope name, or a Cisco exec command accepts either a single value or a comma-separated list (`a,b,c`). Every input is validated first; a bad entry aborts the entire operation without writing anything.
@@ -16,14 +17,14 @@ These patterns apply across every subcommand family:
 - **Scope prefix invariants** — every CIDR belongs to **exactly one** scope after canonicalization. Adding a prefix already claimed by a different scope is rejected with a message naming the owner; you must `tacctl scope prefixes <owner> remove <cidr>` before re-adding it elsewhere. Overlapping prefixes *across* scopes are allowed and routed correctly (e.g. `10.5.0.0/16` in `staging` coexists with `10.0.0.0/8` in `lab`). In the rendered `tacquito.yaml` a scope with N prefixes becomes N `secrets:` entries sharing the same `name:` and `secret.key`, sorted globally by prefix specificity (v4 before v6, smaller broadcast first), so tacquito's slice-ordered walk picks the narrowest scope. The CLI shows the logical one-bundle-per-scope view.
 - **`clear` and `remove --all`** — `clear` and `remove --all` subcommands always prompt with `[y/N]` and print a warning describing the resulting posture (e.g. "no clients can connect" or "fails open"). Every prompt cancels, with a message, when standard input is closed.
 - **Service restart** — changes to the store, and to the `tacctl.yaml` settings a backend renders (command rules, listeners, `backends.*`), re-render every enabled backend and restart the ones whose files changed. Settings only device configs read (mgmt-acl permits + names, priv-exec mappings, per-scope AAA order, exec timeout, group labels) and tacctl's own tunables (bcrypt cost, password age, …) restart nothing.
-- **Flags** — long-form flags (`--hash`, `--scopes`, `--scope`, `--prefixes`, `--secret`, `--protocols`, `--vendor-attrs`, `--match`, `--action`, `--branch`, `--protocol`, `--method`, `--backend`, `--listener`, `--out`) take a single argument; `--default`, `--force`, `--legacy`, `--check`, `--replace`, `--json`, `--local`, `--all`, `--dry-run`, `--long`, `--apply`, `--hosts` and `-y`/`--yes` take none. Required positional args come before flags.
+- **Flags** — long-form flags (`--hash`, `--scopes`, `--scope`, `--prefixes`, `--secret`, `--protocols`, `--vendor-attrs`, `--match`, `--action`, `--branch`, `--protocol`, `--method`, `--backend`, `--listener`, `--out`) take a single argument; `--default`, `--force`, `--legacy`, `--check`, `--replace`, `--json`, `--local`, `--all`, `--dry-run`, `--long`, `--apply`, `--hosts` and `--yes` take none. Required positional args come before flags.
 
 ## Top-Level Commands
 
 ```
-tacctl install [--branch name] [--server ip] [-y|--yes]
+tacctl install [--branch name] [--server ip] [--yes]
 
-    Install tacctl and the TACACS+ backend from scratch (-y: no confirmation), and set up this
+    Install tacctl and the TACACS+ backend from scratch (--yes: no confirmation), and set up this
     machine's own login, so that every user can log in to the server and its console (--server:
     the address devices and hosts reach this server at); see install/installing.md
 
@@ -32,15 +33,15 @@ tacctl upgrade [--branch name]
     Pull latest source, rebuild, update system files and every enabled backend, and repair this
     machine's own login (set it up when it is asked for on a terminal); see install/upgrading.md
 
-tacctl uninstall [-y|--yes]
+tacctl uninstall [--yes]
 
-    Remove tacctl, its backends' services and all associated files (-y: no confirmation, keeps no
+    Remove tacctl, its backends' services and all associated files (--yes: no confirmation, keeps no
     archive)
 
 tacctl rollback <version> [--apply] [--yes] [--hosts]
 
-    Prepare the state for the release before this one (0.2.19), for 0.2.18, 0.2.17, 0.2.16,
-    0.2.9 or for 0.2.3: a dry run unless --apply; see install/upgrading.md, "Rolling back"
+    Prepare the state for the release before this one (0.2.21), for 0.2.20, 0.2.19, 0.2.18, 0.2.17,
+    0.2.16, 0.2.9 or for 0.2.3: a dry run unless --apply; see install/upgrading.md, "Rolling back"
 
 tacctl status
 
@@ -81,7 +82,7 @@ tacctl emergency <subcommand>
 
 tacctl server <subcommand>
 
-    This server's settings (addresses: where devices and hosts reach it); see server.md
+    This server's settings (show, name, addresses, listen, metrics); see server.md
 
 tacctl ssh <name|address> [-p port] [-X|-Y] [-g] [-L|-R|-D spec]... [-- ssh args]
 

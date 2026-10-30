@@ -32,7 +32,7 @@ func TestScopeBlockCiscoSystemVerbs(t *testing.T) {
 	}
 	noneOf(t, "check", out+sb.stderr(), banner, key, "Activity is logged")
 
-	out = sb.blk("", "lab", "cisco", "set", "system", "--file", f, "-y")
+	out = sb.blk("", "lab", "cisco", "set", "system", "--file", f, "--yes")
 	if sb.code != 0 || !strings.Contains(out, "The system block of scope 'lab' is set (") {
 		t.Fatalf("set: %d\n%s%s", sb.code, out, sb.stderr())
 	}
@@ -131,7 +131,7 @@ func TestScopeBlockCiscoSystemRefusals(t *testing.T) {
 			t.Errorf("%s: exit %d, no %q:\n%s", c.name, sb.code, c.want, out)
 		}
 		noneOf(t, c.name, out+sb.stderr(), "Hello-Bn3", "key-Bn3")
-		sb.blk("", "lab", "cisco", "set", "system", "--file", f, "-y")
+		sb.blk("", "lab", "cisco", "set", "system", "--file", f, "--yes")
 		if sb.code != 1 {
 			t.Errorf("%s: set accepted it", c.name)
 		}
@@ -149,10 +149,10 @@ func TestDeviceBlockCiscoSystem(t *testing.T) {
 	sb.scopeSNMP("lab-own-community\n", "lab", "community", "--stdin")
 	sb.dev("", "add", "rt1", "192.168.1.5", "--vendor", "cisco", "--no-host-key", "--no-lookup")
 	f := sb.blockFile("system.txt", ciscoSystemFile)
-	sb.blk("", "lab", "cisco", "set", "system", "--file", f, "-y")
+	sb.blk("", "lab", "cisco", "set", "system", "--file", f, "--yes")
 	sb.expect(0, "is set", "")
 	// the trap source: one interface for the scope
-	sb.blk("snmp-server trap-source Loopback0\n", "lab", "cisco", "set", "snmp", "-", "-y")
+	sb.blk("snmp-server trap-source Loopback0\n", "lab", "cisco", "set", "snmp", "-", "--yes")
 	sb.expect(0, "is set", "")
 
 	out := plain(sb.cfgRun("", []string{"config", "cisco", "--scope", "lab", "--name", "rt1"}, route))
@@ -169,7 +169,7 @@ func TestDeviceBlockCiscoSystem(t *testing.T) {
 	}
 	// the device's own: another banner, no name servers, another source
 	dev := "banner login <<'EOF'\nThe device's own.\nEOF\nno ip name-server\nntp server 192.0.2.77\n"
-	sb.dev(dev, "block", "rt1", "set", "system", "-", "-y")
+	sb.dev(dev, "block", "rt1", "set", "system", "-", "--yes")
 	sb.expect(0, "The system block of device 'rt1' is set", "")
 	out = plain(sb.cfgRun("", []string{"device", "block", "rt1", "show", "system", "--effective", "--reveal"}, route))
 	for _, want := range []string{"# from scope block lab cisco system", "# from device block rt1 system", "The device's own.", "ntp server 192.0.2.77", "ip domain name lab.example.net"} {
@@ -208,7 +208,7 @@ func TestBlockCiscoSystemCheckAgainstADevice(t *testing.T) {
 	f := b.sb.blockFile("c.txt", ciscoSystemFile)
 	// the device is read with the block in force (the pull reads the system
 	// section only where the scope has one), as a device that has none of it
-	b.run("scope", "block", "lab", "cisco", "set", "system", "--file", f, "-y")
+	b.run("scope", "block", "lab", "cisco", "set", "system", "--file", f, "--yes")
 	b.serve("cisco", strings.NewReplacer("banner login ^\nAuthorized use only, Zq41.\n\n! Activity is logged.\n^\n", "",
 		"ip domain name lab.example.net\n", "", "clock timezone CET 1\n", "").Replace(b.expected("lab-c")))
 	b.run("device", "config", "pull", "lab-c")
@@ -259,7 +259,7 @@ func TestCiscoSystemNTPVersion3InTheIOS12Syntax(t *testing.T) {
 	b := newPullBox(t)
 	b.cisco("lab-c", false)
 	f := b.sb.blockFile("c.txt", strings.Replace(ciscoSystemFile, "ntp server 192.0.2.123 key 5 prefer", typed, 1))
-	b.run("scope", "block", "lab", "cisco", "set", "system", "--file", f, "-y")
+	b.run("scope", "block", "lab", "cisco", "set", "system", "--file", f, "--yes")
 	if b.sb.code != 0 {
 		t.Fatalf("set: %d %s", b.sb.code, b.sb.stderr())
 	}
@@ -407,7 +407,7 @@ func TestTrapSourceThroughTheVerbs(t *testing.T) {
 	sb.blk("set snmp trap-options source-address nms.example.net\n", "lab", "juniper", "check", "snmp", "-")
 	sb.expect(1, "is not an address", "")
 	// set and show: not a secret, shown as it is
-	sb.blk("snmp-server trap-source Loopback0\n", "lab", "cisco", "set", "snmp", "-", "-y")
+	sb.blk("snmp-server trap-source Loopback0\n", "lab", "cisco", "set", "snmp", "-", "--yes")
 	sb.expect(0, "is set", "")
 	out = sb.blk("", "lab", "cisco", "show", "snmp")
 	if sb.code != 0 || !strings.Contains(out, "snmp-server trap-source Loopback0\n") {
@@ -434,7 +434,7 @@ func TestScopeBlockCiscoVRFForms(t *testing.T) {
 			t.Errorf("check lacks %q (exit %d):\n%s", want, sb.code, out)
 		}
 	}
-	sb.blk("", "lab", "cisco", "set", "system", "--file", f, "-y")
+	sb.blk("", "lab", "cisco", "set", "system", "--file", f, "--yes")
 	sb.expect(0, "is set", "")
 	out = sb.blk("", "lab", "cisco", "show", "system")
 	for _, want := range []string{"ip domain name vrf MGMT mgmt.example.net\n", "ip domain list vrf MGMT mgmt.example.net\n",
@@ -454,7 +454,7 @@ func TestScopeBlockCiscoVRFForms(t *testing.T) {
 		t.Errorf("check snmp (exit %d):\n%s", sb.code, out)
 	}
 	noneOf(t, "check snmp", out+sb.stderr(), "host-secret-Kq7")
-	sb.blk("", "lab", "cisco", "set", "snmp", "--file", f, "-y")
+	sb.blk("", "lab", "cisco", "set", "snmp", "--file", f, "--yes")
 	sb.expect(0, "is set", "")
 	out = sb.blk("", "lab", "cisco", "show", "snmp")
 	for _, want := range []string{"snmp-server host 192.0.2.61 vrf MGMT version 2c <secret:1>\n", "snmp-server host 192.0.2.62 informs version 2c <secret:1>\n",

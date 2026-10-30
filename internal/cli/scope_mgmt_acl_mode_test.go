@@ -111,9 +111,9 @@ func TestScopeMgmtACLModeRefusals(t *testing.T) {
 	if sb.overrides() != before {
 		t.Errorf("a refused call wrote tacctl.yaml:\n%s", sb.overrides())
 	}
-	// the unknown-subcommand answer names the verb
+	// the unknown-subcommand answer points at the help of the command
 	sb.run("", []string{"scope", "mgmt-acl", "lab", "frob"})
-	if !strings.Contains(sb.stderr(), "Use: list | add | remove | clear | cisco-name | juniper-name | mode.") {
+	if !strings.Contains(sb.stderr(), "Unknown subcommand: 'frob'\nRun 'tacctl scope mgmt-acl -h' for usage.") {
 		t.Errorf("unknown subcommand: %q", sb.stderr())
 	}
 	// a mode that is no mode in the file is reported by 'config validate'

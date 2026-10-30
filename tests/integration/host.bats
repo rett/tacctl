@@ -12,6 +12,9 @@ load ../helpers/fixtures
 
 bats_require_minimum_version 1.5.0
 
+# _plain strips the colour sequences from the output of the last run.
+_plain() { output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output"); }
+
 HASH="24326224313024616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161"
 
 setup() {
@@ -222,6 +225,26 @@ _own_scope() {
     if stub_called '^ssh '; then stub_calls; return 1; fi
 }
 
+@test "host sync --concurrency: hosts at once print in the order typed, a failure is counted, a bad number is refused" {
+    "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab > /dev/null
+    "$TACCTL_BIN_SCRIPT" host enroll web2 --scope lab > /dev/null
+    : > "$CALLS_LOG"
+    run "$TACCTL_BIN_SCRIPT" host sync web2 web1 --concurrency 2
+    assert_success
+    [[ "$output" == *"web2: synced"*"web1: synced"* ]]
+    [[ "$(grep -c 'rm -f /tmp/tacctl.AbCd1234' "$CALLS_LOG")" -eq 2 ]]
+    stub_called "ssh .*BatchMode=yes .*rm -f /tmp/tacctl.AbCd1234"
+    SSH_RUN_FAILS=1 run "$TACCTL_BIN_SCRIPT" host sync web1 web2 --concurrency=2
+    assert_failure
+    assert_output --partial "web1: sync failed"
+    assert_output --partial "web2: sync failed"
+    : > "$CALLS_LOG"
+    run "$TACCTL_BIN_SCRIPT" host sync web1 --concurrency 0
+    assert_failure
+    assert_output --partial "--concurrency takes a number of hosts, 1 or more: '0'"
+    if stub_called '^ssh '; then stub_calls; return 1; fi
+}
+
 @test "host enroll/sync: --allow-uid-mismatch is passed through to the host" {
     run "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab --allow-uid-mismatch
     assert_success
@@ -351,7 +374,7 @@ on_tty() {
     "$TACCTL_BIN_SCRIPT" user add bob readonly --hash "$HASH" --scopes lab > /dev/null
     "$TACCTL_BIN_SCRIPT" user disable bob > /dev/null
     run "$TACCTL_BIN_SCRIPT" host list
-    assert_line --regexp "web1 +web1 +[^ ]+ +lab +192\.0\.2\.1 +tacplus +1$"
+    assert_line --regexp "web1 +web1 +[^ ]+ +lab +[a-z]+ +.* +192\.0\.2\.1 +tacplus +1 +-$"
 }
 
 @test "host sync: unknown host is an error" {
@@ -598,7 +621,7 @@ on_tty() {
     "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab > /dev/null
     run "$TACCTL_BIN_SCRIPT" host list
     assert_success
-    assert_line --regexp "web1 +web1 +[^ ]+ +lab +192\.0\.2\.1 +tacplus +1"
+    assert_line --regexp "web1 +web1 +[^ ]+ +lab +[a-z]+ +.* +192\.0\.2\.1 +tacplus +1 +-$"
 }
 
 @test "host list --json: a JSON array of the hosts, with the recorded address; [] for none" {
@@ -619,7 +642,35 @@ on_tty() {
     assert_output "old1  tacplus"
     run "$TACCTL_BIN_SCRIPT" host list --bogus
     assert_failure
-    assert_output --partial "Usage: tacctl host list [--json]"
+    assert_output --partial "Usage: tacctl host list [--name <text>] [--ip <addr|cidr|text>] [--scope <scope>] [--stale] [--json]"
+}
+
+@test "host list: STATE, LAST SEEN, BY and NOTICES, and --name, --ip, --scope and --stale narrow it" {
+    "$TACCTL_BIN_SCRIPT" host enroll web1 --scope lab > /dev/null
+    echo "ubuntu|admin@old1||lab|192.0.2.1|" >> "${TACCTL_STATE_DIR}/linux-hosts"
+    run "$TACCTL_BIN_SCRIPT" host list
+    _plain
+    assert_success
+    assert_line --regexp "NAME +TARGET +ADDRESS +SCOPE +STATE +LAST SEEN +BY +SERVER +METHOD +USERS +NOTICES"
+    assert_line --regexp "ubuntu +.* configured +.* generic-name$"
+    assert_output --partial "Enrolled Linux hosts (2)"
+    assert_output --partial "seen data: none (tacctl device scan)"
+    assert_output --partial "1 open notice(s): tacctl device notice list"
+    run "$TACCTL_BIN_SCRIPT" host list --name WEB --scope lab
+    _plain
+    assert_success
+    assert_output --partial "Enrolled Linux hosts (1), of 2"
+    refute_output --partial "ubuntu"
+    run "$TACCTL_BIN_SCRIPT" host list --scope prod,none
+    _plain
+    assert_success
+    assert_output --partial "None match."
+    run "$TACCTL_BIN_SCRIPT" host list --stale --json
+    assert_success
+    assert_output "[]"
+    run "$TACCTL_BIN_SCRIPT" host list --json
+    run jq -r 'map(.name + ":" + .state + ":" + (.notices | length | tostring)) | join(",")' <<< "$output"
+    assert_output "web1:configured:0,ubuntu:configured:1"
 }
 
 @test "host: is superuser-only" {
@@ -948,8 +999,8 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
     assert_line "TAC_PORT=49"
 
     run "$TACCTL_BIN_SCRIPT" host list
-    assert_line --regexp "web1 +web1 +[^ ]+ +lab +192\.0\.2\.1 +radius +1$"
-    assert_line --regexp "web2 +web2 +[^ ]+ +lab +192\.0\.2\.1 +tacplus +1$"
+    assert_line --regexp "web1 +web1 +[^ ]+ +lab +[a-z]+ +.* +192\.0\.2\.1 +radius +1 +-$"
+    assert_line --regexp "web2 +web2 +[^ ]+ +lab +[a-z]+ +.* +192\.0\.2\.1 +tacplus +1 +-$"
 
     run "$TACCTL_BIN_SCRIPT" host unenroll web1
     assert_success
@@ -962,7 +1013,7 @@ _protocols() { "$TACCTL_BIN_SCRIPT" scope protocols "$1" | sed -n "s/.*Scope '$1
 @test "host: a six-field registry line is a tacplus host" {
     echo "old1|admin@old1||lab|192.0.2.1|" > "${TACCTL_STATE_DIR}/linux-hosts"
     run "$TACCTL_BIN_SCRIPT" host list
-    assert_line --regexp "old1 +admin@old1 +- +lab +192\.0\.2\.1 +tacplus +1$"
+    assert_line --regexp "old1 +admin@old1 +- +lab +[a-z]+ +.* +192\.0\.2\.1 +tacplus +1 +-$"
     run "$TACCTL_BIN_SCRIPT" host sync old1
     assert_success
     run cat "$PUSHED"
@@ -1301,6 +1352,29 @@ _container_ssh() {
     run "$TACCTL_BIN_SCRIPT" host check web1 ghost
     assert_failure 1
     assert_output --partial "No enrolled host named 'ghost'"
+}
+
+@test "host check --concurrency: the same report in the order typed, hosts reached without a terminal, a bad number refused" {
+    "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab > /dev/null
+    "$TACCTL_BIN_SCRIPT" host enroll admin@web2.example.net --scope lab > /dev/null
+    : > "$CALLS_LOG"
+    stub_cmd ssh 'case "$*" in
+        *web2.example.net*tacctl-check*) echo "sudo needs a password" >&2; false ;;
+        *tacctl-check*) printf "tacctl-check %s\n" "group tac-users 80000" "group tac-superuser 1002" "group tac-engineer 80005" \
+            "account alice 80000 80000 700 /home/alice" "pam tacctl-auth a" "pam tacctl-account b" "pam tacctl-session c" \
+            "pam-written tacctl-auth a" "pam-written tacctl-account b" "pam-written tacctl-session c" "protocol 6" ;;
+        *) true ;;
+    esac'
+    run --separate-stderr "$TACCTL_BIN_SCRIPT" host check web2 web1 --concurrency 2
+    assert_failure 1
+    [[ "$output" == *"web2: could not be checked"*"web1: 2 differences:"* ]]
+    assert_line "2 hosts: 1 with differences, 1 not checked."
+    stub_called "ssh .*BatchMode=yes .*web1.example.net"
+    : > "$CALLS_LOG"
+    run "$TACCTL_BIN_SCRIPT" host check web1 --concurrency 0
+    assert_failure 1
+    assert_output --partial "--concurrency takes a number of hosts, 1 or more: '0'"
+    if stub_called '^ssh '; then stub_calls; return 1; fi
 }
 
 @test "host show --check: an engineer left in tac-superuser, the tac-engineer group, protocol 5" {

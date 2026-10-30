@@ -3,6 +3,448 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.22 (2026-10-29)
+
+1. **A device `ssh-keyscan` reads nothing from, but plain `ssh` reaches, gets
+   its host key read.** `device hostkey <name> accept|set`, `device add`,
+   `device onboard` and the host-key re-scan of `device scan` and `device
+   check` refused such a device with `(ssh-keyscan)` only. `ssh-keyscan` gives
+   up after 5 seconds and prints nothing for a server that is slow to greet,
+   and it prints nothing for a refused connection or an address nobody
+   answers at either; only a name that does not resolve produces a message
+   (`getaddrinfo <host>: Name or service not known`). When `ssh-keyscan` reads
+   no key and prints nothing, tacctl's own ssh client (no password sent) now
+   reads the keys once, without the one-type retry, as nothing shows the
+   device accepted a connection. Its TCP connect is bounded by 3 seconds and
+   its handshake by 10 as before, so a refused device costs nothing more,
+   and a filtered or powered-off address costs 3 seconds more per scan. The
+   keys are read one type after the other, so a device that is slow to greet
+   can take several seconds. A name that does not resolve costs one
+   `ssh-keyscan`. When the built-in client reads nothing either, the refusal
+   reads `(ssh-keyscan, and tacctl's own ssh client)`, with a line to see the
+   key by hand, `ssh-keyscan -T 30 [-p <port>] -t ed25519 <address>` (also
+   `-t ecdsa`, `-t rsa`), and the two ways to accept a key by its
+   fingerprint, `--host-key SHA256:<fp>` and `device hostkey <name> set
+   SHA256:<fp>`. A `legacy-ssh` device, a device that
+   answered, `device enroll` and `device collect` are scanned as before, and
+   so is the diagnosis `tacctl ssh` prints after an ssh that ended with 255.
+2. **A Junos virtual chassis whose master answers without a label is applied to.**
+   `device config apply` failed at the check on a virtual chassis with `a
+   line "configuration check succeeds" outside the members' answers`: the
+   local (master) member answers `commit check` and the commits without a
+   label, and only the other members get a header (`fpc1:`, `fpc2:`). The
+   master's success comes first, and on a commit its `commit complete` is the
+   last line, after the other members' blocks. tacctl now reads the lines no
+   label opens as the answer of the one member of `show version` that has no
+   block, and holds them to rules like the others': its lines are the check
+   (optional on a commit) and, on a confirmed commit only, the note, then
+   `commit complete` last; every other member's block is the check (optional
+   on a commit), `commit complete` and, on a confirmed commit only, the note,
+   which each member of a confirmed commit must print as the real chassis
+   does, so a confirmed commit without it is refused. A failing text, a
+   missing last line, an extra line, a label twice and two members without a
+   block still fail the step, and the error names the member and its line. A
+   single member, two routing engines, a cluster and a chassis in which every
+   member has a label are read as before.
+
+3. **User names are letters, digits, `_` and `-` again.** Since 0.2.21 every
+   user has an account on the tacctl server, and a name with a period cannot
+   be a Linux account name, so such a user could not be created properly or
+   change a password. `user add` and the new name of `user rename` refuse a
+   period with `Username must contain only letters, numbers, underscores and
+   hyphens (a period cannot be part of a Linux account name).` Device and host
+   names keep their periods (fully qualified names); group, scope and class
+   names never had them. A user already stored with a period (0.2.20 and
+   0.2.21 allowed it) stays readable: every store command still runs, and the
+   user can be shown, listed, disabled, moved, given scopes, removed and
+   renamed, so `user rename alice.smith alice-smith` is the way out. `passwd`,
+   `user passwd` and `user require-password-change` follow the new rule for
+   that user until it is renamed (a user that stands gets the line `rename it
+   first: tacctl user rename <name> <new-name>`), `config linux uid <user>`
+   prints its number if the ledger has one but `config linux uid <user> <uid>`
+   is refused, and `host sync` still skips it. `config validate` reports each
+   such user as an error with the ready command `tacctl user rename <name>
+   <new-name>` (also in `--json`, section `names`), and `config validate
+   --fix-names` does not offer one. `tacctl upgrade` refuses while the store
+   has one, listing each user with that command. Rename such a user before
+   upgrading from 0.2.20 or 0.2.21: the upgrade of those releases has already
+   replaced `tacctl` and the tacquito build when the new `tacctl` refuses (the
+   store, the configuration and the services are not changed, and the refusal
+   says so), and `tacctl upgrade` run again after the rename finishes it.
+   `tacctl rollback` keeps refusing them for every target but 0.2.21 and
+   0.2.20, which read them (a restored snapshot of 0.2.20 or 0.2.21 can bring
+   one back).
+   The refusal of a rename to a name with a period and its notes are gone, as
+   that name can no longer be made. The older entries of this file stay as
+   they were written.
+4. **The command names of the top-level list are teal.** The `?` list of the
+   shell and the console, Tab's columns, the `Usage:` rows and `-h` /
+   `--help` showed the command names (`device`, `user`, `scope`) in bright
+   white, while the sub-commands, fixed words and options were teal, so the
+   list at `tacctl>` looked unlike the one after a sub-command. Command
+   names, sub-commands, fixed words and options are now all teal, and the
+   live names (users, groups, devices, hosts) stay bold. The colour is
+   emitted where it was: on a terminal, off in a pipe, with `NO_COLOR` and
+   `TACCTL_COLOR=never`, and in the console as `console color` says.
+
+5. **`host list` shows what `device list` shows of a device.** Its table has
+   STATE after SCOPE (`configured` when the host's scope exists,
+   `unconfigured`, a `stale` mark, and `BREAK-GLASS` in place of both while the
+   host is held; the column used to be the last and appeared only while a
+   hold was in the caller's scopes), LAST SEEN and BY from the seen cache, and
+   NOTICES last; a line under
+   the table gives the age of the seen data (`seen data as of ...`) and how
+   many notices are open (`tacctl device notice list` lists them), and the
+   heading counts the hosts (`Enrolled Linux hosts (2), of 5` when narrowed).
+   The new options narrow the list as `device list`'s do: `--name <text>`,
+   `--ip <addr|cidr|text>` and `--scope <scope>` take one value or a comma
+   list, `--stale` keeps the hosts not seen for stale-days, and all must
+   match. ADDRESS is the address recorded at the last enroll or sync, else the
+   single address of the host's scope (a host never synced shows it now, where
+   it showed `-`), the address LAST SEEN is looked up by. An engineer's list
+   and counts hold the hosts of their own scopes only; this server's own
+   login still shows `-` as its scope and `--scope` never selects it.
+   `host list --json` has the new fields `state`, `seen` (as in `device list
+   --json`, absent when the address was never seen) and `notices`, and its
+   `address` follows the rule above; the fields it had are unchanged.
+
+6. **`device list` lists network devices only; the hosts are in `host list`.**
+   `device list` showed the registered devices and the enrolled Linux hosts
+   in one table (heading `Registered devices (n) and enrolled hosts (m)`, a
+   `linux` vendor), the tacctl server's own entry among them. It now lists
+   the registered devices alone, heading `Registered devices (n)`, in the
+   table and in `--json`, which loses the rows with `"source": "host"`. A
+   script that read the hosts from `device list` or `device list --json`
+   breaks and reads them from `host list` or `host list --json` (item 5: the
+   same fields and filters). `--vendor linux` is a vendor no device has,
+   like any other unknown name (it matches nothing), and there is no
+   `--hosts` option and no alias. The word, `--name`, `--ip`, `--scope` and
+   `--stale` no longer match a host, and the counts of the heading leave
+   them out. `device show`, `check`, `hostkey`, `notice` and the other verbs
+   that take a name still take a host's, and `device notice list` still lists
+   the hosts' notices; their behaviour does not change.
+
+7. **`device list --differs` lists the devices whose configuration differs.**
+   It keeps the devices whose last pull differs from what tacctl renders
+   now, computed from the pull records with no login, the way `device config
+   list --differs` does (one shared computation, so both name the same
+   devices): after a change of the store, `tacctl device list --differs` is
+   the list of devices to pull or plan. It is the operator tier's, like the
+   CONFIG column (a read-only user is refused, as for `--scan`), and an
+   engineer gets the devices of their own scopes. The CONFIG column then
+   says `differs`, and `device list --json` has `config: "differs"` and the
+   new field `differs_in`, the sections that differ (as `config list
+   --json`); without the option `device list` still reads the record only and
+   has no such field. `device list --stale` is still the devices not seen for
+   stale-days, where `device config list --stale` is the devices never read,
+   failed or differing. `--stale`, `--unconfigured` and `--differs` now count
+   as narrowing the list: the heading says `Registered devices (1), of 5` and
+   an empty result says `None match.` (it said `None. Register one with...`
+   for `--stale` and `--unconfigured` over a registry with devices). The usage
+   of `device list`, its Tab completion and the manual page show the option.
+
+8. **`--yes` has no `-y` shorthand.** `-y` looked out of place and was too
+   easy to type without thinking, so every command that took it takes `--yes`
+   only: `install`, `uninstall`, `backend enable|disable`, `log clear` (which
+   also takes `--force`), `config validate --fix-names`, `host enroll`, `host
+   move`, `host rename`, `host forget`, `scope block` and `device block`
+   (`set`, `remove`, `edit`, `adopt`), `device remove`, `device import`,
+   `device address`, `device vendor`, `device location`, `device hostkey
+   accept`, `device collect --register`, `device sync`, `device config apply`
+   (with `--confirmed`) and `device config shapes seed`. A script that passes
+   `-y` now fails with the usual refusal of an argument the command does not
+   know (`Unknown option: '-y'`, `Unknown argument: '-y'` or `Unknown flag:
+   '-y'`, with the usage line) and changes nothing: change `-y` to `--yes`.
+   `log clear -y` is refused the same way, as is any word but `--force` and
+   `--yes` (it was passed on and left the question asked). The usage lines,
+   `help`, the shell, the completion scripts, the manual page and the docs
+   name `--yes` only. The older entries of this file stay as they were
+   written.
+
+9. **`host sync --concurrency <n>` syncs several hosts at once.** `host sync`
+   took its hosts one after the other. `--concurrency <n>` (1 or more, the
+   default 1 is as before, byte for byte) runs n hosts side by side with the
+   runner `device config pull` uses. Each host's output is held and printed
+   whole in the order the hosts were typed, so lines never mix; the lines,
+   the final status (1 when a host failed, the others still run) are those of
+   a sequential run; each host's audit line is the same as in a sequential
+   run, written when that host ends. What the hosts write on the
+   server (the UID ledger, the host records, the device registry, the staging
+   addresses) is written one host at a time. Nothing is asked and no terminal
+   is used with more than one host at once: ssh runs in BatchMode (a key or the
+   agent; no password or passphrase) and the remote sudo is `sudo -n`, so the
+   login must be root or have passwordless sudo, and the questions about the
+   home directories of removed users are not asked. Those homes are kept, as
+   with no terminal, and the host says so after the line that names the
+   removed users (`web1: the home directories of removed users are kept, as no
+   questions are asked with --concurrency above 1: add --remove-home to delete
+   them, or sync web1 alone to be asked.`); `--remove-home` deletes them.
+   Registrations that share an ssh target and port are synced one after the
+   other, as they share one connection. Ctrl-C stops the run as it stops a
+   sequential one: no further host is started, the connections of the hosts
+   under way are ended and those hosts are reported, recorded and audited as
+   interrupted, not as script failures, and the hosts not started are named
+   (status 130). Nothing carries the interrupt to a script already running on
+   a host, as a terminal does in a sequential run, so that script may finish.
+   With one host `--concurrency` changes nothing. There is no `--timeout` and no
+   `--max-failures`: a time limit would cut a script off in the middle of its
+   account changes.
+10. **`host check --concurrency <n>` checks several hosts at once.** `host
+   check` read its hosts one after the other. `--concurrency <n>` (1 or more,
+   the default 1 is as before, byte for byte) reads n hosts side by side with
+   the runner `host sync --concurrency` uses. Each host's text, with what the
+   host prints on standard error, is held and printed whole in the order the
+   hosts were typed, a held host in its place, so the report, the `--json`
+   array, the count and the exit status (1 when a host differs or could not
+   be checked) are those of a sequential run. Nothing is asked and no terminal
+   is used with more than one host at once: the login runs in BatchMode (a key
+   or the agent; no password or passphrase) and the remote sudo is `sudo -n`,
+   so the login must be root or have passwordless sudo. Hosts that share an
+   ssh target and port are checked one after the other. Ctrl-C stops the run
+   as it stops a sequential one: no further host is started, the reads under
+   way are ended and give no result, and the hosts not started are named
+   (status 130). With one host `--concurrency` changes nothing. There is no `--timeout` and no `--max-failures`.
+
+11. **An unknown sub-command is one short answer, not the usage.** `tacctl
+   device config seed jr1` (`seed` belongs under `device config shapes`)
+   printed `[ERROR] Unknown subcommand: 'seed'` and then the whole usage page
+   of `device config`. Every command with sub-commands, and every verb that
+   takes a word after a name (`scope secret <scope> <verb>`), now answers a
+   word that is none of them on standard error with the error line, a `Did
+   you mean` line when something fits, and `Run 'tacctl <command> -h' for
+   usage.`, exits 1, and prints nothing on standard output:
+   ```
+   [ERROR] Unknown subcommand: 'seed'
+   Did you mean: tacctl device config shapes seed?
+   Run 'tacctl device config -h' for usage.
+   ```
+   The hint names the sub-commands of that command within two letters of the
+   word (`lst` → `tacctl scope list`, the rule of an unknown first word), or,
+   when the word is a verb further down the command, the commands that have it
+   (`seed` → `device config shapes seed`; `apply` below `device` →
+   `device config apply`); in `tacctl shell` and the console only the commands
+   the tier can run, and for a command run under `sudo` those of the caller's
+   tier. `user`, `group`, `config`, `backend`, `backup`, `log`, `store`,
+   `config allow|deny|linux|sudoers [tiers]` and `group preset` printed their
+   usage (or `Unknown store subcommand`, `Invalid subcommand ... Use: ...`)
+   for such a word and answer the same way now. Where they printed a
+   bare usage, a word that starts with `-` (a flag may come before the verb:
+   `log --backend tacacs tail`), `help` and no word keep printing it; `host`
+   has no `help` word, so `host help` is an unknown sub-command, as it was.
+   The refusal of `scope mgmt-acl` no longer repeats its verbs in the error
+   line (`tacctl scope mgmt-acl -h` lists them). The pointers `Run 'tacctl scope
+   prefixes <scope>' for usage.` and the like are the `-h` form (`tacctl scope
+   prefixes -h`).
+12. **An unknown sub-command of a command with fixed sub-commands no longer
+   asks for the sudo password first.** Only an unknown first word was
+   answered before `sudo` (0.2.19); `tacctl device config seed jr1` asked for
+   the password (`[sudo] password for ...`) and only then said `Unknown
+   subcommand`. `tacctl` now walks the command tree with the words typed, as
+   the user, before it runs `sudo`, and answers the first command with
+   sub-commands that is given a word that is none of them with the same short
+   answer as any unknown sub-command (error line, hint, pointer, exit 1), in
+   the plain command, in `tacctl shell` and at the console, with no password
+   asked and no process started. It looks at the fixed words of the tree only.
+   A word that follows a name or a value (`scope secret lab shwo`, `user scope
+   alice bogus`, `scope prefixes lab bogus`, `host provisioner web1 bogus
+   rotate`: a scope, a user and a host are root-only data), the words after a
+   command that has no sub-commands, a flag and its value, a verb of another
+   family (`device config shapes seed jr1` is not `device config seed`) and a
+   word that starts with `-` are left to `sudo` and the command, which ask for
+   the password and answer as before; so is a verb that exists but that the
+   caller's tier cannot run (the tier check says so). In a managed shell or
+   console, a mistyped line that `sudo` used to refuse is now reported as
+   `Unknown subcommand` instead of a tier denial. Nothing of tacctl's state is
+   read, so the hint of this answer cannot know the caller's tier outside
+   `tacctl shell` and the console, and may name a verb the tier cannot run;
+   the answer that comes after `sudo` is filtered.
+
+13. **`server show`: this server at a glance.** `tacctl server show [--json]`
+   prints the address devices and hosts reach this server at (the setting, else
+   the copy in this server's registry entry), the default method of `host
+   enroll`, the metrics exporter (address, enabled or disabled, loopback only or
+   externally reachable), each backend with whether it is installed and enabled
+   and the state of its service, and each listener of the installed or enabled
+   backends with its network, address, port and the state of its unit. It
+   changes nothing and writes no audit line. `--json` has the same data
+   (`addresses`, `address_source`, `default_method`, `metrics`, `backends` with
+   their `listeners`). Like the rest of the family it is the superuser's: the
+   tier table has no row for `server`, so the sudoers rules of the tiers are
+   unchanged.
+
+14. **`config listen` is `server listen`.** The listeners of the backends are
+   a setting of this server, and `tacctl server` is where its settings are:
+   `tacctl server listen [--backend <id>] [--listener <name>] [show|reset|<network>
+   <address>]` does what `config listen` did, with the same options, the same
+   confirmation for `tcp6` and `udp6`, the same restart of the unit and the same
+   stored keys (`listeners.<backend>.<name>` of `tacctl.yaml`). The old form is
+   gone, with no alias: `tacctl config listen ...` is answered as any word
+   `config` does not have (`Unknown subcommand: 'listen'`, the closest verbs,
+   `Run 'tacctl config -h' for usage.`, exit 1), so a script, a runbook or a
+   note that uses it must change to `server listen`. The log line of a change is `server listen backend=
+   listener= from= to=` (it was `config listen`), the command line in the
+   central audit lines is `server listen`, and the messages that name the
+   command (a listener that does not exist, a missing address, the install
+   plan's next steps) name the new one. The descriptions of `--listener` and
+   `--backend` are shorter.
+15. **`config metrics` is `server metrics`.** `tacctl server metrics
+   [show|enable|disable|reset|address <host:port>]` does what `config metrics`
+   did (the Prometheus exporter of the TACACS+ backend, stored as
+   `backends.tacacs.metrics_address`, unchanged). The old form is gone, with no
+   alias: `tacctl config metrics ...` is answered as any word `config` does not
+   have (`Unknown subcommand: 'metrics'`, the closest verbs, `Run 'tacctl
+   config -h' for usage.`, exit 1), so a script that uses it must change to
+   `server metrics`. The log line of a
+   change is `server metrics from= to=` (it was `config metrics`) and
+   `tacctl status` and the scrape hints name the new command. The tier table
+   has no row for `config listen`, `config metrics` or `server`: both are still
+   the superuser's, and the sudoers rules of the tiers are unchanged.
+
+16. **`server name`: the name the console shows for this server.** The
+   console's prompt (`<host>> `) and its notices (the banner of a session, `tacctl
+   console on <host>`, and the header of `device client-config`) showed the short
+   host name of the machine. `tacctl server name [<label>|unset]` sets another
+   name, recorded as the new setting `server.name` of `tacctl.yaml`; with no
+   word it shows the name in effect and whether it is the setting or the host
+   name, and `unset` removes it. A name is 1 to 63 lower-case letters, digits and
+   hyphens, a letter first and no hyphen last (upper case, a period, an
+   underscore and a digit first are refused; `unset` removes the name and cannot
+   be one; a bad value in the file is reported by `config validate`). Nothing else is renamed: the
+   host name, this server's entry in the host registry and the accounts stay.
+   The console reads the name once, when a session starts, from the root side
+   (`_console-policy` carries `name=<label>`; an older console ignores it).
+   `server show` has a `Name` line and `name` in `--json`. Only the superuser sets
+   it. An older release refuses the key, so `tacctl rollback` removes
+   `server.name` for every target.
+
+17. **`tacctl rollback 0.2.21`, the release before this one, is a target.**
+   0.2.21 reads every file this release writes but the new keys of
+   `tacctl.yaml`, `server.name` (`tacctl server name`) and the timing scale
+   (`device.timeout_scale`, `timeout_scale_scope.<scope>`), which its schema
+   refuses: its `config validate` says `unknown config key` and its `backup
+   restore` refuses a snapshot that has them, and the `timeout_scale` of a
+   device in `devices.yaml`, which its parser refuses. The new target removes
+   those keys after a snapshot and converts nothing else. It does not add the scope of this server's own login
+   to the users' scopes (0.2.21 has the login itself, which the older targets
+   need it for), and it is not refused for a user whose name has a period or for
+   an emergency lockdown (0.2.21 reads both); it needs no `--yes` (it has no
+   warning). The other targets (`0.2.20`, `0.2.19`, `0.2.18`, `0.2.17`,
+   `0.2.16`, `0.2.9`, `0.2.3`) remove `server.name` too, with `server.addresses`
+   and the other keys they removed before. Nothing else this release changes
+   needs a conversion for 0.2.21: the user name rule (0.2.21 reads a name with a
+   period as it reads any), the `server listen` and `server metrics` verbs (they
+   write the keys `config listen` and `config metrics` wrote, so 0.2.21's
+   scripts keep working against the same `tacctl.yaml`), the host-key scan, the
+   Junos virtual chassis apply and the checks of this release store nothing
+   0.2.21 would not read. The per-tier sudoers drop-in is the one 0.2.21
+   writes (the `server` family has no tier row), so no drop-in is rewritten.
+   `TestRollbackRealOldBinary0221` builds 0.2.21 from its tag and runs its
+   `config validate` before and after, its render, `user show` of a user with a
+   period, `server addresses` and `host list`.
+
+18. **The generated drop-in and the shipped unit comments name the current
+   commands.** The comment at the top of every rendered tacquito drop-in
+   (`tacquito.service.d/tacctl.conf`, `tacquito@<name>.service.d/tacctl.conf`)
+   and the comments of the shipped `tacquito.service` and `tacquito@.service`
+   said `tacctl config listen` and `tacctl config metrics`, which are
+   `tacctl server listen` and `tacctl server metrics` since item 14 and 15; they
+   say so now (`tacctl config loglevel` is unchanged). Nothing else in them
+   changes: the settings, the units and the other comments are as they were.
+   The text is part of the file, so the first render after the upgrade (the
+   upgrade's own, or the first `config render` or change of a listener,
+   `loglevel` or exporter) rewrites each drop-in, reloads systemd
+   (`daemon-reload`) and restarts tacquito once: a brief interruption of
+   TACACS+ (RADIUS is not touched). The upgrade itself restarts tacquito once
+   at its end for the changed unit files and drop-ins, as it does for any
+   changed unit or drop-in. A drop-in you edited by hand is saved aside
+   before it is replaced, as before.
+   After a rollback the older release's `config validate` reports the rendered
+   config out of date until its first render writes its own comment, which
+   restarts tacquito once; the rollback itself renders and restarts nothing.
+
+19. **A timing scale for slow or distant devices.** Every network timing
+   tacctl uses to reach a device was a constant or a global setting, which a
+   device behind a satellite circuit (a round trip of about 600 ms) or with a
+   slow CPU (one measured needs about 4 s for each ssh connection) can miss.
+   One whole number from 1 to 10, `timeout_scale`, now multiplies them all; 1,
+   the default, is every timing as it has always been, byte for byte.
+   `tacctl device timeout-scale <name> [<n>|clear]` sets a device's own,
+   `tacctl scope timeout-scale <scope> [<n>|clear]` a scope's, and `tacctl
+   config devices timeout-scale [<n>]` the default of the whole server
+   (`device.timeout_scale`). The scale in force is the device's own, else its
+   scope's, else the server's, else 1, the order of the NETCONF service
+   setting. With no value a verb prints the scale in force and where it comes
+   from (the device, the scope, the server or built in) and, above 1, what it
+   makes of each timing, with the SNMP maximum and the bounds of a pull's time
+   said. `clear` removes a device's or a scope's own. `device show` has a
+   `Timeout scale` row and `--json` a `timeout_scale` object (`scale` and
+   `from`), and `scope show` a row, when the scale in force is not 1. The
+   verbs are the superuser's, as the NETCONF service setting's are; an
+   engineer reads the scale in `device show` and `scope show`. A scope's
+   scale follows `scope rename` and goes with `scope remove`. The values are
+   `device.timeout_scale` and `timeout_scale_scope.<scope>` in `tacctl.yaml`
+   and the device's `timeout_scale` in `devices.yaml`, each written only when
+   set; `config validate` checks all three (a new `devices` finding reports a
+   `devices.yaml` that does not load). Older releases refuse the new keys, so
+   every `tacctl rollback` target removes them after a snapshot: the two
+   `tacctl.yaml` keys with the other keys it removes, and each device's
+   `timeout_scale` from `devices.yaml`, listed in the plan with a note (not a
+   warning: the older release connects with its fixed timings again) and
+   named in the command's last lines with the three verbs not to run until the
+   older release is installed. The plan of the rollback to 0.2.9 no longer
+   lists the keys other releases added (the server address and name) as
+   NETCONF settings in its warning.
+
+20. **The timing scale multiplies the host-key scans, the sessions, the SNMP
+   timeout and the per-device time of a pull.** At a scale above 1: the
+   connect and handshake budget of every ssh and NETCONF session to a device
+   (10 s: `device config pull`, `diff --pull`, `plan --pull`, `apply`,
+   `enroll`, `onboard`, `collect`, `support-bundle`) and the `ConnectTimeout`
+   of `tacctl ssh` (10 s); the host-key scans (ssh-keyscan's `-T` of 5 s and
+   3 s, and the built-in client's connect of 3 s, handshake of 10 s and
+   per-type attempt of 5 s), for `device add`, `hostkey`, `scan`, `check`,
+   `enroll`, `collect`, `onboard` and the diagnosis after a failed `ssh`; the
+   SNMP timeout (`snmp.timeout`, `scope snmp timeout`, `device snmp timeout`,
+   2 s by default), never above its maximum of 10 s, which the scale's read
+   says; and the per-device time of a pull or an apply
+   (`device.config.timeout`, 90 s by default), kept between 10 s and 600 s.
+   The confirmed-commit windows (`device.config.confirm_timeout`,
+   `device.apply.confirm_timeout`) are timers on the device and are never
+   scaled. An option typed on the command line wins over the scale:
+   `--timeout` of a pull or an apply is the time of every device of that run,
+   as typed; the scale replaces only the default, `device.config.timeout`. Where one run covers devices with different scales, each device has
+   the time its own scale gives.
+
+21. **`--timing` shows where the time of each device went.** `device config
+   pull`, `device config diff --pull`, `device config plan --pull` and
+   `device config apply` take `--timing`, for a run over many devices of which
+   some are slow (one may need seconds for the ssh connection alone). After the
+   summary it prints, per device, the phases it went through in order with
+   their time and its total, and names the slowest device:
+   ```
+     timing:
+       sw1   connect 4.0s  login 900ms  session 1.2s  read 2.1s  compare 40ms  record 12ms  total 8.3s
+       jsw1  connect 210ms  login 180ms  session 95ms  read 1.4s  compare 33ms  record 10ms  total 2.0s
+     slowest: sw1 (8.3s)
+   ```
+   The phases are `connect` (the TCP connect and the ssh key exchange up to
+   the device's pinned host key), `login` (the authentication), `session`
+   (opening the command line, NETCONF or terminal session), `read`, `compare`
+   and `record` for a pull, and, for an apply, `preflight`, `read`, `load`
+   (opening the candidate and loading the plan), `check`, `commit`, `verify`
+   (the fresh login and what it proves), `confirm` and `record`, the pull of
+   `--pull`, the check and the apply of a device added up. A phase the device
+   did not reach is absent, not zero (a pull has no `commit`); a device that
+   failed shows the phases it reached and, under the word of its status
+   (`failed`, `auth-failed`, `timeout`), the time it spent in the one it
+   failed in. With `--json` each device's line has a `timings` object (the
+   `steps` in order, each with its `ms`, and `total_ms`) and the summary line
+   has `timings.slowest` and `timings.slowest_ms`; `diff --pull --json`, which
+   prints the array of devices only, marks the slowest device's `timings` with
+   `"slowest": true`, and `plan --pull` prints the timing on standard error,
+   standard output staying the plan. Nothing is stored, no timeout changes,
+   and without the option every output is as it was.
+
 ## 0.2.21 (2026-10-28)
 
 1. **`user rename` to a name with a period says what to do.** The refusal of

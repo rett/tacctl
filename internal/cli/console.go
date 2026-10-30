@@ -169,9 +169,7 @@ func (inv *invocation) console(args []string) error {
 		if f, ok := run[sub]; ok {
 			return f(rest)
 		}
-		inv.app.Out.ErrorE("Unknown subcommand: '" + sub + "'")
-		inv.write(consoleUsage())
-		return exit(1)
+		return inv.unknownSub(sub)
 	}
 }
 
@@ -1098,10 +1096,16 @@ func (inv *invocation) consolePolicyLine([]string) error {
 			change = " password_change=yes"
 		}
 	}
+	// The name of this server (0.2.22, server name) when one is set: the
+	// console shows it in its prompt and banner; an older console ignores it.
+	serverName := ""
+	if n := a.Conf().ServerName(); n != "" {
+		serverName = " name=" + n
+	}
 	inv.echo("shell=" + shell + " idle=" + strconv.Itoa(pol.File.Idle) + " system_shell=" + yesNo(sys) +
 		" system_shell_path=" + path + " ssh_escape=" + yesNo(pol.SSHEscape()) + " agent=" + yesNo(pol.AgentForwarding()) +
 		" forward=" + yesNo(pol.Forwarding(t)) + " tier=" + string(t) + gateField + " list_max=" + strconv.Itoa(pol.ListMax()) +
-		" space_completion=" + yesNo(pol.SpaceCompletion()) + " color=" + pol.Color() + cache + change)
+		" space_completion=" + yesNo(pol.SpaceCompletion()) + " color=" + pol.Color() + cache + change + serverName)
 	return nil
 }
 

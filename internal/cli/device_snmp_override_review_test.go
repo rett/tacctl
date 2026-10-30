@@ -345,7 +345,7 @@ func TestEngineerImportCannotCopyAMapOntoADevice(t *testing.T) {
 	imp := func(replace bool, doc string) {
 		args := []string{"device", "import", "-"}
 		if replace {
-			args = append(args, "--replace", "-y")
+			args = append(args, "--replace", "--yes")
 		}
 		sb.asEngineer(doc, args...)
 	}
@@ -391,7 +391,7 @@ func TestImportReplaceForgetsTheConfigurationRecord(t *testing.T) {
 	if _, err := os.Stat(sections); err != nil {
 		t.Fatalf("no sections file: %v", err)
 	}
-	out := plain(b.sb.cfgRun("lab-j1,192.168.1.20,juniper\n", []string{"device", "import", "-", "--replace", "-y"}, route, "SUDO_USER=alice"))
+	out := plain(b.sb.cfgRun("lab-j1,192.168.1.20,juniper\n", []string{"device", "import", "-", "--replace", "--yes"}, route, "SUDO_USER=alice"))
 	if b.sb.code != 0 || !strings.Contains(out, "1 removed") {
 		t.Fatalf("import: %d %q %q", b.sb.code, out, b.sb.stderr())
 	}

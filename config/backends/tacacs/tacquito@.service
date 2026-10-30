@@ -8,7 +8,7 @@ Wants=network-online.target
 # every instance, and starting it starts the enabled ones (see [Install]).
 PartOf=tacquito.service
 # An instance exists only as a listener in tacctl.yaml
-# (tacctl config listen --listener %i ...), from which tacctl renders this
+# (tacctl server listen --listener %i ...), from which tacctl renders this
 # drop-in. Without it there is no address to listen on.
 AssertPathExists=/etc/systemd/system/tacquito@%i.service.d/tacctl.conf
 
