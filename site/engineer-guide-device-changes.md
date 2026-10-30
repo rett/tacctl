@@ -9,7 +9,7 @@ doctype: how-to
 
 # Engineer Guide: Device Changes
 
-*Register, compare, plan and apply device AAA configuration · Checked against tacctl 0.2.21*
+*Register, compare, plan and apply device AAA configuration · Checked against tacctl 0.2.22*
 
 [Printable PDF](../pdf/tacctl-engineer-guide-device-changes.pdf){: .pdf-link }
 
@@ -61,9 +61,10 @@ tacctl device add pdu1 10.10.0.50 --vendor wti
   console: Cisco `show ip ssh`, Junos
   `file show /etc/ssh/ssh_host_ed25519_key.pub`. If you already have the
   fingerprint, `--host-key SHA256:<fp>` pins only that key. A device that
-  gives no key to the scan is asked one key type at a time, then read with
-  tacctl's own ssh client; when nothing works the refusal says what to do
-  ([Connecting to Devices](connecting-to-devices.md) §6).
+  gives no key to the scan is read one key type at a time and then with
+  tacctl's own ssh client, and a device that is slow to greet goes straight
+  to that client and can take several seconds; when nothing works the refusal
+  says what to do ([Connecting to Devices](connecting-to-devices.md) §6).
 - `--legacy-ssh` affects only the ssh algorithms (SHA-1 key exchange, CBC
   ciphers, ssh-rsa). The Cisco configuration syntax is set separately with
   `--ios-syntax auto|ios12|modern`. With `auto`, the version line of the
@@ -90,7 +91,9 @@ For each address:
    console command that displays it (Cisco `show ip ssh`, Junos
    `file show /etc/ssh/ssh_host_ed25519_key.pub`). Compare them.
 2. **Accept the key by typing the device's name.** Enter skips the device.
-   Any other answer refuses it, with no second try. There is no `-y`.
+   Any other answer refuses it, with no second try. There is no `--yes` for
+   the key: `--host-key SHA256:<fp>` (one address, the fingerprint you read on
+   the console) answers it instead.
 3. **Confirm the registration**, then give your password once for the
    pulls.
 4. **Review the result.** tacctl reads the device, plans what needs
@@ -154,6 +157,44 @@ The managed sections are `aaa`, `roles`, `mgmt-acl`, `snmp`, `netconf`, and
 > **Pull options:** `--concurrency <n>`, `--timeout <s>`,
 > `--max-failures <n>` and `--transport auto|netconf|ssh`. A first Ctrl-C
 > starts no new devices. A second one stops the devices that are running.
+
+**Where the time goes.** For a run over many devices of which some are slow,
+add `--timing` to `device config pull`, `device config diff --pull`, `device
+config plan --pull` or `device config apply`. After the summary it prints, per
+device, the phases it went through in order with their time and its total, and
+names the slowest device:
+
+```text
+  timing:
+    sw1   connect 4.0s  login 900ms  session 1.2s  read 2.1s  compare 40ms  record 12ms  total 8.3s
+    jsw1  connect 210ms  login 180ms  session 95ms  read 1.4s  compare 33ms  record 10ms  total 2.0s
+  slowest: sw1 (8.3s)
+```
+
+The phases of a pull are `connect` (the TCP connect and the ssh key exchange up
+to the device's pinned host key), `login`, `session`, `read`, `compare` and
+`record`. An apply adds `preflight`, `load`, `check`, `commit`, `verify` (the
+fresh login and what it proves) and `confirm`; with `--pull`, the pull, the
+check and the apply of a device are added up. A phase the device did not reach
+is left out, not shown as zero, and a device that failed shows the phases it
+reached and, under the word of its status (`failed`, `auth-failed`,
+`timeout`), the time it spent in the one it failed in. Nothing is stored, and
+without `--timing` the output is as it was.
+
+- With `--json` each device's line has a `timings` object (the `steps` in
+  order, each with its `ms`, and `total_ms`), and the summary line has
+  `timings.slowest` and `timings.slowest_ms`.
+- `diff --pull --json` prints the array of devices only: the slowest device's
+  `timings` carries `"slowest": true`.
+- `plan --pull` prints the timing on standard error, so standard output stays
+  the plan.
+
+A device that is slow for a reason of its own, such as a long round trip or a
+slow CPU, is a case for a timing scale, which a superuser sets
+([Connecting to Devices](connecting-to-devices.md) §7). You read the scale in
+force in `tacctl device show <name>` and `tacctl scope show <scope>`. A
+`--timeout` you type on a pull or an apply is the time of every device of that
+run, as typed, and wins over the scale.
 
 ---
 
@@ -325,9 +366,21 @@ What happens during an apply:
   like a single device: its plain lines are read, and so is a block labelled
   with that one member; a block of another member, or a label twice, is
   refused.
+- The master of a virtual chassis answers `commit check` and the commits
+  without a label, and only the other members get a header (`fpc1:`). tacctl
+  reads the lines no label opens as the answer of the one member of
+  `show version` that has no block, and holds it to the same rules as the
+  others: its success comes first, and on a commit its `commit complete` is
+  the last line, after the other members' blocks. On a confirmed commit every
+  member must print the note that such a commit prints, and a commit without
+  it is refused. A line that is none of these, a label twice, and two members
+  without a block fail the step.
 - The first device of each new shape goes alone (canary). By default at most
   5 devices are changed per run (`--max`), with a pause between devices
   (`--pause`).
+- The time of the apply is not scaled where it is a timer on the device: the
+  confirmed-commit window (10 minutes by default) is never multiplied by a
+  timing scale. `--timing` shows where the time of each device went (§3).
 
 > **`PENDING until <time>`** means tacctl could not read the device's
 > state after the commit. **Type nothing on that device until the time
@@ -399,6 +452,8 @@ tacctl device config plan sw1 --converge  # optional: remove old servers and sim
 | Register + read | `tacctl device add <n> <ip> --vendor <v> --pull` |
 | Enroll discovered | `tacctl device enroll --discovered` |
 | Read a scope | `tacctl device config pull --scope <s>` |
+| Where the time of a run goes | add `--timing` to `pull`, `diff --pull`, `plan --pull` or `apply` |
+| Scale in force for a slow device | `tacctl device show <n>` (`Timeout scale` row) |
 | What differs | `tacctl device config list --differs` |
 | Line-level diff | `tacctl device config diff <n>` |
 | Paste plan | `tacctl device config plan <n>` |

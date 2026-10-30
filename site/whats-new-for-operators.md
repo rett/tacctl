@@ -10,7 +10,7 @@ commands: historical
 
 # What's New for Operators
 
-*The changes in each tacctl release that people on shift will notice · Checked against tacctl 0.2.21*
+*The changes in each tacctl release that people on shift will notice · Checked against tacctl 0.2.22*
 
 [Printable PDF](../pdf/tacctl-whats-new-for-operators.pdf){: .pdf-link }
 
@@ -24,7 +24,67 @@ first.
 
 ---
 
-## 1. tacctl 0.2.21
+## 1. tacctl 0.2.22
+
+Not released yet. The release notes follow with the release.
+
+**Renamed commands, no aliases.** The old forms are now unknown
+sub-commands, and the one-letter form of `--yes` is refused:
+
+| Up to 0.2.21 | From 0.2.22 |
+|---|---|
+| `config listen ...` | `server listen ...` |
+| `config metrics ...` | `server metrics ...` |
+| The one-letter form of `--yes`, on any command | `--yes` |
+| `device list` (and `--json`) with the enrolled hosts | `host list` (and `--json`) for the hosts; `device list` has devices only |
+
+| Change | What it means on shift | Page |
+|---|---|---|
+| **`host list`** | Shows state, last seen, by and open notices as `device list` does, with the filters `--name`, `--ip`, `--scope` and `--stale` | [Linux Host Operations](linux-host-operations.md) §1 |
+| **`device list --differs`** | The devices whose last pull differs from what is rendered now, with no login (operator tier) | [Superuser Daily Operations](superuser-daily-operations.md) §4.1 |
+| **`tacctl server`** | `server show` is this server at a glance (address, name, default method, metrics exporter, backends and listeners); `server name` sets the name the console shows; `server listen` and `server metrics` are the old `config listen` and `config metrics` | [Superuser Daily Operations](superuser-daily-operations.md) §11.3 |
+| **Timing scale** | For a device behind a long round trip or with a slow CPU, one whole number from 1 to 10 multiplies the host-key scan, session, SNMP and per-device pull times: `device timeout-scale <name>`, `scope timeout-scale <scope>`, `config devices timeout-scale` (superuser); engineers read it in `device show` and `scope show`. 1, the default, changes nothing | [Connecting to Devices](connecting-to-devices.md) §7, [Superuser Daily Operations](superuser-daily-operations.md) §4.9 |
+| **`--timing`** | `device config pull`, `diff --pull`, `plan --pull` and `apply` print, per device, the time of each phase and name the slowest device; `timings` in `--json` | [Engineer Guide](engineer-guide-device-changes.md) §3 |
+| `host sync` and `host check` take `--concurrency <n>` | Several hosts at once, output in the order typed; nothing is asked, so a key or agent and a root or passwordless-sudo login are needed | [Linux Host Operations](linux-host-operations.md) §2.1 |
+| Unknown sub-command | One error line, a `Did you mean` hint and a pointer to `-h`; below the first word it is answered before `sudo` asks for a password | [Getting Started](getting-started.md) §5 |
+| User names | A period is refused again; a user stored with one stays readable and is renamed with `user rename` | [Access Lifecycle](access-lifecycle.md) §2 |
+| Host keys of slow devices | A device `ssh-keyscan` reads nothing from is read by tacctl's own ssh client | [Connecting to Devices](connecting-to-devices.md) §6 |
+| Junos virtual chassis | The master answers without a label, and the apply reads it | [Engineer Guide](engineer-guide-device-changes.md) §5.1 |
+| Teal command names | The console's lists show command names in teal like the other fixed words | [Superuser Daily Operations](superuser-daily-operations.md) §10.2 |
+| Generated tacquito drop-in | Its comment, and the shipped unit comments, name `server listen` and `server metrics`; the first render restarts tacquito once (see below) | [Backups and Undo](backups-and-undo.md) §5 |
+| `tacctl rollback 0.2.21` | The release before this one is a target; it removes `server.name` and the timing scale and converts nothing else | [Backups and Undo](backups-and-undo.md) §5 |
+
+> **Before upgrading from 0.2.21:**
+>
+> - Rename every user whose name has a period (`tacctl user list` shows
+>   them; `tacctl user rename <name> <new-name>`). If one is left, 0.2.20 or
+>   0.2.21 has already replaced `tacctl` and the tacquito build when the new
+>   `tacctl` refuses; the store, the configuration and the services are not
+>   changed, and `tacctl upgrade` run again after the rename finishes it.
+> - Change scripts, runbooks and notes: `config listen` and `config metrics`
+>   become `server listen` and `server metrics`, the one-letter form of
+>   `--yes` is spelled out, and a script that reads hosts from `device list`
+>   reads `host list`.
+> - No sudoers rule and no stored setting needs to change: the `server`
+>   family is the superuser's, as `config listen` and `config metrics` were,
+>   and writes the same keys. The timing scale needs no conversion either: it
+>   is 1 until a superuser sets it, and every timing is as before.
+> - Expect one brief interruption of TACACS+. The comment at the top of the
+>   generated tacquito drop-in names the current commands, so the first render
+>   after the upgrade (the upgrade's own, else the first `config render` or
+>   change of a listener, `loglevel` or exporter) rewrites the drop-in,
+>   reloads systemd and restarts tacquito once. The upgrade restarts tacquito
+>   once at its end for any changed unit file or drop-in, and that is this
+>   restart. RADIUS is not touched. A drop-in you edited by hand is saved
+>   aside before it is replaced.
+> - The way back is `tacctl rollback 0.2.21`. It removes `server.name` and the
+>   timing scale (the two `tacctl.yaml` keys and each device's
+>   `timeout_scale`), with a note in the plan and no `--yes`. After it the
+>   older release's `config validate` reports the rendered config as out of
+>   date until its first render writes its own comment, which restarts
+>   tacquito once; the rollback itself restarts nothing.
+
+## 2. tacctl 0.2.21
 
 Released 2026-10-28 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.21.md)
@@ -38,7 +98,6 @@ Released 2026-10-28 ·
 | Walkthroughs follow the listener port | A TACACS+ listener that is not on 49 adds its `port` to the Cisco and Junos walkthroughs and the WTI Authentication Port item. | [Engineer Guide](engineer-guide-device-changes.md) §4.1 |
 | Junos chassis of one member | `device config apply` treats it like a single device | [Engineer Guide](engineer-guide-device-changes.md) §5.1 |
 | `tacctl rollback 0.2.20` | The release before this one is a target; every target keeps the users' server login | [Backups and Undo](backups-and-undo.md) §5 |
-| `user rename` to a name with a period | The refusal names the two ways forward | [Access Lifecycle](access-lifecycle.md) §3 |
 
 > **Before the upgrade,** rename a scope of your own that is called `tacctl`
 > (`tacctl scope rename tacctl <new-name>`): it is never taken over, and
@@ -46,7 +105,7 @@ Released 2026-10-28 ·
 > `config validate` stop with one line. **After it,** check the line about
 > the machine's own login, and run `tacctl host sync <server>` as before.
 
-## 2. tacctl 0.2.20
+## 3. tacctl 0.2.20
 
 Released 2026-10-28 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.20.md)
@@ -71,7 +130,7 @@ sub-commands:
 | `Kept:` and `Secrets:` in plans | A device's own SNMP, system and NETCONF statements are no irregularity any more; the secrets line is information | [Engineer Guide](engineer-guide-device-changes.md) §4 |
 | Apply on a virtual chassis | The check and the commits must answer for every member; `PENDING until` is the device's own clock | [Engineer Guide](engineer-guide-device-changes.md) §5.1 |
 | Host keys read one type at a time | A device that gives no key to the scan is asked again, and the refusal says how to pin a key by hand | [Connecting to Devices](connecting-to-devices.md) §6 |
-| User names with a period | `user add alice.smith operator` works; such a user has no Linux account | [Access Lifecycle](access-lifecycle.md) §2 |
+| User names with a period | 0.2.20 and 0.2.21 accept a period between the parts of a user name; such a user has no Linux account. 0.2.22 refuses a period | [Access Lifecycle](access-lifecycle.md) §2 |
 | `tacctl rollback 0.2.19` | Goes back to the previous release, with warnings for what it undoes | [Backups and Undo](backups-and-undo.md) §5 |
 
 > **After the upgrade,** run `tacctl host sync <server>` for the server's own
@@ -79,7 +138,7 @@ sub-commands:
 > and not before. No existing user must change their password until a
 > superuser says so.
 
-## 3. tacctl 0.2.19
+## 4. tacctl 0.2.19
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.19.md)
 
@@ -92,7 +151,7 @@ sub-commands:
 | Host names may contain dots | `tacctl host rename web1 web1.example.net` works | [Linux Host Operations](linux-host-operations.md) |
 | Unknown commands answered first | A mistyped command is answered before `sudo` asks for a password | — |
 
-## 4. tacctl 0.2.18
+## 5. tacctl 0.2.18
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.18.md)
 
@@ -111,14 +170,14 @@ you may have meant (`tacctl enroll` suggests `device enroll` and
 `host enroll`). Every tier can run `device notice list` and
 `device client-config`.
 
-## 5. tacctl 0.2.17
+## 6. tacctl 0.2.17
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.17.md)
 
 | Change | What it means on shift | Page |
 |---|---|---|
 | **`tacctl device enroll`** | One attended command from a new address to its plan: key, vendor, registration, pull, plan | [Engineer Guide](engineer-guide-device-changes.md) §2.2 |
-| **Apply review asks per device** | Approve each Junos device by typing its name. Typing a count no longer works; scripts use `--confirmed -y`. | [Engineer Guide](engineer-guide-device-changes.md) §5.1 |
+| **Apply review asks per device** | Approve each Junos device by typing its name. Typing a count no longer works; scripts use `--confirmed --yes`. | [Engineer Guide](engineer-guide-device-changes.md) §5.1 |
 | **Host keys accepted one device at a time** | `enroll`, `collect` and `onboard` show the one key they will pin; you accept it by typing the name back | [Connecting to Devices](connecting-to-devices.md) §6 |
 | **Audit session id** | Every audit line ends in `sid=<id>`, so one `grep` finds a whole command. Log filters that anchor the end of a line (`$`) need updating. | [Audit and Compliance](audit-and-compliance.md) §2 |
 | `cmd start` / `cmd end` lines | Every change writes a start and an end line, with the result and the snapshot taken | [Audit and Compliance](audit-and-compliance.md) |
@@ -127,7 +186,7 @@ you may have meant (`tacctl enroll` suggests `device enroll` and
 
 ---
 
-## 6. Older releases
+## 7. Older releases
 
 Releases 0.2.0 to 0.2.16 are listed on the
 [releases page](https://github.com/rett/tacctl/releases), and every change is

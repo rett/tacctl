@@ -9,7 +9,7 @@ doctype: explanation
 
 # Concepts
 
-*Users, groups, scopes and tiers, and the other words tacctl uses · Checked against tacctl 0.2.21*
+*Users, groups, scopes and tiers, and the other words tacctl uses · Checked against tacctl 0.2.22*
 
 [Printable PDF](../pdf/tacctl-concepts.pdf){: .pdf-link }
 
@@ -107,7 +107,8 @@ tacctl scope show site-a             # prefixes, users, secret length, settings
 | **Linux host** | A server **enrolled** so that logins and `sudo` authenticate against tacctl, with accounts tacctl creates | [Linux Host Operations](linux-host-operations.md) |
 
 Devices and hosts share one namespace, so `tacctl ssh <name>` works for
-both. A registered device is **configured** when a scope's prefixes cover
+both. `tacctl device list` lists the devices and `tacctl host list` the
+hosts. A registered device is **configured** when a scope's prefixes cover
 its address. Only configured devices authenticate users.
 
 > **Hosts follow users only when you sync.** A user change reaches the

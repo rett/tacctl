@@ -9,7 +9,7 @@ doctype: how-to
 
 # Incident Response Runbooks
 
-*Step-by-step security and availability runbooks · Checked against tacctl 0.2.21*
+*Step-by-step security and availability runbooks · Checked against tacctl 0.2.22*
 
 [Printable PDF](../pdf/tacctl-incident-response-runbooks.pdf){: .pdf-link }
 
@@ -223,6 +223,7 @@ Full procedure: [Connecting to Devices](connecting-to-devices.md) §5.
 ```bash
 tacctl status                  # are the backends running? errors?
 tacctl backend status          # services and listeners
+tacctl server show             # address, backends and every listener with its unit state
 tacctl log failures            # failures in the last 24 hours; look at the pattern
 tacctl config validate         # drift or broken configuration
 ```

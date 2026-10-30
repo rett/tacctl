@@ -9,7 +9,7 @@ doctype: reference
 
 # Exit Codes
 
-*What each tacctl exit status means on shift and in scripts · Checked against tacctl 0.2.21*
+*What each tacctl exit status means on shift and in scripts · Checked against tacctl 0.2.22*
 
 [Printable PDF](../pdf/tacctl-exit-codes.pdf){: .pdf-link }
 
@@ -25,12 +25,12 @@ change is needed" apart.
 | Code | Meaning | What to do |
 |---|---|---|
 | **0** | Done, or nothing to do. Answering *no* to a removal's confirmation also cancels with nothing changed and exits 0. | Nothing |
-| **1** | Refused or failed. The reason is on standard error. Nothing changed unless the message says so. Includes a check that found a problem (`config validate`, `device check`, `host check`), a device that could not be read or planned, and a Junos apply that failed, rolled back or was left pending. | Read the message. For an apply, read each device's row. |
+| **1** | Refused or failed. The reason is on standard error. Nothing changed unless the message says so. Includes a check that found a problem (`config validate`, `device check`, `host check`), a device that could not be read or planned, and a Junos apply that failed, rolled back or was left pending. A command or sub-command that does not exist ends with 1 as well: on standard error one error line that names it, a `Did you mean` line when something fits and a pointer (`Run ... -h` for a sub-command), and nothing on standard output. No word, `help` and a word that starts with `-` still print the usage of a command that has them. | Read the message. For an apply, read each device's row. |
 | **2** | Wrong arguments. Also, with `--exit-code`: `device config diff` found a difference, or `device config plan` / `apply --check` found a change is needed. | Fix the command, or act on the device that needs a change |
 | **3** | A backend command was refused because a rendered file holds a hand edit it would discard. Nothing was written. | `tacctl config validate` names both ways out (keep or discard the edit). Usually a superuser task. |
 | **126** | sudo could not be run to re-run tacctl as root | Check sudo on the server; escalate to the server owner |
 | **127** | sudo is not installed, and tacctl was not run as root | As 126 |
-| **130** | Interrupted (Ctrl-C at a prompt, or during a pull or apply) | For an apply, check each device's state; a pull never writes to a device |
+| **130** | Interrupted (Ctrl-C at a prompt, or during a pull, an apply, or `host sync` or `host check` with `--concurrency`) | For an apply, check each device's state; a pull never writes to a device |
 
 `tacctl ssh` ends with the status of the ssh it runs, and `tacctl shell -c`
 with the status of its line.

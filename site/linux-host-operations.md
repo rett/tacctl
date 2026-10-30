@@ -9,7 +9,7 @@ doctype: how-to
 
 # Linux Host Operations
 
-*Keeping enrolled Linux hosts in step · Checked against tacctl 0.2.21*
+*Keeping enrolled Linux hosts in step · Checked against tacctl 0.2.22*
 
 [Printable PDF](../pdf/tacctl-linux-host-operations.pdf){: .pdf-link }
 
@@ -30,13 +30,33 @@ hosts of their own scopes.
 ## 1. See your hosts
 
 ```bash
-tacctl host list                 # target, ADDRESS, scope, server, METHOD, users (+ STATE when held)
+tacctl host list                       # the enrolled hosts, as device list shows devices
+tacctl host list --scope site-a --stale
+tacctl host list --name web --ip 10.30.0.0/24
 tacctl host list --json
 tacctl host show web1            # connection, scope, pinned keys, sightings,
                                  # the accounts the next sync makes
 tacctl host check web1           # read-only: does the host match what tacctl would make it?
 tacctl host check --all
+tacctl host check --all --concurrency 4    # several hosts at once (§2.1)
 ```
+
+`host list` shows each host's target, address (recorded at the last enroll or
+sync, else the single address of its scope), scope, `STATE` (`configured`
+when the host's scope exists, `unconfigured`, `stale`, and `BREAK-GLASS` in
+place of those while the host is held), `LAST SEEN` and `BY` (from the seen
+data that `tacctl device scan` refreshes), server, method, users and open
+notices. A line under the table gives the age of the seen data and how many
+notices are open (`tacctl device notice list`).
+
+The filters narrow the list as those of `device list` do, and all must
+match: `--name <text>`, `--ip <addr|cidr|text>` and `--scope <scope>` take one
+value or a comma list, and `--stale` keeps the hosts not seen for stale-days.
+The heading counts the hosts, and `, of 5` follows when the list is narrowed
+(`Enrolled Linux hosts (2), of 5`); a narrowed list with no host says
+`None match.` An engineer sees the hosts of their own scopes only. This
+server's own login shows `-` as its scope, and `--scope` never selects it.
+`device list` shows network devices only.
 
 `host check` logs in, changes nothing, and lists each difference with the
 command that fixes it. It exits 1 if a host differs or could not be
@@ -55,13 +75,14 @@ tacctl host sync web1                  # one host
 tacctl host sync db1 db2               # several, in the order typed
 tacctl host sync --all                 # every enrolled host
 tacctl host sync --all --remove-home   # also delete removed users' homes without asking
+tacctl host sync --all --concurrency 4 # several hosts at once (§2.1)
 ```
 
 What a sync does:
 
 | User state | Effect on the host |
 |---|---|
-| New in the host's scope | Account created (with a UID consistent across hosts). A user name with a period is skipped with a warning: it is no Linux account name. |
+| New in the host's scope | Account created (with a UID consistent across hosts). A user name with a period (stored by 0.2.20 or 0.2.21) is skipped with a warning: it is no Linux account name. |
 | Disabled | Account expired: no login, ssh keys included. Files kept. |
 | Must change the password | As disabled, on every host but the tacctl server, until the user changes it there; the next sync opens it again. `host show` counts it with the disabled accounts. |
 | Re-enabled | Restored |
@@ -78,6 +99,36 @@ named.
 > gets no account on the host and you see a warning
 > (`web1: synced (4 users; 1 refused: carl)`). Resolve it by renaming one
 > of the two.
+
+### 2.1 Several hosts at once
+
+`--concurrency <n>` (1 or more; the default, 1, is one host after the other)
+works on n hosts side by side in `host sync` and in `host check`. Each host's
+output is held and printed whole, in the order the hosts were typed, so lines
+never mix, and the lines, the report and the exit status (1 when a host
+failed or differs, the others still run) are those of a run one host after
+the other. What the hosts write on the server (the UID ledger, the host
+records, the registry) is written one host at a time. With one host
+`--concurrency` changes nothing.
+
+With more than one host at once nothing is asked and no terminal is used:
+the login runs in BatchMode (a key or the agent; no password or passphrase)
+and the remote sudo is `sudo -n`, so the login must be root or have
+passwordless sudo. Hosts that share an ssh target and port are handled one
+after the other, since they share one connection.
+
+- **Home directories.** `host sync` does not ask about the homes of removed
+  users. It keeps them and says so after the line that names the removed
+  users: `web1: the home directories of removed users are kept, as no
+  questions are asked with --concurrency above 1: add --remove-home to
+  delete them, or sync web1 alone to be asked.` `--remove-home` deletes them.
+- **Ctrl-C** starts no further host and ends the connections under way, and
+  the hosts not started are named (status 130). A `host sync` reports,
+  records and audits the hosts under way as interrupted. Nothing carries the
+  interrupt to a script already running on a host, so that script may
+  finish.
+- There is no `--timeout` and no `--max-failures`: a time limit would cut a
+  script off in the middle of its account changes.
 
 ---
 

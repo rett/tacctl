@@ -9,7 +9,7 @@ doctype: tutorial
 
 # Getting Started
 
-*Your first login, the console and the shell, and where to go next · Checked against tacctl 0.2.21*
+*Your first login, the console and the shell, and where to go next · Checked against tacctl 0.2.22*
 
 [Printable PDF](../pdf/tacctl-getting-started.pdf){: .pdf-link }
 
@@ -37,12 +37,13 @@ tacacs>
 ```
 
 At the console prompt, type commands **without** the `tacctl` prefix, for
-example `device list` or `ssh sw1`.
+example `device list` or `ssh sw1`. The prompt shows the server's name: its
+host name, unless a superuser set another with `tacctl server name`.
 
 | Key or command | What it does |
 |---|---|
 | `Tab` | Completes commands and names (devices, users, scopes) |
-| `?` | Shows what can come next, and the tier a command needs |
+| `?` | Shows what can come next, and the tier a command needs. On a terminal command names, sub-commands, fixed words and options are teal and live names (users, devices) bold. |
 | `-h` / `--help` after a command | Prints the same help as `?` at that place (`user add --help`) |
 | `help` / `help <command>` | Lists the commands **your tier** can run / one command's usage |
 | `man` / `man <topic>` | Opens the manual page, at a command or heading if you name one (`man device config plan`, `man tiers`) |
@@ -217,8 +218,27 @@ tacctl config validate         # configuration problems; each warning names its 
 | `clear`, `remove --all` | Always ask `[y/N]` and say what the result will be |
 | A setter with no value | Prints the current value (`tacctl device location sw1`) |
 | `--dry-run`, `--check` | Show what would change and write nothing. Use them before every risky command. |
-| Names | Lower case: letters, digits, `_`, `-` (users, devices and hosts may also use `.`) |
+| `--yes` | Answers the confirmation of a command that asks one, for a script |
+| A word that is none of a command's sub-commands | One error line, a `Did you mean` hint when something fits and a `Run 'tacctl <command> -h' for usage.` line; exit status 1, no usage page (below) |
+| Names | Lower case: letters, digits, `_`, `-`; device and host names may also use `.` |
 | Secrets | Let the command prompt for them, or use `--hash -` / `--stdin`. Never type a secret on the command line. |
+
+A mistyped sub-command such as `device config seed jr1` (the verb is
+`device config shapes seed`) gets that short answer:
+
+```text
+[ERROR] Unknown subcommand: 'seed'
+Did you mean: tacctl device config shapes seed?
+Run 'tacctl device config -h' for usage.
+```
+
+Below the first word it is answered before `sudo` asks for a password, in the
+plain command, in `tacctl shell` and at the console. A word that follows a
+name (`scope secret lab shwo`: `lab` is a scope) is left to `sudo` and the
+command, which ask for the password first and then answer the same way. In
+the shell and the console the hint names only commands your tier can run.
+Nothing goes to standard output. No word, `help` and a word that starts with
+`-` still print the usage of a command that has them.
 
 Every change takes a snapshot first and writes an audit line, so a mistake
 can be rolled back ([Backups and Undo](backups-and-undo.md)).
