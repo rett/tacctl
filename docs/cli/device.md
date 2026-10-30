@@ -182,7 +182,9 @@ device rename <old> <new> [--allow-generic]
 
     Rename a device; the device's own host name is unchanged and not planned by tacctl, and the verb
     says so. The new name is lower case; changing only the spelling to lower case
-    (`device rename Core-SW1 core-sw1`) is how a name from before is fixed
+    (`device rename Core-SW1 core-sw1`) is how a name from before is fixed. A staging address of the
+    device (`config <vendor> --staging`, `scope staging list`) follows the new name, so it ends as
+    before once the device is registered at an address its scope covers
 
 device address|hostname|vendor|port|description|location <name> [<value>|clear]
 

@@ -214,6 +214,42 @@ func (inv *invocation) stagingSeen(e stagingEntry) string {
 	return ""
 }
 
+// stagingRenameDevice names the new device name in the staging entries of
+// the device (the fourth field of the line), so that the sweep still finds
+// the device where it is registered and ends the /32 once it is in place.
+// Names compare without regard to case, as the registry's do (a line is
+// written with the name as typed to 'config <vendor> --staging --name'): the
+// old name is matched first, so a rename of the spelling only keeps the
+// line, and only a line of the new name that is not the device's own, left
+// by an earlier device, is dropped, as a host's is (hostRenameStaging). The
+// registry was renamed already: a failure here is a warning that names the
+// addresses of the lines renamed and dropped and the way out.
+func (inv *invocation) stagingRenameDevice(oldName, newName string) {
+	entries := inv.stagingLoad()
+	var out []stagingEntry
+	changed := false
+	var addrs []string
+	for _, s := range entries {
+		switch {
+		case s.Kind == "device" && strings.EqualFold(s.Name, oldName):
+			s.Name, changed = newName, true
+			addrs = append(addrs, s.addr())
+		case s.Kind == "device" && strings.EqualFold(s.Name, newName):
+			changed = true
+			addrs = append(addrs, s.addr())
+			continue
+		}
+		out = append(out, s)
+	}
+	if !changed {
+		return
+	}
+	if err := inv.stagingSave(out); err != nil {
+		inv.app.Out.WarnE(newName + ": its staging lines still name '" + oldName + "' or an earlier device of that name (" + strings.Join(addrs, ", ") + "): " + strings.Join(msgs(err), " ") +
+			". The sweep does not find the device under its new name; remove them: tacctl scope staging remove <address>")
+	}
+}
+
 // stagingSweep removes each staging /32 whose host or device is now seen
 // at another address its scope answers, and forgets entries whose /32 is
 // no longer a prefix of the scope (removed by hand). Every problem is a

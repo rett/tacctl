@@ -20,6 +20,21 @@ current behaviour; this file is where history lives.
    target older than that release, so the timing scale is such an entry for
    the targets before 0.2.22 and a new entry reaches `0.2.22` too.
 
+2. **`device rename` carries the staging address.** A device staged at a bench
+   address (`config <vendor> --staging <address> --name <device>`) is recorded
+   in the `staging` file under its name, and the sweep that ends the `/32` once
+   the device is registered at an address its scope covers looks the device up
+   by that name. `device rename` (and the rename `device enroll` makes to the
+   name a device gives itself) renamed the registry entry, the pull record, the
+   SNMP credentials, the blocks and a break-glass hold, but not the staging
+   line, so a renamed device was never found again and its `/32` stayed in the
+   scope until `scope staging remove <address>`. The name in the line follows
+   the rename now, as `host rename` already carries a host's. Names compare
+   without regard to case, as the registry's do, so a line spelled differently
+   is the device's too, and a rename of the spelling only keeps it; a line
+   that an earlier device of the new name left is dropped, and a failure to
+   write the file is a warning that names the addresses.
+
 ## 0.2.22 (2026-10-29)
 
 1. **A device `ssh-keyscan` reads nothing from, but plain `ssh` reaches, gets

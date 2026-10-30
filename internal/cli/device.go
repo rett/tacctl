@@ -1709,8 +1709,8 @@ func (inv *invocation) deviceRename(args []string) error {
 // the name rules, the names taken (devices and enrolled hosts) and the
 // generic-name refusal unless allowGeneric, then the write and what follows
 // the name (the pull record and sections, the SNMP credentials, the blocks,
-// a break-glass hold) and the D253 line, with extra keys after count=. It
-// prints nothing on success; a refusal is printed as the write prints it.
+// a break-glass hold, the staging address) and the D253 line, with extra keys
+// after count=. It prints nothing on success; a refusal is printed as the write prints it.
 // Nothing is written to the device.
 func (inv *invocation) renameDevice(oldName, newName, address string, allowGeneric bool, extra ...audit.KV) error {
 	if err := devreg.ValidateName(newName); err != nil {
@@ -1744,6 +1744,7 @@ func (inv *invocation) renameDevice(oldName, newName, address string, allowGener
 	inv.snmpDeviceCarry(oldName, newName)
 	inv.blocksDeviceCarry(oldName, newName)
 	inv.holdCarry(oldName, newName, address)
+	inv.stagingRenameDevice(oldName, newName)
 	inv.detail("device rename", append([]audit.KV{kvp("from", oldName), kvp("to", newName), kvp("count", "1")}, extra...)...)
 	return nil
 }

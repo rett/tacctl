@@ -9158,7 +9158,11 @@ Remove every device (an engineer: those of their own scopes).
 Rename a device; acknowledgements stay with it. The new name is lower case;
 changing only the spelling to lower case
 .RB ( "device rename Core\-SW1 core\-sw1" )
-is how a name from before is fixed. The device's own host name is
+is how a name from before is fixed. A staging address of the device
+.RB ( "config <vendor> \-\-staging" ,
+.BR "scope staging list" )
+follows the new name, so it ends as before once the device is registered at an
+address its scope covers. The device's own host name is
 unchanged and not planned by tacctl: the verb says so.
 .\" BEGIN GENERATED: command device rename
 .RS
