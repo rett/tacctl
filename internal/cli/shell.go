@@ -481,7 +481,7 @@ func (inv *invocation) completer(root *cobra.Command, fixedOnly bool) shell.Comp
 			// 'shell' is not offered in the shell.
 			for _, r := range topRows() {
 				if r.Name != "shell" && child(root, r.Name) != nil && shown([]string{r.Name}) {
-					out = append(out, shell.Candidate{Word: r.Name, Label: r.Left, Desc: r.Desc, Kind: "commands", Fixed: true, Command: true})
+					out = append(out, shell.Candidate{Word: r.Name, Label: r.Left, Desc: r.Desc, Kind: "commands", Fixed: true})
 				}
 			}
 			return out

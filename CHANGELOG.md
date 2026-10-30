@@ -35,6 +35,12 @@ current behaviour; this file is where history lives.
    that an earlier device of the new name left is dropped, and a failure to
    write the file is a warning that names the addresses.
 
+3. **The summary of `device list` is shorter.** The one line that Tab, `?`,
+   the completion scripts and `help` list for `device list` was 90 characters,
+   over the 72 the lists allow. It reads `Registered devices, by name: scope,
+   state, last seen, notices`; which options narrow the list is in its usage
+   block, `help device list` and the manual page, as for every other verb.
+
 ## 0.2.22 (2026-10-29)
 
 1. **A device `ssh-keyscan` reads nothing from, but plain `ssh` reaches, gets

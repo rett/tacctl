@@ -172,7 +172,7 @@ var deviceSpecs = map[string]Spec{
 
 // deviceVerbs are the verbs ({Use, Short}), in usage order.
 var deviceVerbs = [][2]string{
-	{"list [<word>] [--name <text>] [--ip <addr|cidr|text>] [--vendor <vendor>] [--scope <scope>] [--stale] [--unconfigured] [--differs] [--scan] [--probe] [--json]", "Registered devices, by name: scope, state, last seen, notices; the options narrow the list"},
+	{"list [<word>] [--name <text>] [--ip <addr|cidr|text>] [--vendor <vendor>] [--scope <scope>] [--stale] [--unconfigured] [--differs] [--scan] [--probe] [--json]", "Registered devices, by name: scope, state, last seen, notices"},
 	{"show <name|address> [--all] [--json]", "One device or host in full (--all: the acknowledged notices too)"},
 	{"add [<name>] <address> [options]", "Register a device (no name: offer the one it gives itself by SNMP); the vendor the device names by SNMP is shown, and offered at a terminal"},
 	{"onboard <address> --login <local-user> [--name <name>] [--host-key SHA256:<fp>] [--legacy-ssh] [--check] [--section <list>] [--json]", "Engineers, Junos devices: register a blank device reached with one of its local accounts (its host key accepted first by typing its name) and commit its first configuration as that account, kept only after your own TACACS+ login proves it"},

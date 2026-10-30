@@ -42,7 +42,6 @@ device enroll
 device import
 device ios-syntax
 device legacy-ssh
-device list
 device location
 device netconf
 device notice

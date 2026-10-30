@@ -91,9 +91,9 @@ func TestExplainPalette(t *testing.T) {
 	}
 }
 
-// The candidates say what a word is: the top level's commands are command
-// names, the rest of the language fixed words, the names of the store live
-// names.
+// The candidates say what a word is: the language's words (the top level's
+// commands included, which are listed as 'commands') are fixed, the names of
+// the store live.
 func TestCandidateClasses(t *testing.T) {
 	inv, root, _ := shellTestInv(t)
 	complete := inv.shellCompleter(root)
@@ -102,12 +102,12 @@ func TestCandidateClasses(t *testing.T) {
 		t.Fatalf("%d commands", len(top))
 	}
 	for _, c := range top {
-		if !c.Command || c.Live || !c.Fixed {
+		if c.Live || !c.Fixed || c.Kind != "commands" {
 			t.Errorf("top level %q: %+v", c.Word, c)
 		}
 	}
 	for _, c := range complete([]string{"user"}, "") {
-		if c.Command || c.Live || !c.Fixed {
+		if c.Live || !c.Fixed {
 			t.Errorf("user %q: %+v", c.Word, c)
 		}
 	}
@@ -116,17 +116,17 @@ func TestCandidateClasses(t *testing.T) {
 		t.Fatalf("user show: %+v", names)
 	}
 	for _, c := range names {
-		if !c.Live || c.Command || c.Fixed {
+		if !c.Live || c.Fixed {
 			t.Errorf("user show %q: %+v", c.Word, c)
 		}
 	}
 	for _, c := range complete([]string{"user", "add", "alice", "ops"}, "-") {
-		if c.Live || c.Command || !c.Fixed {
+		if c.Live || !c.Fixed {
 			t.Errorf("flag %q: %+v", c.Word, c)
 		}
 	}
 	for _, c := range complete([]string{"user", "scope", "alice"}, "") {
-		if c.Live || c.Command || !c.Fixed {
+		if c.Live || !c.Fixed {
 			t.Errorf("fixed word %q: %+v", c.Word, c)
 		}
 	}
