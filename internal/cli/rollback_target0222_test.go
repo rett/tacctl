@@ -130,3 +130,33 @@ func TestRollbackSnapshotIsSpokenOfOnlyWhenTaken(t *testing.T) {
 		t.Errorf("0.2.21:\n%s", out)
 	}
 }
+
+// A staging entry marked covered (0.2.23: a device at a bench address its
+// scope answered already, no /32 added) would let an older release take a real
+// prefix out of the scope, so the rollback drops it after a snapshot, names it
+// in the plan and asks for no --yes; the other entries stay.
+func TestRollbackDropsTheCoveredStagingEntries(t *testing.T) {
+	const kept = "192.0.2.80/32|lab|device|lab-sw1|2026-10-01 10:00\n"
+	for _, v := range []string{"0.2.22", "0.2.21", "0.2.20"} {
+		hs := rollback0221State(t)
+		hs.write("state/staging", kept+"192.0.2.50/32|lab|device|lab-sw2|2026-10-02 11:00|covered\n", 0o600)
+		hs.run(hs.runner(), "rollback", v)
+		hs.expect(0, "drop 192.0.2.50/32 (scope lab, device lab-sw2)", "")
+		snaps := hs.snapshots()
+		args := []string{"rollback", v, "--apply"}
+		if v == "0.2.20" {
+			args = append(args, "--yes") // this target adds the managed scope to the users
+		}
+		hs.run(hs.runner(), args...)
+		hs.expect(0, "Applying.", "")
+		if hs.snapshots() == snaps {
+			t.Errorf("%s: no snapshot was taken first", v)
+		}
+		if !strings.Contains(hs.all(), "dropped 1 staging entry of addresses a scope answers already") {
+			t.Errorf("%s: --apply:\n%s", v, hs.all())
+		}
+		if got := hs.read("state/staging"); got != kept {
+			t.Errorf("%s: staging:\n%s", v, got)
+		}
+	}
+}

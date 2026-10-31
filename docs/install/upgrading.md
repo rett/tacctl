@@ -183,6 +183,15 @@ and are fine (for a device, once it has an `snmp:` entry: while it has none,
 its file is version 2, and so is the file of a device whose entry is removed).
 If a version 2 file was written, run the rollback again.
 
+**Staging entries of addresses a scope answers already (0.2.23).** `device
+clone` at a bench address its scope answers already writes an entry marked
+`covered` to `state/staging` (no `/32` is added). An older release reads it as
+a plain entry, and its sweep and `scope staging remove` take that `/32` out of
+the scope, a prefix of the scope's own included. So every target drops these
+entries from the file, after the snapshot; the plan names them, and nothing
+asks (no warning, no `--yes`), since the device is registered and the scope
+answers its address. Every other entry stays.
+
 **An emergency lockdown stops every rollback to a release before 0.2.19**
 (the dry run too): such a release has no such record and would render every
 locked user back into the scope. 0.2.19 has the record as this release writes
@@ -316,12 +325,13 @@ in `store.yaml`, so the rollback removes those (above) and converts nothing
 else but the sudoers drop-in (below): the server name, the timing scale, the server address, the users' login
 to this server, a user name with a period and an emergency lockdown (of
 scopes with no enrolled host) all stay.
-With no address in the store and no SNMP credential file in version 2 (a
+With no address in the store, no SNMP credential file in version 2 (a
 second or a non-default user, a default naming another level's user, a
-device's file without an `snmp:` entry: above) no file is converted, no
+device's file without an `snmp:` entry: above) and no covered staging entry no file is converted, no
 snapshot is taken and `--yes` is not needed; with an address, or a version 2
-file, the rollback takes a snapshot first and needs `--yes` when anything is
-dropped. The per-tier sudoers drop-in, when it is exactly this release's text,
+file, or a covered staging entry, the rollback takes a snapshot first and needs `--yes`
+when anything is dropped (the staging entries ask nothing). The covered staging entries are dropped (above), with a snapshot first and no
+question. The per-tier sudoers drop-in, when it is exactly this release's text,
 is rewritten with 0.2.22's (after `visudo -cf`): it loses the engineer's row of
 `device clone`; an edited drop-in is left. `--hosts` is accepted and does
 nothing.

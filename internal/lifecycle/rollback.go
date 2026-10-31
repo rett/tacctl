@@ -458,6 +458,9 @@ type RollbackPlan struct {
 	// users, 0.2.23), which every older release refuses
 	// (rollback_snmp_pool.go): every target.
 	snmpPool []snmpPoolFile
+	// stagingCovered are the staging entries marked covered (0.2.23), which
+	// every older release mishandles (rollback_staging.go): every target.
+	stagingCovered []string
 	// rootLeaf are the stored pulls whose breakglass section holds the root
 	// statements of 0.2.20's pull (rollback_rootleaves.go): taken out for
 	// the targets that read the records.
@@ -517,7 +520,7 @@ func (p *RollbackPlan) Pending() bool {
 // PendingFiles: there is a file of tacctl's own to convert (the snapshot
 // holds those; the sudoers drop-ins and the stored pulls are not in it).
 func (p *RollbackPlan) PendingFiles() bool {
-	return len(p.keys) > 0 || len(p.pwStore) > 0 || len(p.emailUsers) > 0 || len(p.snmpPool) > 0 || len(p.managedUsers) > 0 || p.console.Text != nil || len(p.snmpDev) > 0 || len(p.syntaxDev) > 0 || len(p.netconfDev) > 0 || len(p.syntaxKeyDev) > 0 || len(p.timeoutDev) > 0
+	return len(p.keys) > 0 || len(p.pwStore) > 0 || len(p.emailUsers) > 0 || len(p.snmpPool) > 0 || len(p.stagingCovered) > 0 || len(p.managedUsers) > 0 || p.console.Text != nil || len(p.snmpDev) > 0 || len(p.syntaxDev) > 0 || len(p.netconfDev) > 0 || len(p.syntaxKeyDev) > 0 || len(p.timeoutDev) > 0
 }
 
 func (p *RollbackPlan) todoSudoers() []sudoersPlan {
@@ -1165,6 +1168,15 @@ func ApplyRollback(p *RollbackPlan) ([]string, error) {
 			return done, fmt.Errorf("%s: %w", pt.SNMPDir, err)
 		}
 		done = append(done, fmt.Sprintf("%s, %s: wrote %d SNMP credential %s in version 1", pt.SNMPFile, pt.SNMPDir, n, plural(n, "file", "files")))
+	}
+	if len(p.stagingCovered) > 0 {
+		n, err := p.applyStagingCovered()
+		if err != nil {
+			return done, fmt.Errorf("%s: %w", p.stagingCoveredFile(), err)
+		}
+		if n > 0 {
+			done = append(done, fmt.Sprintf("%s: dropped %d staging %s of addresses a scope answers already", p.stagingCoveredFile(), n, plural(n, "entry", "entries")))
+		}
 	}
 	if p.console.Text != nil {
 		write := console.RollbackSince0220

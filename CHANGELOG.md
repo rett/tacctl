@@ -15,8 +15,8 @@ current behaviour; this file is where history lives.
    hosts stops every target, item 20). With no address in the
    store and no SNMP credential file in version 2 (item 14: a second or a
    non-default v3 user, a default naming another level's user, a device's
-   file without an `snmp:` entry) no file is converted, no snapshot is taken
-   and it needs no `--yes`; with an address, or a version 2 file, it takes
+   file without an `snmp:` entry) and no covered staging entry no file is converted, no snapshot is taken
+   and it needs no `--yes`; with an address, a version 2 file or a covered staging entry, it takes
    the snapshot first and needs `--yes` when anything is dropped (items 11
    and 14). `--hosts`
    is accepted and does nothing. The older targets (`0.2.21` and back) still
@@ -27,7 +27,9 @@ current behaviour; this file is where history lives.
    (`rollbackAdditions`, in `internal/lifecycle/rollback_additions.go`) and
    added to the plan of each target older than that release, so the timing
    scale is such an entry for the targets before 0.2.22, the email addresses
-   one for every target, and a new entry reaches `0.2.22` too.
+   one for every target, and a new entry reaches `0.2.22` too. Every target
+   also drops the staging entries marked `covered` from `state/staging` (item
+   17), after the snapshot, without a question.
 
 2. **`device rename` carries the staging address.** A device staged at a bench
    address (`config <vendor> --staging <address> --name <device>`) is recorded
@@ -470,9 +472,12 @@ current behaviour; this file is where history lives.
     (`tier.Sudoers0222`, after `visudo -cf`), and the older targets, which
     recognise that text as an older one, put back their own. The staging
     file's line gains an optional sixth field, `covered`, for the entry of an
-    address the scope answered already; older releases read the line as any
-    other (their sweep forgets it, the scope holding no such /32), so no
-    rollback step is added.
+    address the scope answered already. An older release reads the line as any
+    other and writes it back without the field, and its sweep and `scope
+    staging remove` take the /32 of the entry out of the scope, a prefix of the
+    scope's own included: every target drops those entries from `state/staging`
+    after the snapshot, names them in the plan and asks for nothing (they are
+    derivable; no warning, no `--yes`).
 
 18. **`device rename <replacement> <name> --replace` puts a device registered
     at a bench address where the device it replaces is.** The original is

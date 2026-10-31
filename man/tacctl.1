@@ -427,8 +427,20 @@ the audit line adds
 and the apply names
 .BR "tacctl backup recover <snapshot> \-\-only snmp\-users" .
 .IP
+Every target drops from
+.I state/staging
+the entries marked
+.B covered
+that
+.B "device clone"
+writes for a bench address its scope answers already (no /32 is added for them): an older release reads such a line as any other, and its sweep and
+.B "scope staging remove"
+would take that /32 out of the scope, a prefix of the scope's own included. The plan names the entries, the snapshot is taken first and nothing asks (no warning, no
+.BR \-\-yes ):
+the device is registered and the scope answers its address. Every other entry stays.
+.IP
 .B "rollback 0.2.22"
-converts nothing but the email addresses, the SNMP credential files and the per\-tier sudoers drop\-in
+converts nothing but the email addresses, the SNMP credential files, the covered staging entries and the per\-tier sudoers drop\-in
 (when it is exactly this release's text it is rewritten, after
 .BR "visudo \-cf" ,
 with 0.2.22's: the engineer's rule of
@@ -441,9 +453,9 @@ address in the store and no SNMP
 credential file in version 2 (a second or non\-default user, a default naming
 another level's user, a device's file without an
 .B snmp:
-entry) it takes no snapshot (there is no file to convert) and needs no
+entry) and no covered staging entry it takes no snapshot (there is no file to convert) and needs no
 .BR \-\-yes ;
-with an address, or a version 2 file, it takes the snapshot and needs
+with an address, a version 2 file or a covered staging entry, it takes the snapshot and needs
 .B \-\-yes
 when anything is dropped.
 .B \-\-hosts
