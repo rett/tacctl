@@ -597,15 +597,18 @@ func (inv *invocation) userAdd(args []string) error {
 		inv.detailPwChange(username, true, "add")
 		a.Out.InfoE("'" + username + "' must change the password at the first login to this server; no device accepts the user until then (" + noChangeRequired + " skips this, 'tacctl user require-password-change " + username + " off' lifts it).")
 		inv.reportRequired(m, []string{username})
-	case !skipChange:
+	case !skipChange && barrier.exempt:
 		a.Out.InfoE("No password change is required of '" + username + "': " + barrier.why + ".")
+	case !skipChange:
+		a.Out.WarnE("A password change could not be required of '" + username + "': " + barrier.why + ".")
 	}
 	// The account exists on this server only after its sync, and the new user
 	// logs in here to change the password.
-	if err := inv.syncOwnAccounts(username); err != nil {
+	if err := inv.afterUserChange(m, []string{username}, func(h string) string {
+		return "'" + username + "' gets an account on " + h + " at each host's next sync"
+	}); err != nil {
 		return err
 	}
-	inv.echo("")
 	return shellErr
 }
 
@@ -740,6 +743,7 @@ func (inv *invocation) userRemove(args []string) error {
 		inv.app.Out.Info("Cancelled.")
 		return nil
 	}
+	before, _ := inv.model()
 	var shell userSettingsMove
 	if err := inv.storeApplyThen(func(s *store.Store) error { return s.UserDel(username) },
 		func() { shell = inv.moveUserSettings(username, "") }); err != nil {
@@ -748,8 +752,9 @@ func (inv *invocation) userRemove(args []string) error {
 	inv.detail("user remove", kvp("name", username))
 	inv.app.Out.Info("User '" + username + "' removed.")
 	shellErr := inv.userSettingsMoved(shell, username, "")
-	inv.echo("")
-	if err := inv.syncOwnAccounts(username); err != nil {
+	if err := inv.afterUserChange(before, []string{username}, func(h string) string {
+		return "'" + username + "' keeps its account on " + h + " until each host's next sync, which removes it"
+	}); err != nil {
 		return err
 	}
 	return shellErr
@@ -866,6 +871,7 @@ func (inv *invocation) userPasswd(args []string) error {
 	inv.detail("user passwd", kvp("name", username), kvp("source", source))
 	out := inv.app.Out
 	out.Info("Password changed for '" + username + "'.")
+	var hostsNote func() error
 	switch {
 	case require:
 		inv.detailPwChange(username, true, "passwd")
@@ -874,13 +880,13 @@ func (inv *invocation) userPasswd(args []string) error {
 		// a user held already, or disabled until now, had no login on the
 		// other hosts before this reset either
 		if !cur.IsDisabled() && !pwchange.Subject(inv.app.Conf(), m, cur) {
-			inv.reportHostsSync(m, []string{username}, true)
+			hostsNote = func() error { return inv.noticeFlagHosts(m, []string{username}, true, true) }
 		}
 	case lifted:
 		inv.detailPwChange(username, false, "passwd")
 		out.InfoE("The password change required of '" + username + "' is lifted.")
 		if pwchange.Subject(inv.app.Conf(), m, cur) {
-			inv.reportHostsSync(m, []string{username}, false)
+			hostsNote = func() error { return inv.noticeFlagHosts(m, []string{username}, false, true) }
 		}
 	case !skipChange && barrier.exempt:
 		out.InfoE("No password change is required of '" + username + "': " + barrier.why + ".")
@@ -889,13 +895,18 @@ func (inv *invocation) userPasswd(args []string) error {
 	case !skipChange:
 		out.WarnE("A password change could not be required of '" + username + "': " + barrier.why + ".")
 	}
-	inv.echo("")
 	// A reset that enables a disabled user gives the account back on this
-	// server; any other reset leaves the accounts as they are.
+	// server and on the hosts; any other reset leaves the accounts as they are.
 	if cur.IsDisabled() {
-		return inv.syncOwnAccounts(username)
+		return inv.afterUserChange(m, []string{username}, func(h string) string {
+			return "The reset of '" + username + "' reaches " + h + " at each host's next sync"
+		})
 	}
-	return nil
+	if hostsNote != nil {
+		err = hostsNote()
+	}
+	inv.echo("")
+	return err
 }
 
 // --- disable / enable -------------------------------------------------------
@@ -935,13 +946,15 @@ func (inv *invocation) userDisable(args []string) error {
 		inv.app.Out.Warn("User '" + username + "' is already disabled.")
 		return nil
 	}
+	before, _ := inv.model()
 	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, "disabled=true") }); err != nil {
 		return err
 	}
 	inv.detail("user disable", kvp("name", username))
 	inv.app.Out.Info("User '" + username + "' disabled. Use 'enable' to restore access.")
-	inv.echo("")
-	return inv.syncOwnAccounts(username)
+	return inv.afterUserChange(before, []string{username}, func(h string) string {
+		return "'" + username + "' can still log in to " + h + " until each host's next sync, which expires the account there"
+	})
 }
 
 func (inv *invocation) userEnable(args []string) error {
@@ -959,13 +972,15 @@ func (inv *invocation) userEnable(args []string) error {
 		return inv.usageErr("No saved hash found for '"+username+"'. Set a new password instead:",
 			"  tacctl user passwd "+username)
 	}
+	before, _ := inv.model()
 	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, "disabled=false") }); err != nil {
 		return err
 	}
 	inv.detail("user enable", kvp("name", username))
 	inv.app.Out.Info("User '" + username + "' re-enabled with previous password.")
-	inv.echo("")
-	return inv.syncOwnAccounts(username)
+	return inv.afterUserChange(before, []string{username}, func(h string) string {
+		return "'" + username + "' can log in to " + h + " again after each host's next sync"
+	})
 }
 
 // --- verify -----------------------------------------------------------------
@@ -1080,7 +1095,7 @@ func (inv *invocation) userRename(args []string) error {
 	if err := inv.consoleSettingsReadable(); err != nil {
 		return err
 	}
-	hostCount := inv.enrolledHostsWith(oldname)
+	before, _ := inv.model()
 	var mv uidMove
 	var shell userSettingsMove
 	if err := inv.storeApplyThen(func(s *store.Store) error { return s.UserRename(oldname, newname) }, func() {
@@ -1108,19 +1123,29 @@ func (inv *invocation) userRename(args []string) error {
 		return exit(1)
 	case mv.moved:
 		out.Info("UID " + mv.uid + " follows the rename (linux-uids).")
-		if hostCount > 0 {
-			out.Info(hostsText(hostCount) + ": the account '" + oldname + "' is renamed to '" + newname +
-				"' at each host's next sync, home kept where it is: tacctl host sync --all")
-		}
 	case mv.heldBy != "":
 		out.Warn("'" + newname + "' already has UID " + mv.heldBy + " in linux-uids; the account '" + oldname + "' (UID " + mv.uid +
 			") is removed on hosts and '" + newname + "' created with " + mv.heldBy)
 	}
 	inv.loaded = false
-	inv.echo("")
 	// An enrolled server syncs now, and the sync renames the account with
-	// its UID.
-	if err := inv.syncOwnAccounts(newname); err != nil {
+	// its UID. The hosts that list the user rename the account at their next
+	// sync, by its UID (or, when the new name has a number of its own, remove
+	// the old account and create the new one): a user with no number in the
+	// ledger has no account there to change.
+	if !mv.moved && mv.heldBy == "" {
+		if err := inv.syncOwnAccounts(newname); err != nil {
+			return err
+		}
+		inv.echo("")
+		return shellErr
+	}
+	if err := inv.afterUserChange(before, []string{oldname, newname}, func(h string) string {
+		if mv.heldBy != "" {
+			return "The change reaches " + h + " at each host's next sync"
+		}
+		return "The account '" + oldname + "' is renamed to '" + newname + "' on " + h + " at each host's next sync, home kept where it is"
+	}); err != nil {
 		return err
 	}
 	return shellErr
@@ -1163,45 +1188,6 @@ func (inv *invocation) moveUID(oldname, newname string) uidMove {
 	}
 	held, err := uids.Lookup(newname)
 	return uidMove{uid: uid, heldBy: held, err: err}
-}
-
-// enrolledHostsWith is how many enrolled hosts have the user in their scope,
-// disabled or not: a disabled user's account is expired there and is renamed
-// all the same (the script gets the number in TAC_INACTIVE_UIDS).
-func (inv *invocation) enrolledHostsWith(user string) int {
-	n, _ := inv.enrolledHostsCount(user)
-	return n
-}
-
-// enrolledHostsCount is enrolledHostsWith with the error of a registry or a
-// model that cannot be read (the count is then 0).
-func (inv *invocation) enrolledHostsCount(user string) (int, error) {
-	reg, err := inv.registry()
-	if err != nil {
-		return 0, err
-	}
-	m, err := inv.model()
-	if err != nil {
-		return 0, err
-	}
-	n := 0
-	for _, e := range reg.Entries() {
-		found := false
-		m := inv.serverModel(m, serverOfEntry(e))
-		for _, r := range m.LinuxUsers(e.Scope) {
-			if name, _, _ := strings.Cut(r, "|"); name == user {
-				found = true
-				break
-			}
-		}
-		for _, name := range m.LinuxInactive(e.Scope) {
-			found = found || name == user
-		}
-		if found {
-			n++
-		}
-	}
-	return n, nil
 }
 
 // hostsText is "1 enrolled host" or "3 enrolled hosts".
@@ -1249,8 +1235,9 @@ func (inv *invocation) userMove(args []string) error {
 	}
 	inv.detail("user move", kvp("name", username), kvp("from", oldgroup), kvp("to", newgroup))
 	inv.app.Out.Info("User '" + username + "' moved: " + oldgroup + " -> " + newgroup)
-	inv.echo("")
-	return inv.syncOwnAccounts(username)
+	return inv.afterUserChange(m, []string{username}, func(h string) string {
+		return "The group of '" + username + "' changes on " + h + " at each host's next sync"
+	})
 }
 
 // --- scope ------------------------------------------------------------------
@@ -1403,6 +1390,7 @@ func (inv *invocation) userScope(args []string) error {
 		}
 	}
 	list := strings.Join(kept, ",")
+	before, _ := inv.model()
 	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, "scopes="+list) }); err != nil {
 		return err
 	}
@@ -1424,8 +1412,15 @@ func (inv *invocation) userScope(args []string) error {
 		a.Out.Warn("User '" + username + "' now has NO scopes — they cannot auth on any device")
 		a.Out.Warn("until you run: tacctl user scope " + username + " add <scope>")
 	}
-	inv.echo("")
-	return inv.syncOwnAccounts(username)
+	return inv.afterUserChange(before, []string{username}, scopeHostsCause(username))
+}
+
+// scopeHostsCause says what the next sync of the other hosts does with a
+// change of the scopes of username.
+func scopeHostsCause(username string) func(string) string {
+	return func(h string) string {
+		return "The account of '" + username + "' on " + h + " follows the new scopes at each host's next sync"
+	}
 }
 
 // userScopeRemoveAll is _user_scope_remove_all: empty the user's scope
@@ -1443,13 +1438,13 @@ func (inv *invocation) userScopeRemoveAll(username string, current []string) err
 		a.Out.Info("Aborted.")
 		return nil
 	}
+	before, _ := inv.model()
 	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, "scopes=") }); err != nil {
 		return err
 	}
 	inv.detail("user scope", kvp("name", username), kvp("op", "remove"), kvp("scopes", strings.Join(current, ",")))
 	a.Out.Info("Removed all scopes from user '" + username + "'.")
-	inv.echo("")
-	return inv.syncOwnAccounts(username)
+	return inv.afterUserChange(before, []string{username}, scopeHostsCause(username))
 }
 
 // usageLinesOf are the 'Usage:' lines of rows of cmd ('tacctl <cmd> <row>'),

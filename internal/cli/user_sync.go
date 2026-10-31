@@ -13,6 +13,13 @@ package cli
 // wrong (a warning, an error of the script) is shown after it. A sync that
 // fails is a WARN with the retry command; the store change stands and the
 // verb exits 0.
+//
+// The other enrolled hosts the change reaches are told in one WARN with the
+// command (noticeHosts); on a terminal the verb asks whether to sync them
+// now, and with no terminal the notice is all. INFO says what was done (the
+// store change, the restart, the sync); WARN says that something failed or
+// that the operator has to act (a sync that failed, hosts left to sync, a
+// lockout risk); a fact is said once.
 
 import (
 	"bytes"
@@ -22,7 +29,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/hosts"
+	"github.com/rett/tacctl/internal/model"
+	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -192,6 +202,8 @@ func (inv *invocation) syncLocalAccounts(e hosts.Entry) (he *hosts.Env, failed b
 	}
 	st := inv.sequentialStep()
 	he = inv.syncEnv(st)
+	// the script's output is held back, so it is not given the terminal
+	he.NoTerminal()
 	ok, err := inv.syncOne(st, he, e, reg.Method(e.Name), []string{"--accounts-only"}, false)
 	return he, !ok, err
 }
@@ -227,4 +239,148 @@ func ownSyncText(he *hosts.Env, who []string, uid func(string) string) string {
 		return "no account changed"
 	}
 	return strings.Join(parts, ", ")
+}
+
+// otherHostsWith are the enrolled hosts but this server whose account of one
+// of names the change alters: the row of the user as the host sees it (an
+// active row, an expired account, none; linuxAccounts with the held users of
+// a host that is not this server) differs between the model before the change
+// and the model after it. Those are the hosts a change of those users reaches
+// at their next sync. before is nil when the model could not be read before
+// the change. A name that is no Linux account name and the accounting sink
+// have no account on any host.
+func (inv *invocation) otherHostsWith(before *model.Model, names ...string) []hosts.Entry {
+	reg, err := inv.registry()
+	if err != nil || len(names) == 0 {
+		return nil
+	}
+	after, err := inv.app.LoadModel()
+	if err != nil {
+		return nil
+	}
+	c := inv.app.Conf()
+	var out []hosts.Entry
+	for _, e := range reg.Entries() {
+		if e.Target == hosts.Local {
+			continue
+		}
+		for _, name := range names {
+			if !hosts.LinuxName(name) || accountingSink(before, name) || accountingSink(after, name) {
+				continue
+			}
+			if accountRow(c, before, e.Scope, name) != accountRow(c, after, e.Scope, name) {
+				out = append(out, e)
+				break
+			}
+		}
+	}
+	return out
+}
+
+// accountingSink reports whether name is the accounting sink in m (nil: no).
+func accountingSink(m *model.Model, name string) bool {
+	if m == nil {
+		return false
+	}
+	u := m.User(name)
+	return u != nil && u.AccountingSink
+}
+
+// accountRow is how a host enrolled in scope sees the user name in the model m:
+// its linux-users row (name and priv-lvl), "expired" for an account the sync
+// expires (disabled, or held to a password change), "" for none. A nil model
+// gives "".
+func accountRow(c *conf.Config, m *model.Model, scope, name string) string {
+	if m == nil {
+		return ""
+	}
+	held := pwchange.HostHeld(c, m, false)
+	for _, r := range m.LinuxUsersHeld(scope, held) {
+		if n, _, _ := strings.Cut(r, "|"); n == name {
+			return r
+		}
+	}
+	for _, n := range m.LinuxInactiveHeld(scope, held) {
+		if n == name {
+			return "expired"
+		}
+	}
+	return ""
+}
+
+// hostsSyncCommand is the command that syncs es: their names, or --all when
+// they are many.
+func hostsSyncCommand(es []hosts.Entry) string {
+	if len(es) > 4 {
+		return "tacctl host sync --all"
+	}
+	return "tacctl host sync " + strings.Join(hostNames(es), " ")
+}
+
+// hostNames are the names of the registry entries es.
+func hostNames(es []hosts.Entry) []string {
+	names := make([]string, len(es))
+	for i, e := range es {
+		names[i] = e.Name
+	}
+	return names
+}
+
+// noticeHosts is the one notice of the enrolled hosts a change reaches: what
+// their next sync does (cause is that, given the count of the hosts in words,
+// "2 enrolled hosts"), and the command. It is a warning, as the hosts are left
+// as they were until someone syncs them. With offer, the caller is a person
+// who can sync them: a terminal is asked whether to sync them now (the answer
+// is never taken from --yes or any option; with no terminal the notice is
+// all). Without it (a user's own password change) the notice is information.
+// The error it returns is an interrupt only.
+func (inv *invocation) noticeHosts(es []hosts.Entry, cause func(hostsText string) string, offer bool) error {
+	if len(es) == 0 {
+		return nil
+	}
+	a := inv.app
+	cmd := hostsSyncCommand(es)
+	if !offer {
+		a.Out.InfoE(cause(hostsText(len(es))) + ": " + cmd)
+		return nil
+	}
+	a.Out.WarnE(cause(hostsText(len(es))) + ": " + cmd)
+	if !a.Prompter().Interactive() || !a.Prompter().Confirm("  Sync these hosts now? [y/N]: ") {
+		return nil
+	}
+	// The sync of these hosts shows its own output, as 'host sync' does: a
+	// host's ssh or sudo may ask for a password on this terminal.
+	err := inv.hostSync(hostNames(es))
+	if errors.Is(err, ui.ErrInterrupted) {
+		return err
+	}
+	if err != nil {
+		reason := "see above"
+		if r := msgsJoin(err); r != "" && !isExit(err) {
+			reason = r
+		}
+		a.Out.WarnE("Not every host was synced (" + reason + "): " + cmd)
+		return nil
+	}
+	synced := " was synced."
+	if len(es) > 1 {
+		synced = " were synced."
+	}
+	a.Out.InfoE(hostsText(len(es)) + synced)
+	return nil
+}
+
+// afterUserChange ends a user verb that has written the store: this server's
+// accounts are synced at once, then the other hosts the change reaches are
+// told (and offered), cause saying what their next sync does. before is the
+// model before the write; who the users the verb concerns, the ones the hosts
+// are looked up for. The blank line that ends the output of the verb is
+// printed here.
+func (inv *invocation) afterUserChange(before *model.Model, who []string, cause func(string) string) error {
+	if err := inv.syncOwnAccounts(who...); err != nil {
+		return err
+	}
+	err := inv.noticeHosts(inv.otherHostsWith(before, who...), cause, true)
+	inv.echo("")
+	return err
 }

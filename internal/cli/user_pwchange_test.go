@@ -98,11 +98,11 @@ func TestUserAddDoesNotRequireWhatCannotBeMet(t *testing.T) {
 	for _, c := range []struct {
 		name, group, scopes, why string
 	}{
-		{"root2", "superuser", "srv", "a superuser is never required to change the password"},
-		{"ivan", "operator", "lab", "it is not in scope 'srv', the scope of this server"},
+		{"root2", "superuser", "srv", "No password change is required of 'root2': a superuser is never required to change the password"},
+		{"ivan", "operator", "lab", "A password change could not be required of 'ivan': it is not in scope 'srv', the scope of this server"},
 	} {
 		sb.asAlice("", "user", "add", c.name, c.group, "--hash", h, "--scopes", c.scopes)
-		sb.expect(0, "No password change is required of '"+c.name+"': "+c.why, "")
+		sb.expect(0, c.why, "")
 		if strings.Contains(sb.out.String(), "must change") {
 			t.Errorf("%s: said the user must change it:\n%s", c.name, sb.out.String())
 		}
@@ -113,7 +113,7 @@ func TestUserAddDoesNotRequireWhatCannotBeMet(t *testing.T) {
 	// a server that is not enrolled has no login to change the password at
 	sb.write("state/linux-hosts", "", 0o600)
 	sb.asAlice("", "user", "add", "kate", "operator", "--hash", h, "--scopes", "lab,srv")
-	sb.expect(0, "No password change is required of 'kate': this server is not enrolled (tacctl host enroll --local)", "")
+	sb.expect(0, "[WARN] A password change could not be required of 'kate': this server is not enrolled (tacctl host enroll --local)", "")
 	if got := flaggedUsers(t, sb); got != "" {
 		t.Errorf("flagged on a server that is not enrolled: %q", got)
 	}
@@ -170,7 +170,7 @@ func TestUserRequirePasswordChange(t *testing.T) {
 	out := flag("--all")
 	for _, want := range []string{"Skipped alice (a superuser is never required to change the password).",
 		"Skipped carol (it is not in scope 'srv', the scope of this server, so it has no login on it).",
-		"Password change required of bob:", "Flagged 1, skipped 2 (1 superuser), already required 0."} {
+		"Flagged 1 (bob), skipped 2 (1 superuser), already required 0: each can log in to tacctl only, and no device accepts the user, until the password is changed."} {
 		if !strings.Contains(out, want) {
 			t.Errorf("--all lacks %q:\n%s", want, out)
 		}
@@ -192,7 +192,7 @@ func TestUserRequirePasswordChange(t *testing.T) {
 	}
 	// off: the one user, then every user who has it, a superuser's included
 	out = flag("bob", "off")
-	if !strings.Contains(out, "Password change no longer required of bob.") || !strings.Contains(out, "Cleared 1, not required 0.") || flaggedUsers(t, sb) != "" {
+	if !strings.Contains(out, "Cleared 1 (bob), not required 0.") || flaggedUsers(t, sb) != "" {
 		t.Errorf("off: %q\n%s", flaggedUsers(t, sb), out)
 	}
 	wantDetail(t, "off", auditCalls(sb.runner), "auth.info", "user password-change name=bob state=cleared via=require by=alice")
@@ -206,7 +206,7 @@ func TestUserRequirePasswordChange(t *testing.T) {
 		t.Fatalf("flagged: %q", got)
 	}
 	out = flag("--all", "off")
-	if !strings.Contains(out, "Cleared 2, not required 1.") || flaggedUsers(t, sb) != "" {
+	if !strings.Contains(out, "Cleared 2 (alice, bob), not required 1.") || flaggedUsers(t, sb) != "" {
 		t.Errorf("--all off: %q\n%s", flaggedUsers(t, sb), out)
 	}
 	// the refusals
@@ -380,7 +380,7 @@ func TestRequiredChangeKnowsTheServersLoginAddresses(t *testing.T) {
 	sb.run("", []string{"scope", "prefixes", "srv", "add", "192.0.2.10/32"})
 	sb.expect(0, "", "")
 	sb.asAlice("", "user", "require-password-change", "bob")
-	sb.expect(0, "Flagged 1, skipped 0, already required 0.", "")
+	sb.expect(0, "Flagged 1 (bob), skipped 0, already required 0:", "")
 	if strings.Contains(sb.out.String()+sb.err.String(), "also answers") {
 		t.Errorf("the server's own address is warned of:\n%s", sb.out.String()+sb.err.String())
 	}

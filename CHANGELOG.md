@@ -303,6 +303,30 @@ current behaviour; this file is where history lives.
     the groups of the old tier` of the user verbs: a sync that fails is the
     one warning.
 
+13. **The notices of a user change are two levels, and the hosts it reaches
+    are offered a sync.** INFO says what was done (the change, the restart,
+    the sync); WARN says that something failed or that the operator has to
+    act; a fact is said once. `user add` says the password-change rule of the
+    new user in one line, `user require-password-change` says its result in
+    one line (`Flagged 2 (bob, carol), skipped 1 (1 superuser), already
+    required 0: each can log in to tacctl only, and ...`; `Cleared 1 (bob),
+    not required 0.`), and a password change that could not be required of a
+    new user is a warning, as it is for `user passwd`. The other enrolled
+    hosts a change reaches are named in one warning with the command that
+    syncs them (`tacctl host sync web1 web2`, `--all` above four hosts), for
+    `user add`, `remove`, `rename`, `move`, `enable`, `disable`, `scope`,
+    `passwd` and `require-password-change`; on a terminal the verb then asks
+    `Sync these hosts now? [y/N]` (the default is no, and `--yes` or any
+    other option does not answer it), and with no terminal the warning is
+    all. Yes runs `host sync` of just those hosts and says so in one line.
+    `tacctl passwd` informs of the hosts and offers nothing. `user rename`
+    names the hosts only when the user has a UID, or the new name has one,
+    as before, and a move, a scope change and a removal name them now too. A
+    host is named only when its own account of the user changes: disabling or
+    enabling a user who must change the password names none, as the account is
+    expired on the other hosts already, and a name that is no Linux account
+    name names none.
+
 ## 0.2.22 (2026-10-29)
 
 1. **A device `ssh-keyscan` reads nothing from, but plain `ssh` reaches, gets

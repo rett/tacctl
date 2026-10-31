@@ -52,11 +52,11 @@ func TestUserRenameNamesTheHostsThatRenameTheAccount(t *testing.T) {
 	sb.write("state/linux-hosts", "web1|web1||lab|192.0.2.1|\nweb2|web2||prod|192.0.2.2|\nweb3|web3||dmz|192.0.2.3|\n", 0o600)
 	sb.run("", []string{"user", "rename", "alice", "zed"})
 	sb.expect(0, "[INFO] UID 80001 follows the rename (linux-uids).\n"+
-		"[INFO] 2 enrolled hosts: the account 'alice' is renamed to 'zed' at each host's next sync, home kept where it is: tacctl host sync --all\n", "")
+		"[WARN] The account 'alice' is renamed to 'zed' on 2 enrolled hosts at each host's next sync, home kept where it is: tacctl host sync web1 web2\n", "")
 	// One host; none.
 	sb.write("state/linux-hosts", "web1|web1||lab|192.0.2.1|\n", 0o600)
 	sb.run("", []string{"user", "rename", "zed", "yan"})
-	sb.expect(0, "[INFO] 1 enrolled host: the account 'zed' is renamed to 'yan'", "")
+	sb.expect(0, "[WARN] The account 'zed' is renamed to 'yan' on 1 enrolled host at each host's next sync, home kept where it is: tacctl host sync web1", "")
 	sb.write("state/linux-hosts", "web3|web3||dmz|192.0.2.3|\n", 0o600)
 	sb.run("", []string{"user", "rename", "yan", "xan"})
 	sb.expect(0, "UID 80001 follows the rename", "")
@@ -73,7 +73,7 @@ func TestUserRenameCountsHostsOfADisabledUser(t *testing.T) {
 	sb.write("state/linux-hosts", "web1|web1||lab|192.0.2.1|\n", 0o600)
 	sb.run("", []string{"user", "disable", "alice"})
 	sb.run("", []string{"user", "rename", "alice", "zed"})
-	sb.expect(0, "[INFO] 1 enrolled host: the account 'alice' is renamed to 'zed' at each host's next sync, home kept where it is: tacctl host sync --all\n", "")
+	sb.expect(0, "[WARN] The account 'alice' is renamed to 'zed' on 1 enrolled host at each host's next sync, home kept where it is: tacctl host sync web1\n", "")
 }
 
 // A user with no line in the ledger (never sent to a host) renames as it

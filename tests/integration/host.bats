@@ -1600,3 +1600,63 @@ YAML
     run "$TACCTL_BIN_SCRIPT" config linux uid alice
     assert_output "80005"
 }
+
+# _own_server: this server enrolled (its registry line), its sync run by a
+# stand-in for bash that only records the call (the real script needs root).
+_own_server() {
+    printf 'authsrv|local||lab|127.0.0.1|\n' >> "${TACCTL_STATE_DIR}/linux-hosts"
+    printf '#!/bin/bash\ncase "$*" in\n  *--accounts-only*) echo "bash $*" >> "%s" ;;\n  *) exec /bin/bash "$@" ;;\nesac\n' "$CALLS_LOG" > "${STUB_BIN}/bash"
+    chmod +x "${STUB_BIN}/bash"
+}
+
+# _syncs: how many times the stand-in ran the accounts-only sync of this server.
+_syncs() { grep -c -- '--accounts-only$' "$CALLS_LOG" || true; }
+
+@test "user add: with this server enrolled, its accounts are synced at once, once, in one INFO line" {
+    _own_server
+    run "$TACCTL_BIN_SCRIPT" user add bob operator --hash "$HASH" --scopes lab
+    assert_success
+    _plain
+    assert_output --partial "[INFO] User 'bob' added (operator) with scopes: lab"
+    assert_output --partial "[INFO] This server's accounts were synced: "
+    refute_output --partial "cannot log in to this server"
+    refute_output --partial "next sync of this server"
+    [[ "$(_syncs)" == 1 ]]
+    # without the server enrolled nothing is said of a sync
+    : > "${TACCTL_STATE_DIR}/linux-hosts"
+    run "$TACCTL_BIN_SCRIPT" user add carol operator --hash "$HASH" --scopes lab
+    assert_success
+    refute_output --partial "synced"
+    [[ "$(_syncs)" == 1 ]]
+}
+
+@test "user disable: names the other hosts in one warning, and a script is asked nothing" {
+    "$TACCTL_BIN_SCRIPT" user add bob operator --hash "$HASH" --scopes lab > /dev/null
+    run "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab
+    assert_success
+    _own_server
+    run "$TACCTL_BIN_SCRIPT" user disable bob --yes
+    assert_success
+    _plain
+    assert_output --partial "[WARN] 'bob' can still log in to 1 enrolled host until each host's next sync, which expires the account there: tacctl host sync web1"
+    refute_output --partial "Sync these hosts now"
+    [[ "$(_syncs)" == 1 ]]
+}
+
+@test "user enable: on a terminal asks whether to sync the other hosts; the default is no, --yes does not answer" {
+    "$TACCTL_BIN_SCRIPT" user add bob operator --hash "$HASH" --scopes lab > /dev/null
+    run "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab
+    assert_success
+    "$TACCTL_BIN_SCRIPT" user disable bob > /dev/null
+    _own_server
+    : > "$PUSHED"
+    on_tty '\n' user enable bob --yes
+    assert_success
+    assert_output --partial "Sync these hosts now? [y/N]"
+    [[ ! -s "$PUSHED" ]]
+    "$TACCTL_BIN_SCRIPT" user disable bob > /dev/null
+    on_tty 'y\n' user enable bob
+    assert_success
+    assert_output --partial "[INFO] 1 enrolled host was synced."
+    [[ -s "$PUSHED" ]]
+}

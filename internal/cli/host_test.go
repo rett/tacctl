@@ -98,8 +98,13 @@ func (hs *hostSandbox) newApp(r *fake.Runner, args []string) *app.App {
 	hs.out.Reset()
 	hs.err.Reset()
 	hs.sandbox.runner = r
+	var stdin io.Reader = strings.NewReader(hs.stdin)
+	if hs.sandbox.tty != nil {
+		// a terminal answers the questions (the sandbox's tty, as sandbox.run has it)
+		stdin = hs.sandbox.tty
+	}
 	a := app.New(args, paths.NewEnv(hs.env), "/opt/x/dist/tacctl", 1000,
-		app.Stdio{Stdin: strings.NewReader(hs.stdin), Stdout: &hs.out, Stderr: &hs.err}, r)
+		app.Stdio{Stdin: stdin, Stdout: &hs.out, Stderr: &hs.err}, r)
 	if hs.reroot {
 		a.Paths = a.Paths.Reroot(hs.dir)
 	}

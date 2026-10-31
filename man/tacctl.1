@@ -1187,7 +1187,31 @@ fails is a warning with the retry command
 .RB ( "tacctl host sync <name>" ),
 followed by what the script said as plain lines: the change is stored and the
 command exits 0. A server that is not enrolled gets no sync and no word about
-one.
+one. The sync writes its own
+.B "host sync"
+line to the audit log, as
+.B "host sync"
+does.
+.PP
+The other enrolled hosts such a change reaches (those whose account of the user
+the change alters: the user is in their scope before or after it, and the
+account is not already as the change leaves it) get one warning with their count and
+the command
+.RB ( "tacctl host sync web1 web2" ,
+or
+.B "host sync \-\-all"
+for more than four hosts): their accounts follow at their next sync. On a
+terminal the verb then asks
+.BR "Sync these hosts now? [y/N]" :
+the default is no, the answer is never taken from
+.B \-\-yes
+or any other option, and with no terminal the warning is all. Yes runs
+.B "host sync"
+of just those hosts, one after the other. The notices follow one rule: INFO
+says what was done (the change, the restart, the sync); WARN says that
+something failed or that the operator has to act (a sync that failed, hosts
+left to sync, a device that still accepts a user who must change the
+password); a fact is said once.
 .PP
 Reserved usernames
 .RB ( root
@@ -1395,10 +1419,10 @@ keeps the Linux UID: the line of the old name in
 becomes the new name's, in place, under the apply lock after the pre\-change
 snapshot, and the command says so
 .RB ( "UID <uid> follows the rename" ).
-With enrolled hosts that list the user it also says that the next
+With enrolled hosts that list the user it also warns that the next
 .B "host sync"
-renames the account on each of them, by its UID, keeping the home directory
-where it is. A user with no line is renamed as before. A new name that already
+of them renames the account on each of them, by its UID, keeping the home
+directory where it is. A user with no line is renamed as before. A new name that already
 has a line keeps its own number, the ledger is left alone, and a warning says
 that hosts then remove the old account and create the new one. If the ledger
 cannot be written after the rename the command says so, names the snapshot to
@@ -1517,12 +1541,14 @@ disabled user's (a password and an SSH key both fail; the files are kept), and
 the sync after the change opens it again; the server's own sync keeps the
 account, since the password is changed there. Until a host is synced it is as
 it was:
-.BR "user require\-password\-change" ,
-.B "user passwd"
+.BR "user require\-password\-change"
 and
+.B "user passwd"
+warn, and
 .B passwd
-name the hosts of the user's scopes with
-.BR "tacctl host sync \-\-all" .
+informs, naming the hosts of the user's scopes and the
+.B "tacctl host sync"
+that syncs them.
 The verb syncs the accounts of this server once it is stored, as
 .B "user add"
 does, and a new or renamed user has its account there at once; if that sync

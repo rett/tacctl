@@ -97,10 +97,11 @@ user rename <old> <new>
     typed login name exactly, so the rename changes what the person types at the device. The user
     keeps the Linux UID: the line of the old name in `linux-uids` becomes the new name's, in
     place, and the command says `UID <uid> follows the rename (linux-uids).` With enrolled hosts
-    that list the user it also says that the next `host sync` renames the account there by its
-    UID, home kept where it is. A user with no line is renamed as before. A new name that already
-    has a line keeps its own number, the ledger is left alone and a warning says that hosts remove
-    the old account and create the new one. If the ledger cannot be written after the rename, the
+    that list the user it also warns that the next `host sync` of them renames the account there by
+    its UID, home kept where it is (and offers to sync them on a terminal). A user with no line is
+    renamed as before. A new name that already has a line keeps its own number, the ledger is left
+    alone and a warning says that hosts remove the old account and create the new one. If the
+    ledger cannot be written after the rename, the
     command names the snapshot to restore and exits 1. The move is made under the ledger's lock: a
     `host sync` builds its script from the ledger under the same lock, so it sends the names as
     they were before the rename or after it, never a mix; an account created under the old name is
@@ -216,7 +217,25 @@ are. A sync that fails is a warning with the retry command (`tacctl host sync
 the command exits 0. A server that is not
 enrolled gets no sync and no word about one. `user passwd` syncs only when it
 enables a disabled user, and `user list`, `show`, `email` and `verify` never
-do. A change of several users (`require-password-change --all`) syncs once.
+do. A change of several users (`require-password-change --all`) syncs once. The sync writes
+its own `host sync` line to the audit log, as `host sync` does.
+
+The other enrolled hosts a change reaches (those whose account of the user the
+change alters: the user is in their scope before or after it, and the account
+is not already as the change leaves it, as an expired one of a user who must
+change the password stays when the user is disabled) get one warning with their count and the
+command, such as `The group of 'bob' changes on 2 enrolled hosts at each
+host's next sync: tacctl host sync web1 web2` (`--all` for more than four
+hosts); their accounts follow at their next sync, as they always did. On a
+terminal the verb then asks `Sync these hosts now? [y/N]`: the default is no,
+the answer is never taken from `--yes` or any other option, and with no
+terminal (a script, a pipe) the warning is all. Yes runs `host sync` of just
+those hosts, one after the other, and says `2 enrolled hosts were synced.`, or
+warns with the same command when one failed. The notices follow one rule: INFO
+says what was done (the change, the restart, the sync), WARN says that
+something failed or that the operator has to act (a sync that failed, hosts
+left to sync, a device that still accepts a user who must change the
+password), and a fact is said once.
 
 **A required password change.** A user who must change the password can log in to the tacctl
 server only: every device refuses the user, as it refuses an unknown user, and every other enrolled
@@ -262,8 +281,8 @@ only when set.
   `host sync` expires the account of a user who must change the password, as it expires a disabled
   user's (a password and an SSH key both fail; the files are kept), and the sync after the change
   opens it again. The server's own sync keeps the account: the password is changed there. Until a
-  host is synced it is as it was, so `require-password-change`, `user passwd` and `tacctl passwd`
-  name the hosts of the user's scopes with `tacctl host sync --all`.
+  host is synced it is as it was, so `require-password-change` and `user passwd` warn, and `tacctl
+  passwd` informs, naming the hosts of the user's scopes and the `tacctl host sync` that syncs them.
 - *A flagged user must be able to log in.* A user who must change the password and has no login on
   the server (the server's own login no longer answers its addresses, the backend of the server's
   own logins is not enabled, the server not enrolled) could change nothing and enter
