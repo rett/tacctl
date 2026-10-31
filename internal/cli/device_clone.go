@@ -149,6 +149,9 @@ func (inv *invocation) deviceClone(args []string) error {
 	}
 	staged, added := inv.stagingEntryOf(bench)
 	added = added && !hadStaging
+	// named: the entry of the bench device had no name (staged without
+	// --name) and has the clone's now.
+	named := false
 
 	// undo takes back what this run made, newest first, and says what it
 	// could not.
@@ -160,6 +163,11 @@ func (inv *invocation) deviceClone(args []string) error {
 			}
 			inv.snmpDeviceCarry(newName, "")
 			inv.blocksDeviceCarry(newName, "")
+		}
+		if named {
+			if err := inv.stagingSetName(bench, ""); err != nil {
+				left = append(left, "the name of the staging entry "+bench+"/32 (tacctl scope staging remove "+bench+"/32, a superuser's verb)")
+			}
 		}
 		if added {
 			if err := inv.stagingEnd(staged, "scope staging remove", "device="+newName+" by="+inv.sudoUser()); err != nil {
@@ -182,9 +190,19 @@ func (inv *invocation) deviceClone(args []string) error {
 		}
 		return err
 	}
-	// An address the scope answered already is staged without a /32: the
-	// entry alone (Covered), once the device is registered.
-	if covered && !hadStaging {
+	// Once the device is registered (the sweep of the registry write has run,
+	// and forgot a stale line of this device): an entry with no name is the
+	// bench device's and gets the clone's name; an address the scope
+	// answered already, with no entry left, is staged without a /32, by the
+	// entry alone (Covered).
+	if e, ok := inv.stagingEntryOf(bench); ok {
+		if e.Name == "" {
+			if err := inv.stagingSetName(bench, newName); err != nil {
+				return undo(err, true)
+			}
+			named = true
+		}
+	} else if covered {
 		if err := inv.stagingCoveredAdd(scope, bench, newName); err != nil {
 			return undo(err, true)
 		}

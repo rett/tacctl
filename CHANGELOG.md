@@ -457,7 +457,9 @@ current behaviour; this file is where history lives.
     at another address, `device rename --replace` ends it or a superuser
     removes it: a clone that is removed later leaves it, as a staging /32 is
     left; an address already staged for a host or another device is refused
-    before the snapshot), and a device no scope answers is refused. The
+    before the snapshot; an entry with no name, from `config <vendor>
+    --staging <ip>` without `--name`, is the bench device's and is named for
+    the clone once it is registered, and named back if the clone fails), and a device no scope answers is refused. The
     new name follows the rules of `device add` (lower case, not taken, not
     generic unless `--allow-generic`). Every refusal, those of the staging
     address included, comes before the one snapshot; what can

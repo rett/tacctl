@@ -192,10 +192,13 @@ func (inv *invocation) stagingAdd(scope, addr, kind, name string) error {
 // stagingConflict is the refusal of a bench address that has a staging entry
 // already for something else than the device name (a host, or another device):
 // the entry is that one's, and a second owner of the address would leave one of
-// them unfindable. Nothing is changed. A superuser removes the entry first.
+// them unfindable. Nothing is changed. A superuser removes the entry first. A
+// device entry with no name ('config <vendor> --staging <ip>' without --name)
+// is by construction the bench device being registered here: it is not a
+// conflict, and the verb names it (stagingSetName).
 func (inv *invocation) stagingConflict(addr, name string) error {
 	for _, e := range inv.stagingLoad() {
-		if e.CIDR != addr+"/32" || (e.Kind == "device" && strings.EqualFold(e.Name, name)) {
+		if e.CIDR != addr+"/32" || (e.Kind == "device" && (e.Name == "" || strings.EqualFold(e.Name, name))) {
 			continue
 		}
 		who := e.Kind
@@ -206,6 +209,20 @@ func (inv *invocation) stagingConflict(addr, name string) error {
 			"Give the bench address another value, or have a superuser remove that entry first: tacctl scope staging remove "+e.CIDR+". Nothing was changed.")
 	}
 	return nil
+}
+
+// stagingSetName gives the device entry of the /32 of addr the name (empty:
+// takes it away), so that the sweep finds the device where it is registered.
+// It is not audited: the entry was, when it was made, and a rename of a
+// device carries its staging lines the same way (stagingRenameDevice).
+func (inv *invocation) stagingSetName(addr, name string) error {
+	entries := inv.stagingLoad()
+	for i := range entries {
+		if entries[i].Kind == "device" && entries[i].CIDR == addr+"/32" {
+			entries[i].Name = name
+		}
+	}
+	return inv.stagingSave(entries)
 }
 
 // stagingCoveredAdd records the device at a bench address its scope answers

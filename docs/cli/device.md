@@ -190,7 +190,9 @@ device clone <name> <new> --staging <bench-ip> [--allow-generic]
     address the scope answers needs no /32 and gets a staging entry without one,
     which `device rename --replace` ends and which lasts until the device is seen
     at another address or a superuser removes it: a clone that is removed later
-    leaves it; an address already staged for a host or another device is refused;
+    leaves it; an address already staged for a host or another device is refused (an entry
+    with no name, from `config <vendor> --staging <ip>` without `--name`, is this
+    device's and takes the new name);
     an engineer is refused one another scope answers; every such refusal comes
     before the snapshot); a device no scope answers is refused. The new name is
     lower case and not taken, and not a generic name unless `--allow-generic`

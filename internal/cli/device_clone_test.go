@@ -498,6 +498,12 @@ func TestDeviceCloneAtACoveredAddressWithAnEntry(t *testing.T) {
 			t.Errorf("%q: %d %q", c.line, sb.code, sb.stderr())
 		}
 	}
+	// a host's entry with no name is refused too, with the text for it
+	sb.write("state/staging", "192.168.1.60/32|lab|host||2026-10-01 10:00\n", 0o600)
+	sb.dev("", "clone", "lab-sw", "lab-sw2", "--staging", "192.168.1.60")
+	if sb.code != 1 || !strings.Contains(sb.stderr(), "is staged for host already (tacctl scope staging list)") {
+		t.Errorf("a host entry with no name: %d %q", sb.code, sb.stderr())
+	}
 	// the same device's entry stays as it is
 	same := "192.168.1.60/32|lab|device|lab-sw2|2026-10-01 10:00|covered\n"
 	sb.write("state/staging", same, 0o600)
@@ -530,4 +536,68 @@ func TestDeviceCloneIsAllOrNothingAtACoveredAddress(t *testing.T) {
 	if sb.devices() != was || sb.fileExists("state/staging") {
 		t.Errorf("something of the clone is left:\n%s\n%s", sb.devices(), sb.read("state/staging"))
 	}
+}
+
+// An entry with no name ('config <vendor> --staging <ip>' without --name) is
+// the bench device's by construction: the clone is not refused for it, gives
+// it its name once registered (the /32 stays, and is ended by the replace),
+// and gives the name back if the clone fails after that.
+func TestDeviceCloneNamesAnEntryWithNoName(t *testing.T) {
+	sb := engineerSandbox(t)
+	sb.devSNMP("example-community\n", "lab-sw", "community", "--stdin")
+	sb.run("", []string{"config", "cisco", "--scope", "lab", "--staging", "192.0.2.81"})
+	if !strings.HasPrefix(sb.read("state/staging"), "192.0.2.81/32|lab|device||") {
+		t.Fatalf("staging:\n%s", sb.read("state/staging"))
+	}
+	nameless := sb.read("state/staging")
+
+	// a clone that fails after the entry was named puts the nameless entry back
+	sb.write("state/snmp/devices/lab-sw2.yaml", "version: 2\ncommunity: example-leftover\n", 0o600)
+	sb.dev("", "clone", "lab-sw", "lab-sw2", "--staging", "192.0.2.81")
+	if sb.code != 1 || sb.read("state/staging") != nameless {
+		t.Errorf("a refused clone: %d %q\n%s", sb.code, sb.stderr(), sb.read("state/staging"))
+	}
+	_ = os.RemoveAll(sb.path("state", "snmp", "devices", "lab-sw2.yaml"))
+	once := true
+	sb.hooks.deviceWriteStep = func() {
+		if once {
+			once = false
+			if err := os.MkdirAll(sb.path("state", "snmp", "devices", "lab-sw2.yaml"), 0o700); err != nil {
+				t.Error(err)
+			}
+		}
+	}
+	sb.dev("", "clone", "lab-sw", "lab-sw2", "--staging", "192.0.2.81")
+	sb.hooks.deviceWriteStep = nil
+	if sb.code != 1 || !strings.Contains(sb.stderr(), "The clone was not made. Nothing was kept.") || sb.read("state/staging") != nameless {
+		t.Fatalf("a failing clone: %d %q\n%s", sb.code, sb.stderr(), sb.read("state/staging"))
+	}
+	_ = os.RemoveAll(sb.path("state", "snmp", "devices", "lab-sw2.yaml"))
+
+	sb.dev("", "clone", "lab-sw", "lab-sw2", "--staging", "192.0.2.81")
+	sb.expect(0, "", "")
+	if got := sb.read("state/staging"); !strings.HasPrefix(got, "192.0.2.81/32|lab|device|lab-sw2|") || strings.Contains(got, "covered") || strings.Count(got, "\n") != 1 {
+		t.Errorf("staging:\n%s", got)
+	}
+	sb.dev("y\n", "rename", "lab-sw2", "lab-sw", "--replace")
+	sb.expect(0, "replaces 'lab-sw'", "")
+	if sb.fileExists("state/staging") || strings.Contains(plain(sb.run("", []string{"scope", "show", "lab"})), "192.0.2.81") {
+		t.Errorf("the /32 stayed: %q", sb.read("state/staging"))
+	}
+}
+
+// A stale line of the same device (no covered field, its /32 not a prefix of
+// the scope, which answers through a wider prefix) is forgotten by the sweep
+// of the registry write, so the covered entry is written after it: the
+// replacement finds the clone staged.
+func TestDeviceCloneReplacesAStaleLineOfTheSameDevice(t *testing.T) {
+	sb := engineerSandbox(t)
+	sb.write("state/staging", "192.168.1.61/32|lab|device|lab-sw2|2026-10-01 10:00\n", 0o600)
+	sb.dev("", "clone", "lab-sw", "lab-sw2", "--staging", "192.168.1.61")
+	sb.expect(0, "", "")
+	if got := sb.read("state/staging"); !strings.HasPrefix(got, "192.168.1.61/32|lab|device|lab-sw2|") || !strings.HasSuffix(got, "|covered\n") || strings.Count(got, "\n") != 1 {
+		t.Fatalf("staging:\n%s", got)
+	}
+	sb.dev("y\n", "rename", "lab-sw2", "lab-sw", "--replace")
+	sb.expect(0, "replaces 'lab-sw'", "")
 }

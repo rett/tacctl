@@ -7085,7 +7085,7 @@ gets an entry without a /32 (it is listed like the others, and logged as
 .BR "scope staging add ... covered=yes" ):
 no prefix is added and none is ever taken out, by the end of the entry or by
 .BR remove ,
-and the entry lasts until the device is seen at another address, is replaced or is removed by hand; a clone that is removed leaves it, as a staging /32 is left. A bench address already staged for a host or another device is refused to the clone.
+and the entry lasts until the device is seen at another address, is replaced or is removed by hand; a clone that is removed leaves it, as a staging /32 is left. A bench address already staged for a host or another device is refused to the clone; an entry with no name (\fBconfig <vendor> \-\-staging\fR without \fB\-\-name\fR) is the bench device's and takes the clone's name.
 .B list
 (the default) shows them with where each is seen now;
 .B remove
