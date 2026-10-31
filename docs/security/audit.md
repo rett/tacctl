@@ -133,6 +133,7 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `device clone` | `from` `to` `address` (the bench address) `scope` `snmp_users` and `block_files` (counts) `count` |
 | `device remove` | `names` (the first 20, then `+n`) `count` |
 | `device rename` | `from` `to` `count`, and `reason=device-name` when `device enroll` took over the name the device is configured with |
+| `device replace` | `old` `new` `address` `hold_cleared=yes\|no` `snmp_files` `block_files` `notices` (counts of what went with the original) `count`; with it `scope staging done` for the /32 and, for a hold, `breakglass release` |
 | `device enroll hostkey`, `device collect hostkey`, `device onboard hostkey` | `user` `addr` `device` `alg` `fp` `result=accepted\|skipped\|refused` `source=confirmed\|flag`; every answer to a host key's question, before the key is pinned or used; `auth.notice` |
 | `device enroll` | `user` `addr` `device` `vendor` `source=snmp\|given\|asked` `result`; one line per address at the end of the run |
 | `device import` | `source` `added` `updated` `removed` `count` |

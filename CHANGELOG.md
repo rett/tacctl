@@ -462,6 +462,29 @@ current behaviour; this file is where history lives.
     rewrites the drop-in recognises. No stored format changes, so no rollback
     step is added.
 
+18. **`device rename <replacement> <name> --replace` puts a device registered
+    at a bench address where the device it replaces is.** The original is
+    removed with its files (its SNMP credentials file, its configuration
+    blocks and their list, its configuration record, its acknowledged
+    notices); the replacement takes its name and its address, keeps its own
+    pinned host keys and settings, and takes the original's DNS name when it
+    has none. The replacement must have a staging /32 (`device clone`, or
+    `config <vendor> --staging --name`): the replacement's /32 ends in the
+    scope that holds it, and the replacement is answered by the scope of its
+    new address, which the plan says when it is not the scope of its bench
+    address. A break-glass hold on the original is shown in the plan and
+    cleared as `breakglass release` does (one render, the backends that serve
+    the address restarted); it is never moved to the replacement, and a
+    replacement with a hold of its own is refused until it is released. An
+    original with a hold needs the superuser, and an engineer is refused
+    naming it. The plan lines come first, then one question: a closed stdin is
+    a no and `--yes` is the only way to skip it. One snapshot covers all the
+    steps. The audit line is `device replace old= new= address=
+    hold_cleared=yes|no snmp_files= block_files= notices= count=1`, with
+    `scope staging done` for the /32 and `breakglass release` for a hold. No
+    stored format changes and no sudoers row is added (`device rename` has
+    one), so `tacctl rollback` has nothing to undo for it.
+
 19. **The client script writes and removes sshd's lockdown drop-in, and speaks
     protocol 7.** A host enrolled in a scope that is locked down gets one
     static sshd drop-in, `/etc/ssh/sshd_config.d/00-tacctl-0-lockdown.conf`,

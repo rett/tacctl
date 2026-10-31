@@ -128,8 +128,14 @@ var deviceSpecs = map[string]Spec{
 		{Names: []string{"--scope"}, Value: true, Kind: KindScopes},
 		{Names: []string{"--vendor"}, Value: true, Kind: "cisco|juniper|wti"},
 		flagApply, {Names: []string{"--overwrite"}}, flagYes, flagJSON}},
-	"remove":      {MaxArgs: -1, Args: []string{KindDevices + KindList}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}, flagYes}},
-	"rename":      {MinArgs: 2, MaxArgs: 2, Args: []string{KindDevices, ""}, Flags: []Flag{flagAllowGeneric}},
+	"remove": {MaxArgs: -1, Args: []string{KindDevices + KindList}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}, flagYes}},
+	// 'rename <new> <name> --replace' (0.2.23, D308): the device registered at
+	// a bench address takes the place of the original.
+	"rename": {MinArgs: 2, MaxArgs: 2, Args: []string{KindDevices, ""}, Flags: []Flag{flagAllowGeneric,
+		{Names: []string{"--replace"}, Desc: "Take the place of the second device, which is removed",
+			Long: "Treat the first device as the replacement of the second: the second is removed with its files, the first takes its name and its address (which ends its staging /32) and a break-glass hold on the second is cleared, never moved. One question asks first; an original with a hold needs the superuser"},
+		{Names: []string{"--yes"}, Desc: "Do not ask for confirmation",
+			Long: "Do not ask for confirmation of --replace (the only way to skip the question; it is not implied by any other option)"}}},
 	"address":     {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, ""}, Flags: []Flag{flagApply, flagYes}},
 	"hostname":    {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "clear"}},
 	"vendor":      {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, KindVendors + "|clear"}, Flags: []Flag{{Names: []string{"--from-device"}}, flagYes}},
@@ -188,6 +194,7 @@ var deviceVerbs = [][2]string{
 	{"sync <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> [--apply] [--overwrite] [--json] [--yes]", "Engineers: fill the registry's empty hostname, location and description from what each device's last pull record says of itself (no login; the preview first, --apply writes after one question)"},
 	{"remove <name>[,<name>...] | --all [--yes]", "Remove devices from the registry (confirms)"},
 	{"rename <old> <new> [--allow-generic]", "Rename a device"},
+	{"rename <replacement> <name> --replace [--yes]", "Replace a device with one registered at a bench address"},
 	{"address <name> [<address>] [--yes]", "Show or set the address (--apply: then run 'device config apply' for the device); on a device with a break-glass hold, the hold moves with it after one question (--yes: no question)"},
 	{"hostname <name> [<dns>|clear]", "Show, set or clear the DNS name"},
 	{"vendor <name> [cisco|juniper|wti|other|--from-device [--yes]]", "Show or set the vendor (--from-device: read it from the device by SNMP)"},
@@ -1709,6 +1716,12 @@ func (inv *invocation) deviceRename(args []string) error {
 	p, err := inv.deviceParse("rename", args)
 	if err != nil {
 		return err
+	}
+	if p.Has("--replace") {
+		return inv.deviceReplace(p)
+	}
+	if p.Has("--yes") {
+		return inv.usageErr(append([]string{"--yes goes with --replace: a rename asks no question."}, deviceUsageLines("rename")...)...)
 	}
 	f, res, err := inv.deviceLoad()
 	if err != nil {

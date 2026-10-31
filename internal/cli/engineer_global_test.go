@@ -85,7 +85,12 @@ var engineerRowCases = map[string]engineerRow{
 	"device remove": {cases: append(cases("device remove lab-sw --yes", "device remove --all --yes"),
 		refusedCase("Device 'web1' not found", "device remove web1 --yes"), refusedCase("Device 'authsrv' not found", "device remove lab-sw,authsrv --yes"))},
 	"device rename": {cases: append(cases("device rename lab-sw lab-core"),
-		refusedCase("Device 'web1' not found", "device rename web1 webx"), refusedCase("Device '192.168.1.10' not found", "device rename 192.168.1.10 webx"))},
+		refusedCase("Device 'web1' not found", "device rename web1 webx"), refusedCase("Device '192.168.1.10' not found", "device rename 192.168.1.10 webx"),
+		refusedCase("Device 'prod-sw' not found", "device rename lab-sw prod-sw --replace --yes"),
+		refusedCase("Device 'web1' not found", "device rename lab-sw web1 --replace --yes"),
+		refusedCase("Device 'lab-sw2' not found", "device rename lab-sw2 lab-sw --replace --yes")),
+		// A replacement ends its staging /32 in the engineer's own scope.
+		scoped: []string{"scopes.lab.prefixes"}},
 	"device address": {cases: append(cases("device address lab-sw 192.168.1.3"),
 		refusedCase("Device 'web1' not found", "device address web1 192.168.1.99"))},
 	"device hostname": {cases: append(cases("device hostname lab-sw lab-sw.example.net"),

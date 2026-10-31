@@ -844,3 +844,55 @@ targetssh() {
     assert_failure 1
     assert_output --partial "already registered as 'core-sw2'"
 }
+
+@test "device rename --replace: the bench device takes the original's name and address, the /32 ends" {
+    local T="$TACCTL_BIN_SCRIPT" snmp="${TACCTL_STATE_DIR}/snmp/devices"
+    "$T" scope prefixes lab add 10.99.0.0/24
+    "$T" device add core-sw1 10.99.0.1 --vendor cisco --hostname core-sw1.example.net --no-host-key
+    printf 'example-ro\n' | "$T" device snmp core-sw1 community --stdin > /dev/null
+    "$T" device clone core-sw1 core-sw2 --staging 192.0.2.77 > /dev/null
+    printf 'example-bench\n' | "$T" device snmp core-sw2 community --stdin > /dev/null
+    local before
+    before=$(sha256sum < "$DEVICES")
+
+    # no question answered: nothing happens, whatever else is given
+    run "$T" device rename core-sw2 core-sw1 --replace < /dev/null
+    assert_success
+    plain
+    assert_output --partial "About to replace 'core-sw1' with 'core-sw2'."
+    assert_output --partial "Staging:  192.0.2.77/32 ends in scope 'lab'."
+    assert_output --partial "Aborted."
+    [[ "$(sha256sum < "$DEVICES")" == "$before" ]]
+    run "$T" device rename core-sw2 core-sw1 --replace --allow-generic --yes
+    assert_failure 1
+    run "$T" device rename core-sw2 core-sw3 --yes
+    assert_failure 1
+    plain
+    assert_output --partial "--yes goes with --replace"
+    [[ "$(sha256sum < "$DEVICES")" == "$before" ]]
+
+    run "$T" device rename core-sw2 core-sw1 --replace --yes
+    assert_success
+    plain
+    assert_output --partial "Device 'core-sw2' replaces 'core-sw1': it is now 'core-sw1' at 10.99.0.1."
+    run "$T" device list
+    plain
+    assert_output --partial "Registered devices (1)"
+    assert_output --regexp "core-sw1 +10\.99\.0\.1 +cisco +lab +configured"
+    refute_output --partial "core-sw2"
+    run grep -c "example-bench" "$snmp/core-sw1.yaml"
+    assert_output "1"
+    [[ ! -e "$snmp/core-sw2.yaml" ]]
+    [[ ! -e "${TACCTL_STATE_DIR}/staging" ]]
+    run "$T" scope show lab
+    refute_output --partial "192.0.2.77"
+    # the hostname of the original is the replacement's, which had none
+    run grep -c "hostname: core-sw1.example.net" "$DEVICES"
+    assert_output "1"
+    # a device that is not staged is refused
+    "$T" device add core-sw4 10.99.0.4 --vendor cisco --no-host-key
+    run "$T" device rename core-sw4 core-sw1 --replace --yes
+    assert_failure 1
+    plain
+    assert_output --partial "'core-sw4' is not staged"
+}

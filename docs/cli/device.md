@@ -208,6 +208,24 @@ device rename <old> <new> [--allow-generic]
     device (`config <vendor> --staging`, `scope staging list`) follows the new name, so it ends as
     before once the device is registered at an address its scope covers
 
+device rename <replacement> <name> --replace [--yes]
+
+    Put a device that was registered at a bench address (`device clone`, or `config <vendor>
+    --staging --name`) where the device it replaces is. The first name is the replacement, the
+    second the original, which is removed with its files: its SNMP credentials file, its
+    configuration blocks and their list, its configuration record and its acknowledged notices.
+    The replacement takes the original's name and address, keeps its own pinned host keys and
+    settings, and takes the original's DNS name when it has none. It is answered by the scope of
+    its new address (the plan says when that is not the scope of its bench address), and its
+    staging /32 ends in the scope that holds it. A break-glass hold on the original is cleared
+    as `breakglass release` does and is never moved to the replacement. The replacement must
+    have a staging /32, and no hold of its own. The plan lines come first, then one question;
+    a terminal-less run answers no and `--yes` is the only way to skip it. One snapshot covers
+    the steps. An engineer replaces within their own scopes; a hold on the original needs the
+    superuser, and an engineer is refused naming it. Audit: `device replace old= new= address=
+    hold_cleared= snmp_files= block_files= notices= count=1`, `scope staging done` and, for a
+    hold, `breakglass release`
+
 device address|hostname|vendor|port|description|location <name> [<value>|clear]
 
     Show, set or clear one field (`location`: the SNMP location of the walkthroughs; an empty text
@@ -750,4 +768,4 @@ device that then has no change, never a change nobody reviewed. `apply
 --pull` pulls the devices the other selectors pick first and applies
 `--stale` and `--differs` to the records that pull wrote.
 
-Each change also writes a line of its own to the audit log, beside the `cmd start` and `cmd end` pair: `device add`, `device clone`, `device remove`, `device rename`, `device import`, `device set name= field= from= to=` for the setters and `device sync` with the devices written; a shown SNMP secret is `secret-read kind= name=` for every caller, and `device config show|plan` and the walkthroughs log the secret they read the same way ([Audit log](../security/audit.md#detail-lines)).
+Each change also writes a line of its own to the audit log, beside the `cmd start` and `cmd end` pair: `device add`, `device clone`, `device remove`, `device rename`, `device replace`, `device import`, `device set name= field= from= to=` for the setters and `device sync` with the devices written; a shown SNMP secret is `secret-read kind= name=` for every caller, and `device config show|plan` and the walkthroughs log the secret they read the same way ([Audit log](../security/audit.md#detail-lines)).

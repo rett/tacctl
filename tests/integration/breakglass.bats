@@ -177,6 +177,32 @@ restarts() { grep -c 'systemctl restart' "$CALLS_LOG" || true; }
     assert_success
 }
 
+@test "hold: replacing the held device clears the hold, which is never moved to the replacement" {
+    "$TACCTL_BIN_SCRIPT" device clone lab-sw lab-sw2 --staging 192.0.2.77 > /dev/null
+    run hold lab-sw "console recovery"
+    assert_success
+    run plain device rename lab-sw2 lab-sw --replace < /dev/null
+    assert_success
+    assert_output --partial "Break-glass is held on lab-sw (192.168.1.1) since "
+    assert_output --partial "the hold is cleared, never moved to 'lab-sw2'"
+    assert_output --partial "Aborted."
+    run plain breakglass list
+    assert_output --partial "lab-sw"
+    base=$(restarts)
+    run plain device rename lab-sw2 lab-sw --replace --yes
+    assert_success
+    assert_output --partial "Device 'lab-sw2' replaces 'lab-sw': it is now 'lab-sw' at 192.168.1.1."
+    assert_output --partial "Break-glass on lab-sw (192.168.1.1) released"
+    (( $(restarts) > base ))
+    run plain breakglass list
+    refute_output --partial "lab-sw"
+    run plain scope lookup 192.168.1.1
+    refute_output --partial "NOT ANSWERED"
+    run plain device list
+    assert_output --partial "Registered devices (3)"
+    refute_output --partial "lab-sw2"
+}
+
 @test "hold: refused for an unknown device, the server's own address and an address no scope covers" {
     run hold nosuch "x"
     assert_failure 1

@@ -9677,8 +9677,35 @@ Options:
 .TP
 \fB\-\-allow\-generic\fR
 (add, rename, import) Allow a generic name such as 'switch'.
+.TP
+\fB\-\-replace\fR
+Treat the first device as the replacement of the second: the second is removed with its files, the first takes its name and its address (which ends its staging /32) and a break\-glass hold on the second is cleared, never moved. One question asks first; an original with a hold needs the superuser.
+.TP
+\fB\-\-yes\fR
+Do not ask for confirmation of \-\-replace (the only way to skip the question; it is not implied by any other option).
 .RE
 .\" END GENERATED: command device rename
+.TP
+.BI "device rename " "replacement name " "\-\-replace " [ \-\-yes ]
+Puts a device that was registered at a bench address
+.RB ( "device clone" ,
+or
+.B config <vendor> \-\-staging \-\-name
+followed by
+.BR "device add" )
+where the device it replaces is. The first name is the replacement and the second the device it replaces, which is removed with its files (its SNMP credentials file, its configuration blocks and their list, its configuration record and its acknowledged notices); the replacement takes its name and its address, keeps its own pinned host keys and settings, and takes the original's DNS name when it has none. The replacement is answered by the scope of its new address, which is not always the scope of its bench address (the plan says so), and its staging /32 ends in the scope that holds it. A break\-glass hold on the original is cleared like
+.B "breakglass release"
+does (one render, the backends that serve the address restarted) and is never moved to the replacement, which is what the address now belongs to. The replacement must be staged, that is have a staging /32 (see
+.BR "scope staging" ),
+and is refused otherwise with the command that stages one; a replacement with a hold of its own is refused until it is released. The plan lines name what is removed, what moves and what ends, and, for a hold, how long it stood; one question follows (a closed stdin is a no, and
+.B \-\-yes
+is the only way to skip it: no other option implies it). One snapshot is taken for all the steps. An engineer replaces within their own scopes; a hold on the original needs the superuser, since releasing it is the superuser's, and an engineer is refused naming it. A replacement whose SNMP settings are not the original's is the superuser's to bring in, as for any change of them. Logged:
+.B "auth.info device replace old= new= address= hold_cleared=yes|no snmp_files= block_files= notices= count=1 by="
+and
+.B "scope staging done"
+for the /32, and
+.B "breakglass release"
+for a hold (counts and names, never a credential).
 .TP
 .BI "device address " "name " [ address " [" \-\-apply "] [" \-\-yes ] ]
 Show or set the address, the AAA identity of the device, stored canonically. It
