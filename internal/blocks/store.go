@@ -511,6 +511,60 @@ func (s *Store) RenameDevice(old, newName string) error {
 	return nil
 }
 
+// File is one block file of a device, read to be written under another
+// name.
+type File struct {
+	Vendor, Block string
+	Data          []byte
+}
+
+// ReadDevice reads every block file of the device (a device with none has
+// none), vendor by vendor in the order of Vendors and each vendor's blocks
+// by name. Nothing is written, so a file that cannot be read is found before
+// a copy changes anything.
+func (s *Store) ReadDevice(device string) ([]File, error) {
+	var out []File
+	l := DeviceLevel(device)
+	vendors, err := s.Vendors(l)
+	if err != nil {
+		return nil, err
+	}
+	for _, v := range vendors {
+		list, err := s.List(l, v)
+		if err != nil {
+			return nil, err
+		}
+		for _, b := range list {
+			data, err := s.Read(l, v, b)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, File{Vendor: v, Block: b, Data: data})
+		}
+	}
+	return out, nil
+}
+
+// WriteDevice writes files as the blocks of the device, which must have no
+// blocks directory (CheckNoDevice: a copy never merges into the blocks of an
+// earlier device of the name). A write that fails takes back what was
+// written, so the device has no half a copy.
+func (s *Store) WriteDevice(device string, files []File) error {
+	if len(files) == 0 {
+		return nil
+	}
+	if err := s.CheckNoDevice(device); err != nil {
+		return err
+	}
+	for _, f := range files {
+		if err := s.Write(DeviceLevel(device), f.Vendor, f.Block, f.Data); err != nil {
+			_ = s.RemoveDevice(device)
+			return err
+		}
+	}
+	return nil
+}
+
 // CheckNoDevice is nil when the device has no blocks directory. A new device
 // (or a device renamed to the name) that finds one would pick up the blocks
 // of an earlier device of that name: a directory left by a device removed

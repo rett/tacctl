@@ -174,6 +174,28 @@ device support-bundle <name> [--vendor cisco|juniper|wti] [--login <local-user>]
     `--vendor` reads the device as another vendor for this run only; `--login` is a Junos local
     account's one-shot password, as for a pull; see Support bundles (devices/support-bundle.md)
 
+device clone <name> <new> --staging <bench-ip> [--allow-generic]
+
+    Engineers: register <new> as a copy of the device <name>, at the address
+    the new device has on the bench. Copied: the registry's settings (vendor,
+    ssh port, description, location, legacy-ssh, ios-syntax), the SNMP
+    settings and credentials file (the community and the pool of v3 users,
+    the default included), the NETCONF settings, the timing scale and the
+    configuration blocks with their list in `tacctl.yaml`. Not copied: the
+    address, the name, the DNS name (it names the original), the pinned host
+    keys, the acknowledged notices, a break-glass hold and the configuration
+    record. `--staging` is required: the registry holds one device for each
+    address. The bench address is added to the scope of <name> as a /32
+    before the registry is written, as `config <vendor> --staging` does (an
+    address the scope answers needs none; an engineer is refused one another
+    scope answers); a device no scope answers is refused. The new name is
+    lower case and not taken, and not a generic name unless `--allow-generic`
+    is given. One snapshot is taken first and a write that fails takes the
+    copy back whole. An engineer clones the devices of their own scopes, the
+    SNMP credentials included. Once the copy is installed, `device rename
+    <new> <name> --replace` puts it where the original is. Audit: `device
+    clone from= to= address= scope= snmp_users= block_files= count=1`
+
 device remove <name>[,<name>...] | --all [--yes]
 
     Remove from the registry (confirms; hosts, scopes and vendor tags are not touched)
@@ -728,4 +750,4 @@ device that then has no change, never a change nobody reviewed. `apply
 --pull` pulls the devices the other selectors pick first and applies
 `--stale` and `--differs` to the records that pull wrote.
 
-Each change also writes a line of its own to the audit log, beside the `cmd start` and `cmd end` pair: `device add`, `device remove`, `device rename`, `device import`, `device set name= field= from= to=` for the setters and `device sync` with the devices written; a shown SNMP secret is `secret-read kind= name=` for every caller, and `device config show|plan` and the walkthroughs log the secret they read the same way ([Audit log](../security/audit.md#detail-lines)).
+Each change also writes a line of its own to the audit log, beside the `cmd start` and `cmd end` pair: `device add`, `device clone`, `device remove`, `device rename`, `device import`, `device set name= field= from= to=` for the setters and `device sync` with the devices written; a shown SNMP secret is `secret-read kind= name=` for every caller, and `device config show|plan` and the walkthroughs log the secret they read the same way ([Audit log](../security/audit.md#detail-lines)).

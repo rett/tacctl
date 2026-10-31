@@ -95,8 +95,8 @@ package lifecycle
 //	                       tiers file with its own text and its group
 //	                       drop-in is never refreshed: a file
 //	                       that is exactly this release's text, or the one
-//	                       0.2.4 to 0.2.19 wrote (tier.Sudoers0219,
-//	                       Sudoers0218, Sudoers0217, Sudoers0216,
+//	                       0.2.4 to 0.2.22 wrote (tier.Sudoers0222,
+//	                       Sudoers0219, Sudoers0218, Sudoers0217, Sudoers0216,
 //	                       Sudoers0214, Sudoers0213, Sudoers028,
 //	                       Sudoers027, GroupSudoers026, GroupSudoers027,
 //	                       GroupSudoers028, GroupSudoers0216), is
@@ -878,7 +878,7 @@ func (p *RollbackPlan) planSudoers() []sudoersPlan {
 	tiers := sudoersPlan{label: "the per-tier drop-in", file: pt.TierSudoersFile, state: "absent"}
 	if b, err := os.ReadFile(pt.TierSudoersFile); err == nil {
 		switch got := string(b); {
-		case got == tier.Sudoers(), got == tier.Sudoers0219(), got == tier.Sudoers0218(), got == tier.Sudoers0217(), got == tier.Sudoers0216(), got == tier.Sudoers0214(), got == tier.Sudoers0213(), got == tier.Sudoers028(), got == tier.Sudoers027():
+		case got == tier.Sudoers(), got == tier.Sudoers0222(), got == tier.Sudoers0219(), got == tier.Sudoers0218(), got == tier.Sudoers0217(), got == tier.Sudoers0216(), got == tier.Sudoers0214(), got == tier.Sudoers0213(), got == tier.Sudoers028(), got == tier.Sudoers027():
 			tiers.state, tiers.body = "rewrite", tier.Sudoers023()
 		case got == tier.Sudoers023():
 			tiers.state = "done"

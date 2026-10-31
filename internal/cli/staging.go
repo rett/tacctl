@@ -11,6 +11,7 @@ package cli
 // ('scope staging remove').
 
 import (
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -212,6 +213,64 @@ func (inv *invocation) stagingSeen(e stagingEntry) string {
 		return d.Address
 	}
 	return ""
+}
+
+// stagingBench is the bench address of --staging <ip>: one IPv4 address, no
+// prefix length, in its canonical form; a problem is the refusal's text.
+func stagingBench(flag string) (addr, problem string) {
+	norm, err := devreg.NormalizeAddress(flag)
+	if err != nil || strings.Contains(norm, ":") || strings.Contains(flag, "/") {
+		return "", "--staging takes the device's bench IPv4 address (a single address, no prefix length): '" + flag + "'"
+	}
+	return norm, ""
+}
+
+// stagingEntryOf is the staging line of the device registered at addr (kind
+// device, the /32 of that address), and whether there is one.
+func (inv *invocation) stagingEntryOf(addr string) (stagingEntry, bool) {
+	for _, e := range inv.stagingLoad() {
+		if e.Kind == "device" && e.CIDR == addr+"/32" {
+			return e, true
+		}
+	}
+	return stagingEntry{}, false
+}
+
+// stagingEnd takes the staging /32 of e out of its scope and out of the
+// staging file now, whatever address the device is seen at: the verbs that
+// decide the device is in place (a replacement that took its original's
+// address) or that undo the /32 they just added. A scope that no longer lists
+// the /32 keeps nothing to remove, and a /32 that is the scope's only prefix
+// stays (a scope without a prefix answers nothing). The change is audited as
+// the sweep's is, with event and what, for the device or the reason.
+func (inv *invocation) stagingEnd(e stagingEntry, event, what string) error {
+	m, err := inv.model()
+	if err != nil {
+		return err
+	}
+	base := event + " cidr=" + e.CIDR + " scope=" + e.Scope + " " + what
+	if m.Exists("scopes", e.Scope) && contains(m.ScopePrefixes(e.Scope), e.CIDR) {
+		rest := without(m.ScopePrefixes(e.Scope), e.CIDR)
+		if joinNonEmpty(rest, "") == "" {
+			return errors.New("staging address " + e.CIDR + " is the only prefix of scope '" + e.Scope + "'; add its real prefixes first")
+		}
+		if err := inv.applyStore(func(s *store.Store) error { return s.ScopeSet(e.Scope, "prefixes="+joinNonEmpty(rest, ",")) }); err != nil {
+			inv.verbResult(audit.Info, base, failReason(err, "store"))
+			return err
+		}
+	}
+	var kept []stagingEntry
+	for _, o := range inv.stagingLoad() {
+		if o.CIDR != e.CIDR {
+			kept = append(kept, o)
+		}
+	}
+	if err := inv.stagingSave(kept); err != nil {
+		inv.verbResult(audit.Info, base, "write")
+		return err
+	}
+	inv.verbResult(audit.Info, base, "")
+	return nil
 }
 
 // stagingRenameDevice names the new device name in the staging entries of

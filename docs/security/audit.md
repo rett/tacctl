@@ -130,6 +130,7 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `host sync` | `name` `target` `created` `updated` `renamed` `removed` `remove-home` `result`, and `reason` when it failed; one line per host |
 | `host move` | `scope` `moved` `failed` (for a move of every drifted host) |
 | `device add` | `name` `address` `vendor` `count` |
+| `device clone` | `from` `to` `address` (the bench address) `scope` `snmp_users` and `block_files` (counts) `count` |
 | `device remove` | `names` (the first 20, then `+n`) `count` |
 | `device rename` | `from` `to` `count`, and `reason=device-name` when `device enroll` took over the name the device is configured with |
 | `device enroll hostkey`, `device collect hostkey`, `device onboard hostkey` | `user` `addr` `device` `alg` `fp` `result=accepted\|skipped\|refused` `source=confirmed\|flag`; every answer to a host key's question, before the key is pinned or used; `auth.notice` |

@@ -32,10 +32,11 @@ package lifecycle
 //	                  host sync of the server) or the password cache.
 //	sudoers           the per-tier drop-in grants the engineer 'scope mgmt-acl
 //	                  * mode' and the operator the read forms of 'console
-//	                  system-shell' and 'console password-cache [on|off]'; a
-//	                  file that is exactly this release's text is rewritten
-//	                  with 0.2.19's (tier.Sudoers0219, through 'visudo -cf'),
-//	                  any other is left. 'man' and 'completion' are tier rows
+//	                  system-shell' and 'console password-cache [on|off]' (and
+//	                  0.2.23 the engineer 'device clone'); a file that is
+//	                  exactly this release's text, or 0.2.22's (tier.Sudoers0222),
+//	                  is rewritten with 0.2.19's (tier.Sudoers0219, through
+//	                  'visudo -cf'), any other is left. 'man' and 'completion' are tier rows
 //	                  without a sudoers line. The group drop-in is unchanged.
 //	VarLib records    devices-config.json is version 1 with no new field, and
 //	                  the plan's 'kept' and 'own' are output only, never
@@ -69,7 +70,7 @@ func planRollback0219(p *RollbackPlan) (*RollbackPlan, error) {
 	in := p.in
 	pt := in.Paths
 	p.keys = slices.DeleteFunc(in.Conf.RollbackKeys0218(), func(k string) bool { return !conf.Added0220Key(k) && !conf.Added0221Key(k) && !conf.Added0222Key(k) })
-	tiers := p.tiersPlan(tier.Sudoers0219(), tier.Sudoers())
+	tiers := p.tiersPlan(tier.Sudoers0219(), tier.Sudoers(), tier.Sudoers0222())
 	p.sudoers = []sudoersPlan{tiers}
 	p.Steps = append(p.Steps, p.lockdownKeysStep(RollbackTarget0219), p.tiersStep(RollbackTarget0219, tiers,
 		"the engineer's rule of 'scope mgmt-acl * mode' and the operator's rules of 'console system-shell' and 'console password-cache' are taken out"),

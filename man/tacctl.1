@@ -9588,6 +9588,56 @@ Options:
 .RE
 .\" END GENERATED: command device support-bundle
 .TP
+.BI "device clone " "name new " "\-\-staging " "bench\-ip " [ \-\-allow\-generic ]
+Registers
+.I new
+as a copy of the device
+.IR name :
+the same intent, at the address the new device has on the bench. Copied are the registry's settings
+(the vendor, the ssh port, the description, the location, the legacy and the
+Cisco syntax settings, the NETCONF settings and the timing scale), the device's own SNMP settings
+and its credentials file (the community and the pool of v3 users, the default
+included; a default that names a user of the scope's pool stays valid, the copy being in the same scope), and its
+configuration blocks, the files and their list in
+.BR tacctl.yaml .
+Not copied are what belongs to the one device that is there: its address, its name, its DNS name (it names the original), its
+pinned host keys, its acknowledged notices, a break\-glass hold and its configuration record. The copy has no pinned host key, so the usual notice follows it.
+.IP
+.B \-\-staging
+is required: the registry holds one device for each address, and the copy cannot take the original's. The bench
+address is added to the scope of the original as a /32, as
+.B config <vendor> \-\-staging
+does (see
+.BR "scope staging" ),
+before the registry is written; a bench address the scope already answers needs no /32, and one that another scope answers is refused to an engineer and warned about for the superuser. The new name follows the
+rules of
+.B device add
+(lower case, not taken, not a generic name unless
+.B \-\-allow\-generic
+is given). A device that no scope answers has no scope to stage the address in and is refused. When the copy is installed in the original's place,
+.B "device rename <new> <name> \-\-replace"
+removes the original and moves the copy to its address.
+.IP
+The copy is all or nothing: one snapshot is taken first, what can be read is read before anything is written, and a write that fails takes the registry line, the files and the /32 back. An engineer clones the devices of their own scopes, the SNMP credentials included (an engineer reads them there); the SNMP settings of the copy are the original's and nothing else, so the verb does not open
+.B device snmp
+to them. Logged:
+.B "auth.info device clone from= to= address= scope= snmp_users= block_files= count=1 by="
+(counts and names, never a credential). Exit status: 0, 1 refused, 2 wrong arguments.
+.\" BEGIN GENERATED: command device clone
+.RS
+.PP
+Requires: \fBengineer\fR.
+.PP
+Options:
+.TP
+\fB\-\-staging\fR \fI<bench\-ip>\fR
+The address the copy has on the bench. It is required: the registry holds one device for each address. It is added to the scope of the original as a /32 until the copy replaces the original; an address the scope answers already needs none.
+.TP
+\fB\-\-allow\-generic\fR
+Allow a generic name such as 'switch'.
+.RE
+.\" END GENERATED: command device clone
+.TP
 .BI "device remove " "name[,name...] | \-\-all " [ \-\-yes ]
 Remove devices from the registry, after confirmation (\c
 .B \-\-yes
@@ -14688,10 +14738,10 @@ device hostname, device vendor, device port, device description,
 device location, device legacy\-ssh, device ios\-syntax,
 device hostkey, device import, scope devices, device config,
 device enroll, device collect, device onboard, device sync,
-device support\-bundle, config cisco, config juniper, config wti,
-host list, host show, scope staging, scope secret, scope snmp,
-scope mgmt\-acl, device snmp, scope block, device block, scope show,
-breakglass list
+device support\-bundle, device clone, config cisco, config juniper,
+config wti, host list, host show, scope staging, scope secret,
+scope snmp, scope mgmt\-acl, device snmp, scope block, device block,
+scope show, breakglass list
 .TP
 .B superuser
 Every verb not listed above, and every verb of the tiers below.
@@ -14811,7 +14861,7 @@ are:
 .B "action"
 _phase, backend disable, backend enable, backup unkeep,
 breakglass hold, breakglass release, console install, console remove,
-device add, device enroll, device notice, device remove,
+device add, device clone, device enroll, device notice, device remove,
 device rename, device ssh, device support\-bundle, emergency lockdown,
 group add, group edit, group remove, host enroll, host forget,
 host move, host rename, host sync, host unenroll, passwd, scope add,

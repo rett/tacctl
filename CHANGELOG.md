@@ -434,6 +434,34 @@ current behaviour; this file is where history lives.
     The dry run lists levels and counts, never a name or a passphrase; the
     audit line carries counts and snapshot ids.
 
+17. **`device clone <name> <new> --staging <bench-ip>` registers a copy of a
+    device's intent at its bench address.** A device that will be replaced
+    is provisioned from the one it replaces: the copy has the registry's
+    settings (vendor, ssh port, description, location, legacy-ssh,
+    ios-syntax), the SNMP settings and credentials file (the community and
+    the pool of v3 users, the default included), the NETCONF settings, the
+    timing scale and the configuration blocks with their list in
+    `tacctl.yaml`. It has none of what belongs to the one device that is
+    there: its address, its name, its DNS name (it names the original), the
+    pinned host keys, the acknowledged notices, a break-glass hold and the
+    configuration record. `--staging` is required, since the registry holds
+    one device for each address; the bench address is added to the scope of
+    the original as a /32 before the registry is written, as `config
+    <vendor> --staging` does, and a device no scope answers is refused. The
+    new name follows the rules of `device add` (lower case, not taken, not
+    generic unless `--allow-generic`). One snapshot is taken first, what can
+    be read is read before anything is written, and a write that fails takes
+    the registry line, the files and the /32 back. An engineer clones the
+    devices of their own scopes, the SNMP credentials included (they can
+    read them there); the verb gives them no way to set SNMP settings that
+    are not a copy of the device's. The audit line is `device clone from= to=
+    address= scope= snmp_users= block_files= count=1`, counts and names, never
+    a credential. The engineer's sudoers rows gain `device clone *`; the
+    texts that `tacctl rollback` puts back for the older releases do not have
+    it, and the text of 0.2.22 (`tier.Sudoers0222`) is one every target that
+    rewrites the drop-in recognises. No stored format changes, so no rollback
+    step is added.
+
 19. **The client script writes and removes sshd's lockdown drop-in, and speaks
     protocol 7.** A host enrolled in a scope that is locked down gets one
     static sshd drop-in, `/etc/ssh/sshd_config.d/00-tacctl-0-lockdown.conf`,

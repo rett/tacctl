@@ -386,6 +386,7 @@ var auditTable = map[string]auditEntry{
 	"device add":            action(),
 	"device remove":         action(),
 	"device rename":         action(),
+	"device clone":          action(),
 	"device notice":         action().readWhen(noticeListForm),
 	"device ssh":            action(),
 	"device onboard":        mixed(),

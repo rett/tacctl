@@ -118,6 +118,11 @@ var deviceSpecs = map[string]Spec{
 		{Names: []string{"--vendor"}, Value: true, Kind: "cisco|juniper|wti"},
 		{Names: []string{"--login"}, Value: true},
 		{Names: []string{"--out"}, Value: true}}},
+	// 'clone' (0.2.23, D307): a copy of a device's intent at a bench address.
+	"clone": {MinArgs: 2, MaxArgs: 2, Args: []string{KindDevices, ""}, Flags: []Flag{
+		{Names: []string{"--staging"}, Value: true, Arg: "<bench-ip>", Desc: "The address the copy has on the bench (required)",
+			Long: "The address the copy has on the bench. It is required: the registry holds one device for each address. It is added to the scope of the original as a /32 until the copy replaces the original; an address the scope answers already needs none"},
+		{Names: []string{"--allow-generic"}, Desc: "Allow a generic name such as 'switch'"}}},
 	"sync": {MaxArgs: -1, Args: []string{KindDevices + KindList}, Flags: []Flag{
 		{Names: []string{"--all"}, Alone: true},
 		{Names: []string{"--scope"}, Value: true, Kind: KindScopes},
@@ -179,6 +184,7 @@ var deviceVerbs = [][2]string{
 	{"collect <address>... | --discovered [--login <local-user>] [--host-key SHA256:<fp>] [--register [--yes]] [--json]", "Engineers, Junos devices: log in once to each address nobody registered and read what it is (each one's host key shown and accepted first by typing its name or address; show version and the configuration, nothing else), as one table; --register registers them through 'device add' and keeps the read as their first record"},
 	{"enroll <address>... | --discovered [--host-key SHA256:<fp>] [--vendor cisco|juniper|wti|other] [--name <name>] [--legacy-ssh] [--json]", "Engineers: per address, accept the one host key shown by typing the device's name, read its name and vendor by SNMP (asking for what cannot be read), register it, pull it as you, take the name it is configured with, plan it and, for Junos devices, offer the apply review"},
 	{"support-bundle <name> [--vendor cisco|juniper|wti] [--login <local-user>] [--out <dir>]", "Engineers: log in once to a registered device and collect what a developer needs to make tacctl read it right (the version, hardware or inventory, stack, the login's permissions and the commit history of a Junos device, the screens of a WTI unit, the SNMP system group; the configuration itself is not collected), scrubbed: names, users, addresses, serial numbers and time zones become examples and secrets are removed; what was replaced is kept in a private file beside the directory"},
+	{"clone <name> <new> --staging <bench-ip> [--allow-generic]", "Register a copy of a device at its bench address"},
 	{"sync <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> [--apply] [--overwrite] [--json] [--yes]", "Engineers: fill the registry's empty hostname, location and description from what each device's last pull record says of itself (no login; the preview first, --apply writes after one question)"},
 	{"remove <name>[,<name>...] | --all [--yes]", "Remove devices from the registry (confirms)"},
 	{"rename <old> <new> [--allow-generic]", "Rename a device"},
@@ -586,7 +592,7 @@ func (inv *invocation) device(args []string) error {
 		"list": inv.deviceList, "show": inv.deviceShow, "add": inv.deviceAdd, "remove": inv.deviceRemove,
 		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "ios-syntax": inv.deviceIOSSyntax, "netconf": inv.deviceNetconf, "timeout-scale": inv.deviceTimeoutScale, "stale-days": inv.deviceStaleDays,
 		"notice": inv.deviceNotice, "import": inv.deviceImport, "export": inv.deviceExport,
-		"hostkey": inv.deviceHostkey, "onboard": inv.deviceOnboard, "collect": inv.deviceCollect, "enroll": inv.deviceEnroll, "sync": inv.deviceSync, "support-bundle": inv.deviceSupportBundle, "snmp": inv.deviceSNMP, "block": inv.deviceBlock, "ssh": inv.ssh, "client-config": inv.deviceClientConfig, "config": inv.deviceConfig,
+		"hostkey": inv.deviceHostkey, "onboard": inv.deviceOnboard, "collect": inv.deviceCollect, "enroll": inv.deviceEnroll, "sync": inv.deviceSync, "support-bundle": inv.deviceSupportBundle, "clone": inv.deviceClone, "snmp": inv.deviceSNMP, "block": inv.deviceBlock, "ssh": inv.ssh, "client-config": inv.deviceClientConfig, "config": inv.deviceConfig,
 		"scan": inv.deviceScan, "discover": inv.deviceDiscover, "check": inv.deviceCheck,
 		"address": inv.deviceSetter("address"), "hostname": inv.deviceSetter("hostname"), "vendor": inv.deviceSetter("vendor"),
 		"port": inv.deviceSetter("port"), "description": inv.deviceSetter("description"), "location": inv.deviceSetter("location"),
@@ -797,6 +803,11 @@ func (inv *invocation) deviceChangeScopes(f scopeFilter, before, after *devreg.R
 				case was != nil && reflect.DeepEqual(was.SNMP, is.SNMP):
 				case was == nil && slices.ContainsFunc(bf.Devices, func(o *devreg.Device) bool {
 					return o.Address == is.Address && reflect.DeepEqual(o.SNMP, is.SNMP)
+				}):
+				// 'device clone' copies the device's settings to the copy: the
+				// same settings, from a device the caller sees.
+				case was == nil && inv.cloneOf != "" && slices.ContainsFunc(bf.Devices, func(o *devreg.Device) bool {
+					return strings.EqualFold(o.Name, inv.cloneOf) && reflect.DeepEqual(o.SNMP, is.SNMP)
 				}):
 				default:
 					return inv.deniedUsage(reasonSuperuser, "A device's SNMP settings are not the engineer tier's to change (tacctl device snmp is the superuser's); '"+d.Name+"' was not changed. Nothing was changed.")

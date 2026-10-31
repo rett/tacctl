@@ -32,6 +32,10 @@ type invocation struct {
 	// registryNoted: the device registry's load notes (devreg.File.Notes)
 	// were printed in this run.
 	registryNoted bool
+	// cloneOf is the device 'device clone' copies while it writes the
+	// registry: the copy carries its SNMP settings, which an engineer's
+	// registry change may not otherwise bring in (deviceChangeScopes).
+	cloneOf string
 	// lockdownShown: the emergency lockdown notice was decided for this process.
 	lockdownShown bool
 	// pwGuardOff: the guards of a required password change (pwGuard,

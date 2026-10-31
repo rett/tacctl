@@ -287,6 +287,10 @@ var Rules = []Rule{
 	{Tier: Engineer, Cmd: "device", Sub: "onboard", Sudoers: []string{"device onboard *"}},
 	{Tier: Engineer, Cmd: "device", Sub: "sync", Sudoers: []string{"device sync *"}},
 	{Tier: Engineer, Cmd: "device", Sub: "support-bundle", Sudoers: []string{"device support-bundle *"}},
+	// 'device clone' (0.2.23, D307) registers a copy of a device of their own
+	// scopes at a bench address of the same scope, its SNMP credentials
+	// included (which they can read).
+	{Tier: Engineer, Cmd: "device", Sub: "clone", Sudoers: []string{"device clone *"}},
 	{Tier: Engineer, Cmd: "config", Sub: "cisco", Sudoers: []string{"config cisco", "config cisco *"},
 		Note: "config cisco: an engineer may print the walkthrough and read source-interface for a scope of their own; setting or unsetting source-interface needs the superuser tier."},
 	{Tier: Engineer, Cmd: "config", Sub: "juniper", Sudoers: []string{"config juniper", "config juniper *"}},

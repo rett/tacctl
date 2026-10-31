@@ -130,6 +130,25 @@ func TestDeviceBlocksInForce(t *testing.T) {
 		t.Errorf("manifest = %v, want %v", got, want)
 	}
 
+	// A copy gives the other name the same lists and leaves the source's
+	// and the others' as they are; a device with none copies nothing.
+	if err := CopyDeviceBlocks(c, dev, "jsw5.lab.example.net"); err != nil {
+		t.Fatal(err)
+	}
+	if got := DeviceBlockManifest(c); !reflect.DeepEqual(got, blocks.Manifest{
+		dev:                    {"juniper": {"snmp", "system"}, "cisco": {"system"}},
+		"jsw2.lab.example.net": {"juniper": {"snmp"}},
+		"jsw5.lab.example.net": {"juniper": {"snmp", "system"}, "cisco": {"system"}},
+	}) {
+		t.Errorf("manifest after a copy = %v", got)
+	}
+	if err := CopyDeviceBlocks(c, "jsw6.lab.example.net", "jsw7.lab.example.net"); err != nil || DeviceBlockInForce(c, "jsw7.lab.example.net", "juniper", "snmp") {
+		t.Errorf("a copy of nothing: %v", err)
+	}
+	if err := ForgetDeviceBlocks(c, "jsw5.lab.example.net"); err != nil {
+		t.Fatal(err)
+	}
+
 	if err := MoveDeviceBlocks(c, dev, "jsw3.lab.example.net"); err != nil {
 		t.Fatal(err)
 	}

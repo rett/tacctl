@@ -169,9 +169,9 @@ func (inv *invocation) configDeviceNote(vendor string, args []string, sink func(
 		if scope == "" {
 			return "", inv.usageErr("--staging provisions a device off-site for the scope it will be installed in; name it: --scope <scope>")
 		}
-		norm, err := devreg.NormalizeAddress(stagingIP)
-		if err != nil || strings.Contains(norm, ":") || strings.Contains(stagingIP, "/") {
-			return "", inv.usageErr("--staging takes the device's bench IPv4 address (a single address, no prefix length): '" + stagingIP + "'")
+		norm, problem := stagingBench(stagingIP)
+		if problem != "" {
+			return "", inv.usageErr(problem)
 		}
 		stagingIP = norm
 		if err := inv.requireStore(); err != nil {

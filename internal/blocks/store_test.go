@@ -542,3 +542,60 @@ func TestVerifyDevices(t *testing.T) {
 		}
 	}
 }
+
+// A device's files are read whole, in the order of the vendors, and written
+// under another name (a clone): never into a directory the name has, and a
+// write that fails leaves nothing of the copy.
+func TestReadAndWriteDevice(t *testing.T) {
+	s := newStore(t)
+	src := DeviceLevel("jsw1.lab.example.net")
+	for _, f := range []File{{"juniper", "snmp", []byte("# j-snmp\n")}, {"juniper", "system", []byte("# j-system\n")}, {"cisco", "system", []byte("# c-system\n")}} {
+		if err := s.Write(src, f.Vendor, f.Block, f.Data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files, err := s.ReadDevice("JSW1.lab.example.net")
+	if err != nil || len(files) != 3 {
+		t.Fatalf("ReadDevice = %v %v", files, err)
+	}
+	if got := files[0].Vendor + "/" + files[0].Block + "," + files[1].Vendor + "/" + files[1].Block + "," + files[2].Vendor + "/" + files[2].Block; got != "juniper/snmp,juniper/system,cisco/system" {
+		t.Errorf("order: %s", got)
+	}
+	if none, err := s.ReadDevice("jsw9.lab.example.net"); err != nil || len(none) != 0 {
+		t.Errorf("a device with no blocks: %v %v", none, err)
+	}
+	if err := s.WriteDevice("jsw2.lab.example.net", files); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		got, err := s.Read(DeviceLevel("jsw2.lab.example.net"), f.Vendor, f.Block)
+		if err != nil || string(got) != string(f.Data) {
+			t.Errorf("%s/%s: %q %v", f.Vendor, f.Block, got, err)
+		}
+	}
+	if m := mode(t, filepath.Join(s.Dir, "_devices", "jsw2.lab.example.net", "cisco")); m != 0o700 {
+		t.Errorf("a written directory is %v", m)
+	}
+	// The source is untouched, and a name that has blocks is never merged into.
+	if !s.HasDevice("jsw1.lab.example.net") {
+		t.Error("the source is gone")
+	}
+	if err := s.WriteDevice("jsw2.lab.example.net", files); err == nil || !strings.Contains(err.Error(), "already on disk") {
+		t.Errorf("a second write: %v", err)
+	}
+	// An invalid name writes nothing; no files is nothing to do.
+	if err := s.WriteDevice("a/b", files); err == nil {
+		t.Error("an invalid name was accepted")
+	}
+	if err := s.WriteDevice("jsw3.lab.example.net", nil); err != nil || s.HasDevice("jsw3.lab.example.net") {
+		t.Errorf("no files: %v", err)
+	}
+	// A file that cannot be written takes the others back.
+	bad := append(slices.Clone(files), File{Vendor: "juniper", Block: "Bad Name", Data: []byte("x")})
+	if err := s.WriteDevice("jsw4.lab.example.net", bad); err == nil {
+		t.Error("an invalid block name was accepted")
+	}
+	if s.HasDevice("jsw4.lab.example.net") {
+		t.Error("a failed copy left files")
+	}
+}
