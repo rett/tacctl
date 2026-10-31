@@ -138,7 +138,7 @@ as_engineer() {
     refute_output --partial "dev-community-bats"
     assert_output --partial '"community_from": "device"'
     # v3 user: both passphrases, one level.
-    printf 'dev-auth-pass-1\ndev-priv-pass-1\n' | "$T" device snmp lab-sw1 v3-user carol --stdin > /dev/null
+    printf 'dev-auth-pass-1\ndev-priv-pass-1\n' | "$T" device snmp lab-sw1 v3-user add carol --default --stdin > /dev/null
     run "$T" device snmp lab-sw1 show --reveal
     plain
     assert_output --partial "v3 user:    carol  (device)"
@@ -331,7 +331,8 @@ as_engineer() {
     "$T" user add en superuser --hash "$hash" --scopes lab > /dev/null
     printf 'tier:\n  superuser: engineer\n' > "${TACCTL_STATE_DIR}/tacctl.yaml"
     "$T" device add lab-sw1 192.168.1.1 --vendor cisco --no-host-key --no-lookup > /dev/null
-    printf 'auth-pass-bats-1\npriv-pass-bats-1\n' | "$T" device snmp lab-sw1 v3-user svc-reader --stdin > /dev/null
+    printf 'auth-pass-bats-1\npriv-pass-bats-1\n' | "$T" device snmp lab-sw1 v3-user add svc-reader --default --stdin > /dev/null
+    "$T" device snmp lab-sw1 version v3 > /dev/null
     run "$T" device show lab-sw1
     plain
     assert_output --partial "v3 user svc-reader, passphrases set (device)"
@@ -353,7 +354,8 @@ as_engineer() {
     printf 'scope-community-bats\n' | "$T" scope snmp lab community --stdin > /dev/null
     printf 'dev-community-bats\n' | "$T" device snmp lab-sw1 community --stdin > /dev/null
     "$T" device snmp lab-sw1 port 2161 > /dev/null
-    # What the rollback leaves: the file, and no map.
+    # What the rollback leaves: the file (a community is version 1, which
+    # counts only beside a map), and no map.
     python3 - "$DEVICES" << 'EOF2'
 import re, sys
 t = open(sys.argv[1]).read()

@@ -566,3 +566,55 @@ JSON
     assert_output --partial "is not permitted for the engineer tier"
     [[ "$(_sums)" == "$before" ]]
 }
+
+@test "rollback 0.2.22: the SNMPv3 pool is written in version 1 after a snapshot, and backup recover puts the users back" {
+    printf 'auth-pass-bats\npriv-pass-bats\n' | "$TACCTL_BIN_SCRIPT" config snmp v3-user add alice --default --stdin > /dev/null
+    printf 'auth-pass-bats\npriv-pass-bats\n' | "$TACCTL_BIN_SCRIPT" config snmp v3-user add bob --stdin > /dev/null
+    before=$(_sums)
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.22
+    assert_success
+    assert_output --partial "write the SNMP credential files in version 1"
+    assert_output --partial "1 user is dropped from 1 level (the config (1))"
+    assert_output --partial "tacctl backup recover <snapshot> --only snmp-users"
+    refute_output --partial "alice"
+    refute_output --partial "bob"
+    [[ "$(_sums)" == "$before" ]]
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.22 --apply
+    assert_failure 1
+    assert_output --partial "The warnings above need your decision"
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.22 --apply --yes
+    assert_success
+    assert_output --partial "wrote 1 SNMP credential file in version 1"
+    assert_output --partial "dropped from the credential files of 1 level"
+    run grep -c "version: 1" "${TACCTL_STATE_DIR}/snmp.yaml"
+    assert_output "1"
+    run grep -c bob "${TACCTL_STATE_DIR}/snmp.yaml"
+    assert_output "0"
+    snap=$(ls "${TACCTL_STATE_DIR}/backups-kept" | tail -n 1)
+    [[ -n "$snap" ]]
+    run "$TACCTL_BIN_SCRIPT" backup recover "$snap" --only snmp-users --dry-run
+    assert_success
+    assert_output --partial "the config: restore 1 user"
+    refute_output --partial "bob"
+    run "$TACCTL_BIN_SCRIPT" backup recover "$snap" --only snmp-users --yes
+    assert_success
+    assert_output --partial "Recovered 1 item from snapshot $snap."
+    run "$TACCTL_BIN_SCRIPT" config snmp v3-user list
+    assert_output --partial "alice  default"
+    assert_output --partial "bob"
+}
+
+@test "rollback 0.2.22: a community and one default SNMPv3 user are version 1 files, so there is nothing to convert" {
+    printf 'comm-bats-1\n' | "$TACCTL_BIN_SCRIPT" config snmp community --stdin > /dev/null
+    printf 'auth-pass-bats\npriv-pass-bats\n' | "$TACCTL_BIN_SCRIPT" config snmp v3-user add alice --default --stdin > /dev/null
+    run grep -c "version: 1" "${TACCTL_STATE_DIR}/snmp.yaml"
+    assert_output "1"
+    before=$(_sums)
+    n=$(_snapshots)
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.22 --apply
+    assert_success
+    refute_output --partial "credential files"
+    assert_output --partial "Nothing to convert: every file is one 0.2.22 can read."
+    [[ "$(_sums)" == "$before" ]]
+    [[ "$(_snapshots)" == "$n" ]]
+}

@@ -143,9 +143,9 @@ complete_words() {
     assert_output "$(printf 'viewonly\nuser\nsuperuser\nadministrator')"
     complete_words tacctl group edit ops tier ""
     assert_output "$(printf 'auto\nreadonly\noperator\nengineer\nsuperuser')"
-    complete_words tacctl config snmp v3-user monitor --priv ""
+    complete_words tacctl config snmp v3-user add monitor --priv ""
     assert_output "aes128"
-    complete_words tacctl scope snmp lab v3-user monitor --auth ""
+    complete_words tacctl scope snmp lab v3-user add monitor --auth ""
     assert_output "$(printf 'sha\nsha256')"
 }
 

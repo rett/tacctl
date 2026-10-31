@@ -862,10 +862,10 @@ pre-store.20250601_000000
     local snap; snap="$(snapshots | while read -r s; do grep -q 'alice@example.net' "${BACKUPS}/$s/store.yaml" && echo "$s"; done | tail -n 1)"
     [[ -n "$snap" ]]
 
-    # reserved and unknown kinds are refused
+    # a kind the snapshot holds nothing of recovers nothing; an unknown one is refused
     run "$TACCTL_BIN_SCRIPT" backup recover "$snap" --only snmp-users --yes
-    assert_failure
-    assert_output --partial "not available yet"
+    assert_success
+    assert_output --partial "Nothing to recover."
     run "$TACCTL_BIN_SCRIPT" backup recover "$snap" --only bogus --yes
     assert_failure
     assert_output --partial "Unknown kind"
@@ -891,7 +891,7 @@ pre-store.20250601_000000
     assert_output --partial "disabled"
     # the audit line holds the counts and the id, never the address
     run grep -E '^logger -t tacctl .*backup recover id=' "$CALLS_LOG"
-    assert_output --partial "kinds=email restored=1 skipped=0"
+    assert_output --partial "kinds=email,snmp-users restored=1 skipped=0"
     ! grep -q 'alice@example.net' "$CALLS_LOG"
 
     run "$TACCTL_BIN_SCRIPT" backup recover "$snap" --yes
