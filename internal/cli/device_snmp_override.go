@@ -174,6 +174,14 @@ func (inv *invocation) deviceAt(addr string) *devreg.Device {
 // (newName empty): its credentials file. What cannot be carried is a
 // warning, as the configuration record's is.
 func (inv *invocation) snmpDeviceCarry(oldName, newName string) {
+	if problem := inv.snmpCarryProblem(oldName, newName); problem != "" {
+		inv.app.Out.Warn(problem)
+	}
+}
+
+// snmpCarryProblem does snmpDeviceCarry's work and returns the sentence that
+// says what was not carried ("" when all was).
+func (inv *invocation) snmpCarryProblem(oldName, newName string) string {
 	dir := inv.app.Paths.SNMPDir
 	var err error
 	if newName == "" {
@@ -182,8 +190,9 @@ func (inv *invocation) snmpDeviceCarry(oldName, newName string) {
 		err = snmpcred.RenameDevice(dir, oldName, newName)
 	}
 	if err != nil {
-		inv.app.Out.Warn("The SNMP credentials of '" + oldName + "' were not carried over: " + strings.Join(msgs(err), " "))
+		return "The SNMP credentials of '" + oldName + "' were not carried over: " + strings.Join(msgs(err), " ")
 	}
+	return ""
 }
 
 // snmpNewNamesFree is nil when no device that the registry change adds

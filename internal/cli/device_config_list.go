@@ -652,10 +652,19 @@ func (inv *invocation) deviceConfigForget(args []string) error {
 // or, with no new name, drops a removed device's (D65). It is best effort: a
 // record is derived data, and a device with none costs no file.
 func (inv *invocation) configCarry(oldName, newName string) {
+	if problem := inv.configCarryProblem(oldName, newName); problem != "" {
+		inv.app.Out.Warn(problem)
+	}
+}
+
+// configCarryProblem does configCarry's work and returns the sentence that
+// says what was not carried ("" when all was), for the verbs that report it
+// in their exit status.
+func (inv *invocation) configCarryProblem(oldName, newName string) string {
 	store := inv.configStore()
 	if _, err := os.Stat(store.Records); err != nil {
 		if p := filepath.Join(store.Dir, strings.ToLower(oldName)+".yaml"); !fileThere(p) {
-			return
+			return ""
 		}
 	}
 	var err error
@@ -665,8 +674,9 @@ func (inv *invocation) configCarry(oldName, newName string) {
 		err = store.Rename(oldName, newName)
 	}
 	if err != nil {
-		inv.app.Out.Warn("The configuration record of '" + oldName + "' was not carried over: " + strings.Join(msgs(err), " "))
+		return "The configuration record of '" + oldName + "' was not carried over: " + strings.Join(msgs(err), " ")
 	}
+	return ""
 }
 
 func fileThere(p string) bool {

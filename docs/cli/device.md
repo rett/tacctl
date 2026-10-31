@@ -224,10 +224,12 @@ device rename <replacement> <name> --replace [--yes]
     have a staging entry (the /32 of its bench address, or, for an address its scope answered
     already, the entry alone), and no hold of its own. The plan lines come first, then one
     question; a terminal-less run answers no and `--yes` is the only way to skip it. One
-    snapshot covers the steps. An engineer replaces within their own scopes; a hold on the
-    original needs the superuser, and an engineer is refused naming it. Audit: `device
-    replace old= new= address= hold_cleared= snmp_files= block_files= notices= count=1`,
-    `scope staging done` and, for a hold, `breakglass release`
+    snapshot covers the steps. A file of the original that cannot be removed, or of the
+    replacement that cannot take the name, makes the verb exit 1 and names it. An engineer
+    replaces within their own scopes; a hold on the original needs the superuser, and an
+    engineer is refused naming it. Audit: `device replace old= new= address= hold_cleared=
+    snmp_files= block_files= notices= count=1`, `scope staging done` and, for a hold,
+    `breakglass release`
 
 device address|hostname|vendor|port|description|location <name> [<value>|clear]
 

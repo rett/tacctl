@@ -166,15 +166,24 @@ func (inv *invocation) deviceReplace(p Parsed) error {
 		return err
 	}
 	// What belonged to the original goes first, so that what belongs to the
-	// replacement can take the name.
-	inv.configCarry(origName, "")
-	inv.snmpDeviceCarry(origName, "")
-	inv.blocksDeviceCarry(origName, "")
-	inv.configCarry(replName, origName)
-	inv.snmpDeviceCarry(replName, origName)
-	inv.blocksDeviceCarry(replName, origName)
-
+	// replacement can take the name. A file that cannot be carried is a
+	// failure of the verb: the device named '<name>' would be running the
+	// original's credentials or settings.
 	var failed []string
+	carry := func(problems ...string) {
+		for _, pr := range problems {
+			if pr != "" {
+				failed = append(failed, pr+" Check the files of '"+origName+"' before it is used.")
+			}
+		}
+	}
+	carry(inv.configCarryProblem(origName, ""))
+	carry(inv.snmpCarryProblem(origName, ""))
+	carry(inv.blocksCarryProblems(origName, "")...)
+	carry(inv.configCarryProblem(replName, origName))
+	carry(inv.snmpCarryProblem(replName, origName))
+	carry(inv.blocksCarryProblems(replName, origName)...)
+
 	cleared, rendered := "no", ""
 	if held {
 		var err error
@@ -184,6 +193,9 @@ func (inv *invocation) deviceReplace(p Parsed) error {
 			cleared = "yes"
 		}
 	}
+	// The staging line follows the rename first: if the /32 cannot be ended
+	// now, the line names a device that is registered, and the sweep ends it.
+	inv.stagingRenameDevice(replName, origName)
 	if err := inv.stagingEnd(staged, "scope staging done", "device="+origName+" seen="+addr); err != nil {
 		failed = append(failed, "the staging address "+staged.CIDR+" stays in scope '"+staged.Scope+"': "+strings.Join(msgs(err), " ")+" (tacctl scope staging remove "+staged.CIDR+", a superuser's verb)")
 	}

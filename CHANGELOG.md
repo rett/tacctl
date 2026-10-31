@@ -492,7 +492,12 @@ current behaviour; this file is where history lives.
     original with a hold needs the superuser, and an engineer is refused
     naming it. The plan lines come first, then one question: a closed stdin is
     a no and `--yes` is the only way to skip it. One snapshot covers all the
-    steps. The audit line is `device replace old= new= address=
+    steps. A file of the original that cannot be removed, or of the replacement
+    that cannot take the name (its SNMP credentials, blocks or record), fails
+    the verb with exit status 1 and names it, rather than leaving the device
+    on the original's files with a warning; and the staging entry follows the
+    rename before the /32 ends, so that one that cannot end names a device
+    that is registered. The audit line is `device replace old= new= address=
     hold_cleared=yes|no snmp_files= block_files= notices= count=1`, with
     `scope staging done` for the /32 and `breakglass release` for a hold. No
     stored format changes and no sudoers row is added (`device rename` has

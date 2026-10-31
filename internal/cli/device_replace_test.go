@@ -371,3 +371,36 @@ func TestStagingEntryOfACoveredAddressLeavesThePrefix(t *testing.T) {
 		t.Errorf("remove took the prefix:\n%s", plain(sb.run("", []string{"scope", "show", "lab"})))
 	}
 }
+
+// A file of the original that cannot be removed, or a file of the replacement
+// that cannot take the name, would leave the device named '<name>' on the
+// original's credentials: the verb exits 1 and says which.
+func TestDeviceReplaceFailsWhenAFileCannotBeCarried(t *testing.T) {
+	sb := cloneFixture(t)
+	sb.dev("", "clone", cloneSrc, cloneNew, "--staging", "192.0.2.77")
+	sb.expect(0, "", "")
+	file := sb.path("state", "snmp", "devices", cloneSrc+".yaml")
+	// After the plan, as the registry is written: the original's file
+	// becomes a directory with something in it, which cannot be removed.
+	sb.hooks.deviceWriteStep = func() {
+		if err := os.Remove(file); err != nil {
+			t.Error(err)
+		}
+		if err := os.MkdirAll(file, 0o700); err != nil {
+			t.Error(err)
+		}
+		if err := os.WriteFile(file+"/x", []byte("x"), 0o600); err != nil {
+			t.Error(err)
+		}
+	}
+	sb.dev("", "rename", cloneNew, cloneSrc, "--replace", "--yes")
+	sb.hooks.deviceWriteStep = nil
+	if sb.code != 1 || !strings.Contains(sb.stderr(), "Not done: The SNMP credentials of '"+cloneSrc+"' were not carried over") {
+		t.Fatalf("exit %d, stderr %q", sb.code, sb.stderr())
+	}
+	// The rest was done: the registry names the replacement, the staging
+	// entry is gone.
+	if strings.Contains(sb.devices(), cloneNew) || sb.fileExists("state/staging") {
+		t.Errorf("devices.yaml:\n%s\nstaging %q", sb.devices(), sb.read("state/staging"))
+	}
+}
