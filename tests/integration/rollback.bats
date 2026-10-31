@@ -503,9 +503,12 @@ JSON
     [[ "$(_snapshots)" == "$n" ]]
     run "$TACCTL_BIN_SCRIPT" rollback 0.2.22 --apply
     assert_success
-    assert_output --partial "Nothing to convert: every file is one 0.2.22 can read."
+    assert_output --partial "tacctl-tiers: rewritten with the text 0.2.22 writes"
     assert_output --partial "tacctl upgrade --branch 0.2.22"
-    [[ "$(_sums)" == "$before" ]]
+    # Only the engineer's rule of 'device clone' goes, from the sudoers drop-in.
+    [[ "$(_sums | grep -v ' sudoers.d/tacctl-tiers$')" == "$(grep -v ' sudoers.d/tacctl-tiers$' <<< "$before")" ]]
+    [[ "$(_sums)" != "$before" ]]
+    ! grep -q 'device clone' "$BATS_TEST_TMPDIR/sudoers.d/tacctl-tiers"
     run "$TACCTL_BIN_SCRIPT" config get server.name unset-marker
     assert_output "core-1"
 }
