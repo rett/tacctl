@@ -144,44 +144,45 @@ store that cannot be read refuses every target (an address that cannot be seen
 is not hidden). Until the older release is installed, do not run `tacctl user
 email` or `tacctl user add --email`; if one ran, run the rollback again.
 
-**SNMPv3 users (0.2.23).** The credential files `snmp.yaml`, `snmp/<scope>.yaml`
-and `snmp/devices/<device>.yaml` stay version 1, which every release reads,
-while they hold only a community and at most one v3 user that is the default,
-and nothing rewrites them at the upgrade (an older file is read as a pool of
-one user that is the default). A command of this release saves version 2
-(`users:` and `default:`) only for what version 1 cannot hold: a second or a
-non-default user, a default that names another level's user, and the file of a
-device with no `snmp:` entry in `devices.yaml` (the older releases ignore a
-version 1 file there). A device's file follows its entry: it is saved version 2
-while the device has no entry, written version 1 when an entry appears (any
-setting of the device) and the content fits version 1 (a pool of two stays
-version 2), and version 2 again when the entry is gone. No older release reads
-version 2 ("unsupported version"), so every target writes each version 2 file in version 1 again,
-after the snapshot `--apply` takes first; a state with version 1 files only
-has nothing of this to convert. Version 1 holds
-one v3 user for each level: the default user stays and the rest are dropped.
-The plan names the levels and counts the users, never a name or a passphrase,
-in a warning, so `--apply` needs `--yes`; a device whose default names a user
-of its scope's or the config's pool loses the choice (it reads with its scope's
-or the config's default user again), and a device with no `snmp:` entry in
-`devices.yaml` loses its credentials file whole: the older releases ignore the
-credentials of such a device, so a file in version 1 would hand it to another
-level's credentials unseen. A level with several users and none that
-is its own default has no answer to which one stays, and the rollback is refused,
-naming the level and the command (`v3-user default <user>`). A rollback that
-drops no user only rewrites the files and asks nothing. As for the email
-addresses, the snapshot is kept in `/etc/tacctl/backups-kept/` with a note
-that carries the counts, and `tacctl backup recover <snapshot> --only
-snmp-users` puts the dropped users back once this release is installed again
-(it skips a scope or device that is gone, a name another pool holds now, and
-never overwrites a default). Until the older release is installed, do not give
-a level a second or a non-default user (`v3-user add`), a device a default
-that names another level's user (`device snmp <device> v3-user default
-<user>`), or a device with no `snmp:` entry a user of its own: the file is
-version 2 again. A community and one user that is the default are version 1
-and are fine (for a device, once it has an `snmp:` entry: while it has none,
-its file is version 2, and so is the file of a device whose entry is removed).
-If a version 2 file was written, run the rollback again.
+**SNMPv3 users (0.2.23).** The credential files `snmp.yaml`,
+`snmp/<scope>.yaml` and `snmp/devices/<device>.yaml` stay version 1, which
+every release reads, while they hold only a community and at most one v3 user
+that is the default, and nothing rewrites them at the upgrade (an older file
+is read as a pool of one user that is the default). A command of this release
+saves version 2 (`users:` and `default:`) only for what version 1 cannot hold:
+a second or a non-default user, a default that names another level's user, and
+the file of a device with no `snmp:` entry in `devices.yaml` (the older
+releases ignore a version 1 file there). A device's file follows its entry: it
+is saved version 2 while the device has no entry, written version 1 when an
+entry appears (any setting of the device) and the content fits version 1 (a
+pool of two stays version 2), and version 2 again when the entry is gone. No
+older release reads version 2 ("unsupported version"), so every target writes
+each version 2 file in version 1 again, after the snapshot `--apply` takes
+first; a state with version 1 files only has nothing of this to convert.
+Version 1 holds one v3 user for each level: the default user stays and the
+rest are dropped. The plan names the levels and counts the users, never a name
+or a passphrase, in a warning, so `--apply` needs `--yes`; a device whose
+default names a user of its scope's or the config's pool loses the choice (it
+reads with its scope's or the config's default user again), and a device with
+no `snmp:` entry in `devices.yaml` loses its credentials file whole: the older
+releases ignore the credentials of such a device, so a file in version 1 would
+hand it to another level's credentials unseen. A level with several users and
+none that is its own default has no answer to which one stays, and the
+rollback is refused, naming the level and the command (`v3-user default
+<user>`). A rollback that drops no user only rewrites the files and asks
+nothing. As for the email addresses, the snapshot is kept in
+`/etc/tacctl/backups-kept/` with a note that carries the counts, and `tacctl
+backup recover <snapshot> --only snmp-users` puts the dropped users back once
+this release is installed again (it skips a scope or device that is gone, a
+name another pool holds now, and never overwrites a default). Until the older
+release is installed, do not give a level a second or a non-default user
+(`v3-user add`), a device a default that names another level's user (`device
+snmp <device> v3-user default <user>`), or a device with no `snmp:` entry a
+user of its own: the file is version 2 again. A community and one user that is
+the default are version 1 and are fine (for a device, once it has an `snmp:`
+entry: while it has none, its file is version 2, and so is the file of a
+device whose entry is removed). If a version 2 file was written, run the
+rollback again.
 
 **Staging entries of addresses a scope answers already (0.2.23).** `device
 clone` at a bench address its scope answers already writes an entry marked
@@ -189,11 +190,10 @@ clone` at a bench address its scope answers already writes an entry marked
 a plain entry, and its sweep and `scope staging remove` take that `/32` out of
 the scope, a prefix of the scope's own included. So every target drops these
 entries from the file, after the snapshot; the plan names them, and nothing
-asks (no warning, no `--yes`). A clone that still waits for its `device
-rename --replace` loses its entry, and after a re-upgrade the verb refuses it
-as not staged (this release cannot write the entry again): remove the clone and
-clone again from the original, or restore the snapshot. Every other entry
-stays.
+asks (no warning, no `--yes`). A clone that still waits for its `device rename
+--replace` loses its entry, and after a re-upgrade the verb refuses it as not
+staged (this release cannot write the entry again): remove the clone and clone
+again from the original, or restore the snapshot. Every other entry stays.
 
 **An emergency lockdown stops every rollback to a release before 0.2.19**
 (the dry run too): such a release has no such record and would render every
@@ -208,13 +208,13 @@ ones to 0.2.19 to 0.2.22 included (the dry run too). On a host the lockdown is
 an sshd drop-in that only this release writes and removes, and the record
 keeps the hosts it has not reached (a `pending` list that older releases
 refuse), so an older release could not lift it and the hosts would stay
-closed. The refusal names the hosts: lift the lockdown and sync them
-(`tacctl emergency lockdown <scope> disable`, then `tacctl host sync <hosts>`).
-A lockdown that was lifted on the devices but still waits for a host to drop
-the file stops it too, and so does a list that names a host that is not
-enrolled any more (`emergency lockdown <scope> enable <its groups>` or
-`disable` drops the name). A lockdown on a scope with no enrolled host is
-taken over as before.
+closed. The refusal names the hosts: lift the lockdown and sync them (`tacctl
+emergency lockdown <scope> disable`, then `tacctl host sync <hosts>`). A
+lockdown that was lifted on the devices but still waits for a host to drop the
+file stops it too, and so does a list that names a host that is not enrolled
+any more (`emergency lockdown <scope> enable <its groups>` or `disable` drops
+the name). A lockdown on a scope with no enrolled host is taken over as
+before.
 
 **A user name with a period stops every rollback but the ones to 0.2.22,
 0.2.21 and 0.2.20** (the dry run too): 0.2.20 and 0.2.21 allowed periods and
@@ -323,21 +323,21 @@ snapshot; this release, if it stays, reads the two as missing until its next
 
 ### To 0.2.22
 
-0.2.22 reads every file this release writes but the users' email addresses
-in `store.yaml`, so the rollback removes those (above) and converts nothing
-else but the sudoers drop-in (below): the server name, the timing scale, the server address, the users' login
-to this server, a user name with a period and an emergency lockdown (of
-scopes with no enrolled host) all stay.
-With no address in the store, no SNMP credential file in version 2 (a
-second or a non-default user, a default naming another level's user, a
-device's file without an `snmp:` entry: above) and no covered staging entry
-(above), no file is converted, no snapshot is taken and `--yes` is not needed;
-with an address or a version 2 file the rollback takes a snapshot first and
-needs `--yes` when anything is dropped, and with only a covered staging entry
-it takes the snapshot and asks nothing. The per-tier sudoers drop-in, when it is exactly this release's text,
-is rewritten with 0.2.22's (after `visudo -cf`): it loses the engineer's row of
-`device clone`; an edited drop-in is left. `--hosts` is accepted and does
-nothing.
+0.2.22 reads every file this release writes but the users' email addresses in
+`store.yaml`, so the rollback removes those (above) and converts nothing else
+but the sudoers drop-in (below): the server name, the timing scale, the server
+address, the users' login to this server, a user name with a period and an
+emergency lockdown (of scopes with no enrolled host) all stay. With no address
+in the store, no SNMP credential file in version 2 (a second or a non-default
+user, a default naming another level's user, a device's file without an
+`snmp:` entry: above) and no covered staging entry (above), no file is
+converted, no snapshot is taken and `--yes` is not needed; with an address or
+a version 2 file the rollback takes a snapshot first and needs `--yes` when
+anything is dropped, and with only a covered staging entry it takes the
+snapshot and asks nothing. The per-tier sudoers drop-in, when it is exactly
+this release's text, is rewritten with 0.2.22's (after `visudo -cf`): it loses
+the engineer's row of `device clone`; an edited drop-in is left. `--hosts` is
+accepted and does nothing.
 
 ```bash
 tacctl rollback 0.2.22          # the dry run: steps, writes nothing

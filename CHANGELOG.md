@@ -12,40 +12,41 @@ current behaviour; this file is where history lives.
    and so for the `0.2.21` and `0.2.20` targets): the server name, the timing
    scale, the server address, the users' login to this server, a user name
    with a period and an emergency lockdown all stay (a lockdown with enrolled
-   hosts stops every target, item 20). With no address in the
-   store, no SNMP credential file in version 2 (item 14: a second or a
-   non-default v3 user, a default naming another level's user, a device's
-   file without an `snmp:` entry) and no covered staging entry (item 17), no file
-   is converted, no snapshot is taken and it needs no `--yes`; with an address
-   or a version 2 file it takes the snapshot first and needs `--yes` when
-   anything is dropped (items 11 and 14), and with only a covered staging entry
-   it takes the snapshot and asks nothing. `--hosts`
-   is accepted and does nothing. The older targets (`0.2.21` and back) still
-   remove the server name and the timing scale, and still say so; only the
-   `0.2.22` target keeps them. What a change of this release stores in a file
-   that 0.2.22 refuses is a step of every target, the ones that return early
-   included: the steps for a release's changes are listed once
-   (`rollbackAdditions`, in `internal/lifecycle/rollback_additions.go`) and
-   added to the plan of each target older than that release, so the timing
-   scale is such an entry for the targets before 0.2.22, the email addresses
-   one for every target, and a new entry reaches `0.2.22` too. Every target
-   also drops the staging entries marked `covered` from `state/staging` (item
-   17), after the snapshot, without a question.
+   hosts stops every target, item 20). With no address in the store, no SNMP
+   credential file in version 2 (item 14: a second or a non-default v3 user, a
+   default naming another level's user, a device's file without an `snmp:`
+   entry) and no covered staging entry (item 17), no file is converted, no
+   snapshot is taken and it needs no `--yes`; with an address or a version 2
+   file it takes the snapshot first and needs `--yes` when anything is dropped
+   (items 11 and 14), and with only a covered staging entry it takes the
+   snapshot and asks nothing. `--hosts` is accepted and does nothing. The
+   older targets (`0.2.21` and back) still remove the server name and the
+   timing scale, and still say so; only the `0.2.22` target keeps them. What a
+   change of this release stores in a file that 0.2.22 refuses is a step of
+   every target, the ones that return early included: the steps for a
+   release's changes are listed once (`rollbackAdditions`, in
+   `internal/lifecycle/rollback_additions.go`) and added to the plan of each
+   target older than that release, so the timing scale is such an entry for
+   the targets before 0.2.22, the email addresses one for every target, and a
+   new entry reaches `0.2.22` too. Every target also drops the staging entries
+   marked `covered` from `state/staging` (item 17), after the snapshot,
+   without a question.
 
 2. **`device rename` carries the staging address.** A device staged at a bench
    address (`config <vendor> --staging <address> --name <device>`) is recorded
-   in the `staging` file under its name, and the sweep that ends the `/32` once
-   the device is registered at an address its scope covers looks the device up
-   by that name. `device rename` (and the rename `device enroll` makes to the
-   name a device gives itself) renamed the registry entry, the pull record, the
-   SNMP credentials, the blocks and a break-glass hold, but not the staging
-   line, so a renamed device was never found again and its `/32` stayed in the
-   scope until `scope staging remove <address>`. The name in the line follows
-   the rename now, as `host rename` already carries a host's. Names compare
-   without regard to case, as the registry's do, so a line spelled differently
-   is the device's too, and a rename of the spelling only keeps it; a line
-   that an earlier device of the new name left is dropped, and a failure to
-   write the file is a warning that names the addresses.
+   in the `staging` file under its name, and the sweep that ends the `/32`
+   once the device is registered at an address its scope covers looks the
+   device up by that name. `device rename` (and the rename `device enroll`
+   makes to the name a device gives itself) renamed the registry entry, the
+   pull record, the SNMP credentials, the blocks and a break-glass hold, but
+   not the staging line, so a renamed device was never found again and its
+   `/32` stayed in the scope until `scope staging remove <address>`. The name
+   in the line follows the rename now, as `host rename` already carries a
+   host's. Names compare without regard to case, as the registry's do, so a
+   line spelled differently is the device's too, and a rename of the spelling
+   only keeps it; a line that an earlier device of the new name left is
+   dropped, and a failure to write the file is a warning that names the
+   addresses.
 
 3. **The summary of `device list` is shorter.** The one line that Tab, `?`,
    the completion scripts and `help` list for `device list` was 90 characters,
@@ -65,45 +66,45 @@ current behaviour; this file is where history lives.
    warning of a staging file that cannot be written names the addresses of the
    dropped lines too.
 
-5. **The device's own settings of its AAA server are no difference.** A
-   Junos device that holds `set system tacplus-server <address>
-   source-address <address>`, a `timeout`, a `retry`, a `routing-instance` or
-   an option of `system tacplus-options` or `radius-options` that does not
-   decide who can log in, and an IOS device that holds a `send-nat-address`
-   or an `automate-tester` under tacctl's `tacacs server` or `radius server`
-   block, was listed by `device config plan` as an access irregularity that
-   the paste leaves alone (`the paste fixes 0, leaves 1`, then `Nothing to
-   paste`), and `diff`, `device config list`, `device list` and `--differs`
-   said the device differed. The planner already left these alone; the
-   comparison did not call them the device's own, which it did for `snmp`,
-   `system` and `netconf` only. They are the device's own now: the `aaa`
-   section reads `ok (+N unmanaged)`, the plan has no item for them, and the
-   device is consistent when nothing else differs. `--differs` recomputes at
-   once; the state in the CONFIG column of `device list` and in `device
-   config list` is the pull's record, and changes at the next pull of the
-   device. The leaves of tacctl's own server that the standard does not state
-   are the device's own; a leaf it states with another value (the timeout of
-   an IOS block, the port of a RADIUS server) is still a difference that the
-   plan replaces in place. A TACACS+ `port` is never the device's own: the
-   standard states one only for a server off the default port, so a port on
-   the device against a server on the default is the device asking the wrong
-   port. Of the client's options, those that change the service asked for
-   or how a password is checked stay differences (`tacplus-options
-   service-name` other than `junos-exec`, `strict-authorization`,
-   `radius-options password-protocol`); the others are the device's own.
-   What decides who can authenticate stays a difference: another server or
-   server block, another group, a method list or login list of another name,
-   the login method of a line, the authentication order, a `tacacs-server
-   host` line and a deactivated statement. The source interface is compared
-   only where the scope sets one, as before. The `Kept:` line of the plan
-   names these statements `TACACS+ server settings`, `RADIUS server
+5. **The device's own settings of its AAA server are no difference.** A Junos
+   device that holds `set system tacplus-server <address> source-address
+   <address>`, a `timeout`, a `retry`, a `routing-instance` or an option of
+   `system tacplus-options` or `radius-options` that does not decide who can
+   log in, and an IOS device that holds a `send-nat-address` or an
+   `automate-tester` under tacctl's `tacacs server` or `radius server` block,
+   was listed by `device config plan` as an access irregularity that the paste
+   leaves alone (`the paste fixes 0, leaves 1`, then `Nothing to paste`), and
+   `diff`, `device config list`, `device list` and `--differs` said the device
+   differed. The planner already left these alone; the comparison did not call
+   them the device's own, which it did for `snmp`, `system` and `netconf`
+   only. They are the device's own now: the `aaa` section reads `ok (+N
+   unmanaged)`, the plan has no item for them, and the device is consistent
+   when nothing else differs. `--differs` recomputes at once; the state in the
+   CONFIG column of `device list` and in `device config list` is the pull's
+   record, and changes at the next pull of the device. The leaves of tacctl's
+   own server that the standard does not state are the device's own; a leaf it
+   states with another value (the timeout of an IOS block, the port of a
+   RADIUS server) is still a difference that the plan replaces in place. A
+   TACACS+ `port` is never the device's own: the standard states one only for
+   a server off the default port, so a port on the device against a server on
+   the default is the device asking the wrong port. Of the client's options,
+   those that change the service asked for or how a password is checked stay
+   differences (`tacplus-options service-name` other than `junos-exec`,
+   `strict-authorization`, `radius-options password-protocol`); the others are
+   the device's own. What decides who can authenticate stays a difference:
+   another server or server block, another group, a method list or login list
+   of another name, the login method of a line, the authentication order, a
+   `tacacs-server host` line and a deactivated statement. The source interface
+   is compared only where the scope sets one, as before. The `Kept:` line of
+   the plan names these statements `TACACS+ server settings`, `RADIUS server
    settings`, `TACACS+ options` or `RADIUS options`, and so does `kinds` of
    `--json`. The IOS server group tacctl renders (`aaa group server
-   tacacs+|radius`) has the same: its `ip vrf forwarding`, its own
-   `ip tacacs source-interface` or `ip radius source-interface` and its `deadtime` are the device's own (`TACACS+
-   group settings`, `RADIUS group settings`), while a server line in it
-   (`server`, `server name`, `server-private`, with or without a key) is
-   another server and stays a difference, as does every leaf of another group.
+   tacacs+|radius`) has the same: its `ip vrf forwarding`, its own `ip tacacs
+   source-interface` or `ip radius source-interface` and its `deadtime` are
+   the device's own (`TACACS+ group settings`, `RADIUS group settings`), while
+   a server line in it (`server`, `server name`, `server-private`, with or
+   without a key) is another server and stays a difference, as does every leaf
+   of another group.
 
 6. **The source of the AAA client must be an address of the device.** A
    source address that no interface of the device holds, or a source
@@ -252,21 +253,21 @@ current behaviour; this file is where history lives.
    kinds are listed in one place (`recoverKinds`, `internal/cli/
    backup_recover.go`): `email` recovers the email addresses of users (item
    8), and `snmp-users` the SNMPv3 users a rollback dropped (item 16). Without
-   `--only` it recovers every kind. For `email` it reads the snapshot's `store.yaml` and
-   sets the address of each user who has one there and exists now with none,
-   through the same validation as `user email`, so an address still belongs to
-   one user. A user who no longer exists, a user who has another address now
-   (the current one is kept) and an address another user holds now are
-   skipped and named; a user who has it already is nothing to do. The lists
-   name users, never an address. The snapshot is found as `backup diff` and
-   `restore` find one (item 9): in `backups/`, then among the kept copies, so
-   a snapshot a retention pruned is still recovered from its kept copy, which
-   is named with the command that removes it (`backup unkeep`). `--dry-run`
-   lists and changes nothing; otherwise it asks for confirmation (`--yes`
-   does not), takes a snapshot of the current state first (the retention
-   keeps the one being read) and ends with the numbers recovered and skipped.
-   The audit line `backup recover id= pre= kinds= restored= skipped=` holds
-   counts and snapshot ids, never an address.
+   `--only` it recovers every kind. For `email` it reads the snapshot's
+   `store.yaml` and sets the address of each user who has one there and exists
+   now with none, through the same validation as `user email`, so an address
+   still belongs to one user. A user who no longer exists, a user who has
+   another address now (the current one is kept) and an address another user
+   holds now are skipped and named; a user who has it already is nothing to
+   do. The lists name users, never an address. The snapshot is found as
+   `backup diff` and `restore` find one (item 9): in `backups/`, then among
+   the kept copies, so a snapshot a retention pruned is still recovered from
+   its kept copy, which is named with the command that removes it (`backup
+   unkeep`). `--dry-run` lists and changes nothing; otherwise it asks for
+   confirmation (`--yes` does not), takes a snapshot of the current state
+   first (the retention keeps the one being read) and ends with the numbers
+   recovered and skipped. The audit line `backup recover id= pre= kinds=
+   restored= skipped=` holds counts and snapshot ids, never an address.
 
 11. **A rollback removes the email addresses, after a snapshot that it
     keeps.** No older release knows `users.<name>.email`, so every `tacctl
@@ -275,18 +276,18 @@ current behaviour; this file is where history lives.
     address, never the address, in a warning, so `--apply` needs `--yes`; it
     takes the snapshot first (the `0.2.22` target takes one only when an
     address stands, or an SNMP credential file in version 2 has to be
-    converted, item 14) and keeps it (item 9): the older release prunes `backups/`
-    by its own retention and knows no marker, so the snapshot is copied to
-    `backups-kept/`, where no retention reaches it, with the note `rollback to
-    <target>: dropped the email addresses of N users` (a count, no name and no
-    address). The apply names the snapshot, the kept copy and the command that
-    puts the addresses back once this release is installed again (`tacctl
-    backup recover <snapshot> --only email`, item 10; `backup unkeep` removes
-    the copy after that), and the audit line of the rollback carries the kept
-    snapshot's id and the users (`kept=` `email-users=`), never an address. A
-    store that cannot be read refuses every target. Until the older release is
-    installed, `tacctl user email` and `tacctl user add --email` write the key
-    again, and the command says so.
+    converted, item 14) and keeps it (item 9): the older release prunes
+    `backups/` by its own retention and knows no marker, so the snapshot is
+    copied to `backups-kept/`, where no retention reaches it, with the note
+    `rollback to <target>: dropped the email addresses of N users` (a count,
+    no name and no address). The apply names the snapshot, the kept copy and
+    the command that puts the addresses back once this release is installed
+    again (`tacctl backup recover <snapshot> --only email`, item 10; `backup
+    unkeep` removes the copy after that), and the audit line of the rollback
+    carries the kept snapshot's id and the users (`kept=` `email-users=`),
+    never an address. A store that cannot be read refuses every target. Until
+    the older release is installed, `tacctl user email` and `tacctl user add
+    --email` write the key again, and the command says so.
 
 12. **A user change syncs this server's own accounts at once.** After
     `tacctl user add` the new user could not log in to this server to change
@@ -385,12 +386,12 @@ current behaviour; this file is where history lives.
     version 1 files only converts nothing.
 
 15. **SNMPv3: a pool of users for each level, one default.** The version, the
-    port, the timeout and the two protocols stay one setting for the config,
-    a scope and a device; the v3 users are now a pool of names with their
-    passphrases and a default user or none. `config snmp v3-user`, `scope
-    snmp <scope> v3-user` and `device snmp <device> v3-user` take `add
-    <user> [--default] [--stdin]` (and `--auth`, `--priv` for the config and
-    a scope), `remove <user>`, `default [<user>|--none]` and `list`; the old
+    port, the timeout and the two protocols stay one setting for the config, a
+    scope and a device; the v3 users are now a pool of names with their
+    passphrases and a default user or none. `config snmp v3-user`, `scope snmp
+    <scope> v3-user` and `device snmp <device> v3-user` take `add <user>
+    [--default] [--stdin]` (and `--auth`, `--priv` for the config and a
+    scope), `remove <user>`, `default [<user>|--none]` and `list`; the old
     `v3-user <user>` is not accepted (it fails with the usage of the new
     verbs). Adding a user changes nothing but the pool: it no longer sets the
     version, so `config snmp version [v2c|v3]` is new (a scope's and a
@@ -403,90 +404,91 @@ current behaviour; this file is where history lives.
     devices, a device's against its scope and the config), so a scope's user
     cannot shadow the config's: adding a name another pool holds is refused
     and names the level, and a user that a device's default names cannot be
-    removed. A chosen user that is missing, or lacks a passphrase, is an
-    error that names the command that fixes it (`tacctl scope snmp lab v3-user
-    add alice`), never a fallback to another user; the walkthroughs and the
+    removed. A chosen user that is missing, or lacks a passphrase, is an error
+    that names the command that fixes it (`tacctl scope snmp lab v3-user add
+    alice`), never a fallback to another user; the walkthroughs and the
     rendered blocks name only the user in force, and their placeholder for a
-    missing user names the new verb. A credentials file of version 2 (item
-    14) counts for a device without the `snmp:` map of the registry that
-    version 1 needed. `show --reveal <user>` prints one user's passphrases; every reveal that
-    prints a user's passphrases logs `secret-read ... user=<name>`. `device
-    show --json` and `device check --json` gain `v3_users` (the names in the
-    device's own pool) and `v3_default` (its own default) beside `v3_user`,
-    the user in force. The passphrases are entered as before (asked twice, or
-    `--stdin`; at least 8 characters), the audit line masks any word typed in
-    their place, and the shell history masks them too. An engineer reads
-    `v3-user list` and `default` of their own scopes and devices and may
+    missing user names the new verb. A credentials file of version 2 (item 14)
+    counts for a device without the `snmp:` map of the registry that version 1
+    needed. `show --reveal <user>` prints one user's passphrases; every reveal
+    that prints a user's passphrases logs `secret-read ... user=<name>`.
+    `device show --json` and `device check --json` gain `v3_users` (the names
+    in the device's own pool) and `v3_default` (its own default) beside
+    `v3_user`, the user in force. The passphrases are entered as before (asked
+    twice, or `--stdin`; at least 8 characters), the audit line masks any word
+    typed in their place, and the shell history masks them too. An engineer
+    reads `v3-user list` and `default` of their own scopes and devices and may
     reveal a user of the level's own pool or the user in force, never another
-    user of the config's pool; changing a default (`default <user>`,
-    `default --none`) is the superuser's. Below the engineer tier an error
-    about a chosen user does not name it (`device check`, `device scan`), as
-    `device show` does not. `config validate` warns (section `snmp_users`)
-    when two pools a device can see hold the same user name under the scopes
-    as they are now; the device's own pool is searched first, then its
-    scope's, then the config's.
+    user of the config's pool; changing a default (`default <user>`, `default
+    --none`) is the superuser's. Below the engineer tier an error about a
+    chosen user does not name it (`device check`, `device scan`), as `device
+    show` does not. `config validate` warns (section `snmp_users`) when two
+    pools a device can see hold the same user name under the scopes as they
+    are now; the device's own pool is searched first, then its scope's, then
+    the config's.
 
 16. **`backup recover --only snmp-users` puts back the SNMPv3 users a rollback
     dropped.** It reads the credential files of the snapshot and adds each
     user to the pool of the same level now, and a default where the level has
-    none and the user it chose is there (a device's may be a user of its scope's
-    pool or the config's that the same run restores); it never overwrites a
-    default, and a default that named a user of the level's own pool is not
-    given to another pool's user of the same name. A
-    scope or device that no longer exists is skipped and named, a user the
-    level has already is nothing to do, and a name another pool that can see
-    it holds now is skipped (the current user is kept) and says which pool.
-    The dry run lists levels and counts, never a name or a passphrase; the
-    audit line carries counts and snapshot ids.
+    none and the user it chose is there (a device's may be a user of its
+    scope's pool or the config's that the same run restores); it never
+    overwrites a default, and a default that named a user of the level's own
+    pool is not given to another pool's user of the same name. A scope or
+    device that no longer exists is skipped and named, a user the level has
+    already is nothing to do, and a name another pool that can see it holds
+    now is skipped (the current user is kept) and says which pool. The dry run
+    lists levels and counts, never a name or a passphrase; the audit line
+    carries counts and snapshot ids.
 
 17. **`device clone <name> <new> --staging <bench-ip>` registers a copy of a
-    device's intent at its bench address.** A device that will be replaced
-    is provisioned from the one it replaces: the copy has the registry's
-    settings (vendor, ssh port, description, location, legacy-ssh,
-    ios-syntax), the SNMP settings and credentials file (the community and
-    the pool of v3 users, the default included), the NETCONF settings, the
-    timing scale and the configuration blocks with their list in
-    `tacctl.yaml`. It has none of what belongs to the one device that is
-    there: its address, its name, its DNS name (it names the original), the
-    pinned host keys, the acknowledged notices, a break-glass hold and the
-    configuration record. `--staging` is required, since the registry holds
-    one device for each address; the bench address is added to the scope of
-    the original as a /32 before the registry is written, as `config
-    <vendor> --staging` does (an address the scope answers already gets a
-    staging entry without a /32, written once the registry line is, which
-    nothing takes out of the scope, and which lasts until the device is seen
-    at another address, `device rename --replace` ends it or a superuser
-    removes it: a clone that is removed later leaves it, as a staging /32 is
-    left; an address already staged for a host or another device is refused
-    before the snapshot; an entry with no name, from `config <vendor>
-    --staging <ip>` without `--name`, is the bench device's and is named for
-    the clone once it is registered, and named back if the clone fails), and a device no scope answers is refused. The
-    new name follows the rules of `device add` (lower case, not taken, not
-    generic unless `--allow-generic`). Every refusal, those of the staging
-    address included, comes before the one snapshot; what can
-    be read is read before anything is written, and a write that fails takes
-    the registry line, the files and the /32 back. An engineer clones the
-    devices of their own scopes, the SNMP credentials included (they can
-    read them there); the verb gives them no way to set SNMP settings that
-    are not a copy of the device's. The audit line is `device clone from= to=
-    address= scope= snmp_users= block_files= count=1`, counts and names, never
-    a credential, and the entry without a /32 is audited as the add of a /32
-    is, `scope staging add cidr= scope= device= covered=yes`. The engineer's sudoers rows gain `device clone *`; the
-    texts that `tacctl rollback` puts back for the older releases do not have
-    it: the `0.2.22`, `0.2.21` and `0.2.20` targets rewrite the per-tier
-    drop-in, when it is exactly this release's text, with 0.2.22's
-    (`tier.Sudoers0222`, after `visudo -cf`), and the older targets, which
-    recognise that text as an older one, put back their own. The staging
+    device's intent at its bench address.** A device that will be replaced is
+    provisioned from the one it replaces: the copy has the registry's settings
+    (vendor, ssh port, description, location, legacy-ssh, ios-syntax), the
+    SNMP settings and credentials file (the community and the pool of v3
+    users, the default included), the NETCONF settings, the timing scale and
+    the configuration blocks with their list in `tacctl.yaml`. It has none of
+    what belongs to the one device that is there: its address, its name, its
+    DNS name (it names the original), the pinned host keys, the acknowledged
+    notices, a break-glass hold and the configuration record. `--staging` is
+    required, since the registry holds one device for each address; the bench
+    address is added to the scope of the original as a /32 before the registry
+    is written, as `config <vendor> --staging` does (an address the scope
+    answers already gets a staging entry without a /32, written once the
+    registry line is, which nothing takes out of the scope, and which lasts
+    until the device is seen at another address, `device rename --replace`
+    ends it or a superuser removes it: a clone that is removed later leaves
+    it, as a staging /32 is left; an address already staged for a host or
+    another device is refused before the snapshot; an entry with no name, from
+    `config <vendor> --staging <ip>` without `--name`, is the bench device's
+    and is named for the clone once it is registered, and named back if the
+    clone fails), and a device no scope answers is refused. The new name
+    follows the rules of `device add` (lower case, not taken, not generic
+    unless `--allow-generic`). Every refusal, those of the staging address
+    included, comes before the one snapshot; what can be read is read before
+    anything is written, and a write that fails takes the registry line, the
+    files and the /32 back. An engineer clones the devices of their own
+    scopes, the SNMP credentials included (they can read them there); the verb
+    gives them no way to set SNMP settings that are not a copy of the
+    device's. The audit line is `device clone from= to= address= scope=
+    snmp_users= block_files= count=1`, counts and names, never a credential,
+    and the entry without a /32 is audited as the add of a /32 is, `scope
+    staging add cidr= scope= device= covered=yes`. The engineer's sudoers rows
+    gain `device clone *`; the texts that `tacctl rollback` puts back for the
+    older releases do not have it: the `0.2.22`, `0.2.21` and `0.2.20` targets
+    rewrite the per-tier drop-in, when it is exactly this release's text, with
+    0.2.22's (`tier.Sudoers0222`, after `visudo -cf`), and the older targets,
+    which recognise that text as an older one, put back their own. The staging
     file's line gains an optional sixth field, `covered`, for the entry of an
     address the scope answered already. An older release reads the line as any
     other and writes it back without the field, and its sweep and `scope
-    staging remove` take the /32 of the entry out of the scope, a prefix of the
-    scope's own included: every target drops those entries from `state/staging`
-    after the snapshot, names them in the plan and asks for nothing (no warning,
-    no `--yes`). A clone that still waits for its `device rename --replace` loses
-    its entry, and 0.2.23 cannot write it again after a re-upgrade: the
-    `--replace` then refuses it as not staged. The way back is to remove the
-    clone and clone again from the original, or to restore the snapshot.
+    staging remove` take the /32 of the entry out of the scope, a prefix of
+    the scope's own included: every target drops those entries from
+    `state/staging` after the snapshot, names them in the plan and asks for
+    nothing (no warning, no `--yes`). A clone that still waits for its `device
+    rename --replace` loses its entry, and 0.2.23 cannot write it again after
+    a re-upgrade: the `--replace` then refuses it as not staged. The way back
+    is to remove the clone and clone again from the original, or to restore
+    the snapshot.
 
 18. **`device rename <replacement> <name> --replace` puts a device registered
     at a bench address where the device it replaces is.** The original is
@@ -497,27 +499,27 @@ current behaviour; this file is where history lives.
     has none. The replacement must have a staging entry (`device clone`, or
     `config <vendor> --staging --name` for a bench address no prefix of the
     scope covers: the /32 of its bench address, or, for a clone at an address
-    its scope answers already, the entry alone): its /32 ends in
-    the scope that holds it, the original's own staging entries stay (they
-    name the device now at its address), and the replacement is answered by the scope of its
-    new address, which the plan says when it is not the scope of its bench
-    address. A break-glass hold on the original is shown in the plan and
+    its scope answers already, the entry alone): its /32 ends in the scope
+    that holds it, the original's own staging entries stay (they name the
+    device now at its address), and the replacement is answered by the scope
+    of its new address, which the plan says when it is not the scope of its
+    bench address. A break-glass hold on the original is shown in the plan and
     cleared as `breakglass release` does (one render, the backends that serve
     the address restarted); it is never moved to the replacement, and a
     replacement with a hold of its own is refused until it is released. An
     original with a hold needs the superuser, and an engineer is refused
     naming it. The plan lines come first, then one question: a closed stdin is
     a no and `--yes` is the only way to skip it. One snapshot covers all the
-    steps. A file of the original that cannot be removed, or of the replacement
-    that cannot take the name (its SNMP credentials, blocks or record), fails
-    the verb with exit status 1 and names it, rather than leaving the device
-    on the original's files with a warning; and the staging entry follows the
-    rename before the /32 ends, so that one that cannot end names a device
-    that is registered. The audit line is `device replace old= new= address=
-    hold_cleared=yes|no snmp_files= block_files= notices= count=1`, with
-    `scope staging done` for the /32 and `breakglass release` for a hold. No
-    stored format changes and no sudoers row is added (`device rename` has
-    one), so `tacctl rollback` has nothing to undo for it.
+    steps. A file of the original that cannot be removed, or of the
+    replacement that cannot take the name (its SNMP credentials, blocks or
+    record), fails the verb with exit status 1 and names it, rather than
+    leaving the device on the original's files with a warning; and the staging
+    entry follows the rename before the /32 ends, so that one that cannot end
+    names a device that is registered. The audit line is `device replace old=
+    new= address= hold_cleared=yes|no snmp_files= block_files= notices=
+    count=1`, with `scope staging done` for the /32 and `breakglass release`
+    for a hold. No stored format changes and no sudoers row is added (`device
+    rename` has one), so `tacctl rollback` has nothing to undo for it.
 
 19. **The client script writes and removes sshd's lockdown drop-in, and speaks
     protocol 7.** A host enrolled in a scope that is locked down gets one
