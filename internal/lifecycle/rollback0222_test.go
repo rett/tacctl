@@ -5,7 +5,17 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/rett/tacctl/internal/tier"
 )
+
+// as0222 puts the per-tier drop-in 0.2.20 to 0.2.22 wrote (this release's
+// without the engineer's row of 'device clone') where the sandbox has this
+// release's: the state of a 0.2.22 installation, whose rollback to 0.2.22,
+// 0.2.21 or 0.2.20 rewrites no drop-in.
+func (s *rbSandbox) as0222() {
+	s.write(s.p.TierSudoersFile, tier.Sudoers0222(), 0o640)
+}
 
 // The rollback to 0.2.22 on the sandbox of rollback_test.go: a state of this
 // release is the 0.2.22 one, so the plan converts nothing.
@@ -25,6 +35,7 @@ func plan0222(t *testing.T, s *rbSandbox) *RollbackPlan {
 // stay. It writes nothing.
 func TestPlanRollback0222ConvertsNothing(t *testing.T) {
 	s := scaleState(t)
+	s.as0222()
 	s.write(s.p.Overrides, string(mustRead(t, s.p.Overrides))+"server:\n  addresses: [192.0.2.10]\n  name: core-1\n", 0o640)
 	s.reload()
 	before := s.snapshotOf()

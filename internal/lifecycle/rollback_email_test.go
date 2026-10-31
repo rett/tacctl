@@ -123,6 +123,7 @@ func TestPlanRollbackEveryTargetRemovesTheEmail(t *testing.T) {
 // takes the snapshot when an address stands, and only then.
 func TestPlanRollback0222ConvertsOnlyWhenAnAddressStands(t *testing.T) {
 	s := newRBSandbox(t)
+	s.as0222()
 	rbStoreEmail(t, s)
 	s.in.Target = RollbackTarget0222
 	p, err := PlanRollback(s.in)
@@ -146,6 +147,7 @@ func TestPlanRollback0222ConvertsOnlyWhenAnAddressStands(t *testing.T) {
 	}
 	// no address: as before
 	s = newRBSandbox(t)
+	s.as0222()
 	s.in.Target = RollbackTarget0222
 	if p, err = PlanRollback(s.in); err != nil || p.PendingFiles() || p.Pending() || p.NeedsYes() || len(p.EmailUsers()) != 0 {
 		t.Errorf("no address: %v %v", p, err)

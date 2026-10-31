@@ -313,7 +313,7 @@ snapshot; this release, if it stays, reads the two as missing until its next
 
 0.2.22 reads every file this release writes but the users' email addresses
 in `store.yaml`, so the rollback removes those (above) and converts nothing
-else: the server name, the timing scale, the server address, the users' login
+else but the sudoers drop-in (below): the server name, the timing scale, the server address, the users' login
 to this server, a user name with a period and an emergency lockdown (of
 scopes with no enrolled host) all stay.
 With no address in the store and no SNMP credential file in version 2 (a
@@ -321,7 +321,10 @@ second or a non-default user, a default naming another level's user, a
 device's file without an `snmp:` entry: above) no file is converted, no
 snapshot is taken and `--yes` is not needed; with an address, or a version 2
 file, the rollback takes a snapshot first and needs `--yes` when anything is
-dropped. `--hosts` is accepted and does nothing.
+dropped. The per-tier sudoers drop-in, when it is exactly this release's text,
+is rewritten with 0.2.22's (after `visudo -cf`): it loses the engineer's row of
+`device clone`; an edited drop-in is left. `--hosts` is accepted and does
+nothing.
 
 ```bash
 tacctl rollback 0.2.22          # the dry run: steps, writes nothing
@@ -336,8 +339,10 @@ tacctl upgrade --branch 0.2.22  # install 0.2.22
 keys, after a snapshot, and converts nothing else: no scope is added to the users (0.2.21 has the login to
 this server itself), a user name with a period and an emergency lockdown stay
 (0.2.21 reads both), and the new `server show`, `server listen` and `server
-metrics` write the keys that `config listen` and `config metrics` wrote.
-`--hosts` is accepted and does nothing.
+metrics` write the keys that `config listen` and `config metrics` wrote. The
+per-tier sudoers drop-in, when it is exactly this release's text, is rewritten
+with 0.2.21's, which is 0.2.22's (it loses the engineer's row of `device
+clone`); an edited drop-in is left. `--hosts` is accepted and does nothing.
 
 ```bash
 tacctl rollback 0.2.21          # the dry run: steps, writes nothing
@@ -357,8 +362,10 @@ run there.
 
 0.2.20 reads every file this release writes but `server.addresses`,
 `server.name` and the timing scale, so the rollback removes those keys and adds the scope of this server's own login to the
-users' scopes (above), after a snapshot. Nothing else is converted, and
-`--hosts` is accepted and does nothing.
+users' scopes (above), after a snapshot. The per-tier sudoers drop-in, when it
+is exactly this release's text, is rewritten with 0.2.20's, which is 0.2.22's
+(it loses the engineer's row of `device clone`); an edited drop-in is left.
+Nothing else is converted, and `--hosts` is accepted and does nothing.
 
 ```bash
 tacctl rollback 0.2.20          # the dry run: steps, warnings, writes nothing

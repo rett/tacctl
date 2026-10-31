@@ -7,7 +7,9 @@ current behaviour; this file is where history lives.
 
 1. **`tacctl rollback 0.2.22`, the release before this one, is a target.**
    0.2.22 reads every file this release writes but the users' email addresses
-   (item 8), so the target converts nothing else: the server name, the timing
+   (item 8), so the target converts nothing else but the per-tier sudoers
+   drop-in (item 17: exactly this release's text is rewritten with 0.2.22's,
+   and so for the `0.2.21` and `0.2.20` targets): the server name, the timing
    scale, the server address, the users' login to this server, a user name
    with a period and an emergency lockdown all stay (a lockdown with enrolled
    hosts stops every target, item 20). With no address in the
@@ -458,9 +460,11 @@ current behaviour; this file is where history lives.
     address= scope= snmp_users= block_files= count=1`, counts and names, never
     a credential. The engineer's sudoers rows gain `device clone *`; the
     texts that `tacctl rollback` puts back for the older releases do not have
-    it, and the text of 0.2.22 (`tier.Sudoers0222`) is one every target that
-    rewrites the drop-in recognises. No stored format changes, so no rollback
-    step is added.
+    it: the `0.2.22`, `0.2.21` and `0.2.20` targets rewrite the per-tier
+    drop-in, when it is exactly this release's text, with 0.2.22's
+    (`tier.Sudoers0222`, after `visudo -cf`), and the older targets, which
+    recognise that text as an older one, put back their own. No stored format
+    changes.
 
 18. **`device rename <replacement> <name> --replace` puts a device registered
     at a bench address where the device it replaces is.** The original is

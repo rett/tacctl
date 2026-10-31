@@ -23,6 +23,7 @@ func plan0221(t *testing.T, s *rbSandbox) *RollbackPlan {
 // --yes, adds no scope to any user and rewrites no drop-in; it writes nothing.
 func TestPlanRollback0221RemovesTheServerName(t *testing.T) {
 	s := newRBSandbox(t)
+	s.as0222()
 	s.write(s.p.Overrides, rbConf+"server:\n  addresses: [192.0.2.10]\n  name: core-1\n", 0o640)
 	s.reload()
 	before := s.snapshotOf()
@@ -56,6 +57,7 @@ func TestPlanRollback0221RemovesTheServerName(t *testing.T) {
 // Without a server name there is nothing to remove.
 func TestPlanRollback0221WithNoServerName(t *testing.T) {
 	s := newRBSandbox(t)
+	s.as0222()
 	s.write(s.p.Overrides, rbConf+"server:\n  addresses: [192.0.2.10]\n", 0o640)
 	s.reload()
 	p := plan0221(t, s)

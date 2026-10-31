@@ -104,6 +104,7 @@ func TestPlanRollbackEveryTargetRemovesTheTimeoutScale(t *testing.T) {
 // devices.yaml, and says nothing of it.
 func TestPlanRollback0222KeepsTheTimeoutScale(t *testing.T) {
 	s := scaleState(t)
+	s.as0222()
 	s.in.Target = RollbackTarget0222
 	p, err := PlanRollback(s.in)
 	if err != nil {

@@ -7,10 +7,11 @@ package lifecycle
 // invocation: the snapshot and the sudoers installer.
 //
 // The targets are 0.2.22 (the release before this one: RollbackTarget0222;
-// rollback0222.go), 0.2.21 (RollbackTarget0221;
+// rollback0222.go: the email addresses and the engineer's row of 'device
+// clone'), 0.2.21 (RollbackTarget0221;
 // rollback0221.go: the server name and the timing scale), 0.2.20 (RollbackTarget0220;
 // rollback_managed.go: the server address and the managed scope of the server's
-// own login), 0.2.19 (RollbackTarget0219;
+// own login; the three share tiers0222Step), 0.2.19 (RollbackTarget0219;
 // rollback0219.go: the tiers drop-in and the management filter mode), 0.2.18
 // (RollbackTarget0218; rollback0218.go: the tiers drop-in, the lockdown record
 // and a warning for the system blocks that hold 0.2.19's statements), 0.2.17

@@ -428,7 +428,12 @@ and the apply names
 .BR "tacctl backup recover <snapshot> \-\-only snmp\-users" .
 .IP
 .B "rollback 0.2.22"
-converts nothing but the email addresses and the SNMP credential files: 0.2.22
+converts nothing but the email addresses, the SNMP credential files and the per\-tier sudoers drop\-in
+(when it is exactly this release's text it is rewritten, after
+.BR "visudo \-cf" ,
+with 0.2.22's: the engineer's rule of
+.B "device clone"
+is taken out; an edited drop\-in is left): 0.2.22
 reads every other file this release writes, so the server name, the timing
 scale, the server address, the users' login to this server, a user name with a
 period and an emergency lockdown (of scopes with no enrolled host) stay. With no
@@ -448,7 +453,9 @@ is accepted and does nothing. The command ends with the next step,
 .B "rollback 0.2.21"
 removes
 .B server.name
-and the timing scale and converts nothing else: no scope is added to the users, and a user name with
+and the timing scale, rewrites the per\-tier sudoers drop\-in when it is exactly this release's text (with 0.2.21's, which is 0.2.22's: the engineer's rule of
+.B "device clone"
+is taken out; an edited drop\-in is left) and converts nothing else: no scope is added to the users, and a user name with
 a period and an emergency lockdown stay, as 0.2.21 reads both. It needs no
 .B \-\-yes
 (it has no warning of its own: the email addresses, above, are the one), and
@@ -467,7 +474,9 @@ removes
 .B server.addresses
 and
 .B server.name
-and the timing scale, and adds the scope to the users (above); 0.2.20 reads every other file this
+and the timing scale, adds the scope to the users (above) and rewrites the per\-tier sudoers drop\-in when it is exactly this release's text (with 0.2.20's, which is 0.2.22's: the engineer's rule of
+.B "device clone"
+is taken out; an edited drop\-in is left); 0.2.20 reads every other file this
 release writes, so nothing else is converted, and
 .B \-\-hosts
 is accepted and does nothing. The command ends with the next step,
