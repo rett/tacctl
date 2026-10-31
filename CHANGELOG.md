@@ -245,9 +245,8 @@ current behaviour; this file is where history lives.
    superuser's) brings back a kind and leaves everything else as it is. The
    kinds are listed in one place (`recoverKinds`, `internal/cli/
    backup_recover.go`): `email` recovers the email addresses of users (item
-   8), and `snmp-users` is reserved, accepted by name and refused with `not
-   available yet` until it is built. Without `--only` it recovers every kind
-   that can be recovered. For `email` it reads the snapshot's `store.yaml` and
+   8), and `snmp-users` the SNMPv3 users a rollback dropped (item 16). Without
+   `--only` it recovers every kind. For `email` it reads the snapshot's `store.yaml` and
    sets the address of each user who has one there and exists now with none,
    through the same validation as `user email`, so an address still belongs to
    one user. A user who no longer exists, a user who has another address now
@@ -420,6 +419,19 @@ current behaviour; this file is where history lives.
     when two pools a device can see hold the same user name under the scopes
     as they are now; the device's own pool is searched first, then its
     scope's, then the config's.
+
+16. **`backup recover --only snmp-users` puts back the SNMPv3 users a rollback
+    dropped.** It reads the credential files of the snapshot and adds each
+    user to the pool of the same level now, and a default where the level has
+    none and the user it chose is there (a device's may be a user of its scope's
+    pool or the config's that the same run restores); it never overwrites a
+    default, and a default that named a user of the level's own pool is not
+    given to another pool's user of the same name. A
+    scope or device that no longer exists is skipped and named, a user the
+    level has already is nothing to do, and a name another pool that can see
+    it holds now is skipped (the current user is kept) and says which pool.
+    The dry run lists levels and counts, never a name or a passphrase; the
+    audit line carries counts and snapshot ids.
 
 ## 0.2.22 (2026-10-29)
 

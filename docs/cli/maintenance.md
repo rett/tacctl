@@ -140,9 +140,16 @@ leaves everything else as it is, where `backup restore` puts back the whole
 state. It is the way back for what `tacctl rollback` removed: the rollback
 keeps the snapshot it took (`backup keep`) and names it (see [Rolling
 back](../install/upgrading.md#rolling-back)). The kinds are `email` (the email
-addresses of users, `user email`) and `snmp-users`, which is reserved: `--only
-snmp-users` is refused with `not available yet` and nothing changes. Without
-`--only` it recovers every kind that can be recovered. For `email` it reads
+addresses of users, `user email`) and `snmp-users` (the SNMPv3 users a
+rollback dropped). Without `--only` it recovers every kind. For `snmp-users`
+it reads the credential files of the snapshot (`snmp.yaml`, `snmp/<scope>.yaml`,
+`snmp/devices/<device>.yaml`) and adds each user to the pool of the same level
+now, and a default where the level has none and the user it chose is there; it
+never overwrites a default. A scope or a device that no longer exists is
+skipped and named, a user the level has already is nothing to do, and a name
+that another pool a device can see holds now is skipped (the current user is
+kept), saying which pool; the lists name levels and count users, never a user
+or a passphrase, and the audit line holds counts and snapshot ids. For `email` it reads
 the snapshot's `store.yaml` and sets the address of each user who has one
 there and exists now with none, in one store write that goes through the same
 validation as `user email`. A user who no longer exists, a user who has

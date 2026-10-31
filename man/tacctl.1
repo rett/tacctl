@@ -6350,12 +6350,18 @@ are
 (the email addresses of users,
 .BR "user email" )
 and
-.BR snmp\-users ,
-which is reserved: it is accepted by name and refused with
-.BR "not available yet" ,
-and nothing is changed. Without
+.B snmp\-users
+(the SNMPv3 users a rollback dropped). Without
 .B \-\-only
-every kind that can be recovered is recovered. For
+every kind is recovered. For
+.BR snmp\-users ,
+it reads the credential files of the snapshot and adds each user to the pool
+of the same level now, and a default where the level has none and the user it
+chose is there; it never overwrites a default. A scope or a device that no
+longer exists is skipped and named, a user the level has already is nothing to
+do, and a name that another pool a device can see holds now is skipped (the
+current user is kept) and says which pool; the lists name levels and count
+users, never a user or a passphrase. For
 .BR email ,
 a user the snapshot gives an address and who exists now with none gets it
 (through the same validation as

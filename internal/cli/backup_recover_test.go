@@ -92,7 +92,7 @@ func TestBackupRecoverEmail(t *testing.T) {
 	}
 	pre := snapshotIDsOf(sb)
 	wantDetail(t, "backup recover", auditCalls(sb.runner), "auth.info",
-		"backup recover id="+id+" pre="+pre[len(pre)-1]+" kinds=email restored=1 skipped=3 by=alice")
+		"backup recover id="+id+" pre="+pre[len(pre)-1]+" kinds=email,snmp-users restored=1 skipped=3 by=alice")
 	noLoggerHas(t, "backup recover", sb.runner, "example.net", "alice@", "Example")
 	// the snapshot being read is still there
 	if _, err := os.Stat(sb.path("state", "backups", id, "store.yaml")); err != nil {
@@ -107,17 +107,15 @@ func TestBackupRecoverEmail(t *testing.T) {
 	}
 }
 
-// --yes asks nothing, and the kinds are checked before anything is read: a
-// reserved kind is refused as not available yet, an unknown one as unknown,
-// a list repeats nothing.
+// --yes asks nothing, and the kinds are checked before anything is read: an
+// unknown one is refused as unknown, a list repeats nothing.
 func TestBackupRecoverKinds(t *testing.T) {
 	sb, id := recoverSandbox(t)
 	before := tree(t, sb.dir)
 	for _, c := range []struct {
 		only, want string
 	}{
-		{"snmp-users", "'snmp-users' is not available yet"},
-		{"email,snmp-users", "'snmp-users' is not available yet"},
+		{"email,bogus", "Unknown kind 'bogus'. Kinds: email, snmp-users."},
 		{"bogus", "Unknown kind 'bogus'. Kinds: email, snmp-users."},
 		{",", "Usage: tacctl backup recover"},
 	} {
@@ -207,7 +205,9 @@ func TestBackupRecoverKindsAreOneList(t *testing.T) {
 			t.Errorf("%s has no plan", k.name)
 		}
 	}
-	if reserved != 1 {
+	// every kind of this release can be recovered; the reserved mechanism is
+	// for the release that names a kind before it builds it
+	if reserved != 0 {
 		t.Errorf("%d reserved kinds", reserved)
 	}
 }

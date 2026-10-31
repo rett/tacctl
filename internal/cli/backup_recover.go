@@ -21,8 +21,9 @@ package cli
 // so the data it dropped can be recovered after the older release's own
 // retention has pruned backups/.
 //
-// Nothing printed or logged holds an address: the lines name users, and the
-// audit line carries counts and the snapshot ids.
+// Nothing printed or logged holds an address or a passphrase: the email lines
+// name users, the SNMPv3 lines name levels and count users, and the audit
+// line carries counts and the snapshot ids.
 
 import (
 	"errors"
@@ -31,8 +32,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/names"
+	"github.com/rett/tacctl/internal/snmpcred"
 	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -66,7 +69,7 @@ type recoverKind struct {
 // recoverKinds is the list of kinds, in the order the usage names them.
 var recoverKinds = []recoverKind{
 	{name: "email", what: "email addresses", plan: planRecoverEmail},
-	{name: "snmp-users", what: "SNMPv3 users", reserved: true},
+	{name: "snmp-users", what: "SNMPv3 users", plan: planRecoverSNMP},
 }
 
 // recoverKindNames are the names of the kinds, the reserved ones included.
@@ -383,4 +386,343 @@ func (pl *emailPlan) Apply(inv *invocation) (restored, skipped int, err error) {
 		return nil
 	})
 	return restored, skipped, err
+}
+
+// --- SNMPv3 users ----------------------------------------------------------
+
+// The reasons an SNMPv3 item is skipped or needs nothing.
+const (
+	snmpHasIt     = "has it already"
+	snmpLevelGone = "no longer exists"
+	snmpHeld      = "the name is held by "
+	snmpKeepsDef  = "keeps its current default"
+	snmpNoChoice  = "the user it chose is not there"
+)
+
+// snmpItem is one user (or the default) of one level of the snapshot.
+type snmpItem struct {
+	level snmpcred.Level
+	// user is the user to restore; for the default, def is its name.
+	user snmpcred.User
+	def  string
+	// why is the reason the item is skipped or needs nothing, "" when it is
+	// restored.
+	why string
+}
+
+// snmpPlan is the plan of the SNMPv3 users: the users of the snapshot's
+// credential files against the pools now.
+type snmpPlan struct {
+	snap  snmpcred.Store
+	items []snmpItem
+}
+
+// planRecoverSNMP reads the snapshot's credential files and decides each
+// user against the live pools.
+func planRecoverSNMP(inv *invocation, dir string) (recoverPlan, error) {
+	pl := &snmpPlan{snap: snmpcred.Store{File: filepath.Join(dir, "snmp.yaml"), Dir: filepath.Join(dir, "snmp")}}
+	items, err := inv.decideSNMP(pl.snap)
+	if err != nil {
+		return nil, err
+	}
+	pl.items = items
+	return pl, nil
+}
+
+// snmpSnapshotLevels are the levels the snapshot has a credential file for:
+// the default level, the scopes, the devices.
+func snmpSnapshotLevels(snap snmpcred.Store) ([]snmpcred.Level, error) {
+	levels := []snmpcred.Level{{Kind: snmpcred.LevelDefault}}
+	scopes, err := snmpcred.ScopeNames(snap.Dir)
+	if err != nil {
+		return nil, err
+	}
+	for _, n := range scopes {
+		levels = append(levels, snmpcred.Level{Kind: snmpcred.LevelScope, Name: n})
+	}
+	devs, err := snmpcred.DeviceNames(snap.Dir)
+	if err != nil {
+		return nil, err
+	}
+	for _, n := range devs {
+		levels = append(levels, snmpcred.Level{Kind: snmpcred.LevelDevice, Name: n})
+	}
+	return levels, nil
+}
+
+// decideSNMP decides each user of the snapshot against the pools now, level
+// by level: a scope or a device that is gone is skipped; a user the level has
+// already needs nothing; a name another pool that can see it holds (the
+// config's, the scope's, a device's: the unique-names rule) is skipped, and
+// the current one kept; the rest is restored. A default is restored only
+// where the level has none, naming a user that is there; a current default is
+// never overwritten.
+func (inv *invocation) decideSNMP(snap snmpcred.Store) ([]snmpItem, error) {
+	live := inv.snmpStore()
+	levels, err := snmpSnapshotLevels(snap)
+	if err != nil {
+		return nil, err
+	}
+	_, res, rerr := inv.deviceLoad()
+	var out []snmpItem
+	// will are the users this run restores, by level: the levels come in the
+	// order config, scopes, devices, so a level sees what the levels a device
+	// or scope may share names with are about to get (a device's default may
+	// name a user restored in the config or its scope in the same run, and
+	// two restored users never take one name).
+	will := map[snmpcred.Level]map[string]bool{}
+	willHold := func(name string, at ...snmpcred.Level) (snmpcred.Level, bool) {
+		for _, l := range at {
+			if will[l][name] {
+				return l, true
+			}
+		}
+		return snmpcred.Level{}, false
+	}
+	for _, l := range levels {
+		sc, err := snap.Load(l)
+		if err != nil {
+			// A file of the snapshot that cannot be read has nothing to give.
+			continue
+		}
+		if len(sc.Users) == 0 && sc.Default == "" {
+			continue
+		}
+		gone := func() snmpItem { return snmpItem{level: l, why: snmpLevelGone} }
+		var scopeOfDev string
+		var devsOfScope []string
+		switch l.Kind {
+		case snmpcred.LevelScope:
+			ok, err := inv.scopeExists(l.Name)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				for range sc.Users {
+					out = append(out, gone())
+				}
+				continue
+			}
+			if rerr == nil {
+				for _, e := range res.All() {
+					if e.Source == devreg.SourceDevice && e.Scope == l.Name {
+						devsOfScope = append(devsOfScope, e.Name)
+					}
+				}
+			}
+		case snmpcred.LevelDevice:
+			var e devreg.Entry
+			ok := false
+			if rerr == nil {
+				e, ok = res.Lookup(l.Name, devreg.ScopeFilter{})
+			}
+			if !ok || e.Source != devreg.SourceDevice {
+				for range sc.Users {
+					out = append(out, gone())
+				}
+				continue
+			}
+			scopeOfDev = e.Scope
+		}
+		cur, err := inv.liveSNMPCreds(live, l)
+		if err != nil {
+			return nil, err
+		}
+		peers, err := live.Peers(l, scopeOfDev, devsOfScope)
+		if err != nil {
+			return nil, err
+		}
+		// The levels whose restored users a user of this level shares names with.
+		seen := []snmpcred.Level{{Kind: snmpcred.LevelDefault}}
+		if l.Kind == snmpcred.LevelDevice && scopeOfDev != "" {
+			seen = append(seen, snmpcred.Level{Kind: snmpcred.LevelScope, Name: scopeOfDev})
+		}
+		if l.Kind == snmpcred.LevelDefault {
+			seen = nil
+		}
+		restoring := map[string]bool{}
+		for _, u := range sc.Users {
+			it := snmpItem{level: l, user: u}
+			if _, ok := cur.Find(u.Name); ok {
+				it.why = snmpHasIt
+			} else if h, ok := snmpcred.Holder(u.Name, peers); ok {
+				it.why = snmpHeld + h.Label()
+			} else if h, ok := willHold(u.Name, seen...); ok {
+				it.why = snmpHeld + h.Label()
+			} else {
+				restoring[u.Name] = true
+				if will[l] == nil {
+					will[l] = map[string]bool{}
+				}
+				will[l][u.Name] = true
+			}
+			out = append(out, it)
+		}
+		if sc.Default == "" || sc.Default == cur.Default {
+			continue
+		}
+		it := snmpItem{level: l, def: sc.Default}
+		_, inCur := cur.Find(sc.Default)
+		_, inPeers := snmpcred.Holder(sc.Default, peers)
+		_, inWill := willHold(sc.Default, seen...)
+		// A default that named a user of this level's own pool in the snapshot
+		// is not given to another level's user of the same name: that is
+		// another credential.
+		_, ownInSnap := sc.Find(sc.Default)
+		if ownInSnap {
+			inPeers, inWill = false, false
+		}
+		switch {
+		case cur.Default != "":
+			it.why = snmpKeepsDef
+		case !inCur && !restoring[sc.Default] && (l.Kind != snmpcred.LevelDevice || (!inPeers && !inWill)):
+			it.why = snmpNoChoice
+		}
+		out = append(out, it)
+	}
+	return out, nil
+}
+
+// liveSNMPCreds is the credentials the level has now: a device's are the file
+// that is in force.
+func (inv *invocation) liveSNMPCreds(live snmpcred.Store, l snmpcred.Level) (snmpcred.Creds, error) {
+	if l.Kind == snmpcred.LevelDevice {
+		if d := inv.deviceNamed(l.Name); d != nil {
+			own, err := inv.deviceSNMPOwnOf(*d)
+			return own.Creds, err
+		}
+	}
+	return live.Load(l)
+}
+
+// Lines say, per level, how many users would be restored and why the others
+// are not: levels and counts, never a user's name or a passphrase.
+func (pl *snmpPlan) Lines() []string {
+	if len(pl.items) == 0 {
+		return []string{"the snapshot holds none"}
+	}
+	type group struct {
+		level          snmpcred.Level
+		restore        int
+		skipped        map[string]int
+		has            int
+		restoreDefault bool
+	}
+	var order []snmpcred.Level
+	groups := map[snmpcred.Level]*group{}
+	for _, it := range pl.items {
+		g := groups[it.level]
+		if g == nil {
+			g = &group{level: it.level, skipped: map[string]int{}}
+			groups[it.level] = g
+			order = append(order, it.level)
+		}
+		switch {
+		case it.def != "" && it.why == "":
+			g.restoreDefault = true
+		case it.def != "":
+			g.skipped["its default: "+it.why]++
+		case it.why == "":
+			g.restore++
+		case it.why == snmpHasIt:
+			g.has++
+		default:
+			g.skipped[it.why]++
+		}
+	}
+	var out []string
+	for _, l := range order {
+		g := groups[l]
+		var parts []string
+		if g.restore > 0 {
+			parts = append(parts, "restore "+strconv.Itoa(g.restore)+" "+plural(g.restore, "user", "users"))
+		}
+		if g.restoreDefault {
+			parts = append(parts, "restore its default")
+		}
+		if g.has > 0 {
+			parts = append(parts, strconv.Itoa(g.has)+" "+plural(g.has, "has", "have")+" it already")
+		}
+		for _, why := range sortedKeys(g.skipped) {
+			n := g.skipped[why]
+			parts = append(parts, "skip "+strconv.Itoa(n)+", "+why)
+		}
+		out = append(out, levelLabel(l)+": "+strings.Join(parts, "; "))
+	}
+	return out
+}
+
+func sortedKeys(m map[string]int) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out
+}
+
+func (pl *snmpPlan) Pending() int {
+	n := 0
+	for _, it := range pl.items {
+		if it.why == "" {
+			n++
+		}
+	}
+	return n
+}
+
+// Skipped counts the items skipped for a reason; a user the level has
+// already is neither pending nor skipped.
+func (pl *snmpPlan) Skipped() int {
+	n := 0
+	for _, it := range pl.items {
+		if it.why != "" && it.why != snmpHasIt {
+			n++
+		}
+	}
+	return n
+}
+
+// Apply decides again against the pools as they are now (they may have
+// changed since the plan) and writes each level once.
+func (pl *snmpPlan) Apply(inv *invocation) (restored, skipped int, err error) {
+	items, err := inv.decideSNMP(pl.snap)
+	if err != nil {
+		return 0, 0, err
+	}
+	live := inv.snmpStore()
+	var order []snmpcred.Level
+	byLevel := map[snmpcred.Level][]snmpItem{}
+	for _, it := range items {
+		switch it.why {
+		case "":
+			if _, ok := byLevel[it.level]; !ok {
+				order = append(order, it.level)
+			}
+			byLevel[it.level] = append(byLevel[it.level], it)
+			restored++
+		case snmpHasIt:
+		default:
+			skipped++
+		}
+	}
+	for _, l := range order {
+		cur, err := inv.liveSNMPCreds(live, l)
+		if err != nil {
+			return restored, skipped, err
+		}
+		cur = snmpcred.Creds{Community: cur.Community, Users: slices.Clone(cur.Users), Default: cur.Default}
+		for _, it := range byLevel[l] {
+			if it.def != "" {
+				cur.Default = it.def
+			} else {
+				cur.Put(it.user)
+			}
+		}
+		inv.app.Audit().Touch()
+		if err := live.Save(l, cur); err != nil {
+			return restored, skipped, err
+		}
+	}
+	return restored, skipped, nil
 }
