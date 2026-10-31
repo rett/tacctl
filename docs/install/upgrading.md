@@ -189,8 +189,11 @@ clone` at a bench address its scope answers already writes an entry marked
 a plain entry, and its sweep and `scope staging remove` take that `/32` out of
 the scope, a prefix of the scope's own included. So every target drops these
 entries from the file, after the snapshot; the plan names them, and nothing
-asks (no warning, no `--yes`), since the device is registered and the scope
-answers its address. Every other entry stays.
+asks (no warning, no `--yes`). A clone that still waits for its `device
+rename --replace` loses its entry, and after a re-upgrade the verb refuses it
+as not staged (this release cannot write the entry again): remove the clone and
+clone again from the original, or restore the snapshot. Every other entry
+stays.
 
 **An emergency lockdown stops every rollback to a release before 0.2.19**
 (the dry run too): such a release has no such record and would render every
@@ -327,11 +330,11 @@ to this server, a user name with a period and an emergency lockdown (of
 scopes with no enrolled host) all stay.
 With no address in the store, no SNMP credential file in version 2 (a
 second or a non-default user, a default naming another level's user, a
-device's file without an `snmp:` entry: above) and no covered staging entry no file is converted, no
-snapshot is taken and `--yes` is not needed; with an address, or a version 2
-file, or a covered staging entry, the rollback takes a snapshot first and needs `--yes`
-when anything is dropped (the staging entries ask nothing). The covered staging entries are dropped (above), with a snapshot first and no
-question. The per-tier sudoers drop-in, when it is exactly this release's text,
+device's file without an `snmp:` entry: above) and no covered staging entry
+(above), no file is converted, no snapshot is taken and `--yes` is not needed;
+with an address or a version 2 file the rollback takes a snapshot first and
+needs `--yes` when anything is dropped, and with only a covered staging entry
+it takes the snapshot and asks nothing. The per-tier sudoers drop-in, when it is exactly this release's text,
 is rewritten with 0.2.22's (after `visudo -cf`): it loses the engineer's row of
 `device clone`; an edited drop-in is left. `--hosts` is accepted and does
 nothing.

@@ -436,8 +436,10 @@ that
 writes for a bench address its scope answers already (no /32 is added for them): an older release reads such a line as any other, and its sweep and
 .B "scope staging remove"
 would take that /32 out of the scope, a prefix of the scope's own included. The plan names the entries, the snapshot is taken first and nothing asks (no warning, no
-.BR \-\-yes ):
-the device is registered and the scope answers its address. Every other entry stays.
+.BR \-\-yes ).
+A clone that still waits for its
+.B "device rename \-\-replace"
+loses its entry, and after a re-upgrade the verb refuses it as not staged: remove the clone and clone again from the original, or restore the snapshot. Every other entry stays.
 .IP
 .B "rollback 0.2.22"
 converts nothing but the email addresses, the SNMP credential files, the covered staging entries and the per\-tier sudoers drop\-in
@@ -453,11 +455,11 @@ address in the store, no SNMP
 credential file in version 2 (a second or non\-default user, a default naming
 another level's user, a device's file without an
 .B snmp:
-entry) and no covered staging entry it takes no snapshot (there is no file to convert) and needs no
+entry), and no covered staging entry, it takes no snapshot (there is no file to convert) and needs no
 .BR \-\-yes ;
-with an address, a version 2 file or a covered staging entry, it takes the snapshot and needs
+with an address or a version 2 file it takes the snapshot and needs
 .B \-\-yes
-when anything is dropped.
+when anything is dropped, and with only a covered staging entry it takes the snapshot and asks nothing.
 .B \-\-hosts
 is accepted and does nothing. The command ends with the next step,
 .BR "tacctl upgrade \-\-branch 0.2.22" .

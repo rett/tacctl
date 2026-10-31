@@ -10,8 +10,9 @@ import (
 // The staging entries marked covered (0.2.23) would make an older release
 // take a real prefix out of a scope, so every target drops them from
 // state/staging, the ones that return early included, and only them. The
-// lines are derivable: the plan names them, asks for nothing (no warning, no
-// --yes) and the snapshot --apply takes first holds the file.
+// plan names them and the clone that loses its entry (it must be cloned again
+// or the snapshot restored), asks for nothing (no warning, no --yes) and the
+// snapshot --apply takes first holds the file.
 
 const (
 	stagingKept    = "192.0.2.80/32|lab|device|lab-sw1|2026-10-01 10:00\n192.0.2.9/32|lab|host|web1|2026-10-01 10:00\n"
@@ -46,6 +47,9 @@ func TestPlanRollbackEveryTargetDropsTheCoveredStagingEntries(t *testing.T) {
 			st := stepText(p)
 			if !strings.Contains(st, path+": drop the staging entries of addresses a scope answers already") || !strings.Contains(st, "drop 192.0.2.50/32 (scope lab, device lab-sw2)") {
 				t.Errorf("steps:\n%s", st)
+			}
+			if !strings.Contains(st, "clone again from the original, or restore the snapshot") {
+				t.Errorf("the plan does not say how a pending clone gets its entry back:\n%s", st)
 			}
 			if strings.Contains(st, "192.0.2.80") || strings.Contains(st, "web1") {
 				t.Errorf("the plan names an entry that stays:\n%s", st)

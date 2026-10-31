@@ -15,10 +15,11 @@ current behaviour; this file is where history lives.
    hosts stops every target, item 20). With no address in the
    store, no SNMP credential file in version 2 (item 14: a second or a
    non-default v3 user, a default naming another level's user, a device's
-   file without an `snmp:` entry) and no covered staging entry no file is converted, no snapshot is taken
-   and it needs no `--yes`; with an address, a version 2 file or a covered staging entry, it takes
-   the snapshot first and needs `--yes` when anything is dropped (items 11
-   and 14). `--hosts`
+   file without an `snmp:` entry) and no covered staging entry (item 17), no file
+   is converted, no snapshot is taken and it needs no `--yes`; with an address
+   or a version 2 file it takes the snapshot first and needs `--yes` when
+   anything is dropped (items 11 and 14), and with only a covered staging entry
+   it takes the snapshot and asks nothing. `--hosts`
    is accepted and does nothing. The older targets (`0.2.21` and back) still
    remove the server name and the timing scale, and still say so; only the
    `0.2.22` target keeps them. What a change of this release stores in a file
@@ -481,8 +482,11 @@ current behaviour; this file is where history lives.
     other and writes it back without the field, and its sweep and `scope
     staging remove` take the /32 of the entry out of the scope, a prefix of the
     scope's own included: every target drops those entries from `state/staging`
-    after the snapshot, names them in the plan and asks for nothing (they are
-    derivable; no warning, no `--yes`).
+    after the snapshot, names them in the plan and asks for nothing (no warning,
+    no `--yes`). A clone that still waits for its `device rename --replace` loses
+    its entry, and 0.2.23 cannot write it again after a re-upgrade: the
+    `--replace` then refuses it as not staged. The way back is to remove the
+    clone and clone again from the original, or to restore the snapshot.
 
 18. **`device rename <replacement> <name> --replace` puts a device registered
     at a bench address where the device it replaces is.** The original is

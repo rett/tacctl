@@ -7,10 +7,11 @@ package lifecycle
 // other staging entry and writes it back without the field, and its sweep
 // and 'scope staging remove' take the /32 of the entry out of the scope: if
 // the scope holds that exact /32 as a real prefix, a real prefix goes. So
-// every target drops these lines from the file. They are derivable (the
-// device is registered, and the scope answers its address), so the plan names
-// them, the snapshot --apply takes first holds the file, and nothing needs an
-// answer: no warning and no --yes.
+// every target drops these lines from the file. The plan names them, the
+// snapshot --apply takes first holds the file, and nothing needs an answer: no
+// warning and no --yes. A clone still waiting for its 'device rename
+// --replace' loses its entry: a re-upgrade cannot write it again, so the plan
+// says to clone again or restore the snapshot.
 
 import (
 	"os"
@@ -61,7 +62,7 @@ func (p *RollbackPlan) addStagingCovered() {
 	for _, e := range p.stagingCovered {
 		s.Lines = append(s.Lines, "drop "+e)
 	}
-	s.Lines = append(s.Lines, "(no /32 was added to the scope for them; "+target+" would take the /32 of such an entry out of the scope when its device moves, a prefix of the scope's own included; every other entry stays)")
+	s.Lines = append(s.Lines, "(no /32 was added to the scope for them; "+target+" would take the /32 of such an entry out of the scope when its device moves, a prefix of the scope's own included; every other entry stays; a clone still waiting for its 'device rename --replace' loses its entry, and after a re-upgrade that verb refuses it as not staged: remove the clone and clone again from the original, or restore the snapshot)")
 	at := len(p.Steps)
 	for i := range p.Steps {
 		if p.Steps[i].Title == "leave every other file untouched" {
