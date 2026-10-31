@@ -143,15 +143,25 @@ func (inv *invocation) deviceClone(args []string) error {
 	inv.cloneOf = srcName
 	defer func() { inv.cloneOf = "" }()
 
-	_, hadStaging := inv.stagingEntryOf(bench)
-	if err := inv.stagingAdd(scope, bench, "device", newName); err != nil {
-		return err
+	// An address the scope answers already, with an entry of this device or
+	// one with no name, needs no call: stagingAdd would only say that no
+	// staging address is needed, of the very entry that is staged for it.
+	_, entryHere := inv.stagingEntryOf(bench)
+	skippedAdd := covered && entryHere
+	if !skippedAdd {
+		if err := inv.stagingAdd(scope, bench, "device", newName); err != nil {
+			return err
+		}
 	}
-	staged, added := inv.stagingEntryOf(bench)
-	added = added && !hadStaging
+	// stagingAdd put the /32 and the entry there, in place of a stale entry
+	// if there was one, unless the scope answered the address already.
+	staged, found := inv.stagingEntryOf(bench)
+	added := found && !covered
 	// named: the entry of the bench device had no name (staged without
 	// --name) and has the clone's now.
 	named := false
+	// namedNote is said once the clone is made, not before it could still fail.
+	namedNote := ""
 
 	// undo takes back what this run made, newest first, and says what it
 	// could not.
@@ -166,7 +176,7 @@ func (inv *invocation) deviceClone(args []string) error {
 		}
 		if named {
 			if err := inv.stagingSetName(bench, ""); err != nil {
-				left = append(left, "the name of the staging entry "+bench+"/32 (tacctl scope staging remove "+bench+"/32, a superuser's verb)")
+				left = append(left, "the name of the staging entry "+bench+"/32, which names '"+newName+"', a device that is not registered (a superuser ends the entry: tacctl scope staging remove "+bench+"/32; stage the bench device again: tacctl config <vendor> --scope "+scope+" --staging "+bench+")")
 			}
 		}
 		if added {
@@ -201,10 +211,18 @@ func (inv *invocation) deviceClone(args []string) error {
 				return undo(err, true)
 			}
 			named = true
+			namedNote = "Staging address " + e.CIDR + " of scope '" + scope + "' now names device '" + newName + "'; tacctl device rename " + shellquote.Q(newName) + " " + shellquote.Q(srcName) + " --replace ends it."
 		}
 	} else if covered {
 		if err := inv.stagingCoveredAdd(scope, bench, newName); err != nil {
 			return undo(err, true)
+		}
+		if skippedAdd {
+			// The entry that stood there was a stale one the sweep forgot:
+			// the address is answered without a staging /32 after all.
+			if err := inv.stagingAdd(scope, bench, "device", newName); err != nil {
+				return undo(err, true)
+			}
 		}
 		staged, added = inv.stagingEntryOf(bench)
 	}
@@ -222,6 +240,9 @@ func (inv *invocation) deviceClone(args []string) error {
 		return undo(err, true)
 	}
 
+	if namedNote != "" {
+		a.Out.InfoE(namedNote)
+	}
 	inv.detail("device clone", kvp("from", srcName), kvp("to", newName), kvp("address", bench), kvp("scope", scope),
 		kvp("snmp_users", strconv.Itoa(len(creds.Users))), kvp("block_files", strconv.Itoa(len(files))), kvp("count", "1"))
 	inv.cloneReport(srcName, newName, bench, scope, src, creds, files, after)

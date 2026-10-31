@@ -551,13 +551,14 @@ func TestDeviceCloneNamesAnEntryWithNoName(t *testing.T) {
 	}
 	nameless := sb.read("state/staging")
 
-	// a clone that fails after the entry was named puts the nameless entry back
+	// a clone refused up front leaves the nameless entry as it was
 	sb.write("state/snmp/devices/lab-sw2.yaml", "version: 2\ncommunity: example-leftover\n", 0o600)
 	sb.dev("", "clone", "lab-sw", "lab-sw2", "--staging", "192.0.2.81")
 	if sb.code != 1 || sb.read("state/staging") != nameless {
 		t.Errorf("a refused clone: %d %q\n%s", sb.code, sb.stderr(), sb.read("state/staging"))
 	}
 	_ = os.RemoveAll(sb.path("state", "snmp", "devices", "lab-sw2.yaml"))
+	// a clone that fails after the entry was named puts the nameless entry back
 	once := true
 	sb.hooks.deviceWriteStep = func() {
 		if once {
@@ -572,10 +573,14 @@ func TestDeviceCloneNamesAnEntryWithNoName(t *testing.T) {
 	if sb.code != 1 || !strings.Contains(sb.stderr(), "The clone was not made. Nothing was kept.") || sb.read("state/staging") != nameless {
 		t.Fatalf("a failing clone: %d %q\n%s", sb.code, sb.stderr(), sb.read("state/staging"))
 	}
+	// the name is said once the clone is made, not before it could still fail
+	if strings.Contains(plain(sb.out.String()), "now names") {
+		t.Errorf("a failing clone says the entry names it: %q", sb.out.String())
+	}
 	_ = os.RemoveAll(sb.path("state", "snmp", "devices", "lab-sw2.yaml"))
 
 	sb.dev("", "clone", "lab-sw", "lab-sw2", "--staging", "192.0.2.81")
-	sb.expect(0, "", "")
+	sb.expect(0, "Staging address 192.0.2.81/32 of scope 'lab' now names device 'lab-sw2'", "")
 	if got := sb.read("state/staging"); !strings.HasPrefix(got, "192.0.2.81/32|lab|device|lab-sw2|") || strings.Contains(got, "covered") || strings.Count(got, "\n") != 1 {
 		t.Errorf("staging:\n%s", got)
 	}
@@ -594,10 +599,37 @@ func TestDeviceCloneReplacesAStaleLineOfTheSameDevice(t *testing.T) {
 	sb := engineerSandbox(t)
 	sb.write("state/staging", "192.168.1.61/32|lab|device|lab-sw2|2026-10-01 10:00\n", 0o600)
 	sb.dev("", "clone", "lab-sw", "lab-sw2", "--staging", "192.168.1.61")
-	sb.expect(0, "", "")
+	sb.expect(0, "scope 'lab' already answers 192.168.1.61", "")
 	if got := sb.read("state/staging"); !strings.HasPrefix(got, "192.168.1.61/32|lab|device|lab-sw2|") || !strings.HasSuffix(got, "|covered\n") || strings.Count(got, "\n") != 1 {
 		t.Fatalf("staging:\n%s", got)
 	}
 	sb.dev("y\n", "rename", "lab-sw2", "lab-sw", "--replace")
 	sb.expect(0, "replaces 'lab-sw'", "")
+}
+
+// A stale entry (its /32 is no prefix of the scope, which nothing else
+// answers) is replaced by the staging /32 of the clone; a clone that then
+// fails takes the /32 back, the entry that stood there before included.
+func TestDeviceCloneThatFailsTakesBackTheStaleEntrysAddress(t *testing.T) {
+	sb := engineerSandbox(t)
+	sb.devSNMP("example-community\n", "lab-sw", "community", "--stdin")
+	sb.write("state/staging", "192.0.2.90/32|lab|device|lab-sw2|2026-10-01 00:00\n", 0o600)
+	prefixes := plain(sb.run("", []string{"scope", "show", "lab"}))
+	once := true
+	sb.hooks.deviceWriteStep = func() {
+		if once {
+			once = false
+			if err := os.MkdirAll(sb.path("state", "snmp", "devices", "lab-sw2.yaml"), 0o700); err != nil {
+				t.Error(err)
+			}
+		}
+	}
+	sb.dev("", "clone", "lab-sw", "lab-sw2", "--staging", "192.0.2.90")
+	sb.hooks.deviceWriteStep = nil
+	if sb.code != 1 || !strings.Contains(sb.stderr(), "The clone was not made. Nothing was kept.") {
+		t.Fatalf("%d %q", sb.code, sb.stderr())
+	}
+	if got := plain(sb.run("", []string{"scope", "show", "lab"})); got != prefixes || sb.fileExists("state/staging") {
+		t.Errorf("the /32 or its entry is left:\n%s", got)
+	}
 }
