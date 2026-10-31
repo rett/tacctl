@@ -99,7 +99,7 @@ func syncInputs(t *testing.T, sb *sandbox) map[string]string {
 
 		he := inv.hostsEnv()
 		he.Range, _ = inv.configuredUIDRange()
-		req, err := inv.scriptRequest(e.Scope, e.Server, reg.Method(e.Name), filepath.Join(t.TempDir(), "script"), e.Target == hosts.Local)
+		req, err := inv.scriptRequest(e.Scope, e.Server, reg.Method(e.Name), filepath.Join(t.TempDir(), "script"), e.Target == hosts.Local, e.Name)
 		if err != nil {
 			out[prefix+"request"] = "error: " + err.Error()
 			continue

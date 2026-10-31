@@ -12,6 +12,10 @@ package cli
 // of a superuser group is never locked. There is no expiry. The verb is the
 // superuser's (the tier table has no row for it); a lockdown is shown by
 // every command that names the scope, to the engineers of the scope too.
+//
+// The enrolled hosts of the scope are closed by a 'host sync' (0.2.23,
+// emergency_hosts.go): 'enable' and 'disable' change the devices, then offer
+// that sync; the hosts it does not settle stay on the record's pending list.
 
 import (
 	"encoding/json"
@@ -36,7 +40,7 @@ import (
 )
 
 const (
-	emergencyUseLockdown = "lockdown <scope> enable|disable [<group>[,<group>...]] [--tier <tier>] [--reason <text>] [--dry-run] | lockdown --all-scopes enable|disable [<groups>] | lockdown status [<scope>] [--json]"
+	emergencyUseLockdown = "lockdown <scope> enable|disable [<group>[,<group>...]] [--tier <tier>] [--reason <text>] [--dry-run] [--yes] | lockdown --all-scopes enable|disable [<groups>] [--yes] | lockdown status [<scope>] [--json]"
 	emergencyUsage       = "Usage: tacctl emergency " + emergencyUseLockdown
 )
 
@@ -48,6 +52,7 @@ var emergencySpecs = map[string]Spec{
 			{Names: []string{"--tier"}, Value: true, Kind: "readonly|operator|engineer"},
 			{Names: []string{"--reason"}, Value: true},
 			{Names: []string{"--dry-run"}},
+			{Names: []string{"--yes"}, Desc: "Sync the scope's hosts without asking"},
 			flagJSON,
 		}},
 }
@@ -80,23 +85,35 @@ func emergencyHelp() string {
       --tier <tier>                     (lockdown) Lock the groups of that tier (readonly, operator or engineer)
       --reason <text>                   (lockdown) Why, 1 to 256 characters; kept with the record and in the log
       --dry-run                         (lockdown) Print who loses access and change nothing
+      --yes                             (lockdown) Sync the scope's hosts at once, without the question
       --json                            (lockdown status) Print the lockdowns as a JSON array
 
 'enable' with no group locks every group that is not a superuser's; with a
 list, those groups, added to what is locked already. The users of those groups
 are taken out of the scope when the backends render, so the server answers
 every login and every further command authorization with a refusal; a session
-that is open on a Junos device, a WTI unit or a Linux host stays until it logs
-in again or runs sudo. A user of a superuser group is never locked. 'enable'
-shows who loses access and who keeps it, and asks for the scope's name typed
-back (for --all-scopes the word all). A lockdown stands until 'disable' (there
-is no timer). The device's own local accounts are not tacctl users and are
-not locked: 'status' names the ways they remain.
+that is open on a Junos device or a WTI unit stays until it logs in again or
+runs sudo. A user of a superuser group is never locked. 'enable' shows who
+loses access and who keeps it, and asks for the scope's name typed back (for
+--all-scopes the word all). A lockdown stands until 'disable' (there is no
+timer). The device's own local accounts are not tacctl users and are not
+locked: 'status' names the ways they remain.
+
+The enrolled hosts of the scope are closed by 'host sync': sshd stops key
+logins and every forwarding for each account that is not a superuser, and
+'enable' ends the live sessions of those accounts. A host knows the tiers, not
+the store's groups, so on the hosts a lockdown that does not name every group
+of the scope's users locks every account that is not a superuser's: 'enable'
+says so before it asks for the name. After the change on the devices, 'enable'
+and 'disable' name the hosts and the command and, on a terminal, ask whether
+to sync them now (--yes answers yes; with no terminal nothing runs). A host
+that is unreachable, held or refused stays on the lockdown's list, which
+'status' shows and the next 'host sync' of that host completes.
 
 Examples:
   tacctl emergency lockdown site-a enable --reason "credential leak"
   tacctl emergency lockdown site-a enable ops,readonly
-  tacctl emergency lockdown site-a disable
+  tacctl emergency lockdown site-a disable --yes
   tacctl emergency lockdown status
 
 `)
@@ -383,7 +400,7 @@ func (inv *invocation) lockdownScopesOf(args []string, locks []conf.Lockdown) ma
 // a lockdown: they are in no tacctl group.
 var lockdownResidual = []string{
 	"a device's own local accounts are not tacctl users and are not locked; they stay out of the way only because of the device's method list",
-	"not closed: a Cisco console line, the Junos root account on the console, a scope that lists local accounts first (aaa-order local-first), local ssh keys, sessions that are open, a device that cannot reach this server",
+	"not closed: a Cisco console line, the Junos root account on the console, a scope that lists local accounts first (aaa-order local-first), local ssh keys on a device, sessions that are open on a Junos device or a WTI unit, a device that cannot reach this server",
 }
 
 func (inv *invocation) emergencyLockdown(args []string) error {
@@ -451,9 +468,9 @@ func (inv *invocation) emergencyLockdown(args []string) error {
 		}
 	}
 	if verbWord == "enable" {
-		return inv.lockdownEnable(m, scopes, groupList, p.Value("--tier"), reason, p.Has("--all-scopes"), p.Has("--dry-run"))
+		return inv.lockdownEnable(m, scopes, groupList, p.Value("--tier"), reason, p.Has("--all-scopes"), p.Has("--dry-run"), p.Has("--yes"))
 	}
-	return inv.lockdownDisable(m, scopes, groupList, p.Has("--all-scopes"), p.Has("--dry-run"))
+	return inv.lockdownDisable(m, scopes, groupList, p.Has("--all-scopes"), p.Has("--dry-run"), p.Has("--yes"))
 }
 
 // lockdownPlan is what a command does to one scope.
@@ -463,6 +480,8 @@ type lockdownPlan struct {
 	// that are locked afterwards (empty: the record goes).
 	before *conf.Lockdown
 	groups []string
+	// hosts are the hosts enrolled in the scope (names).
+	hosts []string
 }
 
 func (inv *invocation) lockdownOf(scope string) *conf.Lockdown {
@@ -475,7 +494,7 @@ func (inv *invocation) lockdownOf(scope string) *conf.Lockdown {
 	return nil
 }
 
-func (inv *invocation) lockdownEnable(m *model.Model, scopes []string, list, tierName, reason string, all, dry bool) error {
+func (inv *invocation) lockdownEnable(m *model.Model, scopes []string, list, tierName, reason string, all, dry, yes bool) error {
 	groups, err := inv.lockdownGroups(m, list, tierName)
 	if err != nil {
 		return err
@@ -495,11 +514,15 @@ func (inv *invocation) lockdownEnable(m *model.Model, scopes []string, list, tie
 		if cur != nil && slices.Equal(cur.Groups, union) {
 			continue
 		}
-		plans = append(plans, lockdownPlan{scope: s, before: cur, groups: union})
+		plans = append(plans, lockdownPlan{scope: s, before: cur, groups: union, hosts: inv.lockdownHostNames(s)})
 	}
 	if len(plans) == 0 {
 		inv.echo("Already locked: " + strings.Join(groups, ", ") + " on " + quoteNames(scopes) + ". Nothing was changed.")
-		return nil
+		if dry {
+			return nil
+		}
+		// hosts a sync did not settle are offered again
+		return inv.lockdownHostsStep(scopes, true, yes)
 	}
 	inv.echo("")
 	for _, pl := range plans {
@@ -542,7 +565,15 @@ func (inv *invocation) lockdownEnable(m *model.Model, scopes []string, list, tie
 			if err := inv.app.Conf().UpdateLockdown(pl.scope, func(cur *conf.Lockdown) (*conf.Lockdown, error) {
 				next := conf.Lockdown{Scope: pl.scope, Since: now, By: by, Reason: reason}
 				groups := slices.Clone(groups)
+				// every host of the scope waits for the drop-in (read now, inside the
+				// update, not when the plan was made); a record that stands keeps
+				// its list, a lifted one starts again
+				next.Pending = inv.lockdownHostNames(pl.scope)
+				if cur != nil && len(cur.Groups) == 0 {
+					cur = nil
+				}
 				if cur != nil {
+					next.Pending = cur.Pending
 					next.Since, next.By = cur.Since, cur.By
 					if reason == "" {
 						next.Reason = cur.Reason
@@ -574,7 +605,7 @@ func (inv *invocation) lockdownEnable(m *model.Model, scopes []string, list, tie
 		out := inv.lockedOutNames(m, l.Scope, l.Groups)
 		inv.app.Audit().Raw("auth.notice", "emergency lockdown enable scope="+l.Scope+" groups="+strings.Join(l.Groups, ",")+
 			" exempt="+strings.Join(inv.lockdownExempt(m, l.Scope), ",")+" reason="+strconv.Quote(l.Reason)+" by="+by+
-			" locked="+strconv.Itoa(len(out))+" result=ok")
+			" locked="+strconv.Itoa(len(out))+" hosts="+strconv.Itoa(len(inv.lockdownHostNames(pl.scope)))+" result=ok")
 		inv.echo(ui.Red + ui.Bold + inv.lockdownLine(*l) + ui.NC)
 	}
 	inv.echo("  Rendered: " + lockdownRendered(res))
@@ -583,7 +614,16 @@ func (inv *invocation) lockdownEnable(m *model.Model, scopes []string, list, tie
 		inv.app.Out.Error("The lockdown is recorded and the rendered files are kept, but it is not in force until the backend named under Rendered is restarted; 'tacctl emergency lockdown " + lockdownTarget(scopes, all) + " disable' removes the record.")
 		return exit(1)
 	}
-	return nil
+	return inv.lockdownHostsStep(lockdownScopesOfPlans(plans), true, yes)
+}
+
+// lockdownScopesOfPlans are the scopes the plans change.
+func lockdownScopesOfPlans(plans []lockdownPlan) []string {
+	out := make([]string, len(plans))
+	for i, pl := range plans {
+		out[i] = pl.scope
+	}
+	return out
 }
 
 func lockdownTarget(scopes []string, all bool) string {
@@ -610,7 +650,7 @@ func lockdownRendered(res backend.Result) string {
 	return strings.Join(parts, "; ")
 }
 
-func (inv *invocation) lockdownDisable(m *model.Model, scopes []string, list string, all, dry bool) error {
+func (inv *invocation) lockdownDisable(m *model.Model, scopes []string, list string, all, dry, yes bool) error {
 	var plans []lockdownPlan
 	var named []string
 	if list != "" {
@@ -636,11 +676,15 @@ func (inv *invocation) lockdownDisable(m *model.Model, scopes []string, list str
 		if len(named) > 0 && len(keep) == len(cur.Groups) {
 			continue
 		}
-		plans = append(plans, lockdownPlan{scope: s, before: cur, groups: keep})
+		plans = append(plans, lockdownPlan{scope: s, before: cur, groups: keep, hosts: inv.lockdownHostNames(s)})
 	}
 	if len(plans) == 0 {
 		inv.echo("No lockdown stands on " + quoteNames(scopes) + " for those groups. Nothing was changed.")
-		return nil
+		if dry || len(named) > 0 {
+			return nil
+		}
+		// hosts that still hold the drop-in of a lifted lockdown are offered again
+		return inv.lockdownHostsStep(scopes, false, yes)
 	}
 	if dry {
 		for _, pl := range plans {
@@ -663,11 +707,18 @@ func (inv *invocation) lockdownDisable(m *model.Model, scopes []string, list str
 						keep = append(keep, g)
 					}
 				}
-				if len(keep) == 0 {
-					return nil, nil
-				}
 				next := *cur
 				next.Groups = keep
+				if len(keep) == 0 {
+					// lifted on the devices: every enrolled host of the scope waits
+					// for the removal, the ones on the list too (a listed host may
+					// hold the file after a run that failed half way); a sync of a
+					// host without the file removes nothing
+					next.Pending = inv.lockdownHostNames(pl.scope)
+					if len(next.Pending) == 0 {
+						return nil, nil
+					}
+				}
 				return &next, nil
 			}); err != nil {
 				return err
@@ -694,7 +745,13 @@ func (inv *invocation) lockdownDisable(m *model.Model, scopes []string, list str
 		inv.app.Out.Error("The record is removed and the rendered files are kept, but the lockdown is not lifted until the backend named under Rendered is restarted.")
 		return exit(1)
 	}
-	return nil
+	var lifted []lockdownPlan
+	for _, pl := range plans {
+		if len(pl.groups) == 0 {
+			lifted = append(lifted, pl)
+		}
+	}
+	return inv.lockdownHostsStep(lockdownScopesOfPlans(lifted), false, yes)
 }
 
 // liftedGroups are the groups a disable plan lifts.
@@ -760,8 +817,57 @@ func (inv *invocation) lockdownPreview(m *model.Model, pl lockdownPlan, enable b
 			}
 		}
 	}
-	inv.echo("  Open sessions on Junos devices, WTI units and Linux hosts stay until they log in again or run sudo.")
+	inv.echo("  Open sessions on Junos devices and WTI units stay until they log in again or run sudo.")
+	inv.lockdownHostsPreview(m, pl, out, keep, others)
 	inv.echo("")
+}
+
+// lockdownHostsPreview says what the lockdown does on the enrolled hosts of
+// the scope, before the name is asked for: sshd closes key logins and every
+// forwarding for the accounts of every tier that is not a superuser's, and the
+// live sessions of those accounts end. A host knows tiers, not the store's
+// groups, so a lockdown that does not name every group the scope's users are in
+// locks them all there: those users are named in red.
+func (inv *invocation) lockdownHostsPreview(m *model.Model, pl lockdownPlan, locked, keep, others []string) {
+	if len(pl.hosts) == 0 {
+		return
+	}
+	var hostUsers []string
+	for _, n := range m.Members(pl.scope) {
+		if !slices.Contains(keep, n) && hosts.LinuxName(n) {
+			hostUsers = append(hostUsers, n)
+		}
+	}
+	inv.echo("  Hosts (" + strconv.Itoa(len(pl.hosts)) + "): " + strings.Join(pl.hosts, ", ") + ". At their sync sshd refuses key logins and every forwarding, and the live sessions end, for every account that is not a superuser's:")
+	inv.echo("    " + orNone(hostUsers) + ".")
+	// A host provisioned through a tacctl account that is not a superuser's
+	// would lock its own way in: the script refuses it, and the host stays on
+	// the list.
+	if reg, err := inv.registry(); err == nil {
+		for _, n := range pl.hosts {
+			e, ok := reg.Find(n)
+			if !ok || e.Target == hosts.Local {
+				continue
+			}
+			login, _, isUser, perr := inv.provisioningLogin(e.Target)
+			if perr != nil || !isUser {
+				continue
+			}
+			if u := m.User(login); u != nil && !inv.groupIsSuperuser(m, u.Group) {
+				inv.echo("  " + ui.Red + n + " is provisioned through '" + login + "', a tacctl user that is not a superuser: the sync refuses to lock down that host (it would close its own way in). Enroll it through a local account: tacctl host enroll <account>@<host> --name " + n + ui.NC)
+			}
+		}
+	}
+	var spared []string
+	for _, n := range others {
+		if hosts.LinuxName(n) {
+			spared = append(spared, n)
+		}
+	}
+	if len(spared) > 0 {
+		inv.echo("  " + ui.Red + "This lockdown does not name every group of the scope's users. A host knows tiers, not the store's groups, so on the hosts it locks EVERY account that is not a superuser's, including " +
+			strings.Join(spared, ", ") + ", whose groups are not locked." + ui.NC)
+	}
 }
 
 func orNone(l []string) string {
@@ -783,6 +889,13 @@ type lockdownJSON struct {
 	Reason      string   `json:"reason"`
 	LockedUsers []string `json:"locked_users"`
 	Exempt      []string `json:"exempt"`
+	// Hosts are the hosts enrolled in the scope, PendingHosts those the sshd
+	// drop-in is not settled on (0.2.23).
+	Hosts        []string `json:"hosts"`
+	PendingHosts []string `json:"pending_hosts"`
+	// Lifted is true for a lockdown that is lifted on the devices and waits
+	// for hosts to drop sshd's drop-in: it has no groups and locks no one.
+	Lifted bool `json:"lifted"`
 }
 
 func (inv *invocation) lockdownStatus(scope string, asJSON bool) error {
@@ -793,26 +906,41 @@ func (inv *invocation) lockdownStatus(scope string, asJSON bool) error {
 	if scope != "" && m.Scope(scope) == nil {
 		return inv.usageErr("There is no scope '"+scope+"'.", emergencyUsage)
 	}
-	var rows []conf.Lockdown
+	var rows, lifts []conf.Lockdown
 	for _, l := range inv.app.Conf().Lockdowns() {
 		if scope == "" || l.Scope == scope {
 			rows = append(rows, l)
 		}
 	}
+	for _, l := range inv.app.Conf().LockdownLifts() {
+		if scope == "" || l.Scope == scope {
+			lifts = append(lifts, l)
+		}
+	}
 	now := inv.app.Knobs.Now()
 	if asJSON {
-		out := make([]lockdownJSON, 0, len(rows))
-		for _, l := range rows {
-			j := lockdownJSON{Scope: l.Scope, Groups: l.Groups, Since: l.Since, By: l.By, Reason: l.Reason,
-				LockedUsers: inv.lockedOutNames(m, l.Scope, l.Groups), Exempt: inv.lockdownExempt(m, l.Scope)}
+		out := make([]lockdownJSON, 0, len(rows)+len(lifts))
+		for _, l := range append(slices.Clone(rows), lifts...) {
+			j := lockdownJSON{Lifted: l.Lifted(), Scope: l.Scope, Groups: l.Groups, Since: l.Since, By: l.By, Reason: l.Reason,
+				LockedUsers: inv.lockedOutNames(m, l.Scope, l.Groups), Exempt: inv.lockdownExempt(m, l.Scope),
+				Hosts: inv.lockdownHostNames(l.Scope), PendingHosts: inv.lockdownWaiting(l)}
 			if t := l.SinceTime(); !t.IsZero() {
 				j.LockedSecs = int64(now.Sub(t) / time.Second)
+			}
+			if j.Groups == nil {
+				j.Groups = []string{}
 			}
 			if j.LockedUsers == nil {
 				j.LockedUsers = []string{}
 			}
 			if j.Exempt == nil {
 				j.Exempt = []string{}
+			}
+			if j.Hosts == nil {
+				j.Hosts = []string{}
+			}
+			if j.PendingHosts == nil {
+				j.PendingHosts = []string{}
 			}
 			out = append(out, j)
 		}
@@ -829,6 +957,7 @@ func (inv *invocation) lockdownStatus(scope string, asJSON bool) error {
 		} else {
 			inv.echo("No emergency lockdown stands.")
 		}
+		inv.lockdownLiftLines(lifts)
 		return nil
 	}
 	for _, l := range rows {
@@ -845,9 +974,41 @@ func (inv *invocation) lockdownStatus(scope string, asJSON bool) error {
 		for _, r := range lockdownResidual {
 			inv.echo("  " + r + ".")
 		}
+		inv.lockdownHostLines(l)
 		inv.echo("  Lift it with: tacctl emergency lockdown " + inv.lockdownTargetOf(l.Scope) + " disable")
 	}
+	inv.lockdownLiftLines(lifts)
 	return nil
+}
+
+// lockdownHostLines are the lines of 'status' about the hosts of a lockdown
+// that stands: how many are enrolled, and which the sshd drop-in has not
+// reached yet, with the command that completes it.
+func (inv *invocation) lockdownHostLines(l conf.Lockdown) {
+	all := inv.lockdownHostNames(l.Scope)
+	if len(all) == 0 {
+		return
+	}
+	waiting := inv.lockdownWaiting(l)
+	if len(waiting) == 0 {
+		inv.echo("  Hosts (" + strconv.Itoa(len(all)) + "): the sshd lockdown is in force on " + strings.Join(all, ", ") + ".")
+		return
+	}
+	inv.echo("  " + ui.Yellow + "Hosts not locked yet (" + strconv.Itoa(len(waiting)) + " of " + strconv.Itoa(len(all)) + "): " + strings.Join(waiting, ", ") +
+		": ssh keys and forwarding stay open there until: " + lockdownHostsSyncCommand(waiting) + ui.NC)
+}
+
+// lockdownLiftLines are the lines of a lockdown lifted on the devices whose
+// hosts still hold the sshd drop-in.
+func (inv *invocation) lockdownLiftLines(lifts []conf.Lockdown) {
+	for _, l := range lifts {
+		waiting := inv.lockdownWaiting(l)
+		if len(waiting) == 0 {
+			continue
+		}
+		inv.echo(ui.Yellow + "The lockdown of " + inv.lockdownWhere(l.Scope) + " is lifted, but sshd's lockdown drop-in is still on " + hostsText(len(waiting)) + " (" +
+			strings.Join(waiting, ", ") + "): " + lockdownHostsSyncCommand(waiting) + ui.NC)
+	}
 }
 
 // holdsOnScope are the names of the break-glass holds whose address a
@@ -874,7 +1035,7 @@ func (inv *invocation) holdsOnScope(m *model.Model, scope string) []string {
 // scopeLockdownMove follows a scope's rename (newName set) or removal
 // (newName empty): its lockdown record moves or goes.
 func (inv *invocation) scopeLockdownMove(old, newName string) error {
-	l := inv.lockdownOf(old)
+	l := inv.lockdownRecordOf(old)
 	if l == nil {
 		return nil
 	}
@@ -917,7 +1078,11 @@ func (inv *invocation) lockdownForgetGroup(group string) error {
 				}
 			}
 			if len(next.Groups) == 0 {
-				return nil, nil
+				// the last group is gone: lifted on the devices; every enrolled
+				// host of the scope waits for the removal (as 'disable' leaves them)
+				if next.Pending = inv.lockdownHostNames(scope); len(next.Pending) == 0 {
+					return nil, nil
+				}
 			}
 			return &next, nil
 		}); err != nil {
@@ -973,6 +1138,15 @@ func (inv *invocation) lockdownFindings(m *model.Model) []validateFinding {
 			case inv.groupIsSuperuser(m, g):
 				add(levelError, "the lockdown of "+inv.lockdownBare(l.Scope)+" locks the group "+g+", which is a superuser group now", "tacctl emergency lockdown "+target+" disable "+g)
 			}
+		}
+	}
+	for _, l := range append(slices.Clone(inv.app.Conf().Lockdowns()), inv.app.Conf().LockdownLifts()...) {
+		if waiting := inv.lockdownWaiting(l); len(waiting) > 0 {
+			what := "has not reached"
+			if l.Lifted() {
+				what = "is still on"
+			}
+			add(levelWarning, "sshd's lockdown drop-in of "+inv.lockdownBare(l.Scope)+" "+what+" "+hostsText(len(waiting))+" ("+strings.Join(waiting, ", ")+")", lockdownHostsSyncCommand(waiting))
 		}
 	}
 	for _, d := range inv.app.Conf().LockdownDefects() {

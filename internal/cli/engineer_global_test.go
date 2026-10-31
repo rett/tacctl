@@ -85,7 +85,12 @@ var engineerRowCases = map[string]engineerRow{
 	"device remove": {cases: append(cases("device remove lab-sw --yes", "device remove --all --yes"),
 		refusedCase("Device 'web1' not found", "device remove web1 --yes"), refusedCase("Device 'authsrv' not found", "device remove lab-sw,authsrv --yes"))},
 	"device rename": {cases: append(cases("device rename lab-sw lab-core"),
-		refusedCase("Device 'web1' not found", "device rename web1 webx"), refusedCase("Device '192.168.1.10' not found", "device rename 192.168.1.10 webx"))},
+		refusedCase("Device 'web1' not found", "device rename web1 webx"), refusedCase("Device '192.168.1.10' not found", "device rename 192.168.1.10 webx"),
+		refusedCase("Device 'prod-sw' not found", "device rename lab-sw prod-sw --replace --yes"),
+		refusedCase("Device 'web1' not found", "device rename lab-sw web1 --replace --yes"),
+		refusedCase("Device 'lab-sw2' not found", "device rename lab-sw2 lab-sw --replace --yes")),
+		// A replacement ends its staging /32 in the engineer's own scope.
+		scoped: []string{"scopes.lab.prefixes"}},
 	"device address": {cases: append(cases("device address lab-sw 192.168.1.3"),
 		refusedCase("Device 'web1' not found", "device address web1 192.168.1.99"))},
 	"device hostname": {cases: append(cases("device hostname lab-sw lab-sw.example.net"),
@@ -138,6 +143,12 @@ var engineerRowCases = map[string]engineerRow{
 	"device onboard": {cases: []engineerCase{
 		refusedCase("not one of yours", "device onboard 192.168.2.77 --login admin --check --host-key SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
 	}},
+	"device clone": {cases: append(cases("device clone lab-sw lab-sw2 --staging 192.0.2.77"),
+		refusedCase("Device 'prod-sw' not found", "device clone prod-sw prod-sw2 --staging 192.0.2.78"),
+		refusedCase("Device 'web1' not found", "device clone web1 web2 --staging 192.0.2.78"),
+		refusedCase("which is not one of yours", "device clone lab-sw lab-sw3 --staging 10.99.0.78")),
+		// The bench address of the copy is a /32 of the engineer's own scope.
+		scoped: []string{"scopes.lab.prefixes"}},
 	"device support-bundle": {cases: []engineerCase{
 		refusedCase("Device 'prod-sw' not found", "device support-bundle prod-sw"),
 		refusedCase("enrolled Linux host", "device support-bundle web1"),
@@ -309,6 +320,12 @@ func foreignEntries(t *testing.T, sb *sandbox, regs map[string]string) map[strin
 		t.Fatalf("devices.yaml: %v", err)
 	}
 	lab := []string{"172.16.0.0/12", "192.168.0.0/16"}
+	// A staging /32 of lab is lab's too (a device at a bench address).
+	for _, e := range sb.stagingLines() {
+		if e.Scope == "lab" {
+			lab = append(lab, e.CIDR)
+		}
+	}
 	for _, d := range f.Devices {
 		own := false
 		for _, p := range lab {
@@ -553,4 +570,15 @@ func TestEngineerEnrollRefusesAnotherScopesAddress(t *testing.T) {
 			t.Errorf("the address of another scope was scanned: %v", c)
 		}
 	}
+}
+
+// stagingLines are the lines of the sandbox's staging file.
+func (sb *sandbox) stagingLines() []stagingEntry {
+	var out []stagingEntry
+	for _, l := range strings.Split(sb.read("state/staging"), "\n") {
+		if f := strings.Split(l, "|"); len(f) >= 5 {
+			out = append(out, stagingEntry{f[0], f[1], f[2], f[3], f[4], len(f) > 5 && f[5] == "covered"})
+		}
+	}
+	return out
 }

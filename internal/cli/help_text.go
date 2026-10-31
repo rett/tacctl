@@ -25,7 +25,7 @@ Commands:
       <o>--yes</o>                             Answer yes to the confirmations
   <b>upgrade</b> [<o>--branch <name></o>]             Pull latest source, rebuild, update scripts and every enabled backend
   <b>uninstall</b> [<o>--yes</o>]                     Remove tacctl, its backends' services and all associated files
-  <b>rollback</b> <o><version></o> [options]          Prepare the state for the release before this one (0.2.21), for 0.2.20, 0.2.19, 0.2.18, 0.2.17, 0.2.16, 0.2.9 or 0.2.3: a dry run unless <o>--apply</o>
+  <b>rollback</b> <o><version></o> [options]          Prepare the state for the release before this one (0.2.22), for 0.2.21, 0.2.20, 0.2.19, 0.2.18, 0.2.17, 0.2.16, 0.2.9 or 0.2.3: a dry run unless <o>--apply</o>
       <o>--apply</o>                           Take a snapshot, then convert the files the target cannot read (tacctl.yaml, sudoers; for 0.2.3 also console.yaml, devices.yaml)
       <o>--yes</o>                             Acknowledge the warnings that <o>--apply</o> refuses to go on without
       <o>--hosts</o>                           Accepted; the hosts need nothing for this target (no host is synced)
@@ -52,7 +52,7 @@ Commands:
   <b>store</b> <o><subcommand></o>                    The canonical store: show, import, rollback
   <b>config</b> <o><subcommand></o>                   Configuration (show, render, cisco, juniper, wti, validate, ...)
   <b>log</b> <o><subcommand></o>                      Log viewer (tail, search, failures, accounting; <o>--backend <id></o>)
-  <b>backup</b> <o><subcommand></o>                   Backup management (list, diff, restore)
+  <b>backup</b> <o><subcommand></o>                   Backup management (list, diff, restore, keep, unkeep, recover)
   <b>hash</b> <o><subcommand></o>                     Bcrypt helper (generate, commands — runs as invoking user, no sudo)
   <b>completion</b> bash|zsh|fish              Print the shell completion script
   <b>man</b> [<o>--path</o>] [<o><word>...</o>]              Open the manual page, at a command or topic
@@ -88,8 +88,12 @@ Subcommands:
   <b>add</b> <o><username></o> <o><group></o>                       Add a new user; lands in default scope
   <b>add</b> <o><username></o> <o><group></o> <o>--scopes <s></o>[,s...]   Grant specific scopes at creation
   <b>add</b> <o><username></o> <o><group></o> <o>--hash <hash></o>         Add with pre-generated bcrypt hash (<o>-</o> reads it from stdin)
+  <b>add</b> <o><username></o> <o><group></o> <o>--email <address></o>     Record an email address (a plain address; no mail is sent)
   <b>add</b> <o><username></o> <o><group></o> <o>--no-change-required</o>  Skip the required password change (a new user must change it first)
   <b>remove</b> <o><username></o>                            Remove a user
+  <b>email</b> <o><username></o>                             Show the user's email address
+  <b>email</b> <o><username></o> <o><address></o>                   Set it (an address belongs to one user)
+  <b>email</b> <o><username></o> <o>clear</o>                       Remove it
   <b>passwd</b> <o><username></o>                            Change a user's password
   <b>passwd</b> <o><username></o> <o>--hash <hash></o>              Change with pre-generated bcrypt hash (<o>-</o> reads it from stdin)
   <b>passwd</b> <o><username></o> <o>--no-change-required</o>       Skip the required password change (a reset requires one)
@@ -109,6 +113,8 @@ Examples:
   tacctl user list
   tacctl user add jsmith superuser
   tacctl user add jsmith superuser --scopes prod,lab
+  tacctl user add alice superuser --email alice@example.net
+  tacctl user email alice alice@example.net
   tacctl user scope jsmith add prod
   tacctl user verify jsmith
 
@@ -456,7 +462,7 @@ Subcommands:
                                        address of the route to the Internet); not stored
       <o>--snmp-location <text></o>           (cisco, juniper, wti) The SNMP location for this paste; not stored (a device's own: tacctl device location)
   <b>linux</b>   build|script|remove-script|uid|builds  TACACS+ or RADIUS login for Linux hosts (install/removal scripts)
-  <b>snmp</b>    show|community|v3-user|port|timeout|clear|test  SNMP for the name hint of 'device add' (sysName)
+  <b>snmp</b>    show|version|community|v3-user|port|timeout|clear|test  SNMP for the name hint of 'device add' (sysName)
   <b>devices</b> [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause|apply-transport|timeout-scale] [<o><value></o>]  How 'device config pull' reads the devices (default 8 at once, auto, 90 s), the confirm timeout of 'plan' (5 min), how 'device config apply' runs (confirm 10 min, pause 60 s, transport cli) and the timing scale (1)
   <b>branch</b> [<o><name></o>]                      Show or change the tacctl repo branch
 
@@ -676,6 +682,16 @@ Subcommands:
   <b>restore</b> <o><timestamp></o> [<o>--legacy</o>|<o>--keep-uids</o>]  Restore a snapshot (with confirmation); <o>--legacy</o> for an old-style backup
       <o>--legacy</o>                               The timestamp names an old-style backup (backups/legacy)
       <o>--keep-uids</o>                            Leave the UID ledger (linux-uids) as it is; the registry, records and staging come back
+  <b>keep</b> <o><timestamp></o> [<o>--note <text></o>]           Copy a snapshot to backups-kept/, where no retention reaches it
+      <o>--note <text></o>                          Why it is kept (free text, shown by list, never logged)
+  <b>unkeep</b> <o><timestamp></o> [<o>--yes</o>]                 Remove the kept copy of a snapshot (with confirmation)
+      <o>--yes</o>                                  Do not ask for confirmation
+  <b>recover</b> <o><snapshot></o> [<o>--only <kind></o>[,<kind>...]] [<o>--dry-run</o>] [<o>--yes</o>]
+                                             Put back what a rollback dropped, from a snapshot (kinds: email, snmp-users)
+                                             The snapshot is in backups/, else the kept copy in backups-kept/
+      <o>--only <kind></o>[,<kind>...]              Recover only these kinds; without it, every kind that can be recovered
+      <o>--dry-run</o>                              List what would be recovered and change nothing
+      <o>--yes</o>                                  Do not ask for confirmation
 
 `,
 	// lib/users.sh cmd_hash_usage

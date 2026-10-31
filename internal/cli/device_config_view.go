@@ -214,12 +214,14 @@ type diffLineJSON struct {
 	Op     string `json:"op"`
 	Text   string `json:"text"`
 	Secret bool   `json:"secret,omitempty"`
+	// Why says why the device's own source of the AAA client is a finding.
+	Why string `json:"why,omitempty"`
 }
 
 func diffLinesJSON(ls []devconf.DiffLine) []diffLineJSON {
 	var out []diffLineJSON
 	for _, l := range ls {
-		out = append(out, diffLineJSON{Op: string(l.Op), Text: l.Text, Secret: l.Secret})
+		out = append(out, diffLineJSON{Op: string(l.Op), Text: l.Text, Secret: l.Secret, Why: l.Why})
 	}
 	return out
 }

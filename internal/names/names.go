@@ -119,6 +119,10 @@ func MatchClass(s string) bool { return reClass.MatchString(s) }
 // ValidateClassName is validate_class_name.
 func ValidateClassName(value string) error {
 	if !reClass.MatchString(value) {
+		if strings.Contains(value, "@") {
+			// an email address typed in the place of a name is not repeated
+			return fail("Invalid name. Only letters, numbers, underscores, and hyphens are allowed.")
+		}
 		return fail(fmt.Sprintf("Invalid name '%s'. Only letters, numbers, underscores, and hyphens are allowed.", value))
 	}
 	return nil

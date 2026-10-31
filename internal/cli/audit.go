@@ -32,6 +32,7 @@ import (
 
 	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/console"
+	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -151,6 +152,42 @@ func secretAll(rest []string) []int {
 	return out
 }
 
+// secretEmail marks the words of 'user email <name> [<address>|clear]' that
+// can be the address: every word after the name but the sub-command 'clear',
+// and the first word too when it holds an '@' (a user name cannot), which is
+// an address typed where the name goes. An address is not a secret in the
+// sense of a password, but it is personal data and is never logged.
+func secretEmail(rest []string) []int {
+	var out []int
+	for i, w := range rest {
+		switch {
+		case i == 0 && !strings.Contains(w, "@"):
+		case i > 0 && w == names.EmailClear:
+		default:
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+// withAtSign marks, beside the words f marks (f may be nil), every word with
+// an '@': a user, group or scope name cannot hold one, so it is an email
+// address typed in the place of a name, and an address is never logged.
+func withAtSign(f func(rest []string) []int) func(rest []string) []int {
+	return func(rest []string) []int {
+		var out []int
+		if f != nil {
+			out = f(rest)
+		}
+		for i, w := range rest {
+			if strings.Contains(w, "@") && !slices.Contains(out, i) {
+				out = append(out, i)
+			}
+		}
+		return out
+	}
+}
+
 // secretSurplus marks the words that no flag and no positional of the verb's
 // spec takes: the secret that was typed on the command line in the place of
 // the prompt the verb offers ('user passwd bob <password>', 'user add bob
@@ -162,14 +199,50 @@ func secretSurplus(spec func() Spec) func(rest []string) []int {
 
 // secretSNMPSurplus is secretSurplus for the SNMP verbs that read the
 // community or the v3 keys from a prompt or standard input: the words after
-// 'community' or 'v3-user <user>', where the verb word is rest[at].
+// 'community' or 'v3-user add <user>', where the verb word is rest[at]. A
+// 'v3-user' word that is not one of its actions is the retired form that
+// took the user and the passphrases on the line ('v3-user <user> <pass>'): the
+// verb refuses it, and every word after the first is masked, a passphrase
+// among them.
 func secretSNMPSurplus(at int, specs func() map[string]Spec) func(rest []string) []int {
 	return func(rest []string) []int {
 		if len(rest) <= at+1 || (rest[at] != "community" && rest[at] != "v3-user") {
 			return nil
 		}
-		return surplusWords(specs()[rest[at]], rest[at+1:], at+1)
+		spec := specs()[rest[at]]
+		if rest[at] == "v3-user" {
+			spec = v3UserSurplusSpec(spec, rest[at+1:])
+		}
+		return surplusWords(spec, rest[at+1:], at+1)
 	}
+}
+
+// v3UserSurplusSpec is the spec to find the secret words of 'v3-user ...'
+// with: the verb's own when the first positional is one of its actions, else
+// (the retired 'v3-user <user> <passphrase>') one that takes a single
+// positional, so that everything after it is masked.
+func v3UserSurplusSpec(spec Spec, words []string) Spec {
+	byName := map[string]Flag{}
+	for _, f := range spec.Flags {
+		for _, n := range f.Names {
+			byName[n] = f
+		}
+	}
+	for i := 0; i < len(words); i++ {
+		w := words[i]
+		if len(w) >= 2 && w[0] == '-' {
+			name, _, hasVal := strings.Cut(w, "=")
+			if f, ok := byName[name]; ok && f.Value && !hasVal {
+				i++
+			}
+			continue
+		}
+		if !slices.Contains(strings.Split(snmpV3UserActions, "|"), w) {
+			spec.MaxArgs = 1
+		}
+		break
+	}
+	return spec
 }
 
 // surplusWords are the indices (base + position in words) of the words of an
@@ -239,17 +312,18 @@ var auditTable = map[string]auditEntry{
 
 	"user list":    read(),
 	"user show":    read(),
-	"user add":     withSecret(action(), secretSurplus(func() Spec { return userSpecs["add"] })),
-	"user remove":  action(),
-	"user passwd":  withSecret(action(), secretSurplus(func() Spec { return userSpecs["passwd"] })),
-	"user disable": action(),
-	"user enable":  action(),
-	"user rename":  action(),
-	"user move":    action(),
+	"user add":     withSecret(action(), withAtSign(secretSurplus(func() Spec { return userSpecs["add"] }))),
+	"user remove":  withSecret(action(), withAtSign(nil)),
+	"user email":   withSecret(mixed(), secretEmail),
+	"user passwd":  withSecret(action(), withAtSign(secretSurplus(func() Spec { return userSpecs["passwd"] }))),
+	"user disable": withSecret(action(), withAtSign(nil)),
+	"user enable":  withSecret(action(), withAtSign(nil)),
+	"user rename":  withSecret(action(), withAtSign(nil)),
+	"user move":    withSecret(action(), withAtSign(nil)),
 	"user verify":  read(),
-	"user scope":   mixed(),
+	"user scope":   withSecret(mixed(), withAtSign(nil)),
 
-	"user require-password-change": action(),
+	"user require-password-change": withSecret(action(), withAtSign(nil)),
 
 	"group list":   read(),
 	"group show":   read(),
@@ -312,6 +386,7 @@ var auditTable = map[string]auditEntry{
 	"device add":            action(),
 	"device remove":         action(),
 	"device rename":         action(),
+	"device clone":          action(),
 	"device notice":         action().readWhen(noticeListForm),
 	"device ssh":            action(),
 	"device onboard":        mixed(),
@@ -387,6 +462,9 @@ var auditTable = map[string]auditEntry{
 	"backup list":    read(),
 	"backup diff":    read(),
 	"backup restore": action().weighty(),
+	"backup keep":    withSecret(mixed(), secretSurplus(func() Spec { return backupSpecs["keep"] })),
+	"backup unkeep":  action(),
+	"backup recover": withSecret(mixed(), withAtSign(nil)),
 
 	"store show":     read(),
 	"store import":   mixed().weighty(),

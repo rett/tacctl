@@ -79,11 +79,18 @@ func (inv *invocation) blocksNewNamesFree(before, after *devreg.File) error {
 // is a warning, as the SNMP credentials' is; a rename that cannot move the
 // files puts the entries back, so the two never disagree about the name.
 func (inv *invocation) blocksDeviceCarry(oldName, newName string) {
-	if blocks.ValidateDevice(oldName) != nil || !inv.deviceHasBlocks(oldName) {
-		return
+	for _, w := range inv.blocksCarryProblems(oldName, newName) {
+		inv.app.Out.Warn(w)
 	}
-	a := inv.app
-	c := a.Conf()
+}
+
+// blocksCarryProblems does blocksDeviceCarry's work and returns the sentences
+// that say what was not carried (none when all was).
+func (inv *invocation) blocksCarryProblems(oldName, newName string) []string {
+	if blocks.ValidateDevice(oldName) != nil || !inv.deviceHasBlocks(oldName) {
+		return nil
+	}
+	c := inv.app.Conf()
 	store := inv.deviceBlockStore()
 	if newName == "" {
 		var problems []string
@@ -94,22 +101,22 @@ func (inv *invocation) blocksDeviceCarry(oldName, newName string) {
 			problems = append(problems, strings.Join(msgs(err), " "))
 		}
 		if len(problems) > 0 {
-			a.Out.Warn("The configuration blocks of '" + oldName + "' were not all removed: " + strings.Join(problems, " "))
+			return []string{"The configuration blocks of '" + oldName + "' were not all removed: " + strings.Join(problems, " ")}
 		}
-		return
+		return nil
 	}
 	if blocks.ValidateDevice(newName) != nil {
-		a.Out.Warn("The configuration blocks of '" + oldName + "' were not carried over: '" + newName + "' is not a name the block store holds. They are still kept under the old name and are not rendered.")
-		return
+		return []string{"The configuration blocks of '" + oldName + "' were not carried over: '" + newName + "' is not a name the block store holds. They are still kept under the old name and are not rendered."}
 	}
 	if err := c.MoveBlockDevice(oldName, newName); err != nil {
-		a.Out.Warn("The configuration blocks of '" + oldName + "' were not carried over to '" + newName + "': " + strings.Join(msgs(err), " ") + " They are still kept under the old name and are not rendered.")
-		return
+		return []string{"The configuration blocks of '" + oldName + "' were not carried over to '" + newName + "': " + strings.Join(msgs(err), " ") + " They are still kept under the old name and are not rendered."}
 	}
+	var out []string
 	if err := store.RenameDevice(oldName, newName); err != nil {
 		if back := c.MoveBlockDevice(newName, oldName); back != nil {
-			a.Out.Warn("The configuration blocks of '" + oldName + "' could not be put back under their old name in tacctl.yaml: " + strings.Join(msgs(back), " "))
+			out = append(out, "The configuration blocks of '"+oldName+"' could not be put back under their old name in tacctl.yaml: "+strings.Join(msgs(back), " "))
 		}
-		a.Out.Warn("The configuration blocks of '" + oldName + "' were not carried over to '" + newName + "': " + strings.Join(msgs(err), " ") + " They are still kept under the old name and are not rendered.")
+		out = append(out, "The configuration blocks of '"+oldName+"' were not carried over to '"+newName+"': "+strings.Join(msgs(err), " ")+" They are still kept under the old name and are not rendered.")
 	}
+	return out
 }

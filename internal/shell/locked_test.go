@@ -142,7 +142,7 @@ func TestInProcessLockedLists(t *testing.T) {
 	o := lockOptions(&locked, &ran, &refused)
 	o.Complete = func(words []string, partial string) []Candidate {
 		if len(words) == 0 {
-			return []Candidate{{Word: "passwd", Desc: "Change your own password", Fixed: true, Command: true}}
+			return []Candidate{{Word: "passwd", Desc: "Change your own password", Fixed: true}}
 		}
 		return nil
 	}

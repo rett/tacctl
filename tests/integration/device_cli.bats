@@ -798,3 +798,101 @@ targetssh() {
     run grep -c core-sw2 "$DEVICES"
     assert_output "0"
 }
+
+# --- clone -----------------------------------------------------------------------------------
+
+@test "device clone: a copy of the intent at a bench address, its /32 added to the scope" {
+    local T="$TACCTL_BIN_SCRIPT" snmp="${TACCTL_STATE_DIR}/snmp/devices"
+    "$T" scope prefixes lab add 10.99.0.0/24
+    "$T" device add core-sw1 10.99.0.1 --vendor cisco --hostname core-sw1.example.net --description "Rack 4" --no-host-key
+    printf 'example-ro\n' | "$T" device snmp core-sw1 community --stdin > /dev/null
+    run "$T" device clone core-sw1 core-sw2
+    assert_failure 1
+    plain
+    assert_output --partial "--staging <bench-ip> is required"
+    run "$T" device clone core-sw1 core-sw2 --staging 192.0.2.0/24
+    assert_failure 1
+    run grep -c core-sw2 "$DEVICES"
+    assert_output "0"
+
+    run "$T" device clone core-sw1 core-sw2 --staging 192.0.2.77
+    assert_success
+    plain
+    assert_output --partial "Staging address 192.0.2.77/32 added to scope 'lab'"
+    assert_output --partial "Device 'core-sw2' registered as a copy of 'core-sw1': 192.0.2.77, cisco, scope lab."
+    assert_output --partial "Not copied: the address, name, DNS name, host keys"
+    assert_output --partial "tacctl device rename core-sw2 core-sw1 --replace"
+    run "$T" device show core-sw2
+    assert_success
+    plain
+    assert_output --partial "Description:"
+    assert_output --partial "Rack 4"
+    refute_output --partial "core-sw1.example.net"
+    # the credentials are a file of the copy's own, 0600, the original's
+    cmp "$snmp/core-sw1.yaml" "$snmp/core-sw2.yaml"
+    [[ "$(stat -c '%a' "$snmp/core-sw2.yaml")" == "600" ]]
+    run grep -c "^192.0.2.77/32|lab|device|core-sw2|" "${TACCTL_STATE_DIR}/staging"
+    assert_output "1"
+    run "$T" scope show lab
+    assert_output --partial "192.0.2.77/32"
+    # a taken name or address is refused and changes nothing
+    run "$T" device clone core-sw1 core-sw2 --staging 192.0.2.78
+    assert_failure 1
+    plain
+    assert_output --partial "'core-sw2' is already registered"
+    run "$T" device clone core-sw1 core-sw3 --staging 192.0.2.77
+    assert_failure 1
+    assert_output --partial "already registered as 'core-sw2'"
+}
+
+@test "device rename --replace: the bench device takes the original's name and address, the /32 ends" {
+    local T="$TACCTL_BIN_SCRIPT" snmp="${TACCTL_STATE_DIR}/snmp/devices"
+    "$T" scope prefixes lab add 10.99.0.0/24
+    "$T" device add core-sw1 10.99.0.1 --vendor cisco --hostname core-sw1.example.net --no-host-key
+    printf 'example-ro\n' | "$T" device snmp core-sw1 community --stdin > /dev/null
+    "$T" device clone core-sw1 core-sw2 --staging 192.0.2.77 > /dev/null
+    printf 'example-bench\n' | "$T" device snmp core-sw2 community --stdin > /dev/null
+    local before
+    before=$(sha256sum < "$DEVICES")
+
+    # no question answered: nothing happens, whatever else is given
+    run "$T" device rename core-sw2 core-sw1 --replace < /dev/null
+    assert_success
+    plain
+    assert_output --partial "About to replace 'core-sw1' with 'core-sw2'."
+    assert_output --partial "Staging:  192.0.2.77/32 ends in scope 'lab'."
+    assert_output --partial "Aborted."
+    [[ "$(sha256sum < "$DEVICES")" == "$before" ]]
+    run "$T" device rename core-sw2 core-sw1 --replace --allow-generic --yes
+    assert_failure 1
+    run "$T" device rename core-sw2 core-sw3 --yes
+    assert_failure 1
+    plain
+    assert_output --partial "--yes goes with --replace"
+    [[ "$(sha256sum < "$DEVICES")" == "$before" ]]
+
+    run "$T" device rename core-sw2 core-sw1 --replace --yes
+    assert_success
+    plain
+    assert_output --partial "Device 'core-sw2' replaces 'core-sw1': it is now 'core-sw1' at 10.99.0.1."
+    run "$T" device list
+    plain
+    assert_output --partial "Registered devices (1)"
+    assert_output --regexp "core-sw1 +10\.99\.0\.1 +cisco +lab +configured"
+    refute_output --partial "core-sw2"
+    run grep -c "example-bench" "$snmp/core-sw1.yaml"
+    assert_output "1"
+    [[ ! -e "$snmp/core-sw2.yaml" ]]
+    [[ ! -e "${TACCTL_STATE_DIR}/staging" ]]
+    run "$T" scope show lab
+    refute_output --partial "192.0.2.77"
+    # the hostname of the original is the replacement's, which had none
+    run grep -c "hostname: core-sw1.example.net" "$DEVICES"
+    assert_output "1"
+    # a device that is not staged is refused
+    "$T" device add core-sw4 10.99.0.4 --vendor cisco --no-host-key
+    run "$T" device rename core-sw4 core-sw1 --replace --yes
+    assert_failure 1
+    plain
+    assert_output --partial "'core-sw4' is not staged"
+}

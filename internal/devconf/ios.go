@@ -1461,7 +1461,7 @@ func ciscoExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 	if visible != nil {
 		vis = *visible
 	}
-	return Extracted{Vendor: FamilyIOS, Sections: out, SecretsVisible: vis, ArchiveFS: archiveFS(lines)}, nil
+	return Extracted{Vendor: FamilyIOS, Sections: out, SecretsVisible: vis, ArchiveFS: archiveFS(lines), Interfaces: iosInterfaces(got)}, nil
 }
 
 // archiveFS is the file system of the device's archive path: the 'path'

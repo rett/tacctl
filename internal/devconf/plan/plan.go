@@ -239,6 +239,14 @@ func Plan(vendor string, expected []devices.Section, current, plain devconf.Extr
 	d.InheritanceChecked = d.InheritanceChecked && fam == devconf.FamilyJunos
 	p := &planner{fam: fam, opt: opt, cur: current, plain: plain, checked: d.InheritanceChecked}
 	p.exp = expected
+	p.badSource = map[string]bool{}
+	for _, r := range results {
+		for _, l := range r.Lines {
+			if l.Why != "" {
+				p.badSource[r.Name+"|"+stemOf(l)] = true
+			}
+		}
+	}
 	if fam == devconf.FamilyJunos || fam == devconf.FamilyIOS {
 		p.blk = blockObjectsOf(fam, expected, opt.Scope)
 	}
@@ -462,6 +470,9 @@ type planner struct {
 	// blk are the objects of the rendering that a configuration block put
 	// there (nil: none), for the report's words.
 	blk *blockObjects
+	// badSource are the statements (section|text) that are the source of the
+	// AAA client and name nothing the device holds (D314).
+	badSource map[string]bool
 }
 
 func (p *planner) expected(name string) devices.Section {

@@ -51,6 +51,10 @@ type SNMPInput struct {
 	// scope or default (snmpcred.FromDevice, FromScope, FromDefault); empty
 	// adds no line.
 	CredFrom string
+	// V3Fix is the command that fixes a v3 user that is chosen but cannot be
+	// used (missing, or without a passphrase); empty names the command that
+	// adds a user and makes it the default.
+	V3Fix string
 	// Server is the tacctl server's own address, the first client (an IPv4
 	// address; anything else is rendered as a commented placeholder).
 	Server string
@@ -176,7 +180,7 @@ func (in SNMPInput) unfilled() []Unfilled {
 	case "community":
 		out = append(out, Unfilled{"community", "tacctl scope snmp " + in.Scope + " community"})
 	case "v3-user":
-		out = append(out, Unfilled{"v3 user", "tacctl scope snmp " + in.Scope + " v3-user <user>"})
+		out = append(out, Unfilled{"v3 user", in.v3Fix()})
 	}
 	if in.serverNet() == "" {
 		out = append(out, Unfilled{"tacctl server address", "pass --source <address>"})
@@ -184,11 +188,19 @@ func (in SNMPInput) unfilled() []Unfilled {
 	return out
 }
 
+// v3Fix is the command the placeholders of a missing v3 user name.
+func (in SNMPInput) v3Fix() string {
+	if in.V3Fix != "" {
+		return in.V3Fix
+	}
+	return "tacctl scope snmp " + in.Scope + " v3-user add <user> --default"
+}
+
 // notConfiguredLines are the lines of the step when no version is set.
 func (in SNMPInput) notConfiguredLines(what string) []string {
 	rows := [][2]string{
 		{"tacctl scope snmp " + in.Scope + " community", "(v2c)"},
-		{"tacctl scope snmp " + in.Scope + " v3-user <user>", "(v3, authPriv)"},
+		{"tacctl scope snmp " + in.Scope + " v3-user add <user> --default", "(v3, authPriv; then: version v3)"},
 		{"tacctl config snmp community|v3-user", "(the default for every scope that sets none)"},
 	}
 	w := 0
@@ -305,7 +317,7 @@ func CiscoSNMP(in SNMPInput) SNMPBlock {
 		if missing == "community" {
 			add("! snmp-server community <community> RO " + snmpACLName + "   ! NOT SET: tacctl scope snmp " + in.Scope + " community")
 		} else {
-			add("! snmp-server user <user> " + snmpGroupName + " v3 auth sha <passphrase> priv aes 128 <passphrase>   ! NOT SET: tacctl scope snmp " + in.Scope + " v3-user <user>")
+			add("! snmp-server user <user> " + snmpGroupName + " v3 auth sha <passphrase> priv aes 128 <passphrase>   ! NOT SET: " + in.v3Fix())
 		}
 	} else if in.Version == snmpV2c {
 		add("snmp-server community " + in.Community + " RO " + snmpACLName)
@@ -406,7 +418,7 @@ func JuniperSNMP(in SNMPInput) SNMPBlock {
 		if missing == "community" {
 			add("# set snmp community <community> authorization read-only   (NOT SET: tacctl scope snmp " + in.Scope + " community)")
 		} else {
-			add("# set snmp v3 usm local-engine user <user> ...   (NOT SET: tacctl scope snmp " + in.Scope + " v3-user <user>)")
+			add("# set snmp v3 usm local-engine user <user> ...   (NOT SET: " + in.v3Fix() + ")")
 		}
 	} else if in.Version == snmpV2c {
 		add("set snmp community "+in.Community+" authorization read-only",
@@ -510,7 +522,7 @@ func WTISNMP(in SNMPInput) SNMPBlock {
 		if missing == "community" {
 			value("Read-only Community", "(NOT SET: tacctl scope snmp "+in.Scope+" community)")
 		} else {
-			value("SNMPv3 User", "(NOT SET: tacctl scope snmp "+in.Scope+" v3-user <user>)")
+			value("SNMPv3 User", "(NOT SET: "+in.v3Fix()+")")
 		}
 	} else if in.Version == snmpV2c {
 		value("Enable", "On")

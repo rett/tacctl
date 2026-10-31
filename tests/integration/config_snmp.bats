@@ -49,10 +49,11 @@ no_secret() {
     run "$TACCTL_BIN_SCRIPT" config snmp
     assert_success
     assert_output --partial "Usage: tacctl config snmp <subcommand>"
-    assert_output --partial "v3-user <user> [--auth sha|sha256] [--priv aes128] [--stdin]"
+    assert_output --partial "v3-user add|remove|default|list [<user>]"
+    assert_output --partial "add <user> [--default]"
     run "$TACCTL_BIN_SCRIPT" config snmp show
     assert_success
-    assert_output --partial "version:    not set (no lookup; 'community' or 'v3-user' sets it)"
+    assert_output --partial "version:    not set (no lookup; 'version', 'community' or 'v3-user' sets it)"
     assert_output --partial "port:       161 (default)"
     assert_output --partial "timeout:    2 (default) s, one retry"
     assert_output --partial "community:  not set"
@@ -60,7 +61,7 @@ no_secret() {
     assert_failure 1
     assert_output --partial "Unknown subcommand: 'frob'"
     run "$TACCTL_BIN_SCRIPT" config
-    assert_output --partial "snmp    show|community|v3-user|port|timeout|clear|test"
+    assert_output --partial "snmp    show|version|community|v3-user|port|timeout|clear|test"
 }
 
 @test "config snmp community: stdin only without a terminal; stored 0600, never printed; the version becomes v2c" {
@@ -124,38 +125,69 @@ no_secret() {
     assert_output --partial "'not-a-device' is neither an address nor a registered device."
 }
 
-@test "config snmp v3-user: authPriv with SHA-256 answers; wrongDigest and unknownUserName are named" {
+@test "config snmp v3-user: a pool, a default and the version; wrongDigest and unknownUserName are named" {
     snmp_agent --sysname rtr1.site-b.example --user alice --auth-pass auth-pass-bats --priv-pass priv-pass-bats --auth sha256
     "$TACCTL_BIN_SCRIPT" config snmp port "$SNMP_PORT" > /dev/null
     "$TACCTL_BIN_SCRIPT" config snmp timeout 1 > /dev/null
-    run bash -c "printf 'auth-pass-bats\npriv-pass-bats\n' | '$TACCTL_BIN_SCRIPT' config snmp v3-user alice --auth sha256 --stdin"
+    run bash -c "printf 'auth-pass-bats\npriv-pass-bats\n' | '$TACCTL_BIN_SCRIPT' config snmp v3-user add alice --auth sha256 --default --stdin"
     assert_success
-    assert_output --partial "version v3, auth sha256, priv aes128."
+    assert_output --partial "SNMPv3 user 'alice' added to the pool of the config"
+    assert_output --partial "tacctl config snmp version v3 reads with SNMPv3."
     no_secret
-    [[ "$(conf_get snmp.version)" == "v3" && "$(conf_get snmp.v3.auth)" == "sha256" ]]
+    # adding a user sets no version; the protocol it was given is stored
+    [[ -z "$(conf_get snmp.version)" && "$(conf_get snmp.v3.auth)" == "sha256" ]]
     run stat -c %a "$SNMP_FILE"
     assert_output "600"
+    # one default user fits version 1, which the older releases read
+    run grep -c "version: 1" "$SNMP_FILE"
+    assert_output "1"
+    "$TACCTL_BIN_SCRIPT" config snmp version v3 > /dev/null
+    [[ "$(conf_get snmp.version)" == "v3" ]]
     run "$TACCTL_BIN_SCRIPT" config snmp show
-    assert_output --partial "v3 user:    set; passphrases: set"
+    assert_output --partial "v3 users:   alice (default)"
+    assert_output --partial "v3 user:    alice; passphrases: set"
     assert_output --partial "v3 auth:    sha256; priv: aes128 (default)"
-    refute_output --partial "alice"
     run "$TACCTL_BIN_SCRIPT" config snmp test 127.0.0.1
     assert_success
     assert_output --partial "127.0.0.1 calls itself 'rtr1.site-b.example' (SNMP sysName)."
-    printf 'wrong-pass-1\npriv-pass-bats\n' | "$TACCTL_BIN_SCRIPT" config snmp v3-user alice --stdin > /dev/null
+    run "$TACCTL_BIN_SCRIPT" config snmp show --reveal alice
+    assert_success
+    assert_output --partial "v3 user:    alice; auth passphrase: auth-pass-bats; priv passphrase: priv-pass-bats"
+    printf 'wrong-pass-1\npriv-pass-bats\n' | "$TACCTL_BIN_SCRIPT" config snmp v3-user add alice --stdin > /dev/null
     run "$TACCTL_BIN_SCRIPT" config snmp test 127.0.0.1
     assert_failure 1
     assert_output --partial "127.0.0.1 refused the request: wrongDigest (wrong authentication passphrase or protocol)."
-    printf 'auth-pass-bats\npriv-pass-bats\n' | "$TACCTL_BIN_SCRIPT" config snmp v3-user bob --stdin > /dev/null
+    # another user is in the pool and changes nothing until it is the default
+    printf 'auth-pass-bats\npriv-pass-bats\n' | "$TACCTL_BIN_SCRIPT" config snmp v3-user add bob --stdin > /dev/null
+    # a second user is what version 1 cannot hold
+    run grep -c "version: 2" "$SNMP_FILE"
+    assert_output "1"
+    run "$TACCTL_BIN_SCRIPT" config snmp test 127.0.0.1
+    assert_output --partial "wrongDigest"
+    "$TACCTL_BIN_SCRIPT" config snmp v3-user default bob > /dev/null
     run "$TACCTL_BIN_SCRIPT" config snmp test 127.0.0.1
     assert_failure 1
     assert_output --partial "127.0.0.1 refused the request: unknownUserName (the agent has no such user)."
-    run bash -c "printf 'short\nshort\n' | '$TACCTL_BIN_SCRIPT' config snmp v3-user alice --stdin"
+    run "$TACCTL_BIN_SCRIPT" config snmp v3-user list
+    assert_success
+    assert_output --partial "bob  default  (passphrases set)"
+    no_secret
+    run "$TACCTL_BIN_SCRIPT" config snmp v3-user remove bob
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" config snmp test 127.0.0.1
+    assert_failure 1
+    assert_output --partial "no SNMPv3 user is the default ('tacctl config snmp v3-user default <user>')"
+    run bash -c "printf 'short\nshort\n' | '$TACCTL_BIN_SCRIPT' config snmp v3-user add alice --stdin"
     assert_failure 1
     assert_output --partial "at least 8 characters"
-    run "$TACCTL_BIN_SCRIPT" config snmp v3-user alice --auth md5 --stdin
+    run "$TACCTL_BIN_SCRIPT" config snmp v3-user add alice --auth md5 --stdin
     assert_failure 1
     assert_output --partial "Unknown --auth 'md5': sha or sha256."
+    # the retired form fails with the usage of the new verbs
+    run "$TACCTL_BIN_SCRIPT" config snmp v3-user alice --stdin
+    assert_failure 1
+    assert_output --partial "Unknown action 'alice': add, remove, default or list."
+    assert_output --partial "tacctl config snmp v3-user add <user>"
 }
 
 @test "config snmp clear: removes the credentials and the version" {

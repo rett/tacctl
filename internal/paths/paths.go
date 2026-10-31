@@ -47,6 +47,9 @@ type Paths struct {
 	Config     string // TACCTL_CONFIG (CONFIG): tacquito.yaml
 	BackupDir  string // BACKUP_DIR
 	PWDatesDir string // PASSWORD_DATES_DIR
+	// KeptDir holds the snapshots 'backup keep' copied out of BackupDir: no
+	// retention reaches it (internal/snapshot, kept.go).
+	KeptDir    string
 	AcctLog    string // ACCT_LOG
 	Overrides  string // TACCTL_OVERRIDES_FILE: tacctl.yaml
 	StoreFile  string // STORE_FILE
@@ -152,6 +155,7 @@ func Resolve(env Env, exe string, exists func(string) bool) Paths {
 	p.Config = env.Or("TACCTL_CONFIG", p.Etc+"/tacquito.yaml")
 	p.BackupDir = p.StateDir + "/backups"
 	p.PWDatesDir = p.StateDir + "/backups/password-dates"
+	p.KeptDir = p.StateDir + "/backups-kept"
 	p.AcctLog = p.Log + "/accounting.log"
 	p.Overrides = p.StateDir + "/tacctl.yaml"
 	p.StoreFile = p.StateDir + "/store.yaml"
@@ -278,6 +282,16 @@ const RadiusName = "tacctl-radius"
 // SSHDEngineerDropInName is the file name of the engineer tier's sshd drop-in;
 // the leading 00- puts it before tacctl-console.conf in sshd's read order.
 const SSHDEngineerDropInName = "00-tacctl-engineer.conf"
+
+// SSHDLockdownDropInName is the file name of sshd's emergency-lockdown drop-in
+// on an enrolled host (written by the client script, config/linux/
+// client-install.sh, at a sync while the scope is locked down). It sorts
+// before SSHDEngineerDropInName in the byte order and in a locale's, so its
+// values are the first sshd takes: the engineer drop-in may let agent
+// forwarding through, the lockdown must not be beaten by it. A leading
+// 000- would sort after the engineer's name in the byte order ('-' is before
+// '0'), which is why the name has the 0 after the family prefix.
+const SSHDLockdownDropInName = "00-tacctl-0-lockdown.conf"
 
 // Radius returns the RADIUS layout for family ("rhel"; anything else is the
 // Debian layout, as in bash), with the TACCTL_RADIUS_* overrides applied.

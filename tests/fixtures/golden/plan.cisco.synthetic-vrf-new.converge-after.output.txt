@@ -11,3 +11,5 @@
 ! --secrets writes them again.
 ! Cleanup (--converge): nothing to remove.
 ! 1 extra stays: its item above says why.
+! Note: the source of the AAA server is not checked against the interfaces of the device: this login
+! cannot see the interfaces.

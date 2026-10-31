@@ -225,7 +225,7 @@ func TestSectionsCiscoRoundTrip(t *testing.T) {
 	}
 	// and what comes back compares the same as the extraction did
 	expected := expectedSections(t, "ios/reference-lab/expected.txt")
-	rec := Record{Vendor: "cisco", Result: ResultOK, SecretsVisible: true}
+	rec := Record{Vendor: "cisco", Result: ResultOK, SecretsVisible: true, Interfaces: ex.Interfaces}
 	r1, _ := CompareAll(expected, ex)
 	r2, _ := CompareAll(expected, rec.Extracted(got))
 	if resultText(ex, r1) != resultText(ex, r2) {

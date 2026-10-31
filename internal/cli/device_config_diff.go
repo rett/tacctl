@@ -53,7 +53,12 @@ func diffText(r devconf.SectionResult) []string {
 		if l.Op == devconf.OpSame && !l.Secret {
 			continue
 		}
-		out = append(out, string(l.Op)+" "+cleanLine(l.Text))
+		text := string(l.Op) + " " + cleanLine(l.Text)
+		if l.Why != "" {
+			// the device's own AAA source that the device does not hold
+			text += "  (" + cleanLine(l.Why) + ")"
+		}
+		out = append(out, text)
 	}
 	for _, n := range r.Notes {
 		out = append(out, "note: "+cleanLine(n))

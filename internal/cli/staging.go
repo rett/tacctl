@@ -11,6 +11,7 @@ package cli
 // ('scope staging remove').
 
 import (
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -26,13 +27,22 @@ import (
 
 type stagingEntry struct {
 	CIDR, Scope, Kind, Name, Since string
+	// Covered marks a device's entry made for an address the scope answered
+	// already (by a prefix of its own): no /32 was added, so none is ever
+	// taken out, and the sweep keeps the entry until the device is seen
+	// elsewhere. The line carries a sixth field, 'covered'.
+	Covered bool
 }
 
 // addr is the entry's address (its /32 without the length).
 func (e stagingEntry) addr() string { a, _, _ := strings.Cut(e.CIDR, "/"); return a }
 
 func (e stagingEntry) line() string {
-	return strings.Join([]string{e.CIDR, e.Scope, e.Kind, e.Name, e.Since}, "|")
+	f := []string{e.CIDR, e.Scope, e.Kind, e.Name, e.Since}
+	if e.Covered {
+		f = append(f, "covered")
+	}
+	return strings.Join(f, "|")
 }
 
 func (inv *invocation) stagingPath() string {
@@ -50,7 +60,7 @@ func (inv *invocation) stagingLoad() []stagingEntry {
 		if len(f) < 5 || f[0] == "" {
 			continue
 		}
-		out = append(out, stagingEntry{f[0], f[1], f[2], f[3], f[4]})
+		out = append(out, stagingEntry{f[0], f[1], f[2], f[3], f[4], len(f) > 5 && f[5] == "covered"})
 	}
 	return out
 }
@@ -75,51 +85,77 @@ func (inv *invocation) stagingSave(entries []stagingEntry) error {
 	return os.Rename(tmp, path)
 }
 
-// stagingAdd answers addr from scope with a staging /32 (for the host or
-// device kind/name), unless scope already answers it. Nothing is changed
-// when the /32 cannot be added (another scope owns it, a tagged address).
-func (inv *invocation) stagingAdd(scope, addr, kind, name string) error {
+// stagingCheck is the read-only half of stagingAdd: it refuses, changing
+// nothing, an address that cannot be staged in scope (another scope owns it,
+// an enrolled host is there, a prefix collides, a vendor tag conflicts), and
+// says whether scope answers it already (covered: no /32 is needed). The
+// verbs that take a snapshot first call it before the snapshot.
+func (inv *invocation) stagingCheck(scope, addr string) (covered bool, err error) {
 	a := inv.app
 	m, err := inv.model()
 	if err != nil {
-		return err
+		return false, err
 	}
 	if info, found := m.LookupAddr(addr); found && info.Scope == scope {
-		a.Out.InfoE("--staging: scope '" + scope + "' already answers " + addr + " (prefix " + info.Prefix + "); no staging address is needed.")
-		return nil
+		return true, nil
 	}
 	// An engineer stages in their own scopes only, and never an address
 	// another scope answers: the /32 would take it, and its devices'
 	// logins, from that scope (D18).
 	if f := inv.callerScopes(); f.restricted {
 		if err := inv.ownScope(f, scope); err != nil {
-			return err
+			return false, err
 		}
 		if info, found := m.LookupAddr(addr); found && !f.allows(info.Scope) {
-			return inv.usageErr("--staging: " + addr + " is answered by scope '" + info.Scope + "', which is not one of yours; staging it would take it from that scope. Nothing was changed.")
+			return false, inv.usageErr("--staging: " + addr + " is answered by scope '" + info.Scope + "', which is not one of yours; staging it would take it from that scope. Nothing was changed.")
 		}
 		// A host is not a device: the scope that answers a host's address
 		// is the superuser's to change, since the host's next sync is
 		// checked against it.
 		if inv.hostWithin(addr) {
-			return inv.usageErr("--staging: " + addr + " is not available for staging. Nothing was changed.")
+			return false, inv.usageErr("--staging: " + addr + " is not available for staging. Nothing was changed.")
 		}
 	}
 	cidr := addr + "/32"
 	collisions, err := inv.scopePrefixCollisions([]string{cidr}, scope)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if len(collisions) > 0 {
-		return inv.usageErr(append(append([]string{"Cannot stage " + cidr + " in scope '" + scope + "':"}, collisions...), collisionAdvice(collisions)...)...)
+		return false, inv.usageErr(append(append([]string{"Cannot stage " + cidr + " in scope '" + scope + "':"}, collisions...), collisionAdvice(collisions)...)...)
 	}
-	current := m.ScopePrefixes(scope)
-	csv := joinNonEmpty(append(append([]string(nil), current...), cidr), ",")
+	csv := joinNonEmpty(append(append([]string(nil), m.ScopePrefixes(scope)...), cidr), ",")
 	if problems, ok := m.DeviceProblems(scope, csv, "", ""); !ok {
 		a.Out.ErrorE("Cannot stage " + cidr + " in scope '" + scope + "': it would take over an address another scope has tagged with a vendor:")
 		inv.scopeDeviceProblems(problems)
-		return inv.usageErr("Nothing was changed.")
+		return false, inv.usageErr("Nothing was changed.")
 	}
+	return false, nil
+}
+
+// stagingAdd answers addr from scope with a staging /32 (for the host or
+// device kind/name), unless scope already answers it. Nothing is changed
+// when the /32 cannot be added (another scope owns it, a tagged address).
+// An address the scope answers already needs no /32 and writes nothing here:
+// 'device clone' records the device it registers there itself
+// (stagingCoveredAdd), once the registry line is written.
+func (inv *invocation) stagingAdd(scope, addr, kind, name string) error {
+	a := inv.app
+	covered, err := inv.stagingCheck(scope, addr)
+	if err != nil {
+		return err
+	}
+	m, err := inv.model()
+	if err != nil {
+		return err
+	}
+	cidr := addr + "/32"
+	if covered {
+		info, _ := m.LookupAddr(addr)
+		a.Out.InfoE("--staging: scope '" + scope + "' already answers " + addr + " (prefix " + info.Prefix + "); no staging address is needed.")
+		return nil
+	}
+	csv := joinNonEmpty(append(append([]string(nil), m.ScopePrefixes(scope)...), cidr), ",")
 	if info, found := m.LookupAddr(addr); found {
 		a.Out.WarnE("--staging: " + addr + " is answered by scope '" + info.Scope + "' (prefix " + info.Prefix + ") until now; the staging /32 answers it from '" + scope + "' instead.")
 	}
@@ -135,7 +171,7 @@ func (inv *invocation) stagingAdd(scope, addr, kind, name string) error {
 			kept = append(kept, e)
 		}
 	}
-	kept = append(kept, stagingEntry{cidr, scope, kind, name, a.Knobs.Now().Format("2006-01-02 15:04")})
+	kept = append(kept, stagingEntry{cidr, scope, kind, name, a.Knobs.Now().Format("2006-01-02 15:04"), false})
 	if err := inv.stagingSave(kept); err != nil {
 		inv.verbResult(audit.Info, addBase, "write")
 		return err
@@ -150,6 +186,68 @@ func (inv *invocation) stagingAdd(scope, addr, kind, name string) error {
 		how = "remove it once the device is installed: tacctl scope staging remove " + cidr
 	}
 	a.Out.InfoE("Staging address " + cidr + " added to scope '" + scope + "' (its secret and users) for " + who + "; " + how + ".")
+	return nil
+}
+
+// stagingConflict is the refusal of a bench address that has a staging entry
+// already for something else than the device name (a host, or another device):
+// the entry is that one's, and a second owner of the address would leave one of
+// them unfindable. Nothing is changed. A superuser removes the entry first. A
+// device entry with no name ('config <vendor> --staging <ip>' without --name)
+// is by construction the bench device being registered here: it is not a
+// conflict, and the verb names it (stagingSetName).
+func (inv *invocation) stagingConflict(addr, name string) error {
+	for _, e := range inv.stagingLoad() {
+		if e.CIDR != addr+"/32" || (e.Kind == "device" && (e.Name == "" || strings.EqualFold(e.Name, name))) {
+			continue
+		}
+		who := e.Kind
+		if e.Name != "" {
+			who += " '" + e.Name + "'"
+		}
+		return inv.usageErr("--staging: "+addr+" is staged for "+who+" already (tacctl scope staging list).",
+			"Give the bench address another value, or have a superuser remove that entry first: tacctl scope staging remove "+e.CIDR+". Nothing was changed.")
+	}
+	return nil
+}
+
+// stagingSetName gives the device entry of the /32 of addr the name (empty:
+// takes it away), so that the sweep finds the device where it is registered.
+// It is not audited: the entry was, when it was made, and a rename of a
+// device carries its staging lines the same way (stagingRenameDevice).
+func (inv *invocation) stagingSetName(addr, name string) error {
+	entries := inv.stagingLoad()
+	for i := range entries {
+		if entries[i].Kind == "device" && entries[i].CIDR == addr+"/32" {
+			entries[i].Name = name
+		}
+	}
+	return inv.stagingSave(entries)
+}
+
+// stagingCoveredAdd records the device at a bench address its scope answers
+// already: an entry marked Covered, with no /32 (none was added, so none is
+// ever taken out), audited as the add of a /32 is. It is written once the
+// device is registered, under the snapshot of the verb that registers it, and
+// stays until the device is seen at another address, 'device rename
+// --replace' ends it or a superuser removes it ('scope staging remove'): a
+// device that is removed afterwards leaves it, as a staging /32 is left.
+func (inv *invocation) stagingCoveredAdd(scope, addr, name string) error {
+	a := inv.app
+	cidr := addr + "/32"
+	base := "scope staging add cidr=" + cidr + " scope=" + scope + " device=" + name + " covered=yes by=" + inv.sudoUser()
+	entries := inv.stagingLoad()
+	for _, e := range entries {
+		if e.CIDR == cidr {
+			return nil
+		}
+	}
+	entries = append(entries, stagingEntry{cidr, scope, "device", name, a.Knobs.Now().Format("2006-01-02 15:04"), true})
+	if err := inv.stagingSave(entries); err != nil {
+		inv.verbResult(audit.Info, base, "write")
+		return err
+	}
+	inv.verbResult(audit.Info, base, "")
 	return nil
 }
 
@@ -214,6 +312,111 @@ func (inv *invocation) stagingSeen(e stagingEntry) string {
 	return ""
 }
 
+// stagingBench is the bench address of --staging <ip>: one IPv4 address, no
+// prefix length, in its canonical form; a problem is the refusal's text.
+func stagingBench(flag string) (addr, problem string) {
+	norm, err := devreg.NormalizeAddress(flag)
+	if err != nil || strings.Contains(norm, ":") || strings.Contains(flag, "/") {
+		return "", "--staging takes the device's bench IPv4 address (a single address, no prefix length): '" + flag + "'"
+	}
+	return norm, ""
+}
+
+// stagingEntryOf is the staging line of the device registered at addr (kind
+// device, the /32 of that address), and whether there is one.
+func (inv *invocation) stagingEntryOf(addr string) (stagingEntry, bool) {
+	for _, e := range inv.stagingLoad() {
+		if e.Kind == "device" && e.CIDR == addr+"/32" {
+			return e, true
+		}
+	}
+	return stagingEntry{}, false
+}
+
+// stagingEnd takes the staging /32 of e out of its scope and out of the
+// staging file now, whatever address the device is seen at: the verbs that
+// decide the device is in place (a replacement that took its original's
+// address) or that undo the /32 they just added. A scope that no longer lists
+// the /32 keeps nothing to remove, and a /32 that is the scope's only prefix
+// stays (a scope without a prefix answers nothing). An entry made for an
+// address the scope answered already (Covered) has no /32: only the entry
+// goes. The change is audited as the sweep's is, with event and what, for the
+// device or the reason.
+func (inv *invocation) stagingEnd(e stagingEntry, event, what string) error {
+	m, err := inv.model()
+	if err != nil {
+		return err
+	}
+	base := event + " cidr=" + e.CIDR + " scope=" + e.Scope + " " + what
+	if !e.Covered && m.Exists("scopes", e.Scope) && contains(m.ScopePrefixes(e.Scope), e.CIDR) {
+		rest := without(m.ScopePrefixes(e.Scope), e.CIDR)
+		if joinNonEmpty(rest, "") == "" {
+			return errors.New("staging address " + e.CIDR + " is the only prefix of scope '" + e.Scope + "'; add its real prefixes first")
+		}
+		if err := inv.applyStore(func(s *store.Store) error { return s.ScopeSet(e.Scope, "prefixes="+joinNonEmpty(rest, ",")) }); err != nil {
+			inv.verbResult(audit.Info, base, failReason(err, "store"))
+			return err
+		}
+	}
+	var kept []stagingEntry
+	for _, o := range inv.stagingLoad() {
+		if o.CIDR != e.CIDR {
+			kept = append(kept, o)
+		}
+	}
+	if err := inv.stagingSave(kept); err != nil {
+		inv.verbResult(audit.Info, base, "write")
+		return err
+	}
+	inv.verbResult(audit.Info, base, "")
+	return nil
+}
+
+// stagingRenameDevice names the new device name in the staging entries of
+// the device (the fourth field of the line), so that the sweep still finds
+// the device where it is registered and ends the /32 once it is in place.
+// Names compare without regard to case, as the registry's do (a line is
+// written with the name as typed to 'config <vendor> --staging --name'): the
+// old name is matched first, so a rename of the spelling only keeps the
+// line, and only a line of the new name that is not the device's own, left
+// by an earlier device, is dropped, as a host's is (hostRenameStaging). The
+// registry was renamed already: a failure here is a warning that names the
+// addresses of the lines renamed and dropped and the way out.
+func (inv *invocation) stagingRenameDevice(oldName, newName string) {
+	inv.stagingRenameLines(oldName, newName, false)
+}
+
+// stagingRenameLines is stagingRenameDevice; with keepNew the lines of newName
+// stay as they are instead of being dropped as a stray's. 'device rename
+// --replace' keeps them: newName is the original, a registered device whose
+// own staging /32s are not stray, and now name the replacement that is at its
+// address.
+func (inv *invocation) stagingRenameLines(oldName, newName string, keepNew bool) {
+	entries := inv.stagingLoad()
+	var out []stagingEntry
+	changed := false
+	var addrs []string
+	for _, s := range entries {
+		switch {
+		case s.Kind == "device" && strings.EqualFold(s.Name, oldName):
+			s.Name, changed = newName, true
+			addrs = append(addrs, s.addr())
+		case !keepNew && s.Kind == "device" && strings.EqualFold(s.Name, newName):
+			changed = true
+			addrs = append(addrs, s.addr())
+			continue
+		}
+		out = append(out, s)
+	}
+	if !changed {
+		return
+	}
+	if err := inv.stagingSave(out); err != nil {
+		inv.app.Out.WarnE(newName + ": its staging lines still name '" + oldName + "' or an earlier device of that name (" + strings.Join(addrs, ", ") + "): " + strings.Join(msgs(err), " ") +
+			". The sweep does not find the device under its new name; remove them: tacctl scope staging remove <address>")
+	}
+}
+
 // stagingSweep removes each staging /32 whose host or device is now seen
 // at another address its scope answers, and forgets entries whose /32 is
 // no longer a prefix of the scope (removed by hand). Every problem is a
@@ -238,11 +441,21 @@ func (inv *invocation) stagingSweep() {
 			kept = append(kept, e)
 			continue
 		}
-		if !m.Exists("scopes", e.Scope) || !contains(m.ScopePrefixes(e.Scope), e.CIDR) {
+		if !m.Exists("scopes", e.Scope) || (!e.Covered && !contains(m.ScopePrefixes(e.Scope), e.CIDR)) {
 			changed = true
 			continue
 		}
 		seen := inv.stagingSeen(e)
+		if e.Covered {
+			// No /32 was added for it: the entry only lasts until the
+			// device is seen at another address.
+			if seen != "" && seen != e.addr() {
+				changed = true
+				continue
+			}
+			kept = append(kept, e)
+			continue
+		}
 		info, found := m.LookupAddr(seen)
 		if seen == "" || seen == e.addr() || !found || info.Scope != e.Scope {
 			kept = append(kept, e)
@@ -351,7 +564,7 @@ func (inv *invocation) scopeStaging(args []string) error {
 			return err
 		}
 		removeBase := "scope staging remove cidr=" + cidr + " scope=" + hit.Scope + " by=" + inv.sudoUser()
-		if m.Exists("scopes", hit.Scope) && contains(m.ScopePrefixes(hit.Scope), cidr) {
+		if !hit.Covered && m.Exists("scopes", hit.Scope) && contains(m.ScopePrefixes(hit.Scope), cidr) {
 			rest := without(m.ScopePrefixes(hit.Scope), cidr)
 			if joinNonEmpty(rest, "") == "" {
 				return inv.usageErr("Staging address " + cidr + " is the only prefix of scope '" + hit.Scope + "'; add its real prefixes first.")
@@ -366,6 +579,10 @@ func (inv *invocation) scopeStaging(args []string) error {
 			return err
 		}
 		inv.verbResult(audit.Info, removeBase, "")
+		if hit.Covered {
+			a.Out.Info("Staging entry " + cidr + " removed; scope '" + hit.Scope + "' answers the address by its own prefixes, which are unchanged.")
+			return nil
+		}
 		a.Out.Info("Staging address " + cidr + " removed from scope '" + hit.Scope + "'.")
 		return nil
 	default:

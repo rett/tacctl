@@ -678,5 +678,5 @@ func junosExtract(raw string, expected []devices.Section, visible *bool) (Extrac
 	if visible != nil {
 		vis = *visible
 	}
-	return Extracted{Vendor: FamilyJunos, Sections: out, SecretsVisible: vis}, nil
+	return Extracted{Vendor: FamilyJunos, Sections: out, SecretsVisible: vis, Interfaces: junosInterfaces(got)}, nil
 }

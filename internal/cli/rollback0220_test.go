@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/tier"
 )
 
 // 'tacctl rollback 0.2.20' and the managed scope in every target, on the
@@ -22,6 +23,9 @@ func rollback0221State(t *testing.T) *hostSandbox {
 	t.Helper()
 	hs := rollbackState(t)
 	hs.step("", "host", "enroll", "--local", "--name", "authsrv", "--build-on-host")
+	// the per-tier drop-in 0.2.20 to 0.2.22 wrote: the rollback to those
+	// releases leaves it, the older ones put back their own
+	hs.write("sudoers.d/tacctl-tiers", tier.Sudoers0222(), 0o640)
 	return hs
 }
 

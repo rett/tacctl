@@ -76,9 +76,10 @@ var scopeSpecs = map[string]Spec{
 	// The timing scale of the scope's devices (0.2.22).
 	"timeout-scale": {MinArgs: 1, MaxArgs: 2, Args: []string{KindScopes, timeoutScaleWords}},
 	"snmp": {MinArgs: 1, MaxArgs: -1, Args: []string{KindScopes, "show|version|community|v3-user|clients|contact|port|timeout|clear|test",
-		After("clients", "list|add|remove"), ""}, Flags: []Flag{
-		{Names: []string{"--reveal"}, Only: "show"}, {Names: []string{"--clear"}, Only: "contact"},
-		{Names: []string{"--stdin"}}, {Names: []string{"--auth"}, Value: true, Only: "v3-user", Kind: strings.Join(snmp.AuthProtocols, "|")},
+		Either(After("clients", "list|add|remove"), After("v3-user", snmpV3UserActions)), ""}, Flags: []Flag{
+		{Names: []string{"--reveal"}, Only: "show"}, {Names: []string{"--clear"}, Only: "contact"}, {Names: []string{"--none"}, Only: "default", Desc: "Choose no default user"},
+		{Names: []string{"--stdin"}}, {Names: []string{"--default"}, Only: "add", Desc: "Make the user the default"},
+		{Names: []string{"--auth"}, Value: true, Only: "v3-user", Kind: strings.Join(snmp.AuthProtocols, "|")},
 		{Names: []string{"--priv"}, Value: true, Only: "v3-user", Kind: strings.Join(snmp.PrivProtocols, "|")}}},
 }
 

@@ -118,13 +118,24 @@ var deviceSpecs = map[string]Spec{
 		{Names: []string{"--vendor"}, Value: true, Kind: "cisco|juniper|wti"},
 		{Names: []string{"--login"}, Value: true},
 		{Names: []string{"--out"}, Value: true}}},
+	// 'clone' (0.2.23, D307): a copy of a device's intent at a bench address.
+	"clone": {MinArgs: 2, MaxArgs: 2, Args: []string{KindDevices, ""}, Flags: []Flag{
+		{Names: []string{"--staging"}, Value: true, Arg: "<bench-ip>", Desc: "The address the copy has on the bench (required)",
+			Long: "The address the copy has on the bench. It is required: the registry holds one device for each address. It is added to the scope of the original as a /32 until the copy replaces the original; an address the scope answers already needs none"},
+		{Names: []string{"--allow-generic"}, Desc: "Allow a generic name such as 'switch'"}}},
 	"sync": {MaxArgs: -1, Args: []string{KindDevices + KindList}, Flags: []Flag{
 		{Names: []string{"--all"}, Alone: true},
 		{Names: []string{"--scope"}, Value: true, Kind: KindScopes},
 		{Names: []string{"--vendor"}, Value: true, Kind: "cisco|juniper|wti"},
 		flagApply, {Names: []string{"--overwrite"}}, flagYes, flagJSON}},
-	"remove":      {MaxArgs: -1, Args: []string{KindDevices + KindList}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}, flagYes}},
-	"rename":      {MinArgs: 2, MaxArgs: 2, Args: []string{KindDevices, ""}, Flags: []Flag{flagAllowGeneric}},
+	"remove": {MaxArgs: -1, Args: []string{KindDevices + KindList}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}, flagYes}},
+	// 'rename <new> <name> --replace' (0.2.23, D308): the device registered at
+	// a bench address takes the place of the original.
+	"rename": {MinArgs: 2, MaxArgs: 2, Args: []string{KindDevices, ""}, Flags: []Flag{flagAllowGeneric,
+		{Names: []string{"--replace"}, Desc: "Take the place of the second device, which is removed",
+			Long: "Treat the first device as the replacement of the second: the second is removed with its files, the first takes its name and its address (which ends its staging /32) and a break-glass hold on the second is cleared, never moved. One question asks first; an original with a hold needs the superuser"},
+		{Names: []string{"--yes"}, Desc: "Do not ask for confirmation",
+			Long: "Do not ask for confirmation of --replace (the only way to skip the question; it is not implied by any other option)"}}},
 	"address":     {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, ""}, Flags: []Flag{flagApply, flagYes}},
 	"hostname":    {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, "clear"}},
 	"vendor":      {MinArgs: 1, MaxArgs: 2, Args: []string{KindDevices, KindVendors + "|clear"}, Flags: []Flag{{Names: []string{"--from-device"}}, flagYes}},
@@ -158,10 +169,10 @@ var deviceSpecs = map[string]Spec{
 	"ssh":           sshSpec,
 	"client-config": {MaxArgs: 0},
 	"scan": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--full"}}, {Names: []string{"--since"}, Value: true},
-		{Names: []string{"--if-stale"}}, {Names: []string{"--quiet"}},
+		{Names: []string{"--if-stale"}}, {Names: []string{"--quiet"}}, {Names: []string{"--sources"}},
 		{Names: []string{"--backend"}, Value: true, Kind: KindBackends}}},
 	"discover": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--all"}}, {Names: []string{"--snmp"}}, {Names: []string{"--backend"}, Value: true, Kind: KindBackends}}},
-	"check":    {MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}, flagJSON}},
+	"check":    {MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{{Names: []string{"--all"}, Alone: true}, {Names: []string{"--sources"}}, flagJSON}},
 	// 'device config show <name>' is device_config.go.
 	"config": {MinArgs: 1, MaxArgs: 2, Args: []string{"show", KindDevices}, Flags: []Flag{
 		{Names: []string{"--protocol"}, Value: true, Kind: "tacacs|radius"},
@@ -172,16 +183,18 @@ var deviceSpecs = map[string]Spec{
 
 // deviceVerbs are the verbs ({Use, Short}), in usage order.
 var deviceVerbs = [][2]string{
-	{"list [<word>] [--name <text>] [--ip <addr|cidr|text>] [--vendor <vendor>] [--scope <scope>] [--stale] [--unconfigured] [--differs] [--scan] [--probe] [--json]", "Registered devices, by name: scope, state, last seen, notices; the options narrow the list"},
+	{"list [<word>] [--name <text>] [--ip <addr|cidr|text>] [--vendor <vendor>] [--scope <scope>] [--stale] [--unconfigured] [--differs] [--scan] [--probe] [--json]", "Registered devices, by name: scope, state, last seen, notices"},
 	{"show <name|address> [--all] [--json]", "One device or host in full (--all: the acknowledged notices too)"},
 	{"add [<name>] <address> [options]", "Register a device (no name: offer the one it gives itself by SNMP); the vendor the device names by SNMP is shown, and offered at a terminal"},
 	{"onboard <address> --login <local-user> [--name <name>] [--host-key SHA256:<fp>] [--legacy-ssh] [--check] [--section <list>] [--json]", "Engineers, Junos devices: register a blank device reached with one of its local accounts (its host key accepted first by typing its name) and commit its first configuration as that account, kept only after your own TACACS+ login proves it"},
 	{"collect <address>... | --discovered [--login <local-user>] [--host-key SHA256:<fp>] [--register [--yes]] [--json]", "Engineers, Junos devices: log in once to each address nobody registered and read what it is (each one's host key shown and accepted first by typing its name or address; show version and the configuration, nothing else), as one table; --register registers them through 'device add' and keeps the read as their first record"},
 	{"enroll <address>... | --discovered [--host-key SHA256:<fp>] [--vendor cisco|juniper|wti|other] [--name <name>] [--legacy-ssh] [--json]", "Engineers: per address, accept the one host key shown by typing the device's name, read its name and vendor by SNMP (asking for what cannot be read), register it, pull it as you, take the name it is configured with, plan it and, for Junos devices, offer the apply review"},
 	{"support-bundle <name> [--vendor cisco|juniper|wti] [--login <local-user>] [--out <dir>]", "Engineers: log in once to a registered device and collect what a developer needs to make tacctl read it right (the version, hardware or inventory, stack, the login's permissions and the commit history of a Junos device, the screens of a WTI unit, the SNMP system group; the configuration itself is not collected), scrubbed: names, users, addresses, serial numbers and time zones become examples and secrets are removed; what was replaced is kept in a private file beside the directory"},
+	{"clone <name> <new> --staging <bench-ip> [--allow-generic]", "Register a copy of a device at its bench address"},
 	{"sync <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> [--apply] [--overwrite] [--json] [--yes]", "Engineers: fill the registry's empty hostname, location and description from what each device's last pull record says of itself (no login; the preview first, --apply writes after one question)"},
 	{"remove <name>[,<name>...] | --all [--yes]", "Remove devices from the registry (confirms)"},
 	{"rename <old> <new> [--allow-generic]", "Rename a device"},
+	{"rename <replacement> <name> --replace [--yes]", "Replace a device with one registered at a bench address"},
 	{"address <name> [<address>] [--yes]", "Show or set the address (--apply: then run 'device config apply' for the device); on a device with a break-glass hold, the hold moves with it after one question (--yes: no question)"},
 	{"hostname <name> [<dns>|clear]", "Show, set or clear the DNS name"},
 	{"vendor <name> [cisco|juniper|wti|other|--from-device [--yes]]", "Show or set the vendor (--from-device: read it from the device by SNMP)"},
@@ -199,20 +212,20 @@ var deviceVerbs = [][2]string{
 	{deviceNetconfUse, deviceNetconfShort},
 	{deviceTimeoutScaleUse, deviceTimeoutScaleShort},
 	// 'device snmp': one row for each verb.
-	{"snmp <name> show [--reveal]", "A device's own SNMP settings over its scope's: version, port, timeout, allowed clients and credentials, and where each comes from"},
+	{"snmp <name> show [--reveal [<user>]]", "A device's own SNMP settings over its scope's: version, port, timeout, allowed clients and credentials, and where each comes from"},
 	{"snmp <name> version [v2c|v3]", "Show or set the device's own SNMP version"},
 	{"snmp <name> port [<n>]", "Show or set the device's own agent port (1-65535)"},
 	{"snmp <name> timeout [<seconds>]", "Show or set the device's own wait for an answer (1-10 seconds)"},
 	{"snmp <name> clients list|add|remove [<cidr>[,<cidr>...]]", "The ranges allowed to query the device: its own list replaces its scope's"},
 	{"snmp <name> community [--stdin]", "Set the device's own v2c community (asked twice, not echoed)"},
-	{"snmp <name> v3-user <user> [--stdin]", "Set the device's own v3 user and passphrases"},
+	{"snmp <name> v3-user add|remove|default|list [<user>]", "The device's v3 user pool: add, remove, default (any pool it sees), list"},
 	{"snmp <name> clear", "Remove everything the device sets of its own: its scope's settings apply again"},
 	{deviceBlockUse, "A device's own configuration blocks (snmp and system, for Junos and IOS) over its scope's: list, show, check, set, remove, edit, adopt"},
 	{"ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]", "Alias of 'tacctl ssh': a session to the device, as you"},
 	{"client-config", "Print an ssh_config Include for your devices (Host blocks, pinned keys)"},
-	{"scan [--full] [--since <dur>] [--backend <id>]", "Read the logs for the devices seen; re-scan pinned host keys"},
+	{"scan [--full] [--since <dur>] [--backend <id>] [--sources]", "Read the logs for the devices seen; re-scan pinned host keys"},
 	{"discover [--all] [--snmp] [--backend <id>]", "Scan, then list the addresses that authenticated unregistered (--snmp: read each one's name and vendor by SNMP for the add lines)"},
-	{"check <name>|--all [--json]", "Checklist: scope, tag, seen, reachable, host key, SNMP name, location and vendor"},
+	{"check <name>|--all [--sources] [--json]", "Checklist: scope, tag, seen, reachable, host key, SNMP name, location and vendor"},
 	{"config show <name> [--protocol tacacs|radius] [--legacy] [--server <address|name>] [--source <address>]", "The device's data, then its vendor walkthrough for its scope"},
 	{"config pull <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale | --differs | --name <text> | --ip <addr|cidr|text> [options]", "Read the devices' configuration as you and compare the managed sections with what tacctl renders"},
 	{"config diff <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale | --differs | --name <text> | --ip <addr|cidr|text> [--pull] [--timing] [--section <list>] [--exit-code] [--json]", "The last pull against what tacctl renders now, section by section"},
@@ -316,6 +329,7 @@ var deviceOptions = map[string][][2]string{
 		{"--since <dur>", "Read this stretch of the logs (7d, 12h, 2w)"},
 		{"--if-stale", "The background form: read only when the data is older than five minutes and no scan is under way; re-scan a device's host keys only when its last scan is a day old"},
 		{"--quiet", "Print nothing (with --if-stale: what a session start runs)"},
+		{"--sources", "Test the AAA source addresses: read the host key, never log in"},
 		{"--backend <id>", "(scan, discover) Only that backend's log"},
 	},
 	"discover": {
@@ -546,7 +560,12 @@ starts 'scan --if-stale --quiet' in the background (operator tier and up). --ful
 without being registered, each with its 'device add' line (--all: those only
 refused too; --snmp: the name and vendor read by SNMP in each line). 'check' and 'list --probe' connect to each ssh port (3 s): this
 server often has no path to management ports, so a timeout may be a false
-alarm. Scans, discover and check are for the operator tier and up.
+alarm. 'scan --sources' and 'check --sources' also test the source addresses of a
+device's TACACS+ and RADIUS clients (read from its last pull): each but the registered
+address is connected to, its SSH host key read without logging in and compared with
+the key pinned for the device; an address that does not answer or presents another key
+is a warning (it may belong to another device, or be out of this server's reach by
+design), never a difference. Scans, discover and check are for the operator tier and up.
 
 A device is found by name or by its registered address. A name is letters,
 digits, '.', '_' and '-', at most 253 characters, each dotted part at most 63:
@@ -580,7 +599,7 @@ func (inv *invocation) device(args []string) error {
 		"list": inv.deviceList, "show": inv.deviceShow, "add": inv.deviceAdd, "remove": inv.deviceRemove,
 		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "ios-syntax": inv.deviceIOSSyntax, "netconf": inv.deviceNetconf, "timeout-scale": inv.deviceTimeoutScale, "stale-days": inv.deviceStaleDays,
 		"notice": inv.deviceNotice, "import": inv.deviceImport, "export": inv.deviceExport,
-		"hostkey": inv.deviceHostkey, "onboard": inv.deviceOnboard, "collect": inv.deviceCollect, "enroll": inv.deviceEnroll, "sync": inv.deviceSync, "support-bundle": inv.deviceSupportBundle, "snmp": inv.deviceSNMP, "block": inv.deviceBlock, "ssh": inv.ssh, "client-config": inv.deviceClientConfig, "config": inv.deviceConfig,
+		"hostkey": inv.deviceHostkey, "onboard": inv.deviceOnboard, "collect": inv.deviceCollect, "enroll": inv.deviceEnroll, "sync": inv.deviceSync, "support-bundle": inv.deviceSupportBundle, "clone": inv.deviceClone, "snmp": inv.deviceSNMP, "block": inv.deviceBlock, "ssh": inv.ssh, "client-config": inv.deviceClientConfig, "config": inv.deviceConfig,
 		"scan": inv.deviceScan, "discover": inv.deviceDiscover, "check": inv.deviceCheck,
 		"address": inv.deviceSetter("address"), "hostname": inv.deviceSetter("hostname"), "vendor": inv.deviceSetter("vendor"),
 		"port": inv.deviceSetter("port"), "description": inv.deviceSetter("description"), "location": inv.deviceSetter("location"),
@@ -702,6 +721,7 @@ func (inv *invocation) deviceWrite(fn func(*devreg.File, *devreg.Resolver) error
 		return nil, err
 	}
 	inv.app.Audit().Touch()
+	var entryWas, entryNow map[string]bool
 	_, err = devreg.Mutate(inv.app.Paths.DevicesFile, inv.app.Paths.KnownHosts, func() error {
 		inv.hooks.deviceStep()
 		return inv.snapshotFirst()
@@ -721,12 +741,17 @@ func (inv *invocation) deviceWrite(fn func(*devreg.File, *devreg.Resolver) error
 		}
 		before := fresh(live.Clone())
 		r := fresh(live)
+		entryWas = snmpEntryState(live)
 		if err := fn(live, r); err != nil {
 			return err
 		}
+		entryNow = snmpEntryState(live)
 		return inv.deviceChangeScopes(scopes, before, r)
 	})
 	if err == nil {
+		// A device that gained or lost its snmp: entry has its credentials
+		// file brought to the version the entry allows.
+		inv.snmpReconcile(entryWas, entryNow)
 		// A device registered at, or moved to, its scope's prefixes ends
 		// its staging address.
 		inv.stagingSweep()
@@ -785,6 +810,11 @@ func (inv *invocation) deviceChangeScopes(f scopeFilter, before, after *devreg.R
 				case was != nil && reflect.DeepEqual(was.SNMP, is.SNMP):
 				case was == nil && slices.ContainsFunc(bf.Devices, func(o *devreg.Device) bool {
 					return o.Address == is.Address && reflect.DeepEqual(o.SNMP, is.SNMP)
+				}):
+				// 'device clone' copies the device's settings to the copy: the
+				// same settings, from a device the caller sees.
+				case was == nil && inv.cloneOf != "" && slices.ContainsFunc(bf.Devices, func(o *devreg.Device) bool {
+					return strings.EqualFold(o.Name, inv.cloneOf) && reflect.DeepEqual(o.SNMP, is.SNMP)
 				}):
 				default:
 					return inv.deniedUsage(reasonSuperuser, "A device's SNMP settings are not the engineer tier's to change (tacctl device snmp is the superuser's); '"+d.Name+"' was not changed. Nothing was changed.")
@@ -1687,6 +1717,12 @@ func (inv *invocation) deviceRename(args []string) error {
 	if err != nil {
 		return err
 	}
+	if p.Has("--replace") {
+		return inv.deviceReplace(p)
+	}
+	if p.Has("--yes") {
+		return inv.usageErr(append([]string{"--yes goes with --replace: a rename asks no question."}, deviceUsageLines("rename")...)...)
+	}
 	f, res, err := inv.deviceLoad()
 	if err != nil {
 		return err
@@ -1709,8 +1745,8 @@ func (inv *invocation) deviceRename(args []string) error {
 // the name rules, the names taken (devices and enrolled hosts) and the
 // generic-name refusal unless allowGeneric, then the write and what follows
 // the name (the pull record and sections, the SNMP credentials, the blocks,
-// a break-glass hold) and the D253 line, with extra keys after count=. It
-// prints nothing on success; a refusal is printed as the write prints it.
+// a break-glass hold, the staging address) and the D253 line, with extra keys
+// after count=. It prints nothing on success; a refusal is printed as the write prints it.
 // Nothing is written to the device.
 func (inv *invocation) renameDevice(oldName, newName, address string, allowGeneric bool, extra ...audit.KV) error {
 	if err := devreg.ValidateName(newName); err != nil {
@@ -1744,6 +1780,7 @@ func (inv *invocation) renameDevice(oldName, newName, address string, allowGener
 	inv.snmpDeviceCarry(oldName, newName)
 	inv.blocksDeviceCarry(oldName, newName)
 	inv.holdCarry(oldName, newName, address)
+	inv.stagingRenameDevice(oldName, newName)
 	inv.detail("device rename", append([]audit.KV{kvp("from", oldName), kvp("to", newName), kvp("count", "1")}, extra...)...)
 	return nil
 }

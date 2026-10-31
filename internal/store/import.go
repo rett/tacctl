@@ -23,14 +23,14 @@ import (
 // a tacquito.yaml cannot carry (scope protocols, vendor attributes and
 // tagged addresses, password dates, the saved hash of a disabled user, a
 // required password change: the rendered file holds a flagged user, but not
-// the flag).
+// the flag; an email address).
 func carryOver(s *Store, existing string, rep *LegacyReport) {
 	old, err := Load(existing)
 	if err != nil {
 		rep.note("existing store could not be read (%s); nothing carried over", err.Error())
 		return
 	}
-	var keptProtocols, keptDates, keptHashes, keptVendor, keptFlags int
+	var keptProtocols, keptDates, keptHashes, keptVendor, keptFlags, keptEmails int
 	oldScopes, oldUsers := old.section("scopes"), old.section("users")
 	scopes := s.section("scopes")
 	for name, sv := range scopes.All() {
@@ -79,6 +79,12 @@ func carryOver(s *Store, existing string, rep *LegacyReport) {
 			u.Set("password_change_required", true)
 			keptFlags++
 		}
+		// A rendered or legacy file cannot hold an address. The existing
+		// store held each once, so the kept ones stay unique.
+		if e, ok := get(prev, "email").(string); ok && e != "" && !u.Has("email") {
+			u.Set("email", e)
+			keptEmails++
+		}
 	}
 	if keptProtocols > 0 {
 		rep.note("kept the protocols filter of %d scope(s) from the existing store", keptProtocols)
@@ -94,6 +100,9 @@ func carryOver(s *Store, existing string, rep *LegacyReport) {
 	}
 	if keptFlags > 0 {
 		rep.note("kept the required password change of %d user(s) from the existing store", keptFlags)
+	}
+	if keptEmails > 0 {
+		rep.note("kept the email address of %d user(s) from the existing store", keptEmails)
 	}
 }
 

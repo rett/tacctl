@@ -51,6 +51,11 @@ var backupSpecs = map[string]Spec{
 	"list":    {},
 	"diff":    {MaxArgs: 1, Args: []string{KindBackups}},
 	"restore": {MinArgs: 1, MaxArgs: 1, Args: []string{KindBackups}, Flags: []Flag{{Names: []string{"--legacy"}}, {Names: []string{"--keep-uids"}}}},
+	"keep": {MinArgs: 1, MaxArgs: 1, Args: []string{KindBackups}, Flags: []Flag{{Names: []string{"--note"}, Value: true, Secret: true, Arg: "<text>",
+		Desc: "Record why the snapshot is kept",
+		Long: "Record why the snapshot is kept: free text, stored in the kept copy, shown by backup list and never written to the audit log. It is not a place for secrets. A new note replaces the old one"}}},
+	"recover": recoverSpec(),
+	"unkeep":  {MinArgs: 1, MaxArgs: 1, Args: []string{KindBackups}, Flags: []Flag{{Names: []string{"--yes"}, Desc: "Do not ask for confirmation"}}},
 }
 
 // 'config diff' and 'config restore' are cmd_backup diff|restore.
@@ -69,10 +74,13 @@ func backupCmd(inv *invocation) *cobra.Command {
 	n := func(run func([]string) error) func(*cobra.Command, []string) error {
 		return inv.native(withPreflight, run)
 	}
-	c := verb("backup <subcommand>", "Backup management (list, diff, restore)",
+	c := verb("backup <subcommand>", "Backup management (list, diff, restore, keep, unkeep, recover)",
 		withRun(verb("list", "Show snapshots, then old-style backups"), n(inv.backupList)),
 		withRun(verb("diff [<timestamp>]", "Diff store.yaml and tacctl.yaml against a snapshot"), n(inv.backupDiff)),
 		withRun(verb("restore <timestamp> [--legacy|--keep-uids]", "Restore a snapshot (with confirmation)"), n(inv.backupRestore)),
+		withRun(verb("keep <timestamp> [--note <text>]", "Keep a snapshot where no retention reaches it"), n(inv.backupKeep)),
+		withRun(verb("unkeep <timestamp> [--yes]", "Remove the kept copy of a snapshot"), n(inv.backupUnkeep)),
+		withRun(verb("recover <snapshot> [--only <kind>[,<kind>...]] [--dry-run] [--yes]", "Put back what a rollback dropped, from a snapshot"), n(inv.backupRecover)),
 	)
 	// No sub-command or an unknown one: the usage, exit 1.
 	c.RunE = n(func(args []string) error {
@@ -154,14 +162,45 @@ func (inv *invocation) legacyPath(id string) (string, bool) {
 	return "", false
 }
 
-// isSnapshot is _backup_is_snapshot: id has the shape of a snapshot id
-// and names a directory (not a symlink) under backups/.
-func (inv *invocation) isSnapshot(id string) bool {
+// snapDir is the directory of snapshot id: the one in backups/, else the copy
+// 'backup keep' made in backups-kept/. kept says which. "" when neither
+// exists; an id that is not the shape of a snapshot id (a path, '..'), and a
+// symlink, are neither.
+func (inv *invocation) snapDir(id string) (dir string, kept bool) {
 	if !snapshot.ValidID(id) {
-		return false
+		return "", false
 	}
-	st, err := os.Lstat(filepath.Join(inv.app.Paths.BackupDir, id))
-	return err == nil && st.IsDir()
+	d := filepath.Join(inv.app.Paths.BackupDir, id)
+	if st, err := os.Lstat(d); err == nil && st.IsDir() {
+		return d, false
+	}
+	if d = snapshot.KeptPath(inv.app.Paths.KeptDir, id); d != "" {
+		return d, true
+	}
+	return "", false
+}
+
+// isSnapshot is _backup_is_snapshot: id has the shape of a snapshot id
+// and names a directory (not a symlink) under backups/ or backups-kept/.
+func (inv *invocation) isSnapshot(id string) bool {
+	d, _ := inv.snapDir(id)
+	return d != ""
+}
+
+// keptIDs are the ids of the kept copies, newest first.
+func (inv *invocation) keptIDs() []string { return snapshot.KeptIDs(inv.app.Paths.KeptDir) }
+
+// snapshotAndKeptIDs are the ids of the snapshots in backups/ and of the kept
+// copies, once each, newest first.
+func (inv *invocation) snapshotAndKeptIDs() []string {
+	ids := inv.snapshotIDs()
+	for _, k := range inv.keptIDs() {
+		if !slices.Contains(ids, k) {
+			ids = append(ids, k)
+		}
+	}
+	slices.SortFunc(ids, func(a, b string) int { return snapshot.Compare(b, a) })
+	return ids
 }
 
 // backupNames is '_completion-names backups' (backup_names | head -50).
@@ -170,7 +209,7 @@ func (inv *invocation) backupNames([]string) []string {
 	if inv.tierGate().Caller(inv.ctx) == tier.Readonly {
 		return nil
 	}
-	names := inv.snapshotIDs()
+	names := inv.snapshotAndKeptIDs()
 	for _, e := range inv.legacyBackups() {
 		names = append(names, e.id)
 	}
@@ -187,7 +226,7 @@ func (inv *invocation) storeMode() bool { return model.Mode(inv.app.Paths.StoreF
 // backupList is _backup_list: the snapshots, then the old-style backups,
 // with their sizes (du -sh).
 func (inv *invocation) backupList([]string) error {
-	ids, entries := inv.snapshotIDs(), inv.legacyBackups()
+	ids, entries := inv.snapshotAndKeptIDs(), inv.legacyBackups()
 	inv.echo("")
 	noStore := func() {
 		if !inv.storeMode() {
@@ -202,9 +241,25 @@ func (inv *invocation) backupList([]string) error {
 		inv.echo("")
 		return nil
 	}
-	t := ui.NewTable("Config Backups", ui.Left("TIMESTAMP"), ui.Left("KIND"), ui.Left("SIZE"))
+	// A kept snapshot says so, with its note; a kept one whose original was
+	// pruned is "kept only". The NOTE column is there only when one is kept.
+	kept := inv.keptIDs()
+	cols := []ui.Col{ui.Left("TIMESTAMP"), ui.Left("KIND"), ui.Left("SIZE")}
+	if len(kept) > 0 {
+		cols = append(cols, ui.Left("NOTE"))
+	}
+	t := ui.NewTable("Config Backups", cols...)
 	for _, id := range ids {
-		t.Add(id, "snapshot", duSH(filepath.Join(inv.app.Paths.BackupDir, id)))
+		dir, isKept := inv.snapDir(id)
+		kind, note := "snapshot", ""
+		if slices.Contains(kept, id) {
+			kind = "snapshot, kept"
+			note = snapshot.ReadKept(snapshot.KeptPath(inv.app.Paths.KeptDir, id)).Note
+			if isKept {
+				kind = "kept only"
+			}
+		}
+		t.Add(id, kind, duSH(dir), note)
 	}
 	for _, e := range entries {
 		t.Add(e.id, "old-style", duSH(e.path))
@@ -328,7 +383,7 @@ func (inv *invocation) syntaxKeyView(snap string) (path string, done func()) {
 // snapshot id.
 func (inv *invocation) diffSnapshot(id string) {
 	p := inv.app.Paths
-	dir := filepath.Join(p.BackupDir, id)
+	dir, _ := inv.snapDir(id)
 	inv.echo("")
 	inv.echoE(ui.Bold + "Diff: current store and tacctl.yaml vs snapshot " + id + ui.NC)
 	inv.echo(ui.Rule("Diff: current store and tacctl.yaml vs snapshot " + id))
@@ -525,7 +580,7 @@ func (inv *invocation) snapshotEnabled(dir string) []string {
 // keepUIDs leaves the UID ledger as it is (D212).
 func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	a := inv.app
-	dir := filepath.Join(a.Paths.BackupDir, id)
+	dir, _ := inv.snapDir(id)
 	snapStore := filepath.Join(dir, "store.yaml")
 	if !cfgIsFile(snapStore) {
 		return inv.usageErr("Snapshot " + id + " has no store.yaml. Nothing was changed.")
@@ -590,6 +645,7 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 		inv.echo("")
 		inv.echoE(ui.Red + note + ui.NC)
 	}
+	lockHeld := inv.lockdownHeld()
 	// So are the hosts: the registry, the UID ledger and the rest come back
 	// with a snapshot that knows them (D192-D195).
 	hostsHead, hostsLedger := inv.restoreHostsNote(dir, keepUIDs)
@@ -716,6 +772,9 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	// backends are reconciled and restarted as for any restore, and the
 	// failure is a warning that names the way back.
 	hostErr := inv.restoreHosts(dir, keepUIDs)
+	// The hosts keep sshd's lockdown drop-in whatever the restored record says:
+	// the record lists them, so the next sync of each makes them agree.
+	lockHosts := inv.lockdownAfterRestore(lockHeld)
 	// The files were rendered against the registry that was live: a break-glass
 	// hold on a name the restore enrolled or forgot is worded the other way
 	// (D237), so the render is done again against the registry now in place.
@@ -735,6 +794,9 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	a.Out.InfoE("Restored snapshot " + id + ".")
 	if holdNote != "" {
 		a.Out.WarnE(holdNote)
+	}
+	if len(lockHosts) > 0 {
+		a.Out.WarnE("sshd's lockdown drop-in on " + hostsText(len(lockHosts)) + " (" + strings.Join(lockHosts, ", ") + ") follows the restored lockdown record only at their next sync: " + lockdownHostsSyncCommand(lockHosts))
 	}
 	if renderErr != nil {
 		a.Out.WarnE("The files were not rendered again for the restored hosts: 'tacctl config validate' may say they are out of date. Run 'tacctl config render' to fix it.")
@@ -847,7 +909,13 @@ func (inv *invocation) restoreLockdownNote(dir string) string {
 	if list(now) == list(after) {
 		return ""
 	}
-	return "Emergency lockdowns change: locked now: " + list(now) + "; locked after the restore: " + list(after) + " (tacctl emergency lockdown status)."
+	note := "Emergency lockdowns change: locked now: " + list(now) + "; locked after the restore: " + list(after) + " (tacctl emergency lockdown status)."
+	// the sshd drop-in on the hosts follows the record at their next sync
+	// (the list of hosts the record waits for comes back with it)
+	if reg, err := hosts.LoadRegistry(inv.app.Paths.LinuxHosts); err == nil && !reg.Empty() {
+		note += " The enrolled hosts of those scopes get or lose sshd's lockdown drop-in at their next sync (tacctl host sync --all)."
+	}
+	return note
 }
 
 // restoreHostsNote says what restoring the snapshot in dir does to the hosts

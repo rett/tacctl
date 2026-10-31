@@ -1071,6 +1071,8 @@ func (r *pullRun) recordSuccess(o *pullOutcome, e devreg.Entry, ext devconf.Extr
 	// the device's own name (Junos), which 'device sync' fills the registry
 	// from
 	rec.Hostname = ext.Hostname
+	// the addresses of the interfaces, for the check of the AAA source
+	rec.Interfaces = ext.Interfaces.Clone()
 	rec.SecretsVisible = ext.SecretsVisible
 	if err := rec.SetSections(ext, results); err != nil {
 		return err

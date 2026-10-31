@@ -70,6 +70,10 @@ type hooks struct {
 	// it was checked on a copy and before the lock is taken; a test changes
 	// the world at that point.
 	deviceWriteStep func()
+	// snmpReconcileSave is called by snmpReconcile before it saves the
+	// credentials file of a device (by name); a test returns an error to
+	// make the save fail after the registry was written.
+	snmpReconcileSave func(name string) error
 	// treeBuilt is called with the command tree of a run, once it is built
 	// and before anything is dispatched; a test replaces the commands' run
 	// functions there.
@@ -244,6 +248,15 @@ func (h *hooks) deviceStep() {
 	if h != nil && h.deviceWriteStep != nil {
 		h.deviceWriteStep()
 	}
+}
+
+// reconcileSave is the error a test makes the save of a device's credentials
+// file fail with, nil otherwise.
+func (h *hooks) reconcileSave(name string) error {
+	if h != nil && h.snmpReconcileSave != nil {
+		return h.snmpReconcileSave(name)
+	}
+	return nil
 }
 
 // builtTree lets a test see (and change) the command tree of a run.

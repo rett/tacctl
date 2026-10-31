@@ -569,8 +569,11 @@ func (inv *invocation) linuxScopeServes(scope, method string) (bool, error) {
 // rows, the method's backend's listeners. local is the tacctl server's own
 // script ('host enroll --local' and its sync): every other host expires the
 // account of a user who must change the password (linuxAccounts).
-func (inv *invocation) scriptRequest(scope, server, method, output string, local bool) (hosts.ScriptRequest, error) {
+func (inv *invocation) scriptRequest(scope, server, method, output string, local bool, host string) (hosts.ScriptRequest, error) {
 	req := hosts.ScriptRequest{Scope: scope, Server: server, Method: method, Output: output}
+	// the scope's emergency lockdown, as this host is to have it (host is ""
+	// for a script written by hand)
+	req.Lockdown = inv.lockdownState(scope, host)
 	if local && scope == pwchange.ManagedScope {
 		// this server's own PAM client connects to itself: server is the
 		// address devices and other hosts reach it at (it may be behind NAT,
@@ -853,7 +856,7 @@ func (inv *invocation) configLinuxScript(args []string) error {
 	if output == "" {
 		output = "tacctl-linux-" + scope + ".sh"
 	}
-	req, err := inv.scriptRequest(scope, server, method, output, false)
+	req, err := inv.scriptRequest(scope, server, method, output, false, "")
 	if err != nil {
 		return err
 	}

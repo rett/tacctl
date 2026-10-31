@@ -165,6 +165,8 @@ func TestRollbackRealOldBinary0219(t *testing.T) {
 	bin := oldBinaryOf(t, "0.2.19", old0219Flag)
 	hs := rollback0220State(t)
 	hs.withTimeoutScale()
+	// the email address of 0.2.23, which 0.2.19 refuses in the store
+	hs.step("", "user", "email", "bob", "bob@example.net")
 	stubs := t.TempDir()
 	for _, name := range []string{"systemctl", "logger", "chown"} {
 		if err := os.WriteFile(filepath.Join(stubs, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
@@ -180,7 +182,8 @@ func TestRollbackRealOldBinary0219(t *testing.T) {
 		return plain(string(res.Stdout) + string(res.Stderr)), res.Code
 	}
 	out, code := run("config", "validate")
-	if code != 1 || !strings.Contains(out, "scope_mgmt_acl.mode.lab: unknown config key") || !strings.Contains(out, "user 'erin': unknown field 'password_change_required'") {
+	if code != 1 || !strings.Contains(out, "scope_mgmt_acl.mode.lab: unknown config key") || !strings.Contains(out, "user 'erin': unknown field 'password_change_required'") ||
+		!strings.Contains(out, "user 'bob': unknown field 'email'") {
 		t.Errorf("0.2.19 config validate before: %d\n%s", code, out)
 	}
 	if out, code := run("console", "show"); code != 1 || !strings.Contains(out, "settings: unknown key") {

@@ -496,7 +496,8 @@ setup() {
 
     run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab ios-name
     assert_failure
-    assert_output --partial "cisco-name | juniper-name"
+    assert_output --partial "Unknown subcommand: 'ios-name'"
+    assert_output --partial "Run 'tacctl scope mgmt-acl -h' for usage."
 
     run "$TACCTL_BIN_SCRIPT" scope mgmt-acl lab cisco-name "1bad"
     assert_failure

@@ -279,10 +279,10 @@ var iosOwned = []OwnedRow{
 		Kept: "another server"},
 	{ID: "ios.aaa.group", Section: "aaa", Pattern: "aaa group server tacacs+ $", Mode: ModeRenderedLeaves,
 		Why:  "tacctl's server group",
-		Kept: "another group"},
+		Kept: "another group; the vrf, the source interface and the dead time of tacctl's group; every other leaf of tacctl's group (a server line included)"},
 	{ID: "ios.aaa.radius-group", Section: "aaa", Pattern: "aaa group server radius $", Mode: ModeRenderedLeaves,
 		Why:  "tacctl's RADIUS server group",
-		Kept: "another group"},
+		Kept: "another group; the vrf, the source interface and the dead time of tacctl's group; every other leaf of tacctl's group (a server line included)"},
 
 	{ID: "ios.roles.privilege", Section: "roles", Pattern: "privilege exec level <level>", Mode: ModeWhole,
 		Why:  "the privilege lines of the levels tacctl renders",

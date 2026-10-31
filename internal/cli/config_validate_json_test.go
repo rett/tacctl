@@ -13,6 +13,7 @@ import (
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
 	"github.com/rett/tacctl/internal/paths"
+	"github.com/rett/tacctl/internal/snmpcred"
 )
 
 // 'config validate --json' (docs/plans/0.2.15-plan.md D219-D221): the
@@ -309,6 +310,7 @@ func TestConfigValidateJSONEverySection(t *testing.T) {
 		"unreadable model": unreadableModelSandbox(t),
 		"backends":         backendsUnreadableSandbox(t),
 		"legacy":           legacySandbox(t),
+		"snmp names":       sharedSNMPNameSandbox(t),
 	} {
 		if name == "legacy" {
 			sb.write("etc/tacquito.yaml", "users: [\n", 0o640)
@@ -515,4 +517,19 @@ func TestValidateReportCounts(t *testing.T) {
 	if c := r.countsJSON(); c == nil || *c != (validateCounts{Users: 3, Groups: 2, Scopes: 4}) {
 		t.Errorf("counts %+v", c)
 	}
+}
+
+// sharedSNMPNameSandbox holds the same SNMPv3 user name in the config's pool
+// and in a scope's (a file put in by hand: the verbs refuse it).
+func sharedSNMPNameSandbox(t *testing.T) *sandbox {
+	t.Helper()
+	sb := newSandbox(t, true)
+	st := snmpcred.Store{File: sb.path("state", "snmp.yaml"), Dir: sb.path("state", "snmp")}
+	alice := snmpcred.Creds{Users: []snmpcred.User{{Name: "alice", AuthPass: "pool-auth-pass", PrivPass: "pool-priv-pass"}}, Default: "alice"}
+	for _, l := range []snmpcred.Level{{Kind: snmpcred.LevelDefault}, {Kind: snmpcred.LevelScope, Name: "lab"}} {
+		if err := st.Save(l, alice); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return sb
 }

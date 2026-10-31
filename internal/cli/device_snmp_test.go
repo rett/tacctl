@@ -311,25 +311,51 @@ func TestConfigSNMP(t *testing.T) {
 	cfg("wrong-one\n", "community", "--stdin")
 	cfg("", "test", "127.0.0.1")
 	sb.expect(1, "", "No answer from 127.0.0.1: no answer (2 tries, 1s each). No agent there, a filter on the way, or a wrong community")
-	// v3: the user, its passphrases, the protocols.
-	cfg("auth-pass-1\npriv-pass-1\n", "v3-user", "alice", "--auth", "sha256", "--stdin")
+	// v3: the pool, the default user, the version, the protocols. Adding a
+	// user changes nothing but the pool.
+	cfg("auth-pass-1\npriv-pass-1\n", "v3-user", "add", "alice", "--auth", "sha256", "--default", "--stdin")
 	if sb.code != 0 {
-		t.Fatalf("v3-user: %s", sb.stderr())
+		t.Fatalf("v3-user add: %s", sb.stderr())
 	}
+	if v := cfg("", "version"); !strings.Contains(v, "v2c") {
+		t.Errorf("adding a user changed the version: %q", v)
+	}
+	cfg("", "version", "v3")
 	out = cfg("", "test", "127.0.0.1")
 	if sb.code != 0 || !strings.Contains(out, "calls itself 'sw1.site-a.example'") {
 		t.Errorf("v3 test: %d %q %q", sb.code, out, sb.stderr())
 	}
-	cfg("wrong-one\npriv-pass-1\n", "v3-user", "alice", "--stdin")
+	// The same name again replaces the passphrases.
+	cfg("wrong-one\npriv-pass-1\n", "v3-user", "add", "alice", "--stdin")
 	cfg("", "test", "127.0.0.1")
 	sb.expect(1, "", "127.0.0.1 refused the request: wrongDigest")
-	cfg("auth-pass-1\npriv-pass-1\n", "v3-user", "bob", "--stdin")
+	// Another user in the pool changes nothing until it is the default.
+	cfg("auth-pass-1\npriv-pass-1\n", "v3-user", "add", "bob", "--stdin")
+	cfg("", "test", "127.0.0.1")
+	sb.expect(1, "", "127.0.0.1 refused the request: wrongDigest")
+	cfg("", "v3-user", "default", "bob")
 	cfg("", "test", "127.0.0.1")
 	sb.expect(1, "", "127.0.0.1 refused the request: unknownUserName")
-	cfg("short\nshort\n", "v3-user", "alice", "--stdin")
+	if list := cfg("", "v3-user", "list"); !strings.Contains(list, "alice") || !strings.Contains(list, "bob  default") || strings.Contains(list, "auth-pass-1") {
+		t.Errorf("list:\n%s", list)
+	}
+	// A default that is gone is an error that names the fix, not a fallback.
+	cfg("", "v3-user", "default", "nobody")
+	sb.expect(1, "", "No SNMPv3 user 'nobody' to choose for the config")
+	cfg("", "v3-user", "remove", "bob")
+	cfg("", "test", "127.0.0.1")
+	sb.expect(1, "", "no SNMPv3 user is the default ('tacctl config snmp v3-user default <user>')")
+	cfg("", "v3-user", "default", "alice")
+	cfg("short\nshort\n", "v3-user", "add", "alice", "--stdin")
 	sb.expect(1, "", "at least 8 characters")
-	cfg("", "v3-user", "alice", "--auth", "md5", "--stdin")
+	cfg("", "v3-user", "add", "alice", "--auth", "md5", "--stdin")
 	sb.expect(1, "", "Unknown --auth 'md5': sha or sha256.")
+	// The retired form fails with the usage of the new verbs.
+	cfg("", "v3-user", "alice", "--stdin")
+	sb.expect(1, "", "Unknown action 'alice': add, remove, default or list.")
+	if !strings.Contains(sb.stderr(), "tacctl config snmp v3-user add <user>") {
+		t.Errorf("the usage lines of the new verbs are missing: %q", sb.stderr())
+	}
 	cfg("", "frob")
 	sb.expect(1, "", "Unknown subcommand: 'frob'")
 	// clear: no credentials, no version.

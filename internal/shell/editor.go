@@ -30,11 +30,10 @@ type Candidate struct {
 	NoSpace    bool
 	Unlisted   bool
 	Fixed      bool
-	// Command: the word is the name of a command (the first word at the top
-	// level); Live: it is a live name (a user, a group, a device). Live
-	// makes the word bold in the lists (style); any other word, command
-	// names included, is teal.
-	Command, Live bool
+	// Live: the word is a live name (a user, a group, a device). Live makes
+	// the word bold in the lists (style); any other word, command names
+	// included, is teal.
+	Live bool
 	// Kind is what the word is, plural ('devices', 'commands'), for the
 	// question before a long list; empty: 'choices'.
 	Kind string
@@ -91,7 +90,7 @@ func builtinCandidates(rows []Row) []Candidate {
 	var out []Candidate
 	for _, r := range rows {
 		for _, w := range r.Words {
-			c := Candidate{Word: w, Desc: r.Desc, Unlisted: true, Fixed: true, Command: true}
+			c := Candidate{Word: w, Desc: r.Desc, Unlisted: true, Fixed: true}
 			if r.Left != w {
 				c.Label = r.Left
 			}

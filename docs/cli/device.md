@@ -174,6 +174,34 @@ device support-bundle <name> [--vendor cisco|juniper|wti] [--login <local-user>]
     `--vendor` reads the device as another vendor for this run only; `--login` is a Junos local
     account's one-shot password, as for a pull; see Support bundles (devices/support-bundle.md)
 
+device clone <name> <new> --staging <bench-ip> [--allow-generic]
+
+    Engineers: register <new> as a copy of the device <name>, at the address
+    the new device has on the bench. Copied: the registry's settings (vendor,
+    ssh port, description, location, legacy-ssh, ios-syntax), the SNMP
+    settings and credentials file (the community and the pool of v3 users,
+    the default included), the NETCONF settings, the timing scale and the
+    configuration blocks with their list in `tacctl.yaml`. Not copied: the
+    address, the name, the DNS name (it names the original), the pinned host
+    keys, the acknowledged notices, a break-glass hold and the configuration
+    record. `--staging` is required: the registry holds one device for each
+    address. The bench address is added to the scope of <name> as a /32
+    before the registry is written, as `config <vendor> --staging` does (an
+    address the scope answers needs no /32 and gets a staging entry without one,
+    which `device rename --replace` ends and which lasts until the device is seen
+    at another address or a superuser removes it: a clone that is removed later
+    leaves it; an address already staged for a host or another device is refused (an entry
+    with no name, from `config <vendor> --staging <ip>` without `--name`, is this
+    device's and takes the new name);
+    an engineer is refused one another scope answers; every such refusal comes
+    before the snapshot); a device no scope answers is refused. The new name is
+    lower case and not taken, and not a generic name unless `--allow-generic`
+    is given. One snapshot is taken first and a write that fails takes the
+    copy back whole. An engineer clones the devices of their own scopes, the
+    SNMP credentials included. Once the copy is installed, `device rename
+    <new> <name> --replace` puts it where the original is. Audit: `device
+    clone from= to= address= scope= snmp_users= block_files= count=1`
+
 device remove <name>[,<name>...] | --all [--yes]
 
     Remove from the registry (confirms; hosts, scopes and vendor tags are not touched)
@@ -182,7 +210,29 @@ device rename <old> <new> [--allow-generic]
 
     Rename a device; the device's own host name is unchanged and not planned by tacctl, and the verb
     says so. The new name is lower case; changing only the spelling to lower case
-    (`device rename Core-SW1 core-sw1`) is how a name from before is fixed
+    (`device rename Core-SW1 core-sw1`) is how a name from before is fixed. A staging address of the
+    device (`config <vendor> --staging`, `scope staging list`) follows the new name, so it ends as
+    before once the device is registered at an address its scope covers
+
+device rename <replacement> <name> --replace [--yes]
+
+    Put a device that was registered at a bench address (`device clone`, or `config <vendor>
+    --staging --name`) where the device it replaces is. The first name is the replacement, the
+    second the original, which is removed with its files: its SNMP credentials file, its
+    configuration blocks and their list, its configuration record and its acknowledged notices. The
+    replacement takes the original's name and address, keeps its own pinned host keys and settings,
+    and takes the original's DNS name when it has none. It is answered by the scope of its new
+    address (the plan says when that is not the scope of its bench address), and its staging /32
+    ends in the scope that holds it. A break-glass hold on the original is cleared as `breakglass
+    release` does and is never moved to the replacement. The replacement must have a staging entry
+    (the /32 of its bench address, or, for a clone at an address its scope answered already, the
+    entry alone), and no hold of its own. The original's own staging entries stay. The plan lines
+    come first, then one question; a terminal-less run answers no and `--yes` is the only way to
+    skip it. One snapshot covers the steps. A file of the original that cannot be removed, or of the
+    replacement that cannot take the name, makes the verb exit 1 and names it. An engineer replaces
+    within their own scopes; a hold on the original needs the superuser, and an engineer is refused
+    naming it. Audit: `device replace old= new= address= hold_cleared= snmp_files= block_files=
+    notices= count=1`, `scope staging done` and, for a hold, `breakglass release`
 
 device address|hostname|vendor|port|description|location <name> [<value>|clear]
 
@@ -337,10 +387,12 @@ device client-config
 
     Print an ssh_config Include for your devices (Host blocks with the vendor options and the pin)
 
-device scan [--full] [--since <dur>] [--backend <id>]
+device scan [--full] [--since <dur>] [--backend <id>] [--sources]
 
     Read the backends' logs into the seen cache from where the last scan stopped; re-scan pinned
-    host keys (never re-pins); print each log's window and the notices
+    host keys (never re-pins); print each log's window and the notices. --sources then tests the
+    AAA source addresses of the devices as `device check --sources` does, device by device, and
+    names a device that could not be tested; it is refused with --if-stale and --quiet
 
 device discover [--all] [--snmp] [--backend <id>]
 
@@ -349,7 +401,7 @@ device discover [--all] [--snmp] [--backend <id>]
     SNMP (its scope's credentials) and puts them in the line (`--vendor` when the device names
     one; what was not used as a `# SNMP:` comment). Without --snmp it contacts nothing
 
-device check <name>|--all [--json]
+device check <name>|--all [--sources] [--json]
 
     Checklist: scope, vendor tag, last seen, reachable (TCP connect, 3 s), host key against the pin,
     SNMP (the settings the device is read with and where each comes from; a credential only as set
@@ -359,19 +411,37 @@ device check <name>|--all [--json]
     NETCONF (a Junos device: what the last pull's probe found, `hello ok`, `port closed`, `no
     hello`, or `not probed`; a check logs in to nothing), notices; --all ends with the devices
     registered as other that name a vendor; --json: the rows, with sysname, syslocation,
-    vendor_detected (vendor_reason, vendor_error) and netconf
+    vendor_detected (vendor_reason, vendor_error) and netconf.
+    --sources also tests the source addresses of the device's TACACS+ and RADIUS clients (read from
+    its last pull; see [Device configuration](../devices/configuration.md)):
+    each but the registered address is connected to (at most eight per device), its ssh host key
+    read without logging in and compared with the pin. An address that does not answer
+    (`source-address <address> is unreachable from this server; it may be unreachable by design`)
+    or that presents another key (`source-address <address> presents another SSH host key
+    (<fingerprint>), the device's is <fingerprint>: the address may belong to another device`) is a
+    warning (the registered device that holds the address is named when there is one; an address
+    from an IOS source interface is `source-interface <name> (<address>)`); one info line sums up
+    the device. Not compared, with the reason: a device with no pinned key, and an address that
+    presents only a key type that is not pinned. Skipped: loopback, link-local, unspecified,
+    multicast and broadcast addresses, and an interface whose addresses are not recorded, not
+    visible to the login or learned dynamically. About 8 seconds per unanswered address, devices 8
+    at a time (the timing scale of the device multiplies it). Nothing is pinned, recorded or
+    changed, no difference is counted, and the audit line (`sources tested=N unreachable=N
+    mismatched=N`) names no address; --json adds a `sources` array (address, interface, result
+    `ok`, `unreachable`, `mismatch` or `skipped`, fingerprint, pinned, device, source, reason)
 
-device snmp <name> [show [--reveal]]
+device snmp <name> [show [--reveal [<user>]]]
 
     The device's SNMP settings as it is read with: version, port, timeout, credentials (set or not;
-    `--reveal` prints them, an engineer's own scopes' devices only, logged: one `secret-read` line
-    for each level a printed secret comes from) and allowed clients, each with where it comes from:
+    `--reveal` prints them, `--reveal <user>` one user's passphrases, an engineer's own scopes'
+    devices only, logged: one `secret-read` line for each level a printed secret comes from, with
+    the user's name) and allowed clients, each with where it comes from:
     `(device)`, `(scope <scope>)`, `(default)` or `(built-in)`. A setting the device does not set
     comes from its scope, then the default, then the built-in
 
 device snmp <name> version [v2c|v3]
 
-    Show or set the device's own SNMP version (superusers); `community` and `v3-user` set it too
+    Show or set the device's own SNMP version (superusers); `community` sets v2c
 
 device snmp <name> port [<n>]
 
@@ -391,10 +461,17 @@ device snmp <name> community [--stdin]
     Set the device's own v2c community (asked twice, not echoed; `--stdin`: one line); the device's
     version becomes v2c
 
-device snmp <name> v3-user <user> [--stdin]
+device snmp <name> v3-user add <user> [--default] [--stdin]
+device snmp <name> v3-user remove <user>
+device snmp <name> v3-user default [<user>|--none]
+device snmp <name> v3-user list
 
-    Set the device's own v3 user and passphrases (authPriv; the protocols are the scope's or the
-    default's); the device's version becomes v3
+    The device's own pool of v3 users and its default (the protocols are the scope's or the
+    default's). A device uses its own default user, else its scope's, else the config's; `default
+    <user>` may name a user of its own pool, its scope's or the config's. Adding a user changes
+    nothing but the pool; a name stands for one user across the three pools. A chosen user that is
+    missing or has no passphrase is an error that names the command that fixes it, never another
+    user
 
 device snmp <name> clear
 
@@ -490,7 +567,8 @@ device config diff <name>[,<name>...] | --all | --scope <scope> | --vendor <vend
     `+` one it has in a managed hierarchy that tacctl does not render, `!` a reordering, `?` a
     secret the login could not see, `=` a secret present (its value is never compared or shown); a
     section in which nothing rendered is missing or different and the extras are only statements of
-    the device's own, kept by rule, reads `ok (+N unmanaged)`
+    the device's own, kept by rule, reads `ok (+N unmanaged)`; a source of the AAA client that
+    names no address or interface of the device is a `+` line with its reason and `differs`
 
     --pull
         Read the devices first (with the options of `pull`, `--timing` included: the timing of the
@@ -698,4 +776,4 @@ device that then has no change, never a change nobody reviewed. `apply
 --pull` pulls the devices the other selectors pick first and applies
 `--stale` and `--differs` to the records that pull wrote.
 
-Each change also writes a line of its own to the audit log, beside the `cmd start` and `cmd end` pair: `device add`, `device remove`, `device rename`, `device import`, `device set name= field= from= to=` for the setters and `device sync` with the devices written; a shown SNMP secret is `secret-read kind= name=` for every caller, and `device config show|plan` and the walkthroughs log the secret they read the same way ([Audit log](../security/audit.md#detail-lines)).
+Each change also writes a line of its own to the audit log, beside the `cmd start` and `cmd end` pair: `device add`, `device clone`, `device remove`, `device rename`, `device replace`, `device import`, `device set name= field= from= to=` for the setters and `device sync` with the devices written; a shown SNMP secret is `secret-read kind= name=` for every caller, and `device config show|plan` and the walkthroughs log the secret they read the same way ([Audit log](../security/audit.md#detail-lines)).

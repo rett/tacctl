@@ -5,7 +5,8 @@
 # (everything of both is removed, so a host caught halfway through a switch
 # comes out clean too): the PAM edits, the pam_tacplus module, the
 # pam_radius_auth server file with the shared secret, the SELinux modules
-# and the sudoers drop-in. Local accounts, home directories and the tac-*
+# the sudoers drop-in and sshd's lockdown drop-in (sshd is reloaded when it
+# was there). Local accounts, home directories and the tac-*
 # groups are left in place, and so are packages the install added
 # (pam_radius_auth, EPEL, build tools); tacctl's accounts whose login shell
 # is the tacctl console get /bin/bash back. Contains no secrets. Run as root
@@ -19,6 +20,7 @@ STATE_DIR="${TACCTL_CLIENT_STATE:-/var/lib/tacctl-client}"
 PAM_DIR="${TACCTL_CLIENT_PAM_DIR:-/etc/pam.d}"
 XDG_DIR="${TACCTL_CLIENT_XDG:-/etc/xdg}"
 SUDOERS_HOST_FILE="${TACCTL_CLIENT_SUDOERS:-/etc/sudoers.d/tacctl-host}"
+LOCKDOWN_DROPIN="${TACCTL_CLIENT_LOCKDOWN_DROPIN:-/etc/ssh/sshd_config.d/00-tacctl-0-lockdown.conf}"
 # sudo-i is the service 'sudo -i' uses; where it exists it has its own copy
 # of the includes (Debian) or simply includes sudo (RHEL family). sddm and
 # gdm-password are the graphical logins; GNOME's lock screen also unlocks
@@ -94,6 +96,35 @@ rm -f "$RADIUS_CONF"
 info "PAM service files restored; shared secret removed."
 
 rm -f "$SUDOERS_HOST_FILE"
+
+# An emergency lockdown's sshd drop-in goes with the enrolment: without the
+# host's PAM edits nothing else ties it to tacctl, and it would close key
+# logins of accounts nobody manages any more.
+if [[ -e "$LOCKDOWN_DROPIN" ]]; then
+    rm -f "$LOCKDOWN_DROPIN"
+    reloaded=0
+    if command -v systemctl >/dev/null; then
+        for unit in sshd.service ssh.service; do
+            if systemctl reload "$unit" 2>/dev/null; then reloaded=1; break; fi
+        done
+    fi
+    # no systemd (another init, a container): sshd re-reads its configuration on SIGHUP
+    if [[ "$reloaded" != "1" ]]; then
+        pidfile="${TACCTL_CLIENT_SSHD_PIDFILE:-/run/sshd.pid}"
+        if [[ "${TACCTL_CLIENT_TEST:-0}" == "1" && -z "${TACCTL_CLIENT_SSHD_PIDFILE:-}" ]]; then pidfile="$STATE_DIR/sshd.pid"; fi
+        pid=$(cat "$pidfile" 2>/dev/null || true)
+        if [[ "$pid" =~ ^[0-9]+$ ]] && { [[ "${TACCTL_CLIENT_TEST:-0}" == "1" && -n "${TACCTL_CLIENT_SSHD_PIDFILE:-}" ]] || [[ "$(cat "/proc/${pid}/comm" 2>/dev/null || true)" == "sshd" ]]; } \
+            && kill -HUP "$pid" 2>/dev/null; then
+            reloaded=1
+        fi
+    fi
+    if [[ "$reloaded" == "1" ]]; then
+        info "Lockdown drop-in ${LOCKDOWN_DROPIN} removed; sshd reloaded."
+    else
+        warn "Lockdown drop-in ${LOCKDOWN_DROPIN} removed, but sshd could not be reloaded; reload it for the change to apply."
+    fi
+fi
+rm -f "$STATE_DIR/lockdown"
 
 # KDE Plasma: the accounts may lock the screen again.
 rm -f "$XDG_DIR/plasma-workspace/env/tacctl-nolock.sh" "$XDG_DIR/tacctl/kscreenlockerrc" "$XDG_DIR/tacctl/kdeglobals"

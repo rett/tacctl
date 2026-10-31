@@ -439,6 +439,7 @@ var manKeyDocs = map[string]struct{ verb, desc string }{
 	"breakglass_hold.<device>.by":            {setWith("breakglass hold"), "The user who held it."},
 	"breakglass_hold.<device>.reason":        {setWith("breakglass hold"), "Why, 1 to 256 characters; logged and shown, never rendered into a backend file. Removed with the hold by tacctl breakglass release."},
 	"emergency.lockdown.<scope>.groups":      {setWith("emergency lockdown"), "The groups whose logins the scope refuses while the lockdown stands: both renderers take the scope out of their users. Superuser groups are never listed."},
+	"emergency.lockdown.<scope>.pending":     {setWith("emergency lockdown", "host sync"), "The enrolled hosts sshd's lockdown drop-in is not settled on: with groups, the hosts the lockdown has not reached (their next sync writes the file and ends the live sessions); without, a lockdown lifted on the devices: every enrolled host of the scope, until its next sync removes the file. A release before 0.2.23 refuses it."},
 	"emergency.lockdown.<scope>.since":       {setWith("emergency lockdown"), "When the lockdown began (RFC 3339)."},
 	"emergency.lockdown.<scope>.by":          {setWith("emergency lockdown"), "The user who began it."},
 	"emergency.lockdown.<scope>.reason":      {setWith("emergency lockdown"), "Why, 1 to 256 characters; logged and shown, never rendered into a backend file. Removed with the lockdown by tacctl emergency lockdown disable."},
@@ -519,6 +520,8 @@ func manTypeText(r conf.Rule) string {
 		return "list of name:role entries, role one of " + strings.Join(conf.BreakGlassRoles, ", ") + ", at most " + strconv.Itoa(conf.MaxBreakGlassUsers)
 	case conf.TypeLockdownGroups:
 		return "list of group names, at most " + strconv.Itoa(conf.MaxLockdownGroups)
+	case conf.TypeLockdownPending:
+		return "list of host names, at most " + strconv.Itoa(conf.MaxLockdownPending)
 	case conf.TypeHoldAddress:
 		return "one IPv4 or IPv6 address, in its canonical form, without a prefix length"
 	case conf.TypeHoldSince:

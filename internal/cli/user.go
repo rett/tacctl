@@ -15,6 +15,7 @@ import (
 
 	"github.com/rett/tacctl/internal/hash"
 	"github.com/rett/tacctl/internal/hosts"
+	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/shellquote"
@@ -28,9 +29,12 @@ var userSpecs = map[string]Spec{
 	"show": {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}},
 	"add": {MinArgs: 2, MaxArgs: 2, Args: []string{"", KindGroups}, Flags: []Flag{
 		{Names: []string{"--hash"}, Value: true, Secret: true}, {Names: []string{"--scopes"}, Value: true, Kind: KindScopes + KindList},
+		{Names: []string{"--email"}, Value: true, Secret: true, Arg: "<address>", Desc: "Record an email address",
+			Long: "Record an email address for the user (a plain address, local@domain). No mail is sent to it. An address belongs to one user"},
 		{Names: []string{noChangeRequired}, Desc: "Skip the required password change",
 			Long: "Do not require the user to change the password at the first login to this server. Without it a new user must change it first, and no device accepts the user until then (a superuser, and a user with no login on this server, never must)"}}},
 	"remove": {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}},
+	"email":  {MinArgs: 1, MaxArgs: 2, Args: []string{KindUsers, names.EmailClear}},
 	"passwd": {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}, Flags: []Flag{{Names: []string{"--hash"}, Value: true, Secret: true},
 		{Names: []string{noChangeRequired}, Desc: "Skip the required password change",
 			Long: "Do not require the user to change the password at the next login to this server. Without it the reset requires one, and no device accepts the user until it is done (a superuser, and a user with no login on this server, never must); with it a requirement that stands is lifted"}}},
@@ -53,8 +57,9 @@ func userCmd(inv *invocation) *cobra.Command {
 	c := verb("user <subcommand>", "User management (list, add, remove, passwd, scope, ...)",
 		withRun(verb("list", "List all users (name, group, status, pw age, scopes)"), n(inv.userList)),
 		withRun(verb("show <username>", "Show user details incl. scope membership"), n(inv.userShow)),
-		withRun(verb("add <username> <group> [--hash <hash>|-] [--scopes <s>[,s...]] [--no-change-required]", "Add a new user; lands in default scope"), n(inv.userAdd)),
+		withRun(verb("add <username> <group> [--hash <hash>|-] [--scopes <s>[,s...]] [--email <address>] [--no-change-required]", "Add a new user; lands in default scope"), n(inv.userAdd)),
 		withRun(verb("remove <username>", "Remove a user"), n(inv.userRemove)),
+		withRun(verb("email <username> [<address>|clear]", "Show, set or clear a user's email address"), n(inv.userEmail)),
 		withRun(verb("passwd <username> [--hash <hash>|-] [--no-change-required]", "Change a user's password"), n(inv.userPasswd)),
 		withRun(verb("disable <username>", "Disable a user (preserves hash)"), n(inv.userDisable)),
 		withRun(verb("enable <username>", "Re-enable a disabled user"), n(inv.userEnable)),
@@ -114,6 +119,8 @@ type userInfo struct {
 	group, status, passwordChanged, privLvl, juniperClass, hashType string
 	hasHash                                                         bool
 	scopes, orphans                                                 []string
+	// email is the user's address, "" when none is set.
+	email string
 }
 
 func (inv *invocation) userInfo(name string) (ui userInfo, ok bool, err error) {
@@ -143,6 +150,8 @@ func (inv *invocation) userInfo(name string) (ui userInfo, ok bool, err error) {
 			ui.hashType = v
 		case "has_hash":
 			ui.hasHash = v == "1"
+		case "email":
+			ui.email = v
 		case "scope":
 			s, exists := v, "1"
 			if i := strings.LastIndexByte(v, '|'); i >= 0 {
@@ -191,7 +200,13 @@ func (inv *invocation) groupCheck(group string, extra ...string) error {
 		n, _, _ := strings.Cut(l, "|")
 		avail = append(avail, n)
 	}
-	return inv.usageErr(append([]string{"Group '" + group + "' does not exist. Available: " + strings.Join(avail, "|")}, extra...)...)
+	// a word with an '@' is an email address typed in the place of a group: a
+	// message never repeats one
+	shown := "'" + group + "' "
+	if strings.Contains(group, "@") {
+		shown = ""
+	}
+	return inv.usageErr(append([]string{"Group " + shown + "does not exist. Available: " + strings.Join(avail, "|")}, extra...)...)
 }
 
 // hashArg is _user_hash_arg: the --hash value as canonical hex, or the
@@ -269,6 +284,10 @@ func (inv *invocation) scopeList(csv string) ([]string, error) {
 			return nil, err
 		}
 		if !contains(all, s) {
+			if strings.Contains(s, "@") {
+				// an email address typed in the place of a scope is not repeated
+				return nil, inv.usageErr("Scope does not exist. Available: " + strings.Join(all, " "))
+			}
 			return nil, inv.usageErr("Scope '" + s + "' does not exist. Available: " + strings.Join(all, " "))
 		}
 		if !contains(out, s) {
@@ -362,6 +381,9 @@ func (inv *invocation) userShow(args []string) error {
 	inv.echoE("  " + b + "User:" + nc + "             " + username)
 	inv.echoE("  " + b + "Group:" + nc + "            " + u.group)
 	inv.echoE("  " + b + "UID:" + nc + "              " + inv.userUID(username))
+	if u.email != "" {
+		inv.echoE("  " + b + "Email:" + nc + "            " + u.email)
+	}
 	if u.status == "disabled" {
 		inv.echoE("  " + b + "Status:" + nc + "           " + ui.Red + "disabled" + nc)
 	} else {
@@ -421,7 +443,7 @@ func (inv *invocation) userShow(args []string) error {
 
 // --- add --------------------------------------------------------------------
 
-const userAddUsage = "Usage: tacctl user add <username> <group> [--hash <bcrypt-hash>|-] [--scopes <name>[,<name>...]] [--no-change-required]"
+const userAddUsage = "Usage: tacctl user add <username> <group> [--hash <bcrypt-hash>|-] [--scopes <name>[,<name>...]] [--email <address>] [--no-change-required]"
 
 func (inv *invocation) userAdd(args []string) error {
 	a := inv.app
@@ -450,7 +472,7 @@ func (inv *invocation) userAdd(args []string) error {
 		return inv.usageErr("User '" + username + "' already exists.")
 	}
 
-	var hexHash, scopesCSV string
+	var hexHash, scopesCSV, email string
 	skipChange := false
 	rest := args[min(2, len(args)):]
 	for len(rest) > 0 {
@@ -475,7 +497,20 @@ func (inv *invocation) userAdd(args []string) error {
 				return inv.usageErr("Usage: tacctl user add <username> <group> --scopes <name>[,<name>...]")
 			}
 			rest = rest[2:]
+		case "--email":
+			email = arg(rest, 1)
+			if email == "" {
+				return inv.usageErr("Usage: tacctl user add <username> <group> --email <address>")
+			}
+			if err := names.ValidateEmail(email); err != nil {
+				return err
+			}
+			rest = rest[2:]
 		default:
+			// a word that looks like an address is never repeated
+			if strings.Contains(rest[0], "@") {
+				return inv.usageErr("Unknown argument. An email address follows --email.", userAddUsage)
+			}
 			return inv.usageErr("Unknown argument: '"+rest[0]+"'", userAddUsage)
 		}
 	}
@@ -510,6 +545,11 @@ func (inv *invocation) userAdd(args []string) error {
 	if err != nil {
 		return err
 	}
+	if email != "" {
+		if err := inv.emailFree(m, email, username); err != nil {
+			return err
+		}
+	}
 	var barrier pwBarrier
 	require := !skipChange
 	if require {
@@ -532,6 +572,9 @@ func (inv *invocation) userAdd(args []string) error {
 		a.Out.Info("Using pre-generated bcrypt hash.")
 	}
 	fields := []string{"group=" + group, "scopes=" + display, "hash=" + hexHash, "disabled=false", "password_changed=today"}
+	if email != "" {
+		fields = append(fields, "email="+email)
+	}
 	if require {
 		fields = append(fields, "password_change_required=true")
 	}
@@ -545,21 +588,113 @@ func (inv *invocation) userAdd(args []string) error {
 	}
 	inv.detail("user add", kvp("name", username), kvp("group", group), kvp("scopes", display))
 	a.Out.InfoE("User '" + username + "' added (" + group + ") with scopes: " + display)
-	if err := inv.userSettingsMoved(stale, username, ""); err != nil {
-		return err
+	if email != "" {
+		a.Out.InfoE("Email address recorded for '" + username + "'.")
 	}
+	shellErr := inv.userSettingsMoved(stale, username, "")
 	switch {
 	case require:
 		inv.detailPwChange(username, true, "add")
 		a.Out.InfoE("'" + username + "' must change the password at the first login to this server; no device accepts the user until then (" + noChangeRequired + " skips this, 'tacctl user require-password-change " + username + " off' lifts it).")
 		inv.reportRequired(m, []string{username})
-		inv.reportNeedsSync([]string{username}, "the account is made at the next sync of this server")
 	case !skipChange && barrier.exempt:
 		a.Out.InfoE("No password change is required of '" + username + "': " + barrier.why + ".")
 	case !skipChange:
-		a.Out.InfoE("No password change is required of '" + username + "': " + barrier.why + ".")
+		a.Out.WarnE("A password change could not be required of '" + username + "': " + barrier.why + ".")
 	}
-	inv.echo("")
+	// The account exists on this server only after its sync, and the new user
+	// logs in here to change the password.
+	if err := inv.afterUserChange(m, []string{username}, func(h string) string {
+		return "'" + username + "' gets an account on " + h + " at each host's next sync"
+	}); err != nil {
+		return err
+	}
+	return shellErr
+}
+
+// emailFree refuses an address another user holds (no regard to case),
+// naming that user; the address is not repeated.
+func (inv *invocation) emailFree(m *model.Model, address, except string) error {
+	if holder := m.EmailHolder(address, except); holder != "" {
+		return inv.usageErr("That email address already belongs to user '"+holder+"' (an address belongs to one user).", "Nothing was changed.")
+	}
+	return nil
+}
+
+// --- email ------------------------------------------------------------------
+
+const userEmailUsage = "Usage: tacctl user email <username> [<address>|clear]"
+
+// userEmail is 'user email <username> [<address>|clear]': without a second
+// word it prints the address (or says there is none); with an address it
+// sets it; 'clear' removes it. The address is never written to an audit
+// line or repeated in a message.
+func (inv *invocation) userEmail(args []string) error {
+	a := inv.app
+	username := arg(args, 0)
+	if username == "" || len(args) > 2 {
+		return inv.usageErr(userEmailUsage)
+	}
+	if err := inv.requireStore(); err != nil {
+		return err
+	}
+	if err := names.ValidateExistingUsername(username); err != nil {
+		return err
+	}
+	u, ok, err := inv.userInfo(username)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return inv.usageErr("User '" + username + "' does not exist.")
+	}
+	if len(args) == 1 {
+		if u.email == "" {
+			a.Out.Info("User '" + username + "' has no email address.")
+		} else {
+			inv.echo(u.email)
+		}
+		return nil
+	}
+	word := args[1]
+	if strings.HasPrefix(word, "-") {
+		// an option (an address never starts with '-'), not repeated
+		return inv.usageErr(userEmailUsage)
+	}
+	switch {
+	case word == names.EmailClear:
+		if u.email == "" {
+			a.Out.Info("User '" + username + "' has no email address; nothing to clear.")
+			return nil
+		}
+		if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, "email=null") }); err != nil {
+			return err
+		}
+		inv.detail("user email", kvp("name", username), kvp("op", "clear"))
+		a.Out.Info("Email address of '" + username + "' cleared.")
+		return nil
+	case u.email != "" && word == u.email:
+		a.Out.Info("User '" + username + "' has that email address already.")
+		return nil
+	}
+	if err := names.ValidateEmail(word); err != nil {
+		return err
+	}
+	m, err := inv.model()
+	if err != nil {
+		return err
+	}
+	if usr := m.User(username); usr != nil && usr.AccountingSink {
+		return inv.usageErr("User '" + username + "' is the accounting sink and takes no email address.")
+	}
+	if err := inv.emailFree(m, word, username); err != nil {
+		return err
+	}
+	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, "email="+word) }); err != nil {
+		return err
+	}
+	inv.detail("user email", kvp("name", username), kvp("op", "set"))
+	a.Out.Info("Email address of '" + username + "' set.")
 	return nil
 }
 
@@ -608,7 +743,7 @@ func (inv *invocation) userRemove(args []string) error {
 		inv.app.Out.Info("Cancelled.")
 		return nil
 	}
-	watch := inv.watchServerTiers()
+	before, _ := inv.model()
 	var shell userSettingsMove
 	if err := inv.storeApplyThen(func(s *store.Store) error { return s.UserDel(username) },
 		func() { shell = inv.moveUserSettings(username, "") }); err != nil {
@@ -616,11 +751,13 @@ func (inv *invocation) userRemove(args []string) error {
 	}
 	inv.detail("user remove", kvp("name", username))
 	inv.app.Out.Info("User '" + username + "' removed.")
-	if err := inv.userSettingsMoved(shell, username, ""); err != nil {
+	shellErr := inv.userSettingsMoved(shell, username, "")
+	if err := inv.afterUserChange(before, []string{username}, func(h string) string {
+		return "'" + username + "' keeps its account on " + h + " until each host's next sync, which removes it"
+	}); err != nil {
 		return err
 	}
-	inv.echo("")
-	return watch.lowered("'"+username+"'", "'"+username+"' keeps the groups of the old tier")
+	return shellErr
 }
 
 // --- passwd -----------------------------------------------------------------
@@ -734,6 +871,7 @@ func (inv *invocation) userPasswd(args []string) error {
 	inv.detail("user passwd", kvp("name", username), kvp("source", source))
 	out := inv.app.Out
 	out.Info("Password changed for '" + username + "'.")
+	var hostsNote func() error
 	switch {
 	case require:
 		inv.detailPwChange(username, true, "passwd")
@@ -742,13 +880,13 @@ func (inv *invocation) userPasswd(args []string) error {
 		// a user held already, or disabled until now, had no login on the
 		// other hosts before this reset either
 		if !cur.IsDisabled() && !pwchange.Subject(inv.app.Conf(), m, cur) {
-			inv.reportHostsSync(m, []string{username}, true)
+			hostsNote = func() error { return inv.noticeFlagHosts(m, []string{username}, true, true) }
 		}
 	case lifted:
 		inv.detailPwChange(username, false, "passwd")
 		out.InfoE("The password change required of '" + username + "' is lifted.")
 		if pwchange.Subject(inv.app.Conf(), m, cur) {
-			inv.reportHostsSync(m, []string{username}, false)
+			hostsNote = func() error { return inv.noticeFlagHosts(m, []string{username}, false, true) }
 		}
 	case !skipChange && barrier.exempt:
 		out.InfoE("No password change is required of '" + username + "': " + barrier.why + ".")
@@ -757,8 +895,18 @@ func (inv *invocation) userPasswd(args []string) error {
 	case !skipChange:
 		out.WarnE("A password change could not be required of '" + username + "': " + barrier.why + ".")
 	}
+	// A reset that enables a disabled user gives the account back on this
+	// server and on the hosts; any other reset leaves the accounts as they are.
+	if cur.IsDisabled() {
+		return inv.afterUserChange(m, []string{username}, func(h string) string {
+			return "The reset of '" + username + "' reaches " + h + " at each host's next sync"
+		})
+	}
+	if hostsNote != nil {
+		err = hostsNote()
+	}
 	inv.echo("")
-	return nil
+	return err
 }
 
 // --- disable / enable -------------------------------------------------------
@@ -798,14 +946,15 @@ func (inv *invocation) userDisable(args []string) error {
 		inv.app.Out.Warn("User '" + username + "' is already disabled.")
 		return nil
 	}
-	watch := inv.watchServerTiers()
+	before, _ := inv.model()
 	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, "disabled=true") }); err != nil {
 		return err
 	}
 	inv.detail("user disable", kvp("name", username))
 	inv.app.Out.Info("User '" + username + "' disabled. Use 'enable' to restore access.")
-	inv.echo("")
-	return watch.lowered("'"+username+"'", "'"+username+"' keeps the groups of the old tier")
+	return inv.afterUserChange(before, []string{username}, func(h string) string {
+		return "'" + username + "' can still log in to " + h + " until each host's next sync, which expires the account there"
+	})
 }
 
 func (inv *invocation) userEnable(args []string) error {
@@ -823,13 +972,15 @@ func (inv *invocation) userEnable(args []string) error {
 		return inv.usageErr("No saved hash found for '"+username+"'. Set a new password instead:",
 			"  tacctl user passwd "+username)
 	}
+	before, _ := inv.model()
 	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, "disabled=false") }); err != nil {
 		return err
 	}
 	inv.detail("user enable", kvp("name", username))
 	inv.app.Out.Info("User '" + username + "' re-enabled with previous password.")
-	inv.echo("")
-	return nil
+	return inv.afterUserChange(before, []string{username}, func(h string) string {
+		return "'" + username + "' can log in to " + h + " again after each host's next sync"
+	})
 }
 
 // --- verify -----------------------------------------------------------------
@@ -944,8 +1095,7 @@ func (inv *invocation) userRename(args []string) error {
 	if err := inv.consoleSettingsReadable(); err != nil {
 		return err
 	}
-	watch := inv.watchServerTiers()
-	hostCount := inv.enrolledHostsWith(oldname)
+	before, _ := inv.model()
 	var mv uidMove
 	var shell userSettingsMove
 	if err := inv.storeApplyThen(func(s *store.Store) error { return s.UserRename(oldname, newname) }, func() {
@@ -973,29 +1123,32 @@ func (inv *invocation) userRename(args []string) error {
 		return exit(1)
 	case mv.moved:
 		out.Info("UID " + mv.uid + " follows the rename (linux-uids).")
-		if hostCount > 0 {
-			out.Info(hostsText(hostCount) + ": the account '" + oldname + "' is renamed to '" + newname +
-				"' at each host's next sync, home kept where it is: tacctl host sync --all")
-		}
 	case mv.heldBy != "":
 		out.Warn("'" + newname + "' already has UID " + mv.heldBy + " in linux-uids; the account '" + oldname + "' (UID " + mv.uid +
 			") is removed on hosts and '" + newname + "' created with " + mv.heldBy)
 	}
-	// The account of the new name is made at the next sync of this server.
 	inv.loaded = false
-	if rm, err := inv.model(); err == nil && pwchange.Subject(inv.app.Conf(), rm, rm.User(newname)) {
-		inv.reportNeedsSync([]string{newname}, "the account of '"+oldname+"' is renamed at the next sync of this server")
-	}
-	if shellErr != nil {
+	// An enrolled server syncs now, and the sync renames the account with
+	// its UID. The hosts that list the user rename the account at their next
+	// sync, by its UID (or, when the new name has a number of its own, remove
+	// the old account and create the new one): a user with no number in the
+	// ledger has no account there to change.
+	if !mv.moved && mv.heldBy == "" {
+		if err := inv.syncOwnAccounts(newname); err != nil {
+			return err
+		}
+		inv.echo("")
 		return shellErr
 	}
-	inv.echo("")
-	// A server that is not enrolled holds no accounts to sync; an enrolled
-	// one syncs now, and the sync renames the account with its UID.
-	if _, ok, _ := inv.localHost(); !ok {
-		return nil
+	if err := inv.afterUserChange(before, []string{oldname, newname}, func(h string) string {
+		if mv.heldBy != "" {
+			return "The change reaches " + h + " at each host's next sync"
+		}
+		return "The account '" + oldname + "' is renamed to '" + newname + "' on " + h + " at each host's next sync, home kept where it is"
+	}); err != nil {
+		return err
 	}
-	return watch.lowered("'"+oldname+"'", "'"+oldname+"' keeps the groups of the old tier")
+	return shellErr
 }
 
 // uidMove is what a rename did to the UID ledger: moved (the line of the
@@ -1035,45 +1188,6 @@ func (inv *invocation) moveUID(oldname, newname string) uidMove {
 	}
 	held, err := uids.Lookup(newname)
 	return uidMove{uid: uid, heldBy: held, err: err}
-}
-
-// enrolledHostsWith is how many enrolled hosts have the user in their scope,
-// disabled or not: a disabled user's account is expired there and is renamed
-// all the same (the script gets the number in TAC_INACTIVE_UIDS).
-func (inv *invocation) enrolledHostsWith(user string) int {
-	n, _ := inv.enrolledHostsCount(user)
-	return n
-}
-
-// enrolledHostsCount is enrolledHostsWith with the error of a registry or a
-// model that cannot be read (the count is then 0).
-func (inv *invocation) enrolledHostsCount(user string) (int, error) {
-	reg, err := inv.registry()
-	if err != nil {
-		return 0, err
-	}
-	m, err := inv.model()
-	if err != nil {
-		return 0, err
-	}
-	n := 0
-	for _, e := range reg.Entries() {
-		found := false
-		m := inv.serverModel(m, serverOfEntry(e))
-		for _, r := range m.LinuxUsers(e.Scope) {
-			if name, _, _ := strings.Cut(r, "|"); name == user {
-				found = true
-				break
-			}
-		}
-		for _, name := range m.LinuxInactive(e.Scope) {
-			found = found || name == user
-		}
-		if found {
-			n++
-		}
-	}
-	return n, nil
 }
 
 // hostsText is "1 enrolled host" or "3 enrolled hosts".
@@ -1116,14 +1230,14 @@ func (inv *invocation) userMove(args []string) error {
 		inv.app.Out.Info("User '" + username + "' is already in group '" + newgroup + "'.")
 		return nil
 	}
-	watch := inv.watchServerTiers()
 	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, "group="+newgroup) }); err != nil {
 		return err
 	}
 	inv.detail("user move", kvp("name", username), kvp("from", oldgroup), kvp("to", newgroup))
 	inv.app.Out.Info("User '" + username + "' moved: " + oldgroup + " -> " + newgroup)
-	inv.echo("")
-	return watch.lowered("'"+username+"'", "'"+username+"' keeps the groups of the old tier")
+	return inv.afterUserChange(m, []string{username}, func(h string) string {
+		return "The group of '" + username + "' changes on " + h + " at each host's next sync"
+	})
 }
 
 // --- scope ------------------------------------------------------------------
@@ -1276,9 +1390,7 @@ func (inv *invocation) userScope(args []string) error {
 		}
 	}
 	list := strings.Join(kept, ",")
-	// Taking this server's scope away (remove, replace) drops the account's
-	// groups at the next sync like a lower tier does.
-	watch := inv.watchServerTiers()
+	before, _ := inv.model()
 	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, "scopes="+list) }); err != nil {
 		return err
 	}
@@ -1300,8 +1412,15 @@ func (inv *invocation) userScope(args []string) error {
 		a.Out.Warn("User '" + username + "' now has NO scopes — they cannot auth on any device")
 		a.Out.Warn("until you run: tacctl user scope " + username + " add <scope>")
 	}
-	inv.echo("")
-	return watch.lowered("'"+username+"'", "'"+username+"' keeps the groups of the old tier")
+	return inv.afterUserChange(before, []string{username}, scopeHostsCause(username))
+}
+
+// scopeHostsCause says what the next sync of the other hosts does with a
+// change of the scopes of username.
+func scopeHostsCause(username string) func(string) string {
+	return func(h string) string {
+		return "The account of '" + username + "' on " + h + " follows the new scopes at each host's next sync"
+	}
 }
 
 // userScopeRemoveAll is _user_scope_remove_all: empty the user's scope
@@ -1319,14 +1438,13 @@ func (inv *invocation) userScopeRemoveAll(username string, current []string) err
 		a.Out.Info("Aborted.")
 		return nil
 	}
-	watch := inv.watchServerTiers()
+	before, _ := inv.model()
 	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, "scopes=") }); err != nil {
 		return err
 	}
 	inv.detail("user scope", kvp("name", username), kvp("op", "remove"), kvp("scopes", strings.Join(current, ",")))
 	a.Out.Info("Removed all scopes from user '" + username + "'.")
-	inv.echo("")
-	return watch.lowered("'"+username+"'", "'"+username+"' keeps the groups of the old tier")
+	return inv.afterUserChange(before, []string{username}, scopeHostsCause(username))
 }
 
 // usageLinesOf are the 'Usage:' lines of rows of cmd ('tacctl <cmd> <row>'),

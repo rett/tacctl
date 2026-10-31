@@ -217,3 +217,58 @@ print(",".join(v) if isinstance(v, list) else "" if v is None else v)' "${TACCTL
     run grep -A4 '^  - name: alice$' "$TACCTL_CONFIG"
     assert_output --partial 'scopes: ["lab", "prod"]'
 }
+
+@test "user email: set at creation, shown, changed, refused for a second user, cleared" {
+    run "$TACCTL_BIN_SCRIPT" user add alice superuser --hash "$TEST_HASH" --scopes lab --email Alice@Example.net
+    assert_success
+    [[ "$(store_user alice email)" == "Alice@Example.net" ]]
+
+    # shown by `user show`, not by `user list`
+    run "$TACCTL_BIN_SCRIPT" user show alice
+    assert_success
+    assert_output --partial "Alice@Example.net"
+    run "$TACCTL_BIN_SCRIPT" user list
+    assert_success
+    refute_output --partial "example.net"
+
+    # the model JSON carries it
+    run "$TACCTL_BIN_SCRIPT" store show --json
+    assert_success
+    assert_output --partial '"email": "Alice@Example.net"'
+
+    # an address belongs to one user, whatever the case, and the refusal does not repeat it
+    "$TACCTL_BIN_SCRIPT" user add bob operator --hash "$TEST_HASH" --scopes lab
+    run "$TACCTL_BIN_SCRIPT" user email bob alice@example.NET
+    assert_failure
+    assert_output --partial "already belongs to user 'alice'"
+    refute_output --partial "example.NET"
+    run "$TACCTL_BIN_SCRIPT" user add carol operator --hash "$TEST_HASH" --scopes lab --email ALICE@example.net
+    assert_failure
+    assert_output --partial "already belongs to user 'alice'"
+    run "$TACCTL_BIN_SCRIPT" user show carol
+    assert_failure
+
+    # not an address
+    run "$TACCTL_BIN_SCRIPT" user email bob "bob@example"
+    assert_failure
+    assert_output --partial "Not a plain email address"
+
+    # no word prints it, or says there is none
+    run "$TACCTL_BIN_SCRIPT" user email alice
+    assert_success
+    assert_output "Alice@Example.net"
+    run "$TACCTL_BIN_SCRIPT" user email bob
+    assert_success
+    assert_output --partial "has no email address"
+
+    # set, rename carries it, clear removes the key
+    run "$TACCTL_BIN_SCRIPT" user email bob bob@example.net
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" user rename bob robert
+    assert_success
+    [[ "$(store_user robert email)" == "bob@example.net" ]]
+    run "$TACCTL_BIN_SCRIPT" user email robert clear
+    assert_success
+    run grep -c 'bob@example.net' "${TACCTL_STATE_DIR}/store.yaml"
+    assert_output "0"
+}

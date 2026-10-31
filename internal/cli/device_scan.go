@@ -425,6 +425,9 @@ func (inv *invocation) deviceScan(args []string) error {
 	if err != nil {
 		return err
 	}
+	if p.Has("--sources") && (rq.ifStale || p.Has("--quiet")) {
+		return inv.usageErr("--sources is not part of the background form: give it without --if-stale or --quiet.")
+	}
 	sr, err := inv.runScan(rq)
 	if err != nil {
 		return err
@@ -436,9 +439,44 @@ func (inv *invocation) deviceScan(args []string) error {
 	default:
 		inv.printScan(sr)
 		inv.printNotices(sr.res)
+		if p.Has("--sources") {
+			inv.scanSources(sr.res)
+		}
 		inv.echo("")
 	}
 	return nil
+}
+
+// scanSources tests the source addresses of the devices the caller may see and
+// prints what it found, device by device (D315).
+func (inv *invocation) scanSources(res *devreg.Resolver) {
+	var entries []devreg.Entry
+	for _, e := range res.Visible(inv.deviceFilter()) {
+		if e.Source == devreg.SourceDevice {
+			entries = append(entries, e)
+		}
+	}
+	reps := inv.testDeviceSources(entries, false)
+	inv.auditSources(reps)
+	inv.echo("")
+	inv.echoE(ui.Bold + "Source addresses" + ui.NC)
+	inv.echo(ui.Rule("Source addresses"))
+	shown, untested := 0, 0
+	for _, r := range reps {
+		if len(r.Results) > 0 || r.Registered || r.Note != noteNoSource {
+			inv.printSources(r, r.Device+": ", true)
+			shown++
+		}
+		if len(r.Results) == 0 && !r.Registered && r.Note != noteNoSource {
+			untested++
+		}
+	}
+	switch {
+	case untested > 0:
+		inv.app.Out.Info(howMany(untested, "device") + " not tested (see the lines above)")
+	case shown == 0:
+		inv.app.Out.Info("No device states a source address of its AAA client to test.")
+	}
 }
 
 // --- discover ------------------------------------------------------------------------
@@ -599,9 +637,9 @@ func (inv *invocation) deviceCheck(args []string) error {
 	}
 	switch {
 	case p.Has("--all") && len(p.Args) > 0:
-		return inv.usageErr("--all takes no name.", "Usage: tacctl device check <name>|--all [--json]")
+		return inv.usageErr("--all takes no name.", "Usage: tacctl device check <name>|--all [--sources] [--json]")
 	case !p.Has("--all") && len(p.Args) == 0:
-		return inv.usageErr("Usage: tacctl device check <name>|--all [--json]")
+		return inv.usageErr("Usage: tacctl device check <name>|--all [--sources] [--json]")
 	}
 	_, res, err := inv.deviceLoad()
 	if err != nil {
@@ -679,6 +717,11 @@ func (inv *invocation) deviceCheck(args []string) error {
 	}
 	js := []deviceCheckJSON{}
 	configs := inv.configRecords()
+	var sources []sourceReport
+	if p.Has("--sources") {
+		sources = inv.testDeviceSources(entries, p.Has("--json"))
+		inv.auditSources(sources)
+	}
 	for i, e := range entries {
 		k, scanned := byName[strings.ToLower(e.Name)]
 		rows := inv.checkRows(res, e, reach[i], k, scanned, sys[i])
@@ -698,10 +741,17 @@ func (inv *invocation) deviceCheck(args []string) error {
 					cj.SNMP = info.json()
 				}
 			}
+			if sources != nil && e.Source == devreg.SourceDevice {
+				list := sourcesJSON(sources[i])
+				cj.Sources = &list
+			}
 			js = append(js, cj)
 			continue
 		}
 		inv.printCheck(e, rows)
+		if sources != nil {
+			inv.printCheckSources(e, sources[i])
+		}
 	}
 	if p.Has("--json") {
 		return inv.printJSON(js)
@@ -774,6 +824,9 @@ type deviceCheckJSON struct {
 	SNMP *deviceSNMPJSON `json:"snmp,omitempty"`
 	// Breakglass is the hold on the device while there is one.
 	Breakglass *deviceHoldJSON `json:"breakglass,omitempty"`
+	// Sources are the source addresses of the device's AAA client, tested
+	// with --sources (D315); absent without it and for a host.
+	Sources *[]sourceResult `json:"sources,omitempty"`
 }
 
 func checkJSONOf(res *devreg.Resolver, e devreg.Entry, reach string, rows []checkRow, sys checkSysName) deviceCheckJSON {
@@ -966,7 +1019,7 @@ func (inv *invocation) checkRows(res *devreg.Resolver, e devreg.Entry, reach str
 		if info, err := inv.deviceSNMPInfoOf(e); err != nil {
 			row("SNMP", "cannot be read: "+strings.Join(msgs(err), " "))
 		} else if info.Eff.Version == "" {
-			row("SNMP", "not configured (tacctl device snmp "+shellquote.Q(e.Name)+" community|v3-user <user>)")
+			row("SNMP", "not configured (tacctl device snmp "+shellquote.Q(e.Name)+" version v2c|v3)")
 		} else {
 			row("SNMP", info.settings())
 			row("SNMP creds", info.credentials())

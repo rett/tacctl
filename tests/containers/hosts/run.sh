@@ -30,6 +30,12 @@
 #                       as the hold leaves them), release, 'user rename' (the
 #                       account keeps its UID), 'host forget' (the client is left
 #                       as it was), enroll again, unenroll
+#              lockdown  enroll with --method tacplus, then 'emergency lockdown
+#                       enable|disable' on the host's scope: sshd's drop-in on
+#                       the client (a key login refused for a user that is not a
+#                       superuser, a superuser's allowed, 'sshd -T -C' and the
+#                       live sessions), a client whose sshd does not include
+#                       sshd_config.d refused, lifted again, and unenroll
 #   --server   ubuntu-noble (default; FreeRADIUS 3.2.x and tacquito) or
 #              almalinux-9 (FreeRADIUS 3.0.27; radius and probe only)
 #   --keep     leave both containers (thc-server, thc-client-<client>)
@@ -43,8 +49,8 @@
 # (bin/tacctl.sh installs Go, verified, and builds /usr/local/bin/tacctl).
 # shellcheck disable=SC2016  # the single-quoted scripts run inside the containers
 set -uo pipefail
-CLIENT="${1:?usage: run.sh <client> <radius|tacplus|switch|probe|rotate|server|lifecycle> [--server <distro>] [--keep]}"
-CYCLE="${2:?usage: run.sh <client> <radius|tacplus|switch|probe|rotate|server|lifecycle> [--server <distro>] [--keep]}"
+CLIENT="${1:?usage: run.sh <client> <radius|tacplus|switch|probe|rotate|server|lifecycle|lockdown> [--server <distro>] [--keep]}"
+CYCLE="${2:?usage: run.sh <client> <radius|tacplus|switch|probe|rotate|server|lifecycle|lockdown> [--server <distro>] [--keep]}"
 shift 2
 SERVER="ubuntu-noble"; KEEP=""
 while [[ $# -gt 0 ]]; do
@@ -71,7 +77,7 @@ case "$CLIENT" in
 esac
 case "$CYCLE" in
     radius|probe|rotate) WANT=radius ;;
-    tacplus|server|lifecycle) WANT=tacplus ;;
+    tacplus|server|lifecycle|lockdown) WANT=tacplus ;;
     switch) WANT=both ;;
     *) echo "unknown cycle: ${CYCLE}" >&2; exit 2 ;;
 esac
@@ -466,7 +472,7 @@ enroll() { # <method> [extra args]
     return $rc
 }
 
-FIRST="$CYCLE"; [[ "$CYCLE" == "switch" || "$CYCLE" == "lifecycle" ]] && FIRST="tacplus"; [[ "$CYCLE" == "rotate" ]] && FIRST="radius"
+FIRST="$CYCLE"; [[ "$CYCLE" == "switch" || "$CYCLE" == "lifecycle" || "$CYCLE" == "lockdown" ]] && FIRST="tacplus"; [[ "$CYCLE" == "rotate" ]] && FIRST="radius"
 
 section "before: snapshot, then enroll with --method ${FIRST}"
 snapshot > "${WORK}/before"
@@ -488,6 +494,128 @@ expect "device add refuses that address" "${CIP} belongs to the enrolled host 'c
 # The distribution's own login.defs (UID_MAX 60000): no warning on the next
 # sync, and local useradd stays below the range.
 c cp /root/login.defs.orig /etc/login.defs
+
+# --- lockdown: the emergency lockdown on an enrolled host ---------------------------
+# The host enrolled above as c1 (--method tacplus, its own scope linux-c1) is
+# locked down with 'emergency lockdown linux-c1 enable --yes' (the scope's name
+# typed back at a terminal, which script gives tacctl): the server renders and
+# sshd's drop-in goes onto the client through host sync. A key login is what
+# the server cannot refuse (a local key skips TACACS+ when the server does not
+# answer), so the checks block the server: before the lockdown a readonly
+# user's key login gets in, after it it does not, and a superuser's does. Then
+# a client whose sshd does not include sshd_config.d is refused, the lockdown
+# is lifted and put on again, and unenroll takes the drop-in off.
+if [[ "$CYCLE" == "lockdown" ]]; then
+    LD_DROPIN=/etc/ssh/sshd_config.d/00-tacctl-0-lockdown.conf
+    # tacctl asks for the scope's name at a terminal: script gives it one.
+    ld_tty() { # <typed> <args...> -> the command's status; the output is in ${WORK}/ld.out
+        local typed="$1"; shift
+        printf '%s\n' "$typed" | podman exec -i "$S" script -qec "tacctl emergency lockdown $*" /dev/null 2>&1 | sed 's/\x1b\[[0-9;]*m//g; s/\r$//' > "${WORK}/ld.out"
+        return "${PIPESTATUS[1]}"
+    }
+    # keylogin <user> -> the output and 'rc=N' of one key login from the client to its own sshd
+    keylogin() {
+        local out rc
+        out=$(c ssh -i /root/ldkey -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+            -o PreferredAuthentications=publickey -o PasswordAuthentication=no -o BatchMode=yes -o ConnectTimeout=5 "$1@127.0.0.1" 'id -un' < /dev/null 2>&1); rc=$?
+        printf '%s\nrc=%s\n' "$out" "$rc"
+    }
+    # has_proc <user> <command text>: the user has a process whose command line has the text (read from
+    # /proc: the client images have no pgrep)
+    has_proc() {
+        c bash -c 'u=$(id -u "$1"); for d in /proc/[0-9]*; do
+            if [[ $(awk "/^Uid:/ { print \$2 }" "$d/status" 2> /dev/null) == "$u" ]] && tr "\0" " " < "$d/cmdline" 2> /dev/null | grep -q -- "$2"; then exit 0; fi
+        done; exit 1' _ "$1" "$2"
+    }
+    sshd_says() { c sshd -T -C "user=$1,host=localhost,addr=127.0.0.1,laddr=127.0.0.1,lport=22" 2> /dev/null; }
+
+    section "lockdown 1: users in the host's scope, with an ssh key each"
+    tacctl user scope alice add linux-c1 > /dev/null
+    tacctl user scope dave add linux-c1 > /dev/null
+    tacctl config render > /dev/null 2>&1
+    tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
+    check "host sync c1 creates alice's and dave's accounts" bash -c "[[ $rc == 0 ]] && podman exec '$C' id alice && podman exec '$C' id dave"
+    c ssh-keygen -q -t ed25519 -N '' -f /root/ldkey
+    c bash -c 'for u in alice dave; do h=$(getent passwd $u | cut -d: -f6); mkdir -p "$h/.ssh"; cp /root/ldkey.pub "$h/.ssh/authorized_keys"; chown -R "$u": "$h/.ssh"; chmod 700 "$h/.ssh"; chmod 600 "$h/.ssh/authorized_keys"; done'
+    check "no lockdown drop-in on the host yet" c bash -c "[[ ! -e $LD_DROPIN ]]"
+    expect "alice logs in with the network password" '^alice$' "$(login alice "$A_PW" 'id -un')"
+    expect "dave (readonly) logs in with the network password" '^dave$' "$(login dave "$D_PW" 'id -un')"
+    block > /dev/null || bad "could not block the server"
+    expect "before the lockdown, the server silent: dave's key login gets in (what a local key does)" '^dave$' "$(keylogin dave)"
+    expect "before the lockdown, the server silent: alice's key login gets in" '^alice$' "$(keylogin alice)"
+    unblock > /dev/null || bad "could not unblock the server"
+    # a session of dave's that is open when the lockdown begins
+    c bash -c 'nohup setsid ssh -i /root/ldkey -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o BatchMode=yes dave@127.0.0.1 "sleep 600" > /dev/null 2>&1 < /dev/null &'
+    sleep 2
+    check "dave has a session open on the host" has_proc dave "sleep 600"
+    podman exec -d "$C" su -s /bin/bash alice -c 'sleep 601'
+    sleep 1
+    check "alice has a session open on the host" has_proc alice "sleep 601"
+
+    section "lockdown 2: enable --yes: the drop-in, the checks, the live sessions"
+    ld_tty linux-c1 linux-c1 enable --yes --reason drill; rc=$?
+    sed 's/^/    | /' "${WORK}/ld.out" | grep -vE '^\s+\| *$' | tail -12
+    check "emergency lockdown linux-c1 enable --yes exits 0" test $rc -eq 0
+    expect "enable names the host and says it is in force" 'The lockdown is in force on the hosts' "$(cat "${WORK}/ld.out")"
+    check "the drop-in is on the host, 0644, with the Match line and the five keywords" c bash -c "[[ \$(stat -c %a $LD_DROPIN) == 644 ]] && grep -qx 'Match Group tac-users,!tac-superuser' $LD_DROPIN && [[ \$(grep -cE '^    (PubkeyAuthentication|AllowTcpForwarding|AllowStreamLocalForwarding|X11Forwarding|AllowAgentForwarding) no\$' $LD_DROPIN) == 5 ]]"
+    check "it sorts before the engineers' and the console's drop-ins" c bash -c 'cd /etc/ssh/sshd_config.d && [[ $(LC_ALL=C ls | head -1) == 00-tacctl-0-lockdown.conf ]]'
+    out=$(sshd_says dave)
+    for k in pubkeyauthentication allowtcpforwarding allowstreamlocalforwarding x11forwarding allowagentforwarding; do
+        expect "sshd -T -C user=dave: ${k} no" "^${k} no\$" "$(grep -i "^${k} " <<< "$out")"
+    done
+    out=$(sshd_says alice)
+    expect "sshd -T -C user=alice (a superuser): pubkeyauthentication yes, as before" '^pubkeyauthentication yes$' "$(grep -i '^pubkeyauthentication ' <<< "$out")"
+    expect "sshd -T -C user=alice: allowtcpforwarding is not closed by the lockdown" '^allowtcpforwarding (yes|all)$' "$(grep -i '^allowtcpforwarding ' <<< "$out")"
+    expect "the host's lockdown state file says on" '^on$' "$(c cat /var/lib/tacctl-client/lockdown)"
+    if has_proc dave "sleep 600"; then bad "dave's session was ended"; else ok "dave's session was ended"; fi
+    check "alice's session (a superuser) was not" has_proc alice "sleep 601"
+    expect "the record has no pending host now" '^0$' "$(s bash -c 'grep -c pending /etc/tacctl/tacctl.yaml || true')"
+    expect "status says the lockdown is in force on c1" 'the sshd lockdown is in force on c1' "$(tacctl emergency lockdown status)"
+    block > /dev/null || bad "could not block the server"
+    out=$(keylogin dave)
+    expect "locked down, the server silent: dave's key login is refused" 'rc=255' "$out"
+    expect "locked down, the server silent: alice's key login (a superuser) still gets in" '^alice$' "$(keylogin alice)"
+    unblock > /dev/null || bad "could not unblock the server"
+    expect "locked down: dave's network password is refused (the server's side)" 'rc=255' "$(login dave "$D_PW" true)"
+    expect "locked down: alice logs in with the network password" '^alice$' "$(login alice "$A_PW" 'id -un')"
+    expect "locked down: ladm (the local administrator, no tac-users) logs in" '^ladm$' "$(login ladm "$L_PW" 'id -un')"
+    check "the provisioning login (root) is in no tac-* group, so the drop-in does not match it" c bash -c '! id -nG root | grep -q tac-'
+
+    section "lockdown 3: a host whose sshd does not include sshd_config.d is refused"
+    if c grep -q '^Include' /etc/ssh/sshd_config; then
+        c sed -i 's/^Include/#Include/' /etc/ssh/sshd_config
+        tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
+        check "host sync of a locked-down host with no Include fails" test $rc -ne 0
+        expect "the host says why: the drop-in would be inert" "does not include /etc/ssh/sshd_config.d/\*.conf" "$(cat "${WORK}/sync.out")"
+        c sed -i 's/^#Include/Include/' /etc/ssh/sshd_config
+        tacctl host sync c1 > "${WORK}/sync.out"; rc=$?
+        check "with the Include back, host sync succeeds" test $rc -eq 0
+    else
+        note "this client's sshd_config has no Include line: the refusal is not tried here"
+    fi
+
+    section "lockdown 4: disable --yes lifts it on the host; enable again; unenroll takes the drop-in off"
+    tacctl emergency lockdown linux-c1 disable --yes > "${WORK}/ld.out"; rc=$?
+    sed 's/^/    | /' "${WORK}/ld.out" | grep -E 'LIFTED|lifted|WARN|ERROR'
+    check "emergency lockdown linux-c1 disable --yes exits 0" test $rc -eq 0
+    check "the drop-in is gone from the host" c bash -c "[[ ! -e $LD_DROPIN ]]"
+    expect "sshd -T -C user=dave: pubkeyauthentication yes again" '^pubkeyauthentication yes$' "$(grep -i '^pubkeyauthentication ' <<< "$(sshd_says dave)")"
+    block > /dev/null || bad "could not block the server"
+    expect "lifted, the server silent: dave's key login gets in again" '^dave$' "$(keylogin dave)"
+    unblock > /dev/null || bad "could not unblock the server"
+    expect "no lockdown stands and no host waits" 'No emergency lockdown stands\.' "$(tacctl emergency lockdown status)"
+    ld_tty linux-c1 linux-c1 enable --yes; rc=$?
+    check "enable again exits 0 and the drop-in is back" bash -c "[[ $rc == 0 ]] && podman exec '$C' test -f $LD_DROPIN"
+    tacctl host unenroll c1 > "${WORK}/unenroll.out"; rc=$?
+    check "host unenroll of a locked-down host exits 0" test $rc -eq 0
+    check "unenroll took the drop-in off and reloaded sshd" bash -c "grep -q 'Lockdown drop-in ${LD_DROPIN} removed; sshd reloaded' '${WORK}/unenroll.out' && ! podman exec '$C' test -e $LD_DROPIN"
+    ld_tty linux-c1 linux-c1 disable --yes > /dev/null
+    c bash -c 'pkill -u alice; pkill -u dave; true' > /dev/null 2>&1
+    echo
+    echo "${CLIENT} ${CYCLE} (server ${SERVER}): ${pass} passed, ${fail} failed"
+    [[ $fail -eq 0 ]]
+    exit $?
+fi
 
 # --- rotate: the provisioning account ('host provisioner rotate') ---------------
 # tacctl logs in to the client as root here, so the first rotation leaves root

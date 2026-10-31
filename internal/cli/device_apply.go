@@ -394,7 +394,7 @@ func (r *applyRun) planRead(e devreg.Entry, expected []devices.Section, raw, pla
 	if err != nil {
 		return nil, err
 	}
-	cur := devconf.Extracted{Vendor: fam, Sections: stored, SecretsVisible: ext.SecretsVisible}
+	cur := devconf.Extracted{Vendor: fam, Sections: stored, SecretsVisible: ext.SecretsVisible, Interfaces: ext.Interfaces}
 	var plainView devconf.Extracted
 	if plainRaw != "" {
 		// A view that does not extract is no view (as the pull's): the plan

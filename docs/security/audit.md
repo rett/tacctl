@@ -83,6 +83,7 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `user add` | `name` `group` `scopes` |
 | `user remove`, `user disable`, `user enable` | `name` |
 | `user passwd` | `name` `source=prompt\|hash\|generated` |
+| `user email` | `name` `op=set\|clear`; the address is never written |
 | `user rename` | `from` `to` `uid=carried\|-` |
 | `user password-change` | `name` `state=required\|cleared` `via=require\|add\|passwd\|self`: a requirement to change the password set or lifted, for whom (`by=` is who) |
 | `user move` | `name` `from` `to` (groups) |
@@ -96,6 +97,9 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `config sudoers`, `config sudoers tiers` | `op=install\|remove` `file`, and `group` for the first |
 | `console set` | `key` `item` `from` `to`: `key` is the setting (`system-shell`, `forwarding`, `agent-forwarding`, `ssh-escape`, `password-cache`, `idle-timeout`, `space-completion`, `color`, `list-max`) and `item` the tier, the user (`user:<name>` for a system-shell setting of one user) or part of it; `auth.notice` for `system-shell` |
 | `backup restore` | `id` `pre` (the snapshot taken first) `keep-uids` `legacy`; `auth.notice` |
+| `backup keep` | `id` `note=yes\|no` `already=yes\|no`; the note is never written |
+| `backup unkeep` | `id` `only-copy=yes\|no` |
+| `backup recover` | `id` `pre` (the snapshot taken first) `kinds` `restored` `skipped`; never an address |
 | `store import` | `source` `replace` `force`; `auth.notice` |
 | `store rollback` | `pre`; `auth.notice` |
 | `install` | `branch`; `auth.notice` |
@@ -111,7 +115,7 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `scope mgmt-acl` | `scope` `op=add\|remove\|clear\|cisco-name\|juniper-name\|mode` `value` (the mode, for `op=mode`) |
 | `scope secret set` | `scope` `source=set\|generate` |
 | `snmp set` | `kind=community\|v3-user\|clear\|version\|port\|timeout\|clients\|contact`, and `scope` or `device`; `from` `to` for `config snmp port\|timeout` |
-| `secret-read` | `kind` `name`: a secret shown (`scope`, `snmp`, `snmp-device`, `snmp-default`, `block`, `block-adopt`, `store`, `config`, `snapshot`, `backup`); written for every caller, a superuser's too |
+| `secret-read` | `kind` `name` and `user` (the SNMPv3 user whose passphrases are shown): a secret shown (`scope`, `snmp`, `snmp-device`, `snmp-default`, `block`, `block-adopt`, `store`, `config`, `snapshot`, `backup`); written for every caller, a superuser's too |
 | `secret-export` | `scope` `file`: `config linux script` writes a file that holds the scope's secret (the line comes before the file) |
 | `config allow`, `config deny`, `config mgmt-acl` | `op=add\|remove\|clear\|cisco-name\|juniper-name` `value` |
 | `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config loglevel`, `server metrics`, `server name`, `config branch` | `from` `to` |
@@ -126,8 +130,11 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `host sync` | `name` `target` `created` `updated` `renamed` `removed` `remove-home` `result`, and `reason` when it failed; one line per host |
 | `host move` | `scope` `moved` `failed` (for a move of every drifted host) |
 | `device add` | `name` `address` `vendor` `count` |
+| `device clone` | `from` `to` `address` (the bench address) `scope` `snmp_users` and `block_files` (counts) `count` |
+| `device clone` (staging) | `scope staging add` with `cidr` `scope` `device` and `covered=yes` for the entry of a bench address the scope answers already (no /32 is added) |
 | `device remove` | `names` (the first 20, then `+n`) `count` |
 | `device rename` | `from` `to` `count`, and `reason=device-name` when `device enroll` took over the name the device is configured with |
+| `device replace` | `old` `new` `address` `hold_cleared=yes\|no` `snmp_files` `block_files` `notices` (counts of what went with the original) `count`; with it `scope staging done` for the /32 and, for a hold, `breakglass release` |
 | `device enroll hostkey`, `device collect hostkey`, `device onboard hostkey` | `user` `addr` `device` `alg` `fp` `result=accepted\|skipped\|refused` `source=confirmed\|flag`; every answer to a host key's question, before the key is pinned or used; `auth.notice` |
 | `device enroll` | `user` `addr` `device` `vendor` `source=snmp\|given\|asked` `result`; one line per address at the end of the run |
 | `device import` | `source` `added` `updated` `removed` `count` |
@@ -154,6 +161,16 @@ the lines that had no actor (`uid-map renumbered`, `uid-range set`, the two
 `hostkey-mismatch` lines, `console policy ... unusable`) end in `by=<user>`;
 `scope staging done` stays without an actor, as the sweep that writes it has
 none.
+
+The `rollback` line is `rollback target=<release> keys=<n> by=<user>`; when it
+removed the users' email addresses it is `rollback target=<release> keys=<n>
+kept=<id> email-users=<names> by=<user>`: `kept` is the snapshot it keeps
+(`backup keep`, with a note that says what was dropped), and `email-users` the
+users whose address it removed, never an address. When it wrote the SNMP
+credential files in version 1 and dropped something, the line has `snmp-users=<n>
+snmp-levels=<m> snmp-choices=<k> snmp-devices=<p>` (users and the levels they were
+in, devices whose choice of another level's user went, devices without an `snmp:`
+entry whose file went; counts, never a name) after `kept=<id>`.
 
 `device config apply` writes, at `auth.notice`, a review line for each device
 asked, then, when any device was approved, the approval line, and each applied
@@ -250,10 +267,22 @@ with `reason=superuser` (the verb is the superuser's) or `reason=scope` (the thi
 `args=` writes `<redacted>` for:
 
 - the value of a flag that carries a secret or a password hash (`--hash` of `user add` and `user passwd`, `--secret` of `scope add`), as `--hash <redacted>` or `--hash=<redacted>`; the `-` of `--hash -` is written as `<redacted>` too;
+- the value of `--email` of `user add` and every word of `user email` after
+  the name but `clear` (and the name too when it holds an `@`: an address
+  typed in its place), and every word with an `@` in the other `user` verbs
+  that write a line (`remove`, `rename`, `disable`, `enable`, `passwd`,
+  `move`, `scope`, `require-password-change`, and `add`), where a user, group
+  or scope name cannot hold one. An address is personal data, not a password,
+  but it is never logged; the `user email` detail line says only `op=set` or
+  `op=clear`;
+- the value of `--note` of `backup keep` (free text of the operator's, stored
+  in the kept copy and shown by `backup list`) and every word of `backup keep`
+  that no option or argument of the verb takes; the detail line says only
+  `note=yes` or `note=no`;
 - the value in `scope secret <scope> set <value>`, and every word of `scope secret` after the scope but the sub-command (`show`, `set`, `generate`) and the flag `--stdin`, and a lone word after `scope secret` that is none of them;
-- every word of `hash` and of `passwd`, and every word of `user add`, `user passwd`, `scope add` and the `community` and `v3-user` verbs of `scope snmp`, `device snmp` and `config snmp` that no flag or argument of the verb takes, a word that starts with `-` and is no flag of the verb included. These verbs ask for the password, the community or the SNMPv3 keys at a prompt (or on standard input with `--stdin`) and refuse a line that carries one. `user add`, `user passwd`, `scope add` and `passwd` are actions and write the start line before they refuse it. The SNMP verbs and `scope secret` are mixed and refuse at parse without a line, but an engineer's refusal inside the verb (`scope snmp prod community ...` for a scope that is not theirs) writes `cmd DENY` with the same `args=`; the redaction matters there. A word starting with `-` or a switch given a value (`--stdin=x`) is redacted too.
+- every word of `hash` and of `passwd`, and every word of `user add`, `user passwd`, `scope add` and the `community` and `v3-user add|remove|default|list` verbs of `scope snmp`, `device snmp` and `config snmp` that no flag or argument of the verb takes, a word that starts with `-` and is no flag of the verb included. These verbs ask for the password, the community or the SNMPv3 keys at a prompt (or on standard input with `--stdin`) and refuse a line that carries one. `user add`, `user passwd`, `scope add` and `passwd` are actions and write the start line before they refuse it. The SNMP verbs and `scope secret` are mixed and refuse at parse without a line, but an engineer's refusal inside the verb (`scope snmp prod community ...` for a scope that is not theirs) writes `cmd DENY` with the same `args=`; the redaction matters there. A word starting with `-` or a switch given a value (`--stdin=x`) is redacted too.
 
-Nothing else is redacted: free text such as `breakglass hold --reason` is why a device was taken out of AAA, and it is logged as typed, as are the arguments of `ssh` after `--`. A secret typed in the place of a name (`user passwd <password>`) is logged as the name; only the words after the verb's own arguments are redacted. Whatever is typed on a command line is also in sudo's own log, which records the whole line, and `ps` shows it while the command runs. The forms that keep a value off the command line are `scope secret <scope> set` (a hidden prompt, or `--stdin`), `user add|passwd --hash -` (the hash on standard input), and the `community` and `v3-user` verbs (a prompt or `--stdin`).
+Nothing else is redacted: free text such as `breakglass hold --reason` is why a device was taken out of AAA, and it is logged as typed, as are the arguments of `ssh` after `--`. A secret typed in the place of a name (`user passwd <password>`) is logged as the name; only the words after the verb's own arguments are redacted. Whatever is typed on a command line is also in sudo's own log, which records the whole line, and `ps` shows it while the command runs. The forms that keep a value off the command line are `scope secret <scope> set` (a hidden prompt, or `--stdin`), `user add|passwd --hash -` (the hash on standard input), and the `community` and `v3-user add` verbs (a prompt or `--stdin`).
 
 The login console's refusal of a `-c` string (`scp`, a program, a shell) is not a `cmd` line but `console DENY ... reason=command first=<word>` under the tag `tacctl-console`. `first=` is a verb of tacctl or one of the console's own words (`help`, `history`, `exit`, `quit`, `system-shell`); any other first word, a program or a password typed at the prompt, is not logged: the line reads `first=- len=<n>`, `n` the length of the string. A line refused because a password change is required of the user reads `console DENY ... reason=password-change first=<word>|-` by the same rule, and the opening of such a session writes `console password-change required|done|failed` (the [login console](login-console.md) has the session).
 

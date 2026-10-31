@@ -471,3 +471,28 @@ func TestValidHostName(t *testing.T) {
 		}
 	}
 }
+
+// The staging line holds the name as it was written, and the registry
+// compares names without regard to case, so a line spelled differently is
+// still the host's: a rename of the spelling only keeps it (it is not a
+// stray of the new name), and a rename to another name carries it.
+func TestHostRenameStagingLineOfAnotherSpelling(t *testing.T) {
+	sb := renameLab(t)
+	sb.legacyHostCase("web1", "Web1")
+	// the registry spells the name with upper case, the line does not
+	sb.write("state/staging", "192.0.2.9/32|lab|host|web1|2026-01-01\n192.0.2.7/32|lab|host|web2|2026-01-01\n", 0o600)
+	sb.run("", []string{"host", "rename", "Web1", "web1"})
+	sb.expect(0, "Host 'Web1' renamed to 'web1'.", "")
+	if got, want := sb.read("state/staging"), "192.0.2.9/32|lab|host|web1|2026-01-01\n192.0.2.7/32|lab|host|web2|2026-01-01\n"; got != want {
+		t.Errorf("staging after the spelling: %q, want %q", got, want)
+	}
+
+	// the line is spelled with upper case, the host is not
+	sb = renameLab(t)
+	sb.write("state/staging", "192.0.2.9/32|lab|host|WEB1|2026-01-01\n192.0.2.7/32|lab|host|web2|2026-01-01\n", 0o600)
+	sb.run("", []string{"host", "rename", "web1", "web7"})
+	sb.expect(0, "Host 'web1' renamed to 'web7'.", "")
+	if got, want := sb.read("state/staging"), "192.0.2.9/32|lab|host|web7|2026-01-01\n192.0.2.7/32|lab|host|web2|2026-01-01\n"; got != want {
+		t.Errorf("staging of a line spelled with upper case: %q, want %q", got, want)
+	}
+}

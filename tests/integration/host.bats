@@ -322,7 +322,7 @@ on_tty() {
     assert_line "TAC_UID_LAST=89999"
     assert_line "TAC_UID_PREVIOUS=''"
     assert_line "TAC_ENGINEER_SUDO=ALL"
-    assert_line "TAC_PROTOCOL=6"
+    assert_line "TAC_PROTOCOL=7"
     # The ID maps, then the accounts, were read over the shared connection,
     # read-only, before the copy.
     stub_called "^ssh -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=~/.ssh/tacctl-%C -o ControlPersist=60 -o ForwardAgent=no -o ClearAllForwardings=yes -T web1 getent passwd$"
@@ -1296,7 +1296,7 @@ _container_ssh() {
     stub_cmd ssh 'case "$*" in
         *tacctl-check*) printf "tacctl-check %s\n" "group tac-users 80000" "group tac-superuser 1002" "group tac-engineer 80005" \
             "account alice 80000 80000 700 /home/alice" "pam tacctl-auth a" "pam tacctl-account b" "pam tacctl-session c" \
-            "pam-written tacctl-auth a" "pam-written tacctl-account b" "pam-written tacctl-session c" "protocol 6" ;;
+            "pam-written tacctl-auth a" "pam-written tacctl-account b" "pam-written tacctl-session c" "protocol 7" ;;
         *) true ;;
     esac'
     run "$TACCTL_BIN_SCRIPT" host show web1 --check
@@ -1329,7 +1329,7 @@ _container_ssh() {
         *web2.example.net*tacctl-check*) echo "sudo needs a password" >&2; false ;;
         *tacctl-check*) printf "tacctl-check %s\n" "group tac-users 80000" "group tac-superuser 1002" "group tac-engineer 80005" \
             "account alice 80000 80000 700 /home/alice" "pam tacctl-auth a" "pam tacctl-account b" "pam tacctl-session c" \
-            "pam-written tacctl-auth a" "pam-written tacctl-account b" "pam-written tacctl-session c" "protocol 6" ;;
+            "pam-written tacctl-auth a" "pam-written tacctl-account b" "pam-written tacctl-session c" "protocol 7" ;;
         *) true ;;
     esac'
     run --separate-stderr "$TACCTL_BIN_SCRIPT" host check --all
@@ -1362,7 +1362,7 @@ _container_ssh() {
         *web2.example.net*tacctl-check*) echo "sudo needs a password" >&2; false ;;
         *tacctl-check*) printf "tacctl-check %s\n" "group tac-users 80000" "group tac-superuser 1002" "group tac-engineer 80005" \
             "account alice 80000 80000 700 /home/alice" "pam tacctl-auth a" "pam tacctl-account b" "pam tacctl-session c" \
-            "pam-written tacctl-auth a" "pam-written tacctl-account b" "pam-written tacctl-session c" "protocol 6" ;;
+            "pam-written tacctl-auth a" "pam-written tacctl-account b" "pam-written tacctl-session c" "protocol 7" ;;
         *) true ;;
     esac'
     run --separate-stderr "$TACCTL_BIN_SCRIPT" host check web2 web1 --concurrency 2
@@ -1394,7 +1394,7 @@ _container_ssh() {
     run "$TACCTL_BIN_SCRIPT" host show web1 --check
     assert_failure 1
     assert_line "  - bob is an engineer but is still in tac-superuser (full sudo; the engineer tier gets tac-engineer). Fix: tacctl host sync web1"
-    assert_line "  - the host ran client script protocol 5; this tacctl writes 6. Fix: tacctl host sync web1"
+    assert_line "  - the host ran client script protocol 5; this tacctl writes 7. Fix: tacctl host sync web1"
     refute_output --partial "alice is an engineer"
     refute_output --partial "tac-engineer is missing"
     assert_line "  3 differences."
@@ -1599,4 +1599,64 @@ YAML
     assert_success
     run "$TACCTL_BIN_SCRIPT" config linux uid alice
     assert_output "80005"
+}
+
+# _own_server: this server enrolled (its registry line), its sync run by a
+# stand-in for bash that only records the call (the real script needs root).
+_own_server() {
+    printf 'authsrv|local||lab|127.0.0.1|\n' >> "${TACCTL_STATE_DIR}/linux-hosts"
+    printf '#!/bin/bash\ncase "$*" in\n  *--accounts-only*) echo "bash $*" >> "%s" ;;\n  *) exec /bin/bash "$@" ;;\nesac\n' "$CALLS_LOG" > "${STUB_BIN}/bash"
+    chmod +x "${STUB_BIN}/bash"
+}
+
+# _syncs: how many times the stand-in ran the accounts-only sync of this server.
+_syncs() { grep -c -- '--accounts-only$' "$CALLS_LOG" || true; }
+
+@test "user add: with this server enrolled, its accounts are synced at once, once, in one INFO line" {
+    _own_server
+    run "$TACCTL_BIN_SCRIPT" user add bob operator --hash "$HASH" --scopes lab
+    assert_success
+    _plain
+    assert_output --partial "[INFO] User 'bob' added (operator) with scopes: lab"
+    assert_output --partial "[INFO] This server's accounts were synced: "
+    refute_output --partial "cannot log in to this server"
+    refute_output --partial "next sync of this server"
+    [[ "$(_syncs)" == 1 ]]
+    # without the server enrolled nothing is said of a sync
+    : > "${TACCTL_STATE_DIR}/linux-hosts"
+    run "$TACCTL_BIN_SCRIPT" user add carol operator --hash "$HASH" --scopes lab
+    assert_success
+    refute_output --partial "synced"
+    [[ "$(_syncs)" == 1 ]]
+}
+
+@test "user disable: names the other hosts in one warning, and a script is asked nothing" {
+    "$TACCTL_BIN_SCRIPT" user add bob operator --hash "$HASH" --scopes lab > /dev/null
+    run "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab
+    assert_success
+    _own_server
+    run "$TACCTL_BIN_SCRIPT" user disable bob --yes
+    assert_success
+    _plain
+    assert_output --partial "[WARN] 'bob' can still log in to 1 enrolled host until each host's next sync, which expires the account there: tacctl host sync web1"
+    refute_output --partial "Sync these hosts now"
+    [[ "$(_syncs)" == 1 ]]
+}
+
+@test "user enable: on a terminal asks whether to sync the other hosts; the default is no, --yes does not answer" {
+    "$TACCTL_BIN_SCRIPT" user add bob operator --hash "$HASH" --scopes lab > /dev/null
+    run "$TACCTL_BIN_SCRIPT" host enroll admin@web1.example.net --scope lab
+    assert_success
+    "$TACCTL_BIN_SCRIPT" user disable bob > /dev/null
+    _own_server
+    : > "$PUSHED"
+    on_tty '\n' user enable bob --yes
+    assert_success
+    assert_output --partial "Sync these hosts now? [y/N]"
+    [[ ! -s "$PUSHED" ]]
+    "$TACCTL_BIN_SCRIPT" user disable bob > /dev/null
+    on_tty 'y\n' user enable bob
+    assert_success
+    assert_output --partial "[INFO] 1 enrolled host was synced."
+    [[ -s "$PUSHED" ]]
 }

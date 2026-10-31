@@ -962,12 +962,19 @@ func (inv *invocation) hostEnrollRun(o enrollOpts) error {
 		return err
 	}
 	defer func() { _ = os.Remove(script) }()
-	req, err := inv.scriptRequest(scope, server, method, script, target == hosts.Local)
+	req, err := inv.scriptRequest(scope, server, method, script, target == hosts.Local, name)
 	if err != nil {
 		return err
 	}
 	req.Temp, req.Prebuilt = true, prebuilt
 	req.Local = target == hosts.Local
+	// A host moved into a scope that is locked down has accounts that may have
+	// sessions open: it gets the step that ends them, as a host that waits for
+	// the lockdown does.
+	movedScope := enrolled && cur.Scope != scope
+	if movedScope && req.Lockdown == hosts.LockdownOn {
+		req.Lockdown = hosts.LockdownOnEnd
+	}
 	if err := inv.homesToDelete(he, &req, name, target, port, identity, removeHome); err != nil {
 		return err
 	}
@@ -1079,6 +1086,13 @@ func (inv *invocation) hostEnrollRun(o enrollOpts) error {
 		}
 	}
 	inv.verbResult(audit.Info, enrollBase, "")
+	if movedScope {
+		// the old scope's list has no use for the host (the script ran as the
+		// new scope's: it wrote or removed the drop-in as that scope says)
+		inv.lockdownHostGone(name)
+	} else {
+		inv.lockdownHostDone(entry, req.Lockdown)
+	}
 	if he.Summary != nil {
 		a.Out.InfoE("Host '" + name + "' enrolled (" + he.Summary.Counts() + ").")
 	} else {
@@ -1908,7 +1922,7 @@ func (inv *invocation) syncRun(st *hostStep, he *hosts.Env, e hosts.Entry, metho
 		if script, err = hosts.TempFile(inv.app.Paths.TempDir); err != nil {
 			return
 		}
-		if req, err = inv.scriptRequest(e.Scope, e.Server, method, script, e.Target == hosts.Local); err != nil {
+		if req, err = inv.scriptRequest(e.Scope, e.Server, method, script, e.Target == hosts.Local, e.Name); err != nil {
 			return
 		}
 		req.Temp, req.AccountsOnly = true, true
@@ -1960,6 +1974,8 @@ func (inv *invocation) syncRun(st *hostStep, he *hosts.Env, e hosts.Entry, metho
 			counts = he.Summary.Counts()
 		}
 		inv.app.Out.InfoE(e.Name + ": synced (" + counts + ").")
+		// the sshd drop-in is as the lockdown record says: the host is off its list
+		inv.lockdownHostDone(e, req.Lockdown)
 		he.PinKeys(st.ctx, e)
 		resolved := "127.0.0.1"
 		if host, _, ok := hosts.ScanTarget(e.Target, e.Port); ok {
@@ -2102,6 +2118,8 @@ func (inv *invocation) hostUnenroll(args []string) error {
 		return err
 	}
 	inv.forgetHostKeys(name)
+	// the removal script took sshd's lockdown drop-in off the host
+	inv.lockdownHostGone(name)
 	if err := inv.hostRecords().Forget(name); err != nil {
 		a.Out.WarnE(name + ": its record (" + inv.app.Paths.HostRecords + "/" + name + ".json) could not be removed: " + strings.Join(msgs(err), " "))
 	}

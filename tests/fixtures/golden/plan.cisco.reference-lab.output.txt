@@ -17,6 +17,8 @@
 ! listed by device config diff.
 ! Secrets: 2 present (the TACACS+ server key, the SNMP community); only their presence is checked,
 ! --secrets writes them again.
+! Note: the source of the AAA server is not checked against the interfaces of the device: this login
+! cannot see the interfaces.
 ! The change is live when the paste ends. NOTHING rolls it back by itself. Keep a second terminal
 ! logged in at privilege 15 until the end.
 ! Paste over ssh, not the console; on a console paste at most twenty lines at a time and watch the

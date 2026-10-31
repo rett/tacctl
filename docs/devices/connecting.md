@@ -10,6 +10,7 @@ tacctl device add core-sw1 10.99.0.1 --vendor cisco --legacy-ssh   # register; p
                                                                    # fingerprints
 tacctl device check core-sw1        # scope, vendor tag, last seen, reachable, host key against the
                                     # pin, SNMP name and location
+tacctl device check core-sw1 --sources  # also test the AAA source addresses (host key, no login)
 tacctl device config show core-sw1  # the device's data, then the walkthrough for its vendor and
                                     # scope
 tacctl ssh core-sw1                 # a session, as you

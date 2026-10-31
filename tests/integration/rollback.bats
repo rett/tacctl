@@ -455,13 +455,13 @@ JSON
     assert_output --partial "Roll back to 0.2.19 (dry run)"
     assert_output --partial "put back the per-tier sudoers drop-in 0.2.19 writes"
     [[ "$(_sums)" == "$before" ]]
-    run "$TACCTL_BIN_SCRIPT" rollback 0.2.22
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.23
     assert_failure 1
-    assert_output --partial "'0.2.22' is not a release to roll back to"
-    assert_output --partial "prepares the state for 0.2.21 (the release before this one)"
+    assert_output --partial "'0.2.23' is not a release to roll back to"
+    assert_output --partial "prepares the state for 0.2.22 (the release before this one)"
 }
 
-@test "rollback 0.2.21: the release before this one; the dry run writes nothing and --apply takes out the server name and nothing else" {
+@test "rollback 0.2.21: the release before 0.2.22; the dry run writes nothing and --apply takes out the server name and nothing else" {
     _state_024
     "$TACCTL_BIN_SCRIPT" server name core-1 > /dev/null
     before=$(_sums)
@@ -486,6 +486,80 @@ JSON
     assert_output --partial "Nothing to convert: every file is one 0.2.21 can read."
 }
 
+@test "rollback 0.2.22: the release before this one; the dry run writes nothing and --apply converts nothing" {
+    _state_024
+    "$TACCTL_BIN_SCRIPT" server name core-1 > /dev/null
+    "$TACCTL_BIN_SCRIPT" config devices timeout-scale 3 > /dev/null
+    before=$(_sums)
+    n=$(_snapshots)
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.22 --hosts
+    assert_success
+    assert_output --partial "Roll back to 0.2.22 (dry run)"
+    assert_output --partial "nothing to remove (every key of tacctl.yaml is one 0.2.22 knows)"
+    assert_output --partial "nothing to do for 0.2.22: this release changed nothing on the enrolled hosts"
+    refute_output --partial "remove device.timeout_scale"
+    assert_output --partial "This was a dry run: nothing was changed."
+    [[ "$(_sums)" == "$before" ]]
+    [[ "$(_snapshots)" == "$n" ]]
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.22 --apply
+    assert_success
+    assert_output --partial "tacctl-tiers: rewritten with the text 0.2.22 writes"
+    assert_output --partial "tacctl upgrade --branch 0.2.22"
+    # Only the engineer's rule of 'device clone' goes, from the sudoers drop-in.
+    [[ "$(_sums | grep -v ' sudoers.d/tacctl-tiers$')" == "$(grep -v ' sudoers.d/tacctl-tiers$' <<< "$before")" ]]
+    [[ "$(_sums)" != "$before" ]]
+    ! grep -q 'device clone' "$BATS_TEST_TMPDIR/sudoers.d/tacctl-tiers"
+    run "$TACCTL_BIN_SCRIPT" config get server.name unset-marker
+    assert_output "core-1"
+}
+
+@test "rollback 0.2.22: an email address is removed after a snapshot, and backup recover puts it back" {
+    "$TACCTL_BIN_SCRIPT" user email alice alice@example.net
+    before=$(_sums)
+    n=$(_snapshots)
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.22
+    assert_success
+    assert_output --partial "remove email of alice"
+    assert_output --partial "Email addresses are removed from the store"
+    assert_output --partial "--apply takes a snapshot of the state first"
+    assert_output --partial "tacctl rollback 0.2.22 --apply --yes"
+    refute_output --partial "example.net"
+    [[ "$(_sums)" == "$before" ]]
+    [[ "$(_snapshots)" == "$n" ]]
+
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.22 --apply
+    assert_failure
+    assert_output --partial "The warnings above need your decision"
+    [[ "$(_sums)" == "$before" ]]
+
+    : > "$CALLS_LOG"
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.22 --apply --yes
+    assert_success
+    assert_output --partial "store.yaml: removed the email address of 1 user"
+    assert_output --partial "tacctl backup recover"
+    [[ "$(_snapshots)" -eq $((n + 1)) ]]
+    ! grep -q 'email:' "${TACCTL_STATE_DIR}/store.yaml"
+    run grep -E '^logger -t tacctl .*rollback target=0.2.22' "$CALLS_LOG"
+    assert_output --partial "email-users=alice"
+    assert_output --partial " kept="
+    ! grep -q 'alice@example.net' "$CALLS_LOG"
+
+    snap=$(find "$TACCTL_STATE_DIR/backups" -mindepth 1 -maxdepth 1 -type d -name '2*' | sort | tail -n 1)
+    snap=${snap##*/}
+    # the snapshot is kept, and the kept copy outlives the original
+    [[ -f "${TACCTL_STATE_DIR}/backups-kept/$snap/store.yaml" ]]
+    grep -q 'rollback to 0.2.22: dropped the email addresses of 1 user' "${TACCTL_STATE_DIR}/backups-kept/$snap/kept"
+    rm -rf "${TACCTL_STATE_DIR}/backups/$snap"
+    run "$TACCTL_BIN_SCRIPT" backup recover "$snap" --only email --yes
+    assert_success
+    assert_output --partial "Recovered 1 item from snapshot $snap."
+    run "$TACCTL_BIN_SCRIPT" user email alice
+    assert_output "alice@example.net"
+    # a second dry run of the rollback lists the address again
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.22
+    assert_output --partial "remove email of alice"
+}
+
 @test "rollback 0.2.9 is the superuser's alone" {
     _state_029
     before=$(_sums)
@@ -494,4 +568,56 @@ JSON
     assert_failure 1
     assert_output --partial "is not permitted for the engineer tier"
     [[ "$(_sums)" == "$before" ]]
+}
+
+@test "rollback 0.2.22: the SNMPv3 pool is written in version 1 after a snapshot, and backup recover puts the users back" {
+    printf 'auth-pass-bats\npriv-pass-bats\n' | "$TACCTL_BIN_SCRIPT" config snmp v3-user add alice --default --stdin > /dev/null
+    printf 'auth-pass-bats\npriv-pass-bats\n' | "$TACCTL_BIN_SCRIPT" config snmp v3-user add bob --stdin > /dev/null
+    before=$(_sums)
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.22
+    assert_success
+    assert_output --partial "write the SNMP credential files in version 1"
+    assert_output --partial "1 user is dropped from 1 level (the config (1))"
+    assert_output --partial "tacctl backup recover <snapshot> --only snmp-users"
+    refute_output --partial "alice"
+    refute_output --partial "bob"
+    [[ "$(_sums)" == "$before" ]]
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.22 --apply
+    assert_failure 1
+    assert_output --partial "The warnings above need your decision"
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.22 --apply --yes
+    assert_success
+    assert_output --partial "wrote 1 SNMP credential file in version 1"
+    assert_output --partial "dropped from the credential files of 1 level"
+    run grep -c "version: 1" "${TACCTL_STATE_DIR}/snmp.yaml"
+    assert_output "1"
+    run grep -c bob "${TACCTL_STATE_DIR}/snmp.yaml"
+    assert_output "0"
+    snap=$(ls "${TACCTL_STATE_DIR}/backups-kept" | tail -n 1)
+    [[ -n "$snap" ]]
+    run "$TACCTL_BIN_SCRIPT" backup recover "$snap" --only snmp-users --dry-run
+    assert_success
+    assert_output --partial "the config: restore 1 user"
+    refute_output --partial "bob"
+    run "$TACCTL_BIN_SCRIPT" backup recover "$snap" --only snmp-users --yes
+    assert_success
+    assert_output --partial "Recovered 1 item from snapshot $snap."
+    run "$TACCTL_BIN_SCRIPT" config snmp v3-user list
+    assert_output --partial "alice  default"
+    assert_output --partial "bob"
+}
+
+@test "rollback 0.2.22: a community and one default SNMPv3 user are version 1 files, so there is nothing to convert" {
+    printf 'comm-bats-1\n' | "$TACCTL_BIN_SCRIPT" config snmp community --stdin > /dev/null
+    printf 'auth-pass-bats\npriv-pass-bats\n' | "$TACCTL_BIN_SCRIPT" config snmp v3-user add alice --default --stdin > /dev/null
+    run grep -c "version: 1" "${TACCTL_STATE_DIR}/snmp.yaml"
+    assert_output "1"
+    before=$(_sums)
+    n=$(_snapshots)
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.22 --apply
+    assert_success
+    refute_output --partial "credential files"
+    assert_output --partial "Nothing to convert: every file is one 0.2.22 can read."
+    [[ "$(_sums)" == "$before" ]]
+    [[ "$(_snapshots)" == "$n" ]]
 }

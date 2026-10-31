@@ -89,7 +89,9 @@ func (inv *invocation) passwdSelf(args []string) error {
 		inv.detailPwChange(username, false, "self")
 		a.Out.Info("The required password change is done.")
 		if pwchange.Subject(a.Conf(), m, m.User(username)) {
-			inv.reportHostsSync(m, []string{username}, false)
+			err := inv.noticeFlagHosts(m, []string{username}, false, false)
+			inv.echo("")
+			return err
 		}
 	}
 	inv.echo("")
