@@ -131,6 +131,7 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `host move` | `scope` `moved` `failed` (for a move of every drifted host) |
 | `device add` | `name` `address` `vendor` `count` |
 | `device clone` | `from` `to` `address` (the bench address) `scope` `snmp_users` and `block_files` (counts) `count` |
+| `device clone` (staging) | `scope staging add` with `cidr` `scope` `device` and `covered=yes` for the entry of a bench address the scope answers already (no /32 is added) |
 | `device remove` | `names` (the first 20, then `+n`) `count` |
 | `device rename` | `from` `to` `count`, and `reason=device-name` when `device enroll` took over the name the device is configured with |
 | `device replace` | `old` `new` `address` `hold_cleared=yes\|no` `snmp_files` `block_files` `notices` (counts of what went with the original) `count`; with it `scope staging done` for the /32 and, for a hold, `breakglass release` |

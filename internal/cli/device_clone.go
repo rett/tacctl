@@ -121,8 +121,17 @@ func (inv *invocation) deviceClone(args []string) error {
 	// The refusals of the staging address (an address another scope or an
 	// enrolled host has, a collision, a vendor tag) read only: they come
 	// before the snapshot too.
-	if _, err := inv.stagingCheck(scope, bench); err != nil {
+	covered, err := inv.stagingCheck(scope, bench)
+	if err != nil {
 		return err
+	}
+	if covered {
+		// The scope answers the address already: an entry of something else
+		// is that one's (an address nobody answers has a stale entry
+		// replaced, as the other --staging verbs do).
+		if err := inv.stagingConflict(bench, newName); err != nil {
+			return err
+		}
 	}
 
 	// One snapshot of the state before the staging address, the registry
@@ -138,8 +147,6 @@ func (inv *invocation) deviceClone(args []string) error {
 	if err := inv.stagingAdd(scope, bench, "device", newName); err != nil {
 		return err
 	}
-	// A staging entry this run made: the /32 it added, or, for an address
-	// the scope answered already, the entry alone (Covered).
 	staged, added := inv.stagingEntryOf(bench)
 	added = added && !hadStaging
 
@@ -174,6 +181,14 @@ func (inv *invocation) deviceClone(args []string) error {
 			}
 		}
 		return err
+	}
+	// An address the scope answered already is staged without a /32: the
+	// entry alone (Covered), once the device is registered.
+	if covered && !hadStaging {
+		if err := inv.stagingCoveredAdd(scope, bench, newName); err != nil {
+			return undo(err, true)
+		}
+		staged, added = inv.stagingEntryOf(bench)
 	}
 	// The registry first, then the file in the format the entry as it stands
 	// allows, as 'device snmp <name> community' does: the copy is a new device,

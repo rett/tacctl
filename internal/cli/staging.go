@@ -136,9 +136,9 @@ func (inv *invocation) stagingCheck(scope, addr string) (covered bool, err error
 // stagingAdd answers addr from scope with a staging /32 (for the host or
 // device kind/name), unless scope already answers it. Nothing is changed
 // when the /32 cannot be added (another scope owns it, a tagged address).
-// A device that is named gets a staging entry for an address the scope
-// answers already too (Covered, no /32), so that 'device rename --replace'
-// finds the device staged whichever address the bench has.
+// An address the scope answers already needs no /32 and writes nothing here:
+// 'device clone' records the device it registers there itself
+// (stagingCoveredAdd), once the registry line is written.
 func (inv *invocation) stagingAdd(scope, addr, kind, name string) error {
 	a := inv.app
 	covered, err := inv.stagingCheck(scope, addr)
@@ -153,17 +153,7 @@ func (inv *invocation) stagingAdd(scope, addr, kind, name string) error {
 	if covered {
 		info, _ := m.LookupAddr(addr)
 		a.Out.InfoE("--staging: scope '" + scope + "' already answers " + addr + " (prefix " + info.Prefix + "); no staging address is needed.")
-		if kind != "device" || name == "" {
-			return nil
-		}
-		entries := inv.stagingLoad()
-		for _, e := range entries {
-			if e.CIDR == cidr {
-				return nil
-			}
-		}
-		entries = append(entries, stagingEntry{cidr, scope, kind, name, a.Knobs.Now().Format("2006-01-02 15:04"), true})
-		return inv.stagingSave(entries)
+		return nil
 	}
 	csv := joinNonEmpty(append(append([]string(nil), m.ScopePrefixes(scope)...), cidr), ",")
 	if info, found := m.LookupAddr(addr); found {
@@ -196,6 +186,51 @@ func (inv *invocation) stagingAdd(scope, addr, kind, name string) error {
 		how = "remove it once the device is installed: tacctl scope staging remove " + cidr
 	}
 	a.Out.InfoE("Staging address " + cidr + " added to scope '" + scope + "' (its secret and users) for " + who + "; " + how + ".")
+	return nil
+}
+
+// stagingConflict is the refusal of a bench address that has a staging entry
+// already for something else than the device name (a host, or another device):
+// the entry is that one's, and a second owner of the address would leave one of
+// them unfindable. Nothing is changed. A superuser removes the entry first.
+func (inv *invocation) stagingConflict(addr, name string) error {
+	for _, e := range inv.stagingLoad() {
+		if e.CIDR != addr+"/32" || (e.Kind == "device" && strings.EqualFold(e.Name, name)) {
+			continue
+		}
+		who := e.Kind
+		if e.Name != "" {
+			who += " '" + e.Name + "'"
+		}
+		return inv.usageErr("--staging: "+addr+" is staged for "+who+" already (tacctl scope staging list).",
+			"Give the bench address another value, or have a superuser remove that entry first: tacctl scope staging remove "+e.CIDR+". Nothing was changed.")
+	}
+	return nil
+}
+
+// stagingCoveredAdd records the device at a bench address its scope answers
+// already: an entry marked Covered, with no /32 (none was added, so none is
+// ever taken out), audited as the add of a /32 is. It is written once the
+// device is registered, under the snapshot of the verb that registers it, and
+// stays until the device is seen at another address, 'device rename
+// --replace' ends it or a superuser removes it ('scope staging remove'): a
+// device that is removed afterwards leaves it, as a staging /32 is left.
+func (inv *invocation) stagingCoveredAdd(scope, addr, name string) error {
+	a := inv.app
+	cidr := addr + "/32"
+	base := "scope staging add cidr=" + cidr + " scope=" + scope + " device=" + name + " covered=yes by=" + inv.sudoUser()
+	entries := inv.stagingLoad()
+	for _, e := range entries {
+		if e.CIDR == cidr {
+			return nil
+		}
+	}
+	entries = append(entries, stagingEntry{cidr, scope, "device", name, a.Knobs.Now().Format("2006-01-02 15:04"), true})
+	if err := inv.stagingSave(entries); err != nil {
+		inv.verbResult(audit.Info, base, "write")
+		return err
+	}
+	inv.verbResult(audit.Info, base, "")
 	return nil
 }
 

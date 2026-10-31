@@ -452,3 +452,82 @@ func TestDeviceCloneWritesTheFileThatTheCopysEntryAllows(t *testing.T) {
 		t.Errorf("a default of another level:\n%s", sb.read("state/snmp/devices/lab-sw2.yaml"))
 	}
 }
+
+// A bench address the scope answers already is recorded by the clone alone
+// (config --staging --name prints a configuration and writes nothing there),
+// after the registry line, under the clone's snapshot, and audited as the add
+// of a /32 is, with covered=yes.
+func TestDeviceCloneRecordsACoveredAddressAudited(t *testing.T) {
+	sb := engineerSandbox(t)
+	sb.run("", []string{"config", "cisco", "--scope", "lab", "--staging", "192.168.1.90", "--name", "ghost"})
+	if sb.fileExists("state/staging") {
+		t.Errorf("config wrote a covered entry:\n%s", sb.read("state/staging"))
+	}
+	snaps := sb.snapshots()
+	sb.asEngineer("", "device", "clone", "lab-sw", "lab-sw2", "--staging", "192.168.1.50")
+	sb.expect(0, "", "")
+	if sb.snapshots() != snaps+1 || !strings.HasSuffix(sb.read("state/staging"), "|covered\n") {
+		t.Errorf("snapshots %d -> %d, staging %q", snaps, sb.snapshots(), sb.read("state/staging"))
+	}
+	if line := auditLine(sb.runner, "scope staging add cidr=192.168.1.50/32 scope=lab device=lab-sw2 covered=yes by=bob"); line == "" {
+		t.Errorf("audit lines: %q", auditLines(sb.runner))
+	}
+
+	// A clone that fails to register leaves no entry.
+	sb2 := engineerSandbox(t)
+	sb2.write("state/snmp/devices/lab-sw2.yaml", "version: 2\ncommunity: example-leftover\n", 0o600)
+	sb2.dev("", "clone", "lab-sw", "lab-sw2", "--staging", "192.168.1.50")
+	if sb2.code != 1 || sb2.fileExists("state/staging") {
+		t.Errorf("a refused clone: %d %q", sb2.code, sb2.stderr())
+	}
+}
+
+// An entry that is there for the address already is the same device's, which
+// the clone reuses, or somebody else's, which it refuses before anything is
+// changed (no snapshot): the later --replace would not find the device.
+func TestDeviceCloneAtACoveredAddressWithAnEntry(t *testing.T) {
+	sb := engineerSandbox(t)
+	for _, c := range []struct{ line, msg string }{
+		{"192.168.1.60/32|lab|host|web1|2026-10-01 10:00\n", "is staged for host 'web1' already"},
+		{"192.168.1.60/32|lab|device|ghost|2026-10-01 10:00|covered\n", "is staged for device 'ghost' already"},
+	} {
+		sb.write("state/staging", c.line, 0o600)
+		was, snaps := sb.devices(), sb.snapshots()
+		sb.dev("", "clone", "lab-sw", "lab-sw2", "--staging", "192.168.1.60")
+		if sb.code != 1 || !strings.Contains(sb.stderr(), c.msg) || sb.devices() != was || sb.snapshots() != snaps || sb.read("state/staging") != c.line {
+			t.Errorf("%q: %d %q", c.line, sb.code, sb.stderr())
+		}
+	}
+	// the same device's entry stays as it is
+	same := "192.168.1.60/32|lab|device|lab-sw2|2026-10-01 10:00|covered\n"
+	sb.write("state/staging", same, 0o600)
+	sb.dev("", "clone", "lab-sw", "lab-sw2", "--staging", "192.168.1.60")
+	sb.expect(0, "", "")
+	if sb.read("state/staging") != same {
+		t.Errorf("staging:\n%s", sb.read("state/staging"))
+	}
+}
+
+// A write that fails after the covered entry took it back too: the clone is
+// all or nothing at an address the scope answers already as well.
+func TestDeviceCloneIsAllOrNothingAtACoveredAddress(t *testing.T) {
+	sb := cloneFixture(t)
+	was := sb.devices()
+	once := true
+	sb.hooks.deviceWriteStep = func() {
+		if once {
+			once = false
+			if err := os.MkdirAll(sb.path("state", "snmp", "devices", cloneNew+".yaml"), 0o700); err != nil {
+				t.Error(err)
+			}
+		}
+	}
+	sb.dev("", "clone", cloneSrc, cloneNew, "--staging", "192.168.1.77")
+	sb.hooks.deviceWriteStep = nil
+	if sb.code != 1 || !strings.Contains(sb.stderr(), "The clone was not made. Nothing was kept.") {
+		t.Fatalf("%d %q", sb.code, sb.stderr())
+	}
+	if sb.devices() != was || sb.fileExists("state/staging") {
+		t.Errorf("something of the clone is left:\n%s\n%s", sb.devices(), sb.read("state/staging"))
+	}
+}

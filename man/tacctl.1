@@ -449,7 +449,7 @@ is taken out; an edited drop\-in is left): 0.2.22
 reads every other file this release writes, so the server name, the timing
 scale, the server address, the users' login to this server, a user name with a
 period and an emergency lockdown (of scopes with no enrolled host) stay. With no
-address in the store and no SNMP
+address in the store, no SNMP
 credential file in version 2 (a second or non\-default user, a default naming
 another level's user, a device's file without an
 .B snmp:
@@ -7079,15 +7079,13 @@ users answer it there, so nothing changes on the device when it is
 installed in the scope's prefixes. The /32 is removed once the host (its
 enroll or sync) or the registered device
 .RB ( "device set" )
-is seen at another address the scope covers. A named device at a bench address the scope answers already
-.RB ( "device clone" ,
-or
-.B \-\-name
-with
-.BR \-\-staging )
-gets an entry without a /32 (it is listed like the others): no prefix is added and none is ever taken out, by the end of the entry or by
+is seen at another address the scope covers. A clone at a bench address the scope answers already
+.RB ( "device clone" )
+gets an entry without a /32 (it is listed like the others, and logged as
+.BR "scope staging add ... covered=yes" ):
+no prefix is added and none is ever taken out, by the end of the entry or by
 .BR remove ,
-and the entry lasts until the device is seen at another address or is replaced.
+and the entry lasts until the device is seen at another address, is replaced or is removed by hand; a clone that is removed leaves it, as a staging /32 is left. A bench address already staged for a host or another device is refused to the clone.
 .B list
 (the default) shows them with where each is seen now;
 .B remove

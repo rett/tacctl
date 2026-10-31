@@ -97,7 +97,7 @@ func (inv *invocation) deviceReplace(p Parsed) error {
 	staged, ok := inv.stagingEntryOf(bench)
 	if !ok {
 		return inv.usageErr("'"+replName+"' is not staged: no staging address of the scope holds "+bench+". --replace takes over from the original a device that is registered at a bench address.",
-			"Register it from the original with 'tacctl device clone "+shellquote.Q(origName)+" "+shellquote.Q(replName)+" --staging <bench-ip>' or stage it with 'tacctl config <vendor> --scope <scope> --staging <bench-ip> --name "+shellquote.Q(replName)+"'. Nothing was changed.")
+			"Register it from the original with 'tacctl device clone "+shellquote.Q(origName)+" "+shellquote.Q(replName)+" --staging <bench-ip>' or, for a bench address no prefix of its scope covers, stage it with 'tacctl config <vendor> --scope <scope> --staging <bench-ip> --name "+shellquote.Q(replName)+"'. Nothing was changed.")
 	}
 	// The original's hold is a superuser's to clear (release is, and an
 	// engineer has no break-glass privilege); the replacement's own would be

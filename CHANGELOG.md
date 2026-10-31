@@ -13,7 +13,7 @@ current behaviour; this file is where history lives.
    scale, the server address, the users' login to this server, a user name
    with a period and an emergency lockdown all stay (a lockdown with enrolled
    hosts stops every target, item 20). With no address in the
-   store and no SNMP credential file in version 2 (item 14: a second or a
+   store, no SNMP credential file in version 2 (item 14: a second or a
    non-default v3 user, a default naming another level's user, a device's
    file without an `snmp:` entry) and no covered staging entry no file is converted, no snapshot is taken
    and it needs no `--yes`; with an address, a version 2 file or a covered staging entry, it takes
@@ -452,10 +452,12 @@ current behaviour; this file is where history lives.
     one device for each address; the bench address is added to the scope of
     the original as a /32 before the registry is written, as `config
     <vendor> --staging` does (an address the scope answers already gets a
-    staging entry without a /32, which nothing takes out of the scope, and
-    which lasts until the device is seen at another address or replaced; so
-    does a named device of `config <vendor> --staging --name`), and a device
-    no scope answers is refused. The
+    staging entry without a /32, written once the registry line is, which
+    nothing takes out of the scope, and which lasts until the device is seen
+    at another address, `device rename --replace` ends it or a superuser
+    removes it: a clone that is removed later leaves it, as a staging /32 is
+    left; an address already staged for a host or another device is refused
+    before the snapshot), and a device no scope answers is refused. The
     new name follows the rules of `device add` (lower case, not taken, not
     generic unless `--allow-generic`). Every refusal, those of the staging
     address included, comes before the one snapshot; what can
@@ -465,7 +467,8 @@ current behaviour; this file is where history lives.
     read them there); the verb gives them no way to set SNMP settings that
     are not a copy of the device's. The audit line is `device clone from= to=
     address= scope= snmp_users= block_files= count=1`, counts and names, never
-    a credential. The engineer's sudoers rows gain `device clone *`; the
+    a credential, and the entry without a /32 is audited as the add of a /32
+    is, `scope staging add cidr= scope= device= covered=yes`. The engineer's sudoers rows gain `device clone *`; the
     texts that `tacctl rollback` puts back for the older releases do not have
     it: the `0.2.22`, `0.2.21` and `0.2.20` targets rewrite the per-tier
     drop-in, when it is exactly this release's text, with 0.2.22's

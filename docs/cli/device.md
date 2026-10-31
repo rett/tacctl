@@ -189,8 +189,10 @@ device clone <name> <new> --staging <bench-ip> [--allow-generic]
     before the registry is written, as `config <vendor> --staging` does (an
     address the scope answers needs no /32 and gets a staging entry without one,
     which `device rename --replace` ends and which lasts until the device is seen
-    at another address; an engineer is refused one another scope answers; every
-    such refusal comes before the snapshot); a device no scope answers is refused. The new name is
+    at another address or a superuser removes it: a clone that is removed later
+    leaves it; an address already staged for a host or another device is refused;
+    an engineer is refused one another scope answers; every such refusal comes
+    before the snapshot); a device no scope answers is refused. The new name is
     lower case and not taken, and not a generic name unless `--allow-generic`
     is given. One snapshot is taken first and a write that fails takes the
     copy back whole. An engineer clones the devices of their own scopes, the
