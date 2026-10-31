@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/rett/tacctl/internal/snmp"
@@ -137,6 +138,15 @@ type Layer struct {
 	Auth    string
 	Priv    string
 	Creds   Creds
+	// Name and Setter describe the level in the problems of the resolution:
+	// "scope lab" and "tacctl scope snmp lab". Empty is a generic wording.
+	Name, Setter string
+}
+
+// Empty reports whether the level sets nothing of its own (the name and the
+// setter are no setting).
+func (l Layer) Empty() bool {
+	return l.Version == "" && l.Port == 0 && l.Timeout == 0 && l.Auth == "" && l.Priv == "" && l.Creds.Empty()
 }
 
 // Effective is the settings a device of a scope is read with, and where each
@@ -149,12 +159,20 @@ type Effective struct {
 	TimeoutFrom          string
 	Auth, AuthFrom       string
 	Priv, PrivFrom       string
-	// The community (v2c) and the v3 user with both passphrases (taken
-	// together from one level: a user from the scope and passphrases from
-	// the default would be a credential nobody set).
+	// The community (v2c).
 	Community, CommunityFrom string
+	// The v3 user (D304): the default of the device, else of its scope,
+	// else of the default level, found in the pool of one of the levels it
+	// may use. User is the name chosen (also when it cannot be found or
+	// lacks a passphrase: V3Problem says so), the passphrases are the
+	// user's, V3From the level whose pool holds the user, and DefaultFrom
+	// the level whose default chose it. With no default anywhere User is
+	// empty and both are "not set". Nothing falls back to another user.
 	User, AuthPass, PrivPass string
-	V3From                   string
+	V3From, DefaultFrom      string
+	// V3Problem is why the chosen user cannot be used, a fragment that ends
+	// in the command that fixes it ("" when it can, or none is chosen).
+	V3Problem string
 }
 
 // Resolve combines the scope's layer with the default's. A device in no
@@ -165,12 +183,14 @@ func Resolve(scope, def Layer) Effective { return ResolveDevice(Layer{}, scope, 
 // plan.md: its snmp map in devices.yaml and its file under snmp/devices)
 // with its scope's and the default's: the device's value, then the scope's,
 // then the default's, then the built-in, one setting at a time. The zero
-// Layer as dev is Resolve.
+// Layer as dev is Resolve. The v3 user is the one place that chooses
+// differently (D304 of docs/plans/0.2.23-plan.md): the first default user,
+// the device's, else the scope's, else the default level's, looked up in the
+// pools it may use (a device's: its own, its scope's, the default level's; a
+// scope's and the default level's: their own). A user that is not there, or
+// lacks a passphrase, is a problem, never a reason to take the next default.
 func ResolveDevice(dev, scope, def Layer) Effective {
-	levels := []struct {
-		l    Layer
-		from string
-	}{{dev, FromDevice}, {scope, FromScope}, {def, FromDefault}}
+	levels := []poolLevel{{dev, FromDevice}, {scope, FromScope}, {def, FromDefault}}
 	str := func(get func(Layer) string, builtIn string) (string, string) {
 		for _, lv := range levels {
 			if v := get(lv.l); v != "" {
@@ -197,21 +217,97 @@ func ResolveDevice(dev, scope, def Layer) Effective {
 	e.Auth, e.AuthFrom = str(func(l Layer) string { return l.Auth }, snmp.AuthSHA)
 	e.Priv, e.PrivFrom = str(func(l Layer) string { return l.Priv }, snmp.PrivAES128)
 	e.Community, e.CommunityFrom = str(func(l Layer) string { return l.Creds.Community }, "")
-	// The v3 user and both passphrases come together from one level: a user
-	// from the device and passphrases from the scope would be a credential
-	// nobody set.
-	e.V3From = NotSet
-	for _, lv := range levels {
-		if c := lv.l.Creds; c.User != "" || c.AuthPass != "" || c.PrivPass != "" {
-			e.User, e.AuthPass, e.PrivPass, e.V3From = c.User, c.AuthPass, c.PrivPass, lv.from
-			break
+	e.V3From, e.DefaultFrom = NotSet, NotSet
+	for i, lv := range levels {
+		if lv.l.Creds.Default == "" {
+			continue
 		}
+		// A device's default may name a user of any of the three pools; a
+		// scope's and the default level's only their own.
+		from := levels[i : i+1]
+		if i == 0 {
+			from = levels
+		}
+		e.resolveUser(lv, from)
+		break
 	}
 	return e
 }
 
-// HasV3 reports whether the user and both passphrases are set.
-func (e Effective) HasV3() bool { return e.User != "" && e.AuthPass != "" && e.PrivPass != "" }
+// poolLevel is a level with its origin.
+type poolLevel struct {
+	l    Layer
+	from string
+}
+
+// resolveUser looks the user that the default of chooser names up in the
+// pools of from.
+func (e *Effective) resolveUser(chooser poolLevel, from []poolLevel) {
+	name := chooser.l.Creds.Default
+	e.User, e.DefaultFrom = name, chooser.from
+	for _, pl := range from {
+		u, ok := pl.l.Creds.Find(name)
+		if !ok {
+			continue
+		}
+		e.AuthPass, e.PrivPass, e.V3From = u.AuthPass, u.PrivPass, pl.from
+		what := ""
+		switch {
+		case u.AuthPass == "" && u.PrivPass == "":
+			what = "no passphrases"
+		case u.AuthPass == "":
+			what = "no authentication passphrase"
+		case u.PrivPass == "":
+			what = "no privacy passphrase"
+		}
+		if what != "" {
+			e.V3Problem = "the SNMPv3 user '" + name + "' of " + levelName(pl.l, pl.from) + " has " + what +
+				" ('" + setterOf(pl.l, pl.from) + " v3-user add " + name + "' sets them)"
+		}
+		return
+	}
+	e.V3From = chooser.from
+	var where []string
+	for _, pl := range from {
+		where = append(where, levelName(pl.l, pl.from))
+	}
+	setter := setterOf(chooser.l, chooser.from)
+	e.V3Problem = "the SNMPv3 user '" + name + "', the default of " + levelName(chooser.l, chooser.from) + ", is in no pool it may use (" +
+		strings.Join(where, ", ") + "); '" + setter + " v3-user add " + name + "' adds it, '" + setter + " v3-user default <user>' chooses another"
+}
+
+// levelName is how a level is called in a problem.
+func levelName(l Layer, from string) string {
+	if l.Name != "" {
+		return l.Name
+	}
+	switch from {
+	case FromDevice:
+		return "the device"
+	case FromScope:
+		return "the scope"
+	}
+	return "the config"
+}
+
+// setterOf is the verb family of a level.
+func setterOf(l Layer, from string) string {
+	if l.Setter != "" {
+		return l.Setter
+	}
+	switch from {
+	case FromDevice:
+		return "tacctl device snmp <device>"
+	case FromScope:
+		return "tacctl scope snmp <scope>"
+	}
+	return "tacctl config snmp"
+}
+
+// HasV3 reports whether the user is found and both passphrases are set.
+func (e Effective) HasV3() bool {
+	return e.User != "" && e.AuthPass != "" && e.PrivPass != "" && e.V3Problem == ""
+}
 
 // CredFrom is where the credentials the version needs came from: the
 // community's for v2c, the v3 user's for v3 ("not set" for no version or
@@ -247,8 +343,11 @@ func (e Effective) Config(setter string) (snmp.Config, string) {
 		c.Community = e.Community
 		return c, ""
 	}
+	if e.V3Problem != "" {
+		return c, e.V3Problem
+	}
 	if !e.HasV3() {
-		return c, "no SNMPv3 user is set ('" + setter + " v3-user <user>')"
+		return c, "no SNMPv3 user is the default ('" + setter + " v3-user default <user>')"
 	}
 	c.User, c.AuthPass, c.PrivPass = e.User, e.AuthPass, e.PrivPass
 	c.Auth, c.Priv = e.Auth, e.Priv

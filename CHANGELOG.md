@@ -10,8 +10,12 @@ current behaviour; this file is where history lives.
    (item 8), so the target converts nothing else: the server name, the timing
    scale, the server address, the users' login to this server, a user name
    with a period and an emergency lockdown all stay. With no address in the
-   store no file is converted, no snapshot is taken and it needs no `--yes`;
-   with one it takes the snapshot first and needs `--yes` (item 11). `--hosts`
+   store and no SNMP credential file in version 2 (item 14: a second or a
+   non-default v3 user, a default naming another level's user, a device's
+   file without an `snmp:` entry) no file is converted, no snapshot is taken
+   and it needs no `--yes`; with an address, or a version 2 file, it takes
+   the snapshot first and needs `--yes` when anything is dropped (items 11
+   and 14). `--hosts`
    is accepted and does nothing. The older targets (`0.2.21` and back) still
    remove the server name and the timing scale, and still say so; only the
    `0.2.22` target keeps them. What a change of this release stores in a file
@@ -265,7 +269,8 @@ current behaviour; this file is where history lives.
     ones that return early included. The dry run names the users who have an
     address, never the address, in a warning, so `--apply` needs `--yes`; it
     takes the snapshot first (the `0.2.22` target takes one only when an
-    address stands) and keeps it (item 9): the older release prunes `backups/`
+    address stands, or an SNMP credential file in version 2 has to be
+    converted, item 14) and keeps it (item 9): the older release prunes `backups/`
     by its own retention and knows no marker, so the snapshot is copied to
     `backups-kept/`, where no retention reaches it, with the note `rollback to
     <target>: dropped the email addresses of N users` (a count, no name and no
@@ -326,6 +331,53 @@ current behaviour; this file is where history lives.
     enabling a user who must change the password names none, as the account is
     expired on the other hosts already, and a name that is no Linux account
     name names none.
+
+14. **The SNMP credential files hold a pool of v3 users, and a rollback
+    writes version 1 again.** `snmp.yaml`, `snmp/<scope>.yaml` and
+    `snmp/devices/<device>.yaml` are version 2 (`users:` and `default:`: a
+    pool of v3 users, a name and two passphrases each, and the default user
+    or none); a version 1 file (one v3 user) reads as a pool of one user that
+    is the default, nothing rewrites it at the upgrade, and a command saves
+    version 1 again whenever the content fits it (a community and at most one
+    v3 user, that user the default) and version 2 only for what version 1
+    cannot hold: a second or a non-default user, a default that names another
+    level's user, and a device's file that counts without an `snmp:` entry in
+    `devices.yaml` (the older releases ignore a version 1 file there). One
+    writer chooses (`Creds.Text`), so a community saved by this release is a
+    file 0.2.22 reads; a device's file follows its entry (version 2 while it
+    has none, version 1 once any setting gives it one when the content fits
+    it, version 2 again if the entry is emptied, a registry import included),
+    so a command does not leave a device with a version 1 file that the older
+    releases ignore: it says so when it rewrites such a file as version 2 (the
+    device's own file stays in force), and a file it cannot write is a
+    warning that names the command that writes it again, with exit status 1
+    when the file is then ignored. A device reads with its own default
+    user, else its scope's, else the config's, which may name a user of its
+    scope's pool or the config's (never a user that is in no pool it may use:
+    that is an error naming the command that fixes it, not another user), and
+    a user name stands for one user across the pools a device can see.
+    No older release reads version 2 ("unsupported version"), so every
+    `tacctl rollback` target writes the files in version 1 after the snapshot
+    (an entry of `rollbackAdditions`, in
+    `internal/lifecycle/rollback_snmp_pool.go`): the community stays, and a
+    level keeps its default user and drops the rest. A level with several
+    users and none that is its own default has no answer, and the rollback is
+    refused naming the level; a device that chose a user of its scope's or
+    the config's pool loses the choice; a device with no `snmp:` entry in
+    `devices.yaml` loses its file whole, since the older releases ignore the
+    credentials of such a device and would otherwise hand it to another
+    level's credentials unseen. The dry run names the levels and counts the
+    users, never a name or a passphrase, in a warning, so `--apply` needs
+    `--yes` when anything is dropped; a rollback that drops none only
+    rewrites the files. The snapshot is kept (item 9) with a note that
+    counts what was dropped (`rollback to <target>: dropped 2 SNMPv3 users in
+    2 levels`), the audit line adds `snmp-users=N snmp-levels=M
+    snmp-choices=K snmp-devices=P`, and the apply names `tacctl backup
+    recover <snapshot> --only snmp-users`. Until the older release is
+    installed, what makes version 2 again is a second or non-default user, a
+    default naming another level's user, or a user of its own for a device
+    with no `snmp:` entry; the apply says so. A rollback of a state with
+    version 1 files only converts nothing.
 
 ## 0.2.22 (2026-10-29)
 

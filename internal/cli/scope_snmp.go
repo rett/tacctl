@@ -395,7 +395,7 @@ func (inv *invocation) scopeSNMPV3User(scope string, p Parsed) error {
 	if err != nil {
 		return err
 	}
-	cr.User, cr.AuthPass, cr.PrivPass = user, ap, pp
+	cr.Users, cr.Default = []snmpcred.User{{Name: user, AuthPass: ap, PrivPass: pp}}, user
 	a.Audit().Touch()
 	if err := snmpcred.SaveScope(a.Paths.SNMPDir, scope, cr); err != nil {
 		return err

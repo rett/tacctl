@@ -119,7 +119,7 @@ func (inv *invocation) snmpConfigOwn(scope string, own deviceSNMPOwn) (snmp.Conf
 	// one that has begun is finished through its own verbs; a device that
 	// has chosen a version or credentials is finished through its own.
 	setter := snmpSetter(scope)
-	if sc == (snmpcred.Layer{}) {
+	if sc.Empty() {
 		setter = snmpSetter("")
 	}
 	if own.chosen() {

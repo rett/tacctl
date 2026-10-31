@@ -163,7 +163,11 @@ The `rollback` line is `rollback target=<release> keys=<n> by=<user>`; when it
 removed the users' email addresses it is `rollback target=<release> keys=<n>
 kept=<id> email-users=<names> by=<user>`: `kept` is the snapshot it keeps
 (`backup keep`, with a note that says what was dropped), and `email-users` the
-users whose address it removed, never an address.
+users whose address it removed, never an address. When it wrote the SNMP
+credential files in version 1 and dropped something, the line has `snmp-users=<n>
+snmp-levels=<m> snmp-choices=<k> snmp-devices=<p>` (users and the levels they were
+in, devices whose choice of another level's user went, devices without an `snmp:`
+entry whose file went; counts, never a name) after `kept=<id>`.
 
 `device config apply` writes, at `auth.notice`, a review line for each device
 asked, then, when any device was approved, the approval line, and each applied

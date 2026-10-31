@@ -398,14 +398,46 @@ snapshot and the users. A store that cannot be read
 refuses every target. Until the older release is installed, the two verbs that
 set an address write the key again, and the command says so.
 .IP
+Every target writes the SNMP credential files
+.RI ( snmp.yaml ,
+.IR snmp/ scope .yaml ,
+.IR snmp/devices/ name .yaml )
+in version 1 again: version 2, which holds a pool of v3 users and a default
+(\fBv3\-user add\fR), is refused by every older release ("unsupported
+version"). Version 1 holds one v3 user for each level, so a level keeps its
+default user and drops the rest, and a device whose default names a user of its
+scope's or the config's pool loses the choice, and a device with no
+.B snmp:
+entry in
+.I devices.yaml
+loses its credentials file whole (the older releases ignore the credentials of
+such a device, so a file in version 1 would hand it to another level's
+credentials unseen). A level with several users and
+none that is its own default has no answer, and the rollback is refused naming the
+level. The plan names the levels and counts the users (never a name or a
+passphrase) in a warning, so
+.B \-\-apply
+needs
+.B \-\-yes
+when anything is dropped; one that drops nothing only rewrites the files. The snapshot
+is kept with the note
+.BR "rollback to <target>: dropped N SNMPv3 users in M levels" ,
+the audit line adds
+.BR "snmp\-users=N snmp\-levels=M snmp\-choices=K snmp\-devices=P" ,
+and the apply names
+.BR "tacctl backup recover <snapshot> \-\-only snmp\-users" .
+.IP
 .B "rollback 0.2.22"
-converts nothing but the email addresses: 0.2.22 reads every other file this
-release writes, so the server name, the timing scale, the server address, the
-users' login to this server, a user name with a period and an emergency
-lockdown stay. With no address in the store it takes no snapshot (there is no
-file to convert) and needs no
+converts nothing but the email addresses and the SNMP credential files: 0.2.22
+reads every other file this release writes, so the server name, the timing
+scale, the server address, the users' login to this server, a user name with a
+period and an emergency lockdown stay. With no address in the store and no SNMP
+credential file in version 2 (a second or non\-default user, a default naming
+another level's user, a device's file without an
+.B snmp:
+entry) it takes no snapshot (there is no file to convert) and needs no
 .BR \-\-yes ;
-with one it takes the snapshot and needs it.
+with an address, or a v3 user to drop, it takes the snapshot and needs it.
 .B \-\-hosts
 is accepted and does nothing. The command ends with the next step,
 .BR "tacctl upgrade \-\-branch 0.2.22" .

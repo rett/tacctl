@@ -227,11 +227,11 @@ func (inv *invocation) snmpShow(args []string) error {
 	}
 	inv.echo("  community:  " + secretOrSet(reveal, c.Community))
 	// The v3 lines only when v3 is chosen or set up: v2c is the usual way.
-	if version == snmp.V3 || c.User != "" || c.AuthPass != "" || c.PrivPass != "" {
+	if du, _ := c.Find(c.Default); version == snmp.V3 || len(c.Users) > 0 {
 		if reveal {
-			inv.echo("  v3 user:    " + dash(c.User) + "; auth passphrase: " + dash(c.AuthPass) + "; priv passphrase: " + dash(c.PrivPass))
+			inv.echo("  v3 user:    " + dash(du.Name) + "; auth passphrase: " + dash(du.AuthPass) + "; priv passphrase: " + dash(du.PrivPass))
 		} else {
-			inv.echo("  v3 user:    " + setOrNot(c.User != "") + "; passphrases: " + setOrNot(c.AuthPass != "" && c.PrivPass != ""))
+			inv.echo("  v3 user:    " + setOrNot(du.Name != "") + "; passphrases: " + setOrNot(du.Complete()))
 		}
 		inv.echo("  v3 auth:    " + src("snmp.v3.auth", snmp.AuthSHA) + "; priv: " + src("snmp.v3.priv", snmp.PrivAES128))
 	}
@@ -376,7 +376,7 @@ func (inv *invocation) snmpV3User(args []string) error {
 	if err != nil {
 		return err
 	}
-	c.User, c.AuthPass, c.PrivPass = user, ap, pp
+	c.Users, c.Default = []snmpcred.User{{Name: user, AuthPass: ap, PrivPass: pp}}, user
 	inv.app.Audit().Touch()
 	if err := snmpcred.Save(inv.app.Paths.SNMPFile, c); err != nil {
 		return err

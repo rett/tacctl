@@ -708,6 +708,7 @@ func (inv *invocation) deviceWrite(fn func(*devreg.File, *devreg.Resolver) error
 		return nil, err
 	}
 	inv.app.Audit().Touch()
+	var entryWas, entryNow map[string]bool
 	_, err = devreg.Mutate(inv.app.Paths.DevicesFile, inv.app.Paths.KnownHosts, func() error {
 		inv.hooks.deviceStep()
 		return inv.snapshotFirst()
@@ -727,12 +728,17 @@ func (inv *invocation) deviceWrite(fn func(*devreg.File, *devreg.Resolver) error
 		}
 		before := fresh(live.Clone())
 		r := fresh(live)
+		entryWas = snmpEntryState(live)
 		if err := fn(live, r); err != nil {
 			return err
 		}
+		entryNow = snmpEntryState(live)
 		return inv.deviceChangeScopes(scopes, before, r)
 	})
 	if err == nil {
+		// A device that gained or lost its snmp: entry has its credentials
+		// file brought to the version the entry allows.
+		inv.snmpReconcile(entryWas, entryNow)
 		// A device registered at, or moved to, its scope's prefixes ends
 		// its staging address.
 		inv.stagingSweep()

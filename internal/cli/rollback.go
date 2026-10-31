@@ -130,21 +130,38 @@ func (inv *invocation) rollback(args []string) error {
 	// who or what the addresses were. The line names it and the users (never
 	// an address), before by=.
 	emailUsers := plan.EmailUsers()
-	if len(emailUsers) > 0 {
+	pool := plan.SNMPPoolDropped()
+	dropsPool := pool.Any()
+	if len(emailUsers) > 0 || dropsPool {
 		if snapID == "" {
 			a.Out.ErrorE("Could not keep the snapshot of the state: there is none.")
 			inv.verbResult(audit.Notice, rollbackBase, "store")
 			return inv.usageErr("Nothing was converted.")
 		}
 		if snapshot.KeptPath(a.Paths.KeptDir, snapID) == "" {
-			note := "rollback to " + version + ": dropped the email addresses of " + strconv.Itoa(len(emailUsers)) + " " + plural(len(emailUsers), "user", "users")
+			var dropped []string
+			if len(emailUsers) > 0 {
+				dropped = append(dropped, "dropped the email addresses of "+strconv.Itoa(len(emailUsers))+" "+plural(len(emailUsers), "user", "users"))
+			}
+			if dropsPool {
+				dropped = append(dropped, snmpPoolNote(pool))
+			}
+			note := "rollback to " + version + ": " + strings.Join(dropped, "; ")
 			if _, _, kerr := snapshot.Keep(a.Paths.BackupDir, a.Paths.KeptDir, snapID, inv.keptInfo(note)); kerr != nil {
 				a.Out.ErrorE("Could not keep snapshot " + snapID + " in " + a.Paths.KeptDir + ": " + kerr.Error())
 				inv.verbResult(audit.Notice, rollbackBase, "store")
 				return inv.usageErr("Nothing was converted.")
 			}
 		}
-		rollbackBase = lineHead + " kept=" + snapID + " email-users=" + namesList(emailUsers, 10) + by
+		rollbackBase = lineHead + " kept=" + snapID
+		if len(emailUsers) > 0 {
+			rollbackBase += " email-users=" + namesList(emailUsers, 10)
+		}
+		if dropsPool {
+			rollbackBase += " snmp-users=" + strconv.Itoa(pool.Users) + " snmp-levels=" + strconv.Itoa(pool.Levels) +
+				" snmp-choices=" + strconv.Itoa(pool.Choices) + " snmp-devices=" + strconv.Itoa(pool.Orphans)
+		}
+		rollbackBase += by
 	}
 	done, err := lifecycle.ApplyRollback(plan)
 	for _, d := range done {
@@ -169,6 +186,9 @@ func (inv *invocation) rollback(args []string) error {
 	inv.rollbackNextSteps(version, plan.PendingFiles())
 	if len(emailUsers) > 0 {
 		inv.rollbackEmailNote(version, snapID, emailUsers)
+	}
+	if dropsPool {
+		inv.rollbackSNMPPoolNote(version, snapID, plan)
 	}
 	inv.verbResult(audit.Info, rollbackBase, "")
 	return nil
@@ -290,6 +310,46 @@ func (inv *invocation) rollbackEmailNote(version, snapID string, users []string)
 	inv.echo("once " + rollbackFrom + " is installed again, 'tacctl backup recover " + snapID + " --only email' puts " + plural(n, "it", "them") + " back; 'tacctl backup unkeep " + snapID + "' removes the kept copy after that.")
 	inv.echo("Until then, do not run 'tacctl user email' or 'tacctl user add --email': they write the key again, which " + version + " refuses.")
 	inv.echo("If one did, run 'tacctl rollback " + version + " --apply --yes' again (it removes it).")
+}
+
+// snmpPoolNote is what the note of the kept snapshot says was dropped from the
+// SNMP credential files: counts only ("dropped 2 SNMPv3 users in 2 levels; the
+// choice of 1 device of another level's user; the credentials of 1 device
+// without an snmp: entry").
+func snmpPoolNote(d lifecycle.SNMPPoolDrop) string {
+	var parts []string
+	if d.Users > 0 {
+		parts = append(parts, strconv.Itoa(d.Users)+" SNMPv3 "+plural(d.Users, "user", "users")+" in "+strconv.Itoa(d.Levels)+" "+plural(d.Levels, "level", "levels"))
+	}
+	if d.Choices > 0 {
+		parts = append(parts, "the choice of "+strconv.Itoa(d.Choices)+" "+plural(d.Choices, "device", "devices")+" of another level's SNMPv3 user")
+	}
+	if d.Orphans > 0 {
+		parts = append(parts, "the SNMP credentials of "+strconv.Itoa(d.Orphans)+" "+plural(d.Orphans, "device", "devices")+" without an snmp: entry")
+	}
+	return "dropped " + strings.Join(parts, "; ")
+}
+
+// rollbackSNMPPoolNote says, after a rollback that dropped SNMPv3 users (or a
+// device's credentials or choice) from the credential files, where they are
+// and how they come back, and that every command that saves a credential file
+// writes version 2 again (a second or non-default user and the like).
+func (inv *invocation) rollbackSNMPPoolNote(version, snapID string, plan *lifecycle.RollbackPlan) {
+	d := plan.SNMPPoolDropped()
+	inv.echo("")
+	if d.Users > 0 {
+		inv.echo(strconv.Itoa(d.Users) + " SNMPv3 " + plural(d.Users, "user was", "users were") + " dropped from the credential files of " + strconv.Itoa(d.Levels) + " " + plural(d.Levels, "level", "levels") + " (" + strings.Join(plan.SNMPPoolLevels(), ", ") + "); " + version + " reads one v3 user for each level and the default user of each stays.")
+	}
+	if d.Orphans > 0 {
+		inv.echo(strconv.Itoa(d.Orphans) + " " + plural(d.Orphans, "device's", "devices'") + " credentials file (" + strings.Join(plan.SNMPPoolOrphans(), ", ") + ") was removed: the device has no snmp: entry, and " + version + " ignores such a file.")
+	}
+	if d.Choices > 0 {
+		inv.echo(strconv.Itoa(d.Choices) + " " + plural(d.Choices, "device's", "devices'") + " choice of a user of another level was dropped too.")
+	}
+	inv.echo("What was dropped is in snapshot " + snapID + ", which is kept in " + inv.app.Paths.KeptDir + "/" + snapID + " (no retention reaches it; " + version + " prunes backups/ by its own):")
+	inv.echo("once " + rollbackFrom + " is installed again, 'tacctl backup recover " + snapID + " --only snmp-users' puts it back; 'tacctl backup unkeep " + snapID + "' removes the kept copy after that.")
+	inv.echo("Until then, do not give a level a second or a non-default SNMPv3 user ('v3-user add'), a default that names another level's user ('v3-user default <user>' on a device), or a device with no snmp: entry a user of its own: such a file is written in version 2 again, which " + version + " refuses. A community, and one v3 user that is the default, are saved in version 1 and are fine (for a device, once it has an snmp: entry).")
+	inv.echo("If one did, run 'tacctl rollback " + version + " --apply --yes' again (it writes version 1).")
 }
 
 // rollbackTimeoutScaleNote says, after a rollback to a release before 0.2.22, that the commands of the

@@ -407,7 +407,7 @@ func (inv *invocation) scopeDevicesWithSNMP(scope string) []string {
 		if own.Creds.Community != "" {
 			what = append(what, "community")
 		}
-		if own.Creds.User != "" || own.Creds.AuthPass != "" || own.Creds.PrivPass != "" {
+		if len(own.Creds.Users) > 0 || own.Creds.Default != "" {
 			what = append(what, "v3-user")
 		}
 		out = append(out, e.Name+" ("+strings.Join(what, ", ")+")")
@@ -884,10 +884,13 @@ func (inv *invocation) deviceSNMPCommunity(e devreg.Entry, p Parsed) error {
 	}
 	cr.Community = s
 	inv.app.Audit().Touch()
-	if err := snmpcred.SaveDevice(dir, e.Name, cr); err != nil {
+	// The registry first (the verb sets the version, which gives the device an
+	// snmp: entry), then the file in the format the entry as it stands allows:
+	// a failure of the registry leaves the old file as it was, in force.
+	if err := inv.deviceSNMPUpdateWith(e.Name, func(s *devreg.SNMP) error { s.Version = snmp.V2c; return nil }, false); err != nil {
 		return err
 	}
-	if err := inv.deviceSNMPUpdateWith(e.Name, func(s *devreg.SNMP) error { s.Version = snmp.V2c; return nil }, false); err != nil {
+	if err := snmpcred.SaveDevice(dir, e.Name, cr, inv.deviceHasSNMPEntry(e.Name)); err != nil {
 		return err
 	}
 	file, _ := snmpcred.DeviceFile(dir, e.Name)
@@ -927,12 +930,14 @@ func (inv *invocation) deviceSNMPV3User(e devreg.Entry, p Parsed) error {
 	if err := inv.snapshotFirst(); err != nil {
 		return err
 	}
-	cr.User, cr.AuthPass, cr.PrivPass = user, ap, pp
+	cr.Users, cr.Default = []snmpcred.User{{Name: user, AuthPass: ap, PrivPass: pp}}, user
 	inv.app.Audit().Touch()
-	if err := snmpcred.SaveDevice(dir, e.Name, cr); err != nil {
+	// The registry first (the verb sets the version, which gives the device an
+	// snmp: entry), then the file in the format the entry as it stands allows.
+	if err := inv.deviceSNMPUpdateWith(e.Name, func(s *devreg.SNMP) error { s.Version = snmp.V3; return nil }, false); err != nil {
 		return err
 	}
-	if err := inv.deviceSNMPUpdateWith(e.Name, func(s *devreg.SNMP) error { s.Version = snmp.V3; return nil }, false); err != nil {
+	if err := snmpcred.SaveDevice(dir, e.Name, cr, inv.deviceHasSNMPEntry(e.Name)); err != nil {
 		return err
 	}
 	info, err := inv.deviceSNMPInfoOf(e)
@@ -943,6 +948,91 @@ func (inv *invocation) deviceSNMPV3User(e devreg.Entry, p Parsed) error {
 	inv.app.Out.InfoE("SNMPv3 user and passphrases of device '" + e.Name + "' set (" + file + "); the device's version is v3, auth " +
 		info.Eff.Auth + ", priv " + info.Eff.Priv + ". Try it: tacctl device check " + shellquote.Q(e.Name))
 	return nil
+}
+
+// deviceHasSNMPEntry reports whether the device has an snmp: entry in
+// devices.yaml now (what makes a version 1 credentials file count).
+func (inv *invocation) deviceHasSNMPEntry(name string) bool {
+	d := inv.deviceNamed(name)
+	return d != nil && !d.SNMP.Empty()
+}
+
+// snmpEntryState is which devices have an snmp: entry, by lower-case name.
+func snmpEntryState(f *devreg.File) map[string]bool {
+	out := make(map[string]bool, len(f.Devices))
+	for _, d := range f.Devices {
+		out[strings.ToLower(d.Name)] = !d.SNMP.Empty()
+	}
+	return out
+}
+
+// snmpReconcile keeps the version of a device's credentials file in step with
+// its snmp: entry, after a registry write that changed which devices have one
+// (before and after are snmpEntryState of the registry around the write). A
+// version 1 file counts only beside an entry, and the older releases ignore it
+// without one, so:
+//   - a device whose entry is gone and whose file is version 1 gets version 2
+//     (in force without an entry, and never an orphan that hands the device to
+//     another level's credentials: D304);
+//   - a device that has an entry now and a version 2 file that fits version 1
+//     gets version 1 (the older releases read it).
+//
+// A device whose entry did not change is left alone, an ignored leftover file
+// included. This is the one place that does it: every registry write goes
+// through deviceWrite, so a setter, a clear, an import and a rename all
+// reach it. A file that cannot be read is skipped; one that cannot be written
+// is a warning that names the command to run once the cause is gone, and,
+// when it leaves the device without its own credentials (a version 1 file
+// that is ignored without an entry: it falls back to another level's user),
+// the verb exits 1 (inv.snmpStale, see runWith). A leftover version 1 file
+// that is rewritten as version 2 is said, since the device's own file is in
+// force from then on.
+func (inv *invocation) snmpReconcile(before, after map[string]bool) {
+	dir := inv.app.Paths.SNMPDir
+	for name, mapped := range after {
+		was, existed := before[name]
+		if !existed || was == mapped {
+			continue
+		}
+		c, err := snmpcred.LoadDevice(dir, name)
+		if err != nil || c.Empty() {
+			continue
+		}
+		switch {
+		case mapped && c.Format == snmpcred.Version && c.FitsLegacy(), !mapped && c.Format == snmpcred.LegacyVersion:
+			err := inv.hooks.reconcileSave(name)
+			if err == nil {
+				err = snmpcred.SaveDevice(dir, name, c, mapped)
+			}
+			if err != nil {
+				inv.snmpReconcileFailed(name, c, mapped, err)
+			} else if !mapped {
+				inv.app.Out.Info("'" + name + "' has no snmp: entry now: its own credentials file stays in force (saved as version 2), so the scope's and the default's credentials do not apply to it.")
+			}
+		}
+	}
+}
+
+// snmpReconcileFailed is the warning for a credentials file that could not be
+// brought in step with its device's entry, after the registry was written. The
+// command it names writes the file again (the verbs save it in the format the
+// entry as it stands allows) once the cause is gone.
+func (inv *invocation) snmpReconcileFailed(name string, c snmpcred.Creds, mapped bool, err error) {
+	fix := "tacctl device snmp " + shellquote.Q(name) + " community"
+	if len(c.Users) > 0 {
+		user := c.Default
+		if user == "" {
+			user = c.Users[0].Name
+		}
+		fix = "tacctl device snmp " + shellquote.Q(name) + " v3-user " + shellquote.Q(user)
+	}
+	msg := "The credentials file of '" + name + "' could not be brought in step with the device's settings (" + strings.Join(msgs(err), " ") + "). Once that is fixed, write it again: " + fix
+	if !mapped {
+		// The version 1 file is ignored without an entry.
+		msg = "The credentials file of '" + name + "' could not be saved as version 2 (" + strings.Join(msgs(err), " ") + "). It is version 1 and the device has no snmp: entry, so it is ignored: the device uses its scope's or the default's credentials until the file is written again: " + fix
+		inv.snmpStale = true
+	}
+	inv.app.Out.Warn(msg)
 }
 
 // deviceSNMPClear removes everything the device has of its own: its map and
