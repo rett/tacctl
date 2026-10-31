@@ -331,6 +331,15 @@ func (inv *invocation) stagingEnd(e stagingEntry, event, what string) error {
 // registry was renamed already: a failure here is a warning that names the
 // addresses of the lines renamed and dropped and the way out.
 func (inv *invocation) stagingRenameDevice(oldName, newName string) {
+	inv.stagingRenameLines(oldName, newName, false)
+}
+
+// stagingRenameLines is stagingRenameDevice; with keepNew the lines of newName
+// stay as they are instead of being dropped as a stray's. 'device rename
+// --replace' keeps them: newName is the original, a registered device whose
+// own staging /32s are not stray, and now name the replacement that is at its
+// address.
+func (inv *invocation) stagingRenameLines(oldName, newName string, keepNew bool) {
 	entries := inv.stagingLoad()
 	var out []stagingEntry
 	changed := false
@@ -340,7 +349,7 @@ func (inv *invocation) stagingRenameDevice(oldName, newName string) {
 		case s.Kind == "device" && strings.EqualFold(s.Name, oldName):
 			s.Name, changed = newName, true
 			addrs = append(addrs, s.addr())
-		case s.Kind == "device" && strings.EqualFold(s.Name, newName):
+		case !keepNew && s.Kind == "device" && strings.EqualFold(s.Name, newName):
 			changed = true
 			addrs = append(addrs, s.addr())
 			continue

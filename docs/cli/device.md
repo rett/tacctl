@@ -215,21 +215,20 @@ device rename <replacement> <name> --replace [--yes]
     Put a device that was registered at a bench address (`device clone`, or `config <vendor>
     --staging --name`) where the device it replaces is. The first name is the replacement, the
     second the original, which is removed with its files: its SNMP credentials file, its
-    configuration blocks and their list, its configuration record and its acknowledged notices.
-    The replacement takes the original's name and address, keeps its own pinned host keys and
-    settings, and takes the original's DNS name when it has none. It is answered by the scope of
-    its new address (the plan says when that is not the scope of its bench address), and its
-    staging /32 ends in the scope that holds it. A break-glass hold on the original is cleared
-    as `breakglass release` does and is never moved to the replacement. The replacement must
-    have a staging entry (the /32 of its bench address, or, for an address its scope answered
-    already, the entry alone), and no hold of its own. The plan lines come first, then one
-    question; a terminal-less run answers no and `--yes` is the only way to skip it. One
-    snapshot covers the steps. A file of the original that cannot be removed, or of the
-    replacement that cannot take the name, makes the verb exit 1 and names it. An engineer
-    replaces within their own scopes; a hold on the original needs the superuser, and an
-    engineer is refused naming it. Audit: `device replace old= new= address= hold_cleared=
-    snmp_files= block_files= notices= count=1`, `scope staging done` and, for a hold,
-    `breakglass release`
+    configuration blocks and their list, its configuration record and its acknowledged notices. The
+    replacement takes the original's name and address, keeps its own pinned host keys and settings,
+    and takes the original's DNS name when it has none. It is answered by the scope of its new
+    address (the plan says when that is not the scope of its bench address), and its staging /32
+    ends in the scope that holds it. A break-glass hold on the original is cleared as `breakglass
+    release` does and is never moved to the replacement. The replacement must have a staging entry
+    (the /32 of its bench address, or, for a clone at an address its scope answered already, the
+    entry alone), and no hold of its own. The original's own staging entries stay. The plan lines
+    come first, then one question; a terminal-less run answers no and `--yes` is the only way to
+    skip it. One snapshot covers the steps. A file of the original that cannot be removed, or of the
+    replacement that cannot take the name, makes the verb exit 1 and names it. An engineer replaces
+    within their own scopes; a hold on the original needs the superuser, and an engineer is refused
+    naming it. Audit: `device replace old= new= address= hold_cleared= snmp_files= block_files=
+    notices= count=1`, `scope staging done` and, for a hold, `breakglass release`
 
 device address|hostname|vendor|port|description|location <name> [<value>|clear]
 

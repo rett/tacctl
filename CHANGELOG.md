@@ -481,9 +481,11 @@ current behaviour; this file is where history lives.
     notices); the replacement takes its name and its address, keeps its own
     pinned host keys and settings, and takes the original's DNS name when it
     has none. The replacement must have a staging entry (`device clone`, or
-    `config <vendor> --staging --name`: the /32 of its bench address, or the
-    entry alone for an address its scope answered already): its /32 ends in
-    the scope that holds it, and the replacement is answered by the scope of its
+    `config <vendor> --staging --name` for a bench address no prefix of the
+    scope covers: the /32 of its bench address, or, for a clone at an address
+    its scope answers already, the entry alone): its /32 ends in
+    the scope that holds it, the original's own staging entries stay (they
+    name the device now at its address), and the replacement is answered by the scope of its
     new address, which the plan says when it is not the scope of its bench
     address. A break-glass hold on the original is shown in the plan and
     cleared as `breakglass release` does (one render, the backends that serve

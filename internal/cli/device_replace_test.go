@@ -404,3 +404,33 @@ func TestDeviceReplaceFailsWhenAFileCannotBeCarried(t *testing.T) {
 		t.Errorf("devices.yaml:\n%s\nstaging %q", sb.devices(), sb.read("state/staging"))
 	}
 }
+
+// The original's own staging /32s are not stray: a replacement that takes
+// the original's name leaves them, naming the device that is now at the
+// original's address, and ends only its own.
+func TestDeviceReplaceKeepsTheOriginalsStagingLines(t *testing.T) {
+	sb := engineerSandbox(t)
+	// prod-sw (10.99.0.1, scope prod) was staged on the bench at an address
+	// of scope lab; the sweep keeps the line while it is seen in prod.
+	sb.run("", []string{"config", "cisco", "--scope", "lab", "--staging", "192.0.2.80", "--name", "prod-sw"})
+	own := "192.0.2.80/32|lab|device|prod-sw|"
+	if !strings.HasPrefix(sb.read("state/staging"), own) {
+		t.Fatalf("staging:\n%s", sb.read("state/staging"))
+	}
+	sb.dev("", "clone", "prod-sw", "prod-sw2", "--staging", "192.0.2.81")
+	sb.expect(0, "", "")
+	sb.dev("", "rename", "prod-sw2", "prod-sw", "--replace", "--yes")
+	sb.expect(0, "Device 'prod-sw2' replaces 'prod-sw'", "")
+
+	got := sb.read("state/staging")
+	if strings.Count(got, "\n") != 1 || !strings.HasPrefix(got, own) || strings.Contains(got, "192.0.2.81") {
+		t.Errorf("staging after the replacement:\n%s", got)
+	}
+	lab := plain(sb.run("", []string{"scope", "show", "lab"}))
+	if !strings.Contains(lab, "192.0.2.80/32") || strings.Contains(lab, "192.0.2.81") {
+		t.Errorf("scope lab:\n%s", lab)
+	}
+	if list := plain(sb.run("", []string{"scope", "staging", "list"})); !strings.Contains(list, "192.0.2.80/32") || !strings.Contains(list, "device prod-sw") {
+		t.Errorf("scope staging list:\n%s", list)
+	}
+}

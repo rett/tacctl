@@ -193,9 +193,11 @@ func (inv *invocation) deviceReplace(p Parsed) error {
 			cleared = "yes"
 		}
 	}
-	// The staging line follows the rename first: if the /32 cannot be ended
-	// now, the line names a device that is registered, and the sweep ends it.
-	inv.stagingRenameDevice(replName, origName)
+	// The replacement's staging lines follow the rename first: if the /32
+	// cannot be ended now, the line names a device that is registered, and
+	// the sweep ends it. The original's own lines stay (they name the device
+	// at its address, which is the replacement now), with their /32s.
+	inv.stagingRenameLines(replName, origName, true)
 	if err := inv.stagingEnd(staged, "scope staging done", "device="+origName+" seen="+addr); err != nil {
 		failed = append(failed, "the staging address "+staged.CIDR+" stays in scope '"+staged.Scope+"': "+strings.Join(msgs(err), " ")+" (tacctl scope staging remove "+staged.CIDR+", a superuser's verb)")
 	}
