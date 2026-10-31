@@ -1156,6 +1156,39 @@ server is not enrolled, its name is no Linux account name, its group has no
 privilege level, or, for a server still registered in a scope it shares with
 devices, the user is not in that scope), who could never change the password.
 .PP
+When this server is enrolled
+.RB ( "host enroll \-\-local" ),
+the verbs that change an account on it end by syncing this server's own
+accounts at once:
+.BR "user add" ,
+.BR "user remove" ,
+.BR "user rename" ,
+.BR "user move" ,
+.BR "user enable" ,
+.BR "user disable" ,
+.B "user scope"
+.RB ( add ,
+.BR remove ,
+.B replace
+and
+.BR "remove \-\-all" ),
+.B "user require\-password\-change"
+(once, whatever the number of users) and
+.B "user passwd"
+when it enables a disabled user. It is the accounts\-only sync of
+.B "host sync"
+of this server, run after the change is stored and the service restarted,
+without a snapshot of its own, so that a new user has an account and a UID at
+once and can log in to change the password. One line says what was done
+.RB ( "This server's accounts were synced: 1 created (UID 80003)." ):
+the counts of accounts created, updated, renamed and removed, and no other
+user. The sync's own lines are not shown, but its warnings are. A sync that
+fails is a warning with the retry command
+.RB ( "tacctl host sync <name>" ),
+followed by what the script said as plain lines: the change is stored and the
+command exits 0. A server that is not enrolled gets no sync and no word about
+one.
+.PP
 Reserved usernames
 .RB ( root
 and
@@ -1252,7 +1285,8 @@ and the command says so. It is refused, with nothing changed, while
 .I console.yaml
 cannot be read, so that no setting is left for the next user of the name
 .RB ( "user add" " and " "user rename"
-do the same).
+do the same). The accounts of this server are synced at once, as for
+.BR "user add" .
 .\" BEGIN GENERATED: command user remove
 .RS
 .PP
@@ -1313,9 +1347,10 @@ Do not require the user to change the password at the next login to this server.
 .\" END GENERATED: command user passwd
 .TP
 .BI "user disable " name
-Disable a user while preserving the password hash for later re-enable. On
-this server the account is synced at once, as for a lowered tier (see
-.BR "group edit" ).
+Disable a user while preserving the password hash for later re-enable. The
+accounts of this server are synced at once, as
+.B "user add"
+does.
 .\" BEGIN GENERATED: command user disable
 .RS
 .PP
@@ -1324,7 +1359,10 @@ Requires: \fBsuperuser\fR.
 .\" END GENERATED: command user disable
 .TP
 .BI "user enable " name
-Re-enable a previously disabled user.
+Re-enable a previously disabled user. The accounts of this server are synced
+at once, as
+.B "user add"
+does.
 .\" BEGIN GENERATED: command user enable
 .RS
 .PP
@@ -1372,7 +1410,10 @@ builds its script from the ledger under the same lock, so it sends the names as
 they were before the rename or after it, never a mix; an account created under
 the old name is renamed at that host's next sync. When another command keeps
 the lock for 30 seconds the rename stops at the pre\-change snapshot, which
-copies the ledger under it, with nothing changed.
+copies the ledger under it, with nothing changed. The accounts of this server
+are synced at once, as for
+.BR "user add" ,
+and the sync renames the account there.
 .\" BEGIN GENERATED: command user rename
 .RS
 .PP
@@ -1381,10 +1422,10 @@ Requires: \fBsuperuser\fR.
 .\" END GENERATED: command user rename
 .TP
 .BI "user move " "name group"
-Move a user to a different group without changing the password. A move
-that lowers the user's tier syncs the accounts of this server at once
-(see
-.BR "group edit" ).
+Move a user to a different group without changing the password. It syncs the
+accounts of this server at once, as
+.B "user add"
+does.
 .\" BEGIN GENERATED: command user move
 .RS
 .PP
@@ -1482,14 +1523,12 @@ and
 .B passwd
 name the hosts of the user's scopes with
 .BR "tacctl host sync \-\-all" .
-A new or renamed user has an account on this server only after the next
-.BR "host sync" ,
-which
+The verb syncs the accounts of this server once it is stored, as
 .B "user add"
-and
-.B "user rename"
-say for a user who must change the password: until then the user can neither
-log in nor change it. The requirement is stored as
+does, and a new or renamed user has its account there at once; if that sync
+fails the user can neither log in nor change the password until
+.BR "tacctl host sync <name>" .
+The requirement is stored as
 .B password_change_required
 of the user in
 .I store.yaml
@@ -1565,7 +1604,10 @@ replaces the whole list;
 empties it (with confirmation) and takes no scope names. It keeps the
 bcrypt hash and revokes scope access only;
 .B "user disable"
-revokes the login.
+revokes the login. Every change of the list syncs the accounts of this server
+at once, as
+.B "user add"
+does.
 .\" BEGIN GENERATED: command user scope
 .RS
 .PP
@@ -1711,10 +1753,7 @@ A change of
 or
 .B priv-lvl
 (and
-.BR "user move" ", " "user disable" ", " "user remove" ", a " "user scope"
-change that takes this server's scope away
-.RB ( remove ", " replace ", " "remove \-\-all" ),
-.BR "group preset roles --force" ", and " "group reset" )
+.BR "group preset roles --force" " and " "group reset" )
 that lowers the tier of a user who has an account on this server
 syncs those accounts at once, as
 .B "host sync"

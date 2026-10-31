@@ -3,15 +3,15 @@ package cli
 // The server's accounts after a lowered tier (docs/plans/0.2.3-plan.md S2).
 // A user whose tier drops keeps the local groups of the old tier on this
 // server until the server is synced (an engineer made from a superuser
-// keeps tac-superuser, and its root). Every verb that can lower a tier
-// (group edit tier, group edit priv-lvl, group remove, user move, disable,
-// remove and scope remove|replace|remove --all, group reset, group preset roles
-// --force) takes the tiers of the users this server's accounts cover before
-// it writes and, once it has written, runs the same local sync when any of
-// them is lower (a user who is gone from the model or from the server's
-// scope is none). The verbs that replace the state wholesale (store import
-// and rollback, backup restore) cannot say whose tier fell: they print the
-// line that names the sync (warnServerSync).
+// keeps tac-superuser, and its root). Every group verb that can lower a tier
+// (group edit tier, group edit priv-lvl, group remove, group reset, group
+// preset roles --force) takes the tiers of the users this server's accounts
+// cover before it writes and, once it has written, runs the same local sync
+// when any of them is lower (a user who is gone from the model or from the
+// server's scope is none). The user verbs sync this server's accounts after
+// every change (user_sync.go). The verbs that replace the state wholesale
+// (store import and rollback, backup restore) cannot say whose tier fell:
+// they print the line that names the sync (warnServerSync).
 
 import (
 	"github.com/rett/tacctl/internal/conf"

@@ -58,6 +58,9 @@ func TestGroupTierOfAFlaggedMemberKeepsTheServerLogin(t *testing.T) {
 	sb.expect(0, "", "")
 	sb.run("", []string{"user", "scope", "bob", "replace", "lab"})
 	sb.expect(0, "", "")
+	// the user verbs sync the accounts only; the host sync takes the scope over
+	sb.run("", []string{"host", "sync", "authsrv"})
+	sb.expect(0, "", "")
 	if got := sb.read("state/linux-hosts"); !strings.HasPrefix(got, "authsrv|local|22|tacctl|") {
 		t.Fatalf("the server's scope was not taken over: %q", got)
 	}

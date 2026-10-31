@@ -201,6 +201,23 @@ has no period. Meanwhile:
   prints the number the ledger has for the user, if any, and `config linux uid <user> <uid>` is
   refused. `host sync` skips the user with a warning (no account on enrolled hosts).
 
+**This server's accounts.** `user add`, `remove`, `rename`, `move`, `enable`,
+`disable`, `scope add|remove|replace|remove --all` and
+`require-password-change` end by syncing this server's own accounts when the
+server is enrolled (`host enroll --local`). It is the accounts-only sync of
+`host sync <name of this server>`, run once the change is stored and the
+service restarted, and it takes no snapshot of its own. A new user has its
+account and its UID at once, so it can log in here to change the password.
+One line says what was done: `This server's accounts were synced: 1 created
+(UID 80000).` It counts the accounts created, updated, renamed and removed
+and names no other user; the sync's own lines are not shown, but its warnings
+are. A sync that fails is a warning with the retry command (`tacctl host sync
+<name>`) with what the script said as plain lines under it; the change stays and
+the command exits 0. A server that is not
+enrolled gets no sync and no word about one. `user passwd` syncs only when it
+enables a disabled user, and `user list`, `show`, `email` and `verify` never
+do. A change of several users (`require-password-change --all`) syncs once.
+
 **A required password change.** A user who must change the password can log in to the tacctl
 server only: every device refuses the user, as it refuses an unknown user, and every other enrolled
 Linux host has the account expired from its next `host sync`, until the password is changed (a
@@ -223,8 +240,8 @@ only when set.
   a flagged user flagged and says so with the reason; for an unflagged user it says the change could not
   be required.
 - *Accounts are made by the sync.* The account of a new (or renamed) user exists on the server only
-  after the next `host sync` of it; `user add` and `user rename` of a user who must change the password
-  say so, since until then the user can neither log in nor change the password.
+  after its sync, which these verbs run at once (see "This server's accounts"); if that sync fails the
+  user can neither log in nor change the password until `tacctl host sync <name>`.
 - *A user must be able to change it.* The flag is not set, and the verb says why, for a user with no
   login on this server: the server is not enrolled (`host enroll --local`), the name is no Linux
   account name (a leftover name with a period), the user is disabled, the group has no priv-lvl, or,

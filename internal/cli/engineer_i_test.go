@@ -115,8 +115,8 @@ func TestLoweringSyncRunsWhileAGroupIsAmbiguous(t *testing.T) {
 	r := hs.lowerRunner()
 	hs.run(r, "user", "move", "alice", "readonly")
 	all := plain(hs.out.String() + hs.err.String())
-	if hs.code != 0 || !r.Called("bash") || !strings.Contains(all, "syncing this server's accounts (authsrv).") ||
-		strings.Contains(all, "accounts are not synced") || strings.Contains(all, "keeps the groups of the old tier") {
+	if hs.code != 0 || !r.Called("bash") || !strings.Contains(all, "This server's accounts were synced") ||
+		strings.Contains(all, "not synced") || strings.Contains(all, "keeps the groups of the old tier") {
 		t.Errorf("user move: exit %d, bash %v\n%s", hs.code, r.Called("bash"), all)
 	}
 	if !strings.Contains(all, "Group 'ops' (priv-lvl 15) has no tier setting in ") || !strings.Contains(all, "until: tacctl group edit ops tier <tier>") {
@@ -150,16 +150,16 @@ func TestUserRenameSyncsTheServer(t *testing.T) {
 	r := hs.lowerRunner()
 	hs.run(r, "user", "rename", "alice", "alice2")
 	all := plain(hs.out.String() + hs.err.String())
-	if hs.code != 0 || !r.Called("bash") || !strings.Contains(all, "syncing this server's accounts (authsrv).") {
+	if hs.code != 0 || !r.Called("bash") || !strings.Contains(all, "This server's accounts were synced") {
 		t.Errorf("user rename: exit %d, bash %v\n%s", hs.code, r.Called("bash"), all)
 	}
-	// A failed sync says what is left.
+	// A failed sync is a warning with the retry command; the rename stands.
 	hs = hostLowerSandbox(t)
 	r = hs.lowerRunner()
 	r.On([]string{"bash"}, execx.Result{Code: 1})
 	hs.run(r, "user", "rename", "alice", "alice2")
 	all = plain(hs.out.String() + hs.err.String())
-	if hs.code != 1 || !strings.Contains(all, "'alice' keeps the groups of the old tier on this server until: tacctl host sync authsrv") {
+	if hs.code != 0 || !strings.Contains(all, "[WARN] This server's accounts were not synced; the change reaches them at the next sync: tacctl host sync authsrv") {
 		t.Errorf("user rename with a failing sync: exit %d\n%s", hs.code, all)
 	}
 }

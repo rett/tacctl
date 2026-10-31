@@ -591,22 +591,22 @@ func (inv *invocation) userAdd(args []string) error {
 	if email != "" {
 		a.Out.InfoE("Email address recorded for '" + username + "'.")
 	}
-	if err := inv.userSettingsMoved(stale, username, ""); err != nil {
-		return err
-	}
+	shellErr := inv.userSettingsMoved(stale, username, "")
 	switch {
 	case require:
 		inv.detailPwChange(username, true, "add")
 		a.Out.InfoE("'" + username + "' must change the password at the first login to this server; no device accepts the user until then (" + noChangeRequired + " skips this, 'tacctl user require-password-change " + username + " off' lifts it).")
 		inv.reportRequired(m, []string{username})
-		inv.reportNeedsSync([]string{username}, "the account is made at the next sync of this server")
-	case !skipChange && barrier.exempt:
-		a.Out.InfoE("No password change is required of '" + username + "': " + barrier.why + ".")
 	case !skipChange:
 		a.Out.InfoE("No password change is required of '" + username + "': " + barrier.why + ".")
 	}
+	// The account exists on this server only after its sync, and the new user
+	// logs in here to change the password.
+	if err := inv.syncOwnAccounts(username); err != nil {
+		return err
+	}
 	inv.echo("")
-	return nil
+	return shellErr
 }
 
 // emailFree refuses an address another user holds (no regard to case),
@@ -740,7 +740,6 @@ func (inv *invocation) userRemove(args []string) error {
 		inv.app.Out.Info("Cancelled.")
 		return nil
 	}
-	watch := inv.watchServerTiers()
 	var shell userSettingsMove
 	if err := inv.storeApplyThen(func(s *store.Store) error { return s.UserDel(username) },
 		func() { shell = inv.moveUserSettings(username, "") }); err != nil {
@@ -748,11 +747,12 @@ func (inv *invocation) userRemove(args []string) error {
 	}
 	inv.detail("user remove", kvp("name", username))
 	inv.app.Out.Info("User '" + username + "' removed.")
-	if err := inv.userSettingsMoved(shell, username, ""); err != nil {
+	shellErr := inv.userSettingsMoved(shell, username, "")
+	inv.echo("")
+	if err := inv.syncOwnAccounts(username); err != nil {
 		return err
 	}
-	inv.echo("")
-	return watch.lowered("'"+username+"'", "'"+username+"' keeps the groups of the old tier")
+	return shellErr
 }
 
 // --- passwd -----------------------------------------------------------------
@@ -890,6 +890,11 @@ func (inv *invocation) userPasswd(args []string) error {
 		out.WarnE("A password change could not be required of '" + username + "': " + barrier.why + ".")
 	}
 	inv.echo("")
+	// A reset that enables a disabled user gives the account back on this
+	// server; any other reset leaves the accounts as they are.
+	if cur.IsDisabled() {
+		return inv.syncOwnAccounts(username)
+	}
 	return nil
 }
 
@@ -930,14 +935,13 @@ func (inv *invocation) userDisable(args []string) error {
 		inv.app.Out.Warn("User '" + username + "' is already disabled.")
 		return nil
 	}
-	watch := inv.watchServerTiers()
 	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, "disabled=true") }); err != nil {
 		return err
 	}
 	inv.detail("user disable", kvp("name", username))
 	inv.app.Out.Info("User '" + username + "' disabled. Use 'enable' to restore access.")
 	inv.echo("")
-	return watch.lowered("'"+username+"'", "'"+username+"' keeps the groups of the old tier")
+	return inv.syncOwnAccounts(username)
 }
 
 func (inv *invocation) userEnable(args []string) error {
@@ -961,7 +965,7 @@ func (inv *invocation) userEnable(args []string) error {
 	inv.detail("user enable", kvp("name", username))
 	inv.app.Out.Info("User '" + username + "' re-enabled with previous password.")
 	inv.echo("")
-	return nil
+	return inv.syncOwnAccounts(username)
 }
 
 // --- verify -----------------------------------------------------------------
@@ -1076,7 +1080,6 @@ func (inv *invocation) userRename(args []string) error {
 	if err := inv.consoleSettingsReadable(); err != nil {
 		return err
 	}
-	watch := inv.watchServerTiers()
 	hostCount := inv.enrolledHostsWith(oldname)
 	var mv uidMove
 	var shell userSettingsMove
@@ -1113,21 +1116,14 @@ func (inv *invocation) userRename(args []string) error {
 		out.Warn("'" + newname + "' already has UID " + mv.heldBy + " in linux-uids; the account '" + oldname + "' (UID " + mv.uid +
 			") is removed on hosts and '" + newname + "' created with " + mv.heldBy)
 	}
-	// The account of the new name is made at the next sync of this server.
 	inv.loaded = false
-	if rm, err := inv.model(); err == nil && pwchange.Subject(inv.app.Conf(), rm, rm.User(newname)) {
-		inv.reportNeedsSync([]string{newname}, "the account of '"+oldname+"' is renamed at the next sync of this server")
-	}
-	if shellErr != nil {
-		return shellErr
-	}
 	inv.echo("")
-	// A server that is not enrolled holds no accounts to sync; an enrolled
-	// one syncs now, and the sync renames the account with its UID.
-	if _, ok, _ := inv.localHost(); !ok {
-		return nil
+	// An enrolled server syncs now, and the sync renames the account with
+	// its UID.
+	if err := inv.syncOwnAccounts(newname); err != nil {
+		return err
 	}
-	return watch.lowered("'"+oldname+"'", "'"+oldname+"' keeps the groups of the old tier")
+	return shellErr
 }
 
 // uidMove is what a rename did to the UID ledger: moved (the line of the
@@ -1248,14 +1244,13 @@ func (inv *invocation) userMove(args []string) error {
 		inv.app.Out.Info("User '" + username + "' is already in group '" + newgroup + "'.")
 		return nil
 	}
-	watch := inv.watchServerTiers()
 	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, "group="+newgroup) }); err != nil {
 		return err
 	}
 	inv.detail("user move", kvp("name", username), kvp("from", oldgroup), kvp("to", newgroup))
 	inv.app.Out.Info("User '" + username + "' moved: " + oldgroup + " -> " + newgroup)
 	inv.echo("")
-	return watch.lowered("'"+username+"'", "'"+username+"' keeps the groups of the old tier")
+	return inv.syncOwnAccounts(username)
 }
 
 // --- scope ------------------------------------------------------------------
@@ -1408,9 +1403,6 @@ func (inv *invocation) userScope(args []string) error {
 		}
 	}
 	list := strings.Join(kept, ",")
-	// Taking this server's scope away (remove, replace) drops the account's
-	// groups at the next sync like a lower tier does.
-	watch := inv.watchServerTiers()
 	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, "scopes="+list) }); err != nil {
 		return err
 	}
@@ -1433,7 +1425,7 @@ func (inv *invocation) userScope(args []string) error {
 		a.Out.Warn("until you run: tacctl user scope " + username + " add <scope>")
 	}
 	inv.echo("")
-	return watch.lowered("'"+username+"'", "'"+username+"' keeps the groups of the old tier")
+	return inv.syncOwnAccounts(username)
 }
 
 // userScopeRemoveAll is _user_scope_remove_all: empty the user's scope
@@ -1451,14 +1443,13 @@ func (inv *invocation) userScopeRemoveAll(username string, current []string) err
 		a.Out.Info("Aborted.")
 		return nil
 	}
-	watch := inv.watchServerTiers()
 	if err := inv.storeApply(func(s *store.Store) error { return s.UserSet(username, "scopes=") }); err != nil {
 		return err
 	}
 	inv.detail("user scope", kvp("name", username), kvp("op", "remove"), kvp("scopes", strings.Join(current, ",")))
 	a.Out.Info("Removed all scopes from user '" + username + "'.")
 	inv.echo("")
-	return watch.lowered("'"+username+"'", "'"+username+"' keeps the groups of the old tier")
+	return inv.syncOwnAccounts(username)
 }
 
 // usageLinesOf are the 'Usage:' lines of rows of cmd ('tacctl <cmd> <row>'),

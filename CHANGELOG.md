@@ -278,6 +278,31 @@ current behaviour; this file is where history lives.
     installed, `tacctl user email` and `tacctl user add --email` write the key
     again, and the command says so.
 
+12. **A user change syncs this server's own accounts at once.** After
+    `tacctl user add` the new user could not log in to this server to change
+    the password, because the account and its UID were made by the next `host
+    sync` of the server. `user add`, `remove`, `rename`, `move`, `enable`,
+    `disable`, `scope add|remove|replace|remove --all` and
+    `require-password-change` now run the accounts-only sync of `host sync
+    <this server>` themselves, once the change is stored and the service
+    restarted, when the server is enrolled (`host enroll --local`): once for
+    a change of several users, with no snapshot of its own, and without the
+    set-up of the server's own login scope, which `host sync` and `host
+    enroll --local` keep. One line says what was done (`This server's
+    accounts were synced: 1 created (UID 80003).`: the counts of accounts
+    created, updated, renamed and removed, no name but the user's own); the
+    sync's own lines are not shown, its warnings are. A sync that fails is a
+    warning with the retry command (`tacctl host sync <name>`) and what the
+    script said as plain lines under it, never a second level; the change
+    stays and the command exits 0. A server that is not enrolled gets no sync
+    and no word about one. `user passwd` syncs only when it enables a
+    disabled user; `user list`, `show`, `email` and `verify` never do. The
+    group verbs keep their own sync after a lowered tier. The warning
+    `'<user>' must change the password, but the account is made at the next
+    sync of this server` is gone, and so are the red lines `'<user>' keeps
+    the groups of the old tier` of the user verbs: a sync that fails is the
+    one warning.
+
 ## 0.2.22 (2026-10-29)
 
 1. **A device `ssh-keyscan` reads nothing from, but plain `ssh` reaches, gets

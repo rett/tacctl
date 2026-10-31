@@ -149,21 +149,6 @@ func (inv *invocation) reportRequired(m *model.Model, names []string) {
 	}
 }
 
-// reportNeedsSync tells that the accounts of names exist on this server only
-// after the next 'host sync' of it, so the users cannot log in to change the
-// password before that: reason says why the account is not there yet.
-func (inv *invocation) reportNeedsSync(names []string, reason string) {
-	e, ok, _ := inv.localHost()
-	if !ok || len(names) == 0 {
-		return
-	}
-	who := "'" + names[0] + "'"
-	if len(names) > 1 {
-		who = "'" + strings.Join(names, "', '") + "'"
-	}
-	inv.app.Out.WarnE(who + " must change the password, but " + reason + ", so it cannot log in to this server to do it until the sync: tacctl host sync " + e.Name)
-}
-
 // reportHostsSync tells what the next sync of the other enrolled hosts does
 // with a change of the flag of names (users the flag holds, or held until
 // now): every host but this server expires the account of a user who must
@@ -324,6 +309,9 @@ func (inv *invocation) userRequirePasswordChange(args []string) error {
 		out.InfoE("Flagged " + strconv.Itoa(len(change)) + ", skipped " + strconv.Itoa(len(skipped)) + skippedSuperusers(superusers, len(skipped)) + ", already required " + strconv.Itoa(already) + ".")
 		inv.reportRequired(m, change)
 		inv.reportHostsSync(m, change, true)
+		if err := inv.syncIfChanged(change); err != nil {
+			return err
+		}
 	default:
 		if len(change) > 0 {
 			out.InfoE("Password change no longer required of " + strings.Join(change, ", ") + ".")
@@ -336,9 +324,21 @@ func (inv *invocation) userRequirePasswordChange(args []string) error {
 			}
 		}
 		inv.reportHostsSync(m, held, false)
+		if err := inv.syncIfChanged(change); err != nil {
+			return err
+		}
 	}
 	inv.echo("")
 	return nil
+}
+
+// syncIfChanged syncs this server's accounts when the verb flagged or cleared
+// some users (once, for all of them).
+func (inv *invocation) syncIfChanged(change []string) error {
+	if len(change) == 0 {
+		return nil
+	}
+	return inv.syncOwnAccounts(change...)
 }
 
 // skippedSuperusers is " (n superusers)" after the count of the skipped when
