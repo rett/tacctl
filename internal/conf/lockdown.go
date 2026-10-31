@@ -12,6 +12,7 @@ package conf
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -31,10 +32,20 @@ const (
 	LockdownKeySince  = "since"
 	LockdownKeyBy     = "by"
 	LockdownKeyReason = "reason"
+	// LockdownKeyPending (0.2.23) lists the enrolled hosts whose sshd
+	// drop-in is not settled yet (internal/cli/emergency_hosts.go).
+	LockdownKeyPending = "pending"
 )
 
 // MaxLockdownGroups is how many groups one scope may lock.
 const MaxLockdownGroups = 64
+
+// MaxLockdownPending is how many hosts one scope's record may wait for.
+const MaxLockdownPending = 4096
+
+// TypeLockdownPending is emergency.lockdown.<scope>.pending: a non-empty
+// list of host names.
+const TypeLockdownPending = "lockdown_pending"
 
 // TypeLockdownGroups is emergency.lockdown.<scope>.groups: a non-empty list
 // of group names.
@@ -47,6 +58,12 @@ func LockdownPath(scope, leaf string) string { return LockdownPrefix + scope + "
 type Lockdown struct {
 	Scope  string
 	Groups []string
+	// Pending (0.2.23) are the enrolled hosts the sshd drop-in is not settled
+	// on. With groups, the hosts the lockdown has not reached (their next
+	// sync writes the drop-in and ends the live sessions); with none, a
+	// lockdown that is lifted on the devices and whose hosts still hold the
+	// drop-in (their next sync removes it).
+	Pending []string
 	// Since is the RFC 3339 time the lockdown began (kept when groups are
 	// added to it), By the user who began it and Reason the why.
 	Since, By, Reason string
@@ -59,6 +76,10 @@ func (l Lockdown) SinceTime() time.Time {
 	return t
 }
 
+// Lifted reports a record that locks no group: a lockdown lifted on the
+// devices that waits for hosts to drop the sshd drop-in.
+func (l Lockdown) Lifted() bool { return len(l.Groups) == 0 && len(l.Pending) > 0 }
+
 // Locks reports whether the lockdown locks the group.
 func (l Lockdown) Locks(group string) bool { return slices.Contains(l.Groups, group) }
 
@@ -70,6 +91,7 @@ func lockdownWildcards() []wildcard {
 		{LockdownPrefix, Rule{Type: TypeHoldSince, Tail: LockdownKeySince}},
 		{LockdownPrefix, Rule{Type: TypeHoldText, Tail: LockdownKeyBy}},
 		{LockdownPrefix, Rule{Type: TypeHoldText, Tail: LockdownKeyReason}},
+		{LockdownPrefix, Rule{Type: TypeLockdownPending, Tail: LockdownKeyPending}},
 	}
 }
 
@@ -99,19 +121,61 @@ func lockdownGroupsProblem(value any) string {
 	return ""
 }
 
-// Lockdowns reads the usable records of the merged view, ordered by scope.
+// lockdownPendingProblem is the Validate branch of .pending.
+func lockdownPendingProblem(value any) string {
+	items, isList := py.List(value)
+	if !isList || len(items) == 0 {
+		return "must be a non-empty list of host names"
+	}
+	if len(items) > MaxLockdownPending {
+		return fmt.Sprintf("at most %d hosts; got %d", MaxLockdownPending, len(items))
+	}
+	seen := map[string]bool{}
+	for i, item := range items {
+		s, ok := item.(string)
+		if !ok {
+			return fmt.Sprintf("element %d: must be a string", i)
+		}
+		if !reHostName.MatchString(s) {
+			return fmt.Sprintf("element %d: %s is not a host name", i, py.ReprString(s))
+		}
+		if seen[s] {
+			return fmt.Sprintf("element %d: %s is listed twice", i, py.ReprString(s))
+		}
+		seen[s] = true
+	}
+	return ""
+}
+
+// reHostName is a host's registry name ('host enroll --name').
+var reHostName = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9._-]{0,252}$`)
+
+// Lockdowns reads the records of the merged view that lock a group, ordered
+// by scope.
 func (c *Config) Lockdowns() []Lockdown {
 	return LockdownsOf(c.Merged())
+}
+
+// LockdownLifts reads the records that lock nothing and wait for hosts to
+// remove the sshd drop-in (Lockdown.Lifted), ordered by scope.
+func (c *Config) LockdownLifts() []Lockdown {
+	var out []Lockdown
+	for _, r := range lockdownRecordsOf(c.Merged()) {
+		if r.Lifted() {
+			out = append(out, r.Lockdown)
+		}
+	}
+	return out
 }
 
 // LockdownsOf reads the usable records of a merged view: those with at least
 // one group. A record with none (the schema accepts each leaf alone, so a
 // hand-edited file can hold a partial one) locks nothing; LockdownDefects
-// names it for the validator.
+// names it for the validator, unless it waits for hosts (LockdownLifts).
 func LockdownsOf(view *yamlpy.Map) []Lockdown {
 	var out []Lockdown
 	for _, r := range lockdownRecordsOf(view) {
-		if r.Defect == "" || len(r.Groups) > 0 {
+		if len(r.Groups) > 0 {
 			out = append(out, r.Lockdown)
 		}
 	}
@@ -157,7 +221,7 @@ func lockdownRecordsOf(view *yamlpy.Map) []LockdownRecord {
 		r := LockdownRecord{Lockdown: Lockdown{Scope: scope}}
 		leaves, ok := e.(*yamlpy.Map)
 		if !ok {
-			r.Defect = "is not a record (groups, since, by and reason)"
+			r.Defect = "is not a record (groups, since, by, reason and pending)"
 			out = append(out, r)
 			continue
 		}
@@ -167,6 +231,14 @@ func lockdownRecordsOf(view *yamlpy.Map) []LockdownRecord {
 			return s
 		}
 		r.Since, r.By, r.Reason = str(LockdownKeySince), str(LockdownKeyBy), str(LockdownKeyReason)
+		if g, _ := leaves.Get(LockdownKeyPending); g != nil {
+			items, _ := py.List(g)
+			for _, it := range items {
+				if s, ok := it.(string); ok && reHostName.MatchString(s) {
+					r.Pending = append(r.Pending, s)
+				}
+			}
+		}
 		if g, _ := leaves.Get(LockdownKeyGroups); g != nil {
 			items, _ := py.List(g)
 			for _, it := range items {
@@ -175,7 +247,7 @@ func lockdownRecordsOf(view *yamlpy.Map) []LockdownRecord {
 				}
 			}
 		}
-		if len(r.Groups) == 0 {
+		if len(r.Groups) == 0 && len(r.Pending) == 0 {
 			r.Defect = "has no groups, so it locks nothing"
 		}
 		out = append(out, r)
@@ -209,7 +281,7 @@ func (c *Config) UpdateLockdown(scope string, fn func(cur *Lockdown) (*Lockdown,
 	return c.edit(func(overrides *yamlpy.Map) (bool, error) {
 		var cur *Lockdown
 		for _, r := range lockdownRecordsOf(overrides) {
-			if r.Scope == scope && len(r.Groups) > 0 {
+			if r.Scope == scope && (len(r.Groups) > 0 || len(r.Pending) > 0) {
 				l := r.Lockdown
 				cur = &l
 			}
@@ -223,12 +295,17 @@ func (c *Config) UpdateLockdown(scope string, fn func(cur *Lockdown) (*Lockdown,
 		}
 		next.Scope = scope
 		pairs := []PathValue{
-			{LockdownPath(scope, LockdownKeyGroups), anyStrings(next.Groups)},
 			{LockdownPath(scope, LockdownKeySince), next.Since},
 			{LockdownPath(scope, LockdownKeyBy), next.By},
 		}
+		if len(next.Groups) > 0 {
+			pairs = append([]PathValue{{LockdownPath(scope, LockdownKeyGroups), anyStrings(next.Groups)}}, pairs...)
+		}
 		if next.Reason != "" {
 			pairs = append(pairs, PathValue{LockdownPath(scope, LockdownKeyReason), next.Reason})
+		}
+		if len(next.Pending) > 0 {
+			pairs = append(pairs, PathValue{LockdownPath(scope, LockdownKeyPending), anyStrings(next.Pending)})
 		}
 		for _, pv := range pairs {
 			_, isList := py.List(pv.Value)
@@ -236,7 +313,7 @@ func (c *Config) UpdateLockdown(scope string, fn func(cur *Lockdown) (*Lockdown,
 				return false, &ValidationError{Path: pv.Path, Msg: msg}
 			}
 		}
-		if cur != nil && slices.Equal(cur.Groups, next.Groups) && cur.Since == next.Since && cur.By == next.By && cur.Reason == next.Reason {
+		if cur != nil && slices.Equal(cur.Groups, next.Groups) && slices.Equal(cur.Pending, next.Pending) && cur.Since == next.Since && cur.By == next.By && cur.Reason == next.Reason {
 			return false, nil
 		}
 		unsetLockdown(overrides, scope)

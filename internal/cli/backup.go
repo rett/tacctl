@@ -645,6 +645,7 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 		inv.echo("")
 		inv.echoE(ui.Red + note + ui.NC)
 	}
+	lockHeld := inv.lockdownHeld()
 	// So are the hosts: the registry, the UID ledger and the rest come back
 	// with a snapshot that knows them (D192-D195).
 	hostsHead, hostsLedger := inv.restoreHostsNote(dir, keepUIDs)
@@ -771,6 +772,9 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	// backends are reconciled and restarted as for any restore, and the
 	// failure is a warning that names the way back.
 	hostErr := inv.restoreHosts(dir, keepUIDs)
+	// The hosts keep sshd's lockdown drop-in whatever the restored record says:
+	// the record lists them, so the next sync of each makes them agree.
+	lockHosts := inv.lockdownAfterRestore(lockHeld)
 	// The files were rendered against the registry that was live: a break-glass
 	// hold on a name the restore enrolled or forgot is worded the other way
 	// (D237), so the render is done again against the registry now in place.
@@ -790,6 +794,9 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	a.Out.InfoE("Restored snapshot " + id + ".")
 	if holdNote != "" {
 		a.Out.WarnE(holdNote)
+	}
+	if len(lockHosts) > 0 {
+		a.Out.WarnE("sshd's lockdown drop-in on " + hostsText(len(lockHosts)) + " (" + strings.Join(lockHosts, ", ") + ") follows the restored lockdown record only at their next sync: " + lockdownHostsSyncCommand(lockHosts))
 	}
 	if renderErr != nil {
 		a.Out.WarnE("The files were not rendered again for the restored hosts: 'tacctl config validate' may say they are out of date. Run 'tacctl config render' to fix it.")
@@ -902,7 +909,13 @@ func (inv *invocation) restoreLockdownNote(dir string) string {
 	if list(now) == list(after) {
 		return ""
 	}
-	return "Emergency lockdowns change: locked now: " + list(now) + "; locked after the restore: " + list(after) + " (tacctl emergency lockdown status)."
+	note := "Emergency lockdowns change: locked now: " + list(now) + "; locked after the restore: " + list(after) + " (tacctl emergency lockdown status)."
+	// the sshd drop-in on the hosts follows the record at their next sync
+	// (the list of hosts the record waits for comes back with it)
+	if reg, err := hosts.LoadRegistry(inv.app.Paths.LinuxHosts); err == nil && !reg.Empty() {
+		note += " The enrolled hosts of those scopes get or lose sshd's lockdown drop-in at their next sync (tacctl host sync --all)."
+	}
+	return note
 }
 
 // restoreHostsNote says what restoring the snapshot in dir does to the hosts

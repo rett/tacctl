@@ -69,6 +69,8 @@ func CheckScript(names []string) string {
 	return `STATE_DIR="${TACCTL_CLIENT_STATE:-/var/lib/tacctl-client}"
 PAM_DIR="${TACCTL_CLIENT_PAM_DIR:-/etc/pam.d}"
 SSH_DIR="${TACCTL_CLIENT_SSH_DIR:-/etc/ssh}"
+LOCKDOWN_DROPIN="${TACCTL_CLIENT_LOCKDOWN_DROPIN:-/etc/ssh/sshd_config.d/00-tacctl-0-lockdown.conf}"
+SSHD_CONFIG="${TACCTL_CLIENT_SSHD_CONFIG:-/etc/ssh/sshd_config}"
 say() { printf '` + checkPrefix + `%s\n' "$*"; }
 for g in ` + strings.Join(TacGroups, " ") + `; do
     line=$(getent group "$g") && say "group $g $(echo "$line" | cut -d: -f3)"
@@ -90,6 +92,14 @@ if [ -r "$STATE_DIR/pam.sha256" ]; then
     while read -r sum f; do say "pam-written ${f##*/} $sum"; done < "$STATE_DIR/pam.sha256"
 fi
 say "protocol $(cat "$STATE_DIR/protocol" 2>/dev/null)"
+# sshd's lockdown drop-in: there, gone with the reload not confirmed, or gone;
+# when gone, why a sync could not write it (no sshd on the host, or an sshd_config
+# that does not include the directory)
+if [ -e "$LOCKDOWN_DROPIN" ]; then say "lockdown present"
+elif [ "$(cat "$STATE_DIR/lockdown" 2>/dev/null)" = "off" ]; then say "lockdown unreloaded"
+elif ! command -v sshd >/dev/null 2>&1; then say "lockdown nosshd"
+elif ! grep -Eqi "^[[:space:]]*include[[:space:]].*$(dirname "$LOCKDOWN_DROPIN")/" "$SSHD_CONFIG" 2>/dev/null; then say "lockdown noinclude"
+else say "lockdown absent"; fi
 for k in "$SSH_DIR"/ssh_host_*_key.pub; do
     if [ -r "$k" ]; then say "key $(cat "$k")"; fi
 done
@@ -123,6 +133,12 @@ type HostState struct {
 	// Protocol is the client script protocol the host recorded ("" before
 	// 0.2.2).
 	Protocol string
+	// Lockdown is sshd's lockdown drop-in as the host has it: "present",
+	// "absent", "unreloaded" (removed, sshd not yet told), "nosshd" or
+	// "noinclude" (absent, and a sync could not write it: the host has no
+	// sshd, or its sshd_config does not include the directory) or "" (the
+	// host ran a script of an earlier release that does not say).
+	Lockdown string
 	// Keys are the host's public keys (ssh_host_*_key.pub lines).
 	Keys []byte
 }
@@ -168,6 +184,8 @@ func ParseCheck(lines []string) HostState {
 			}
 		case "protocol":
 			s.Protocol = strings.TrimSpace(rest)
+		case "lockdown":
+			s.Lockdown = strings.TrimSpace(rest)
 		case "key":
 			keys.WriteString(rest + "\n")
 		}

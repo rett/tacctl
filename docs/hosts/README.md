@@ -76,6 +76,13 @@ UID 1000. The script's
 header says which state the host gets in `TAC_LOCKDOWN` (client script
 protocol 7).
 
+`emergency lockdown enable|disable` offers the sync that does this for the
+scope's hosts, and a host that is unreachable, held or refused stays on the
+lockdown's `pending` list until a later `host sync` completes it (see
+[Emergency commands](../cli/emergency.md)). A host enrolled or synced while the
+lockdown stands gets the file; one synced after the lockdown is lifted loses
+it.
+
 ## Pages
 
 - [Enrolling hosts over SSH](enrolling.md): Enrolling, syncing and removing hosts.

@@ -151,6 +151,7 @@ func (inv *invocation) hostRename(args []string) error {
 	// that names what stayed and how to put it right.
 	inv.hostRenameRecord(p)
 	inv.hostRenameStaging(p)
+	inv.lockdownHostRenamed(oldName, newName)
 	if p.holdAddr != "" {
 		// The hold stays on the same address and follows the name (it prints
 		// its own warning when it cannot).

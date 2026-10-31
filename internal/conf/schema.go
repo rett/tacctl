@@ -55,7 +55,7 @@ const (
 )
 
 // listTypes take list input (conf_set_list / a JSON list).
-var listTypes = []string{TypeCIDRList, TypeCiscoCmdList, TypeCommandRules, TypeBackendList, TypeJunosRegexList, TypeSudoCommandList, TypeBreakGlassList, TypeSNMPClients, TypeBlockList, TypeLockdownGroups, TypeServerAddresses}
+var listTypes = []string{TypeCIDRList, TypeCiscoCmdList, TypeCommandRules, TypeBackendList, TypeJunosRegexList, TypeSudoCommandList, TypeBreakGlassList, TypeSNMPClients, TypeBlockList, TypeLockdownGroups, TypeLockdownPending, TypeServerAddresses}
 
 // Rule is one schema entry.
 type Rule struct {
@@ -490,6 +490,8 @@ func (s *Schema) Validate(path string, value any, isList bool) string {
 		return blockListProblem(path, value)
 	case TypeLockdownGroups:
 		return lockdownGroupsProblem(value)
+	case TypeLockdownPending:
+		return lockdownPendingProblem(value)
 	case TypeHoldAddress, TypeHoldSince, TypeHoldText:
 		return holdProblem(t, path, value)
 	case TypeSNMPClients:

@@ -9,7 +9,8 @@ current behaviour; this file is where history lives.
    0.2.22 reads every file this release writes but the users' email addresses
    (item 8), so the target converts nothing else: the server name, the timing
    scale, the server address, the users' login to this server, a user name
-   with a period and an emergency lockdown all stay. With no address in the
+   with a period and an emergency lockdown all stay (a lockdown with enrolled
+   hosts stops every target, item 20). With no address in the
    store and no SNMP credential file in version 2 (item 14: a second or a
    non-default v3 user, a default naming another level's user, a device's
    file without an `snmp:` entry) no file is converted, no snapshot is taken
@@ -492,6 +493,79 @@ current behaviour; this file is where history lives.
     `TACCTL_CLIENT_LOCKDOWN_DROPIN`, `TACCTL_CLIENT_SSHD_CONFIG` and
     `TACCTL_CLIENT_SSHD_PIDFILE` move the paths for the test sandbox. The
     verbs that set the state come with the next item.
+
+20. **`emergency lockdown` closes the enrolled hosts too.** `enable` and
+    `disable` change the devices as before, then name the scope's enrolled
+    hosts with the command that settles them (`tacctl host sync web1 web2`)
+    and, on a terminal, ask `Sync these hosts now? [y/N]`. Only the long
+    `--yes` answers yes for you (new on both verbs); with no terminal nothing
+    runs and the notice is all. The exit status stays 0 when hosts are left to
+    sync (the lockdown on the devices is in force; the notice is a warning
+    that names them), as for the hosts a user change reaches. The sync is the
+    client script of item 19: the hosts get sshd's lockdown drop-in (no key
+    login, no forwarding for an account that is not a superuser's), and
+    `enable` ends the live sessions of those accounts on each host once, at
+    the sync of a host that waits for it. `disable` ends nothing, and a host
+    synced later or enrolled while the lockdown stands only gets the drop-in.
+    A host knows the tiers' groups, not the store's, so on the hosts the
+    lockdown closes every account that is not a superuser's: when the groups
+    it locks leave out users of the scope, `enable` says so in red, naming
+    them, before it asks for the scope's name, and it names a host that is
+    provisioned through a tacctl account that is not a superuser's, which the
+    sync would refuse. The server's own console users are closed and ended
+    like any host's.
+
+    A host that is unreachable, held or refused (a sshd that does not include
+    `sshd_config.d`) stays on a list in the lockdown's record
+    (`emergency.lockdown.<scope>.pending`, host names). At `enable` every host
+    of the scope is on it, read when the record is written, after the name is
+    typed. At a full `disable` every enrolled host of the scope is on it, the
+    ones that waited for the start too, since a listed host may hold the file
+    (a run that failed after the script wrote it) and a sync of a host without
+    the file removes nothing; a lockdown lifted while hosts are on the list
+    stays in the record with no group and those hosts. `emergency lockdown
+    status` shows the hosts the drop-in has not reached (and a lifted record
+    that waits, in `--json` too, with `"lifted": true`) and the command,
+    `status --json` has `hosts` and `pending_hosts` (and `lifted`: an element
+    with `"lifted": true` is a lockdown that was lifted and waits for hosts,
+    with no groups and no locked users, a kind of element the array did not
+    hold before, so a consumer must read that field to tell it from a standing
+    lockdown), and `config validate` warns of them. A host comes off the list
+    when a sync or an enrolment of it succeeds, but only if its script was
+    written for what the record still says (a sync that started before a
+    `disable` does not clear the host the `disable` just listed); a record
+    with no group and no host goes. `enable` or `disable` on a scope offers
+    the hosts that wait again. `host forget` and `host unenroll` drop the name
+    (`host forget` says that the file stays on a host it had reached, or that
+    waits to lose it), `host rename` follows it, and `host move` into a scope
+    that is locked down gives the host the step that ends its accounts'
+    sessions (the list of the scope it leaves loses the name; the script it
+    runs removes or writes the file as the new scope says). A script written
+    by `config linux script` for a locked scope carries the drop-in. `host
+    show --check` compares the file with the scope's state (missing under a
+    lockdown, present without one, or removed with sshd not yet told); a host
+    that a sync cannot lock down is told the real reason and not a sync (it
+    has no sshd, which is a note; its `sshd_config` does not include
+    `sshd_config.d`; it is provisioned through a tacctl user that is not a
+    superuser). The log has `hosts=<count>` on the `enable` line and
+    `emergency lockdown hosts action= scopes= hosts= synced= pending=`, host
+    names only.
+
+    **Restore.** The hosts keep the file whatever a restored record says, so a
+    restore that ends a lockdown (a snapshot taken before it) writes a lifted
+    record that lists every enrolled host of the scope, one that brings a
+    lockdown back or changes its groups lists every host as waiting, and the
+    report names the hosts and the command; a lockdown that is the same is
+    left as the snapshot has it.
+
+    **Rollback.** 0.2.22 and older refuse the `pending` leaf and cannot lift
+    the drop-in on a host, so `tacctl rollback` to any target is refused (the
+    dry run too) while a lockdown stands on a scope that has an enrolled host,
+    while a lifted one still waits for a host, and while a list names a host
+    that is not enrolled any more; the refusal names the hosts and the
+    commands (`emergency lockdown <scope> disable`, then `host sync <hosts>`).
+    A lockdown on a scope with no enrolled host is taken over by 0.2.22 to
+    0.2.19 as before, and the older targets refuse every lockdown as before.
 
 ## 0.2.22 (2026-10-29)
 

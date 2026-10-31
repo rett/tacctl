@@ -292,7 +292,7 @@ and 0.2.19 is refused while an emergency lockdown locks a group (the refusal lis
 one and
 .B "emergency lockdown <scope> disable"
 lifts it; a release before 0.2.19 would render the locked users back into the
-scope; 0.2.19 has the record and keeps it), and every target is refused while a device's record says a confirmed commit of
+scope; 0.2.19 has the record and keeps it), every target is refused while an emergency lockdown stands on a scope that has enrolled hosts, or a lifted one still waits for a host to drop sshd's lockdown drop\-in (older releases cannot lift it on a host; lift it and sync the hosts first), and every target is refused while a device's record says a confirmed commit of
 .B "device config apply"
 is
 .B pending
@@ -431,7 +431,8 @@ and the apply names
 converts nothing but the email addresses and the SNMP credential files: 0.2.22
 reads every other file this release writes, so the server name, the timing
 scale, the server address, the users' login to this server, a user name with a
-period and an emergency lockdown stay. With no address in the store and no SNMP
+period and an emergency lockdown (of scopes with no enrolled host) stay. With no
+address in the store and no SNMP
 credential file in version 2 (a second or non\-default user, a default naming
 another level's user, a device's file without an
 .B snmp:
@@ -3022,7 +3023,11 @@ logs in read-only, as
 tests a login, and compares tacctl's groups and their GIDs, each account's
 UID, primary group and home mode, the PAM files tacctl writes (present, and
 the text the client script recorded writing), the client script protocol the
-host last ran, and its ssh keys against the pins. Nothing is changed. Each
+host last ran, sshd's lockdown drop-in against the scope's lockdown (missing
+under one, present without one, or removed with sshd not yet told; a host that has
+no sshd, an \fIsshd_config\fR without the Include or a provisioner that is a tacctl
+non-superuser is told that reason, not a sync), and its ssh
+keys against the pins. Nothing is changed. Each
 difference names the command that fixes it (usually
 .BI "host sync " name ).
 Sudo with a password needs a terminal, else
@@ -3418,7 +3423,13 @@ changes. The numbers of new users are given out under the lock of the UID ledger
 .RI ( /etc/tacctl/.linux\-uids.lock ),
 held while the script is built and never while it runs on the host, so two syncs
 at once give a user one number; when another command keeps the lock for 30
-seconds the sync stops with nothing changed.
+seconds the sync stops with nothing changed. While the host's scope is locked
+down
+.RB ( "emergency lockdown" )
+it also writes sshd's lockdown drop-in on the host, and it removes the file when
+the scope is not locked down; a host that the lockdown has not reached yet also
+has the live sessions of the accounts the file matches ended, once, and a host
+that has the change is taken off the record's list of hosts it waits for.
 .IP
 Several names run in one command, in the order typed (with
 .B \-\-concurrency
@@ -13416,13 +13427,48 @@ stay out of the way only because of the device's method list. Not closed: a
 Cisco console line, the Junos root account on the console, a scope that lists
 local accounts first
 .RB ( "scope aaa\-order local\-first" ),
-local ssh keys, sessions that are open (Junos devices, WTI units and Linux
-hosts keep a session until it logs in again or runs sudo) and a device that
-cannot reach the server.
+local ssh keys on a device, sessions that are open (Junos devices and WTI units
+keep a session until it logs in again or runs sudo) and a device that cannot
+reach the server.
 .B status
 names these and
 .B enable
 warns in red on a local\-first scope; nothing is changed on any device.
+.PP
+The enrolled hosts of the scope are closed by
+.BR "host sync" :
+the client script writes one sshd drop-in on each,
+.IR /etc/ssh/sshd_config.d/00\-tacctl\-0\-lockdown.conf ,
+with \fBMatch Group tac\-users,!tac\-superuser\fR, \fBPubkeyAuthentication no\fR and
+no TCP, stream\-local, X11 or agent forwarding, and
+.B enable
+ends the live sessions of the accounts it matches (\fBloginctl terminate\-user\fR
+where systemd\-logind runs, else their processes; root, the superusers, the
+provisioning login and the account the script runs from are never touched, and
+.B disable
+ends nothing). A host knows the tiers' groups, not the store's, so on the hosts
+the lockdown closes every account that is not a superuser's: a lockdown that
+does not name every group of the scope's users locks all of them there, and
+.B enable
+says so, naming them, before it asks for the scope's name. After the change on
+the devices, \fBenable\fR and \fBdisable\fR name the hosts and the
+command and, on a terminal, ask whether to sync them now;
+.B \-\-yes
+answers yes, and with no terminal nothing runs. A host that is unreachable,
+held or refused (a sshd that does not include its \fIsshd_config.d\fR) stays on
+the record's list of hosts, which
+.B status
+shows, and the next \fBhost sync\fR of it completes the change (it comes off the
+list only when its script was written for what the record still says); a host
+enrolled or synced while a lockdown stands gets the drop\-in, and one moved into
+the scope by \fBhost move\fR also has the sessions of its accounts ended. At a
+full \fBdisable\fR every enrolled host of the scope is listed, since a listed host
+may hold the file; a lockdown lifted while hosts are on the list stays as a
+lifted record with no group. A host provisioned through a tacctl account that is
+not a superuser's is refused by the sync (\fBenable\fR names it first). The exit
+status is 0 when hosts are left on the list. A restore that ends a lockdown
+writes the lifted record for the scope's hosts, and one that brings it back
+lists them as waiting.
 .PP
 While a lockdown stands, every command that names the scope, a device or
 enrolled host in it, or that is about no one scope
@@ -13445,16 +13491,21 @@ is refused, and so is
 to a release before 0.2.19, until the lockdown is lifted. The log has
 .BI "emergency lockdown enable scope=" name " groups=" list " exempt=" users " reason=\(dq" text "\(dq by=" user " locked=" n " result=ok"
 and
-.BI "emergency lockdown disable scope=" name " groups=" list " held=" duration " by=" user " result=ok" .
-The record is
-.B emergency.lockdown.<scope>.groups|since|by|reason
+.BI "emergency lockdown disable scope=" name " groups=" list " held=" duration " by=" user " result=ok" ;
+.B enable
+adds
+.BI "hosts=" n
+(the hosts of the scope), and the step that offers the sync writes
+.BI "emergency lockdown hosts action=" enable|disable " scopes=" list " hosts=" names " synced=" yes|no " pending=" names ,
+the names of hosts only. The record is
+.B emergency.lockdown.<scope>.groups|since|by|reason|pending
 in
 .IR tacctl.yaml ,
 so every snapshot holds it.
 .TP
-.BI "emergency lockdown " "scope " "enable " [ "group[,group]..." "] [\-\-tier " tier "] [\-\-reason " text "] [\-\-dry\-run]"
+.BI "emergency lockdown " "scope " "enable " [ "group[,group]..." "] [\-\-tier " tier "] [\-\-reason " text "] [\-\-dry\-run] [\-\-yes]"
 .TQ
-.BI "emergency lockdown \-\-all\-scopes enable " [ "group[,group]..." "] [\-\-tier " tier "] [\-\-reason " text "] [\-\-dry\-run]"
+.BI "emergency lockdown \-\-all\-scopes enable " [ "group[,group]..." "] [\-\-tier " tier "] [\-\-reason " text "] [\-\-dry\-run] [\-\-yes]"
 Lock the groups named (with no list every group that is not a superuser's; with
 \fB\-\-tier\fR the groups of that tier, readonly, operator or engineer) on the
 scope, or on every scope, added to what is locked already. Shows the users who
@@ -13466,12 +13517,15 @@ without a terminal the verb refuses. \fB\-\-dry\-run\fR prints the list and chan
 nothing. A superuser group, or \fB\-\-tier superuser\fR, is refused. The change is one
 write of \fItacctl.yaml\fR, one render and one restart of each backend that changed;
 a backend whose restart failed is reported as \fBNOT restarted\fR, the record and
-the files are kept, and the verb exits 1. Superuser only.
+the files are kept, and the verb exits 1. Then it names the scope's enrolled hosts with
+the command that closes them and asks whether to sync them now (\fB\-\-yes\fR
+does, without the question; with no terminal nothing runs); the hosts that are
+not settled stay on the record's list. Superuser only.
 .TP
-.BI "emergency lockdown " "scope " "disable " [ "group[,group]..." ]
+.BI "emergency lockdown " "scope " "disable " [ "group[,group]..." "] [\-\-yes]"
 .TQ
-.BI "emergency lockdown \-\-all\-scopes disable " [ "group[,group]..." ]
-Lift the lockdown for the groups named, or all of it; the rendered files come back byte for byte. Superuser only.
+.BI "emergency lockdown \-\-all\-scopes disable " [ "group[,group]..." "] [\-\-yes]"
+Lift the lockdown for the groups named, or all of it; the rendered files come back byte for byte. When the last group is lifted the hosts that hold sshd's lockdown drop\-in are named with the command that removes it and, on a terminal, asked about; \fB\-\-yes\fR syncs them without the question. A scope that has no lockdown and hosts still waiting is offered them again. Superuser only.
 .\" BEGIN GENERATED: command emergency lockdown
 .RS
 .PP
@@ -13491,6 +13545,9 @@ Options:
 \fB\-\-dry\-run\fR
 (lockdown) Print who loses access and change nothing.
 .TP
+\fB\-\-yes\fR
+Sync the scope's hosts without asking.
+.TP
 \fB\-\-json\fR
 (lockdown status) Print the lockdowns as a JSON array.
 .RE
@@ -13499,7 +13556,7 @@ Options:
 .BI "emergency lockdown status " [ scope "] [\-\-json]"
 .TQ
 .BI "emergency lockdown " scope
-The lockdowns that stand: scope, groups, since, how long, by whom, why, the users locked out, the superusers who keep access and the ways a device's local accounts stay usable. \fB\-\-json\fR prints an array with \fBlocked_users\fR and \fBexempt\fR.
+The lockdowns that stand: scope, groups, since, how long, by whom, why, the users locked out, the superusers who keep access, the enrolled hosts with those the sshd drop\-in has not reached yet and the command that completes it, and the ways a device's local accounts stay usable; a lockdown lifted on the devices whose hosts still hold the file is listed after them. \fB\-\-json\fR prints an array with \fBlocked_users\fR, \fBexempt\fR, \fBhosts\fR, \fBpending_hosts\fR and \fBlifted\fR (an element with \fB"lifted": true\fR is a lifted lockdown that waits for hosts, with no groups and no locked users: a consumer must read the field to tell it from a standing lockdown).
 .SS Server settings \fB(tacctl server)\fR
 This server's own settings: an overview
 .RB ( "server show" ),
@@ -16372,6 +16429,10 @@ The user who began it. Set with \fBtacctl emergency lockdown\fR.
 .B emergency.lockdown.<scope>.reason
 text of 1 to 256 characters (a user name for by). Default: none (unset).
 Why, 1 to 256 characters; logged and shown, never rendered into a backend file. Removed with the lockdown by tacctl emergency lockdown disable. Set with \fBtacctl emergency lockdown\fR.
+.TP
+.B emergency.lockdown.<scope>.pending
+list of host names, at most 4096. Default: none (unset).
+The enrolled hosts sshd's lockdown drop-in is not settled on: with groups, the hosts the lockdown has not reached (their next sync writes the file and ends the live sessions); without, a lockdown lifted on the devices: every enrolled host of the scope, until its next sync removes the file. A release before 0.2.23 refuses it. Set with \fBtacctl emergency lockdown\fR or \fBtacctl host sync\fR.
 .TP
 .B netconf_scope.<scope>.state
 one of enable, disable. Default: none (unset).

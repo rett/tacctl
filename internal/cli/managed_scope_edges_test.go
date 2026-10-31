@@ -533,7 +533,20 @@ func TestManagedScopeLockdownIsLiftedWithAllScopes(t *testing.T) {
 	if out := hs.all(); !strings.Contains(out, "this server's own login is locked down since") || strings.Contains(out, "lockdown tacctl") || !strings.Contains(out, "tacctl emergency lockdown --all-scopes disable") {
 		t.Errorf("validate:\n%s", out)
 	}
+	// lifted on the devices; this server's own login may hold sshd's drop-in
+	// (the record never said it was reached), so the record stays with no
+	// group and the host on its list until the sync
 	hs.run(nil, "emergency", "lockdown", "--all-scopes", "disable")
+	hs.expect(0, "", "")
+	if y := hs.read("state/tacctl.yaml"); strings.Contains(y, "groups") || !strings.Contains(y, "pending:\n      - authsrv\n") {
+		t.Errorf("the record after the lift:\n%s", y)
+	}
+	hs.run(nil, "emergency", "lockdown", "status")
+	if out := hs.all(); strings.Contains(out, "'tacctl'") || !strings.Contains(out, "The lockdown of this server's own login is lifted, but sshd's lockdown drop-in is still on 1 enrolled host (authsrv): tacctl host sync authsrv") {
+		t.Errorf("status of the lifted lockdown:\n%s", out)
+	}
+	// the sync of the server's own host ends it
+	hs.run(nil, "emergency", "lockdown", "--all-scopes", "disable", "--yes")
 	hs.expect(0, "", "")
 	if y := hs.read("state/tacctl.yaml"); strings.Contains(y, "lockdown") {
 		t.Errorf("the record stands:\n%s", y)

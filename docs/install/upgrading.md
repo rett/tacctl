@@ -94,8 +94,9 @@ one, `0.2.21`, `0.2.20`, `0.2.19`, `0.2.18`, `0.2.17`, `0.2.16`, `0.2.9` and
 `0.2.3`. All are the dry run described below until `--apply` is given, all
 refuse while an apply is not settled, all but `0.2.22`, `0.2.21` and `0.2.20`
 while a user name has a period, all but `0.2.22`, `0.2.21`, `0.2.20` and
-`0.2.19` while an emergency lockdown locks a group, and each release's tool
-prepares the state for the releases it knows. `0.2.4` to `0.2.8` and `0.2.2`
+`0.2.19` while an emergency lockdown locks a group, all while an emergency
+lockdown has enrolled hosts, and each release's tool prepares the state for
+the releases it knows. `0.2.4` to `0.2.8` and `0.2.2`
 and older are refused with the way there (one release at a time, or `tacctl
 backup restore` of a snapshot of the time); `0.2.10` to `0.2.15`, this
 release and any other word are refused with the targets named.
@@ -189,6 +190,19 @@ it, so the rollback to 0.2.19 keeps it. The refusal lists each lockdown and the 
 (`tacctl emergency lockdown <scope> disable`); lift them, then run the
 rollback again. A record that locks nothing (a hand-edited, partial one) is
 removed by the rollback, because the older schemas refuse its keys.
+
+**An emergency lockdown that has enrolled hosts stops every rollback**, the
+ones to 0.2.19 to 0.2.22 included (the dry run too). On a host the lockdown is
+an sshd drop-in that only this release writes and removes, and the record
+keeps the hosts it has not reached (a `pending` list that older releases
+refuse), so an older release could not lift it and the hosts would stay
+closed. The refusal names the hosts: lift the lockdown and sync them
+(`tacctl emergency lockdown <scope> disable`, then `tacctl host sync <hosts>`).
+A lockdown that was lifted on the devices but still waits for a host to drop
+the file stops it too, and so does a list that names a host that is not
+enrolled any more (`emergency lockdown <scope> enable <its groups>` or
+`disable` drops the name). A lockdown on a scope with no enrolled host is
+taken over as before.
 
 **A user name with a period stops every rollback but the ones to 0.2.22,
 0.2.21 and 0.2.20** (the dry run too): 0.2.20 and 0.2.21 allowed periods and
@@ -300,7 +314,8 @@ snapshot; this release, if it stays, reads the two as missing until its next
 0.2.22 reads every file this release writes but the users' email addresses
 in `store.yaml`, so the rollback removes those (above) and converts nothing
 else: the server name, the timing scale, the server address, the users' login
-to this server, a user name with a period and an emergency lockdown all stay.
+to this server, a user name with a period and an emergency lockdown (of
+scopes with no enrolled host) all stay.
 With no address in the store and no SNMP credential file in version 2 (a
 second or a non-default user, a default naming another level's user, a
 device's file without an `snmp:` entry: above) no file is converted, no
