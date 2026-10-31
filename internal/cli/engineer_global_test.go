@@ -577,7 +577,7 @@ func (sb *sandbox) stagingLines() []stagingEntry {
 	var out []stagingEntry
 	for _, l := range strings.Split(sb.read("state/staging"), "\n") {
 		if f := strings.Split(l, "|"); len(f) >= 5 {
-			out = append(out, stagingEntry{f[0], f[1], f[2], f[3], f[4]})
+			out = append(out, stagingEntry{f[0], f[1], f[2], f[3], f[4], len(f) > 5 && f[5] == "covered"})
 		}
 	}
 	return out

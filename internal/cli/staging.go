@@ -27,13 +27,22 @@ import (
 
 type stagingEntry struct {
 	CIDR, Scope, Kind, Name, Since string
+	// Covered marks a device's entry made for an address the scope answered
+	// already (by a prefix of its own): no /32 was added, so none is ever
+	// taken out, and the sweep keeps the entry until the device is seen
+	// elsewhere. The line carries a sixth field, 'covered'.
+	Covered bool
 }
 
 // addr is the entry's address (its /32 without the length).
 func (e stagingEntry) addr() string { a, _, _ := strings.Cut(e.CIDR, "/"); return a }
 
 func (e stagingEntry) line() string {
-	return strings.Join([]string{e.CIDR, e.Scope, e.Kind, e.Name, e.Since}, "|")
+	f := []string{e.CIDR, e.Scope, e.Kind, e.Name, e.Since}
+	if e.Covered {
+		f = append(f, "covered")
+	}
+	return strings.Join(f, "|")
 }
 
 func (inv *invocation) stagingPath() string {
@@ -51,7 +60,7 @@ func (inv *invocation) stagingLoad() []stagingEntry {
 		if len(f) < 5 || f[0] == "" {
 			continue
 		}
-		out = append(out, stagingEntry{f[0], f[1], f[2], f[3], f[4]})
+		out = append(out, stagingEntry{f[0], f[1], f[2], f[3], f[4], len(f) > 5 && f[5] == "covered"})
 	}
 	return out
 }
@@ -76,51 +85,87 @@ func (inv *invocation) stagingSave(entries []stagingEntry) error {
 	return os.Rename(tmp, path)
 }
 
-// stagingAdd answers addr from scope with a staging /32 (for the host or
-// device kind/name), unless scope already answers it. Nothing is changed
-// when the /32 cannot be added (another scope owns it, a tagged address).
-func (inv *invocation) stagingAdd(scope, addr, kind, name string) error {
+// stagingCheck is the read-only half of stagingAdd: it refuses, changing
+// nothing, an address that cannot be staged in scope (another scope owns it,
+// an enrolled host is there, a prefix collides, a vendor tag conflicts), and
+// says whether scope answers it already (covered: no /32 is needed). The
+// verbs that take a snapshot first call it before the snapshot.
+func (inv *invocation) stagingCheck(scope, addr string) (covered bool, err error) {
 	a := inv.app
 	m, err := inv.model()
 	if err != nil {
-		return err
+		return false, err
 	}
 	if info, found := m.LookupAddr(addr); found && info.Scope == scope {
-		a.Out.InfoE("--staging: scope '" + scope + "' already answers " + addr + " (prefix " + info.Prefix + "); no staging address is needed.")
-		return nil
+		return true, nil
 	}
 	// An engineer stages in their own scopes only, and never an address
 	// another scope answers: the /32 would take it, and its devices'
 	// logins, from that scope (D18).
 	if f := inv.callerScopes(); f.restricted {
 		if err := inv.ownScope(f, scope); err != nil {
-			return err
+			return false, err
 		}
 		if info, found := m.LookupAddr(addr); found && !f.allows(info.Scope) {
-			return inv.usageErr("--staging: " + addr + " is answered by scope '" + info.Scope + "', which is not one of yours; staging it would take it from that scope. Nothing was changed.")
+			return false, inv.usageErr("--staging: " + addr + " is answered by scope '" + info.Scope + "', which is not one of yours; staging it would take it from that scope. Nothing was changed.")
 		}
 		// A host is not a device: the scope that answers a host's address
 		// is the superuser's to change, since the host's next sync is
 		// checked against it.
 		if inv.hostWithin(addr) {
-			return inv.usageErr("--staging: " + addr + " is not available for staging. Nothing was changed.")
+			return false, inv.usageErr("--staging: " + addr + " is not available for staging. Nothing was changed.")
 		}
 	}
 	cidr := addr + "/32"
 	collisions, err := inv.scopePrefixCollisions([]string{cidr}, scope)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if len(collisions) > 0 {
-		return inv.usageErr(append(append([]string{"Cannot stage " + cidr + " in scope '" + scope + "':"}, collisions...), collisionAdvice(collisions)...)...)
+		return false, inv.usageErr(append(append([]string{"Cannot stage " + cidr + " in scope '" + scope + "':"}, collisions...), collisionAdvice(collisions)...)...)
 	}
-	current := m.ScopePrefixes(scope)
-	csv := joinNonEmpty(append(append([]string(nil), current...), cidr), ",")
+	csv := joinNonEmpty(append(append([]string(nil), m.ScopePrefixes(scope)...), cidr), ",")
 	if problems, ok := m.DeviceProblems(scope, csv, "", ""); !ok {
 		a.Out.ErrorE("Cannot stage " + cidr + " in scope '" + scope + "': it would take over an address another scope has tagged with a vendor:")
 		inv.scopeDeviceProblems(problems)
-		return inv.usageErr("Nothing was changed.")
+		return false, inv.usageErr("Nothing was changed.")
 	}
+	return false, nil
+}
+
+// stagingAdd answers addr from scope with a staging /32 (for the host or
+// device kind/name), unless scope already answers it. Nothing is changed
+// when the /32 cannot be added (another scope owns it, a tagged address).
+// A device that is named gets a staging entry for an address the scope
+// answers already too (Covered, no /32), so that 'device rename --replace'
+// finds the device staged whichever address the bench has.
+func (inv *invocation) stagingAdd(scope, addr, kind, name string) error {
+	a := inv.app
+	covered, err := inv.stagingCheck(scope, addr)
+	if err != nil {
+		return err
+	}
+	m, err := inv.model()
+	if err != nil {
+		return err
+	}
+	cidr := addr + "/32"
+	if covered {
+		info, _ := m.LookupAddr(addr)
+		a.Out.InfoE("--staging: scope '" + scope + "' already answers " + addr + " (prefix " + info.Prefix + "); no staging address is needed.")
+		if kind != "device" || name == "" {
+			return nil
+		}
+		entries := inv.stagingLoad()
+		for _, e := range entries {
+			if e.CIDR == cidr {
+				return nil
+			}
+		}
+		entries = append(entries, stagingEntry{cidr, scope, kind, name, a.Knobs.Now().Format("2006-01-02 15:04"), true})
+		return inv.stagingSave(entries)
+	}
+	csv := joinNonEmpty(append(append([]string(nil), m.ScopePrefixes(scope)...), cidr), ",")
 	if info, found := m.LookupAddr(addr); found {
 		a.Out.WarnE("--staging: " + addr + " is answered by scope '" + info.Scope + "' (prefix " + info.Prefix + ") until now; the staging /32 answers it from '" + scope + "' instead.")
 	}
@@ -136,7 +181,7 @@ func (inv *invocation) stagingAdd(scope, addr, kind, name string) error {
 			kept = append(kept, e)
 		}
 	}
-	kept = append(kept, stagingEntry{cidr, scope, kind, name, a.Knobs.Now().Format("2006-01-02 15:04")})
+	kept = append(kept, stagingEntry{cidr, scope, kind, name, a.Knobs.Now().Format("2006-01-02 15:04"), false})
 	if err := inv.stagingSave(kept); err != nil {
 		inv.verbResult(audit.Info, addBase, "write")
 		return err
@@ -241,15 +286,17 @@ func (inv *invocation) stagingEntryOf(addr string) (stagingEntry, bool) {
 // decide the device is in place (a replacement that took its original's
 // address) or that undo the /32 they just added. A scope that no longer lists
 // the /32 keeps nothing to remove, and a /32 that is the scope's only prefix
-// stays (a scope without a prefix answers nothing). The change is audited as
-// the sweep's is, with event and what, for the device or the reason.
+// stays (a scope without a prefix answers nothing). An entry made for an
+// address the scope answered already (Covered) has no /32: only the entry
+// goes. The change is audited as the sweep's is, with event and what, for the
+// device or the reason.
 func (inv *invocation) stagingEnd(e stagingEntry, event, what string) error {
 	m, err := inv.model()
 	if err != nil {
 		return err
 	}
 	base := event + " cidr=" + e.CIDR + " scope=" + e.Scope + " " + what
-	if m.Exists("scopes", e.Scope) && contains(m.ScopePrefixes(e.Scope), e.CIDR) {
+	if !e.Covered && m.Exists("scopes", e.Scope) && contains(m.ScopePrefixes(e.Scope), e.CIDR) {
 		rest := without(m.ScopePrefixes(e.Scope), e.CIDR)
 		if joinNonEmpty(rest, "") == "" {
 			return errors.New("staging address " + e.CIDR + " is the only prefix of scope '" + e.Scope + "'; add its real prefixes first")
@@ -333,11 +380,21 @@ func (inv *invocation) stagingSweep() {
 			kept = append(kept, e)
 			continue
 		}
-		if !m.Exists("scopes", e.Scope) || !contains(m.ScopePrefixes(e.Scope), e.CIDR) {
+		if !m.Exists("scopes", e.Scope) || (!e.Covered && !contains(m.ScopePrefixes(e.Scope), e.CIDR)) {
 			changed = true
 			continue
 		}
 		seen := inv.stagingSeen(e)
+		if e.Covered {
+			// No /32 was added for it: the entry only lasts until the
+			// device is seen at another address.
+			if seen != "" && seen != e.addr() {
+				changed = true
+				continue
+			}
+			kept = append(kept, e)
+			continue
+		}
 		info, found := m.LookupAddr(seen)
 		if seen == "" || seen == e.addr() || !found || info.Scope != e.Scope {
 			kept = append(kept, e)
@@ -446,7 +503,7 @@ func (inv *invocation) scopeStaging(args []string) error {
 			return err
 		}
 		removeBase := "scope staging remove cidr=" + cidr + " scope=" + hit.Scope + " by=" + inv.sudoUser()
-		if m.Exists("scopes", hit.Scope) && contains(m.ScopePrefixes(hit.Scope), cidr) {
+		if !hit.Covered && m.Exists("scopes", hit.Scope) && contains(m.ScopePrefixes(hit.Scope), cidr) {
 			rest := without(m.ScopePrefixes(hit.Scope), cidr)
 			if joinNonEmpty(rest, "") == "" {
 				return inv.usageErr("Staging address " + cidr + " is the only prefix of scope '" + hit.Scope + "'; add its real prefixes first.")
@@ -461,6 +518,10 @@ func (inv *invocation) scopeStaging(args []string) error {
 			return err
 		}
 		inv.verbResult(audit.Info, removeBase, "")
+		if hit.Covered {
+			a.Out.Info("Staging entry " + cidr + " removed; scope '" + hit.Scope + "' answers the address by its own prefixes, which are unchanged.")
+			return nil
+		}
 		a.Out.Info("Staging address " + cidr + " removed from scope '" + hit.Scope + "'.")
 		return nil
 	default:

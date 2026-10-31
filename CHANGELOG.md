@@ -449,9 +449,14 @@ current behaviour; this file is where history lives.
     configuration record. `--staging` is required, since the registry holds
     one device for each address; the bench address is added to the scope of
     the original as a /32 before the registry is written, as `config
-    <vendor> --staging` does, and a device no scope answers is refused. The
+    <vendor> --staging` does (an address the scope answers already gets a
+    staging entry without a /32, which nothing takes out of the scope, and
+    which lasts until the device is seen at another address or replaced; so
+    does a named device of `config <vendor> --staging --name`), and a device
+    no scope answers is refused. The
     new name follows the rules of `device add` (lower case, not taken, not
-    generic unless `--allow-generic`). One snapshot is taken first, what can
+    generic unless `--allow-generic`). Every refusal, those of the staging
+    address included, comes before the one snapshot; what can
     be read is read before anything is written, and a write that fails takes
     the registry line, the files and the /32 back. An engineer clones the
     devices of their own scopes, the SNMP credentials included (they can
@@ -463,8 +468,11 @@ current behaviour; this file is where history lives.
     it: the `0.2.22`, `0.2.21` and `0.2.20` targets rewrite the per-tier
     drop-in, when it is exactly this release's text, with 0.2.22's
     (`tier.Sudoers0222`, after `visudo -cf`), and the older targets, which
-    recognise that text as an older one, put back their own. No stored format
-    changes.
+    recognise that text as an older one, put back their own. The staging
+    file's line gains an optional sixth field, `covered`, for the entry of an
+    address the scope answered already; older releases read the line as any
+    other (their sweep forgets it, the scope holding no such /32), so no
+    rollback step is added.
 
 18. **`device rename <replacement> <name> --replace` puts a device registered
     at a bench address where the device it replaces is.** The original is
@@ -472,9 +480,10 @@ current behaviour; this file is where history lives.
     blocks and their list, its configuration record, its acknowledged
     notices); the replacement takes its name and its address, keeps its own
     pinned host keys and settings, and takes the original's DNS name when it
-    has none. The replacement must have a staging /32 (`device clone`, or
-    `config <vendor> --staging --name`): the replacement's /32 ends in the
-    scope that holds it, and the replacement is answered by the scope of its
+    has none. The replacement must have a staging entry (`device clone`, or
+    `config <vendor> --staging --name`: the /32 of its bench address, or the
+    entry alone for an address its scope answered already): its /32 ends in
+    the scope that holds it, and the replacement is answered by the scope of its
     new address, which the plan says when it is not the scope of its bench
     address. A break-glass hold on the original is shown in the plan and
     cleared as `breakglass release` does (one render, the backends that serve

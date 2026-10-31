@@ -306,3 +306,68 @@ func TestDeviceReplaceRefusesAHeldReplacement(t *testing.T) {
 		t.Errorf("%d %q", sb.code, sb.stderr())
 	}
 }
+
+// A clone at a bench address its scope answers already (no /32 is added) is
+// staged all the same and is replaced: the entry ends, the scope's own
+// prefixes stay, and neither the sweep nor 'scope staging' touches them.
+func TestDeviceReplaceOfACloneAtACoveredAddress(t *testing.T) {
+	sb := engineerSandbox(t)
+	prefixes := plain(sb.run("", []string{"scope", "show", "lab"}))
+	sb.dev("", "clone", "lab-sw", "lab-sw5", "--staging", "192.168.1.50")
+	sb.expect(0, "no staging address is needed", "")
+	line := "192.168.1.50/32|lab|device|lab-sw5|"
+	if got := sb.read("state/staging"); !strings.HasPrefix(got, line) || !strings.HasSuffix(got, "|covered\n") {
+		t.Fatalf("staging:\n%s", got)
+	}
+	if plain(sb.run("", []string{"scope", "show", "lab"})) != prefixes {
+		t.Fatal("a /32 was added to the scope")
+	}
+
+	// The sweep (any device change, and the list) keeps the entry while the
+	// device is at its bench address; the list shows it.
+	sb.dev("", "add", "lab-sw6", "192.168.1.6", "--vendor", "cisco", "--no-host-key", "--no-lookup")
+	sb.expect(0, "", "")
+	out := sb.run("", []string{"scope", "staging", "list"})
+	if !strings.Contains(sb.read("state/staging"), line) || !strings.Contains(plain(out), "192.168.1.50/32") {
+		t.Errorf("the entry is gone:\n%s\n%s", sb.read("state/staging"), out)
+	}
+
+	out = sb.dev("", "rename", "lab-sw5", "lab-sw", "--replace")
+	if !strings.Contains(out, "Staging:  the entry of 192.168.1.50 ends; scope 'lab' answers it by its own prefixes, which stay.") {
+		t.Errorf("plan:\n%s", out)
+	}
+	sb.dev("y\n", "rename", "lab-sw5", "lab-sw", "--replace")
+	sb.expect(0, "Device 'lab-sw5' replaces 'lab-sw': it is now 'lab-sw' at 192.168.1.1.", "")
+	if strings.Contains(sb.devices(), "lab-sw5") || !strings.Contains(sb.devices(), "  lab-sw: {address: 192.168.1.1, vendor: cisco}\n") || sb.fileExists("state/staging") {
+		t.Errorf("devices.yaml:\n%s\nstaging: %v", sb.devices(), sb.fileExists("state/staging"))
+	}
+	if plain(sb.run("", []string{"scope", "show", "lab"})) != prefixes {
+		t.Error("the scope's prefixes changed")
+	}
+}
+
+// An address that is a /32 prefix of the scope of its own is never taken out
+// of it by the end of the entry made for the clone, nor by 'scope staging
+// remove'.
+func TestStagingEntryOfACoveredAddressLeavesThePrefix(t *testing.T) {
+	sb := engineerSandbox(t)
+	sb.run("", []string{"scope", "prefixes", "lab", "add", "192.0.2.50/32"})
+	prefixes := plain(sb.run("", []string{"scope", "show", "lab"}))
+	if !strings.Contains(prefixes, "192.0.2.50/32") {
+		t.Fatalf("scope lab:\n%s", prefixes)
+	}
+	sb.dev("", "clone", "lab-sw", "lab-sw5", "--staging", "192.0.2.50")
+	sb.expect(0, "no staging address is needed", "")
+	sb.dev("y\n", "rename", "lab-sw5", "lab-sw", "--replace")
+	sb.expect(0, "replaces 'lab-sw'", "")
+	if sb.fileExists("state/staging") || plain(sb.run("", []string{"scope", "show", "lab"})) != prefixes {
+		t.Errorf("the prefix went with the entry:\n%s", plain(sb.run("", []string{"scope", "show", "lab"})))
+	}
+
+	sb.dev("", "clone", "lab-sw", "lab-sw6", "--staging", "192.0.2.50")
+	sb.expect(0, "", "")
+	sb.run("", []string{"scope", "staging", "remove", "192.0.2.50"})
+	if sb.fileExists("state/staging") || plain(sb.run("", []string{"scope", "show", "lab"})) != prefixes {
+		t.Errorf("remove took the prefix:\n%s", plain(sb.run("", []string{"scope", "show", "lab"})))
+	}
+}

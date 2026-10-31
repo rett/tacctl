@@ -187,8 +187,10 @@ device clone <name> <new> --staging <bench-ip> [--allow-generic]
     record. `--staging` is required: the registry holds one device for each
     address. The bench address is added to the scope of <name> as a /32
     before the registry is written, as `config <vendor> --staging` does (an
-    address the scope answers needs none; an engineer is refused one another
-    scope answers); a device no scope answers is refused. The new name is
+    address the scope answers needs no /32 and gets a staging entry without one,
+    which `device rename --replace` ends and which lasts until the device is seen
+    at another address; an engineer is refused one another scope answers; every
+    such refusal comes before the snapshot); a device no scope answers is refused. The new name is
     lower case and not taken, and not a generic name unless `--allow-generic`
     is given. One snapshot is taken first and a write that fails takes the
     copy back whole. An engineer clones the devices of their own scopes, the
@@ -219,12 +221,13 @@ device rename <replacement> <name> --replace [--yes]
     its new address (the plan says when that is not the scope of its bench address), and its
     staging /32 ends in the scope that holds it. A break-glass hold on the original is cleared
     as `breakglass release` does and is never moved to the replacement. The replacement must
-    have a staging /32, and no hold of its own. The plan lines come first, then one question;
-    a terminal-less run answers no and `--yes` is the only way to skip it. One snapshot covers
-    the steps. An engineer replaces within their own scopes; a hold on the original needs the
-    superuser, and an engineer is refused naming it. Audit: `device replace old= new= address=
-    hold_cleared= snmp_files= block_files= notices= count=1`, `scope staging done` and, for a
-    hold, `breakglass release`
+    have a staging entry (the /32 of its bench address, or, for an address its scope answered
+    already, the entry alone), and no hold of its own. The plan lines come first, then one
+    question; a terminal-less run answers no and `--yes` is the only way to skip it. One
+    snapshot covers the steps. An engineer replaces within their own scopes; a hold on the
+    original needs the superuser, and an engineer is refused naming it. Audit: `device
+    replace old= new= address= hold_cleared= snmp_files= block_files= notices= count=1`,
+    `scope staging done` and, for a hold, `breakglass release`
 
 device address|hostname|vendor|port|description|location <name> [<value>|clear]
 

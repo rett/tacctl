@@ -158,12 +158,17 @@ func TestDeviceCloneOfAPlainDevice(t *testing.T) {
 			t.Errorf("%s was made", p)
 		}
 	}
-	// A staging address its scope covers already is no staging: the clone
-	// is registered, and no /32 is added.
+	// A staging address its scope covers already needs no /32: the clone
+	// is registered and none is added, but it is staged all the same (an
+	// entry marked covered), so that 'device rename --replace' finds it.
+	prefixes := plain(sb.run("", []string{"scope", "show", "lab"}))
 	sb.dev("", "clone", "lab-sw1", "lab-sw3", "--staging", "192.168.1.3")
 	sb.expect(0, "no staging address is needed", "")
-	if strings.Contains(sb.read("state/staging"), "192.168.1.3") {
-		t.Errorf("staging:\n%s", sb.read("state/staging"))
+	if got := sb.read("state/staging"); !strings.Contains(got, "192.168.1.3/32|lab|device|lab-sw3|") || !strings.Contains(got, "|covered\n") {
+		t.Errorf("staging:\n%s", got)
+	}
+	if plain(sb.run("", []string{"scope", "show", "lab"})) != prefixes {
+		t.Error("a /32 was added to the scope")
 	}
 }
 
@@ -208,11 +213,16 @@ func TestDeviceCloneRefusals(t *testing.T) {
 			t.Errorf("%v: something changed", c.args)
 		}
 	}
-	// A staging address that another scope answers is taken from it only by
-	// the verbs that say so: refused, after nothing but the snapshot.
+	// A superuser takes an address another scope answers, with a warning:
+	// the /32 is added to the scope of the original, which answers it from
+	// then on (the engineer's refusal is TestEngineerCloneInOwnScopes').
 	sb.dev("", "clone", cloneSrc, cloneNew, "--staging", "10.99.0.77")
-	if sb.code == 0 && !strings.Contains(sb.read("state/staging"), "10.99.0.77/32|lab|") {
-		t.Errorf("staging a prod address: %d\n%s", sb.code, sb.read("state/staging"))
+	if sb.code != 0 || !strings.Contains(sb.printed(), "10.99.0.77 is answered by scope") ||
+		!strings.Contains(sb.read("state/staging"), "10.99.0.77/32|lab|device|"+cloneNew+"|") {
+		t.Errorf("staging a prod address: %d %q\n%s", sb.code, sb.printed(), sb.read("state/staging"))
+	}
+	if m := plain(sb.run("", []string{"scope", "show", "lab"})); !strings.Contains(m, "10.99.0.77/32") {
+		t.Errorf("scope lab does not answer the address:\n%s", m)
 	}
 
 	// Leftovers of an earlier device of the name are refused, as for 'add'.
@@ -333,7 +343,7 @@ func TestEngineerCloneInOwnScopes(t *testing.T) {
 		}
 	}
 
-	was := sb.devices() + sb.read("state/staging")
+	was, snaps := sb.devices()+sb.read("state/staging"), sb.snapshots()
 	for _, c := range []struct {
 		args []string
 		msg  string
@@ -347,7 +357,9 @@ func TestEngineerCloneInOwnScopes(t *testing.T) {
 		if sb.code != 1 || !strings.Contains(sb.stderr(), c.msg) {
 			t.Errorf("%v: %d %q, want %q", c.args, sb.code, sb.stderr(), c.msg)
 		}
-		if sb.devices()+sb.read("state/staging") != was {
+		// A refusal of the staging address changes nothing, a snapshot
+		// included.
+		if sb.devices()+sb.read("state/staging") != was || sb.snapshots() != snaps {
 			t.Errorf("%v changed something", c.args)
 		}
 	}

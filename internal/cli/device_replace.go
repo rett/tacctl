@@ -132,7 +132,11 @@ func (inv *invocation) deviceReplace(p Parsed) error {
 		}
 	}
 	inv.echo("  Replaced: '" + replName + "' (" + bench + ") is renamed '" + origName + "' and moves to " + addr + " (" + where + "); it keeps its own host keys, and none of '" + origName + "' is carried.")
-	inv.echo("  Staging:  " + staged.CIDR + " ends in scope '" + staged.Scope + "'.")
+	if staged.Covered {
+		inv.echo("  Staging:  the entry of " + bench + " ends; scope '" + staged.Scope + "' answers it by its own prefixes, which stay.")
+	} else {
+		inv.echo("  Staging:  " + staged.CIDR + " ends in scope '" + staged.Scope + "'.")
+	}
 	if held {
 		a.Out.Warn("Break-glass is held on " + origName + " (" + addr + ") " + inv.holdSummary(hold) + ": '" + origName + "' is answered again once it is released here (the hold is cleared, never moved to '" + replName + "').")
 	}

@@ -118,6 +118,13 @@ func (inv *invocation) deviceClone(args []string) error {
 		return err
 	}
 
+	// The refusals of the staging address (an address another scope or an
+	// enrolled host has, a collision, a vendor tag) read only: they come
+	// before the snapshot too.
+	if _, err := inv.stagingCheck(scope, bench); err != nil {
+		return err
+	}
+
 	// One snapshot of the state before the staging address, the registry
 	// line and the files.
 	if err := inv.snapshotFirst(); err != nil {
@@ -131,6 +138,8 @@ func (inv *invocation) deviceClone(args []string) error {
 	if err := inv.stagingAdd(scope, bench, "device", newName); err != nil {
 		return err
 	}
+	// A staging entry this run made: the /32 it added, or, for an address
+	// the scope answered already, the entry alone (Covered).
 	staged, added := inv.stagingEntryOf(bench)
 	added = added && !hadStaging
 
