@@ -141,19 +141,36 @@ config linux builds [list|clear]
 
     Show or drop the pam_tacplus modules 'host enroll' built in containers
 
-config snmp show [--reveal]
+config snmp show [--reveal [<user>]]
 
     The default SNMP settings of the name hint and the walkthroughs, and whether the credentials are
-    set; --reveal prints them (administrators)
+    set; --reveal prints the community and the default user's passphrases, `--reveal <user>` one
+    user's (administrators; logged with the user's name)
+
+config snmp version [v2c|v3]
+
+    Show or set the SNMP version of the name lookups. Adding a v3 user does not set it, and
+    `community` sets v2c
 
 config snmp community [--stdin]
 
     Set the v2c community (asked twice, not echoed; --stdin: one line); the version becomes v2c
 
-config snmp v3-user <user> [--auth sha|sha256] [--priv aes128] [--stdin]
+config snmp v3-user add <user> [--auth sha|sha256] [--priv aes128] [--default] [--stdin]
+config snmp v3-user remove <user>
+config snmp v3-user default [<user>|--none]
+config snmp v3-user list
 
-    Set the v3 user and its authentication and privacy passphrases (authPriv); the version becomes
-    v3
+    The pool of v3 users of the config: each has a name and an authentication and a privacy
+    passphrase (authPriv, at least 8 characters, asked twice without echo or one line each with
+    `--stdin`), and the level has one default user or none. `add` changes nothing but the pool and
+    the protocols it is given (one setting for the level, like the version, the port and the
+    timeout): it neither sets the version (`version v3`) nor the default (`--default`, or
+    `default <user>`); the same name again replaces the passphrases. A name stands for one user
+    wherever a device can see it, so a name that a scope's or a device's pool holds is refused,
+    naming the level. `remove` is refused while a device's default names the user; `default
+    --none` clears the default, and with none the v3 lookups fail until one is chosen. `list` never
+    prints a passphrase
 
 config snmp port [<n>] | timeout [<seconds>]
 
@@ -393,7 +410,9 @@ A finding has:
 The sections are `store`, `yaml` (without a store: `tacquito.yaml` does not
 parse), `overrides` (`tacctl.yaml`), `command_rules`, `structure` (users,
 groups and scopes), `scope_default`, `linux_hosts`, `names`, `breakglass`,
-`breakglass_hold`, `emergency_lockdown`, `config_blocks`, `operator_policy`, `group_settings`,
+`snmp_users` (an SNMPv3 user name that two pools a device can see hold: a warning that names the
+levels, never the user; the device's own pool is searched first, then its scope's, then the
+config's), `breakglass_hold`, `emergency_lockdown`, `config_blocks`, `operator_policy`, `group_settings`,
 `orphan_settings`, `orphan_files`, `leftovers`, `devices` (`devices.yaml` does not
 load, a device's `timeout_scale` outside 1 to 10 among the reasons), `backends` (the enabled list
 cannot be read), `rendered`, `drift` and `vendor_attrs`. A line of the text

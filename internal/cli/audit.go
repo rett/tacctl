@@ -199,14 +199,50 @@ func secretSurplus(spec func() Spec) func(rest []string) []int {
 
 // secretSNMPSurplus is secretSurplus for the SNMP verbs that read the
 // community or the v3 keys from a prompt or standard input: the words after
-// 'community' or 'v3-user <user>', where the verb word is rest[at].
+// 'community' or 'v3-user add <user>', where the verb word is rest[at]. A
+// 'v3-user' word that is not one of its actions is the retired form that
+// took the user and the passphrases on the line ('v3-user <user> <pass>'): the
+// verb refuses it, and every word after the first is masked, a passphrase
+// among them.
 func secretSNMPSurplus(at int, specs func() map[string]Spec) func(rest []string) []int {
 	return func(rest []string) []int {
 		if len(rest) <= at+1 || (rest[at] != "community" && rest[at] != "v3-user") {
 			return nil
 		}
-		return surplusWords(specs()[rest[at]], rest[at+1:], at+1)
+		spec := specs()[rest[at]]
+		if rest[at] == "v3-user" {
+			spec = v3UserSurplusSpec(spec, rest[at+1:])
+		}
+		return surplusWords(spec, rest[at+1:], at+1)
 	}
+}
+
+// v3UserSurplusSpec is the spec to find the secret words of 'v3-user ...'
+// with: the verb's own when the first positional is one of its actions, else
+// (the retired 'v3-user <user> <passphrase>') one that takes a single
+// positional, so that everything after it is masked.
+func v3UserSurplusSpec(spec Spec, words []string) Spec {
+	byName := map[string]Flag{}
+	for _, f := range spec.Flags {
+		for _, n := range f.Names {
+			byName[n] = f
+		}
+	}
+	for i := 0; i < len(words); i++ {
+		w := words[i]
+		if len(w) >= 2 && w[0] == '-' {
+			name, _, hasVal := strings.Cut(w, "=")
+			if f, ok := byName[name]; ok && f.Value && !hasVal {
+				i++
+			}
+			continue
+		}
+		if !slices.Contains(strings.Split(snmpV3UserActions, "|"), w) {
+			spec.MaxArgs = 1
+		}
+		break
+	}
+	return spec
 }
 
 // surplusWords are the indices (base + position in words) of the words of an

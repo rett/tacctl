@@ -132,19 +132,22 @@ func TestScopeSNMPSettingsAndSecrets(t *testing.T) {
 
 func TestScopeSNMPV3(t *testing.T) {
 	sb := newSandbox(t, true)
-	sb.scopeSNMP("auth-pass-1\npriv-pass-1\n", "lab", "v3-user", "alice", "--auth", "sha256", "--stdin")
-	sb.said(0, "SNMPv3 user and passphrases of scope 'lab' set")
+	sb.scopeSNMP("auth-pass-1\npriv-pass-1\n", "lab", "v3-user", "add", "alice", "--auth", "sha256", "--default", "--stdin")
+	sb.said(0, "SNMPv3 user 'alice' added to the pool of scope 'lab'")
 	o := sb.overrides()
-	for _, want := range []string{"version: v3", "sha256"} {
-		if !strings.Contains(o, want) {
-			t.Errorf("tacctl.yaml lacks %q:\n%s", want, o)
-		}
+	// Adding a user sets the protocol it was given and nothing else.
+	if !strings.Contains(o, "sha256") || strings.Contains(o, "version") {
+		t.Errorf("tacctl.yaml:\n%s", o)
 	}
 	if strings.Contains(o, "auth-pass-1") || strings.Contains(o, "alice") {
 		t.Errorf("a credential in tacctl.yaml:\n%s", o)
 	}
+	sb.scopeSNMP("", "lab", "version", "v3")
+	if !strings.Contains(sb.overrides(), "version: v3") {
+		t.Errorf("tacctl.yaml:\n%s", sb.overrides())
+	}
 	out := sb.scopeSNMP("", "lab", "show")
-	if strings.Contains(out, "alice") && !strings.Contains(out, "v3 user:    alice") || strings.Contains(out, "auth-pass-1") {
+	if !strings.Contains(out, "v3 user:    alice  (scope)") || !strings.Contains(out, "v3 users:   alice (default)") || strings.Contains(out, "auth-pass-1") {
 		t.Errorf("show:\n%s", out)
 	}
 	out = sb.scopeSNMP("", "lab", "show", "--reveal")
@@ -153,15 +156,43 @@ func TestScopeSNMPV3(t *testing.T) {
 			t.Errorf("reveal lacks %q:\n%s", want, out)
 		}
 	}
+	// A second user, the default chosen between them, one revealed.
+	sb.scopeSNMP("bob-auth-pass\nbob-priv-pass\n", "lab", "v3-user", "add", "bob", "--stdin")
+	sb.scopeSNMP("", "lab", "v3-user", "default", "bob")
+	sb.said(0, "SNMPv3 user 'bob' is the default of scope 'lab'")
+	out = sb.scopeSNMP("", "lab", "show", "--reveal", "alice")
+	if sb.code != 0 || !strings.Contains(out, "v3 user:    alice") || !strings.Contains(out, "auth auth-pass-1, priv priv-pass-1") || strings.Contains(out, "bob-auth-pass") {
+		t.Errorf("reveal of one user: %d\n%s", sb.code, out)
+	}
+	sb.scopeSNMP("", "lab", "show", "alice")
+	sb.said(1, "A user is for --reveal")
+	sb.scopeSNMP("", "lab", "show", "--reveal", "nobody")
+	sb.said(1, "No SNMPv3 user 'nobody'")
+	// Names are unique: the same name in another scope's pool is another
+	// user, but not one of the config's.
+	sb.run("cfg-auth-pass\ncfg-priv-pass\n", []string{"config", "snmp", "v3-user", "add", "monitor", "--stdin"})
+	sb.scopeSNMP("a-auth-pass-1\na-priv-pass-1\n", "lab", "v3-user", "add", "monitor", "--stdin")
+	sb.said(1, "The SNMPv3 user 'monitor' is in the pool of the config already")
+	if out = sb.scopeSNMP("", "lab", "v3-user", "list"); !strings.Contains(out, "alice") || !strings.Contains(out, "bob  default") || strings.Contains(out, "auth-pass") {
+		t.Errorf("list:\n%s", out)
+	}
+	// Remove: the default goes, and the scope has none until another is chosen.
+	sb.scopeSNMP("", "lab", "v3-user", "remove", "bob")
+	sb.said(0, "scope 'lab' has no default user now")
 	for _, c := range []struct {
 		stdin string
 		args  []string
 		err   string
 	}{
-		{"short\nshort\n", []string{"v3-user", "alice", "--stdin"}, "at least 8 characters"},
-		{"", []string{"v3-user", "alice", "--auth", "md5", "--stdin"}, "Unknown --auth 'md5': sha or sha256."},
-		{"", []string{"v3-user", "bad name", "--stdin"}, "Invalid SNMPv3 user 'bad name'"},
-		{"", []string{"v3-user", "--stdin"}, "Usage: tacctl scope snmp lab v3-user <user>"},
+		{"short\nshort\n", []string{"v3-user", "add", "alice", "--stdin"}, "at least 8 characters"},
+		{"", []string{"v3-user", "add", "alice", "--auth", "md5", "--stdin"}, "Unknown --auth 'md5': sha or sha256."},
+		{"", []string{"v3-user", "add", "bad name", "--stdin"}, "Invalid SNMPv3 user 'bad name'"},
+		{"", []string{"v3-user", "add", "--stdin"}, "Usage: tacctl scope snmp lab v3-user add <user>"},
+		{"", []string{"v3-user", "alice", "--stdin"}, "Unknown action 'alice': add, remove, default or list."},
+		{"", []string{"v3-user"}, "Usage: tacctl scope snmp lab v3-user add <user>"},
+		{"", []string{"v3-user", "remove", "nobody"}, "has no user 'nobody'"},
+		{"", []string{"v3-user", "default", "nobody"}, "No SNMPv3 user 'nobody' to choose for scope 'lab'"},
+		{"", []string{"v3-user", "list", "--default"}, "--default is for 'v3-user add'."},
 		{"", []string{"version", "v1"}, "Unknown version 'v1': v2c or v3."},
 		{"", []string{"frob"}, "Unknown subcommand: 'frob'"},
 		{"", []string{"show", "--bogus"}, "Unknown option: '--bogus'"},
@@ -416,7 +447,7 @@ func TestScopeSNMPEngineer(t *testing.T) {
 	}
 	// Everything that changes anything, and test, is refused; nothing changes.
 	before := sb.overrides()
-	for _, args := range [][]string{{"community", "--stdin"}, {"v3-user", "x", "--stdin"}, {"version", "v3"}, {"clients", "add", "192.0.2.0/24"},
+	for _, args := range [][]string{{"community", "--stdin"}, {"v3-user", "add", "x", "--stdin"}, {"v3-user", "default", "--none"}, {"v3-user", "default", "carol"}, {"v3-user", "remove", "x"}, {"version", "v3"}, {"clients", "add", "192.0.2.0/24"},
 		{"clients", "remove", "198.51.100.0/24"}, {"contact", "x"}, {"contact", "--clear"}, {"port", "162"}, {"timeout", "3"}, {"clear"},
 		{"test", "127.0.0.1"}} {
 		sb.asEngineer("x\n", append([]string{"scope", "snmp", "lab"}, args...)...)

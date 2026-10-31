@@ -1019,7 +1019,7 @@ func (inv *invocation) checkRows(res *devreg.Resolver, e devreg.Entry, reach str
 		if info, err := inv.deviceSNMPInfoOf(e); err != nil {
 			row("SNMP", "cannot be read: "+strings.Join(msgs(err), " "))
 		} else if info.Eff.Version == "" {
-			row("SNMP", "not configured (tacctl device snmp "+shellquote.Q(e.Name)+" community|v3-user <user>)")
+			row("SNMP", "not configured (tacctl device snmp "+shellquote.Q(e.Name)+" version v2c|v3)")
 		} else {
 			row("SNMP", info.settings())
 			row("SNMP creds", info.credentials())

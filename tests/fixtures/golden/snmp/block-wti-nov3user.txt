@@ -4,7 +4,7 @@
         25 [Enter]              SNMP Access -- the item number varies by model/firmware;
                                 pick the entry labelled "SNMP Access"
         Set each item (type the item number, [Enter], then the value):
-          SNMPv3 User               : (NOT SET: tacctl scope snmp lab v3-user <user>)
+          SNMPv3 User               : (NOT SET: tacctl scope snmp lab v3-user add <user> --default)
           SNMP Location             : Rack 4, DC1
           Contact                   : NOC <noc@example.net>
 
@@ -16,4 +16,4 @@
           refuse 0.0.0.0/0 (everything else)
           Check from the tacctl server: tacctl scope snmp lab test <device-address>   (expects sysName 'core-sw1')
 
-Unfilled SNMP values: v3 user (tacctl scope snmp lab v3-user <user>)
+Unfilled SNMP values: v3 user (tacctl scope snmp lab v3-user add <user> --default)

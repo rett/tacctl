@@ -382,17 +382,18 @@ device check <name>|--all [--sources] [--json]
     mismatched=N`) names no address; --json adds a `sources` array (address, interface, result
     `ok`, `unreachable`, `mismatch` or `skipped`, fingerprint, pinned, device, source, reason)
 
-device snmp <name> [show [--reveal]]
+device snmp <name> [show [--reveal [<user>]]]
 
     The device's SNMP settings as it is read with: version, port, timeout, credentials (set or not;
-    `--reveal` prints them, an engineer's own scopes' devices only, logged: one `secret-read` line
-    for each level a printed secret comes from) and allowed clients, each with where it comes from:
+    `--reveal` prints them, `--reveal <user>` one user's passphrases, an engineer's own scopes'
+    devices only, logged: one `secret-read` line for each level a printed secret comes from, with
+    the user's name) and allowed clients, each with where it comes from:
     `(device)`, `(scope <scope>)`, `(default)` or `(built-in)`. A setting the device does not set
     comes from its scope, then the default, then the built-in
 
 device snmp <name> version [v2c|v3]
 
-    Show or set the device's own SNMP version (superusers); `community` and `v3-user` set it too
+    Show or set the device's own SNMP version (superusers); `community` sets v2c
 
 device snmp <name> port [<n>]
 
@@ -412,10 +413,17 @@ device snmp <name> community [--stdin]
     Set the device's own v2c community (asked twice, not echoed; `--stdin`: one line); the device's
     version becomes v2c
 
-device snmp <name> v3-user <user> [--stdin]
+device snmp <name> v3-user add <user> [--default] [--stdin]
+device snmp <name> v3-user remove <user>
+device snmp <name> v3-user default [<user>|--none]
+device snmp <name> v3-user list
 
-    Set the device's own v3 user and passphrases (authPriv; the protocols are the scope's or the
-    default's); the device's version becomes v3
+    The device's own pool of v3 users and its default (the protocols are the scope's or the
+    default's). A device uses its own default user, else its scope's, else the config's; `default
+    <user>` may name a user of its own pool, its scope's or the config's. Adding a user changes
+    nothing but the pool; a name stands for one user across the three pools. A chosen user that is
+    missing or has no passphrase is an error that names the command that fixes it, never another
+    user
 
 device snmp <name> clear
 

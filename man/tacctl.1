@@ -437,7 +437,9 @@ another level's user, a device's file without an
 .B snmp:
 entry) it takes no snapshot (there is no file to convert) and needs no
 .BR \-\-yes ;
-with an address, or a v3 user to drop, it takes the snapshot and needs it.
+with an address, or a version 2 file, it takes the snapshot and needs
+.B \-\-yes
+when anything is dropped.
 .B \-\-hosts
 is accepted and does nothing. The command ends with the next step,
 .BR "tacctl upgrade \-\-branch 0.2.22" .
@@ -2678,7 +2680,7 @@ has a
 .B section
 (a fixed token for each label of the text report:
 .BR store ", " yaml ", " overrides ", " command_rules ", " structure ", "
-.BR scope_default ", " linux_hosts ", " names ", " breakglass ", " breakglass_hold ", "
+.BR scope_default ", " linux_hosts ", " names ", " breakglass ", " snmp_users ", " breakglass_hold ", "
 .BR emergency_lockdown ", " config_blocks ", " operator_policy ", " group_settings ", " orphan_settings ", "
 .BR orphan_files ", " leftovers ", " devices ", " backends ", " rendered ", " drift " and "
 .BR vendor_attrs ),
@@ -4381,7 +4383,7 @@ Where the script goes (default: tacctl\-linux\-<scope>.sh, remove\-script: tacct
 .RE
 .\" END GENERATED: command config linux remove-script
 .TP
-.B "config snmp show " "[ \-\-reveal ]"
+.B "config snmp show " "[ \-\-reveal [ user ]]"
 The SNMP access
 .B "device add"
 and
@@ -4389,7 +4391,7 @@ and
 read a device's
 .B sysName.0
 with: the version, port, timeout and v3 protocols, and whether the community
-and the v3 user and passphrases are set (never what they are). The settings are
+and the v3 users and passphrases are set (never what they are). The settings are
 .B snmp.version
 .RB ( v2c " or " v3 ;
 unset: no lookup),
@@ -4407,15 +4409,21 @@ and
 in
 .IR tacctl.yaml ;
 the credentials are in
-.IR /etc/tacctl/snmp.yaml .
+.IR /etc/tacctl/snmp.yaml :
+the community and a pool of v3 users (a name and two passphrases each) with a
+default user or none.
 v3 is authPriv only (HMAC-SHA-96 or HMAC-SHA-256-192, AES-128-CFB), with
 engine discovery. These are the default for every scope; a scope sets its own
 with
 .B "scope snmp"
 and what it does not set comes from here.
 .B \-\-reveal
-prints the community or the v3 user and passphrases instead of whether they
-are set.
+prints the community and the default user's passphrases instead of whether
+they are set;
+.B "\-\-reveal"
+.I user
+prints one user's passphrases and nothing else. A reveal is logged with the
+user's name (\fBsecret\-read kind=snmp\-default name=default user=\fR\fIuser\fR).
 .B "tacctl config snmp"
 with no subcommand prints the usage.
 .\" BEGIN GENERATED: command config snmp show
@@ -4426,9 +4434,23 @@ Requires: \fBsuperuser\fR.
 Options:
 .TP
 \fB\-\-reveal\fR
-Print the community or the v3 passphrases.
+Print the community and the default user's passphrases, or one user's.
 .RE
 .\" END GENERATED: command config snmp show
+.TP
+.BI "config snmp version " "[ v2c | v3 ]"
+Show or set
+.BR snmp.version ,
+the version the name lookups use. Adding a v3 user does not set it, and
+.B community
+sets
+.BR v2c .
+.\" BEGIN GENERATED: command config snmp version
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config snmp version
 .TP
 .B "config snmp community " "[ \-\-stdin ]"
 Ask for the v2c community twice, without echo (or read one line from stdin
@@ -4446,25 +4468,53 @@ Requires: \fBsuperuser\fR.
 Options:
 .TP
 \fB\-\-stdin\fR
-(community, v3\-user) Read the secrets from stdin, one per line.
+(community, v3\-user add) Read the secrets from stdin, one per line.
 .RE
 .\" END GENERATED: command config snmp community
 .TP
-.BI "config snmp v3\-user " user " [ \-\-auth sha|sha256 ] [ \-\-priv aes128 ] [ \-\-stdin ]"
-Store the v3 user with its authentication and privacy passphrases (each asked
-twice without echo, or one line each from stdin with
+.BI "config snmp v3\-user " "add | remove | default | list" " [ user ] [ \-\-auth sha|sha256 ] [ \-\-priv aes128 ] [ \-\-default ] [ \-\-none ] [ \-\-stdin ]"
+The pool of v3 users of the config: each has a name and an
+authentication and a privacy passphrase, and the level has one default user or
+none. The protocols, like the version, the port and the timeout, are one
+setting for the level.
+.B add
+.I user
+stores the user with both passphrases (each asked twice without echo, or one
+line each from stdin with
 .BR \-\-stdin ;
-at least 8 characters), and set
-.B snmp.version
-to
-.B v3
-and the protocols given.
+at least 8 characters) and sets the protocols given; it changes nothing else:
+not the version
+.RB ( version\ v3 ),
+not the default user
+.RB ( \-\-default
+makes the user the default). The same name again replaces the user's
+passphrases. A name stands for one user wherever a device can see it, so a name
+that a scope's or a device's pool holds is refused, naming the level.
+.B remove
+.I user
+takes a user out, and is refused while a device's default names it.
+.B default
+shows the default user,
+.B default
+.I user
+chooses it,
+.B default \-\-none
+clears it. With no default the lookups of v3 fail, naming the command that
+sets one. The old form
+.B v3\-user
+.I user
+is not accepted.
+.B list
+prints the users and whether their passphrases are set, never a passphrase.
 .\" BEGIN GENERATED: command config snmp v3-user
 .RS
 .PP
 Requires: \fBsuperuser\fR.
 .PP
 Options:
+.TP
+\fB\-\-default\fR
+Make the user the default.
 .TP
 \fB\-\-auth\fR \fIsha|sha256\fR
 The authentication protocol: sha (HMAC\-SHA\-96) or sha256 (HMAC\-SHA\-256\-192) (default sha).
@@ -4473,7 +4523,10 @@ The authentication protocol: sha (HMAC\-SHA\-96) or sha256 (HMAC\-SHA\-256\-192)
 The privacy protocol: AES\-128 (the only one).
 .TP
 \fB\-\-stdin\fR
-(community, v3\-user) Read the secrets from stdin, one per line.
+(community, v3\-user add) Read the secrets from stdin, one per line.
+.TP
+\fB\-\-none\fR
+Choose no default user.
 .RE
 .\" END GENERATED: command config snmp v3-user
 .TP
@@ -4773,12 +4826,14 @@ and the reads of a scope of their own:
 .BR "scope secret " \fIscope\fR " show" ,
 .BR "scope show " \fIscope\fR
 and the SNMP settings
-.RB ( "scope snmp " \fIscope\fR " show [ \-\-reveal ]" ,
-with the plain reads of version, port, timeout, contact and
+.RB ( "scope snmp " \fIscope\fR " show [ \-\-reveal [ " \fIuser\fR " ]]" ,
+with the plain reads of version, port, timeout, contact,
+.BR "v3\-user list" " and " "v3\-user default" ,
+and
 .BR "clients list" ;
 every setter, clear and test of it stays the superuser's), and those of a
 device of theirs
-.RB ( "device snmp " \fIname\fR " [ show [ \-\-reveal ]]" ,
+.RB ( "device snmp " \fIname\fR " [ show [ \-\-reveal [ " \fIuser\fR " ]]]" ,
 the same reads; its setters and
 .B clear
 are the superuser's, and an engineer's
@@ -7426,8 +7481,8 @@ says which one a value is. The non-secret settings are
 .B snmp_scope.\fIscope\fR.{version,port,timeout,v3.auth,v3.priv,contact,clients}
 in
 .IR tacctl.yaml ,
-written only when set; the community and the v3 user with its passphrases are
-the file
+written only when set; the community and the pool of v3 users with their
+passphrases and the default user are the file
 .IR /etc/tacctl/snmp/\fIscope\fR.yaml
 (mode 0600 in a 0700 directory, the format of
 .IR snmp.yaml ),
@@ -7443,31 +7498,41 @@ and
 .BR test ,
 are the superuser's.
 .TP
-.BI "scope snmp " scope " show [ \-\-reveal ]"
+.BI "scope snmp " scope " show [ \-\-reveal [ user ]]"
 The effective version, port, timeout, protocols, community or v3 user, contact
 and allowed clients of the scope, each with where it comes from
 .RB ( scope ,
 .BR default ,
 .BR built\-in ).
 .B \-\-reveal
-prints the credentials; an engineer may reveal the scopes of their own, and the
-reveal is logged as
-.BR "secret\-read kind=snmp" .
+prints the credentials (the community and the effective user's passphrases;
+with a
+.I user
+only that user's passphrases, of the scope's pool or the default's); an
+engineer may reveal the scopes of their own, and the reveal is logged as
+.BR "secret\-read kind=snmp" ,
+with the user's name when a user's passphrases are printed.
 .\" BEGIN GENERATED: command scope snmp
 .RS
 .PP
-Requires: \fBengineer\fR. An engineer may read the settings of a scope of their own (show [\-\-reveal], version, port, timeout, contact, clients list); every setter, clear and test needs the superuser tier.
+Requires: \fBengineer\fR. An engineer may read the settings of a scope of their own (show [\-\-reveal [<user>]], version, port, timeout, contact, v3\-user list|default, clients list); every setter, clear and test needs the superuser tier.
 .PP
 Options:
 .TP
 \fB\-\-reveal\fR
-Print the community or the v3 passphrases (an engineer: their own scopes; logged).
+Print the community and the effective user's passphrases, or one user's (an engineer: their own scopes; logged).
 .TP
 \fB\-\-clear\fR
 Remove the contact.
 .TP
+\fB\-\-none\fR
+Choose no default user.
+.TP
 \fB\-\-stdin\fR
-(community, v3\-user) Read the secrets from stdin, one per line.
+(community, v3\-user add) Read the secrets from stdin, one per line.
+.TP
+\fB\-\-default\fR
+Make the user the default.
 .TP
 \fB\-\-auth\fR \fIsha|sha256\fR
 The authentication protocol: sha (HMAC\-SHA\-96) or sha256 (HMAC\-SHA\-256\-192) (default: the default's, else sha).
@@ -7485,11 +7550,23 @@ Ask twice, without echo (or read one line from stdin), for the scope's v2c
 community; the scope's version becomes
 .BR v2c .
 .TP
-.BI "scope snmp " scope " v3\-user " user " [ \-\-auth sha|sha256 ] [ \-\-priv aes128 ] [ \-\-stdin ]"
-Set the scope's v3 user and its two passphrases (at least 8 characters); the
-scope's version becomes
-.BR v3 .
-.TP
+.BI "scope snmp " scope " v3\-user " "add | remove | default | list" " [ user ] [ \-\-auth sha|sha256 ] [ \-\-priv aes128 ] [ \-\-default ] [ \-\-none ] [ \-\-stdin ]"
+The scope's pool of v3 users and its default user, as
+.B "config snmp v3\-user"
+does for the default.
+.B add
+changes only the pool (and the scope's protocols, when given): the scope's
+version is
+.B version\ v3
+and its default user is
+.BR default .
+A name that the default's pool or the pool of one of the scope's devices holds
+is refused, naming the level. The scope's default names a user of the scope's
+pool; with none, the default's applies. A user that a device's default names
+cannot be removed. An engineer may run
+.B list
+and the plain
+.BR default .
 .BI "scope snmp " scope " clients { list | add | remove } " [ cidr [ , cidr ...]]
 The ranges allowed to query the scope's devices: IPv4 networks in canonical
 form, kept in the order given, at most 32, never
@@ -9902,11 +9979,14 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command device timeout-scale
 .TP
-.BI "device snmp " "name " "[ show [ \-\-reveal ] | version v2c|v3 | port " n " | timeout " seconds " | clients { list | add | remove } " "[ cidr [ , cidr ...]] | community [ \-\-stdin ] | v3\-user " "user [ \-\-stdin ] | clear ]"
+.BI "device snmp " "name " "[ show [ \-\-reveal [ " user " ]] | version v2c|v3 | port " n " | timeout " seconds " | clients { list | add | remove } " "[ cidr [ , cidr ...]] | community [ \-\-stdin ] | v3\-user " "{ add | remove | default | list } [ user ] [ \-\-default ] [ \-\-none ] [ \-\-stdin ] | clear ]"
 The SNMP settings of one registered device, over its scope's and the default's:
 one setting at a time, the device's value, then its scope's, then the default's,
-then the built\-in (the v3 user and both passphrases come together from one
-level).
+then the built\-in. The v3 user is the exception: it is the default user of the
+device, else of its scope, else of the config, found in the pool of one
+of the levels the device may use (its own, its scope's, the default's); a
+chosen user that is missing or has no passphrase is an error that names the
+command that fixes it, never a fallback.
 .B show
 (the default verb) prints the resolved version, port, timeout, protocols,
 community or v3 user (set or not), and allowed clients, each with where it
@@ -9916,23 +9996,35 @@ comes from
 .BR default ,
 .BR built\-in ).
 .B \-\-reveal
-prints the credentials and logs one line for each level a printed secret
-comes from:
+prints the credentials (with a
+.I user
+only that user's passphrases, of any pool the device may use) and logs one line
+for each level a printed secret comes from:
 .BR "secret\-read kind=snmp\-device name=" \fIdevice\fR ,
 .BR "secret\-read kind=snmp name=" \fIscope\fR
 or
-.BR "secret\-read kind=snmp\-default name=default" .
+.BR "secret\-read kind=snmp\-default name=default" ;
+the line of a v3 user's passphrases adds
+.BI user= user
+before
+.BR by= .
 .BR version ", " port " and " timeout
 show or set the device's own value;
 .B community
-and
+asks twice, without echo (or reads a line from stdin), for the community and
+makes the device's version
+.BR v2c .
 .B v3\-user
-ask twice, without echo (or read lines from stdin), for the credentials and
-make the device's version
-.B v2c
-or
-.BR v3 ;
-the authentication and privacy protocols are the scope's or the default's.
+manages the device's own pool of v3 users and its default as
+.B "scope snmp v3\-user"
+does for a scope (the authentication and privacy protocols, like the version,
+are the scope's or the default's): adding a user changes only the pool, and
+.B default
+.I user
+may name a user of the device's own pool, of its scope's or of the default's.
+A name stands for one user across those pools (the same name in another
+scope's pool is another user). A user that the device's default names cannot be
+removed from the pool it is in.
 .B clients
 lists, adds and removes the ranges allowed to query this device: its own list,
 when it has one, replaces its scope's (IPv4, at most 32, never
@@ -9946,7 +10038,7 @@ file name it, and
 lists the device);
 .B community
 and
-.B v3\-user
+.B v3\-user\ add
 replace it, saying so. A credential change takes the snapshot first. The
 SNMPv3 user's name is shown to the engineer tier and
 above; a read\-only or operator user is told only that one is set
@@ -9960,7 +10052,8 @@ The non\-secret settings are the optional
 map of the device in
 .I devices.yaml
 (\fBversion\fR, \fBport\fR, \fBtimeout\fR, \fBclients\fR; written only when
-set); the credentials are in
+set); the credentials (the community, the pool of v3 users and the default
+user) are in
 .IR /etc/tacctl/snmp/devices/\fIname\fR.yaml
 (mode 0600 in a 0700 directory, the format of
 .IR snmp.yaml ).
@@ -9990,15 +10083,21 @@ import never sets or drops a device's own settings.
 .\" BEGIN GENERATED: command device snmp
 .RS
 .PP
-Requires: \fBengineer\fR. An engineer may read the settings of a device of their own scope (show [\-\-reveal], version, port, timeout, clients list); every setter and clear needs the superuser tier.
+Requires: \fBengineer\fR. An engineer may read the settings of a device of their own scope (show [\-\-reveal [<user>]], version, port, timeout, v3\-user list|default, clients list); every setter and clear needs the superuser tier.
 .PP
 Options:
 .TP
 \fB\-\-reveal\fR
-(snmp show) Print the community or the v3 passphrases (an engineer: their own scopes' devices; logged).
+(snmp show) Print the community and the effective user's passphrases, or one user's (an engineer: their own scopes' devices; logged).
 .TP
 \fB\-\-stdin\fR
-(snmp community, v3\-user) Read the secrets from stdin, one per line.
+(snmp community, v3\-user add) Read the secrets from stdin, one per line.
+.TP
+\fB\-\-default\fR
+Make the user the default.
+.TP
+\fB\-\-none\fR
+Choose no default user.
 .RE
 .\" END GENERATED: command device snmp
 .TP
@@ -14552,7 +14651,7 @@ Every tier may run list; ack and unack need the superuser tier.
 The Configuration, Release, Model and Serial rows (and config, release, model and serial of \-\-json) are the operator tier's; a read\-only user's output has none.
 .TP
 .B device snmp
-An engineer may read the settings of a device of their own scope (show [\-\-reveal], version, port, timeout, clients list); every setter and clear needs the superuser tier.
+An engineer may read the settings of a device of their own scope (show [\-\-reveal [<user>]], version, port, timeout, v3\-user list|default, clients list); every setter and clear needs the superuser tier.
 .TP
 .B host show
 An engineer reads what tacctl recorded of a host; \-\-check logs in to it and needs the superuser tier.
@@ -14567,7 +14666,7 @@ An engineer may read the management filter mode of a scope of their own (mode, w
 An engineer may run show for a scope of their own; set and generate need the superuser tier.
 .TP
 .B scope snmp
-An engineer may read the settings of a scope of their own (show [\-\-reveal], version, port, timeout, contact, clients list); every setter, clear and test needs the superuser tier.
+An engineer may read the settings of a scope of their own (show [\-\-reveal [<user>]], version, port, timeout, contact, v3\-user list|default, clients list); every setter, clear and test needs the superuser tier.
 .TP
 .B scope staging
 An engineer may run list for a scope of their own; the other verbs need the superuser tier.
@@ -15190,7 +15289,7 @@ and of
 .BR "scope snmp" ", " "device snmp"
 and
 .B "config snmp"
-.RB ( community " and " v3\-user ),
+.RB ( community " and " "v3\-user add" ),
 every word of
 .B passwd
 and
@@ -16707,16 +16806,33 @@ include it. The pinned keys of enrolled hosts are kept under
 .BR hosts: .
 .TP
 .I /etc/tacctl/snmp.yaml
-The SNMP community, or the v3 user and its passphrases, that
+The SNMP community and the pool of v3 users (a name and two passphrases each,
+and the default user) that
 .B "device add"
 and
 .B "device check"
 read a device's sysName with. Mode 0600, root only, written atomically by
 .BR "tacctl config snmp" ;
-never printed. Absent means none.
+never printed. Absent means none. Version 2 of the format holds
+.B users:
+and
+.BR default: ;
+a file of version 1 (0.2.22 and before: one v3 user) reads as a pool of one
+user that is the default. A command saves version 1 while the file fits it (the
+community and at most one v3 user, the default), and version 2 only for what
+version 1 cannot hold (a second or a non\-default user, a default that names
+another level's user, a device's file without an
+.B snmp:
+entry). A device's file follows its entry: version 2 while the device has none
+(it counts all the same), version 1 once any setting gives the device an entry
+when the content fits (a pool of two stays version 2), version 2 again if the
+entry is emptied; the command says so when it rewrites a file that way, and a
+file it cannot write is a warning that names the command that writes it again
+(exit status 1 when the file is then ignored). The same format is the scopes' and the
+devices' files below.
 .TP
 .I /etc/tacctl/snmp/\fIscope\fR.yaml
-The SNMP community, or the v3 user and its passphrases, of one scope
+The SNMP community, or the pool of v3 users and the default user, of one scope
 .RB ( "tacctl scope snmp" ):
 the credentials a device of that scope is read with, and printed in its
 walkthroughs, instead of the default's. Mode 0600 in a 0700 directory, root
@@ -16726,14 +16842,14 @@ Absent means the scope has none of its own. A scope's rename moves the file and
 its removal deletes it.
 .TP
 .I /etc/tacctl/snmp/devices/\fIname\fR.yaml
-The SNMP community, or the v3 user and its passphrases, of one registered
+The SNMP community, or the pool of v3 users and the default user, of one registered
 device
 .RB ( "tacctl device snmp" ):
 read in place of its scope's and the default's. The file is named for the
 device in lower case. Mode 0600 in a 0700 directory, root only; printed only
 by
 .BR "device snmp ... show \-\-reveal" .
-Absent means the device has none of its own. The file counts only while the
+Absent means the device has none of its own. A file of version 1 counts only while the
 device has an
 .B snmp:
 map of its own; one without (such as a rollback to 0.2.3 leaves) is ignored,

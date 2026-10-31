@@ -38,10 +38,10 @@ import (
 
 // deviceSNMPSpecs are the arguments of each verb after the device's name.
 var deviceSNMPSpecs = map[string]Spec{
-	"show":      {MaxArgs: 0, Flags: []Flag{{Names: []string{"--reveal"}}}},
+	"show":      {MaxArgs: 1, Flags: []Flag{{Names: []string{"--reveal"}}}},
 	"version":   {MaxArgs: 1, Args: []string{"v2c|v3"}},
 	"community": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--stdin"}}}},
-	"v3-user":   {MinArgs: 1, MaxArgs: 1, Args: []string{""}, Flags: []Flag{{Names: []string{"--stdin"}}}},
+	"v3-user":   snmpV3UserSpec(false),
 	"clients":   {MaxArgs: 2, Args: []string{"list|add|remove", ""}},
 	"port":      {MaxArgs: 1, Args: []string{""}},
 	"timeout":   {MaxArgs: 1, Args: []string{""}},
@@ -51,13 +51,16 @@ var deviceSNMPSpecs = map[string]Spec{
 // deviceSNMPCompletion is the Spec of the whole verb for completion (the
 // words after 'tacctl device snmp').
 var deviceSNMPCompletion = Spec{MinArgs: 1, MaxArgs: -1, Args: []string{KindDevices,
-	"show|version|port|timeout|clients|community|v3-user|clear", After("clients", "list|add|remove"), ""},
-	Flags: []Flag{{Names: []string{"--reveal"}, Only: "show"}, {Names: []string{"--stdin"}}}}
+	"show|version|port|timeout|clients|community|v3-user|clear", Either(After("clients", "list|add|remove"), After("v3-user", snmpV3UserActions)), ""},
+	Flags: []Flag{{Names: []string{"--reveal"}, Only: "show"}, {Names: []string{"--stdin"}},
+		{Names: []string{"--default"}, Only: "add", Desc: "Make the user the default"}, {Names: []string{"--none"}, Only: "default", Desc: "Choose no default user"}}}
 
 // deviceSNMPOptions are the option lines under the verb's row.
 var deviceSNMPOptions = [][2]string{
-	{"--reveal", "(snmp show) Print the community or the v3 passphrases (an engineer: their own scopes' devices; logged)"},
-	{"--stdin", "(snmp community, v3-user) Read the secrets from stdin, one per line"},
+	{"--reveal [<user>]", "(snmp show) Print the community and the effective user's passphrases, or one user's (an engineer: their own scopes' devices; logged)"},
+	{"--default", "(snmp v3-user add) Make the user the device's default"},
+	{"--none", "(snmp v3-user default) Choose no default: the scope's applies"},
+	{"--stdin", "(snmp community, v3-user add) Read the secrets from stdin, one per line"},
 }
 
 // --- a device's own settings -----------------------------------------------------
@@ -71,9 +74,11 @@ type deviceSNMPOwn struct {
 	SNMP  devreg.SNMP
 	Creds snmpcred.Creds
 	// Orphan: the credentials file is there and the device has no snmp map.
-	// The map gates the file (the verbs that write credentials set the
-	// version, so a map always exists in use): a file without one is what a
-	// rollback to 0.2.3 left, or a stray, and is ignored, not read.
+	// The map gates a file of the form of 0.2.22 and before (the verbs that
+	// wrote credentials set the version, so a map always existed in use): one
+	// without a map is what a rollback to 0.2.3 left, or a stray, and is
+	// ignored. A file of the pool (version 2) holds users and a default and
+	// needs no map: choosing a user sets no version.
 	Orphan bool
 	// TimeoutScale is the device's own timing scale (0.2.22), 0 for none: the
 	// lookup's timeout is multiplied by the scale in force (snmpConfigOwn).
@@ -82,8 +87,15 @@ type deviceSNMPOwn struct {
 
 // layer is the device's level of the resolution.
 func (o deviceSNMPOwn) layer() snmpcred.Layer {
-	return snmpcred.Layer{Version: o.SNMP.Version, Port: o.SNMP.Port, Timeout: o.SNMP.Timeout, Creds: o.Creds}
+	l := snmpcred.Layer{Version: o.SNMP.Version, Port: o.SNMP.Port, Timeout: o.SNMP.Timeout, Creds: o.Creds}
+	if o.Name != "" {
+		l.Name, l.Setter = "device "+o.Name, deviceSNMPSetter(o.Name)
+	}
+	return l
 }
+
+// deviceSNMPSetter is the verb family of a device's SNMP settings.
+func deviceSNMPSetter(name string) string { return "tacctl device snmp " + shellquote.Q(name) }
 
 // isSet reports whether the device has anything of its own.
 func (o deviceSNMPOwn) isSet() bool { return !o.SNMP.Empty() || !o.Creds.Empty() }
@@ -104,12 +116,20 @@ func (inv *invocation) deviceSNMPOwnOf(d devreg.Device) (deviceSNMPOwn, error) {
 	if _, err := snmpcred.DeviceFile(inv.app.Paths.SNMPDir, d.Name); err != nil {
 		return o, nil
 	}
+	c, err := snmpcred.LoadDevice(inv.app.Paths.SNMPDir, d.Name)
 	if d.SNMP.Empty() {
+		// No map: the file of a pool (version 2, which only a command of the
+		// pool verbs writes) is in force, a file of the form of 0.2.22 and
+		// before is a leftover and is ignored; one that cannot be read is
+		// neither (Orphan), as it was never read.
 		file, _ := snmpcred.DeviceFile(inv.app.Paths.SNMPDir, d.Name)
+		if err == nil && c.Format == snmpcred.Version {
+			o.Creds = c
+			return o, nil
+		}
 		o.Orphan = fileThere(file)
 		return o, nil
 	}
-	c, err := snmpcred.LoadDevice(inv.app.Paths.SNMPDir, d.Name)
 	if err != nil {
 		return deviceSNMPOwn{}, err
 	}
@@ -278,6 +298,11 @@ func (i deviceSNMPInfo) credentials() string {
 			user = "set"
 		}
 		v3 = "v3 user " + user + ", passphrases " + map[bool]string{true: "set", false: "incomplete"}[e.HasV3()] + " (" + i.src(e.V3From) + ")"
+		if e.V3Problem != "" && !i.HideUser {
+			v3 = "v3 user " + user + " cannot be used: " + e.V3Problem
+		} else if e.V3Problem != "" {
+			v3 = "v3 user set but cannot be used (" + i.src(e.V3From) + ")"
+		}
 	}
 	switch e.Version {
 	case snmp.V2c:
@@ -313,6 +338,8 @@ type deviceSNMPJSON struct {
 	CommunityFrom  string   `json:"community_from"`
 	V3User         string   `json:"v3_user,omitempty"`
 	V3UserSet      bool     `json:"v3_user_set"`
+	V3Users        []string `json:"v3_users"`
+	V3Default      string   `json:"v3_default,omitempty"`
 	V3Complete     bool     `json:"v3_complete"`
 	V3From         string   `json:"v3_from"`
 	Clients        []string `json:"clients"`
@@ -329,8 +356,11 @@ func (i deviceSNMPInfo) json() *deviceSNMPJSON {
 		Community: e.Community != "", CommunityFrom: e.CommunityFrom, V3UserSet: e.User != "", V3Complete: e.HasV3(), V3From: e.V3From,
 		Clients: append([]string{}, i.Clients...), ClientsFrom: i.ClientsFrom, OwnSettings: !i.Own.SNMP.Empty(), OwnCredentials: !i.Own.Creds.Empty(), IgnoredFile: i.Own.Orphan,
 	}
+	j.V3Users = []string{}
 	if !i.HideUser {
 		j.V3User = e.User
+		j.V3Users = append(j.V3Users, i.Own.Creds.Names()...)
+		j.V3Default = i.Own.Creds.Default
 	}
 	if j.ClientsFrom == "" {
 		j.ClientsFrom = snmpcred.NotSet
@@ -349,9 +379,9 @@ func (inv *invocation) deviceSNMPRows(e devreg.Entry, row func(k, v string)) {
 		return
 	}
 	if info.Eff.Version == "" {
-		fix := "tacctl device snmp " + shellquote.Q(e.Name) + " community|v3-user <user>"
+		fix := "tacctl device snmp " + shellquote.Q(e.Name) + " version v2c|v3"
 		if e.Configured {
-			fix += ", or for its scope: tacctl scope snmp " + e.Scope + " community|v3-user <user>"
+			fix += ", or for its scope: tacctl scope snmp " + e.Scope + " version v2c|v3"
 		}
 		row("SNMP", "not configured ("+fix+")")
 		if !info.Own.SNMP.Empty() {
@@ -466,7 +496,7 @@ func (inv *invocation) deviceSNMP(args []string) error {
 			" show [--reveal]. Changing them is the superuser's. Nothing was changed.")
 	}
 	if sub == "show" {
-		return inv.deviceSNMPShow(e, p.Has("--reveal"))
+		return inv.deviceSNMPShow(e, p)
 	}
 	return inv.snmpChange(func() error {
 		switch sub {
@@ -481,7 +511,7 @@ func (inv *invocation) deviceSNMP(args []string) error {
 		case "community":
 			return inv.deviceSNMPCommunity(e, p)
 		case "v3-user":
-			return inv.deviceSNMPV3User(e, p)
+			return inv.devicePool(e).run(p)
 		default:
 			return inv.deviceSNMPClear(e)
 		}
@@ -492,16 +522,37 @@ func (inv *invocation) deviceSNMP(args []string) error {
 func (i deviceSNMPInfo) fromLabel(from string) string { return "(" + i.src(from) + ")" }
 
 // deviceSNMPShow is 'show': the effective settings with their sources and,
-// with --reveal, the credentials. An engineer's reveal is logged (never the
-// value).
-func (inv *invocation) deviceSNMPShow(e devreg.Entry, reveal bool) error {
+// with --reveal, the credentials (the effective user's passphrases, or those
+// of the user named). An engineer's reveal is logged (never the value), with
+// the user's name.
+func (inv *invocation) deviceSNMPShow(e devreg.Entry, p Parsed) error {
+	reveal := p.Has("--reveal")
+	revealUser := ""
+	if len(p.Args) > 0 {
+		if !reveal {
+			return inv.usageErr("A user is for --reveal: tacctl device snmp " + shellquote.Q(e.Name) + " show --reveal <user>")
+		}
+		revealUser = p.Args[0]
+	}
 	info, err := inv.deviceSNMPInfoOf(e)
 	if err != nil {
 		return err
 	}
 	eff := info.Eff
+	shown := snmpcred.User{Name: eff.User, AuthPass: eff.AuthPass, PrivPass: eff.PrivPass}
+	shownFrom := eff.V3From
+	if revealUser != "" {
+		u, l, ok, err := inv.devicePool(e).revealable(revealUser, eff.User)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return inv.usageErr("No SNMPv3 user '" + revealUser + "' in the pool of device '" + e.Name + "', its scope's or the config's that you may read. Nothing was printed.")
+		}
+		shown, shownFrom = u, snmpFromOfLevel(l)
+	}
 	if reveal {
-		inv.logRevealed(e, info)
+		inv.logRevealed(e, info, revealUser)
 	}
 	title := "SNMP for device '" + e.Name + "'"
 	inv.echo("")
@@ -536,15 +587,23 @@ func (inv *invocation) deviceSNMPShow(e devreg.Entry, reveal bool) error {
 		}
 		return "set"
 	}
-	inv.echo("  community:  " + secret(eff.Community != "", eff.Community) + "  " + info.fromLabel(eff.CommunityFrom))
+	if revealUser == "" {
+		inv.echo("  community:  " + secret(eff.Community != "", eff.Community) + "  " + info.fromLabel(eff.CommunityFrom))
+	}
 	if eff.Version == snmp.V3 || eff.V3From != snmpcred.NotSet {
-		user := "not set"
-		if eff.User != "" {
-			user = eff.User
+		if !info.Own.Creds.Empty() {
+			inv.echo("  v3 users:   " + poolText(info.Own.Creds, info.HideUser) + "  (the device's own pool)")
 		}
-		inv.echo("  v3 user:    " + user + "  " + info.fromLabel(eff.V3From))
-		inv.echo("  v3 passphrases: auth " + secret(eff.AuthPass != "", eff.AuthPass) + ", priv " + secret(eff.PrivPass != "", eff.PrivPass) + "  " + info.fromLabel(eff.V3From))
+		user := "not set"
+		if shown.Name != "" {
+			user = shown.Name
+		}
+		inv.echo("  v3 user:    " + user + "  " + info.fromLabel(shownFrom))
+		inv.echo("  v3 passphrases: auth " + secret(shown.AuthPass != "", shown.AuthPass) + ", priv " + secret(shown.PrivPass != "", shown.PrivPass) + "  " + info.fromLabel(shownFrom))
 		inv.echo("  v3 auth:    " + eff.Auth + "  " + info.fromLabel(eff.AuthFrom) + "; priv: " + eff.Priv + "  " + info.fromLabel(eff.PrivFrom))
+		if eff.V3Problem != "" && !info.HideUser {
+			inv.echo("  Not usable: " + eff.V3Problem + ".")
+		}
 	}
 	inv.echo("  clients:    the tacctl server first (its /32; always), then " + map[bool]string{
 		true: "the ranges below  " + info.fromLabel(info.ClientsFrom), false: "none listed"}[len(info.Clients) > 0] +
@@ -570,29 +629,41 @@ func (inv *invocation) deviceSNMPShow(e devreg.Entry, reveal bool) error {
 // logRevealed logs a reveal, one line for each level a secret
 // that is printed comes from: the device's own, its scope's, the default's
 // (never a value). A secret the device inherits is the scope's or the
-// default's read, and is logged as that.
-func (inv *invocation) logRevealed(e devreg.Entry, info deviceSNMPInfo) {
+// default's read, and is logged as that. The line of the level the v3 user's
+// passphrases come from names the user; a reveal of one user (user set) logs
+// only that user's level.
+func (inv *invocation) logRevealed(e devreg.Entry, info deviceSNMPInfo, user string) {
 	eff := info.Eff
-	var from []string
-	if eff.Community != "" {
-		from = append(from, eff.CommunityFrom)
+	type src struct{ from, user string }
+	var from []src
+	if user != "" {
+		pools, err := inv.devicePool(e).reachable(false)
+		if err == nil {
+			if l, ok := snmpcred.Holder(user, pools); ok {
+				from = append(from, src{snmpFromOfLevel(l), user})
+			}
+		}
+	} else {
+		if eff.Community != "" {
+			from = append(from, src{eff.CommunityFrom, ""})
+		}
+		if (eff.Version == snmp.V3 || eff.V3From != snmpcred.NotSet) && (eff.AuthPass != "" || eff.PrivPass != "") {
+			from = append(from, src{eff.V3From, eff.User})
+		}
 	}
-	if (eff.Version == snmp.V3 || eff.V3From != snmpcred.NotSet) && (eff.AuthPass != "" || eff.PrivPass != "") {
-		from = append(from, eff.V3From)
-	}
-	logged := map[string]bool{}
+	logged := map[src]bool{}
 	for _, f := range from {
 		if logged[f] {
 			continue
 		}
 		logged[f] = true
-		switch f {
+		switch f.from {
 		case snmpcred.FromDevice:
-			inv.secretRead("snmp-device", e.Name)
+			inv.secretReadUser("snmp-device", e.Name, f.user)
 		case snmpcred.FromScope:
-			inv.secretRead("snmp", e.Scope)
+			inv.secretReadUser("snmp", e.Scope, f.user)
 		case snmpcred.FromDefault:
-			inv.secretRead("snmp-default", "default")
+			inv.secretReadUser("snmp-default", "default", f.user)
 		}
 	}
 }
@@ -610,10 +681,8 @@ func (inv *invocation) deviceSNMPUpdateWith(name string, fn func(*devreg.SNMP) e
 	// A credentials file that was ignored (no map) is in force once the
 	// device has settings: say so.
 	wasIgnored := false
-	if d := inv.deviceNamed(name); warn && d != nil && d.SNMP.Empty() {
-		if file, err := snmpcred.DeviceFile(inv.app.Paths.SNMPDir, name); err == nil {
-			wasIgnored = fileThere(file)
-		}
+	if d := inv.deviceNamed(name); warn && d != nil {
+		wasIgnored = inv.deviceCredsIgnored(*d)
 	}
 	defer func() {
 		if d := inv.deviceNamed(name); wasIgnored && d != nil && !d.SNMP.Empty() {
@@ -840,6 +909,21 @@ func (inv *invocation) deviceSNMPClients(e devreg.Entry, p Parsed) error {
 	return nil
 }
 
+// deviceCredsIgnored reports whether the device has a credentials file that
+// is not in force: the device has no snmp map and the file is not a pool's
+// (version 2), or cannot be read.
+func (inv *invocation) deviceCredsIgnored(d devreg.Device) bool {
+	if !d.SNMP.Empty() {
+		return false
+	}
+	file, err := snmpcred.DeviceFile(inv.app.Paths.SNMPDir, d.Name)
+	if err != nil || !fileThere(file) {
+		return false
+	}
+	c, err := snmpcred.LoadDevice(inv.app.Paths.SNMPDir, d.Name)
+	return err != nil || c.Format != snmpcred.Version
+}
+
 // credsToReplace is what the device's credentials file holds, for a verb that
 // sets part of it. A file that cannot be read starts empty, and the verb
 // says so: the file is replaced (it is repaired by setting again, or removed
@@ -847,11 +931,9 @@ func (inv *invocation) deviceSNMPClients(e devreg.Entry, p Parsed) error {
 func (inv *invocation) credsToReplace(name string) snmpcred.Creds {
 	// No map: the file was ignored, and what it holds is not carried into
 	// the credentials being set.
-	if d := inv.deviceNamed(name); d != nil && d.SNMP.Empty() {
+	if d := inv.deviceNamed(name); d != nil && inv.deviceCredsIgnored(*d) {
 		file, _ := snmpcred.DeviceFile(inv.app.Paths.SNMPDir, name)
-		if fileThere(file) {
-			inv.app.Out.Warn("The credentials file of '" + name + "' (" + file + ") was ignored, the device having no settings of its own; it is replaced.")
-		}
+		inv.app.Out.Warn("The credentials file of '" + name + "' (" + file + ") was ignored, the device having no settings of its own; it is replaced.")
 		return snmpcred.Creds{}
 	}
 	cr, err := snmpcred.LoadDevice(inv.app.Paths.SNMPDir, name)
@@ -895,58 +977,6 @@ func (inv *invocation) deviceSNMPCommunity(e devreg.Entry, p Parsed) error {
 	}
 	file, _ := snmpcred.DeviceFile(dir, e.Name)
 	inv.app.Out.InfoE("SNMP community of device '" + e.Name + "' set (" + file + "); the device's version is v2c. Try it: tacctl device check " + shellquote.Q(e.Name))
-	return nil
-}
-
-// deviceSNMPV3User sets the device's v3 user and both passphrases
-// (authPriv); the device's version becomes v3. The authentication and
-// privacy protocols are the scope's or the default's.
-func (inv *invocation) deviceSNMPV3User(e devreg.Entry, p Parsed) error {
-	dir := inv.app.Paths.SNMPDir
-	if _, err := snmpcred.DeviceFile(dir, e.Name); err != nil {
-		return err
-	}
-	user := p.Args[0]
-	if !reSNMPUser.MatchString(user) || names.SNMPTokenProblem(user, names.SNMPUserMax) != "" {
-		return inv.usageErr("Invalid SNMPv3 user '" + user + "': 1-32 printable characters, no blanks, no '?' or '\"'.")
-	}
-	stdin := p.Has("--stdin")
-	ap, err := inv.readSecret(stdin, "authentication passphrase")
-	if err != nil {
-		return err
-	}
-	if msg := secretProblem(ap, "the authentication passphrase", 8, names.SNMPPassphraseMax); msg != "" {
-		return inv.usageErr(msg)
-	}
-	pp, err := inv.readSecret(stdin, "privacy passphrase")
-	if err != nil {
-		return err
-	}
-	if msg := secretProblem(pp, "the privacy passphrase", 8, names.SNMPPassphraseMax); msg != "" {
-		return inv.usageErr(msg)
-	}
-	cr := inv.credsToReplace(e.Name)
-	// The state as it is, before the credential is replaced.
-	if err := inv.snapshotFirst(); err != nil {
-		return err
-	}
-	cr.Users, cr.Default = []snmpcred.User{{Name: user, AuthPass: ap, PrivPass: pp}}, user
-	inv.app.Audit().Touch()
-	// The registry first (the verb sets the version, which gives the device an
-	// snmp: entry), then the file in the format the entry as it stands allows.
-	if err := inv.deviceSNMPUpdateWith(e.Name, func(s *devreg.SNMP) error { s.Version = snmp.V3; return nil }, false); err != nil {
-		return err
-	}
-	if err := snmpcred.SaveDevice(dir, e.Name, cr, inv.deviceHasSNMPEntry(e.Name)); err != nil {
-		return err
-	}
-	info, err := inv.deviceSNMPInfoOf(e)
-	if err != nil {
-		return err
-	}
-	file, _ := snmpcred.DeviceFile(dir, e.Name)
-	inv.app.Out.InfoE("SNMPv3 user and passphrases of device '" + e.Name + "' set (" + file + "); the device's version is v3, auth " +
-		info.Eff.Auth + ", priv " + info.Eff.Priv + ". Try it: tacctl device check " + shellquote.Q(e.Name))
 	return nil
 }
 
@@ -1018,13 +1048,13 @@ func (inv *invocation) snmpReconcile(before, after map[string]bool) {
 // command it names writes the file again (the verbs save it in the format the
 // entry as it stands allows) once the cause is gone.
 func (inv *invocation) snmpReconcileFailed(name string, c snmpcred.Creds, mapped bool, err error) {
-	fix := "tacctl device snmp " + shellquote.Q(name) + " community"
+	fix := deviceSNMPSetter(name) + " community"
 	if len(c.Users) > 0 {
 		user := c.Default
 		if user == "" {
 			user = c.Users[0].Name
 		}
-		fix = "tacctl device snmp " + shellquote.Q(name) + " v3-user " + shellquote.Q(user)
+		fix = deviceSNMPSetter(name) + " v3-user add " + shellquote.Q(user)
 	}
 	msg := "The credentials file of '" + name + "' could not be brought in step with the device's settings (" + strings.Join(msgs(err), " ") + "). Once that is fixed, write it again: " + fix
 	if !mapped {

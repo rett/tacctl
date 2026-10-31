@@ -31,34 +31,31 @@ import (
 	"github.com/rett/tacctl/internal/ui"
 )
 
-const scopeSNMPUse = "snmp <scope> {show [--reveal]|version|community|v3-user|clients|contact|port|timeout|clear|test}"
+const scopeSNMPUse = "snmp <scope> {show [--reveal [<user>]]|version|community|v3-user|clients|contact|port|timeout|clear|test}"
 
 const scopeSNMPShort = "SNMP settings, credentials, allowed clients and contact of a scope"
 
 // scopeSNMPSpecs are the arguments of each verb after the scope.
 var scopeSNMPSpecs = map[string]Spec{
-	"show":      {MaxArgs: 0, Flags: []Flag{{Names: []string{"--reveal"}}}},
+	"show":      {MaxArgs: 1, Flags: []Flag{{Names: []string{"--reveal"}}}},
 	"version":   {MaxArgs: 1, Args: []string{"v2c|v3"}},
 	"community": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--stdin"}}}},
-	"v3-user": {MinArgs: 1, MaxArgs: 1, Args: []string{""}, Flags: []Flag{
-		{Names: []string{"--auth"}, Value: true, Kind: strings.Join(snmp.AuthProtocols, "|")},
-		{Names: []string{"--priv"}, Value: true, Kind: strings.Join(snmp.PrivProtocols, "|")},
-		{Names: []string{"--stdin"}}}},
-	"clients": {MaxArgs: 2, Args: []string{"list|add|remove", ""}},
-	"contact": {MaxArgs: -1, Flags: []Flag{{Names: []string{"--clear"}}}},
-	"port":    {MaxArgs: 1, Args: []string{""}},
-	"timeout": {MaxArgs: 1, Args: []string{""}},
-	"clear":   {MaxArgs: 0},
-	"test":    {MinArgs: 1, MaxArgs: 1, Args: []string{KindDevices}},
+	"v3-user":   snmpV3UserSpec(true),
+	"clients":   {MaxArgs: 2, Args: []string{"list|add|remove", ""}},
+	"contact":   {MaxArgs: -1, Flags: []Flag{{Names: []string{"--clear"}}}},
+	"port":      {MaxArgs: 1, Args: []string{""}},
+	"timeout":   {MaxArgs: 1, Args: []string{""}},
+	"clear":     {MaxArgs: 0},
+	"test":      {MinArgs: 1, MaxArgs: 1, Args: []string{KindDevices}},
 }
 
 // scopeSNMPVerbs are the verbs ({Use, Short}), in usage order.
 var scopeSNMPVerbs = [][2]string{
-	{"show [--reveal]", "The scope's SNMP settings, where each value comes from, and the allowed clients; --reveal also prints the credentials"},
+	{"show [--reveal [<user>]]", "The scope's SNMP settings, where each value comes from, and the allowed clients; --reveal also prints the credentials"},
 	{"version [v2c|v3]", "Show or set the SNMP version of the scope's devices"},
 	{"community [--stdin]", "Set the scope's v2c community (asked twice, not echoed); the scope's version becomes v2c"},
-	{"v3-user <user> [--auth sha|sha256] [--priv aes128] [--stdin]",
-		"Set the scope's v3 user and passphrases (authPriv); the scope's version becomes v3"},
+	{"v3-user add|remove|default|list [<user>]",
+		"The scope's v3 user pool: add (passphrases asked), remove, default, list"},
 	{"clients list|add|remove [<cidr>[,<cidr>...]]", "The ranges allowed to query the devices (IPv4; the tacctl server is always first, 0.0.0.0/0 is always refused last)"},
 	{"contact [<text>|--clear]", "Show, set or remove the scope's SNMP contact"},
 	{"port [<n>]", "Show or set the agents' UDP port for the scope (default: the default's)"},
@@ -70,12 +67,16 @@ var scopeSNMPVerbs = [][2]string{
 // scopeSNMPOptions are the option lines under a verb's row.
 var scopeSNMPOptions = map[string][][2]string{
 	"show": {
-		{"--reveal", "Print the community or the v3 passphrases (an engineer: their own scopes; logged)"},
+		{"--reveal [<user>]", "Print the community and the effective user's passphrases, or one user's (an engineer: their own scopes; logged)"},
 	},
 	"v3-user": {
+		{"add <user> [--default]", "Add a user to the scope's pool (or replace its passphrases); --default makes it the scope's default"},
 		{"--auth sha|sha256", "HMAC-SHA-96 or HMAC-SHA-256-192 (default: the default's, else sha)"},
 		{"--priv aes128", "AES-128 (the only one)"},
-		{"--stdin", "(community, v3-user) Read the secrets from stdin, one per line"},
+		{"--stdin", "(community, v3-user add) Read the secrets from stdin, one per line"},
+		{"remove <user>", "Take a user out of the scope's pool"},
+		{"default [<user>|--none]", "Show, choose or clear the scope's default user (a user of the scope's pool)"},
+		{"list", "The users of the scope's pool, never a passphrase"},
 	},
 	"contact": {
 		{"--clear", "Remove the contact"},
@@ -157,7 +158,7 @@ func (inv *invocation) scopeSNMP(args []string) error {
 			" show [--reveal]. Changing them is the superuser's. Nothing was changed.")
 	}
 	if sub == "show" {
-		return inv.scopeSNMPShow(scope, p.Has("--reveal"))
+		return inv.scopeSNMPShow(scope, p)
 	}
 	// A verb that wrote something is one change of the scope's SNMP settings
 	// (D253): the pair's start line has been written by then.
@@ -168,7 +169,7 @@ func (inv *invocation) scopeSNMP(args []string) error {
 		case "community":
 			return inv.scopeSNMPCommunity(scope, p)
 		case "v3-user":
-			return inv.scopeSNMPV3User(scope, p)
+			return inv.scopePool(scope).run(p)
 		case "clients":
 			return inv.scopeSNMPClients(scope, p)
 		case "contact":
@@ -193,6 +194,8 @@ func scopeSNMPRead(sub string, p Parsed) bool {
 		return true
 	case "version", "port", "timeout":
 		return len(p.Args) == 0
+	case "v3-user":
+		return len(p.Args) > 0 && p.Args[0] == "list" || len(p.Args) == 1 && p.Args[0] == "default" && !p.Has("--none")
 	case "contact":
 		return len(p.Args) == 0 && !p.Has("--clear")
 	case "clients":
@@ -213,6 +216,9 @@ func (inv *invocation) scopeSNMPUsageErr(scope, verbName string, err error) erro
 	if errors.As(err, &uf) {
 		msg = "Unknown option: '" + uf.Flag + "'"
 	}
+	if verbName == "v3-user" {
+		return inv.usageErr(append([]string{msg}, snmpV3UserUsage(snmpSetter(scope), true)...)...)
+	}
 	return inv.usageErr(msg, "Usage: tacctl scope snmp "+scope+" "+use)
 }
 
@@ -220,16 +226,38 @@ func (inv *invocation) scopeSNMPUsageErr(scope, verbName string, err error) erro
 func from(src string) string { return "(" + src + ")" }
 
 // scopeSNMPShow is 'show': the effective settings with their sources, the
-// allowed clients and, with --reveal, the credentials. A reveal
-// is logged (never the value).
-func (inv *invocation) scopeSNMPShow(scope string, reveal bool) error {
+// allowed clients and, with --reveal, the credentials (the effective user's
+// passphrases, or those of the user named). A reveal is logged (never the
+// value), with the user's name.
+func (inv *invocation) scopeSNMPShow(scope string, p Parsed) error {
+	reveal := p.Has("--reveal")
+	revealUser := ""
+	if len(p.Args) > 0 {
+		if !reveal {
+			return inv.usageErr("A user is for --reveal: tacctl scope snmp " + scope + " show --reveal <user>")
+		}
+		revealUser = p.Args[0]
+	}
 	e, err := inv.snmpEffective(scope)
 	if err != nil {
 		return err
 	}
 	own := policy.SNMPSettings(inv.app.Conf(), scope)
+	pool := inv.scopePool(scope)
+	shown := snmpcred.User{Name: e.User, AuthPass: e.AuthPass, PrivPass: e.PrivPass}
+	shownFrom := e.V3From
+	if revealUser != "" {
+		u, l, ok, err := pool.revealable(revealUser, e.User)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return inv.usageErr("No SNMPv3 user '" + revealUser + "' in the pool of scope '" + scope + "' or the config's that you may read. Nothing was printed.")
+		}
+		shown, shownFrom = u, snmpFromOfLevel(l)
+	}
 	if reveal {
-		inv.secretRead("snmp", scope)
+		inv.secretReadUser("snmp", scope, shown.Name)
 	}
 	title := "SNMP for scope '" + scope + "'"
 	inv.echo("")
@@ -259,15 +287,23 @@ func (inv *invocation) scopeSNMPShow(scope string, reveal bool) error {
 		}
 		return "set"
 	}
-	inv.echo("  community:  " + secret(e.Community != "", e.Community) + "  " + from(commFrom(e)))
+	if revealUser == "" {
+		inv.echo("  community:  " + secret(e.Community != "", e.Community) + "  " + from(commFrom(e)))
+	}
 	if e.Version == snmp.V3 || e.V3From != snmpcred.NotSet {
-		user := "not set"
-		if e.User != "" {
-			user = e.User
+		if sc, err := pool.read(); err == nil {
+			inv.echo("  v3 users:   " + poolText(sc, false) + "  (the scope's own pool)")
 		}
-		inv.echo("  v3 user:    " + user + "  " + from(e.V3From))
-		inv.echo("  v3 passphrases: auth " + secret(e.AuthPass != "", e.AuthPass) + ", priv " + secret(e.PrivPass != "", e.PrivPass) + "  " + from(e.V3From))
+		user := "not set"
+		if shown.Name != "" {
+			user = shown.Name
+		}
+		inv.echo("  v3 user:    " + user + "  " + from(shownFrom))
+		inv.echo("  v3 passphrases: auth " + secret(shown.AuthPass != "", shown.AuthPass) + ", priv " + secret(shown.PrivPass != "", shown.PrivPass) + "  " + from(shownFrom))
 		inv.echo("  v3 auth:    " + e.Auth + "  " + from(e.AuthFrom) + "; priv: " + e.Priv + "  " + from(e.PrivFrom))
+		if e.V3Problem != "" {
+			inv.echo("  Not usable: " + e.V3Problem + ".")
+		}
 	}
 	if own.Contact == "" {
 		inv.echo("  contact:    not set (the walkthroughs leave a placeholder and list it as unfilled)")
@@ -298,6 +334,17 @@ func (inv *invocation) scopeSNMPShow(scope string, reveal bool) error {
 	}
 	inv.echo("")
 	return nil
+}
+
+// snmpFromOfLevel is the snmpcred origin label of a level.
+func snmpFromOfLevel(l snmpcred.Level) string {
+	switch l.Kind {
+	case snmpcred.LevelScope:
+		return snmpcred.FromScope
+	case snmpcred.LevelDevice:
+		return snmpcred.FromDevice
+	}
+	return snmpcred.FromDefault
 }
 
 // commFrom is where the community comes from, or "not set".
@@ -360,66 +407,6 @@ func (inv *invocation) scopeSNMPCommunity(scope string, p Parsed) error {
 		return err
 	}
 	a.Out.InfoE("SNMP community of scope '" + scope + "' set (" + a.Paths.SNMPDir + "/" + scope + ".yaml); the scope's version is v2c. Try it: tacctl scope snmp " + scope + " test <address>")
-	return nil
-}
-
-func (inv *invocation) scopeSNMPV3User(scope string, p Parsed) error {
-	user := p.Args[0]
-	if !reSNMPUser.MatchString(user) || names.SNMPTokenProblem(user, names.SNMPUserMax) != "" {
-		return inv.usageErr("Invalid SNMPv3 user '" + user + "': 1-32 printable characters, no blanks, no '?' or '\"'.")
-	}
-	auth, priv := p.Value("--auth"), p.Value("--priv")
-	if p.Has("--auth") && auth != snmp.AuthSHA && auth != snmp.AuthSHA256 {
-		return inv.usageErr("Unknown --auth '" + auth + "': sha or sha256.")
-	}
-	if p.Has("--priv") && priv != snmp.PrivAES128 {
-		return inv.usageErr("Unknown --priv '" + priv + "': aes128.")
-	}
-	stdin := p.Has("--stdin")
-	ap, err := inv.readSecret(stdin, "authentication passphrase")
-	if err != nil {
-		return err
-	}
-	if msg := secretProblem(ap, "the authentication passphrase", 8, names.SNMPPassphraseMax); msg != "" {
-		return inv.usageErr(msg)
-	}
-	pp, err := inv.readSecret(stdin, "privacy passphrase")
-	if err != nil {
-		return err
-	}
-	if msg := secretProblem(pp, "the privacy passphrase", 8, names.SNMPPassphraseMax); msg != "" {
-		return inv.usageErr(msg)
-	}
-	a := inv.app
-	cr, err := snmpcred.LoadScope(a.Paths.SNMPDir, scope)
-	if err != nil {
-		return err
-	}
-	cr.Users, cr.Default = []snmpcred.User{{Name: user, AuthPass: ap, PrivPass: pp}}, user
-	a.Audit().Touch()
-	if err := snmpcred.SaveScope(a.Paths.SNMPDir, scope, cr); err != nil {
-		return err
-	}
-	c := a.Conf()
-	if err := c.Set(conf.SNMPPath(scope, conf.SNMPKeyVersion), snmp.V3); err != nil {
-		return err
-	}
-	if auth != "" {
-		if err := c.Set(conf.SNMPPath(scope, conf.SNMPKeyAuth), auth); err != nil {
-			return err
-		}
-	}
-	if priv != "" {
-		if err := c.Set(conf.SNMPPath(scope, conf.SNMPKeyPriv), priv); err != nil {
-			return err
-		}
-	}
-	e, err := inv.snmpEffective(scope)
-	if err != nil {
-		return err
-	}
-	a.Out.InfoE("SNMPv3 user and passphrases of scope '" + scope + "' set (" + a.Paths.SNMPDir + "/" + scope + ".yaml); the scope's version is v3, auth " +
-		e.Auth + ", priv " + e.Priv + ". Try it: tacctl scope snmp " + scope + " test <address>")
 	return nil
 }
 
@@ -601,6 +588,7 @@ func (inv *invocation) scopeSNMPClear(scope string) error {
 // scopeSNMPDrop removes everything the scope has: its keys in tacctl.yaml
 // and its credentials file.
 func (inv *invocation) scopeSNMPDrop(scope string) error {
+	inv.scopePool(scope).warnReferrers()
 	inv.app.Audit().Touch()
 	if err := snmpcred.RemoveScope(inv.app.Paths.SNMPDir, scope); err != nil {
 		return err

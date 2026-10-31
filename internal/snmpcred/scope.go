@@ -173,6 +173,9 @@ type Effective struct {
 	// V3Problem is why the chosen user cannot be used, a fragment that ends
 	// in the command that fixes it ("" when it can, or none is chosen).
 	V3Problem string
+	// V3Fix is the command that fixes it alone ("tacctl scope snmp lab
+	// v3-user add alice"), for a placeholder that names it.
+	V3Fix string
 }
 
 // Resolve combines the scope's layer with the default's. A device in no
@@ -261,8 +264,8 @@ func (e *Effective) resolveUser(chooser poolLevel, from []poolLevel) {
 			what = "no privacy passphrase"
 		}
 		if what != "" {
-			e.V3Problem = "the SNMPv3 user '" + name + "' of " + levelName(pl.l, pl.from) + " has " + what +
-				" ('" + setterOf(pl.l, pl.from) + " v3-user add " + name + "' sets them)"
+			e.V3Fix = setterOf(pl.l, pl.from) + " v3-user add " + name
+			e.V3Problem = "the SNMPv3 user '" + name + "' of " + levelName(pl.l, pl.from) + " has " + what + " ('" + e.V3Fix + "' sets them)"
 		}
 		return
 	}
@@ -272,6 +275,7 @@ func (e *Effective) resolveUser(chooser poolLevel, from []poolLevel) {
 		where = append(where, levelName(pl.l, pl.from))
 	}
 	setter := setterOf(chooser.l, chooser.from)
+	e.V3Fix = setter + " v3-user add " + name
 	e.V3Problem = "the SNMPv3 user '" + name + "', the default of " + levelName(chooser.l, chooser.from) + ", is in no pool it may use (" +
 		strings.Join(where, ", ") + "); '" + setter + " v3-user add " + name + "' adds it, '" + setter + " v3-user default <user>' chooses another"
 }

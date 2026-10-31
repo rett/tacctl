@@ -71,6 +71,24 @@ func TestRedact(t *testing.T) {
 		{"backup keep 20261030_010101_001 --note before the upgrade", "backup keep 20261030_010101_001 --note …(redacted)"},
 		{"backup keep 20261030_010101_001 --note='the state of bob' --yes", "backup keep 20261030_010101_001 --note=…(redacted)"},
 		{"backup keep 20261030_010101_001", "backup keep 20261030_010101_001"},
+		// the SNMP verbs take their secrets from a prompt or stdin: a word
+		// they do not take is one typed on the line
+		{"config snmp community", "config snmp community"},
+		{"config snmp community public-ish", "config snmp community …(redacted)"},
+		{"scope snmp lab community --stdin", "scope snmp lab community --stdin"},
+		{"scope snmp lab community --stdin=public-ish", "scope snmp lab community --stdin=…(redacted)"},
+		{"scope snmp lab community -dash-ish", "scope snmp lab community …(redacted)"},
+		{"config snmp v3-user add alice --auth sha256 --priv aes128 --default --stdin", "config snmp v3-user add alice --auth sha256 --priv aes128 --default --stdin"},
+		{"config snmp v3-user add alice auth-pass-1 priv-pass-1", "config snmp v3-user add alice …(redacted)"},
+		{"scope snmp lab v3-user add alice --stdin x", "scope snmp lab v3-user add alice --stdin …(redacted)"},
+		{"device snmp sw1 v3-user add alice --stdin=x", "device snmp sw1 v3-user add alice --stdin=…(redacted)"},
+		{"tacctl device snmp sw1 v3-user add --auth sha alice pass-1", "tacctl device snmp sw1 v3-user add --auth sha alice …(redacted)"},
+		{"config snmp v3-user alice auth-pass-1 priv-pass-1", "config snmp v3-user alice …(redacted)"},
+		{"config snmp v3-user default alice", "config snmp v3-user default alice"},
+		{"config snmp v3-user list", "config snmp v3-user list"},
+		{"config snmp v3-user remove alice", "config snmp v3-user remove alice"},
+		{"scope snmp lab show --reveal alice", "scope snmp lab show --reveal alice"},
+		{"device snmp v3-user add alice", "device snmp v3-user add alice"},
 	}
 	for _, c := range cases {
 		if got := Redact(c.line); got != c.want {

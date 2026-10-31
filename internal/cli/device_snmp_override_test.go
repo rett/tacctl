@@ -110,8 +110,8 @@ func TestDeviceSNMPResolutionAndLabels(t *testing.T) {
 
 	// The v3 user and its passphrases: a file of the device's own (0600, in
 	// a 0700 directory), the version v3, and never printed but by --reveal.
-	sb.devSNMP("dev-auth-pass-1\ndev-priv-pass-1\n", "lab-sw1", "v3-user", "carol", "--stdin")
-	sb.said(0, "SNMPv3 user and passphrases of device 'lab-sw1' set")
+	sb.devSNMP("dev-auth-pass-1\ndev-priv-pass-1\n", "lab-sw1", "v3-user", "add", "carol", "--default", "--stdin")
+	sb.said(0, "SNMPv3 user 'carol' added to the pool of device 'lab-sw1'")
 	file := sb.path("state", "snmp", "devices", "lab-sw1.yaml")
 	if fi, err := os.Stat(file); err != nil || fi.Mode().Perm() != 0o600 {
 		t.Fatalf("device file: %v %v", fi, err)
@@ -457,7 +457,7 @@ func TestDeviceSNMPEngineer(t *testing.T) {
 	}
 	// Setting and clearing are the superuser's; nothing changes.
 	before, file := sb.devices(), sb.read("state/snmp/devices/lab-sw.yaml")
-	for _, args := range [][]string{{"community", "--stdin"}, {"v3-user", "x", "--stdin"}, {"version", "v3"}, {"clients", "add", "192.0.2.0/24"},
+	for _, args := range [][]string{{"community", "--stdin"}, {"v3-user", "add", "x", "--stdin"}, {"v3-user", "default", "--none"}, {"v3-user", "default", "carol"}, {"v3-user", "remove", "x"}, {"version", "v3"}, {"clients", "add", "192.0.2.0/24"},
 		{"clients", "remove", "192.0.2.0/24"}, {"port", "162"}, {"timeout", "3"}, {"clear"}} {
 		sb.asEngineer("x\n", append([]string{"device", "snmp", "lab-sw"}, args...)...)
 		if sb.code != 1 || !strings.Contains(sb.stderr(), "The engineer tier reads a device's SNMP settings") ||

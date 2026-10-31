@@ -29,28 +29,27 @@ func init() {
 
 // configSNMPFamilySpec is the spec of 'config snmp' as registerConfigVerb
 // takes it.
-var configSNMPFamilySpec = Spec{MaxArgs: -1, Args: []string{"show|community|v3-user|port|timeout|clear|test", ""}}
+var configSNMPFamilySpec = Spec{MaxArgs: -1, Args: []string{"show|version|community|v3-user|port|timeout|clear|test", After("v3-user", snmpV3UserActions), ""}}
 
 // configSNMPSpecs are the arguments of each verb.
 var configSNMPSpecs = map[string]Spec{
-	"show":      {MaxArgs: 0, Flags: []Flag{{Names: []string{"--reveal"}}}},
+	"show":      {MaxArgs: 1, Flags: []Flag{{Names: []string{"--reveal"}}}},
+	"version":   {MaxArgs: 1, Args: []string{"v2c|v3"}},
 	"community": {MaxArgs: 0, Flags: []Flag{{Names: []string{"--stdin"}}}},
-	"v3-user": {MinArgs: 1, MaxArgs: 1, Args: []string{""}, Flags: []Flag{
-		{Names: []string{"--auth"}, Value: true, Kind: strings.Join(snmp.AuthProtocols, "|")},
-		{Names: []string{"--priv"}, Value: true, Kind: strings.Join(snmp.PrivProtocols, "|")},
-		{Names: []string{"--stdin"}}}},
-	"port":    {MaxArgs: 1, Args: []string{""}},
-	"timeout": {MaxArgs: 1, Args: []string{""}},
-	"clear":   {MaxArgs: 0},
-	"test":    {MinArgs: 1, MaxArgs: 1, Args: []string{KindDevices}},
+	"v3-user":   snmpV3UserSpec(true),
+	"port":      {MaxArgs: 1, Args: []string{""}},
+	"timeout":   {MaxArgs: 1, Args: []string{""}},
+	"clear":     {MaxArgs: 0},
+	"test":      {MinArgs: 1, MaxArgs: 1, Args: []string{KindDevices}},
 }
 
 // configSNMPVerbs are the verbs ({Use, Short}), in usage order.
 var configSNMPVerbs = [][2]string{
-	{"show [--reveal]", "The SNMP settings, and whether the credentials are set; --reveal prints them (administrators)"},
+	{"show [--reveal [<user>]]", "The SNMP settings, and whether the credentials are set; --reveal prints them (administrators)"},
+	{"version [v2c|v3]", "Show or set the SNMP version"},
 	{"community [--stdin]", "Set the v2c community (asked twice, not echoed); the version becomes v2c"},
-	{"v3-user <user> [--auth sha|sha256] [--priv aes128] [--stdin]",
-		"Set the v3 user and its passphrases (authPriv); the version becomes v3"},
+	{"v3-user add|remove|default|list [<user>]",
+		"The v3 user pool: add (passphrases asked), remove, default, list"},
 	{"port [<n>]", "Show or set the agents' UDP port (default 161)"},
 	{"timeout [<seconds>]", "Show or set the wait for an answer, 1-10 (default 2; one retry)"},
 	{"clear", "Remove the credentials and the version: no lookups"},
@@ -60,12 +59,16 @@ var configSNMPVerbs = [][2]string{
 // configSNMPOptions are the option lines under a verb's row.
 var configSNMPOptions = map[string][][2]string{
 	"show": {
-		{"--reveal", "Print the community or the v3 passphrases"},
+		{"--reveal [<user>]", "Print the community and the default user's passphrases, or one user's"},
 	},
 	"v3-user": {
+		{"add <user> [--default]", "Add a user to the pool (or replace its passphrases); --default makes it the default"},
 		{"--auth sha|sha256", "HMAC-SHA-96 or HMAC-SHA-256-192 (default sha)"},
 		{"--priv aes128", "AES-128 (the only one)"},
-		{"--stdin", "(community, v3-user) Read the secrets from stdin, one per line"},
+		{"--stdin", "(community, v3-user add) Read the secrets from stdin, one per line"},
+		{"remove <user>", "Take a user out of the pool"},
+		{"default [<user>|--none]", "Show, choose or clear the default user"},
+		{"list", "The users of the pool, never a passphrase"},
 	},
 }
 
@@ -101,8 +104,13 @@ func configSNMPUsage() string {
 compares it with the name given (a hint only: the add never waits on it
 beyond the timeout, and never fails for it), and stores the sysLocation.0 it
 reports as the device's location; 'device check' shows both.
-v2c sends the community; v3 is authPriv only (SHA or SHA-256, AES-128).
-The settings are in tacctl.yaml (snmp.*), the community and the v3 user
+v2c sends the community; v3 is authPriv only (SHA or SHA-256, AES-128). The
+version, the port, the timeout and the two protocols are one setting; the v3
+users are a pool of names with their passphrases and a default user. Adding a
+user changes nothing but the pool: 'version v3' makes the lookups use v3, and
+the default user is the one they read with. A name stands for one user across
+the config's pool, the scopes' and the devices'.
+The settings are in tacctl.yaml (snmp.*), the community and the v3 users
 and passphrases in /etc/tacctl/snmp.yaml (0600), which tacctl prints only for
 'show --reveal'.
 
@@ -113,7 +121,8 @@ timeout); what it does not set comes from here.
 Examples:
   tacctl config snmp community
   printf '%s\n' "$COMMUNITY" | tacctl config snmp community --stdin
-  tacctl config snmp v3-user alice --auth sha256
+  tacctl config snmp v3-user add alice --auth sha256 --default
+  tacctl config snmp version v3
   tacctl config snmp test 192.0.2.10
 
 `)
@@ -128,7 +137,7 @@ func (inv *invocation) configSNMP(args []string) error {
 		rest = args[1:]
 	}
 	run := map[string]func([]string) error{
-		"show": inv.snmpShow, "community": inv.snmpCommunity, "v3-user": inv.snmpV3User,
+		"show": inv.snmpShow, "version": inv.snmpVersion, "community": inv.snmpCommunity, "v3-user": inv.snmpV3User,
 		"port": inv.snmpPort, "timeout": inv.snmpTimeout, "clear": inv.snmpClear, "test": inv.snmpTest,
 	}
 	switch sub := arg(args, 0); sub {
@@ -159,6 +168,9 @@ func (inv *invocation) snmpUsageErr(verbName string, err error) error {
 	if errors.As(err, &uf) {
 		msg = "Unknown option: '" + uf.Flag + "'"
 	}
+	if verbName == "v3-user" {
+		return inv.usageErr(append([]string{msg}, snmpV3UserUsage(snmpSetter(""), true)...)...)
+	}
 	return inv.usageErr(msg, "Usage: tacctl config snmp "+use)
 }
 
@@ -182,7 +194,15 @@ func setOrNot(b bool) string {
 
 func (inv *invocation) snmpShow(args []string) error {
 	a := inv.app
-	reveal := inv.snmpParse("show", args).Has("--reveal")
+	p := inv.snmpParse("show", args)
+	reveal := p.Has("--reveal")
+	revealUser := ""
+	if len(p.Args) > 0 {
+		if !reveal {
+			return inv.usageErr("A user is for --reveal: tacctl config snmp show --reveal <user>")
+		}
+		revealUser = p.Args[0]
+	}
 	// The default reaches every device: a restricted caller never reveals it.
 	// The gate does not open 'config snmp' to a restricted caller at all (its
 	// tier rows are the superuser's), so this refusal is the same rule where
@@ -191,12 +211,23 @@ func (inv *invocation) snmpShow(args []string) error {
 	if reveal && inv.callerScopes().restricted {
 		return inv.deniedUsage(reasonSuperuser, "The default SNMP credentials are the superuser's to read. Nothing was printed.")
 	}
-	if reveal {
-		inv.secretRead("snmp-default", "default")
-	}
 	c, err := inv.snmpCreds()
 	if err != nil {
 		return err
+	}
+	// A reveal of one user prints only that user; without a name it prints
+	// the community and the default user's passphrases. It is logged first,
+	// with the user's name (never a passphrase).
+	shown, _ := c.Find(c.Default)
+	if revealUser != "" {
+		u, ok := c.Find(revealUser)
+		if !ok {
+			return inv.usageErr(noPoolUser(revealUser, "the config", c)...)
+		}
+		shown = u
+	}
+	if reveal {
+		inv.secretReadUser("snmp-default", "default", shown.Name)
 	}
 	src := func(path, def string) string {
 		v := inv.confGet(path, "")
@@ -210,11 +241,11 @@ func (inv *invocation) snmpShow(args []string) error {
 	inv.echoE(ui.Bold + "SNMP name hint" + ui.NC)
 	switch version {
 	case "":
-		inv.echo("  version:    not set (no lookup; 'community' or 'v3-user' sets it)")
+		inv.echo("  version:    not set (no lookup; 'version', 'community' or 'v3-user' sets it)")
 	case snmp.V2c:
 		inv.echo("  version:    v2c (the community)")
 	case snmp.V3:
-		inv.echo("  version:    v3 (the user, authPriv)")
+		inv.echo("  version:    v3 (the default user, authPriv)")
 	default:
 		inv.echo("  version:    " + version)
 	}
@@ -225,13 +256,17 @@ func (inv *invocation) snmpShow(args []string) error {
 			inv.echo(note)
 		}
 	}
-	inv.echo("  community:  " + secretOrSet(reveal, c.Community))
+	if revealUser == "" {
+		inv.echo("  community:  " + secretOrSet(reveal, c.Community))
+	}
 	// The v3 lines only when v3 is chosen or set up: v2c is the usual way.
-	if du, _ := c.Find(c.Default); version == snmp.V3 || len(c.Users) > 0 {
-		if reveal {
-			inv.echo("  v3 user:    " + dash(du.Name) + "; auth passphrase: " + dash(du.AuthPass) + "; priv passphrase: " + dash(du.PrivPass))
-		} else {
-			inv.echo("  v3 user:    " + setOrNot(du.Name != "") + "; passphrases: " + setOrNot(du.Complete()))
+	if version == snmp.V3 || len(c.Users) > 0 {
+		inv.echo("  v3 users:   " + poolText(c, false))
+		switch {
+		case reveal:
+			inv.echo("  v3 user:    " + dash(shown.Name) + "; auth passphrase: " + dash(shown.AuthPass) + "; priv passphrase: " + dash(shown.PrivPass))
+		case revealUser == "":
+			inv.echo("  v3 user:    " + dash(shown.Name) + "; passphrases: " + setOrNot(shown.Complete()))
 		}
 		inv.echo("  v3 auth:    " + src("snmp.v3.auth", snmp.AuthSHA) + "; priv: " + src("snmp.v3.priv", snmp.PrivAES128))
 	}
@@ -245,6 +280,47 @@ func (inv *invocation) snmpShow(args []string) error {
 	}
 	inv.echo("")
 	return nil
+}
+
+// poolText is the users of a pool on one line, the default marked; names are
+// replaced by their count for a caller who may not see them.
+func poolText(c snmpcred.Creds, hide bool) string {
+	if len(c.Users) == 0 {
+		if c.Default != "" && !hide {
+			return "none of its own; the default is " + c.Default
+		}
+		return "none"
+	}
+	if hide {
+		return strconv.Itoa(len(c.Users)) + " " + plural(len(c.Users), "user", "users")
+	}
+	out := make([]string, len(c.Users))
+	for i, u := range c.Users {
+		out[i] = u.Name
+		if u.Name == c.Default {
+			out[i] += " (default)"
+		}
+	}
+	return strings.Join(out, ", ")
+}
+
+// noPoolUser is the refusal of a user the level does not have.
+func noPoolUser(user, where string, c snmpcred.Creds) []string {
+	have := "it has none"
+	if len(c.Users) > 0 {
+		have = "it has: " + strings.Join(c.Names(), ", ")
+	}
+	return []string{"No SNMPv3 user '" + user + "' in the pool of " + where + " (" + have + ")."}
+}
+
+// secretReadUser logs a secret read as secretRead does, naming the v3 user
+// whose passphrases are printed (never a passphrase).
+func (inv *invocation) secretReadUser(kind, name, user string) {
+	if user == "" {
+		inv.secretRead(kind, name)
+		return
+	}
+	inv.app.Audit().Reveal(audit.Info, "secret-read", kvp("kind", kind), kvp("name", name), kvp("user", user), audit.Pair("by", inv.sudoUser()))
 }
 
 // secretOrSet is a credential as 'show' prints it: the value when revealed,
@@ -344,61 +420,40 @@ func (inv *invocation) snmpCommunity(args []string) error {
 // without blanks.
 var reSNMPUser = regexp.MustCompile(`^[!-~]{1,32}$`)
 
+// snmpV3User is 'v3-user add|remove|default|list' of the config.
 func (inv *invocation) snmpV3User(args []string) error {
-	p := inv.snmpParse("v3-user", args)
-	user := p.Args[0]
-	if !reSNMPUser.MatchString(user) || names.SNMPTokenProblem(user, names.SNMPUserMax) != "" {
-		return inv.usageErr("Invalid SNMPv3 user '" + user + "': 1-32 printable characters, no blanks, no '?' or '\"'.")
+	w := inv.app.Audit()
+	before := w.Touched()
+	err := inv.configPool().run(inv.snmpParse("v3-user", args))
+	if err == nil && !before && w.Touched() {
+		inv.detail("snmp set", kvp("kind", "v3-user"))
 	}
-	auth, priv := p.Value("--auth"), p.Value("--priv")
-	if p.Has("--auth") && auth != snmp.AuthSHA && auth != snmp.AuthSHA256 {
-		return inv.usageErr("Unknown --auth '" + auth + "': sha or sha256.")
-	}
-	if p.Has("--priv") && priv != snmp.PrivAES128 {
-		return inv.usageErr("Unknown --priv '" + priv + "': aes128.")
-	}
-	stdin := p.Has("--stdin")
-	ap, err := inv.readSecret(stdin, "authentication passphrase")
-	if err != nil {
-		return err
-	}
-	if msg := secretProblem(ap, "the authentication passphrase", 8, names.SNMPPassphraseMax); msg != "" {
-		return inv.usageErr(msg)
-	}
-	pp, err := inv.readSecret(stdin, "privacy passphrase")
-	if err != nil {
-		return err
-	}
-	if msg := secretProblem(pp, "the privacy passphrase", 8, names.SNMPPassphraseMax); msg != "" {
-		return inv.usageErr(msg)
-	}
-	c, err := inv.snmpCreds()
-	if err != nil {
-		return err
-	}
-	c.Users, c.Default = []snmpcred.User{{Name: user, AuthPass: ap, PrivPass: pp}}, user
-	inv.app.Audit().Touch()
-	if err := snmpcred.Save(inv.app.Paths.SNMPFile, c); err != nil {
-		return err
-	}
-	conf := inv.app.Conf()
-	if err := conf.Set("snmp.version", snmp.V3); err != nil {
-		return err
-	}
-	if auth != "" {
-		if err := conf.Set("snmp.v3.auth", auth); err != nil {
-			return err
+	return err
+}
+
+// snmpVersion shows or sets the SNMP version of the name lookups.
+func (inv *invocation) snmpVersion(args []string) error {
+	p := inv.snmpParse("version", args)
+	if len(p.Args) == 0 {
+		if v := inv.confGet("snmp.version", ""); v != "" {
+			inv.echo(v)
+		} else {
+			inv.echo("not set")
 		}
+		return nil
 	}
-	if priv != "" {
-		if err := conf.Set("snmp.v3.priv", priv); err != nil {
-			return err
-		}
+	v := p.Args[0]
+	if v != snmp.V2c && v != snmp.V3 {
+		return inv.usageErr("Unknown version '"+v+"': v2c or v3.", "Usage: tacctl config snmp version [v2c|v3]")
 	}
-	inv.detail("snmp set", kvp("kind", "v3-user"))
-	inv.app.Out.InfoE("SNMPv3 user and passphrases set (" + inv.app.Paths.SNMPFile + "); version v3, auth " +
-		inv.confGet("snmp.v3.auth", snmp.AuthSHA) + ", priv " + inv.confGet("snmp.v3.priv", snmp.PrivAES128) +
-		". Try it: tacctl config snmp test <address>")
+	if err := inv.app.Conf().Set("snmp.version", v); err != nil {
+		return err
+	}
+	inv.detail("snmp set", kvp("kind", "version"))
+	inv.app.Out.InfoE("SNMP version set to " + v + ".")
+	if _, problem := inv.snmpConfig(); problem != "" {
+		inv.app.Out.Warn("Not usable yet: " + problem + ".")
+	}
 	return nil
 }
 
@@ -425,6 +480,7 @@ func (inv *invocation) snmpClear([]string) error {
 		return err
 	}
 	had := !c.Empty() || a.Conf().HasOverride("snmp.version")
+	inv.configPool().warnReferrers()
 	a.Audit().Touch()
 	if err := snmpcred.Save(a.Paths.SNMPFile, snmpcred.Creds{}); err != nil {
 		return err

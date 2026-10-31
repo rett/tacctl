@@ -68,10 +68,13 @@ func TestDeviceSNMPSnapshotHoldsTheOldCredential(t *testing.T) {
 		t.Errorf("no snapshot of a community change holds the old file and the registry as they were (%d new)", len(sb.snapIDs())-len(before))
 	}
 
-	// Replacing it with a v3 user: the file the snapshot holds is the old one.
-	before = sb.snapIDs()
-	sb.devSNMP("v3-auth-pass-1\nv3-priv-pass-1\n", "lab-sw1", "v3-user", "carol", "--stdin")
-	sb.said(0, "SNMPv3 user and passphrases of device 'lab-sw1' set")
+	// Adding a v3 user: a snapshot holds the old file. The community change
+	// before it left the registry as it is, so the snapshot it took after
+	// writing the file is the state this one starts from (an equal state
+	// takes none): any snapshot will do, not a new one.
+	before = map[string]bool{}
+	sb.devSNMP("v3-auth-pass-1\nv3-priv-pass-1\n", "lab-sw1", "v3-user", "add", "carol", "--default", "--stdin")
+	sb.said(0, "SNMPv3 user 'carol' added to the pool of device 'lab-sw1'")
 	if !sb.snapHolds(before, file, "new-community-2", "version: v2c") {
 		t.Errorf("no snapshot of a v3-user change holds the old file")
 	}
@@ -157,7 +160,7 @@ func TestDeviceSNMPUnreadableFileIsRepairable(t *testing.T) {
 		want  string
 	}{
 		{"fresh-community-1\n", []string{"lab-sw1", "community", "--stdin"}, "community:  fresh-community-1  (device)"},
-		{"fresh-auth-pass-1\nfresh-priv-pass-1\n", []string{"lab-sw1", "v3-user", "carol", "--stdin"}, "auth fresh-auth-pass-1, priv fresh-priv-pass-1  (device)"},
+		{"fresh-auth-pass-1\nfresh-priv-pass-1\n", []string{"lab-sw1", "v3-user", "add", "carol", "--default", "--stdin"}, "auth fresh-auth-pass-1, priv fresh-priv-pass-1  (device)"},
 	} {
 		sb.devSNMP("", "lab-sw1", "version", "v2c")
 		sb.write(file, bad, 0o600)
@@ -235,7 +238,8 @@ func TestSNMPUserNameIsTheEngineersToRead(t *testing.T) {
 	// The loopback is in scope lab, so a check probes nothing outside.
 	sb.write("state/store.yaml", strings.Replace(sb.store(), "prefixes: [172.16.0.0/12, 192.168.0.0/16]", "prefixes: [172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8]", 1), 0o600)
 	sb.dev("", "add", "sw1", "127.0.0.1", "--no-host-key", "--no-lookup")
-	sb.devSNMP("auth-pass-user-1\npriv-pass-user-1\n", "sw1", "v3-user", "svc-reader", "--stdin")
+	sb.devSNMP("auth-pass-user-1\npriv-pass-user-1\n", "sw1", "v3-user", "add", "svc-reader", "--default", "--stdin")
+	sb.devSNMP("", "sw1", "version", "v3")
 	sb.cfgRun("", []string{"config", "snmp", "timeout", "1"}, nil)
 
 	ops := func(args ...string) string {
@@ -294,8 +298,13 @@ func TestSNMPUserNameIsTheEngineersToRead(t *testing.T) {
 // from.
 func TestDeviceSNMPRevealIsLoggedPerLevel(t *testing.T) {
 	sb := engineerSandbox(t)
-	count := func(kind, name string) int {
-		return auditCount(sb.runner, "auth.info", "secret-read kind="+kind+" name="+name+" by=bob")
+	// A line that reveals a v3 user's passphrases names the user.
+	count := func(kind, name string, user ...string) int {
+		u := ""
+		if len(user) > 0 {
+			u = " user=" + user[0]
+		}
+		return auditCount(sb.runner, "auth.info", "secret-read kind="+kind+" name="+name+u+" by=bob")
 	}
 	reveal := func() string {
 		out := sb.asEngineer("", "device", "snmp", "lab-sw", "show", "--reveal")
@@ -313,10 +322,10 @@ func TestDeviceSNMPRevealIsLoggedPerLevel(t *testing.T) {
 	}
 	// The community from the scope, the v3 user from the device: two lines.
 	sb.scopeSNMP("scope-community-1\n", "lab", "community", "--stdin")
-	sb.devSNMP("dev-auth-pass-1\ndev-priv-pass-1\n", "lab-sw", "v3-user", "carol", "--stdin")
+	sb.devSNMP("dev-auth-pass-1\ndev-priv-pass-1\n", "lab-sw", "v3-user", "add", "carol", "--default", "--stdin")
 	out = reveal()
 	if !strings.Contains(out, "community:  scope-community-1  (scope lab)") || !strings.Contains(out, "auth dev-auth-pass-1, priv dev-priv-pass-1  (device)") ||
-		count("snmp", "lab") != 1 || count("snmp-device", "lab-sw") != 1 || count("snmp-default", "default") != 0 {
+		count("snmp", "lab") != 1 || count("snmp-device", "lab-sw", "carol") != 1 || count("snmp-default", "default") != 0 {
 		t.Errorf("scope and device: logged default=%d scope=%d device=%d\n%s", count("snmp-default", "default"), count("snmp", "lab"), count("snmp-device", "lab-sw"), out)
 	}
 	// A plain show logs nothing; nothing secret to print logs nothing.
@@ -573,7 +582,8 @@ func TestRollbackThenUpgradeKeepsTheFileIgnoredUntilSettingsReturn(t *testing.T)
 		!strings.Contains(out, "port:       2161  (device)") {
 		t.Fatalf("before the rollback:\n%s", out)
 	}
-	// What the rollback to 0.2.3 does to the registry: the maps go.
+	// What the rollback to 0.2.3 does to the registry: the maps go. The
+	// community is a file of version 1, which counts only beside a map.
 	cleared, err := devreg.RollbackSNMP(sb.path("state", "devices.yaml"), nil)
 	if err != nil || len(cleared) != 1 {
 		t.Fatalf("RollbackSNMP: %v %v", cleared, err)

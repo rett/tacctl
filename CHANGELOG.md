@@ -379,6 +379,48 @@ current behaviour; this file is where history lives.
     with no `snmp:` entry; the apply says so. A rollback of a state with
     version 1 files only converts nothing.
 
+15. **SNMPv3: a pool of users for each level, one default.** The version, the
+    port, the timeout and the two protocols stay one setting for the config,
+    a scope and a device; the v3 users are now a pool of names with their
+    passphrases and a default user or none. `config snmp v3-user`, `scope
+    snmp <scope> v3-user` and `device snmp <device> v3-user` take `add
+    <user> [--default] [--stdin]` (and `--auth`, `--priv` for the config and
+    a scope), `remove <user>`, `default [<user>|--none]` and `list`; the old
+    `v3-user <user>` is not accepted (it fails with the usage of the new
+    verbs). Adding a user changes nothing but the pool: it no longer sets the
+    version, so `config snmp version [v2c|v3]` is new (a scope's and a
+    device's `version` are as before) and `--default` makes the new user the
+    level's default. A device reads with its own default user, else its
+    scope's, else the config's, and `device snmp <device> v3-user default
+    <user>` may name a user of its own pool, its scope's or the config's. A
+    name stands for one user across the pools a device can see (the config's
+    against every scope and device, a scope's against the config and its
+    devices, a device's against its scope and the config), so a scope's user
+    cannot shadow the config's: adding a name another pool holds is refused
+    and names the level, and a user that a device's default names cannot be
+    removed. A chosen user that is missing, or lacks a passphrase, is an
+    error that names the command that fixes it (`tacctl scope snmp lab v3-user
+    add alice`), never a fallback to another user; the walkthroughs and the
+    rendered blocks name only the user in force, and their placeholder for a
+    missing user names the new verb. A credentials file of version 2 (item
+    14) counts for a device without the `snmp:` map of the registry that
+    version 1 needed. `show --reveal <user>` prints one user's passphrases; every reveal that
+    prints a user's passphrases logs `secret-read ... user=<name>`. `device
+    show --json` and `device check --json` gain `v3_users` (the names in the
+    device's own pool) and `v3_default` (its own default) beside `v3_user`,
+    the user in force. The passphrases are entered as before (asked twice, or
+    `--stdin`; at least 8 characters), the audit line masks any word typed in
+    their place, and the shell history masks them too. An engineer reads
+    `v3-user list` and `default` of their own scopes and devices and may
+    reveal a user of the level's own pool or the user in force, never another
+    user of the config's pool; changing a default (`default <user>`,
+    `default --none`) is the superuser's. Below the engineer tier an error
+    about a chosen user does not name it (`device check`, `device scan`), as
+    `device show` does not. `config validate` warns (section `snmp_users`)
+    when two pools a device can see hold the same user name under the scopes
+    as they are now; the device's own pool is searched first, then its
+    scope's, then the config's.
+
 ## 0.2.22 (2026-10-29)
 
 1. **A device `ssh-keyscan` reads nothing from, but plain `ssh` reaches, gets

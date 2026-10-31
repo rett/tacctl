@@ -160,7 +160,7 @@ func TestSNMPReconcileFailureNamesTheCommandAndFailsWhenTheFileIsIgnored(t *test
 	if strings.Contains(sb.devices(), "snmp:") {
 		t.Errorf("the registry write did not happen:\n%s", sb.devices())
 	}
-	for _, want := range []string{"could not be saved as version 2", "it is ignored", "tacctl device snmp lab-sw1 v3-user bob"} {
+	for _, want := range []string{"could not be saved as version 2", "it is ignored", "tacctl device snmp lab-sw1 v3-user add bob"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the warning lacks %q:\n%s", want, out)
 		}
@@ -172,7 +172,7 @@ func TestSNMPReconcileFailureNamesTheCommandAndFailsWhenTheFileIsIgnored(t *test
 		t.Fatalf("the file changed:\n%s", got)
 	}
 	// The command it names writes the file again, in step with the entry.
-	sb.devSNMP("bob-auth-pass\nbob-priv-pass\n", "lab-sw1", "v3-user", "bob", "--stdin")
+	sb.devSNMP("bob-auth-pass\nbob-priv-pass\n", "lab-sw1", "v3-user", "add", "bob", "--default", "--stdin")
 	if sb.code != 0 {
 		t.Fatalf("the named command: exit %d: %q", sb.code, sb.stderr())
 	}
@@ -198,7 +198,7 @@ func TestSNMPReconcileFailureNamesTheCommandAndFailsWhenTheFileIsIgnored(t *test
 	if sb.code != 0 {
 		t.Errorf("exit %d, want 0: %q %q", sb.code, out, sb.stderr())
 	}
-	if !strings.Contains(out, "could not be brought in step") || !strings.Contains(out, "tacctl device snmp lab-sw1 v3-user bob") {
+	if !strings.Contains(out, "could not be brought in step") || !strings.Contains(out, "tacctl device snmp lab-sw1 v3-user add bob") {
 		t.Errorf("no warning with the command:\n%s", out)
 	}
 	if got := sb.read(file); got != before || !strings.Contains(got, "version: 2") {
