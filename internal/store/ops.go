@@ -73,7 +73,7 @@ func isNullArg(v string) bool { return v == "" || v == "null" }
 // UserSet is op_user_set (store_user_set <name> [group=<g>]
 // [scopes=<a,b>] [hash=<hex|$2b$..|null>] [disabled=true|false]
 // [password_changed=<YYYY-MM-DD|today|null>]
-// [password_change_required=true|false]). group= is required for a
+// [password_change_required=true|false] [email=<address|null>]). group= is required for a
 // new user; a new user given hash= starts enabled unless disabled= says
 // otherwise, without one it starts disabled; 'root' is always the
 // accounting sink and refuses hash=.
@@ -152,6 +152,16 @@ func (s *Store) UserSet(name string, fields ...string) error {
 				u.Set("password_change_required", true)
 			} else {
 				u.Delete("password_change_required")
+			}
+		case "email":
+			// Written only when set: null (or empty) removes the key, so a
+			// store without an email is byte for byte what 0.2.22 wrote.
+			// The address is kept as typed; the validator checks its form
+			// and that no other user holds it.
+			if isNullArg(f.v) {
+				u.Delete("email")
+			} else {
+				u.Set("email", f.v)
 			}
 		default:
 			return storeErr("user '%s': unknown field '%s'", name, f.k)

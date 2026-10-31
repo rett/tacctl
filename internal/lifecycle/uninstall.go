@@ -47,7 +47,7 @@ func Uninstall(ctx context.Context, h *Host, args []string) error {
 	h.echo("Backends: " + h.backendNames(ids))
 	h.echo("")
 	h.echo("This will remove:")
-	h.echo("  - Management CLI (tacctl), its state directory (" + p.StateDir + ": store, tacctl.yaml, backups)")
+	h.echo("  - Management CLI (tacctl), its state directory (" + p.StateDir + ": store, tacctl.yaml, backups, kept backups)")
 	h.echo("  - Sudoers rules (" + p.SudoersFile + ", " + p.TierSudoersFile + ")")
 	h.echo("  - Bash completion (" + p.Completion + ") and man page")
 	h.echo("  - Linux host build data (" + p.LinuxDir + ") and the generated known_hosts (" + p.KnownHosts + ")")
@@ -123,17 +123,33 @@ func Uninstall(ctx context.Context, h *Host, args []string) error {
 	archive := ""
 	if keepBackups {
 		// Backups of a host that never ran the state migration are still
-		// under the daemon's directory.
+		// under the daemon's directory. The snapshots 'backup keep' copied out
+		// of backups/ are backups too: each member is archived when it exists,
+		// and tar runs when either does.
 		parent := ""
+		var members []string
 		if isDir(filepath.Join(p.StateDir, "backups")) {
-			parent = p.StateDir
+			parent, members = p.StateDir, []string{"backups/"}
 		} else if d := filepath.Join(p.Etc, "backups"); isDir(d) && !isSymlink(d) {
-			parent = p.Etc
+			parent, members = p.Etc, []string{"backups/"}
 		}
-		if parent != "" {
+		if isDir(p.KeptDir) && !isSymlink(p.KeptDir) {
+			if parent == "" {
+				parent = filepath.Dir(p.KeptDir)
+			}
+			if filepath.Dir(p.KeptDir) == parent {
+				members = append(members, filepath.Base(p.KeptDir)+"/")
+			} else {
+				// the backups are under the daemon's directory: tar changes
+				// to the state directory for this member
+				members = append(members, "-C", filepath.Dir(p.KeptDir), filepath.Base(p.KeptDir)+"/")
+			}
+		}
+		if len(members) > 0 {
 			archive = p.ArchiveDir + "/tacquito-backups-" + h.now().Format("20060102_150405") + ".tar.gz"
 			// 'tar czf ... 2>/dev/null || true'
-			h.cmd(ctx, execx.Cmd{Name: "tar", Args: []string{"czf", archive, "-C", parent, "backups/"},
+			tarArgs := append([]string{"czf", archive, "-C", parent}, members...)
+			h.cmd(ctx, execx.Cmd{Name: "tar", Args: tarArgs,
 				Stdout: out.Stdout, Stderr: io.Discard})
 			out.Info("Config backups saved to " + archive)
 		}

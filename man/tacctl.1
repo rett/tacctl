@@ -1,6 +1,6 @@
 .\" Manual page for tacctl, the management CLI for pluggable network-device AAA.
 .\" Render locally with: groff -man -Tascii man/tacctl.1 | less
-.TH TACCTL 1 "2026-10-29" "tacctl 0.2.22" "tacctl Manual"
+.TH TACCTL 1 "2026-10-31" "tacctl 0.2.23" "tacctl Manual"
 .SH NAME
 tacctl \- manage pluggable network-device AAA: users, groups, scopes and devices
 .SH SYNOPSIS
@@ -269,8 +269,9 @@ The tacctl repo branch to install or upgrade from (default: the current one).
 Prepare tacctl's state for the release before this one; run on the newer
 release, before the older one is installed. A dry run by default: it lists
 every step and every warning and changes nothing. The versions it takes are
-.B 0.2.21
+.B 0.2.22
 (the release before this one),
+.BR 0.2.21 ,
 .BR 0.2.20 ,
 .BR 0.2.19 ,
 .BR 0.2.18 ,
@@ -286,12 +287,12 @@ and older are refused, with the way there (one release at a time: this
 rollback,
 .BR "tacctl upgrade \-\-branch 0.2.9" ,
 then the rollback of that release), and so is any other word (0.2.10 to
-0.2.15 included: the refusal names the targets). Every target but 0.2.21, 0.2.20 and
-0.2.19 is refused while an emergency lockdown locks a group (the refusal lists each
+0.2.15 included: the refusal names the targets). Every target but 0.2.22, 0.2.21, 0.2.20
+and 0.2.19 is refused while an emergency lockdown locks a group (the refusal lists each
 one and
 .B "emergency lockdown <scope> disable"
 lifts it; a release before 0.2.19 would render the locked users back into the
-scope; 0.2.19 has the record and keeps it), and every target is refused while a device's record says a confirmed commit of
+scope; 0.2.19 has the record and keeps it), every target is refused while an emergency lockdown stands on a scope that has enrolled hosts, or a lifted one still waits for a host to drop sshd's lockdown drop\-in (older releases cannot lift it on a host; lift it and sync the hosts first), and every target is refused while a device's record says a confirmed commit of
 .B "device config apply"
 is
 .B pending
@@ -301,8 +302,8 @@ or
 .B "device config apply <name> \-\-check"
 or
 .B "device config forget <name>"
-settles it), and every target but 0.2.21 and 0.2.20 while the store has a user whose name
-has a period (no other target reads such a name: the refusal lists each, with
+settles it), and every target but 0.2.22, 0.2.21 and 0.2.20 while the store has a user whose
+name has a period (no other target reads such a name: the refusal lists each, with
 .B "user rename <name> <new\-name>"
 as the way out, and changes nothing; an override under such a name in the
 ignored
@@ -336,8 +337,8 @@ stay, for the releases that have them) are removed and a
 of \-1 (never ask) is written as 1000, with every other setting kept and a
 snapshot first.
 .IP
-Every target but 0.2.21, which has it itself, keeps every user's login to this
-server: an older release answers
+Every target but 0.2.22 and 0.2.21, which have it themselves, keeps every user's
+login to this server: an older release answers
 it only for the users that have the server's scope
 .RB ( tacctl )
 in their own scopes, so the plan adds it to the scopes of each user who logs in
@@ -345,16 +346,16 @@ to the server and lacks it (it counts and names them; a warning, so
 .B \-\-apply
 needs
 .BR \-\-yes ),
-after a snapshot. Every target removes
+after a snapshot. Every target but 0.2.22 removes
 .B server.name
 (the name of
 .BR "server name" ),
-and every target but 0.2.21
+and every target but 0.2.22 and 0.2.21
 .B server.addresses
 as well, from
 .IR tacctl.yaml ,
 which no older release knows; the host registry keeps the address in this
-server's entry. Every target also removes the timing scale:
+server's entry. Every target but 0.2.22 also removes the timing scale:
 .B device.timeout_scale
 and
 .B timeout_scale_scope.\fIscope\fR
@@ -369,29 +370,127 @@ key it does not know). It is a note in the plan, not a warning: the older
 release connects to every device with its fixed timings again, which a slow or
 distant device may not meet, and the values stay in the snapshot.
 .IP
+Every target removes the users' email addresses
+.RB ( "user email" ,
+.BR "user add \-\-email" )
+from
+.IR store.yaml :
+no older release knows the key, and the ones that return early, 0.2.22 among
+them, convert this file too. The plan names the users who have one (never the
+address) in a warning, so
+.B \-\-apply
+needs
+.BR \-\-yes ,
+and takes the snapshot first. The older release prunes
+.I backups/
+by its own retention and knows no marker, so the apply also keeps the snapshot
+.RB ( "backup keep" ):
+a copy in
+.IR /etc/tacctl/backups\-kept/ ,
+where no retention reaches it, with the note
+.B "rollback to <target>: dropped the email addresses of N users"
+(a count, no name, no address). The apply names the snapshot, the kept copy and
+.BR "tacctl backup recover <snapshot> \-\-only email" ,
+which puts the addresses back once this release is installed again
+.RB ( "backup unkeep"
+removes the copy after that); the audit line of the rollback names the kept
+snapshot and the users. A store that cannot be read
+refuses every target. Until the older release is installed, the two verbs that
+set an address write the key again, and the command says so.
+.IP
+Every target writes the SNMP credential files
+.RI ( snmp.yaml ,
+.IR snmp/ scope .yaml ,
+.IR snmp/devices/ name .yaml )
+in version 1 again: version 2, which holds a pool of v3 users and a default
+(\fBv3\-user add\fR), is refused by every older release ("unsupported
+version"). Version 1 holds one v3 user for each level, so a level keeps its
+default user and drops the rest, and a device whose default names a user of its
+scope's or the config's pool loses the choice, and a device with no
+.B snmp:
+entry in
+.I devices.yaml
+loses its credentials file whole (the older releases ignore the credentials of
+such a device, so a file in version 1 would hand it to another level's
+credentials unseen). A level with several users and
+none that is its own default has no answer, and the rollback is refused naming the
+level. The plan names the levels and counts the users (never a name or a
+passphrase) in a warning, so
+.B \-\-apply
+needs
+.B \-\-yes
+when anything is dropped; one that drops nothing only rewrites the files. The snapshot
+is kept with the note
+.BR "rollback to <target>: dropped N SNMPv3 users in M levels" ,
+the audit line adds
+.BR "snmp\-users=N snmp\-levels=M snmp\-choices=K snmp\-devices=P" ,
+and the apply names
+.BR "tacctl backup recover <snapshot> \-\-only snmp\-users" .
+.IP
+Every target drops from
+.I state/staging
+the entries marked
+.B covered
+that
+.B "device clone"
+writes for a bench address its scope answers already (no /32 is added for them): an older release reads such a line as any other, and its sweep and
+.B "scope staging remove"
+would take that /32 out of the scope, a prefix of the scope's own included. The plan names the entries, the snapshot is taken first and nothing asks (no warning, no
+.BR \-\-yes ).
+A clone that still waits for its
+.B "device rename \-\-replace"
+loses its entry, and after a re-upgrade the verb refuses it as not staged: remove the clone and clone again from the original, or restore the snapshot. Every other entry stays.
+.IP
+.B "rollback 0.2.22"
+converts nothing but the email addresses, the SNMP credential files, the covered staging entries and the per\-tier sudoers drop\-in
+(when it is exactly this release's text it is rewritten, after
+.BR "visudo \-cf" ,
+with 0.2.22's: the engineer's rule of
+.B "device clone"
+is taken out; an edited drop\-in is left): 0.2.22
+reads every other file this release writes, so the server name, the timing
+scale, the server address, the users' login to this server, a user name with a
+period and an emergency lockdown (of scopes with no enrolled host) stay. With no
+address in the store, no SNMP
+credential file in version 2 (a second or non\-default user, a default naming
+another level's user, a device's file without an
+.B snmp:
+entry), and no covered staging entry, it takes no snapshot (there is no file to convert) and needs no
+.BR \-\-yes ;
+with an address or a version 2 file it takes the snapshot and needs
+.B \-\-yes
+when anything is dropped, and with only a covered staging entry it takes the snapshot and asks nothing.
+.B \-\-hosts
+is accepted and does nothing. The command ends with the next step,
+.BR "tacctl upgrade \-\-branch 0.2.22" .
+.IP
 .B "rollback 0.2.21"
 removes
 .B server.name
-and the timing scale and converts nothing else: no scope is added to the users, and a user name with
+and the timing scale, rewrites the per\-tier sudoers drop\-in when it is exactly this release's text (with 0.2.21's, which is 0.2.22's: the engineer's rule of
+.B "device clone"
+is taken out; an edited drop\-in is left) and converts nothing else: no scope is added to the users, and a user name with
 a period and an emergency lockdown stay, as 0.2.21 reads both. It needs no
 .B \-\-yes
-(it has no warning), and
+(it has no warning of its own: the email addresses, above, are the one), and
 .B \-\-hosts
 is accepted and does nothing. The command ends with the next step,
 .BR "tacctl upgrade \-\-branch 0.2.21" ,
 and names the verbs that write a key 0.2.21 refuses until then
 .RB ( "server name" ,
 .BR "device timeout\-scale" ,
-.B "scope timeout\-scale"
-and
-.BR "config devices timeout\-scale" ).
+.BR "scope timeout\-scale" ,
+.B "config devices timeout\-scale"
+and the two that set an email address).
 .IP
 .B "rollback 0.2.20"
 removes
 .B server.addresses
 and
 .B server.name
-and the timing scale, and adds the scope to the users (above); 0.2.20 reads every other file this
+and the timing scale, adds the scope to the users (above) and rewrites the per\-tier sudoers drop\-in when it is exactly this release's text (with 0.2.20's, which is 0.2.22's: the engineer's rule of
+.B "device clone"
+is taken out; an edited drop\-in is left); 0.2.20 reads every other file this
 release writes, so nothing else is converted, and
 .B \-\-hosts
 is accepted and does nothing. The command ends with the next step,
@@ -1060,7 +1159,9 @@ a line
 for a user who must change the password (or who is flagged and is a superuser,
 which the flag never binds; with the reason when the user cannot log in to change it), last login (the most recent of every enabled backend: the TACACS+
 accounting log, the RADIUS auth log), Cisco privilege level, Juniper
-class, and a hash fingerprint. Read-only: does not prompt for the
+class, a hash fingerprint and, for a user who has one, the
+.B Email
+address. Read-only: does not prompt for the
 password (unlike
 .BR "user verify" ).
 .\" BEGIN GENERATED: command user show
@@ -1070,7 +1171,7 @@ Requires: \fBreadonly\fR.
 .RE
 .\" END GENERATED: command user show
 .TP
-.BI "user add " "name group " [ "--hash " hash ] [ "--scopes " name[,name...] ] [ --no\-change\-required ]
+.BI "user add " "name group " [ "--hash " hash ] [ "--scopes " name[,name...] ] [ "--email " address ] [ --no\-change\-required ]
 Add a user. The name is lower case (lower\-case letters, digits,
 .BR _ " and " \- ):
 a name with upper case is refused with the lower\-case spelling to use, and a
@@ -1096,6 +1197,11 @@ Without
 .BR --scopes ,
 the user lands in the current default scope; on fresh installs that is
 .BR lab .
+.BI --email " address"
+records an email address for the user (see
+.BR "user email" ).
+It is checked before anything is asked or written, and an address another user
+holds is refused, naming that user.
 .PP
 A new user must change the password at the first login to this server
 (see
@@ -1107,6 +1213,63 @@ superuser (never held to it) and for a user with no login on this server (the
 server is not enrolled, its name is no Linux account name, its group has no
 privilege level, or, for a server still registered in a scope it shares with
 devices, the user is not in that scope), who could never change the password.
+.PP
+When this server is enrolled
+.RB ( "host enroll \-\-local" ),
+the verbs that change an account on it end by syncing this server's own
+accounts at once:
+.BR "user add" ,
+.BR "user remove" ,
+.BR "user rename" ,
+.BR "user move" ,
+.BR "user enable" ,
+.BR "user disable" ,
+.B "user scope"
+.RB ( add ,
+.BR remove ,
+.B replace
+and
+.BR "remove \-\-all" ),
+.B "user require\-password\-change"
+(once, whatever the number of users) and
+.B "user passwd"
+when it enables a disabled user. It is the accounts\-only sync of
+.B "host sync"
+of this server, run after the change is stored and the service restarted,
+without a snapshot of its own, so that a new user has an account and a UID at
+once and can log in to change the password. One line says what was done
+.RB ( "This server's accounts were synced: 1 created (UID 80003)." ):
+the counts of accounts created, updated, renamed and removed, and no other
+user. The sync's own lines are not shown, but its warnings are. A sync that
+fails is a warning with the retry command
+.RB ( "tacctl host sync <name>" ),
+followed by what the script said as plain lines: the change is stored and the
+command exits 0. A server that is not enrolled gets no sync and no word about
+one. The sync writes its own
+.B "host sync"
+line to the audit log, as
+.B "host sync"
+does.
+.PP
+The other enrolled hosts such a change reaches (those whose account of the user
+the change alters: the user is in their scope before or after it, and the
+account is not already as the change leaves it) get one warning with their count and
+the command
+.RB ( "tacctl host sync web1 web2" ,
+or
+.B "host sync \-\-all"
+for more than four hosts): their accounts follow at their next sync. On a
+terminal the verb then asks
+.BR "Sync these hosts now? [y/N]" :
+the default is no, the answer is never taken from
+.B \-\-yes
+or any other option, and with no terminal the warning is all. Yes runs
+.B "host sync"
+of just those hosts, one after the other. The notices follow one rule: INFO
+says what was done (the change, the restart, the sync); WARN says that
+something failed or that the operator has to act (a sync that failed, hosts
+left to sync, a device that still accepts a user who must change the
+password); a fact is said once.
 .PP
 Reserved usernames
 .RB ( root
@@ -1128,10 +1291,70 @@ Add with pre\-generated bcrypt hash (\- reads it from stdin).
 \fB\-\-scopes\fR \fI<s>[,s...]\fR
 Grant specific scopes at creation.
 .TP
+\fB\-\-email\fR \fI<address>\fR
+Record an email address for the user (a plain address, local@domain). No mail is sent to it. An address belongs to one user.
+.TP
 \fB\-\-no\-change\-required\fR
 Do not require the user to change the password at the first login to this server. Without it a new user must change it first, and no device accepts the user until then (a superuser, and a user with no login on this server, never must).
 .RE
 .\" END GENERATED: command user add
+.TP
+.BI "user email " "name " [ address | clear ]
+Show, set or clear the email address of a user. Without a second word it
+prints the address, or says that the user has none. An
+.I address
+sets it, and
+.B clear
+removes it (the word is not an address). The address is a plain
+.IB local @ domain
+of at most 254 characters, with exactly one
+.BR @ ,
+a local part, a domain of at least two dot\-separated labels, and no spaces,
+angle brackets, quotes or control characters; it is kept as typed. An address
+belongs to one user, compared without regard to case: the command, the
+.B \-\-email
+option of
+.B "user add"
+and the store itself refuse an address another user holds, naming that user.
+The address is stored as
+.B users.<name>.email
+in
+.I store.yaml
+(written only when set, so a store without one is unchanged), carried by
+.BR "user rename" ,
+kept by
+.BR "store import \-\-replace" ,
+shown by
+.B "user show"
+(to everyone who can run it) and
+.BR "store show \-\-json" ,
+and not listed by
+.BR "user list" .
+No mail is sent to it, and nothing is rendered or restarted. The address is
+never written to an audit line (the argument is logged as
+.BR <redacted> ),
+to a message or to a log; a word with an @ typed in the place of a name, a
+group or a scope in another
+.B user
+verb is redacted too, and the history of
+.B "tacctl shell"
+keeps the line up to the address (the
+.B \-\-email
+value, the address of
+.BR "user email" ,
+or the first word with an @ in any other
+.B user
+verb) and a mark in place of the rest. The accounting sink
+.RB ( root )
+takes none. An older release refuses the key:
+.B "tacctl rollback"
+removes it, after a snapshot, and names the users.
+.\" BEGIN GENERATED: command user email
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command user email
 .TP
 .BI "user remove " name
 Remove a user after confirmation. The user's
@@ -1144,7 +1367,8 @@ and the command says so. It is refused, with nothing changed, while
 .I console.yaml
 cannot be read, so that no setting is left for the next user of the name
 .RB ( "user add" " and " "user rename"
-do the same).
+do the same). The accounts of this server are synced at once, as for
+.BR "user add" .
 .\" BEGIN GENERATED: command user remove
 .RS
 .PP
@@ -1205,9 +1429,10 @@ Do not require the user to change the password at the next login to this server.
 .\" END GENERATED: command user passwd
 .TP
 .BI "user disable " name
-Disable a user while preserving the password hash for later re-enable. On
-this server the account is synced at once, as for a lowered tier (see
-.BR "group edit" ).
+Disable a user while preserving the password hash for later re-enable. The
+accounts of this server are synced at once, as
+.B "user add"
+does.
 .\" BEGIN GENERATED: command user disable
 .RS
 .PP
@@ -1216,7 +1441,10 @@ Requires: \fBsuperuser\fR.
 .\" END GENERATED: command user disable
 .TP
 .BI "user enable " name
-Re-enable a previously disabled user.
+Re-enable a previously disabled user. The accounts of this server are synced
+at once, as
+.B "user add"
+does.
 .\" BEGIN GENERATED: command user enable
 .RS
 .PP
@@ -1249,10 +1477,10 @@ keeps the Linux UID: the line of the old name in
 becomes the new name's, in place, under the apply lock after the pre\-change
 snapshot, and the command says so
 .RB ( "UID <uid> follows the rename" ).
-With enrolled hosts that list the user it also says that the next
+With enrolled hosts that list the user it also warns that the next
 .B "host sync"
-renames the account on each of them, by its UID, keeping the home directory
-where it is. A user with no line is renamed as before. A new name that already
+of them renames the account on each of them, by its UID, keeping the home
+directory where it is. A user with no line is renamed as before. A new name that already
 has a line keeps its own number, the ledger is left alone, and a warning says
 that hosts then remove the old account and create the new one. If the ledger
 cannot be written after the rename the command says so, names the snapshot to
@@ -1264,7 +1492,10 @@ builds its script from the ledger under the same lock, so it sends the names as
 they were before the rename or after it, never a mix; an account created under
 the old name is renamed at that host's next sync. When another command keeps
 the lock for 30 seconds the rename stops at the pre\-change snapshot, which
-copies the ledger under it, with nothing changed.
+copies the ledger under it, with nothing changed. The accounts of this server
+are synced at once, as for
+.BR "user add" ,
+and the sync renames the account there.
 .\" BEGIN GENERATED: command user rename
 .RS
 .PP
@@ -1273,10 +1504,10 @@ Requires: \fBsuperuser\fR.
 .\" END GENERATED: command user rename
 .TP
 .BI "user move " "name group"
-Move a user to a different group without changing the password. A move
-that lowers the user's tier syncs the accounts of this server at once
-(see
-.BR "group edit" ).
+Move a user to a different group without changing the password. It syncs the
+accounts of this server at once, as
+.B "user add"
+does.
 .\" BEGIN GENERATED: command user move
 .RS
 .PP
@@ -1368,20 +1599,20 @@ disabled user's (a password and an SSH key both fail; the files are kept), and
 the sync after the change opens it again; the server's own sync keeps the
 account, since the password is changed there. Until a host is synced it is as
 it was:
-.BR "user require\-password\-change" ,
+.BR "user require\-password\-change"
+and
 .B "user passwd"
-and
+warn, and
 .B passwd
-name the hosts of the user's scopes with
-.BR "tacctl host sync \-\-all" .
-A new or renamed user has an account on this server only after the next
-.BR "host sync" ,
-which
+informs, naming the hosts of the user's scopes and the
+.B "tacctl host sync"
+that syncs them.
+The verb syncs the accounts of this server once it is stored, as
 .B "user add"
-and
-.B "user rename"
-say for a user who must change the password: until then the user can neither
-log in nor change it. The requirement is stored as
+does, and a new or renamed user has its account there at once; if that sync
+fails the user can neither log in nor change the password until
+.BR "tacctl host sync <name>" .
+The requirement is stored as
 .B password_change_required
 of the user in
 .I store.yaml
@@ -1457,7 +1688,10 @@ replaces the whole list;
 empties it (with confirmation) and takes no scope names. It keeps the
 bcrypt hash and revokes scope access only;
 .B "user disable"
-revokes the login.
+revokes the login. Every change of the list syncs the accounts of this server
+at once, as
+.B "user add"
+does.
 .\" BEGIN GENERATED: command user scope
 .RS
 .PP
@@ -1603,10 +1837,7 @@ A change of
 or
 .B priv-lvl
 (and
-.BR "user move" ", " "user disable" ", " "user remove" ", a " "user scope"
-change that takes this server's scope away
-.RB ( remove ", " replace ", " "remove \-\-all" ),
-.BR "group preset roles --force" ", and " "group reset" )
+.BR "group preset roles --force" " and " "group reset" )
 that lowers the tier of a user who has an account on this server
 syncs those accounts at once, as
 .B "host sync"
@@ -2473,7 +2704,7 @@ has a
 .B section
 (a fixed token for each label of the text report:
 .BR store ", " yaml ", " overrides ", " command_rules ", " structure ", "
-.BR scope_default ", " linux_hosts ", " names ", " breakglass ", " breakglass_hold ", "
+.BR scope_default ", " linux_hosts ", " names ", " breakglass ", " snmp_users ", " breakglass_hold ", "
 .BR emergency_lockdown ", " config_blocks ", " operator_policy ", " group_settings ", " orphan_settings ", "
 .BR orphan_files ", " leftovers ", " devices ", " backends ", " rendered ", " drift " and "
 .BR vendor_attrs ),
@@ -2815,7 +3046,11 @@ logs in read-only, as
 tests a login, and compares tacctl's groups and their GIDs, each account's
 UID, primary group and home mode, the PAM files tacctl writes (present, and
 the text the client script recorded writing), the client script protocol the
-host last ran, and its ssh keys against the pins. Nothing is changed. Each
+host last ran, sshd's lockdown drop-in against the scope's lockdown (missing
+under one, present without one, or removed with sshd not yet told; a host that has
+no sshd, an \fIsshd_config\fR without the Include or a provisioner that is a tacctl
+non-superuser is told that reason, not a sync), and its ssh
+keys against the pins. Nothing is changed. Each
 difference names the command that fixes it (usually
 .BI "host sync " name ).
 Sudo with a password needs a terminal, else
@@ -3211,7 +3446,13 @@ changes. The numbers of new users are given out under the lock of the UID ledger
 .RI ( /etc/tacctl/.linux\-uids.lock ),
 held while the script is built and never while it runs on the host, so two syncs
 at once give a user one number; when another command keeps the lock for 30
-seconds the sync stops with nothing changed.
+seconds the sync stops with nothing changed. While the host's scope is locked
+down
+.RB ( "emergency lockdown" )
+it also writes sshd's lockdown drop-in on the host, and it removes the file when
+the scope is not locked down; a host that the lockdown has not reached yet also
+has the live sessions of the accounts the file matches ended, once, and a host
+that has the change is taken off the record's list of hosts it waits for.
 .IP
 Several names run in one command, in the order typed (with
 .B \-\-concurrency
@@ -3993,6 +4234,21 @@ a local account named like a user that it did not create is left alone and
 that user gets no account. It refuses
 to run when no local administrator with a usable password exists outside
 the TACACS+ user list, and puts the PAM files back if any step fails.
+While the scope is locked down (\fBemergency lockdown\fR) the script also
+writes sshd's lockdown drop-in
+.IR /etc/ssh/sshd_config.d/00\-tacctl\-0\-lockdown.conf :
+\fBMatch Group tac\-users,!tac\-superuser\fR with \fBPubkeyAuthentication no\fR
+and no TCP, stream\-local, X11 or agent forwarding, so no account of a tier
+that is not a superuser's logs in with a key or forwards a port; the file
+sorts before the engineer tier's and the console's drop\-ins. It is checked
+with \fBsshd \-t\fR and \fBsshd \-T \-C\fR (an account it matches and one it
+does not) before sshd, which is reloaded and never restarted, reads it, and a
+host whose \fIsshd_config\fR does not include \fIsshd_config.d\fR is refused
+before anything changes, and so is a run over ssh from a tacctl account that is
+not a superuser (it would lose its own key; checked again just before the file is
+written, and not for the server's own script, which runs locally). A failed reload fails the run
+and the next sync tries it again, though the file is gone. A script of a scope
+that is not locked down removes the file. The header's \fBTAC_LOCKDOWN\fR (protocol 7) says which.
 The server's port in it is the configured listener's
 .RB ( "server listen" ):
 the TACACS+
@@ -4161,8 +4417,9 @@ Requires: \fBsuperuser\fR.
 .B "config linux remove-script " "[ \-\-output " file " ]"
 Write a script that removes TACACS+ or RADIUS login from a host (either
 method): it undoes the PAM edits, deletes the files holding the shared
-secret, the module, the SELinux module and the sudoers drop-in, and reports
-accounts left with no way to log in. Local accounts, home directories, the
+secret, the module, the SELinux module, the sudoers drop-in and sshd's
+lockdown drop-in (sshd is reloaded), and reports accounts left with no way to
+log in. Local accounts, home directories, the
 tac-* groups and installed packages are left in place.
 .\" BEGIN GENERATED: command config linux remove-script
 .RS
@@ -4176,7 +4433,7 @@ Where the script goes (default: tacctl\-linux\-<scope>.sh, remove\-script: tacct
 .RE
 .\" END GENERATED: command config linux remove-script
 .TP
-.B "config snmp show " "[ \-\-reveal ]"
+.B "config snmp show " "[ \-\-reveal [ user ]]"
 The SNMP access
 .B "device add"
 and
@@ -4184,7 +4441,7 @@ and
 read a device's
 .B sysName.0
 with: the version, port, timeout and v3 protocols, and whether the community
-and the v3 user and passphrases are set (never what they are). The settings are
+and the v3 users and passphrases are set (never what they are). The settings are
 .B snmp.version
 .RB ( v2c " or " v3 ;
 unset: no lookup),
@@ -4202,15 +4459,21 @@ and
 in
 .IR tacctl.yaml ;
 the credentials are in
-.IR /etc/tacctl/snmp.yaml .
+.IR /etc/tacctl/snmp.yaml :
+the community and a pool of v3 users (a name and two passphrases each) with a
+default user or none.
 v3 is authPriv only (HMAC-SHA-96 or HMAC-SHA-256-192, AES-128-CFB), with
 engine discovery. These are the default for every scope; a scope sets its own
 with
 .B "scope snmp"
 and what it does not set comes from here.
 .B \-\-reveal
-prints the community or the v3 user and passphrases instead of whether they
-are set.
+prints the community and the default user's passphrases instead of whether
+they are set;
+.B "\-\-reveal"
+.I user
+prints one user's passphrases and nothing else. A reveal is logged with the
+user's name (\fBsecret\-read kind=snmp\-default name=default user=\fR\fIuser\fR).
 .B "tacctl config snmp"
 with no subcommand prints the usage.
 .\" BEGIN GENERATED: command config snmp show
@@ -4221,9 +4484,23 @@ Requires: \fBsuperuser\fR.
 Options:
 .TP
 \fB\-\-reveal\fR
-Print the community or the v3 passphrases.
+Print the community and the default user's passphrases, or one user's.
 .RE
 .\" END GENERATED: command config snmp show
+.TP
+.BI "config snmp version " "[ v2c | v3 ]"
+Show or set
+.BR snmp.version ,
+the version the name lookups use. Adding a v3 user does not set it, and
+.B community
+sets
+.BR v2c .
+.\" BEGIN GENERATED: command config snmp version
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config snmp version
 .TP
 .B "config snmp community " "[ \-\-stdin ]"
 Ask for the v2c community twice, without echo (or read one line from stdin
@@ -4241,25 +4518,53 @@ Requires: \fBsuperuser\fR.
 Options:
 .TP
 \fB\-\-stdin\fR
-(community, v3\-user) Read the secrets from stdin, one per line.
+(community, v3\-user add) Read the secrets from stdin, one per line.
 .RE
 .\" END GENERATED: command config snmp community
 .TP
-.BI "config snmp v3\-user " user " [ \-\-auth sha|sha256 ] [ \-\-priv aes128 ] [ \-\-stdin ]"
-Store the v3 user with its authentication and privacy passphrases (each asked
-twice without echo, or one line each from stdin with
+.BI "config snmp v3\-user " "add | remove | default | list" " [ user ] [ \-\-auth sha|sha256 ] [ \-\-priv aes128 ] [ \-\-default ] [ \-\-none ] [ \-\-stdin ]"
+The pool of v3 users of the config: each has a name and an
+authentication and a privacy passphrase, and the level has one default user or
+none. The protocols, like the version, the port and the timeout, are one
+setting for the level.
+.B add
+.I user
+stores the user with both passphrases (each asked twice without echo, or one
+line each from stdin with
 .BR \-\-stdin ;
-at least 8 characters), and set
-.B snmp.version
-to
-.B v3
-and the protocols given.
+at least 8 characters) and sets the protocols given; it changes nothing else:
+not the version
+.RB ( version\ v3 ),
+not the default user
+.RB ( \-\-default
+makes the user the default). The same name again replaces the user's
+passphrases. A name stands for one user wherever a device can see it, so a name
+that a scope's or a device's pool holds is refused, naming the level.
+.B remove
+.I user
+takes a user out, and is refused while a device's default names it.
+.B default
+shows the default user,
+.B default
+.I user
+chooses it,
+.B default \-\-none
+clears it. With no default the lookups of v3 fail, naming the command that
+sets one. The old form
+.B v3\-user
+.I user
+is not accepted.
+.B list
+prints the users and whether their passphrases are set, never a passphrase.
 .\" BEGIN GENERATED: command config snmp v3-user
 .RS
 .PP
 Requires: \fBsuperuser\fR.
 .PP
 Options:
+.TP
+\fB\-\-default\fR
+Make the user the default.
 .TP
 \fB\-\-auth\fR \fIsha|sha256\fR
 The authentication protocol: sha (HMAC\-SHA\-96) or sha256 (HMAC\-SHA\-256\-192) (default sha).
@@ -4268,7 +4573,10 @@ The authentication protocol: sha (HMAC\-SHA\-96) or sha256 (HMAC\-SHA\-256\-192)
 The privacy protocol: AES\-128 (the only one).
 .TP
 \fB\-\-stdin\fR
-(community, v3\-user) Read the secrets from stdin, one per line.
+(community, v3\-user add) Read the secrets from stdin, one per line.
+.TP
+\fB\-\-none\fR
+Choose no default user.
 .RE
 .\" END GENERATED: command config snmp v3-user
 .TP
@@ -4568,12 +4876,14 @@ and the reads of a scope of their own:
 .BR "scope secret " \fIscope\fR " show" ,
 .BR "scope show " \fIscope\fR
 and the SNMP settings
-.RB ( "scope snmp " \fIscope\fR " show [ \-\-reveal ]" ,
-with the plain reads of version, port, timeout, contact and
+.RB ( "scope snmp " \fIscope\fR " show [ \-\-reveal [ " \fIuser\fR " ]]" ,
+with the plain reads of version, port, timeout, contact,
+.BR "v3\-user list" " and " "v3\-user default" ,
+and
 .BR "clients list" ;
 every setter, clear and test of it stays the superuser's), and those of a
 device of theirs
-.RB ( "device snmp " \fIname\fR " [ show [ \-\-reveal ]]" ,
+.RB ( "device snmp " \fIname\fR " [ show [ \-\-reveal [ " \fIuser\fR " ]]]" ,
 the same reads; its setters and
 .B clear
 are the superuser's, and an engineer's
@@ -5801,7 +6111,14 @@ Only that backend's log (every subcommand).
 .SS Backup management \fB(tacctl backup)\fR
 .TP
 .B backup list
-List snapshots, newest first, then old-style backups.
+List snapshots, newest first, then old-style backups. A snapshot that
+.B "backup keep"
+copied is marked
+.B "snapshot, kept"
+and a note column shows its note; one whose original has been pruned from
+.I backups/
+is
+.BR "kept only" .
 .\" BEGIN GENERATED: command backup list
 .RS
 .PP
@@ -5991,6 +6308,156 @@ The timestamp names an old\-style backup (backups/legacy).
 Leave the UID ledger (linux\-uids) as it is; the registry, records and staging come back.
 .RE
 .\" END GENERATED: command backup restore
+.TP
+.BI "backup keep " timestamp " " [ \-\-note " " text ]
+Copy a snapshot to
+.IR /etc/tacctl/backups\-kept/<timestamp>/ ,
+where no retention reaches it: this release prunes
+.I backups/
+beyond the newest 30, and the older releases a rollback goes to do the same
+without knowing any marker. The copy is a snapshot like any other (the same
+files, the manifest included, mode 0600 in a directory of 0700) with a file
+.I kept
+that records the note, who last set it (the user and the session id of the audit
+lines) and when: the keeper until a new
+.B \-\-note
+replaces the note, and then whoever replaced it. The note is free text of at most 200
+printable characters (no control or format character, no line break); it is stored in
+the kept copy and shown by
+.BR "backup list" ,
+and it is not a place for secrets. The audit line
+.B "backup keep id= note=yes|no already=yes|no"
+says only whether a note was given, and the note is written as
+.B <redacted>
+in the command line it logs. Keeping a snapshot that is kept already says so and
+changes nothing, but for
+.BR \-\-note ,
+which replaces the note. A kept snapshot is looked up after
+.IR backups/ :
+.BR "backup diff" ,
+.B "backup restore"
+and
+.B "backup recover"
+find an id in
+.I backups/
+first and then among the kept copies, so they work on a copy whose original is
+gone. A restore does not touch
+.IR backups\-kept/ .
+When the backups are preserved,
+.B uninstall
+archives
+.I backups\-kept/
+with
+.IR backups/ .
+.\" BEGIN GENERATED: command backup keep
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-note\fR \fI<text>\fR
+Record why the snapshot is kept: free text, stored in the kept copy, shown by backup list and never written to the audit log. It is not a place for secrets. A new note replaces the old one.
+.RE
+.\" END GENERATED: command backup keep
+.TP
+.BI "backup unkeep " timestamp " " [ \-\-yes ]
+Remove the kept copy of a snapshot after confirmation
+.RB ( \-\-yes
+does not ask). When no snapshot of that id remains in
+.IR backups/ ,
+the command says that the kept copy is the only copy before it asks. The
+snapshot in
+.I backups/
+is not touched. The audit line is
+.BR "backup unkeep id= only-copy=yes|no" .
+.\" BEGIN GENERATED: command backup unkeep
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-yes\fR
+Do not ask for confirmation.
+.RE
+.\" END GENERATED: command backup unkeep
+.TP
+.BI "backup recover " snapshot " " [ \-\-only " " kind[,kind...] ] " " [ \-\-dry\-run ] " " [ \-\-yes ]
+Put back from a snapshot only the kinds of data named, and leave everything else
+as it is
+.RB ( "backup restore"
+puts back the whole state). It is the way back for what
+.B rollback
+removed: the rollback keeps the snapshot it took
+.RB ( "backup keep" )
+and names it. It reads the snapshot's
+.I store.yaml
+and, for each kind, the live state, and lists per user what it would restore and
+what it skips, with the reason (the names of users, never an address). The kinds
+are
+.B email
+(the email addresses of users,
+.BR "user email" )
+and
+.B snmp\-users
+(the SNMPv3 users a rollback dropped). Without
+.B \-\-only
+every kind is recovered. For
+.BR snmp\-users ,
+it reads the credential files of the snapshot and adds each user to the pool
+of the same level now, and a default where the level has none and the user it
+chose is there; it never overwrites a default. A scope or a device that no
+longer exists is skipped and named, a user the level has already is nothing to
+do, and a name that another pool a device can see holds now is skipped (the
+current user is kept) and says which pool; the lists name levels and count
+users, never a user or a passphrase. For
+.BR email ,
+a user the snapshot gives an address and who exists now with none gets it
+(through the same validation as
+.BR "user email" ,
+so an address belongs to one user). A user who no longer exists, one who has
+another address now (the current one is kept) and an address another user holds
+now are skipped and named; a user who has the address already is nothing to
+do. Nothing is rendered or restarted. A snapshot of an older release that holds
+no address, or an old\-style backup, recovers nothing. The snapshot is looked up
+as every command that takes an id does: in
+.IR backups/ ,
+then among the copies
+.B "backup keep"
+made in
+.IR backups\-kept/ ,
+which no retention reaches (a rollback keeps the snapshot it names there, so the
+data it dropped can be recovered after an older release pruned
+.IR backups/ ).
+.B \-\-dry\-run
+lists and changes nothing. Otherwise the command asks for confirmation
+.RB ( \-\-yes
+does not), takes a snapshot of the current state first (the snapshot being read
+is kept by the retention), writes the change, and ends with the number
+recovered and skipped. A kept copy that was read is named, with the command
+that removes it once the data is recovered
+.RB ( "backup unkeep" ).
+The audit line is
+.B "backup recover id= pre= kinds= restored= skipped="
+and holds no address.
+.\" BEGIN GENERATED: command backup recover
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.PP
+Options:
+.TP
+\fB\-\-only\fR \fI<kind>[,<kind>...]\fR
+Recover only the listed kinds of data: email, snmp\-users. Without it every kind that can be recovered is.
+.TP
+\fB\-\-dry\-run\fR
+List what would be recovered and change nothing.
+.TP
+\fB\-\-yes\fR
+Do not ask for confirmation.
+.RE
+.\" END GENERATED: command backup recover
 .SS Hash generation \fB(tacctl hash)\fR
 .TP
 .B hash
@@ -6614,7 +7081,13 @@ users answer it there, so nothing changes on the device when it is
 installed in the scope's prefixes. The /32 is removed once the host (its
 enroll or sync) or the registered device
 .RB ( "device set" )
-is seen at another address the scope covers.
+is seen at another address the scope covers. A clone at a bench address the scope answers already
+.RB ( "device clone" )
+gets an entry without a /32 (it is listed like the others, and logged as
+.BR "scope staging add ... covered=yes" ):
+no prefix is added and none is ever taken out, by the end of the entry or by
+.BR remove ,
+and the entry lasts until the device is seen at another address, is replaced or is removed by hand; a clone that is removed leaves it, as a staging /32 is left. A bench address already staged for a host or another device is refused to the clone; an entry with no name (\fBconfig <vendor> \-\-staging\fR without \fB\-\-name\fR) is the bench device's and takes the clone's name.
 .B list
 (the default) shows them with where each is seen now;
 .B remove
@@ -7070,8 +7543,8 @@ says which one a value is. The non-secret settings are
 .B snmp_scope.\fIscope\fR.{version,port,timeout,v3.auth,v3.priv,contact,clients}
 in
 .IR tacctl.yaml ,
-written only when set; the community and the v3 user with its passphrases are
-the file
+written only when set; the community and the pool of v3 users with their
+passphrases and the default user are the file
 .IR /etc/tacctl/snmp/\fIscope\fR.yaml
 (mode 0600 in a 0700 directory, the format of
 .IR snmp.yaml ),
@@ -7087,31 +7560,41 @@ and
 .BR test ,
 are the superuser's.
 .TP
-.BI "scope snmp " scope " show [ \-\-reveal ]"
+.BI "scope snmp " scope " show [ \-\-reveal [ user ]]"
 The effective version, port, timeout, protocols, community or v3 user, contact
 and allowed clients of the scope, each with where it comes from
 .RB ( scope ,
 .BR default ,
 .BR built\-in ).
 .B \-\-reveal
-prints the credentials; an engineer may reveal the scopes of their own, and the
-reveal is logged as
-.BR "secret\-read kind=snmp" .
+prints the credentials (the community and the effective user's passphrases;
+with a
+.I user
+only that user's passphrases, of the scope's pool or the default's); an
+engineer may reveal the scopes of their own, and the reveal is logged as
+.BR "secret\-read kind=snmp" ,
+with the user's name when a user's passphrases are printed.
 .\" BEGIN GENERATED: command scope snmp
 .RS
 .PP
-Requires: \fBengineer\fR. An engineer may read the settings of a scope of their own (show [\-\-reveal], version, port, timeout, contact, clients list); every setter, clear and test needs the superuser tier.
+Requires: \fBengineer\fR. An engineer may read the settings of a scope of their own (show [\-\-reveal [<user>]], version, port, timeout, contact, v3\-user list|default, clients list); every setter, clear and test needs the superuser tier.
 .PP
 Options:
 .TP
 \fB\-\-reveal\fR
-Print the community or the v3 passphrases (an engineer: their own scopes; logged).
+Print the community and the effective user's passphrases, or one user's (an engineer: their own scopes; logged).
 .TP
 \fB\-\-clear\fR
 Remove the contact.
 .TP
+\fB\-\-none\fR
+Choose no default user.
+.TP
 \fB\-\-stdin\fR
-(community, v3\-user) Read the secrets from stdin, one per line.
+(community, v3\-user add) Read the secrets from stdin, one per line.
+.TP
+\fB\-\-default\fR
+Make the user the default.
 .TP
 \fB\-\-auth\fR \fIsha|sha256\fR
 The authentication protocol: sha (HMAC\-SHA\-96) or sha256 (HMAC\-SHA\-256\-192) (default: the default's, else sha).
@@ -7129,11 +7612,23 @@ Ask twice, without echo (or read one line from stdin), for the scope's v2c
 community; the scope's version becomes
 .BR v2c .
 .TP
-.BI "scope snmp " scope " v3\-user " user " [ \-\-auth sha|sha256 ] [ \-\-priv aes128 ] [ \-\-stdin ]"
-Set the scope's v3 user and its two passphrases (at least 8 characters); the
-scope's version becomes
-.BR v3 .
-.TP
+.BI "scope snmp " scope " v3\-user " "add | remove | default | list" " [ user ] [ \-\-auth sha|sha256 ] [ \-\-priv aes128 ] [ \-\-default ] [ \-\-none ] [ \-\-stdin ]"
+The scope's pool of v3 users and its default user, as
+.B "config snmp v3\-user"
+does for the default.
+.B add
+changes only the pool (and the scope's protocols, when given): the scope's
+version is
+.B version\ v3
+and its default user is
+.BR default .
+A name that the default's pool or the pool of one of the scope's devices holds
+is refused, naming the level. The scope's default names a user of the scope's
+pool; with none, the default's applies. A user that a device's default names
+cannot be removed. An engineer may run
+.B list
+and the plain
+.BR default .
 .BI "scope snmp " scope " clients { list | add | remove } " [ cidr [ , cidr ...]]
 The ranges allowed to query the scope's devices: IPv4 networks in canonical
 form, kept in the order given, at most 32, never
@@ -9122,6 +9617,58 @@ Options:
 .RE
 .\" END GENERATED: command device support-bundle
 .TP
+.BI "device clone " "name new " "\-\-staging " "bench\-ip " [ \-\-allow\-generic ]
+Registers
+.I new
+as a copy of the device
+.IR name :
+the same intent, at the address the new device has on the bench. Copied are the registry's settings
+(the vendor, the ssh port, the description, the location, the legacy and the
+Cisco syntax settings, the NETCONF settings and the timing scale), the device's own SNMP settings
+and its credentials file (the community and the pool of v3 users, the default
+included; a default that names a user of the scope's pool stays valid, the copy being in the same scope), and its
+configuration blocks, the files and their list in
+.BR tacctl.yaml .
+Not copied are what belongs to the one device that is there: its address, its name, its DNS name (it names the original), its
+pinned host keys, its acknowledged notices, a break\-glass hold and its configuration record. The copy has no pinned host key, so the usual notice follows it.
+.IP
+.B \-\-staging
+is required: the registry holds one device for each address, and the copy cannot take the original's. The bench
+address is added to the scope of the original as a /32, as
+.B config <vendor> \-\-staging
+does (see
+.BR "scope staging" ),
+before the registry is written; a bench address the scope already answers needs no /32 and is staged all the same, by an entry without one (see
+.BR "scope staging" ),
+and one that another scope answers is refused to an engineer and warned about for the superuser. Every refusal of the address comes before the snapshot. The new name follows the
+rules of
+.B device add
+(lower case, not taken, not a generic name unless
+.B \-\-allow\-generic
+is given). A device that no scope answers has no scope to stage the address in and is refused. When the copy is installed in the original's place,
+.B "device rename <new> <name> \-\-replace"
+removes the original and moves the copy to its address.
+.IP
+The copy is all or nothing: one snapshot is taken first, what can be read is read before anything is written, and a write that fails takes the registry line, the files and the /32 back. An engineer clones the devices of their own scopes, the SNMP credentials included (an engineer reads them there); the SNMP settings of the copy are the original's and nothing else, so the verb does not open
+.B device snmp
+to them. Logged:
+.B "auth.info device clone from= to= address= scope= snmp_users= block_files= count=1 by="
+(counts and names, never a credential). Exit status: 0, 1 refused, 2 wrong arguments.
+.\" BEGIN GENERATED: command device clone
+.RS
+.PP
+Requires: \fBengineer\fR.
+.PP
+Options:
+.TP
+\fB\-\-staging\fR \fI<bench\-ip>\fR
+The address the copy has on the bench. It is required: the registry holds one device for each address. It is added to the scope of the original as a /32 until the copy replaces the original; an address the scope answers already needs none.
+.TP
+\fB\-\-allow\-generic\fR
+Allow a generic name such as 'switch'.
+.RE
+.\" END GENERATED: command device clone
+.TP
 .BI "device remove " "name[,name...] | \-\-all " [ \-\-yes ]
 Remove devices from the registry, after confirmation (\c
 .B \-\-yes
@@ -9146,7 +9693,11 @@ Remove every device (an engineer: those of their own scopes).
 Rename a device; acknowledgements stay with it. The new name is lower case;
 changing only the spelling to lower case
 .RB ( "device rename Core\-SW1 core\-sw1" )
-is how a name from before is fixed. The device's own host name is
+is how a name from before is fixed. A staging address of the device
+.RB ( "config <vendor> \-\-staging" ,
+.BR "scope staging list" )
+follows the new name, so it ends as before once the device is registered at an
+address its scope covers. The device's own host name is
 unchanged and not planned by tacctl: the verb says so.
 .\" BEGIN GENERATED: command device rename
 .RS
@@ -9157,8 +9708,35 @@ Options:
 .TP
 \fB\-\-allow\-generic\fR
 (add, rename, import) Allow a generic name such as 'switch'.
+.TP
+\fB\-\-replace\fR
+Treat the first device as the replacement of the second: the second is removed with its files, the first takes its name and its address (which ends its staging /32) and a break\-glass hold on the second is cleared, never moved. One question asks first; an original with a hold needs the superuser.
+.TP
+\fB\-\-yes\fR
+Do not ask for confirmation of \-\-replace (the only way to skip the question; it is not implied by any other option).
 .RE
 .\" END GENERATED: command device rename
+.TP
+.BI "device rename " "replacement name " "\-\-replace " [ \-\-yes ]
+Puts a device that was registered at a bench address
+.RB ( "device clone" ,
+or
+.B config <vendor> \-\-staging \-\-name
+followed by
+.BR "device add" )
+where the device it replaces is. The first name is the replacement and the second the device it replaces, which is removed with its files (its SNMP credentials file, its configuration blocks and their list, its configuration record and its acknowledged notices); the replacement takes its name and its address, keeps its own pinned host keys and settings, and takes the original's DNS name when it has none. The replacement is answered by the scope of its new address, which is not always the scope of its bench address (the plan says so), and its staging /32 ends in the scope that holds it. A break\-glass hold on the original is cleared like
+.B "breakglass release"
+does (one render, the backends that serve the address restarted) and is never moved to the replacement, which is what the address now belongs to. The replacement must be staged, that is have a staging entry (see
+.BR "scope staging" ):
+the /32 of its bench address, or, for a clone at an address its scope answered already, the entry alone. The original's own staging entries stay. It is refused otherwise with the command that stages one; a replacement with a hold of its own is refused until it is released. The plan lines name what is removed, what moves and what ends, and, for a hold, how long it stood; one question follows (a closed stdin is a no, and
+.B \-\-yes
+is the only way to skip it: no other option implies it). One snapshot is taken for all the steps. A file of the original that cannot be removed, or of the replacement that cannot take the name, makes the verb exit 1 and names it (the device is then on the files of the original until they are put right). An engineer replaces within their own scopes; a hold on the original needs the superuser, since releasing it is the superuser's, and an engineer is refused naming it. A replacement whose SNMP settings are not the original's is the superuser's to bring in, as for any change of them. Logged:
+.B "auth.info device replace old= new= address= hold_cleared=yes|no snmp_files= block_files= notices= count=1 by="
+and
+.B "scope staging done"
+for the /32, and
+.B "breakglass release"
+for a hold (counts and names, never a credential).
 .TP
 .BI "device address " "name " [ address " [" \-\-apply "] [" \-\-yes ] ]
 Show or set the address, the AAA identity of the device, stored canonically. It
@@ -9542,11 +10120,14 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command device timeout-scale
 .TP
-.BI "device snmp " "name " "[ show [ \-\-reveal ] | version v2c|v3 | port " n " | timeout " seconds " | clients { list | add | remove } " "[ cidr [ , cidr ...]] | community [ \-\-stdin ] | v3\-user " "user [ \-\-stdin ] | clear ]"
+.BI "device snmp " "name " "[ show [ \-\-reveal [ " user " ]] | version v2c|v3 | port " n " | timeout " seconds " | clients { list | add | remove } " "[ cidr [ , cidr ...]] | community [ \-\-stdin ] | v3\-user " "{ add | remove | default | list } [ user ] [ \-\-default ] [ \-\-none ] [ \-\-stdin ] | clear ]"
 The SNMP settings of one registered device, over its scope's and the default's:
 one setting at a time, the device's value, then its scope's, then the default's,
-then the built\-in (the v3 user and both passphrases come together from one
-level).
+then the built\-in. The v3 user is the exception: it is the default user of the
+device, else of its scope, else of the config, found in the pool of one
+of the levels the device may use (its own, its scope's, the default's); a
+chosen user that is missing or has no passphrase is an error that names the
+command that fixes it, never a fallback.
 .B show
 (the default verb) prints the resolved version, port, timeout, protocols,
 community or v3 user (set or not), and allowed clients, each with where it
@@ -9556,23 +10137,35 @@ comes from
 .BR default ,
 .BR built\-in ).
 .B \-\-reveal
-prints the credentials and logs one line for each level a printed secret
-comes from:
+prints the credentials (with a
+.I user
+only that user's passphrases, of any pool the device may use) and logs one line
+for each level a printed secret comes from:
 .BR "secret\-read kind=snmp\-device name=" \fIdevice\fR ,
 .BR "secret\-read kind=snmp name=" \fIscope\fR
 or
-.BR "secret\-read kind=snmp\-default name=default" .
+.BR "secret\-read kind=snmp\-default name=default" ;
+the line of a v3 user's passphrases adds
+.BI user= user
+before
+.BR by= .
 .BR version ", " port " and " timeout
 show or set the device's own value;
 .B community
-and
+asks twice, without echo (or reads a line from stdin), for the community and
+makes the device's version
+.BR v2c .
 .B v3\-user
-ask twice, without echo (or read lines from stdin), for the credentials and
-make the device's version
-.B v2c
-or
-.BR v3 ;
-the authentication and privacy protocols are the scope's or the default's.
+manages the device's own pool of v3 users and its default as
+.B "scope snmp v3\-user"
+does for a scope (the authentication and privacy protocols, like the version,
+are the scope's or the default's): adding a user changes only the pool, and
+.B default
+.I user
+may name a user of the device's own pool, of its scope's or of the default's.
+A name stands for one user across those pools (the same name in another
+scope's pool is another user). A user that the device's default names cannot be
+removed from the pool it is in.
 .B clients
 lists, adds and removes the ranges allowed to query this device: its own list,
 when it has one, replaces its scope's (IPv4, at most 32, never
@@ -9586,7 +10179,7 @@ file name it, and
 lists the device);
 .B community
 and
-.B v3\-user
+.B v3\-user\ add
 replace it, saying so. A credential change takes the snapshot first. The
 SNMPv3 user's name is shown to the engineer tier and
 above; a read\-only or operator user is told only that one is set
@@ -9600,7 +10193,8 @@ The non\-secret settings are the optional
 map of the device in
 .I devices.yaml
 (\fBversion\fR, \fBport\fR, \fBtimeout\fR, \fBclients\fR; written only when
-set); the credentials are in
+set); the credentials (the community, the pool of v3 users and the default
+user) are in
 .IR /etc/tacctl/snmp/devices/\fIname\fR.yaml
 (mode 0600 in a 0700 directory, the format of
 .IR snmp.yaml ).
@@ -9630,15 +10224,21 @@ import never sets or drops a device's own settings.
 .\" BEGIN GENERATED: command device snmp
 .RS
 .PP
-Requires: \fBengineer\fR. An engineer may read the settings of a device of their own scope (show [\-\-reveal], version, port, timeout, clients list); every setter and clear needs the superuser tier.
+Requires: \fBengineer\fR. An engineer may read the settings of a device of their own scope (show [\-\-reveal [<user>]], version, port, timeout, v3\-user list|default, clients list); every setter and clear needs the superuser tier.
 .PP
 Options:
 .TP
 \fB\-\-reveal\fR
-(snmp show) Print the community or the v3 passphrases (an engineer: their own scopes' devices; logged).
+(snmp show) Print the community and the effective user's passphrases, or one user's (an engineer: their own scopes' devices; logged).
 .TP
 \fB\-\-stdin\fR
-(snmp community, v3\-user) Read the secrets from stdin, one per line.
+(snmp community, v3\-user add) Read the secrets from stdin, one per line.
+.TP
+\fB\-\-default\fR
+Make the user the default.
+.TP
+\fB\-\-none\fR
+Choose no default user.
 .RE
 .\" END GENERATED: command device snmp
 .TP
@@ -9954,7 +10554,7 @@ Requires: \fBreadonly\fR.
 .RE
 .\" END GENERATED: command device client-config
 .TP
-.BI "device scan " "[ \-\-full ] [ \-\-since " duration " ] [ \-\-backend " id " ]"
+.BI "device scan " "[ \-\-full ] [ \-\-since " duration " ] [ \-\-backend " id " ] [ \-\-sources ]"
 Read each enabled backend's log (or only
 .IR id 's)
 into the seen cache, from where the previous scan stopped; the first scan reads
@@ -9978,6 +10578,13 @@ the stretch of log read and what it found, the host-key results, how many seen
 addresses are registered, and the open notices. Records not seen for twice
 .B stale\-days
 are dropped. A cache that cannot be read is rebuilt.
+.B \-\-sources
+also tests the source addresses of the AAA clients of the devices (see
+.BR "device check" );
+it cannot be combined with
+.B \-\-if\-stale
+or
+.BR \-\-quiet .
 .\" BEGIN GENERATED: command device scan
 .RS
 .PP
@@ -9996,6 +10603,9 @@ The background form: read only when the data is older than five minutes and no s
 .TP
 \fB\-\-quiet\fR
 Print nothing (with \-\-if\-stale: what a session start runs).
+.TP
+\fB\-\-sources\fR
+Test the AAA source addresses: read the host key, never log in.
 .TP
 \fB\-\-backend\fR \fI<id>\fR
 (scan, discover) Only that backend's log.
@@ -10039,7 +10649,7 @@ Read each listed address's name and vendor by SNMP and put them in its 'device a
 .RE
 .\" END GENERATED: command device discover
 .TP
-.BI "device check " name " | \-\-all [ \-\-json ]"
+.BI "device check " name " | \-\-all [ \-\-sources ] [ \-\-json ]"
 A checklist per entry: the scope that answers the address, the vendor tag, the
 last sighting (from the seen cache), whether its ssh port accepts a TCP
 connection (3 seconds; a timeout may be a false alarm, as for
@@ -10073,6 +10683,70 @@ and its notices.
 ends with the devices registered as
 .B other
 that name a vendor tacctl reads.
+.B \-\-sources
+also tests the source addresses of the device's TACACS+ and RADIUS clients, read
+from its last pull: a Junos
+.B source\-address
+under
+.B system tacplus\-server
+or
+.BR radius\-server ,
+and the addresses of the interface an IOS
+.B ip tacacs source\-interface
+or
+.B ip radius source\-interface
+names (those of the interface facts the pull recorded; the one in a server group
+counts). Each address but the device's registered one (the host-key scan reads
+that) is connected to, at most eight per device, one after the other (devices a
+few at a time), and its ssh host key is read without logging in, as
+.B "device hostkey"
+reads it (ssh-keyscan, then tacctl's own client, with the timing scale of the
+device), and compared with the key pinned for the device. An address that does
+not answer is a warning
+.RB ( "source\-address <a> is unreachable from this server; it may be unreachable by design" )
+and so is one that presents another key
+.RB ( "source\-address <a> presents another SSH host key (<fingerprint>), the device's is <fingerprint>: the address may belong to another device" ;
+the name of the registered device that holds the address follows when there is one).
+An address that came through an IOS source interface is named
+.BR "source\-interface <name> (<a>)" .
+An error that is not "no answer" (ssh-keyscan cannot be run) is
+.B "could not be tested: <reason>"
+instead. A device with no pinned key is not compared
+.RB ( "not compared: no host key is pinned for <device>" ),
+and neither is an address that presents only a key type that is not pinned
+.RB ( "not compared: presented only rsa, pinned ed25519" );
+a loopback, link-local, unspecified, multicast or broadcast address, an
+interface whose addresses are not recorded (pull the device again), whose login
+could not see the interfaces, or whose address is learned dynamically are
+skipped with the reason, and one line sums up the device
+.RB ( "3 source addresses tested, all present the device's key" ).
+A device that cannot be tested at all says why in a scan.
+An unanswered address costs about 8 seconds (ssh-keyscan's 5 and the built-in
+client's 3), at most 8 addresses are tested per device, and 8 devices at a time;
+the timing scale of the device multiplies it. On a terminal, a line on standard
+error says which device the test is at.
+The result is a warning only: the device keeps its state, no difference is
+counted, and nothing is pinned, recorded or stored. A pull, a plan, a diff and a
+list never run it. The audit line is
+.B "sources tested=N unreachable=N mismatched=N"
+and names no address. It is the operator tier's, as the verbs are. With
+.B \-\-json
+each device has a
+.B sources
+array of
+.IR address ,
+.IR interface ,
+.I result
+.RB ( ok ,
+.BR unreachable ,
+.B mismatch
+or
+.BR skipped ),
+.IR fingerprint " and " pinned
+(a mismatch),
+.I source
+(a source left out) and
+.IR reason .
 .B \-\-json
 prints the rows for scripts, the sysName as
 .B sysname
@@ -10108,6 +10782,9 @@ Options:
 .TP
 \fB\-\-all\fR
 Check every device.
+.TP
+\fB\-\-sources\fR
+Test the AAA source addresses: read the host key, never log in.
 .TP
 \fB\-\-json\fR
 (list, show, export, check) Print JSON.
@@ -10650,9 +11327,7 @@ and kept. A section is what tacctl renders plus whatever the device holds in
 the same hierarchy, so a stray server is a difference. Each section is
 .BR ok ,
 .B "ok (+N unmanaged)"
-(the
-.B snmp
-section only; see below),
+(a section whose extras are only statements of the device's own; see below),
 .BR differs ,
 .B missing
 (nothing of tacctl's on the device; its lines are listed all the same),
@@ -10724,6 +11399,69 @@ trap groups and options, and on IOS
 .B "enable traps"
 and the rest of
 .BR snmp\-server ).
+The
+.B aaa
+section reads so when the extras are the leaves of tacctl's own server that
+the standard does not state (Junos
+.B "system tacplus\-server"
+and
+.BR "system radius\-server" :
+.BR source\-address ,
+.BR timeout ,
+.BR retry ,
+.BR routing\-instance ;
+IOS
+.B "tacacs server"
+and
+.BR "radius server" :
+.BR send\-nat\-address ,
+.BR automate\-tester ),
+the
+.BR "ip vrf forwarding" ,
+the group's own
+.BR "ip tacacs source\-interface" " or " "ip radius source\-interface"
+and the
+.B deadtime
+of the IOS server group tacctl renders, and the options of the client
+.RB ( "system tacplus\-options" ,
+.BR "system radius\-options" )
+that do not decide who can log in or what they may do.
+A leaf the standard states with another value is a difference, which the plan
+replaces in place. A TACACS+
+.B port
+is a difference: the standard states one only for a server off the default
+port, so a port on the device against a server on the default is the wrong
+one. So are the options that change the service asked for or how a password is
+checked
+.RB ( "tacplus\-options service\-name" ,
+other than
+.BR junos\-exec ,
+.BR strict\-authorization ,
+.BR "radius\-options password\-protocol" ).
+Another server or server block (a
+.BR server ,
+.B "server name"
+or
+.B server\-private
+line of tacctl's group included), another group, a method list or login list of
+another name, the login method of a line, the authentication order, a
+.B "tacacs\-server host"
+line and a deactivated statement stay differences: they decide who can log in.
+The plan's Kept line names the statements of the server
+.BR "TACACS+ server settings" ,
+.BR "RADIUS server settings" ,
+.BR "TACACS+ options" ,
+.BR "RADIUS options" ,
+.B "TACACS+ group settings"
+or
+.BR "RADIUS group settings" .
+The CONFIG column of
+.B "device list"
+and the state of
+.B "device config list"
+are the pull's record and follow the next pull of the device;
+.B \-\-differs
+recomputes at once.
 The statements are still listed, as
 .B +
 lines, with the note
@@ -10744,8 +11482,14 @@ of
 or
 .B plan
 exit 2 (the plan has no item for them, only a Kept line with their number). Only
-.B snmp
-reads this way: an extra server, login class, filter or user in
+statements that are no business of who can log in read this way (the
+.BR snmp ,
+.B system
+and
+.B netconf
+sections, and the leaves of tacctl's own server in
+.BR aaa ):
+an extra server, login class, filter or user in
 .BR aaa ,
 .B roles
 or
@@ -10766,6 +11510,78 @@ stays
 and gives each section the integer
 .B unmanaged
 (left out when 0).
+.PP
+The source of the AAA client must be on the device. A Junos
+.B source\-address
+under tacctl's
+.B "system tacplus\-server"
+or
+.BR "system radius\-server" ,
+and an IOS
+.B "ip tacacs source\-interface"
+or
+.B "ip radius source\-interface"
+(the device's own, tacctl's own, and the one under tacctl's server group), are
+the device's own only while they name something the device has: an address
+that one of its interfaces holds (a prefix length is ignored; the virtual
+address of a VRRP group counts; a deactivated interface, unit, family or
+address does not; a shut interface, Junos
+.B disable
+or IOS
+.BR shutdown ,
+still holds its address, for operational state is not checked), an interface
+that exists and carries an address (its name is the first word of the
+.B interface
+line). Otherwise the source may not be used and the AAA packets may not reach
+the server, without a word, so the statement is a difference: the
+.B aaa
+section
+.BR differs ,
+the diff lists it as a
+.B +
+line with the reason, and the plan reports an item of severity
+.B ACCESS
+(\c
+.B "source\-address 192.0.2.99 is not an address of any interface this login can see"
+or
+.BR "source\-interface Loopback9: no such interface with an address that this login can see" ),
+which the paste never fixes and
+.B \-\-converge
+never removes:
+.BR "Left alone: add the address to an interface, or change the source (not managed by tacctl)" .
+Addresses compare as addresses, not as text. An interface that takes or
+derives its address by itself makes every source possible (Junos
+.BR "family inet dhcp" ,
+.BR dhcp\-client ,
+.BR negotiate\-address ,
+.B "family inet6 dhcpv6\-client"
+and an
+.BR "address ... eui\-64" ;
+IOS
+.BR "ip address dhcp" ,
+.B negotiated
+or
+.BR pool ,
+.BR "ipv6 address dhcp" ,
+.B autoconfig
+or
+.BR "... eui\-64" ,
+and
+.BR "ip unnumbered" ).
+The global IOS source interface is not checked while tacctl's server group
+holds a source interface of its own for the protocol, which overrides it.
+Only the source of the AAA client is checked, not the sources of syslog, NTP or
+SNMP. The check assumes that the login of the pull sees every interface: a
+Junos class that hides only some of them cannot be told from one that shows
+all, and a source on a hidden interface reads as one the device does not hold.
+The addresses are read at the pull from the configuration it reads anyway and
+kept in the record
+.RB ( /var/lib/tacctl/devices\-config.json ,
+not snapshotted, rebuilt by a pull). A record made before they were recorded,
+or a pull whose login saw no interface, cannot be checked: the source stays
+the device's own, and the diff and the plan say so once
+.RB ( "their addresses are not recorded (pull the device again)" ,
+.BR "this login cannot see the interfaces" ).
 .\" BEGIN GENERATED: command device config diff
 .RS
 .PP
@@ -12719,13 +13535,48 @@ stay out of the way only because of the device's method list. Not closed: a
 Cisco console line, the Junos root account on the console, a scope that lists
 local accounts first
 .RB ( "scope aaa\-order local\-first" ),
-local ssh keys, sessions that are open (Junos devices, WTI units and Linux
-hosts keep a session until it logs in again or runs sudo) and a device that
-cannot reach the server.
+local ssh keys on a device, sessions that are open (Junos devices and WTI units
+keep a session until it logs in again or runs sudo) and a device that cannot
+reach the server.
 .B status
 names these and
 .B enable
 warns in red on a local\-first scope; nothing is changed on any device.
+.PP
+The enrolled hosts of the scope are closed by
+.BR "host sync" :
+the client script writes one sshd drop-in on each,
+.IR /etc/ssh/sshd_config.d/00\-tacctl\-0\-lockdown.conf ,
+with \fBMatch Group tac\-users,!tac\-superuser\fR, \fBPubkeyAuthentication no\fR and
+no TCP, stream\-local, X11 or agent forwarding, and
+.B enable
+ends the live sessions of the accounts it matches (\fBloginctl terminate\-user\fR
+where systemd\-logind runs, else their processes; root, the superusers, the
+provisioning login and the account the script runs from are never touched, and
+.B disable
+ends nothing). A host knows the tiers' groups, not the store's, so on the hosts
+the lockdown closes every account that is not a superuser's: a lockdown that
+does not name every group of the scope's users locks all of them there, and
+.B enable
+says so, naming them, before it asks for the scope's name. After the change on
+the devices, \fBenable\fR and \fBdisable\fR name the hosts and the
+command and, on a terminal, ask whether to sync them now;
+.B \-\-yes
+answers yes, and with no terminal nothing runs. A host that is unreachable,
+held or refused (a sshd that does not include its \fIsshd_config.d\fR) stays on
+the record's list of hosts, which
+.B status
+shows, and the next \fBhost sync\fR of it completes the change (it comes off the
+list only when its script was written for what the record still says); a host
+enrolled or synced while a lockdown stands gets the drop\-in, and one moved into
+the scope by \fBhost move\fR also has the sessions of its accounts ended. At a
+full \fBdisable\fR every enrolled host of the scope is listed, since a listed host
+may hold the file; a lockdown lifted while hosts are on the list stays as a
+lifted record with no group. A host provisioned through a tacctl account that is
+not a superuser's is refused by the sync (\fBenable\fR names it first). The exit
+status is 0 when hosts are left on the list. A restore that ends a lockdown
+writes the lifted record for the scope's hosts, and one that brings it back
+lists them as waiting.
 .PP
 While a lockdown stands, every command that names the scope, a device or
 enrolled host in it, or that is about no one scope
@@ -12748,16 +13599,21 @@ is refused, and so is
 to a release before 0.2.19, until the lockdown is lifted. The log has
 .BI "emergency lockdown enable scope=" name " groups=" list " exempt=" users " reason=\(dq" text "\(dq by=" user " locked=" n " result=ok"
 and
-.BI "emergency lockdown disable scope=" name " groups=" list " held=" duration " by=" user " result=ok" .
-The record is
-.B emergency.lockdown.<scope>.groups|since|by|reason
+.BI "emergency lockdown disable scope=" name " groups=" list " held=" duration " by=" user " result=ok" ;
+.B enable
+adds
+.BI "hosts=" n
+(the hosts of the scope), and the step that offers the sync writes
+.BI "emergency lockdown hosts action=" enable|disable " scopes=" list " hosts=" names " synced=" yes|no " pending=" names ,
+the names of hosts only. The record is
+.B emergency.lockdown.<scope>.groups|since|by|reason|pending
 in
 .IR tacctl.yaml ,
 so every snapshot holds it.
 .TP
-.BI "emergency lockdown " "scope " "enable " [ "group[,group]..." "] [\-\-tier " tier "] [\-\-reason " text "] [\-\-dry\-run]"
+.BI "emergency lockdown " "scope " "enable " [ "group[,group]..." "] [\-\-tier " tier "] [\-\-reason " text "] [\-\-dry\-run] [\-\-yes]"
 .TQ
-.BI "emergency lockdown \-\-all\-scopes enable " [ "group[,group]..." "] [\-\-tier " tier "] [\-\-reason " text "] [\-\-dry\-run]"
+.BI "emergency lockdown \-\-all\-scopes enable " [ "group[,group]..." "] [\-\-tier " tier "] [\-\-reason " text "] [\-\-dry\-run] [\-\-yes]"
 Lock the groups named (with no list every group that is not a superuser's; with
 \fB\-\-tier\fR the groups of that tier, readonly, operator or engineer) on the
 scope, or on every scope, added to what is locked already. Shows the users who
@@ -12769,12 +13625,15 @@ without a terminal the verb refuses. \fB\-\-dry\-run\fR prints the list and chan
 nothing. A superuser group, or \fB\-\-tier superuser\fR, is refused. The change is one
 write of \fItacctl.yaml\fR, one render and one restart of each backend that changed;
 a backend whose restart failed is reported as \fBNOT restarted\fR, the record and
-the files are kept, and the verb exits 1. Superuser only.
+the files are kept, and the verb exits 1. Then it names the scope's enrolled hosts with
+the command that closes them and asks whether to sync them now (\fB\-\-yes\fR
+does, without the question; with no terminal nothing runs); the hosts that are
+not settled stay on the record's list. Superuser only.
 .TP
-.BI "emergency lockdown " "scope " "disable " [ "group[,group]..." ]
+.BI "emergency lockdown " "scope " "disable " [ "group[,group]..." "] [\-\-yes]"
 .TQ
-.BI "emergency lockdown \-\-all\-scopes disable " [ "group[,group]..." ]
-Lift the lockdown for the groups named, or all of it; the rendered files come back byte for byte. Superuser only.
+.BI "emergency lockdown \-\-all\-scopes disable " [ "group[,group]..." "] [\-\-yes]"
+Lift the lockdown for the groups named, or all of it; the rendered files come back byte for byte. When the last group is lifted the hosts that hold sshd's lockdown drop\-in are named with the command that removes it and, on a terminal, asked about; \fB\-\-yes\fR syncs them without the question. A scope that has no lockdown and hosts still waiting is offered them again. Superuser only.
 .\" BEGIN GENERATED: command emergency lockdown
 .RS
 .PP
@@ -12794,6 +13653,9 @@ Options:
 \fB\-\-dry\-run\fR
 (lockdown) Print who loses access and change nothing.
 .TP
+\fB\-\-yes\fR
+Sync the scope's hosts without asking.
+.TP
 \fB\-\-json\fR
 (lockdown status) Print the lockdowns as a JSON array.
 .RE
@@ -12802,7 +13664,7 @@ Options:
 .BI "emergency lockdown status " [ scope "] [\-\-json]"
 .TQ
 .BI "emergency lockdown " scope
-The lockdowns that stand: scope, groups, since, how long, by whom, why, the users locked out, the superusers who keep access and the ways a device's local accounts stay usable. \fB\-\-json\fR prints an array with \fBlocked_users\fR and \fBexempt\fR.
+The lockdowns that stand: scope, groups, since, how long, by whom, why, the users locked out, the superusers who keep access, the enrolled hosts with those the sshd drop\-in has not reached yet and the command that completes it, and the ways a device's local accounts stay usable; a lockdown lifted on the devices whose hosts still hold the file is listed after them. \fB\-\-json\fR prints an array with \fBlocked_users\fR, \fBexempt\fR, \fBhosts\fR, \fBpending_hosts\fR and \fBlifted\fR (an element with \fB"lifted": true\fR is a lifted lockdown that waits for hosts, with no groups and no locked users: a consumer must read the field to tell it from a standing lockdown).
 .SS Server settings \fB(tacctl server)\fR
 This server's own settings: an overview
 .RB ( "server show" ),
@@ -13934,10 +14796,10 @@ device hostname, device vendor, device port, device description,
 device location, device legacy\-ssh, device ios\-syntax,
 device hostkey, device import, scope devices, device config,
 device enroll, device collect, device onboard, device sync,
-device support\-bundle, config cisco, config juniper, config wti,
-host list, host show, scope staging, scope secret, scope snmp,
-scope mgmt\-acl, device snmp, scope block, device block, scope show,
-breakglass list
+device support\-bundle, device clone, config cisco, config juniper,
+config wti, host list, host show, scope staging, scope secret,
+scope snmp, scope mgmt\-acl, device snmp, scope block, device block,
+scope show, breakglass list
 .TP
 .B superuser
 Every verb not listed above, and every verb of the tiers below.
@@ -13976,7 +14838,7 @@ Every tier may run list; ack and unack need the superuser tier.
 The Configuration, Release, Model and Serial rows (and config, release, model and serial of \-\-json) are the operator tier's; a read\-only user's output has none.
 .TP
 .B device snmp
-An engineer may read the settings of a device of their own scope (show [\-\-reveal], version, port, timeout, clients list); every setter and clear needs the superuser tier.
+An engineer may read the settings of a device of their own scope (show [\-\-reveal [<user>]], version, port, timeout, v3\-user list|default, clients list); every setter and clear needs the superuser tier.
 .TP
 .B host show
 An engineer reads what tacctl recorded of a host; \-\-check logs in to it and needs the superuser tier.
@@ -13991,7 +14853,7 @@ An engineer may read the management filter mode of a scope of their own (mode, w
 An engineer may run show for a scope of their own; set and generate need the superuser tier.
 .TP
 .B scope snmp
-An engineer may read the settings of a scope of their own (show [\-\-reveal], version, port, timeout, contact, clients list); every setter, clear and test needs the superuser tier.
+An engineer may read the settings of a scope of their own (show [\-\-reveal [<user>]], version, port, timeout, contact, v3\-user list|default, clients list); every setter, clear and test needs the superuser tier.
 .TP
 .B scope staging
 An engineer may run list for a scope of their own; the other verbs need the superuser tier.
@@ -14055,12 +14917,12 @@ are:
 .\" BEGIN GENERATED: audit-classes
 .TP
 .B "action"
-_phase, backend disable, backend enable, breakglass hold,
-breakglass release, console install, console remove, device add,
-device enroll, device notice, device remove, device rename,
-device ssh, device support\-bundle, emergency lockdown, group add,
-group edit, group remove, host enroll, host forget, host move,
-host rename, host sync, host unenroll, passwd, scope add,
+_phase, backend disable, backend enable, backup unkeep,
+breakglass hold, breakglass release, console install, console remove,
+device add, device clone, device enroll, device notice, device remove,
+device rename, device ssh, device support\-bundle, emergency lockdown,
+group add, group edit, group remove, host enroll, host forget,
+host move, host rename, host sync, host unenroll, passwd, scope add,
 scope remove, scope rename, server addresses, ssh, user add,
 user disable, user enable, user move, user passwd, user remove,
 user rename, user require\-password\-change
@@ -14071,10 +14933,10 @@ group edit (the field is tier or priv\-lvl), install, log clear,
 store rollback, uninstall, upgrade
 .TP
 .B "mixed"
-config allow, config bcrypt\-cost, config branch, config cisco,
-config deny, config devices, config juniper, config linux,
-config loglevel, config mgmt\-acl, config password\-age,
-config password\-min\-length, config render,
+backup keep, backup recover, config allow, config bcrypt\-cost,
+config branch, config cisco, config deny, config devices,
+config juniper, config linux, config loglevel, config mgmt\-acl,
+config password\-age, config password\-min\-length, config render,
 config secret\-min\-length, config snmp, config validate, config wti,
 console agent\-forwarding, console color, console forwarding,
 console idle\-timeout, console list\-max, console password\-cache,
@@ -14091,7 +14953,7 @@ scope exec\-timeout, scope mgmt\-acl, scope netconf, scope prefixes,
 scope protocols, scope radius\-group, scope secret, scope snmp,
 scope staging, scope tacacs\-group, scope timeout\-scale,
 scope vendor\-attrs, server listen, server metrics, server name,
-user scope
+user email, user scope
 .TP
 .B "mixed, auth.notice"
 config audit\-strict, config sudoers, console system\-shell, rollback,
@@ -14614,7 +15476,7 @@ and of
 .BR "scope snmp" ", " "device snmp"
 and
 .B "config snmp"
-.RB ( community " and " v3\-user ),
+.RB ( community " and " "v3\-user add" ),
 every word of
 .B passwd
 and
@@ -15676,6 +16538,10 @@ The user who began it. Set with \fBtacctl emergency lockdown\fR.
 text of 1 to 256 characters (a user name for by). Default: none (unset).
 Why, 1 to 256 characters; logged and shown, never rendered into a backend file. Removed with the lockdown by tacctl emergency lockdown disable. Set with \fBtacctl emergency lockdown\fR.
 .TP
+.B emergency.lockdown.<scope>.pending
+list of host names, at most 4096. Default: none (unset).
+The enrolled hosts sshd's lockdown drop-in is not settled on: with groups, the hosts the lockdown has not reached (their next sync writes the file and ends the live sessions); without, a lockdown lifted on the devices: every enrolled host of the scope, until its next sync removes the file. A release before 0.2.23 refuses it. Set with \fBtacctl emergency lockdown\fR or \fBtacctl host sync\fR.
+.TP
 .B netconf_scope.<scope>.state
 one of enable, disable. Default: none (unset).
 The NETCONF service of the scope's Junos devices: enable or disable (unset: leave, nothing is planned or compared). Set with \fBtacctl scope netconf\fR.
@@ -16131,16 +16997,33 @@ include it. The pinned keys of enrolled hosts are kept under
 .BR hosts: .
 .TP
 .I /etc/tacctl/snmp.yaml
-The SNMP community, or the v3 user and its passphrases, that
+The SNMP community and the pool of v3 users (a name and two passphrases each,
+and the default user) that
 .B "device add"
 and
 .B "device check"
 read a device's sysName with. Mode 0600, root only, written atomically by
 .BR "tacctl config snmp" ;
-never printed. Absent means none.
+never printed. Absent means none. Version 2 of the format holds
+.B users:
+and
+.BR default: ;
+a file of version 1 (0.2.22 and before: one v3 user) reads as a pool of one
+user that is the default. A command saves version 1 while the file fits it (the
+community and at most one v3 user, the default), and version 2 only for what
+version 1 cannot hold (a second or a non\-default user, a default that names
+another level's user, a device's file without an
+.B snmp:
+entry). A device's file follows its entry: version 2 while the device has none
+(it counts all the same), version 1 once any setting gives the device an entry
+when the content fits (a pool of two stays version 2), version 2 again if the
+entry is emptied; the command says so when it rewrites a file that way, and a
+file it cannot write is a warning that names the command that writes it again
+(exit status 1 when the file is then ignored). The same format is the scopes' and the
+devices' files below.
 .TP
 .I /etc/tacctl/snmp/\fIscope\fR.yaml
-The SNMP community, or the v3 user and its passphrases, of one scope
+The SNMP community, or the pool of v3 users and the default user, of one scope
 .RB ( "tacctl scope snmp" ):
 the credentials a device of that scope is read with, and printed in its
 walkthroughs, instead of the default's. Mode 0600 in a 0700 directory, root
@@ -16150,14 +17033,14 @@ Absent means the scope has none of its own. A scope's rename moves the file and
 its removal deletes it.
 .TP
 .I /etc/tacctl/snmp/devices/\fIname\fR.yaml
-The SNMP community, or the v3 user and its passphrases, of one registered
+The SNMP community, or the pool of v3 users and the default user, of one registered
 device
 .RB ( "tacctl device snmp" ):
 read in place of its scope's and the default's. The file is named for the
 device in lower case. Mode 0600 in a 0700 directory, root only; printed only
 by
 .BR "device snmp ... show \-\-reveal" .
-Absent means the device has none of its own. The file counts only while the
+Absent means the device has none of its own. A file of version 1 counts only while the
 device has an
 .B snmp:
 map of its own; one without (such as a rollback to 0.2.3 leaves) is ignored,
@@ -16373,6 +17256,18 @@ holds old-style
 backups, the pre-store config and files a render or
 the state migration displaced.
 .TP
+.I /etc/tacctl/backups\-kept/
+The snapshots
+.B "backup keep"
+copied out of
+.IR backups/ ,
+one directory per snapshot (mode 0700, files 0600, a file
+.I kept
+with the note, who set it and when). No retention reaches it; it is removed only by
+.BR "backup unkeep" ,
+by hand, or with the state directory by
+.BR uninstall .
+.TP
 .I /etc/tacctl/templates/
 Host-specific overrides for the device config templates
 .RI ( cisco ,
@@ -16568,7 +17463,22 @@ says whether this file is the same.
 .I ~/.local/state/tacctl/history
 The
 .B tacctl shell
-history of the invoking user: mode 0600, the newest 1000 lines, redacted.
+history of the invoking user: mode 0600, the newest 1000 lines, redacted (the value of
+.BR \-\-secret ,
+.BR \-\-hash ,
+.B \-\-password
+and
+.BR \-\-email ,
+.BR \-\-note ,
+what follows
+.B set
+in
+.BR "secret ... set" ,
+the address of
+.BR "user email" ,
+and the rest of a
+.B user
+line from its first word with an @).
 .SS TACACS+ (tacquito)
 .TP
 .I /etc/tacquito/tacquito.yaml

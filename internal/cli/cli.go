@@ -32,6 +32,10 @@ type invocation struct {
 	// registryNoted: the device registry's load notes (devreg.File.Notes)
 	// were printed in this run.
 	registryNoted bool
+	// cloneOf is the device 'device clone' copies while it writes the
+	// registry: the copy carries its SNMP settings, which an engineer's
+	// registry change may not otherwise bring in (deviceChangeScopes).
+	cloneOf string
 	// lockdownShown: the emergency lockdown notice was decided for this process.
 	lockdownShown bool
 	// pwGuardOff: the guards of a required password change (pwGuard,
@@ -40,6 +44,10 @@ type invocation struct {
 	// judges the registration it leads to, which the writes are the first
 	// half of (managed_scope.go: managedSetup).
 	pwGuardOff bool
+	// snmpStale: a device was left with a credentials file that is ignored
+	// (snmpReconcileFailed); the command that wrote the registry exits 1
+	// although it was written, the warning is printed.
+	snmpStale bool
 
 	// shellMode: completion is for the tacctl shell's lists (live names
 	// with descriptions; flags only after a '-').
@@ -162,7 +170,11 @@ func runWith(ctx context.Context, a *app.App, build BuildInfo, hk *hooks) (err e
 	}
 	return inv.dispatch(func() error {
 		cmd, rest := resolve(root, a.Args)
-		return cmd.RunE(cmd, rest)
+		err := cmd.RunE(cmd, rest)
+		if err == nil && inv.snmpStale {
+			err = exit(1)
+		}
+		return err
 	})
 }
 

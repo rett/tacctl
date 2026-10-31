@@ -3,8 +3,9 @@ package plan
 // The device's own statements in the report. An extra statement that the
 // comparison calls unmanaged (devconf.DiffLine.Unmanaged: another SNMP
 // community, a trap group, the SNMP name, a syslog host the system block does
-// not name, ...) is not an irregularity: the section reads ok, the plan keeps
-// the statement by rule, and 'device config list' shows 'snmp +N unmanaged'.
+// not name, a leaf of tacctl's server block that tacctl does not render, ...)
+// is not an irregularity: the section reads ok, the plan keeps the statement
+// by rule, and 'device config list' shows 'snmp +N unmanaged'.
 // The report therefore has no item for it. It says how many there are, per
 // section, in one line, and that number is the comparison's own
 // (SectionResult.Unmanaged), so the two outputs cannot disagree.
@@ -73,7 +74,8 @@ func ownKind(vendor, section, stem string) string {
 				return "NETCONF service"
 			}
 			if k, ok := map[string]string{"syslog": "syslog", "ntp": "NTP", "domain-name": "domain name", "domain-search": "search domains",
-				"name-server": "name servers", "time-zone": "time zone"}[t[1]]; ok {
+				"name-server": "name servers", "time-zone": "time zone", "tacplus-server": "TACACS+ server settings",
+				"radius-server": "RADIUS server settings", "tacplus-options": "TACACS+ options", "radius-options": "RADIUS options"}[t[1]]; ok {
 				return k
 			}
 			return t[1]
@@ -104,6 +106,17 @@ func ownKind(vendor, section, stem string) string {
 		return ""
 	}
 	switch f[0] {
+	case "aaa":
+		// a leaf of the server group tacctl renders (its vrf, its source
+		// interface, its dead time)
+		if len(f) > 3 && f[1] == "group" && f[2] == "server" {
+			return map[string]string{"tacacs+": "TACACS+", "radius": "RADIUS"}[f[3]] + " group settings"
+		}
+	case "tacacs", "radius":
+		// a leaf of the server block tacctl renders (a port, a vrf, ...)
+		if len(f) > 1 && f[1] == "server" {
+			return map[string]string{"tacacs": "TACACS+", "radius": "RADIUS"}[f[0]] + " server settings"
+		}
 	case "snmp-server":
 		if len(f) < 2 {
 			return "SNMP"

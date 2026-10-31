@@ -21,6 +21,7 @@ import (
 	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/hosts"
+	"github.com/rett/tacctl/internal/paths"
 )
 
 // hostForgetUsage is the usage line of 'host forget'.
@@ -196,6 +197,15 @@ func (inv *invocation) hostForget(args []string) error {
 			return err
 		}
 	}
+	holdsDropIn := false
+	if registered {
+		// a host the lockdown had reached keeps sshd's drop-in: nothing is sent to it
+		// (a host on the list of a lockdown that was lifted still has it too)
+		if l := inv.lockdownRecordOf(entry.Scope); l != nil && (len(l.Groups) > 0) != slices.Contains(l.Pending, name) {
+			holdsDropIn = true
+		}
+		inv.lockdownHostGone(name)
+	}
 	if pieces.pin {
 		// A leftover pin is found again by its own spelling, which may not
 		// be the registry's.
@@ -227,6 +237,9 @@ func (inv *invocation) hostForget(args []string) error {
 
 	inv.verbResult(audit.Info, forgetBase, "")
 	a.Out.InfoE("Host '" + name + "' forgotten. Nothing was sent to the host.")
+	if holdsDropIn {
+		a.Out.WarnE(name + " keeps sshd's emergency-lockdown drop-in: it is removed by the removal script (tacctl config linux remove-script) or by deleting " + paths.SSHDLockdownDropInName + " from its sshd_config.d.")
+	}
 	inv.echo("")
 	inv.hostStagingHints(pieces.staging)
 	// This server's own scope is still used by its PAM setup, so the hint

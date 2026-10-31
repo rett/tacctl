@@ -1209,6 +1209,86 @@ func TestUninstallKeepsWhatItIsAskedTo(t *testing.T) {
 		"    - Config backups saved to: "+archive+"\n    - RADIUS logs saved to: /root/r.tar.gz\n")
 }
 
+// The snapshots 'backup keep' copied out of backups/ are backups too: they
+// are archived with it, and only when there are any.
+func TestUninstallArchivesTheKeptSnapshots(t *testing.T) {
+	o := newOhost(t)
+	o.installed()
+	o.enableBoth()
+	if err := os.MkdirAll(filepath.Join(o.p.KeptDir, "20261001_000000_000"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	o.stdin = "y\ny\nn\ny\n"
+	if code := uninstall(o); code != 0 {
+		t.Fatalf("exit %d\n%s", code, o.stderr)
+	}
+	archive := o.p.ArchiveDir + "/tacquito-backups-20261003_123456.tar.gz"
+	if !o.run.Called("tar", "czf", archive, "-C", o.p.StateDir, "backups/", "backups-kept/") {
+		t.Errorf("calls %v", o.run.Argvs())
+	}
+}
+
+// Each member is archived when it exists, and tar runs when either does: kept
+// snapshots with no backups/ at all, and with the backups of a host that never
+// ran the state migration under the daemon's directory.
+func TestUninstallArchivesKeptSnapshotsWithoutTheStateBackups(t *testing.T) {
+	archive := func(o *ohost) string { return o.p.ArchiveDir + "/tacquito-backups-20261003_123456.tar.gz" }
+	t.Run("no backups/", func(t *testing.T) {
+		o := newOhost(t)
+		o.installed()
+		o.enableBoth()
+		if err := os.RemoveAll(o.p.BackupDir); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(o.p.KeptDir, "20261001_000000_000"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		o.stdin = "y\ny\nn\ny\n"
+		if code := uninstall(o); code != 0 {
+			t.Fatalf("exit %d\n%s", code, o.stderr)
+		}
+		if !o.run.Called("tar", "czf", archive(o), "-C", o.p.StateDir, "backups-kept/") {
+			t.Errorf("calls %v", o.run.Argvs())
+		}
+	})
+	t.Run("backups under the daemon's directory", func(t *testing.T) {
+		o := newOhost(t)
+		o.installed()
+		o.enableBoth()
+		if err := os.RemoveAll(o.p.BackupDir); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(o.p.Etc, "backups"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(o.p.KeptDir, "20261001_000000_000"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		o.stdin = "y\ny\nn\ny\n"
+		if code := uninstall(o); code != 0 {
+			t.Fatalf("exit %d\n%s", code, o.stderr)
+		}
+		if !o.run.Called("tar", "czf", archive(o), "-C", o.p.Etc, "backups/", "-C", o.p.StateDir, "backups-kept/") {
+			t.Errorf("calls %v", o.run.Argvs())
+		}
+	})
+	t.Run("nothing to keep", func(t *testing.T) {
+		o := newOhost(t)
+		o.installed()
+		o.enableBoth()
+		if err := os.RemoveAll(o.p.BackupDir); err != nil {
+			t.Fatal(err)
+		}
+		o.stdin = "y\ny\nn\ny\n"
+		if code := uninstall(o); code != 0 {
+			t.Fatalf("exit %d\n%s", code, o.stderr)
+		}
+		if o.run.Called("tar") {
+			t.Errorf("tar ran: %v", o.run.Argvs())
+		}
+	})
+}
+
 // uninstall_remove_access (install_seed.bats): both sudoers drop-ins and
 // the Linux host data go, with the data's parent when that leaves it
 // empty; nothing to remove is fine, and a shared parent stays.

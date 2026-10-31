@@ -287,6 +287,10 @@ var Rules = []Rule{
 	{Tier: Engineer, Cmd: "device", Sub: "onboard", Sudoers: []string{"device onboard *"}},
 	{Tier: Engineer, Cmd: "device", Sub: "sync", Sudoers: []string{"device sync *"}},
 	{Tier: Engineer, Cmd: "device", Sub: "support-bundle", Sudoers: []string{"device support-bundle *"}},
+	// 'device clone' (0.2.23, D307) registers a copy of a device of their own
+	// scopes at a bench address of the same scope, its SNMP credentials
+	// included (which they can read).
+	{Tier: Engineer, Cmd: "device", Sub: "clone", Sudoers: []string{"device clone *"}},
 	{Tier: Engineer, Cmd: "config", Sub: "cisco", Sudoers: []string{"config cisco", "config cisco *"},
 		Note: "config cisco: an engineer may print the walkthrough and read source-interface for a scope of their own; setting or unsetting source-interface needs the superuser tier."},
 	{Tier: Engineer, Cmd: "config", Sub: "juniper", Sudoers: []string{"config juniper", "config juniper *"}},
@@ -304,7 +308,7 @@ var Rules = []Rule{
 	// The scope's SNMP settings: an engineer reads their own scopes' ('show
 	// [--reveal]', D45); the verb refuses every setter, clear and test.
 	{Tier: Engineer, Cmd: "scope", Sub: "snmp", Sudoers: []string{"scope snmp *"},
-		Note: "scope snmp: an engineer may read the settings of a scope of their own (show [--reveal], version, port, timeout, contact, clients list); every setter, clear and test needs the superuser tier."},
+		Note: "scope snmp: an engineer may read the settings of a scope of their own (show [--reveal [<user>]], version, port, timeout, contact, v3-user list|default, clients list); every setter, clear and test needs the superuser tier."},
 	// The mode of a scope's Junos management filter (0.2.20): an engineer reads
 	// it for a scope of their own ('scope mgmt-acl <scope> mode'). Every other
 	// verb of the family (the permit list, the ACL and filter names, setting
@@ -321,7 +325,7 @@ var Rules = []Rule{
 	// plain reads, each reveal logged); the verbs that set or clear are the
 	// superuser's (the verb sees to that, as 'scope snmp' does).
 	{Tier: Engineer, Cmd: "device", Sub: "snmp", Sudoers: []string{"device snmp *"},
-		Note: "device snmp: an engineer may read the settings of a device of their own scope (show [--reveal], version, port, timeout, clients list); every setter and clear needs the superuser tier."},
+		Note: "device snmp: an engineer may read the settings of a device of their own scope (show [--reveal [<user>]], version, port, timeout, v3-user list|default, clients list); every setter and clear needs the superuser tier."},
 	// 'scope block' and 'device block' (0.2.7): the engineer reads the
 	// configuration blocks of their own scopes and of the devices there
 	// ('list', 'show' elided or --reveal, logged, 'check'); 'set' and

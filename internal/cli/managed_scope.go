@@ -138,7 +138,7 @@ func (inv *invocation) managedCleanup(fn func(*store.Store) error) func(*store.S
 // sameUser reports whether a store change left the user's record as it was.
 func sameUser(a, b *model.User) bool {
 	return a.Group == b.Group && slices.Equal(a.Scopes, b.Scopes) && a.Hash == b.Hash && a.Disabled == b.Disabled &&
-		a.PasswordChanged == b.PasswordChanged && a.AccountingSink == b.AccountingSink && a.PasswordChangeRequired == b.PasswordChangeRequired
+		a.PasswordChanged == b.PasswordChanged && a.AccountingSink == b.AccountingSink && a.PasswordChangeRequired == b.PasswordChangeRequired && a.Email == b.Email
 }
 
 func joinComma(list []string) string {

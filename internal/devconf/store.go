@@ -217,8 +217,13 @@ type Record struct {
 	// which 'device enroll' compares with the name registered. Empty for a
 	// WTI unit, a device that states none, a Junos record made before 0.2.9
 	// and an IOS record made before 0.2.17.
-	Hostname string                   `json:"hostname,omitempty"`
-	Sections map[string]SectionRecord `json:"sections,omitempty"`
+	Hostname string `json:"hostname,omitempty"`
+	// Interfaces are the addresses of the device's interfaces as the last
+	// good pull read them (0.2.23, D314), for the check of the AAA source;
+	// nil for a record made before 0.2.23 and for a WTI unit. Derived data:
+	// an older release's decoder ignores the key, and a pull rebuilds it.
+	Interfaces *InterfaceFacts          `json:"interfaces,omitempty"`
+	Sections   map[string]SectionRecord `json:"sections,omitempty"`
 	// Unit is what the last good pull of a WTI unit saw beside its sections;
 	// nil for every other vendor and for a record made before 0.2.7.
 	Unit    *UnitFacts `json:"unit,omitempty"`
@@ -283,6 +288,7 @@ func (r *Records) Put(name string, rec Record) {
 		u := *rec.Unit
 		c.Unit = &u
 	}
+	c.Interfaces = rec.Interfaces.Clone()
 	if rec.Sections != nil {
 		c.Sections = make(map[string]SectionRecord, len(rec.Sections))
 		for k, v := range rec.Sections {

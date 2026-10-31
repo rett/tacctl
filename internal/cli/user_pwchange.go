@@ -149,53 +149,25 @@ func (inv *invocation) reportRequired(m *model.Model, names []string) {
 	}
 }
 
-// reportNeedsSync tells that the accounts of names exist on this server only
-// after the next 'host sync' of it, so the users cannot log in to change the
-// password before that: reason says why the account is not there yet.
-func (inv *invocation) reportNeedsSync(names []string, reason string) {
-	e, ok, _ := inv.localHost()
-	if !ok || len(names) == 0 {
-		return
-	}
-	who := "'" + names[0] + "'"
-	if len(names) > 1 {
-		who = "'" + strings.Join(names, "', '") + "'"
-	}
-	inv.app.Out.WarnE(who + " must change the password, but " + reason + ", so it cannot log in to this server to do it until the sync: tacctl host sync " + e.Name)
-}
-
-// reportHostsSync tells what the next sync of the other enrolled hosts does
+// noticeFlagHosts tells what the next sync of the other enrolled hosts does
 // with a change of the flag of names (users the flag holds, or held until
 // now): every host but this server expires the account of a user who must
 // change the password and opens it again once the change is made, at its next
-// 'host sync' (linuxAccounts), and until then the host is as it was. Nothing
-// is said when no such host has one of the users in its scope.
-func (inv *invocation) reportHostsSync(m *model.Model, names []string, required bool) {
-	reg, err := inv.registry()
-	if err != nil || len(names) == 0 {
-		return
-	}
-	n := 0
-	for _, e := range reg.Entries() {
-		if e.Target == hosts.Local {
-			continue
-		}
-		for _, name := range names {
-			if u := m.User(name); u != nil && hosts.LinuxName(name) && slices.Contains(u.Scopes, e.Scope) {
-				n++
-				break
-			}
-		}
-	}
-	if n == 0 {
-		return
+// 'host sync' (linuxAccounts), and until then the host is as it was. before is
+// the model before the change. Nothing is said when no such host has one of
+// the users in its scope. With offer, a terminal is asked whether to sync the
+// hosts now (noticeHosts).
+func (inv *invocation) noticeFlagHosts(before *model.Model, names []string, required, offer bool) error {
+	if len(names) == 0 {
+		return nil
 	}
 	who := "'" + strings.Join(names, "', '") + "'"
-	if required {
-		inv.app.Out.WarnE(who + " can still log in to " + hostsText(n) + " until each host's next sync, which expires the account there: tacctl host sync --all")
-		return
-	}
-	inv.app.Out.InfoE(who + " can log in to " + hostsText(n) + " again after each host's next sync: tacctl host sync --all")
+	return inv.noticeHosts(inv.otherHostsWith(before, names...), func(h string) string {
+		if required {
+			return who + " can still log in to " + h + " until each host's next sync, which expires the account there"
+		}
+		return who + " can log in to " + h + " again after each host's next sync"
+	}, offer)
 }
 
 // detailPwChange is the audit line of a flag set or cleared: for whom, by
@@ -240,6 +212,10 @@ func (inv *invocation) userRequirePasswordChange(args []string) error {
 		}
 	}
 	if state != "on" && state != "off" {
+		if strings.Contains(state, "@") {
+			// an email address typed in the place of the state is not repeated
+			return inv.usageErr("The state is neither on nor off.", usage)
+		}
 		return inv.usageErr("'"+state+"' is neither on nor off.", usage)
 	}
 	if err := inv.requireStore(); err != nil {
@@ -314,27 +290,52 @@ func (inv *invocation) userRequirePasswordChange(args []string) error {
 		for _, s := range skipped {
 			out.WarnE("Skipped " + s + ".")
 		}
+		result := "Flagged " + strconv.Itoa(len(change))
 		if len(change) > 0 {
-			out.InfoE("Password change required of " + strings.Join(change, ", ") + ": each can log in to tacctl only, and no device accepts the user, until the password is changed.")
+			result += " (" + strings.Join(change, ", ") + ")"
 		}
-		out.InfoE("Flagged " + strconv.Itoa(len(change)) + ", skipped " + strconv.Itoa(len(skipped)) + skippedSuperusers(superusers, len(skipped)) + ", already required " + strconv.Itoa(already) + ".")
+		result += ", skipped " + strconv.Itoa(len(skipped)) + skippedSuperusers(superusers, len(skipped)) + ", already required " + strconv.Itoa(already)
+		if len(change) > 0 {
+			result += ": each can log in to tacctl only, and no device accepts the user, until the password is changed"
+		}
+		out.InfoE(result + ".")
 		inv.reportRequired(m, change)
-		inv.reportHostsSync(m, change, true)
-	default:
-		if len(change) > 0 {
-			out.InfoE("Password change no longer required of " + strings.Join(change, ", ") + ".")
+		if err := inv.syncIfChanged(change); err != nil {
+			return err
 		}
-		out.InfoE("Cleared " + strconv.Itoa(len(change)) + ", not required " + strconv.Itoa(already) + ".")
+		if err := inv.noticeFlagHosts(m, change, true, true); err != nil {
+			return err
+		}
+	default:
+		result := "Cleared " + strconv.Itoa(len(change))
+		if len(change) > 0 {
+			result += " (" + strings.Join(change, ", ") + ")"
+		}
+		out.InfoE(result + ", not required " + strconv.Itoa(already) + ".")
 		var held []string
 		for _, n := range change {
 			if pwchange.Subject(a.Conf(), m, m.User(n)) {
 				held = append(held, n)
 			}
 		}
-		inv.reportHostsSync(m, held, false)
+		if err := inv.syncIfChanged(change); err != nil {
+			return err
+		}
+		if err := inv.noticeFlagHosts(m, held, false, true); err != nil {
+			return err
+		}
 	}
 	inv.echo("")
 	return nil
+}
+
+// syncIfChanged syncs this server's accounts when the verb flagged or cleared
+// some users (once, for all of them).
+func (inv *invocation) syncIfChanged(change []string) error {
+	if len(change) == 0 {
+		return nil
+	}
+	return inv.syncOwnAccounts(change...)
 }
 
 // skippedSuperusers is " (n superusers)" after the count of the skipped when

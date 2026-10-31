@@ -43,7 +43,7 @@ func planRollback0218(p *RollbackPlan) (*RollbackPlan, error) {
 	in := p.in
 	pt := in.Paths
 	p.keys = in.Conf.RollbackKeys0218()
-	tiers := p.tiersPlan(tier.Sudoers0218(), tier.Sudoers(), tier.Sudoers0219(), tier.Sudoers0218())
+	tiers := p.tiersPlan(tier.Sudoers0218(), tier.Sudoers(), tier.Sudoers0222(), tier.Sudoers0219(), tier.Sudoers0218())
 	p.sudoers = []sudoersPlan{tiers}
 	p.Steps = append(p.Steps, p.lockdownKeysStep(RollbackTarget0218), p.tiersStep(RollbackTarget0218, tiers,
 		"the engineer's rules of 'device config apply', 'device enroll', 'device collect', 'device onboard', 'device sync' and 'device support-bundle' are taken out"),
@@ -123,6 +123,8 @@ func (p *RollbackPlan) lockdownKeysStep(target string) RollbackStep {
 			s.Lines = []string{"nothing to remove (no server address, server name or timeout scale is set)"}
 		case RollbackTarget0221:
 			s.Lines = []string{"nothing to remove (no server name or timeout scale is set)"}
+		case RollbackTarget0222:
+			s.Lines = []string{"nothing to remove (every key of tacctl.yaml is one " + target + " knows)"}
 		}
 		return s
 	}

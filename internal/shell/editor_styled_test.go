@@ -24,7 +24,7 @@ func stripped(t *testing.T, s string) string {
 // name bold; the description is plain.
 func TestListingStyled(t *testing.T) {
 	cands := []Candidate{
-		{Word: "device", Label: "device [<name>]", Desc: "x", Command: true, Fixed: true},
+		{Word: "device", Label: "device [<name>]", Desc: "x", Fixed: true},
 		{Word: "bbb", Label: "bbb [--long]", Desc: "y", Fixed: true},
 		{Word: "--all", Desc: "z", Fixed: true},
 		{Word: "alice", Desc: "operator", Live: true},
@@ -64,7 +64,7 @@ func TestListingStyled(t *testing.T) {
 // words, whatever the colour.
 func TestColumnsStyled(t *testing.T) {
 	cands := []Candidate{
-		{Word: "device", Command: true, Fixed: true}, {Word: "alice", Live: true}, {Word: "list", Fixed: true},
+		{Word: "device", Fixed: true}, {Word: "alice", Live: true}, {Word: "list", Fixed: true},
 		{Word: "bob", Live: true}, {Word: "--all", Fixed: true}, {Word: "quit", Unlisted: true, Fixed: true},
 	}
 	for _, w := range []int{20, 40, 60, 120} {
@@ -344,7 +344,7 @@ func TestWrapWordsKeepsTheBlanks(t *testing.T) {
 // the list of '?' and in Tab's columns: the same sequence, teal; only a live
 // name differs.
 func TestCommandNameAndSubCommandSameStyle(t *testing.T) {
-	root := Candidate{Word: "device", Label: "device [<name>]", Desc: "x", Command: true, Fixed: true}
+	root := Candidate{Word: "device", Label: "device [<name>]", Desc: "x", Fixed: true}
 	sub := Candidate{Word: "list", Label: "list [<name>]", Desc: "x", Fixed: true}
 	live := Candidate{Word: "alice", Desc: "x", Live: true}
 	if root.style() != sub.style() || root.style() != ui.Teal {

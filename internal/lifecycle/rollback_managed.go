@@ -121,7 +121,7 @@ func (p *RollbackPlan) applyManagedScope() (string, error) {
 	return sf + ": added scope " + pwchange.ManagedScope + " to " + strconv.Itoa(len(added)) + " " + plural(len(added), "user", "users"), nil
 }
 
-// planRollback0220 completes p for the release before this one: 0.2.20 reads
+// planRollback0220 completes p for the release before 0.2.21: 0.2.20 reads
 // every file this release writes but the server address of tacctl.yaml
 // (server.addresses, conf.Added0221), which it refuses, so the plan removes
 // that key, adds the managed scope's step (every target) and leaves the
@@ -129,8 +129,10 @@ func (p *RollbackPlan) applyManagedScope() (string, error) {
 func planRollback0220(p *RollbackPlan) (*RollbackPlan, error) {
 	pt := p.in.Paths
 	p.keys = p.in.Conf.RollbackKeys0220()
-	p.Steps = append(p.Steps, p.lockdownKeysStep(RollbackTarget0220), RollbackStep{Title: "leave every other file untouched",
-		Lines: []string{pt.StoreFile + ", " + pt.DevicesFile + ", " + pt.ConsoleFile + ", the sudoers drop-ins, the SNMP credentials, the blocks, the apply state directory, the host registry and the rendered backend files are in formats " + RollbackTarget0220 + " reads;",
+	p.Steps = append(p.Steps, p.lockdownKeysStep(RollbackTarget0220))
+	p.Steps = append(p.Steps, p.tiers0222Step(RollbackTarget0220)...)
+	p.Steps = append(p.Steps, RollbackStep{Title: "leave every other file untouched",
+		Lines: []string{pt.StoreFile + ", " + pt.DevicesFile + ", " + pt.ConsoleFile + ", the group sudoers drop-in, the SNMP credentials, the blocks, the apply state directory, the host registry and the rendered backend files are in formats " + RollbackTarget0220 + " reads;",
 			"nothing is re-rendered or restarted, and no device is contacted"}})
 	if p.in.WithHosts {
 		p.Steps = append(p.Steps, RollbackStep{Title: "the enrolled Linux hosts (--hosts)",

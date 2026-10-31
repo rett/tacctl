@@ -159,6 +159,29 @@ func (inv *invocation) hostCheckRun(ctx context.Context, he *hosts.Env, e hosts.
 	default:
 		diff("the host ran client script protocol "+st.Protocol+"; this tacctl writes "+hosts.ScriptProtocol, sync)
 	}
+	// sshd's lockdown drop-in against the scope's lockdown.
+	locked := inv.lockdownState(e.Scope, e.Name) != ""
+	switch {
+	case st.Lockdown == "unreloaded":
+		diff("the host's lockdown drop-in was removed but sshd was not told to reload it, so it may still enforce the lockdown", sync)
+	case st.Lockdown == "nosshd" && locked:
+		// a sync cannot change it: there is nothing to close
+		c.Notes = append(c.Notes, "Scope "+e.Scope+" is locked down; "+e.Name+" has no sshd, so there is no ssh login to close and the lockdown writes no drop-in there.")
+	case st.Lockdown == "noinclude" && locked:
+		diff("scope "+e.Scope+" is locked down, but the host's sshd_config does not include sshd_config.d, so the lockdown cannot be applied (key logins and forwarding are open there)", "add the Include line (OpenSSH 8.2 or later) or close those logins another way, then: "+sync)
+	case st.Lockdown == "absent" && locked:
+		if login, _, isUser, perr := inv.provisioningLogin(e.Target); perr == nil && isUser && e.Target != hosts.Local {
+			if m, merr := inv.model(); merr == nil {
+				if u := m.User(login); u != nil && !inv.groupIsSuperuser(m, u.Group) {
+					diff("scope "+e.Scope+" is locked down, but the host is provisioned through '"+login+"', a tacctl user that is not a superuser, so the sync refuses to lock it down (it would close its own key)", "enroll it through a local account: tacctl host enroll <account>@<host> --name "+e.Name)
+					break
+				}
+			}
+		}
+		diff("scope "+e.Scope+" is locked down, but the host has no lockdown drop-in (key logins and forwarding are open there)", sync)
+	case st.Lockdown == "present" && !locked:
+		diff("the host has sshd's lockdown drop-in, but scope "+e.Scope+" is not locked down", sync)
+	}
 	// The host's keys against the pins (this server is not reached over ssh).
 	if !local {
 		f, err := devreg.Load(a.Paths.DevicesFile)

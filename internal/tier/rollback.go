@@ -20,11 +20,26 @@ import (
 // Sudoers023 is the per-tier drop-in 0.2.3 wrote.
 func Sudoers023() string { return sudoers023 }
 
-// rules0219 are the rules 0.2.19 had: this release's without the engineer's
-// row of 'scope mgmt-acl' and the operator's rows of 'console system-shell'
-// and 'console password-cache' (0.2.20).
-func rules0219() []Rule {
+// rules0222 are the rules 0.2.20 to 0.2.22 had: this release's without the
+// engineer's row of 'device clone' (0.2.23).
+func rules0222() []Rule {
 	return slices.DeleteFunc(slices.Clone(Rules), func(r Rule) bool {
+		return r.Tier == Engineer && r.Cmd == "device" && r.Sub == "clone"
+	})
+}
+
+// Sudoers0222 is the per-tier drop-in 0.2.20 to 0.2.22 wrote: this release's
+// rules without the engineer's row of 'device clone' (0.2.23). It is an older
+// text of this tool's: every target that rewrites the drop-in recognises it,
+// as it does this release's, and puts back its own. It is derived (a rule that
+// moves on again makes its own frozen copy).
+func Sudoers0222() string { return sudoersFrom(rules0222()) }
+
+// rules0219 are the rules 0.2.19 had: this release's without the engineer's
+// rows of 'device clone' (0.2.23) and 'scope mgmt-acl' and the operator's rows
+// of 'console system-shell' and 'console password-cache' (0.2.20).
+func rules0219() []Rule {
+	return slices.DeleteFunc(rules0222(), func(r Rule) bool {
 		return (r.Tier == Engineer && r.Cmd == "scope" && r.Sub == "mgmt-acl") ||
 			(r.Tier == Operator && r.Cmd == "console" && (r.Sub == "system-shell" || r.Sub == "password-cache"))
 	})

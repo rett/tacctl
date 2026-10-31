@@ -89,40 +89,111 @@ the other hosts. Before upgrading, rename it (`tacctl scope rename tacctl
 
 ## Rolling back
 
-`tacctl rollback` takes eight targets: `0.2.21`, the release before this
-one, `0.2.20`, `0.2.19`, `0.2.18`, `0.2.17`, `0.2.16`, `0.2.9` and `0.2.3`. All are the
-dry run described below until `--apply` is given, all refuse while an apply
-is not settled, all but `0.2.21` and `0.2.20` while a user name has a period, all but
-`0.2.21`, `0.2.20` and `0.2.19` while an emergency
-lockdown locks a group, and each release's tool prepares the state for the
-releases it knows. `0.2.4` to `0.2.8` and `0.2.2` and older are refused with
-the way there (one release at a time, or `tacctl backup restore` of a snapshot
-of the time); `0.2.10` to `0.2.15`, this release and any other word are
-refused with the targets named.
+`tacctl rollback` takes nine targets: `0.2.22`, the release before this
+one, `0.2.21`, `0.2.20`, `0.2.19`, `0.2.18`, `0.2.17`, `0.2.16`, `0.2.9` and
+`0.2.3`. All are the dry run described below until `--apply` is given, all
+refuse while an apply is not settled, all but `0.2.22`, `0.2.21` and `0.2.20`
+while a user name has a period, all but `0.2.22`, `0.2.21`, `0.2.20` and
+`0.2.19` while an emergency lockdown locks a group, all while an emergency
+lockdown has enrolled hosts, and each release's tool prepares the state for
+the releases it knows. `0.2.4` to `0.2.8` and `0.2.2`
+and older are refused with the way there (one release at a time, or `tacctl
+backup restore` of a snapshot of the time); `0.2.10` to `0.2.15`, this
+release and any other word are refused with the targets named.
 
 **The drop-in comment (0.2.22).** The comment at the top of the generated tacquito drop-in names this release's commands. An older release's `config validate` reports the rendered config out of date until its first render rewrites the drop-in, which restarts tacquito once; a rollback converts and restarts nothing.
 
 **Every user's login to this server (0.2.21).** This release lets every user
 log in to the tacctl server and its console, unless disabled or of tier none,
 without the server's scope in the user's own scopes. Every older release
-needs it there (0.2.21 has it itself), so every target but `0.2.21` adds the scope of this server's own login
-(`tacctl`) to the scopes of each user who logs in to the server and lacks it
-(the plan counts and names them; a warning, so `--apply` needs `--yes`), after
-a snapshot. Every target removes the server name `server.name` (0.2.22,
-`tacctl server name`) from `tacctl.yaml`, and every target but `0.2.21` the
-server address `server.addresses` too; no older release knows them. The host
-registry keeps the address in this server's entry, which the older release
-reads, and the console shows the host name again.
+needs it there (0.2.21 and 0.2.22 have it themselves), so every target but
+`0.2.22` and `0.2.21` adds the scope of this server's own login (`tacctl`) to
+the scopes of each user who logs in to the server and lacks it (the plan
+counts and names them; a warning, so `--apply` needs `--yes`), after a
+snapshot. Every target but `0.2.22` removes the server name `server.name`
+(0.2.22, `tacctl server name`) from `tacctl.yaml`, and every target but
+`0.2.22` and `0.2.21` the server address `server.addresses` too; no older
+release knows them. The host registry keeps the address in this server's
+entry, which the older release reads, and the console shows the host name
+again.
 
-**The timing scale (0.2.22).** Every target also removes the timing scale
-(`tacctl device timeout-scale`, `scope timeout-scale`, `config devices
-timeout-scale`): `device.timeout_scale` and `timeout_scale_scope.<scope>` from
-`tacctl.yaml`, and the `timeout_scale` of each device from `devices.yaml`,
-because no older release knows the keys (an older parser refuses a device with
-a key it does not know). The plan lists each key and each device and says so in
-a note, not a warning: the older release connects to every device with its
-fixed timings again, which a slow or distant device may not meet. The values
-stay in the snapshot `--apply` takes first.
+**The timing scale (0.2.22).** Every target but `0.2.22` also removes the
+timing scale (`tacctl device timeout-scale`, `scope timeout-scale`, `config
+devices timeout-scale`): `device.timeout_scale` and
+`timeout_scale_scope.<scope>` from `tacctl.yaml`, and the `timeout_scale` of
+each device from `devices.yaml`, because no older release knows the keys (an
+older parser refuses a device with a key it does not know). The plan lists
+each key and each device and says so in a note, not a warning: the older
+release connects to every device with its fixed timings again, which a slow or
+distant device may not meet. The values stay in the snapshot `--apply` takes
+first.
+
+**Email addresses (0.2.23).** `users.<name>.email` (`tacctl user email`, `user
+add --email`) is a key no older release reads: every target, the ones that
+return early and `0.2.22` included, removes it from `store.yaml` after a
+snapshot. The plan names the users who have an address (never the address), in
+a warning, so `--apply` needs `--yes`; a rollback of a store without an
+address is as it was. The older release prunes `backups/` by its own retention
+(the newest 30) and knows no marker, so `--apply` also keeps the snapshot
+(`tacctl backup keep`: a copy in `/etc/tacctl/backups-kept/<snapshot>/`, with
+a note that says what was dropped, never an address or a name), where no
+retention reaches it, and names it with the command that puts the addresses
+back once this release is installed again: `tacctl backup recover <snapshot>
+--only email`. `backup unkeep <snapshot>` removes the kept copy after that. A
+store that cannot be read refuses every target (an address that cannot be seen
+is not hidden). Until the older release is installed, do not run `tacctl user
+email` or `tacctl user add --email`; if one ran, run the rollback again.
+
+**SNMPv3 users (0.2.23).** The credential files `snmp.yaml`,
+`snmp/<scope>.yaml` and `snmp/devices/<device>.yaml` stay version 1, which
+every release reads, while they hold only a community and at most one v3 user
+that is the default, and nothing rewrites them at the upgrade (an older file
+is read as a pool of one user that is the default). A command of this release
+saves version 2 (`users:` and `default:`) only for what version 1 cannot hold:
+a second or a non-default user, a default that names another level's user, and
+the file of a device with no `snmp:` entry in `devices.yaml` (the older
+releases ignore a version 1 file there). A device's file follows its entry: it
+is saved version 2 while the device has no entry, written version 1 when an
+entry appears (any setting of the device) and the content fits version 1 (a
+pool of two stays version 2), and version 2 again when the entry is gone. No
+older release reads version 2 ("unsupported version"), so every target writes
+each version 2 file in version 1 again, after the snapshot `--apply` takes
+first; a state with version 1 files only has nothing of this to convert.
+Version 1 holds one v3 user for each level: the default user stays and the
+rest are dropped. The plan names the levels and counts the users, never a name
+or a passphrase, in a warning, so `--apply` needs `--yes`; a device whose
+default names a user of its scope's or the config's pool loses the choice (it
+reads with its scope's or the config's default user again), and a device with
+no `snmp:` entry in `devices.yaml` loses its credentials file whole: the older
+releases ignore the credentials of such a device, so a file in version 1 would
+hand it to another level's credentials unseen. A level with several users and
+none that is its own default has no answer to which one stays, and the
+rollback is refused, naming the level and the command (`v3-user default
+<user>`). A rollback that drops no user only rewrites the files and asks
+nothing. As for the email addresses, the snapshot is kept in
+`/etc/tacctl/backups-kept/` with a note that carries the counts, and `tacctl
+backup recover <snapshot> --only snmp-users` puts the dropped users back once
+this release is installed again (it skips a scope or device that is gone, a
+name another pool holds now, and never overwrites a default). Until the older
+release is installed, do not give a level a second or a non-default user
+(`v3-user add`), a device a default that names another level's user (`device
+snmp <device> v3-user default <user>`), or a device with no `snmp:` entry a
+user of its own: the file is version 2 again. A community and one user that is
+the default are version 1 and are fine (for a device, once it has an `snmp:`
+entry: while it has none, its file is version 2, and so is the file of a
+device whose entry is removed). If a version 2 file was written, run the
+rollback again.
+
+**Staging entries of addresses a scope answers already (0.2.23).** `device
+clone` at a bench address its scope answers already writes an entry marked
+`covered` to `state/staging` (no `/32` is added). An older release reads it as
+a plain entry, and its sweep and `scope staging remove` take that `/32` out of
+the scope, a prefix of the scope's own included. So every target drops these
+entries from the file, after the snapshot; the plan names them, and nothing
+asks (no warning, no `--yes`). A clone that still waits for its `device rename
+--replace` loses its entry, and after a re-upgrade the verb refuses it as not
+staged (this release cannot write the entry again): remove the clone and clone
+again from the original, or restore the snapshot. Every other entry stays.
 
 **An emergency lockdown stops every rollback to a release before 0.2.19**
 (the dry run too): such a release has no such record and would render every
@@ -132,12 +203,27 @@ it, so the rollback to 0.2.19 keeps it. The refusal lists each lockdown and the 
 rollback again. A record that locks nothing (a hand-edited, partial one) is
 removed by the rollback, because the older schemas refuse its keys.
 
-**A user name with a period stops every rollback but the ones to 0.2.21 and 0.2.20** (the dry run too): 0.2.20
-and 0.2.21 allowed periods (a restored snapshot of either can bring such a user back), and no other
-target reads one (it fails with `user '<name>': invalid name` on every store command). The refusal
-lists each such user of the store with the command that fixes it
-(`tacctl user rename <name> <new-name>`); do that, then run the rollback again. Nothing is changed
-while it refuses. An override under such a name in the ignored `users` mapping of `console.yaml`
+**An emergency lockdown that has enrolled hosts stops every rollback**, the
+ones to 0.2.19 to 0.2.22 included (the dry run too). On a host the lockdown is
+an sshd drop-in that only this release writes and removes, and the record
+keeps the hosts it has not reached (a `pending` list that older releases
+refuse), so an older release could not lift it and the hosts would stay
+closed. The refusal names the hosts: lift the lockdown and sync them (`tacctl
+emergency lockdown <scope> disable`, then `tacctl host sync <hosts>`). A
+lockdown that was lifted on the devices but still waits for a host to drop the
+file stops it too, and so does a list that names a host that is not enrolled
+any more (`emergency lockdown <scope> enable <its groups>` or `disable` drops
+the name). A lockdown on a scope with no enrolled host is taken over as
+before.
+
+**A user name with a period stops every rollback but the ones to 0.2.22,
+0.2.21 and 0.2.20** (the dry run too): 0.2.20 and 0.2.21 allowed periods and
+0.2.22 reads a stored one (a restored snapshot of any of them can bring such a
+user back); no other target reads one (it fails with `user '<name>': invalid
+name` on every store command). The refusal lists each such user of the store
+with the command that fixes it (`tacctl user rename <name> <new-name>`); do
+that, then run the rollback again. Nothing is changed while it refuses. An
+override under such a name in the ignored `users` mapping of `console.yaml`
 does not stop it: the rollback takes that entry out of the file.
 
 **The password cache is the user's choice (0.2.20).** `console password-cache tiers` is now only the permission: a tier that is listed no longer has the cache on for everyone in it. Each user turns it on for themselves with `console password-cache on` (off by default), so a console that had the cache on for a tier has it off for every user until they do; `tacctl shell --password-cache` is unchanged. The choices are stored in `settings.password_cache_users` (written only when a user turned it on). No older release reads that key: the rollback removes it for every target (the plan names the users), and the older release then has the cache on for every user of a listed tier, as it always did.
@@ -235,6 +321,30 @@ other line; the dry run lists each file. The files are derived and never in a
 snapshot; this release, if it stays, reads the two as missing until its next
 `device config pull`.
 
+### To 0.2.22
+
+0.2.22 reads every file this release writes but the users' email addresses in
+`store.yaml`, so the rollback removes those (above) and converts nothing else
+but the sudoers drop-in (below): the server name, the timing scale, the server
+address, the users' login to this server, a user name with a period and an
+emergency lockdown (of scopes with no enrolled host) all stay. With no address
+in the store, no SNMP credential file in version 2 (a second or a non-default
+user, a default naming another level's user, a device's file without an
+`snmp:` entry: above) and no covered staging entry (above), no file is
+converted, no snapshot is taken and `--yes` is not needed; with an address or
+a version 2 file the rollback takes a snapshot first and needs `--yes` when
+anything is dropped, and with only a covered staging entry it takes the
+snapshot and asks nothing. The per-tier sudoers drop-in, when it is exactly
+this release's text, is rewritten with 0.2.22's (after `visudo -cf`): it loses
+the engineer's row of `device clone`; an edited drop-in is left. `--hosts` is
+accepted and does nothing.
+
+```bash
+tacctl rollback 0.2.22          # the dry run: steps, writes nothing
+tacctl rollback 0.2.22 --apply
+tacctl upgrade --branch 0.2.22  # install 0.2.22
+```
+
 ### To 0.2.21
 
 0.2.21 reads every file this release writes but `server.name`
@@ -242,8 +352,10 @@ snapshot; this release, if it stays, reads the two as missing until its next
 keys, after a snapshot, and converts nothing else: no scope is added to the users (0.2.21 has the login to
 this server itself), a user name with a period and an emergency lockdown stay
 (0.2.21 reads both), and the new `server show`, `server listen` and `server
-metrics` write the keys that `config listen` and `config metrics` wrote.
-`--hosts` is accepted and does nothing.
+metrics` write the keys that `config listen` and `config metrics` wrote. The
+per-tier sudoers drop-in, when it is exactly this release's text, is rewritten
+with 0.2.21's, which is 0.2.22's (it loses the engineer's row of `device
+clone`); an edited drop-in is left. `--hosts` is accepted and does nothing.
 
 ```bash
 tacctl rollback 0.2.21          # the dry run: steps, writes nothing
@@ -252,17 +364,21 @@ tacctl upgrade --branch 0.2.21  # install 0.2.21
 ```
 
 Until 0.2.21 is installed, do not run `tacctl server name <label>`, `tacctl
-device timeout-scale`, `tacctl scope timeout-scale` or `tacctl config devices
-timeout-scale`; if one ran, run `tacctl rollback 0.2.21 --apply` again. The scripts that call `config
-listen` or `config metrics` are the ones of 0.2.21; the ones that call `server
-listen` or `server metrics` do not run there.
+device timeout-scale`, `tacctl scope timeout-scale`, `tacctl config devices
+timeout-scale`, `tacctl user email` or `tacctl user add --email`; if one ran,
+run `tacctl rollback 0.2.21 --apply` again (with `--yes` when an email address
+stands). The scripts that call `config listen` or `config metrics` are the
+ones of 0.2.21; the ones that call `server listen` or `server metrics` do not
+run there.
 
 ### To 0.2.20
 
 0.2.20 reads every file this release writes but `server.addresses`,
 `server.name` and the timing scale, so the rollback removes those keys and adds the scope of this server's own login to the
-users' scopes (above), after a snapshot. Nothing else is converted, and
-`--hosts` is accepted and does nothing.
+users' scopes (above), after a snapshot. The per-tier sudoers drop-in, when it
+is exactly this release's text, is rewritten with 0.2.20's, which is 0.2.22's
+(it loses the engineer's row of `device clone`); an edited drop-in is left.
+Nothing else is converted, and `--hosts` is accepted and does nothing.
 
 ```bash
 tacctl rollback 0.2.20          # the dry run: steps, warnings, writes nothing

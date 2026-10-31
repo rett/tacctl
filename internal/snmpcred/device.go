@@ -63,8 +63,11 @@ func LoadDevice(dir, name string) (Creds, error) {
 
 // SaveDevice writes the device's file (0600) in dir/devices (0700, and dir
 // itself 0700); no credentials at all removes the file, and the
-// directories when that leaves them empty.
-func SaveDevice(dir, name string, c Creds) error {
+// directories when that leaves them empty. The format is Text's, but for a
+// device without an snmp: entry in devices.yaml (mapped false): the older
+// releases ignore a version 1 file there, and this release reads a version 2
+// file without the entry, so that file is version 2 whatever it holds.
+func SaveDevice(dir, name string, c Creds, mapped bool) error {
 	p, err := DeviceFile(dir, name)
 	if err != nil {
 		return err
@@ -80,7 +83,7 @@ func SaveDevice(dir, name string, c Creds) error {
 			return fail("Cannot protect " + d + ": " + errText(err))
 		}
 	}
-	return saveWith(p, c, DeviceHeader)
+	return saveWith(p, c, DeviceHeader, !mapped)
 }
 
 // RemoveDevice deletes the device's file (a missing one is fine), and the

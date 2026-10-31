@@ -9,8 +9,12 @@ Subcommands:
   [1madd[0m [0;36m<username>[0m [0;36m<group>[0m                       Add a new user; lands in default scope
   [1madd[0m [0;36m<username>[0m [0;36m<group>[0m [0;36m--scopes <s>[0m[,s...]   Grant specific scopes at creation
   [1madd[0m [0;36m<username>[0m [0;36m<group>[0m [0;36m--hash <hash>[0m         Add with pre-generated bcrypt hash ([0;36m-[0m reads it from stdin)
+  [1madd[0m [0;36m<username>[0m [0;36m<group>[0m [0;36m--email <address>[0m     Record an email address (a plain address; no mail is sent)
   [1madd[0m [0;36m<username>[0m [0;36m<group>[0m [0;36m--no-change-required[0m  Skip the required password change (a new user must change it first)
   [1mremove[0m [0;36m<username>[0m                            Remove a user
+  [1memail[0m [0;36m<username>[0m                             Show the user's email address
+  [1memail[0m [0;36m<username>[0m [0;36m<address>[0m                   Set it (an address belongs to one user)
+  [1memail[0m [0;36m<username>[0m [0;36mclear[0m                       Remove it
   [1mpasswd[0m [0;36m<username>[0m                            Change a user's password
   [1mpasswd[0m [0;36m<username>[0m [0;36m--hash <hash>[0m              Change with pre-generated bcrypt hash ([0;36m-[0m reads it from stdin)
   [1mpasswd[0m [0;36m<username>[0m [0;36m--no-change-required[0m       Skip the required password change (a reset requires one)
@@ -30,6 +34,8 @@ Examples:
   tacctl user list
   tacctl user add jsmith superuser
   tacctl user add jsmith superuser --scopes prod,lab
+  tacctl user add alice superuser --email alice@example.net
+  tacctl user email alice alice@example.net
   tacctl user scope jsmith add prod
   tacctl user verify jsmith
 

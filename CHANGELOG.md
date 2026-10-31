@@ -3,6 +3,657 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.23 (2026-10-31)
+
+1. **`tacctl rollback 0.2.22`, the release before this one, is a target.**
+   0.2.22 reads every file this release writes but the users' email addresses
+   (item 8), so the target converts nothing else but the per-tier sudoers
+   drop-in (item 17: exactly this release's text is rewritten with 0.2.22's,
+   and so for the `0.2.21` and `0.2.20` targets): the server name, the timing
+   scale, the server address, the users' login to this server, a user name
+   with a period and an emergency lockdown all stay (a lockdown with enrolled
+   hosts stops every target, item 20). With no address in the store, no SNMP
+   credential file in version 2 (item 14: a second or a non-default v3 user, a
+   default naming another level's user, a device's file without an `snmp:`
+   entry) and no covered staging entry (item 17), no file is converted, no
+   snapshot is taken and it needs no `--yes`; with an address or a version 2
+   file it takes the snapshot first and needs `--yes` when anything is dropped
+   (items 11 and 14), and with only a covered staging entry it takes the
+   snapshot and asks nothing. `--hosts` is accepted and does nothing. The
+   older targets (`0.2.21` and back) still remove the server name and the
+   timing scale, and still say so; only the `0.2.22` target keeps them. What a
+   change of this release stores in a file that 0.2.22 refuses is a step of
+   every target, the ones that return early included: the steps for a
+   release's changes are listed once (`rollbackAdditions`, in
+   `internal/lifecycle/rollback_additions.go`) and added to the plan of each
+   target older than that release, so the timing scale is such an entry for
+   the targets before 0.2.22, the email addresses one for every target, and a
+   new entry reaches `0.2.22` too. Every target also drops the staging entries
+   marked `covered` from `state/staging` (item 17), after the snapshot,
+   without a question.
+
+2. **`device rename` carries the staging address.** A device staged at a bench
+   address (`config <vendor> --staging <address> --name <device>`) is recorded
+   in the `staging` file under its name, and the sweep that ends the `/32`
+   once the device is registered at an address its scope covers looks the
+   device up by that name. `device rename` (and the rename `device enroll`
+   makes to the name a device gives itself) renamed the registry entry, the
+   pull record, the SNMP credentials, the blocks and a break-glass hold, but
+   not the staging line, so a renamed device was never found again and its
+   `/32` stayed in the scope until `scope staging remove <address>`. The name
+   in the line follows the rename now, as `host rename` already carries a
+   host's. Names compare without regard to case, as the registry's do, so a
+   line spelled differently is the device's too, and a rename of the spelling
+   only keeps it; a line that an earlier device of the new name left is
+   dropped, and a failure to write the file is a warning that names the
+   addresses.
+
+3. **The summary of `device list` is shorter.** The one line that Tab, `?`,
+   the completion scripts and `help` list for `device list` was 90 characters,
+   over the 72 the lists allow. It reads `Registered devices, by name: scope,
+   state, last seen, notices`; which options narrow the list is in its usage
+   block, `help device list` and the manual page, as for every other verb.
+
+4. **`host rename` carries a staging line spelled differently.** The staging
+   line of a host holds its name as it was written, and names compare without
+   regard to case. `host rename` matched the old name exactly, so a line
+   spelled with other case than the registry's was not carried to the new
+   name, and in a rename of the spelling only (`host rename Web1 web1`) the
+   host's own line counted as a leftover of an earlier host of that name: the
+   rename asked for `--yes` and then dropped the line. The old name is matched
+   without regard to case first, so such a line is carried (or kept) and only
+   a line of the new name that is not the host's own is a leftover. The
+   warning of a staging file that cannot be written names the addresses of the
+   dropped lines too.
+
+5. **The device's own settings of its AAA server are no difference.** A Junos
+   device that holds `set system tacplus-server <address> source-address
+   <address>`, a `timeout`, a `retry`, a `routing-instance` or an option of
+   `system tacplus-options` or `radius-options` that does not decide who can
+   log in, and an IOS device that holds a `send-nat-address` or an
+   `automate-tester` under tacctl's `tacacs server` or `radius server` block,
+   was listed by `device config plan` as an access irregularity that the paste
+   leaves alone (`the paste fixes 0, leaves 1`, then `Nothing to paste`), and
+   `diff`, `device config list`, `device list` and `--differs` said the device
+   differed. The planner already left these alone; the comparison did not call
+   them the device's own, which it did for `snmp`, `system` and `netconf`
+   only. They are the device's own now: the `aaa` section reads `ok (+N
+   unmanaged)`, the plan has no item for them, and the device is consistent
+   when nothing else differs. `--differs` recomputes at once; the state in the
+   CONFIG column of `device list` and in `device config list` is the pull's
+   record, and changes at the next pull of the device. The leaves of tacctl's
+   own server that the standard does not state are the device's own; a leaf it
+   states with another value (the timeout of an IOS block, the port of a
+   RADIUS server) is still a difference that the plan replaces in place. A
+   TACACS+ `port` is never the device's own: the standard states one only for
+   a server off the default port, so a port on the device against a server on
+   the default is the device asking the wrong port. Of the client's options,
+   those that change the service asked for or how a password is checked stay
+   differences (`tacplus-options service-name` other than `junos-exec`,
+   `strict-authorization`, `radius-options password-protocol`); the others are
+   the device's own. What decides who can authenticate stays a difference:
+   another server or server block, another group, a method list or login list
+   of another name, the login method of a line, the authentication order, a
+   `tacacs-server host` line and a deactivated statement. The source interface
+   is compared only where the scope sets one, as before. The `Kept:` line of
+   the plan names these statements `TACACS+ server settings`, `RADIUS server
+   settings`, `TACACS+ options` or `RADIUS options`, and so does `kinds` of
+   `--json`. The IOS server group tacctl renders (`aaa group server
+   tacacs+|radius`) has the same: its `ip vrf forwarding`, its own `ip tacacs
+   source-interface` or `ip radius source-interface` and its `deadtime` are
+   the device's own (`TACACS+ group settings`, `RADIUS group settings`), while
+   a server line in it (`server`, `server name`, `server-private`, with or
+   without a key) is another server and stays a difference, as does every leaf
+   of another group.
+
+6. **The source of the AAA client must be an address of the device.** A
+   source address that no interface of the device holds, or a source
+   interface that does not exist or has no address, may not be used, and the
+   AAA packets may not reach the server, without a word. The leaves of
+   tacctl's own server are the device's own settings (item 5), so the
+   comparison now checks the one that can break the login. A Junos `system
+   tacplus-server` or `radius-server <address> source-address <ip>`, and an
+   IOS `ip tacacs source-interface` or `ip radius source-interface` (the
+   device's own, tacctl's own from `config cisco source-interface`, and the
+   one under tacctl's `aaa group server`), that matches nothing the device
+   holds is a difference: `aaa` reads `differs`, `device config diff` lists
+   it as a `+` line with its reason (`--json` has it as `why`), `device
+   config list`, `--differs` and the CONFIG column of `device list` follow,
+   and `device config plan` reports an ACCESS item, `source-address <ip> is
+   not an address of any interface this login can see` or `source-interface
+   <name>: no such interface with an address that this login can see`, with
+   `Left alone: add the address to an interface, or change the source (not
+   managed by tacctl).` The paste never fixes it and `--converge` never
+   removes it. Addresses compare as parsed addresses (an IPv6 address in any
+   spelling, a prefix length ignored), interface names without regard to
+   case (the name is the first word of the `interface` line, so `Serial0/0.1
+   point-to-point` is `Serial0/0.1`); the virtual address of a VRRP group
+   and the address of `lo0` count, a deactivated interface, unit, family or
+   address does not, and an interface that is shut (Junos `disable`, IOS
+   `shutdown`) still holds its address: operational state is not checked.
+   An interface that takes its address by itself or derives it makes every
+   source possible: on Junos `family inet dhcp`, `dhcp-client`,
+   `negotiate-address`, `family inet6 dhcpv6-client` and an `address ...
+   eui-64`; on IOS `ip address dhcp`, `negotiated` or `pool`, `ipv6 address
+   dhcp`, `autoconfig` or `... eui-64`, and `ip unnumbered`. The global IOS
+   source interface is not checked while tacctl's server group holds a
+   source interface of its own for the protocol, which overrides it. Only the
+   source of the AAA client is checked; syslog, NTP and SNMP sources are not.
+   The check assumes that the login of the pull sees every interface: a Junos
+   class that hides only some of them cannot be told from one that shows all,
+   and a source on a hidden interface reads as one the device does not hold.
+   To tell, `device config pull` now records the addresses of the device's
+   interfaces, read from the configuration it already reads (no new
+   command), in `/var/lib/tacctl/devices-config.json`; no output, `--json`
+   document or audit line shows them. A device pulled before this release
+   has none and a login that cannot see the interfaces records none: its
+   source stays the device's own, and `diff` and `plan` say once that it is
+   not checked (`their addresses are not recorded (pull the device again)`,
+   `this login cannot see the interfaces`), only where there is a source to
+   check. The new key is ignored by every earlier release, so `rollback` has
+   nothing to undo.
+
+7. **New: `device check --sources` and `device scan --sources` test the AAA
+   source addresses.** A source address the device holds can be another
+   device's, or out of this server's reach, and the check of item 6 cannot
+   tell. With `--sources`, the source addresses of a device's TACACS+ and
+   RADIUS clients (a Junos `source-address` under `system tacplus-server` or
+   `radius-server`; the addresses of the interface an IOS `ip tacacs
+   source-interface` or `ip radius source-interface` names, from the interface
+   facts of the last pull, the one in tacctl's `aaa group server` included)
+   are tested, each but the device's registered address, at most eight per
+   device: this server connects to the address, reads the SSH host key
+   without logging in (the read of `device hostkey` and of the host-key scan:
+   ssh-keyscan, then tacctl's own client, with the timing scale of the device)
+   and compares it with the key pinned for the device. An address that does
+   not answer is a warning, `source-address <address> is unreachable from
+   this server; it may be unreachable by design`, and so is one whose key is
+   not the device's, `source-address <address> presents another SSH host key
+   (<fingerprint>), the device's is <fingerprint>: the address may belong to
+   another device` (with the name of the registered device that holds the
+   address, when there is one); an address from an IOS source interface is
+   named `source-interface <name> (<address>)`, and an error that is not "no
+   answer" reads `could not be tested: <reason>`. One info line sums up the
+   device (`3 source addresses tested, all present the device's key`).
+   Skipped with the reason: a source-interface whose addresses are not
+   recorded (`pull the device again`), whose login could not see the
+   interfaces, or whose address is learned dynamically; a loopback,
+   link-local, unspecified, multicast or broadcast address; and the addresses
+   beyond the eighth. Not compared: a device with no pinned key (`not
+   compared: no host key is pinned for <device>`, nothing is connected to)
+   and an address that presents only a key type that is not pinned (`not
+   compared: presented only rsa, pinned ed25519`). In a scan, a device that
+   cannot be tested is named with the reason and the last line counts them.
+   The test is a warning and no more: the device keeps its state, no
+   difference is counted, nothing is pinned, recorded or stored, and a pull,
+   a plan, a diff and a list never run it. An unanswered address costs about
+   8 seconds; devices are tested eight at a time, the addresses of one device
+   one after the other, the timing scale of the device multiplies the time,
+   a terminal gets a progress line on standard error, and Ctrl-C stops the
+   test. `device check --json` has a `sources` array with the flag
+   (`address`, `interface`, `result` `ok`, `unreachable`, `mismatch` or
+   `skipped`, `fingerprint`, `pinned` and `device` for a mismatch, `source`
+   and `reason` for a source left out). The audit line is `sources tested=N
+   unreachable=N mismatched=N` and names no address. `scan --sources` is
+   refused with `--if-stale` and `--quiet`. Both verbs stay the operator
+   tier's.
+
+8. **A user can have an email address.** `tacctl user add <name> <group>
+   --email <address>` records one with the user, and `tacctl user email <name>
+   [<address>|clear]` prints, sets or removes it (both are the superuser's).
+   It is the key `users.<name>.email` of `store.yaml`, written only when set,
+   so a store without an address is the file it was and the store version
+   stays 1. The address is a plain `local@domain`: exactly one `@`, a local
+   part, a domain of at least two dot-separated labels, at most 254
+   characters, and no spaces, angle brackets, quotes or control characters;
+   it is kept as typed, and `clear` is not an address. An address belongs to
+   one user, compared without regard to case: `user add --email`, `user
+   email` and the store's own validation refuse a second user with the same
+   address and name the first user. `user show` prints an `Email` line for a
+   user who has one, to every tier that can run `user show`; `user list` does
+   not show it, and `store show --json` carries it. `user rename` carries the
+   address, and `store import --replace` keeps the one an existing store has
+   (a rendered or legacy file cannot hold one). No mail is sent to it, and
+   changing it renders nothing and restarts no service. The address is never
+   in an audit line: `--email` is a secret flag, the address of `user email`
+   is written as `<redacted>` in `args=` whichever way it is typed (in the
+   place of the name, with extra words), the `user email` line says only
+   `op=set` or `op=clear`, and no message repeats the address. A word with
+   an `@` typed in the place of a name, a group or a scope in another `user`
+   verb is redacted and not repeated either, and the history of `tacctl
+   shell` keeps the line up to the address (the `--email` value, the address
+   of `user email`, or the first word with an `@` in any other `user` verb)
+   and `…(redacted)` in place of the rest. The accounting sink takes none.
+
+9. **`tacctl backup keep` and `backup unkeep` persist a snapshot that
+   matters.** Snapshots live in `backups/`, of which this release prunes the
+   oldest beyond 30 and the older releases a rollback goes to do the same
+   without knowing any marker. `tacctl backup keep <snapshot> [--note
+   <text>]` (the superuser's) copies the snapshot to
+   `/etc/tacctl/backups-kept/<snapshot>/` (0700, files 0600), outside
+   anything a retention reaches, with a file `kept` that records the note,
+   who last set it (the user and the session id) and when. Keeping a snapshot
+   that is kept already says so, and a new `--note` replaces the note. `tacctl
+   backup unkeep <snapshot> [--yes]` removes the copy after a confirmation and
+   says first when no snapshot of that id remains in `backups/` (the copy is
+   then the only copy). `backup list` marks a kept snapshot (`snapshot, kept`,
+   `kept only` when the original is pruned) and shows its note; `backup diff`,
+   `backup restore` and `backup recover` find an id in `backups/` first and
+   then among the kept copies, with the same checks, so a kept copy still
+   restores after its original is gone; a restore does not touch
+   `backups-kept/`; `uninstall` archives it with `backups/` when the backups
+   are kept. The note is free text stored in the kept copy and is not a place
+   for secrets: it is written as `<redacted>` in the audit line, which carries
+   the id and `note=yes|no` only.
+
+10. **`tacctl backup recover <snapshot>` puts back one kind of data from a
+   snapshot.** `backup restore` brings back the whole state; `backup recover
+   <snapshot> [--only <kind>[,<kind>...]] [--dry-run] [--yes]` (the
+   superuser's) brings back a kind and leaves everything else as it is. The
+   kinds are listed in one place (`recoverKinds`, `internal/cli/
+   backup_recover.go`): `email` recovers the email addresses of users (item
+   8), and `snmp-users` the SNMPv3 users a rollback dropped (item 16). Without
+   `--only` it recovers every kind. For `email` it reads the snapshot's
+   `store.yaml` and sets the address of each user who has one there and exists
+   now with none, through the same validation as `user email`, so an address
+   still belongs to one user. A user who no longer exists, a user who has
+   another address now (the current one is kept) and an address another user
+   holds now are skipped and named; a user who has it already is nothing to
+   do. The lists name users, never an address. The snapshot is found as
+   `backup diff` and `restore` find one (item 9): in `backups/`, then among
+   the kept copies, so a snapshot a retention pruned is still recovered from
+   its kept copy, which is named with the command that removes it (`backup
+   unkeep`). `--dry-run` lists and changes nothing; otherwise it asks for
+   confirmation (`--yes` does not), takes a snapshot of the current state
+   first (the retention keeps the one being read) and ends with the numbers
+   recovered and skipped. The audit line `backup recover id= pre= kinds=
+   restored= skipped=` holds counts and snapshot ids, never an address.
+
+11. **A rollback removes the email addresses, after a snapshot that it
+    keeps.** No older release knows `users.<name>.email`, so every `tacctl
+    rollback` target removes it from `store.yaml`, the `0.2.22` target and the
+    ones that return early included. The dry run names the users who have an
+    address, never the address, in a warning, so `--apply` needs `--yes`; it
+    takes the snapshot first (the `0.2.22` target takes one only when an
+    address stands, or an SNMP credential file in version 2 has to be
+    converted, item 14) and keeps it (item 9): the older release prunes
+    `backups/` by its own retention and knows no marker, so the snapshot is
+    copied to `backups-kept/`, where no retention reaches it, with the note
+    `rollback to <target>: dropped the email addresses of N users` (a count,
+    no name and no address). The apply names the snapshot, the kept copy and
+    the command that puts the addresses back once this release is installed
+    again (`tacctl backup recover <snapshot> --only email`, item 10; `backup
+    unkeep` removes the copy after that), and the audit line of the rollback
+    carries the kept snapshot's id and the users (`kept=` `email-users=`),
+    never an address. A store that cannot be read refuses every target. Until
+    the older release is installed, `tacctl user email` and `tacctl user add
+    --email` write the key again, and the command says so.
+
+12. **A user change syncs this server's own accounts at once.** After
+    `tacctl user add` the new user could not log in to this server to change
+    the password, because the account and its UID were made by the next `host
+    sync` of the server. `user add`, `remove`, `rename`, `move`, `enable`,
+    `disable`, `scope add|remove|replace|remove --all` and
+    `require-password-change` now run the accounts-only sync of `host sync
+    <this server>` themselves, once the change is stored and the service
+    restarted, when the server is enrolled (`host enroll --local`): once for
+    a change of several users, with no snapshot of its own, and without the
+    set-up of the server's own login scope, which `host sync` and `host
+    enroll --local` keep. One line says what was done (`This server's
+    accounts were synced: 1 created (UID 80003).`: the counts of accounts
+    created, updated, renamed and removed, no name but the user's own); the
+    sync's own lines are not shown, its warnings are. A sync that fails is a
+    warning with the retry command (`tacctl host sync <name>`) and what the
+    script said as plain lines under it, never a second level; the change
+    stays and the command exits 0. A server that is not enrolled gets no sync
+    and no word about one. `user passwd` syncs only when it enables a
+    disabled user; `user list`, `show`, `email` and `verify` never do. The
+    group verbs keep their own sync after a lowered tier. The warning
+    `'<user>' must change the password, but the account is made at the next
+    sync of this server` is gone, and so are the red lines `'<user>' keeps
+    the groups of the old tier` of the user verbs: a sync that fails is the
+    one warning.
+
+13. **The notices of a user change are two levels, and the hosts it reaches
+    are offered a sync.** INFO says what was done (the change, the restart,
+    the sync); WARN says that something failed or that the operator has to
+    act; a fact is said once. `user add` says the password-change rule of the
+    new user in one line, `user require-password-change` says its result in
+    one line (`Flagged 2 (bob, carol), skipped 1 (1 superuser), already
+    required 0: each can log in to tacctl only, and ...`; `Cleared 1 (bob),
+    not required 0.`), and a password change that could not be required of a
+    new user is a warning, as it is for `user passwd`. The other enrolled
+    hosts a change reaches are named in one warning with the command that
+    syncs them (`tacctl host sync web1 web2`, `--all` above four hosts), for
+    `user add`, `remove`, `rename`, `move`, `enable`, `disable`, `scope`,
+    `passwd` and `require-password-change`; on a terminal the verb then asks
+    `Sync these hosts now? [y/N]` (the default is no, and `--yes` or any
+    other option does not answer it), and with no terminal the warning is
+    all. Yes runs `host sync` of just those hosts and says so in one line.
+    `tacctl passwd` informs of the hosts and offers nothing. `user rename`
+    names the hosts only when the user has a UID, or the new name has one,
+    as before, and a move, a scope change and a removal name them now too. A
+    host is named only when its own account of the user changes: disabling or
+    enabling a user who must change the password names none, as the account is
+    expired on the other hosts already, and a name that is no Linux account
+    name names none.
+
+14. **The SNMP credential files hold a pool of v3 users, and a rollback
+    writes version 1 again.** `snmp.yaml`, `snmp/<scope>.yaml` and
+    `snmp/devices/<device>.yaml` are version 2 (`users:` and `default:`: a
+    pool of v3 users, a name and two passphrases each, and the default user
+    or none); a version 1 file (one v3 user) reads as a pool of one user that
+    is the default, nothing rewrites it at the upgrade, and a command saves
+    version 1 again whenever the content fits it (a community and at most one
+    v3 user, that user the default) and version 2 only for what version 1
+    cannot hold: a second or a non-default user, a default that names another
+    level's user, and a device's file that counts without an `snmp:` entry in
+    `devices.yaml` (the older releases ignore a version 1 file there). One
+    writer chooses (`Creds.Text`), so a community saved by this release is a
+    file 0.2.22 reads; a device's file follows its entry (version 2 while it
+    has none, version 1 once any setting gives it one when the content fits
+    it, version 2 again if the entry is emptied, a registry import included),
+    so a command does not leave a device with a version 1 file that the older
+    releases ignore: it says so when it rewrites such a file as version 2 (the
+    device's own file stays in force), and a file it cannot write is a
+    warning that names the command that writes it again, with exit status 1
+    when the file is then ignored. A device reads with its own default
+    user, else its scope's, else the config's, which may name a user of its
+    scope's pool or the config's (never a user that is in no pool it may use:
+    that is an error naming the command that fixes it, not another user), and
+    a user name stands for one user across the pools a device can see.
+    No older release reads version 2 ("unsupported version"), so every
+    `tacctl rollback` target writes the files in version 1 after the snapshot
+    (an entry of `rollbackAdditions`, in
+    `internal/lifecycle/rollback_snmp_pool.go`): the community stays, and a
+    level keeps its default user and drops the rest. A level with several
+    users and none that is its own default has no answer, and the rollback is
+    refused naming the level; a device that chose a user of its scope's or
+    the config's pool loses the choice; a device with no `snmp:` entry in
+    `devices.yaml` loses its file whole, since the older releases ignore the
+    credentials of such a device and would otherwise hand it to another
+    level's credentials unseen. The dry run names the levels and counts the
+    users, never a name or a passphrase, in a warning, so `--apply` needs
+    `--yes` when anything is dropped; a rollback that drops none only
+    rewrites the files. The snapshot is kept (item 9) with a note that
+    counts what was dropped (`rollback to <target>: dropped 2 SNMPv3 users in
+    2 levels`), the audit line adds `snmp-users=N snmp-levels=M
+    snmp-choices=K snmp-devices=P`, and the apply names `tacctl backup
+    recover <snapshot> --only snmp-users`. Until the older release is
+    installed, what makes version 2 again is a second or non-default user, a
+    default naming another level's user, or a user of its own for a device
+    with no `snmp:` entry; the apply says so. A rollback of a state with
+    version 1 files only converts nothing.
+
+15. **SNMPv3: a pool of users for each level, one default.** The version, the
+    port, the timeout and the two protocols stay one setting for the config, a
+    scope and a device; the v3 users are now a pool of names with their
+    passphrases and a default user or none. `config snmp v3-user`, `scope snmp
+    <scope> v3-user` and `device snmp <device> v3-user` take `add <user>
+    [--default] [--stdin]` (and `--auth`, `--priv` for the config and a
+    scope), `remove <user>`, `default [<user>|--none]` and `list`; the old
+    `v3-user <user>` is not accepted (it fails with the usage of the new
+    verbs). Adding a user changes nothing but the pool: it no longer sets the
+    version, so `config snmp version [v2c|v3]` is new (a scope's and a
+    device's `version` are as before) and `--default` makes the new user the
+    level's default. A device reads with its own default user, else its
+    scope's, else the config's, and `device snmp <device> v3-user default
+    <user>` may name a user of its own pool, its scope's or the config's. A
+    name stands for one user across the pools a device can see (the config's
+    against every scope and device, a scope's against the config and its
+    devices, a device's against its scope and the config), so a scope's user
+    cannot shadow the config's: adding a name another pool holds is refused
+    and names the level, and a user that a device's default names cannot be
+    removed. A chosen user that is missing, or lacks a passphrase, is an error
+    that names the command that fixes it (`tacctl scope snmp lab v3-user add
+    alice`), never a fallback to another user; the walkthroughs and the
+    rendered blocks name only the user in force, and their placeholder for a
+    missing user names the new verb. A credentials file of version 2 (item 14)
+    counts for a device without the `snmp:` map of the registry that version 1
+    needed. `show --reveal <user>` prints one user's passphrases; every reveal
+    that prints a user's passphrases logs `secret-read ... user=<name>`.
+    `device show --json` and `device check --json` gain `v3_users` (the names
+    in the device's own pool) and `v3_default` (its own default) beside
+    `v3_user`, the user in force. The passphrases are entered as before (asked
+    twice, or `--stdin`; at least 8 characters), the audit line masks any word
+    typed in their place, and the shell history masks them too. An engineer
+    reads `v3-user list` and `default` of their own scopes and devices and may
+    reveal a user of the level's own pool or the user in force, never another
+    user of the config's pool; changing a default (`default <user>`, `default
+    --none`) is the superuser's. Below the engineer tier an error about a
+    chosen user does not name it (`device check`, `device scan`), as `device
+    show` does not. `config validate` warns (section `snmp_users`) when two
+    pools a device can see hold the same user name under the scopes as they
+    are now; the device's own pool is searched first, then its scope's, then
+    the config's.
+
+16. **`backup recover --only snmp-users` puts back the SNMPv3 users a rollback
+    dropped.** It reads the credential files of the snapshot and adds each
+    user to the pool of the same level now, and a default where the level has
+    none and the user it chose is there (a device's may be a user of its
+    scope's pool or the config's that the same run restores); it never
+    overwrites a default, and a default that named a user of the level's own
+    pool is not given to another pool's user of the same name. A scope or
+    device that no longer exists is skipped and named, a user the level has
+    already is nothing to do, and a name another pool that can see it holds
+    now is skipped (the current user is kept) and says which pool. The dry run
+    lists levels and counts, never a name or a passphrase; the audit line
+    carries counts and snapshot ids.
+
+17. **`device clone <name> <new> --staging <bench-ip>` registers a copy of a
+    device's intent at its bench address.** A device that will be replaced is
+    provisioned from the one it replaces: the copy has the registry's settings
+    (vendor, ssh port, description, location, legacy-ssh, ios-syntax), the
+    SNMP settings and credentials file (the community and the pool of v3
+    users, the default included), the NETCONF settings, the timing scale and
+    the configuration blocks with their list in `tacctl.yaml`. It has none of
+    what belongs to the one device that is there: its address, its name, its
+    DNS name (it names the original), the pinned host keys, the acknowledged
+    notices, a break-glass hold and the configuration record. `--staging` is
+    required, since the registry holds one device for each address; the bench
+    address is added to the scope of the original as a /32 before the registry
+    is written, as `config <vendor> --staging` does (an address the scope
+    answers already gets a staging entry without a /32, written once the
+    registry line is, which nothing takes out of the scope, and which lasts
+    until the device is seen at another address, `device rename --replace`
+    ends it or a superuser removes it: a clone that is removed later leaves
+    it, as a staging /32 is left; an address already staged for a host or
+    another device is refused before the snapshot; an entry with no name, from
+    `config <vendor> --staging <ip>` without `--name`, is the bench device's
+    and is named for the clone once it is registered, and named back if the
+    clone fails), and a device no scope answers is refused. The new name
+    follows the rules of `device add` (lower case, not taken, not generic
+    unless `--allow-generic`). Every refusal, those of the staging address
+    included, comes before the one snapshot; what can be read is read before
+    anything is written, and a write that fails takes the registry line, the
+    files and the /32 back. An engineer clones the devices of their own
+    scopes, the SNMP credentials included (they can read them there); the verb
+    gives them no way to set SNMP settings that are not a copy of the
+    device's. The audit line is `device clone from= to= address= scope=
+    snmp_users= block_files= count=1`, counts and names, never a credential,
+    and the entry without a /32 is audited as the add of a /32 is, `scope
+    staging add cidr= scope= device= covered=yes`. The engineer's sudoers rows
+    gain `device clone *`; the texts that `tacctl rollback` puts back for the
+    older releases do not have it: the `0.2.22`, `0.2.21` and `0.2.20` targets
+    rewrite the per-tier drop-in, when it is exactly this release's text, with
+    0.2.22's (`tier.Sudoers0222`, after `visudo -cf`), and the older targets,
+    which recognise that text as an older one, put back their own. The staging
+    file's line gains an optional sixth field, `covered`, for the entry of an
+    address the scope answered already. An older release reads the line as any
+    other and writes it back without the field, and its sweep and `scope
+    staging remove` take the /32 of the entry out of the scope, a prefix of
+    the scope's own included: every target drops those entries from
+    `state/staging` after the snapshot, names them in the plan and asks for
+    nothing (no warning, no `--yes`). A clone that still waits for its `device
+    rename --replace` loses its entry, and 0.2.23 cannot write it again after
+    a re-upgrade: the `--replace` then refuses it as not staged. The way back
+    is to remove the clone and clone again from the original, or to restore
+    the snapshot.
+
+18. **`device rename <replacement> <name> --replace` puts a device registered
+    at a bench address where the device it replaces is.** The original is
+    removed with its files (its SNMP credentials file, its configuration
+    blocks and their list, its configuration record, its acknowledged
+    notices); the replacement takes its name and its address, keeps its own
+    pinned host keys and settings, and takes the original's DNS name when it
+    has none. The replacement must have a staging entry (`device clone`, or
+    `config <vendor> --staging --name` for a bench address no prefix of the
+    scope covers: the /32 of its bench address, or, for a clone at an address
+    its scope answers already, the entry alone): its /32 ends in the scope
+    that holds it, the original's own staging entries stay (they name the
+    device now at its address), and the replacement is answered by the scope
+    of its new address, which the plan says when it is not the scope of its
+    bench address. A break-glass hold on the original is shown in the plan and
+    cleared as `breakglass release` does (one render, the backends that serve
+    the address restarted); it is never moved to the replacement, and a
+    replacement with a hold of its own is refused until it is released. An
+    original with a hold needs the superuser, and an engineer is refused
+    naming it. The plan lines come first, then one question: a closed stdin is
+    a no and `--yes` is the only way to skip it. One snapshot covers all the
+    steps. A file of the original that cannot be removed, or of the
+    replacement that cannot take the name (its SNMP credentials, blocks or
+    record), fails the verb with exit status 1 and names it, rather than
+    leaving the device on the original's files with a warning; and the staging
+    entry follows the rename before the /32 ends, so that one that cannot end
+    names a device that is registered. The audit line is `device replace old=
+    new= address= hold_cleared=yes|no snmp_files= block_files= notices=
+    count=1`, with `scope staging done` for the /32 and `breakglass release`
+    for a hold. No stored format changes and no sudoers row is added (`device
+    rename` has one), so `tacctl rollback` has nothing to undo for it.
+
+19. **The client script writes and removes sshd's lockdown drop-in, and speaks
+    protocol 7.** A host enrolled in a scope that is locked down gets one
+    static sshd drop-in, `/etc/ssh/sshd_config.d/00-tacctl-0-lockdown.conf`,
+    with `Match Group tac-users,!tac-superuser` and `PubkeyAuthentication no`,
+    `AllowTcpForwarding no`, `AllowStreamLocalForwarding no`, `X11Forwarding
+    no` and `AllowAgentForwarding no`: it closes ssh key logins and every
+    forwarding for each account of tacctl's tiers that is not a superuser. It
+    matches the tiers' groups, not the store's, so it cannot tell the groups
+    of a lockdown apart; the provisioning login has no `tac-users` group and
+    is not matched. The header of the script has one new variable,
+    `TAC_LOCKDOWN` (`on`, or `on-end`, which also ends the live sessions of
+    the matched accounts; with none the drop-in is removed), so the script
+    protocol is 7, and `host show --check` reports a host that ran protocol 6
+    until its next sync. Both forms of the script write or remove the file: a
+    sync (`--accounts-only`) and an install.
+
+    The file is checked before sshd reads it, with `sshd -t` and with `sshd -T
+    -C user=<account>,host=localhost,addr=127.0.0.1,laddr=127.0.0.1, lport=22`
+    for one account it matches (the five keywords are `no`) and one it does
+    not (what sshd says is what it was before); a failed check puts the old
+    file back and fails the run, and so does a `sshd -T` that itself fails,
+    which is said as that (the first line of what sshd printed), not taken for
+    a keyword that is not set. A host whose `sshd_config` does not include its
+    `sshd_config.d` directory (RHEL 8 and OpenSSH before 8.2) is refused
+    before anything changes, because the file would be silently inert and only
+    look like a lockdown, and so is a run started from a tacctl account that
+    is not a superuser (a member of `tac-users` and not of `tac-superuser`,
+    named in the message), as when the host is provisioned through one: the
+    lockdown would close that account's key and with it the way to the host.
+    The check is made again, for runs over ssh only, right before the file is
+    written, because the sync in between can make the account a member (it
+    creates `tac-users` and adds the accounts of the scope), and it is skipped
+    for the server's own script (`TAC_LOCAL=1`), which tacctl runs locally: an
+    engineer or operator running a user verb there loses no ssh login.
+
+    sshd is reloaded, never restarted (`systemctl reload`, or the SIGHUP to
+    the process its pid file names where there is no systemd, as in a
+    container), and `restorecon` runs on the file. The state file
+    `/var/lib/tacctl-client/lockdown` says what the running sshd may enforce:
+    `on` once the file is loaded, `off` while a lift is under way. A reload
+    that fails, after a write or after a removal, fails the run and is tried
+    again by the next sync, which finishes it even when the file is gone (a
+    lift is not forgotten because its file was removed first).
+
+    `on-end` ends the live sessions after the file is in place and sshd is
+    reloaded: `loginctl terminate-user` for each matched account where
+    systemd-logind knows it, else its processes are ended; root, the
+    superusers, the provisioning login, the account the script was started
+    from (`SUDO_USER`, `LOGNAME`, `USER`) and any account under UID 1000 (a
+    system account, such as the one sshd's listener runs as) are never
+    touched, the last one with a warning. `client-remove.sh` (`config linux
+    remove-script`, `host unenroll`) removes the file and reloads sshd. A lift
+    on a host whose sshd is gone says that nothing was reloaded. The name
+    sorts before `00-tacctl-engineer.conf` and the console's drop-in, in the
+    byte order and in a locale's, so its values are the first sshd takes (the
+    engineer drop-in may let agent forwarding through); the test hooks
+    `TACCTL_CLIENT_LOCKDOWN_DROPIN`, `TACCTL_CLIENT_SSHD_CONFIG` and
+    `TACCTL_CLIENT_SSHD_PIDFILE` move the paths for the test sandbox. The
+    verbs that set the state come with the next item.
+
+20. **`emergency lockdown` closes the enrolled hosts too.** `enable` and
+    `disable` change the devices as before, then name the scope's enrolled
+    hosts with the command that settles them (`tacctl host sync web1 web2`)
+    and, on a terminal, ask `Sync these hosts now? [y/N]`. Only the long
+    `--yes` answers yes for you (new on both verbs); with no terminal nothing
+    runs and the notice is all. The exit status stays 0 when hosts are left to
+    sync (the lockdown on the devices is in force; the notice is a warning
+    that names them), as for the hosts a user change reaches. The sync is the
+    client script of item 19: the hosts get sshd's lockdown drop-in (no key
+    login, no forwarding for an account that is not a superuser's), and
+    `enable` ends the live sessions of those accounts on each host once, at
+    the sync of a host that waits for it. `disable` ends nothing, and a host
+    synced later or enrolled while the lockdown stands only gets the drop-in.
+    A host knows the tiers' groups, not the store's, so on the hosts the
+    lockdown closes every account that is not a superuser's: when the groups
+    it locks leave out users of the scope, `enable` says so in red, naming
+    them, before it asks for the scope's name, and it names a host that is
+    provisioned through a tacctl account that is not a superuser's, which the
+    sync would refuse. The server's own console users are closed and ended
+    like any host's.
+
+    A host that is unreachable, held or refused (a sshd that does not include
+    `sshd_config.d`) stays on a list in the lockdown's record
+    (`emergency.lockdown.<scope>.pending`, host names). At `enable` every host
+    of the scope is on it, read when the record is written, after the name is
+    typed. At a full `disable` every enrolled host of the scope is on it, the
+    ones that waited for the start too, since a listed host may hold the file
+    (a run that failed after the script wrote it) and a sync of a host without
+    the file removes nothing; a lockdown lifted while hosts are on the list
+    stays in the record with no group and those hosts. `emergency lockdown
+    status` shows the hosts the drop-in has not reached (and a lifted record
+    that waits, in `--json` too, with `"lifted": true`) and the command,
+    `status --json` has `hosts` and `pending_hosts` (and `lifted`: an element
+    with `"lifted": true` is a lockdown that was lifted and waits for hosts,
+    with no groups and no locked users, a kind of element the array did not
+    hold before, so a consumer must read that field to tell it from a standing
+    lockdown), and `config validate` warns of them. A host comes off the list
+    when a sync or an enrolment of it succeeds, but only if its script was
+    written for what the record still says (a sync that started before a
+    `disable` does not clear the host the `disable` just listed); a record
+    with no group and no host goes. `enable` or `disable` on a scope offers
+    the hosts that wait again. `host forget` and `host unenroll` drop the name
+    (`host forget` says that the file stays on a host it had reached, or that
+    waits to lose it), `host rename` follows it, and `host move` into a scope
+    that is locked down gives the host the step that ends its accounts'
+    sessions (the list of the scope it leaves loses the name; the script it
+    runs removes or writes the file as the new scope says). A script written
+    by `config linux script` for a locked scope carries the drop-in. `host
+    show --check` compares the file with the scope's state (missing under a
+    lockdown, present without one, or removed with sshd not yet told); a host
+    that a sync cannot lock down is told the real reason and not a sync (it
+    has no sshd, which is a note; its `sshd_config` does not include
+    `sshd_config.d`; it is provisioned through a tacctl user that is not a
+    superuser). The log has `hosts=<count>` on the `enable` line and
+    `emergency lockdown hosts action= scopes= hosts= synced= pending=`, host
+    names only.
+
+    **Restore.** The hosts keep the file whatever a restored record says, so a
+    restore that ends a lockdown (a snapshot taken before it) writes a lifted
+    record that lists every enrolled host of the scope, one that brings a
+    lockdown back or changes its groups lists every host as waiting, and the
+    report names the hosts and the command; a lockdown that is the same is
+    left as the snapshot has it.
+
+    **Rollback.** 0.2.22 and older refuse the `pending` leaf and cannot lift
+    the drop-in on a host, so `tacctl rollback` to any target is refused (the
+    dry run too) while a lockdown stands on a scope that has an enrolled host,
+    while a lifted one still waits for a host, and while a list names a host
+    that is not enrolled any more; the refusal names the hosts and the
+    commands (`emergency lockdown <scope> disable`, then `host sync <hosts>`).
+    A lockdown on a scope with no enrolled host is taken over by 0.2.22 to
+    0.2.19 as before, and the older targets refuse every lockdown as before.
+
 ## 0.2.22 (2026-10-29)
 
 1. **A device `ssh-keyscan` reads nothing from, but plain `ssh` reaches, gets

@@ -35,10 +35,14 @@ type fieldSpec struct {
 	typ      fieldType
 	min, max int
 	pattern  func(string) bool
-	values   []string
-	minItems int
-	required bool
-	nullable bool
+	// patternMsg is the problem a pattern failure reports, when "contains
+	// characters that are not allowed" would say too little. It never
+	// repeats the value.
+	patternMsg string
+	values     []string
+	minItems   int
+	required   bool
+	nullable   bool
 }
 
 type sectionSpec struct {
@@ -70,6 +74,10 @@ var schema = []sectionSpec{
 		// release before 0.2.20 refuses the key (lifecycle's rollback
 		// removes it).
 		{name: "password_change_required", typ: tBool},
+		// email (0.2.23) is written only when set: a release before 0.2.23
+		// refuses the key (lifecycle's rollback removes it). An address
+		// belongs to one user (Validate).
+		{name: "email", typ: tString, pattern: names.MatchEmail, patternMsg: "must be a plain address (local@domain, no spaces, angle brackets or quotes, at most 254 characters)"},
 	}},
 	{key: "scopes", label: "scope", name: names.MatchScope, fields: []fieldSpec{
 		{name: "prefixes", typ: tCIDRList, minItems: 1, required: true},
@@ -178,6 +186,9 @@ func checkField(spec fieldSpec, val any) string {
 			return "must be a non-empty string"
 		}
 		if spec.pattern != nil && !spec.pattern(s) {
+			if spec.patternMsg != "" {
+				return spec.patternMsg
+			}
 			return "contains characters that are not allowed"
 		}
 	case tStringList:
@@ -408,7 +419,30 @@ func Validate(store any) []string {
 			if get(u, "disabled") != true {
 				add("user '%s': the accounting sink must stay disabled", name)
 			}
+			if u.Has("email") {
+				add("user '%s': the accounting sink must not carry an email address", name)
+			}
 		}
+	}
+
+	// An address belongs to one user, compared without regard to case. The
+	// message names the first user (by name) and never the address.
+	emailOwner := map[string]string{}
+	for _, name := range sortedKeys(users) {
+		u, ok := mapOf(get(users, name))
+		if !ok {
+			continue
+		}
+		e, ok := get(u, "email").(string)
+		if !ok || !names.MatchEmail(e) {
+			continue
+		}
+		key := names.EmailKey(e)
+		if first, seen := emailOwner[key]; seen {
+			add("user '%s': email is already used by user '%s' (an address belongs to one user)", name, first)
+			continue
+		}
+		emailOwner[key] = name
 	}
 
 	// One prefix, one scope (only the identical network is exclusive).

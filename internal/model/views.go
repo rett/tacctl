@@ -138,7 +138,8 @@ func (m *Model) UserRows() []string {
 }
 
 // UserInfo is model_user_info: group, status, password_changed, priv_lvl,
-// juniper_class, hash_type, has_hash, then 'scope=<name>|<1|0>' per scope.
+// juniper_class, hash_type, has_hash, then 'scope=<name>|<1|0>' per scope,
+// and 'email=<address>' last when the user has one.
 // ok is false (no lines) for an unknown user. Never the hash.
 func (m *Model) UserInfo(name string) (lines []string, ok bool) {
 	u := m.users[name]
@@ -178,6 +179,9 @@ func (m *Model) UserInfo(name string) (lines []string, ok bool) {
 			e = "1"
 		}
 		lines = append(lines, "scope="+s+"|"+e)
+	}
+	if u.Email != "" {
+		lines = append(lines, "email="+u.Email)
 	}
 	return lines, true
 }

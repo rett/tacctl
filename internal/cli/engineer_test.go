@@ -139,7 +139,7 @@ func TestEngineerScriptUsers(t *testing.T) {
 	hs.run(nil, "config", "linux", "script", "--scope", "lab", "--server", "192.0.2.1", "-o", hs.path("tmp", "s.sh"))
 	data := hs.read("tmp/s.sh")
 	if hs.code != 0 || !strings.Contains(data, "TAC_USERS=$'alice:superuser:80000\\nbob:engineer:80001\\ncarol:readonly:80002'") ||
-		!strings.Contains(data, "\nTAC_ENGINEER_SUDO=/usr/bin/systemctl\\,/usr/bin/journalctl\nTAC_PROTOCOL=6\n") {
+		!strings.Contains(data, "\nTAC_ENGINEER_SUDO=/usr/bin/systemctl\\,/usr/bin/journalctl\nTAC_PROTOCOL=7\n") {
 		t.Errorf("script: %d %q\n%s", hs.code, hs.stderr(), head(data))
 	}
 }

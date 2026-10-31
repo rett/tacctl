@@ -37,9 +37,9 @@ func TestHostSyncExpiresAFlaggedUserOnTheOtherHostsOnly(t *testing.T) {
 	hs.run(nil, "host", "enroll", "admin@web1.example.net", "--scope", "lab", "--build-on-host")
 	hs.expect(0, "Host 'web1' enrolled.", "")
 
-	all := plain(hs.run(nil, "user", "require-password-change", "--all") + hs.err.String())
-	if hs.code != 0 || !strings.Contains(all, "Flagged 2, skipped 1 (1 superuser)") ||
-		!strings.Contains(all, "'bob', 'carol' can still log in to 1 enrolled host until each host's next sync, which expires the account there: tacctl host sync --all") {
+	all := plain(hs.run(local(), "user", "require-password-change", "--all") + hs.err.String())
+	if hs.code != 0 || !strings.Contains(all, "Flagged 2 (bob, carol), skipped 1 (1 superuser)") ||
+		!strings.Contains(all, "[WARN] 'bob', 'carol' can still log in to 1 enrolled host until each host's next sync, which expires the account there: tacctl host sync web1") {
 		t.Fatalf("require: %d\n%s", hs.code, all)
 	}
 	hs.run(nil, "host", "sync", "web1")
@@ -55,8 +55,8 @@ func TestHostSyncExpiresAFlaggedUserOnTheOtherHostsOnly(t *testing.T) {
 		t.Errorf("host show web1:\n%s", out)
 	}
 
-	all = plain(hs.run(nil, "user", "require-password-change", "bob", "off") + hs.err.String())
-	if hs.code != 0 || !strings.Contains(all, "'bob' can log in to 1 enrolled host again after each host's next sync: tacctl host sync --all") {
+	all = plain(hs.run(local(), "user", "require-password-change", "bob", "off") + hs.err.String())
+	if hs.code != 0 || !strings.Contains(all, "[WARN] 'bob' can log in to 1 enrolled host again after each host's next sync: tacctl host sync web1") {
 		t.Fatalf("clear: %d\n%s", hs.code, all)
 	}
 	hs.run(nil, "host", "sync", "web1")

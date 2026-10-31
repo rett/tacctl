@@ -13,8 +13,12 @@ import (
 // tacctl.yaml (the default of the whole server and a scope's) and in
 // devices.yaml (a device's own). Every target removes all three, and says so.
 
-var allRollbackTargets = []string{RollbackTarget0221, RollbackTarget0220, RollbackTarget0219, RollbackTarget0218, RollbackTarget0217,
+var allRollbackTargets = []string{RollbackTarget0222, RollbackTarget0221, RollbackTarget0220, RollbackTarget0219, RollbackTarget0218, RollbackTarget0217,
 	RollbackTarget0216, RollbackTarget029, RollbackTarget}
+
+// targetsBefore0222 are the targets that lack the timing scale: all but 0.2.22,
+// which has it.
+var targetsBefore0222 = allRollbackTargets[1:]
 
 // scaleState lays out a state with a scale at all three levels on top of the
 // sandbox.
@@ -30,7 +34,7 @@ func scaleState(t *testing.T) *rbSandbox {
 }
 
 func TestPlanRollbackEveryTargetRemovesTheTimeoutScale(t *testing.T) {
-	for _, target := range allRollbackTargets {
+	for _, target := range targetsBefore0222 {
 		t.Run(target, func(t *testing.T) {
 			s := scaleState(t)
 			s.in.Target = target
@@ -93,6 +97,32 @@ func TestPlanRollbackEveryTargetRemovesTheTimeoutScale(t *testing.T) {
 				t.Errorf("the second plan still has it:\n%s", st)
 			}
 		})
+	}
+}
+
+// 0.2.22 has the timing scale: its target leaves it, in tacctl.yaml and in
+// devices.yaml, and says nothing of it.
+func TestPlanRollback0222KeepsTheTimeoutScale(t *testing.T) {
+	s := scaleState(t)
+	s.as0222()
+	s.in.Target = RollbackTarget0222
+	p, err := PlanRollback(s.in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Keys()) != 0 || p.PendingFiles() || p.Pending() {
+		t.Errorf("keys %q pending %v", p.Keys(), p.Pending())
+	}
+	if st := stepText(p) + strings.Join(p.Notes, "\n"); strings.Contains(st, "timeout scale of the devices") || strings.Contains(st, "timing scale") || strings.Contains(st, "remove device.") || strings.Contains(st, "remove timeout_scale") {
+		t.Errorf("the plan removes something:\n%s", st)
+	}
+	before := s.snapshotOf()
+	done, err := ApplyRollback(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(done) != 0 || !equalFiles(before, s.snapshotOf()) {
+		t.Errorf("the apply did something: %q", done)
 	}
 }
 

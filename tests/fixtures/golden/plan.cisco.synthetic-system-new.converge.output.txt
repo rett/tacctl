@@ -43,6 +43,8 @@
 ! --secrets writes them again.
 ! Cleanup (--converge): cleanup comes after this region is pasted and verified: pull the device, then
 ! plan --converge again.
+! Note: the source of the AAA server is not checked against the interfaces of the device: this login
+! cannot see the interfaces.
 ! Note: system: the NTP key lines of the system block of scope 'lab' have not been checked on a device
 ! (not lab-tested): read them before you paste; they are in the order IOS needs (keys, trusted keys,
 ! servers, 'ntp authenticate' last).

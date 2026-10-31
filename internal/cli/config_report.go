@@ -486,6 +486,15 @@ func (inv *invocation) collectValidate(r *validateReport) {
 		}
 	}
 
+	// An SNMPv3 user name that two pools a device can see hold (a device
+	// re-addressed into a scope that has the name, a file put in by hand):
+	// the names are meant to be unique, and the lookup takes the device's own
+	// pool, then its scope's, then the config's. A warning that names the
+	// level, never the user.
+	for _, fnd := range inv.snmpNameFindings() {
+		r.found(howEchoE, "  "+Y+"SNMPv3 users:"+NC+"        "+fnd.Text+" ("+fnd.Fix+")", fnd)
+	}
+
 	// Break-glass holds: a warning per hold while it stands; red when it
 	// holds no registered device (an orphan: none of its name is registered,
 	// or the one that is stands at another address; the record still

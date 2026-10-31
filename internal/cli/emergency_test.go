@@ -17,7 +17,9 @@ func (sb *sandbox) lockdown(t *testing.T, typed string, args ...string) string {
 	t.Helper()
 	sb.tty = nil
 	if typed != "" {
-		holdTTY(t, sb, typed+"\n")
+		// the second line answers the offer to sync the scope's hosts, when
+		// one is enrolled (the sandbox has this server): no
+		holdTTY(t, sb, typed+"\nn\n")
 	}
 	out := plain(sb.run("", append([]string{"emergency", "lockdown"}, args...)))
 	sb.tty = nil
@@ -75,7 +77,7 @@ func TestEmergencyLockdownRoundTrip(t *testing.T) {
 			t.Errorf("tacctl.yaml lacks %q:\n%s", want, o)
 		}
 	}
-	if !hasAuditMatch(sb.runner, "auth.notice", `emergency lockdown enable scope=lab groups=operator,readonly exempt=alice reason="credential leak" by=root locked=2 result=ok`) {
+	if !hasAuditMatch(sb.runner, "auth.notice", `emergency lockdown enable scope=lab groups=operator,readonly exempt=alice reason="credential leak" by=root locked=2 hosts=[0-9]+ result=ok`) {
 		t.Errorf("no audit line: %v", sb.runner.Argvs())
 	}
 	cfg := sb.renderedConfig()
@@ -138,8 +140,11 @@ func TestEmergencyLockdownRoundTrip(t *testing.T) {
 	if sb.code != 0 || !strings.Contains(out, "Emergency lockdown LIFTED on scope 'lab'") {
 		t.Fatalf("disable: %d %q %q", sb.code, out, sb.stderr())
 	}
-	if strings.Contains(sb.overrides(), "emergency") {
-		t.Errorf("the record stands:\n%s", sb.overrides())
+	// the devices are open again; the sandbox has one enrolled host (this
+	// server) in the scope, which may hold sshd's drop-in: a lifted record
+	// lists it (web1) until a sync (emergency_hosts_test.go)
+	if o := sb.overrides(); strings.Contains(o, "groups:") || !strings.Contains(o, "pending:\n      - web1\n") {
+		t.Errorf("the lifted record:\n%s", o)
 	}
 	if got := sb.renderedConfig(); got != original {
 		t.Errorf("the rendered file is not what it was:\n%s", got)

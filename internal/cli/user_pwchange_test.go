@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/execx/fake"
 	"github.com/rett/tacctl/internal/hash"
 	"github.com/rett/tacctl/internal/store"
 )
@@ -17,6 +19,10 @@ func pwSandbox(t *testing.T) *sandbox {
 	t.Helper()
 	sb := newSandbox(t, true)
 	linuxDirStandIn(t, sb)
+	// the sync of this server that the user verbs run
+	sb.script = func(r *fake.Runner) {
+		r.On([]string{"bash"}, execx.Result{Stdout: []byte("[INFO] Accounts: 3 managed by tacctl here.\n")})
+	}
 	sb.run("", []string{"scope", "add", "srv", "--prefixes", "127.0.0.1/32"})
 	sb.expect(0, "", "")
 	sb.run("", []string{"user", "scope", "bob", "add", "srv"})
@@ -57,10 +63,11 @@ func TestUserAddRequiresAPasswordChangeByDefault(t *testing.T) {
 	if got := flaggedUsers(t, sb); got != "dave" {
 		t.Errorf("flagged: %q", got)
 	}
-	// the account exists on this server only after the next sync: until then
-	// the user can neither log in nor change the password
-	if out := plain(sb.out.String()); !strings.Contains(out, "[WARN] 'dave' must change the password, but the account is made at the next sync of this server, so it cannot log in to this server to do it until the sync: tacctl host sync authsrv") {
-		t.Errorf("no word of the sync:\n%s", out)
+	// the account is made by the sync the verb runs at once: the new user can
+	// log in here to change the password, and nothing says it cannot
+	if out := plain(sb.out.String()); !strings.Contains(out, "[INFO] This server's accounts were synced: ") || strings.Contains(out, "cannot log in") ||
+		strings.Contains(out, "next sync of this server") {
+		t.Errorf("the sync of this server:\n%s", out)
 	}
 	wantDetail(t, "user add", auditCalls(sb.runner), "auth.info", "user password-change name=dave state=required via=add by=alice")
 	noLoggerHas(t, "user add", sb.runner, h[:30])
@@ -91,11 +98,11 @@ func TestUserAddDoesNotRequireWhatCannotBeMet(t *testing.T) {
 	for _, c := range []struct {
 		name, group, scopes, why string
 	}{
-		{"root2", "superuser", "srv", "a superuser is never required to change the password"},
-		{"ivan", "operator", "lab", "it is not in scope 'srv', the scope of this server"},
+		{"root2", "superuser", "srv", "No password change is required of 'root2': a superuser is never required to change the password"},
+		{"ivan", "operator", "lab", "A password change could not be required of 'ivan': it is not in scope 'srv', the scope of this server"},
 	} {
 		sb.asAlice("", "user", "add", c.name, c.group, "--hash", h, "--scopes", c.scopes)
-		sb.expect(0, "No password change is required of '"+c.name+"': "+c.why, "")
+		sb.expect(0, c.why, "")
 		if strings.Contains(sb.out.String(), "must change") {
 			t.Errorf("%s: said the user must change it:\n%s", c.name, sb.out.String())
 		}
@@ -106,7 +113,7 @@ func TestUserAddDoesNotRequireWhatCannotBeMet(t *testing.T) {
 	// a server that is not enrolled has no login to change the password at
 	sb.write("state/linux-hosts", "", 0o600)
 	sb.asAlice("", "user", "add", "kate", "operator", "--hash", h, "--scopes", "lab,srv")
-	sb.expect(0, "No password change is required of 'kate': this server is not enrolled (tacctl host enroll --local)", "")
+	sb.expect(0, "[WARN] A password change could not be required of 'kate': this server is not enrolled (tacctl host enroll --local)", "")
 	if got := flaggedUsers(t, sb); got != "" {
 		t.Errorf("flagged on a server that is not enrolled: %q", got)
 	}
@@ -163,7 +170,7 @@ func TestUserRequirePasswordChange(t *testing.T) {
 	out := flag("--all")
 	for _, want := range []string{"Skipped alice (a superuser is never required to change the password).",
 		"Skipped carol (it is not in scope 'srv', the scope of this server, so it has no login on it).",
-		"Password change required of bob:", "Flagged 1, skipped 2 (1 superuser), already required 0."} {
+		"Flagged 1 (bob), skipped 2 (1 superuser), already required 0: each can log in to tacctl only, and no device accepts the user, until the password is changed."} {
 		if !strings.Contains(out, want) {
 			t.Errorf("--all lacks %q:\n%s", want, out)
 		}
@@ -185,7 +192,7 @@ func TestUserRequirePasswordChange(t *testing.T) {
 	}
 	// off: the one user, then every user who has it, a superuser's included
 	out = flag("bob", "off")
-	if !strings.Contains(out, "Password change no longer required of bob.") || !strings.Contains(out, "Cleared 1, not required 0.") || flaggedUsers(t, sb) != "" {
+	if !strings.Contains(out, "Cleared 1 (bob), not required 0.") || flaggedUsers(t, sb) != "" {
 		t.Errorf("off: %q\n%s", flaggedUsers(t, sb), out)
 	}
 	wantDetail(t, "off", auditCalls(sb.runner), "auth.info", "user password-change name=bob state=cleared via=require by=alice")
@@ -199,7 +206,7 @@ func TestUserRequirePasswordChange(t *testing.T) {
 		t.Fatalf("flagged: %q", got)
 	}
 	out = flag("--all", "off")
-	if !strings.Contains(out, "Cleared 2, not required 1.") || flaggedUsers(t, sb) != "" {
+	if !strings.Contains(out, "Cleared 2 (alice, bob), not required 1.") || flaggedUsers(t, sb) != "" {
 		t.Errorf("--all off: %q\n%s", flaggedUsers(t, sb), out)
 	}
 	// the refusals
@@ -373,7 +380,7 @@ func TestRequiredChangeKnowsTheServersLoginAddresses(t *testing.T) {
 	sb.run("", []string{"scope", "prefixes", "srv", "add", "192.0.2.10/32"})
 	sb.expect(0, "", "")
 	sb.asAlice("", "user", "require-password-change", "bob")
-	sb.expect(0, "Flagged 1, skipped 0, already required 0.", "")
+	sb.expect(0, "Flagged 1 (bob), skipped 0, already required 0:", "")
 	if strings.Contains(sb.out.String()+sb.err.String(), "also answers") {
 		t.Errorf("the server's own address is warned of:\n%s", sb.out.String()+sb.err.String())
 	}
@@ -458,22 +465,18 @@ func TestUserPasswdResetKeepsAFlagItCannotRenew(t *testing.T) {
 	}
 }
 
-// A renamed user who must change the password has no account under the new
-// name until the next sync, and is told so; an unflagged one is not.
-func TestUserRenameOfAFlaggedUserSaysItNeedsTheSync(t *testing.T) {
+// A renamed user who must change the password gets the account under the new
+// name at once, by the sync of this server: nothing says it must wait.
+func TestUserRenameOfAFlaggedUserSyncsAtOnce(t *testing.T) {
 	sb := pwSandbox(t)
 	sb.asAlice("", "user", "require-password-change", "bob")
 	sb.expect(0, "Flagged 1", "")
 	sb.asAlice("", "user", "rename", "bob", "robert")
 	sb.expect(0, "User renamed: bob -> robert", "")
-	if out := plain(sb.out.String() + sb.err.String()); !strings.Contains(out, "'robert' must change the password, but the account of 'bob' is renamed at the next sync of this server, so it cannot log in to this server to do it until the sync: tacctl host sync authsrv") {
+	if out := plain(sb.out.String() + sb.err.String()); !strings.Contains(out, "[INFO] This server's accounts were synced: ") || strings.Contains(out, "must change the password") {
 		t.Errorf("rename:\n%s", out)
 	}
 	if flaggedUsers(t, sb) != "robert" {
 		t.Errorf("the flag did not follow the name: %q", flaggedUsers(t, sb))
-	}
-	sb.asAlice("", "user", "rename", "carol", "caroline")
-	if sb.code != 0 || strings.Contains(sb.out.String()+sb.err.String(), "must change the password") {
-		t.Errorf("an unflagged user: exit %d\n%s", sb.code, sb.out.String()+sb.err.String())
 	}
 }

@@ -67,7 +67,11 @@ host sync <name>... | --all [--allow-uid-mismatch] [--remove-home] [--concurrenc
     the rest, and the exit status is 1. Names and --all are not given together. The numbers of
     new users are given out under the UID ledger's lock, held while the script is built and never
     while it runs on the host, so two syncs at once give a user one number; a ledger another
-    command keeps for 30 seconds stops the sync (see Consistent UIDs and GIDs)
+    command keeps for 30 seconds stops the sync (see Consistent UIDs and GIDs). While the host's
+    scope is locked down (`emergency lockdown`) it also writes sshd's lockdown drop-in there and
+    removes it when the scope is not locked down; a host the lockdown has not reached yet has the
+    live sessions of the accounts the file matches ended, once, and a host that has the change
+    comes off the lockdown's list of hosts it waits for
 
     --all
         Every enrolled host

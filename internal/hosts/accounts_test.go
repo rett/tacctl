@@ -242,7 +242,7 @@ func TestWriteScriptLifecycleHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 	head := strings.SplitN(readFile(t, out), "# --- tacctl", 2)[0]
-	if !strings.HasSuffix(head, "TAC_USERS=alice:superuser:80000\nTAC_INACTIVE=$'bob\\nnopriv'\nTAC_REMOVE_HOMES=dave\\ erin\nTAC_UID_FIRST=80000\nTAC_UID_LAST=89999\nTAC_UID_PREVIOUS=''\nTAC_ENGINEER_SUDO=ALL\nTAC_PROTOCOL=6\n") {
+	if !strings.HasSuffix(head, "TAC_USERS=alice:superuser:80000\nTAC_INACTIVE=$'bob\\nnopriv'\nTAC_REMOVE_HOMES=dave\\ erin\nTAC_UID_FIRST=80000\nTAC_UID_LAST=89999\nTAC_UID_PREVIOUS=''\nTAC_ENGINEER_SUDO=ALL\nTAC_PROTOCOL=7\n") {
 		t.Errorf("header\n%s", head)
 	}
 	// The tacctl server's own accounts: the shell as a fourth field. The

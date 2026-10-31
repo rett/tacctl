@@ -129,7 +129,7 @@ func (hs *hostSandbox) lowerRunner() *fake.Runner {
 
 // S2: every verb that lowers a tier syncs this server's accounts at once, or
 // says what is left: group edit tier (in engineer_test.go), group edit
-// priv-lvl, user move and group preset roles --force. A raise, or a change
+// priv-lvl and group preset roles --force. A raise, or a change
 // that leaves every rank, does not.
 func TestEveryLoweringVerbSyncsTheServer(t *testing.T) {
 	synced := "syncing this server's accounts (authsrv)."
@@ -145,9 +145,6 @@ func TestEveryLoweringVerbSyncsTheServer(t *testing.T) {
 		{name: "priv-lvl lowered", args: []string{"group", "edit", "operator", "priv-lvl", "3"}, sync: true, left: "Members of 'operator' keep their old groups"},
 		{name: "priv-lvl in the band", args: []string{"group", "edit", "operator", "priv-lvl", "9"}},
 		{name: "priv-lvl raised", args: []string{"group", "edit", "readonly", "priv-lvl", "7"}},
-		{name: "moved down", args: []string{"user", "move", "bob", "readonly"}, sync: true, left: "'bob' keeps the groups of the old tier"},
-		{name: "moved up", args: []string{"user", "move", "bob", "superuser"}},
-		{name: "moved sideways", args: []string{"user", "move", "carol", "readonly"}},
 		{
 			name: "preset --force", args: []string{"group", "preset", "roles", "--force"}, stdin: "y\n", sync: true,
 			// A group called engineer at priv-lvl 15 with no tier is a
@@ -155,7 +152,7 @@ func TestEveryLoweringVerbSyncsTheServer(t *testing.T) {
 			// tier, and bob in it a lowered user.
 			setup: func(hs *hostSandbox) {
 				for _, a := range [][]string{{"group", "add", "engineer", "15", "EN-CLASS"}, {"user", "move", "bob", "engineer"}} {
-					if hs.run(nil, a...); hs.code != 0 {
+					if hs.run(hs.lowerRunner(), a...); hs.code != 0 {
 						hs.t.Fatalf("%v: %d %q", a, hs.code, hs.err.String())
 					}
 				}

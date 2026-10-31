@@ -56,6 +56,7 @@ func TestResolveDefaults(t *testing.T) {
 		"Config":          "/etc/tacquito/tacquito.yaml",
 		"BackupDir":       "/etc/tacctl/backups",
 		"PWDatesDir":      "/etc/tacctl/backups/password-dates",
+		"KeptDir":         "/etc/tacctl/backups-kept",
 		"AcctLog":         "/var/log/tacquito/accounting.log",
 		"Overrides":       "/etc/tacctl/tacctl.yaml",
 		"StoreFile":       "/etc/tacctl/store.yaml",

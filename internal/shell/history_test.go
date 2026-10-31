@@ -40,6 +40,55 @@ func TestRedact(t *testing.T) {
 		{"tacctl scope secret lab set x", "tacctl scope secret lab set …(redacted)"},
 		{"tacctl", "tacctl"},
 		{"sudo tacctl", "sudo tacctl"},
+		// an email address is personal data: the flag's value and the word
+		// of 'user email' are not kept
+		{"user add bob ops --email bob@example.net", "user add bob ops --email …(redacted)"},
+		{"user add bob ops --email=bob@example.net --hash x", "user add bob ops --email=…(redacted)"},
+		{"user email bob alice@example.net", "user email bob …(redacted)"},
+		{"user email bob alice@example.net extra", "user email bob …(redacted)"},
+		{"user email alice@example.net", "user email …(redacted)"},
+		{"user email alice@example.net bob@example.net", "user email …(redacted)"},
+		{"tacctl user email bob carol@example.net", "tacctl user email bob …(redacted)"},
+		{"user email bob", "user email bob"},
+		{"user email bob clear", "user email bob clear"},
+		{"user email", "user email"},
+		// a word with an '@' in any other user verb is an address in the place of
+		// a name; the line is kept up to it
+		{"user remove alice@example.net", "user remove …(redacted)"},
+		{"user show alice@example.net", "user show …(redacted)"},
+		{"user rename bob alice@example.net", "user rename bob …(redacted)"},
+		{"user move alice@example.net operator", "user move …(redacted)"},
+		{"user move bob alice@example.net", "user move bob …(redacted)"},
+		{"user scope bob add lab,alice@example.net", "user scope bob add …(redacted)"},
+		{"user add zed alice@example.net", "user add zed …(redacted)"},
+		{"user add alice@example.net operator --hash x", "user add …(redacted)"},
+		{"user add zed operator --scopes alice@example.net", "user add zed operator --scopes …(redacted)"},
+		{"user passwd alice@example.net --hash x", "user passwd …(redacted)"},
+		{"user require-password-change bob alice@example.net", "user require-password-change bob …(redacted)"},
+		{"user add zed ops --hash x --email alice@example.net", "user add zed ops --hash …(redacted)"},
+		{"user show bob", "user show bob"},
+		// the note of a kept snapshot is free text
+		{"backup keep 20261030_010101_001 --note before the upgrade", "backup keep 20261030_010101_001 --note …(redacted)"},
+		{"backup keep 20261030_010101_001 --note='the state of bob' --yes", "backup keep 20261030_010101_001 --note=…(redacted)"},
+		{"backup keep 20261030_010101_001", "backup keep 20261030_010101_001"},
+		// the SNMP verbs take their secrets from a prompt or stdin: a word
+		// they do not take is one typed on the line
+		{"config snmp community", "config snmp community"},
+		{"config snmp community public-ish", "config snmp community …(redacted)"},
+		{"scope snmp lab community --stdin", "scope snmp lab community --stdin"},
+		{"scope snmp lab community --stdin=public-ish", "scope snmp lab community --stdin=…(redacted)"},
+		{"scope snmp lab community -dash-ish", "scope snmp lab community …(redacted)"},
+		{"config snmp v3-user add alice --auth sha256 --priv aes128 --default --stdin", "config snmp v3-user add alice --auth sha256 --priv aes128 --default --stdin"},
+		{"config snmp v3-user add alice auth-pass-1 priv-pass-1", "config snmp v3-user add alice …(redacted)"},
+		{"scope snmp lab v3-user add alice --stdin x", "scope snmp lab v3-user add alice --stdin …(redacted)"},
+		{"device snmp sw1 v3-user add alice --stdin=x", "device snmp sw1 v3-user add alice --stdin=…(redacted)"},
+		{"tacctl device snmp sw1 v3-user add --auth sha alice pass-1", "tacctl device snmp sw1 v3-user add --auth sha alice …(redacted)"},
+		{"config snmp v3-user alice auth-pass-1 priv-pass-1", "config snmp v3-user alice …(redacted)"},
+		{"config snmp v3-user default alice", "config snmp v3-user default alice"},
+		{"config snmp v3-user list", "config snmp v3-user list"},
+		{"config snmp v3-user remove alice", "config snmp v3-user remove alice"},
+		{"scope snmp lab show --reveal alice", "scope snmp lab show --reveal alice"},
+		{"device snmp v3-user add alice", "device snmp v3-user add alice"},
 	}
 	for _, c := range cases {
 		if got := Redact(c.line); got != c.want {

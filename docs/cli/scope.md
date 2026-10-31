@@ -147,9 +147,17 @@ scope snmp <name> community [--stdin]
 
     Set the scope's v2c community (asked twice, not echoed); the scope's version becomes v2c
 
-scope snmp <name> v3-user <user> [--auth sha|sha256] [--priv aes128] [--stdin]
+scope snmp <name> v3-user add <user> [--auth sha|sha256] [--priv aes128] [--default] [--stdin]
+scope snmp <name> v3-user remove <user>
+scope snmp <name> v3-user default [<user>|--none]
+scope snmp <name> v3-user list
 
-    Set the scope's v3 user and passphrases (authPriv); the scope's version becomes v3
+    The scope's pool of v3 users and its default user, as `config snmp v3-user` has them for the
+    config. `add` changes the pool (and the scope's protocols, when given), not the scope's
+    version (`version v3`) nor its default user; a name that the config's pool or a pool of one of
+    the scope's devices holds is refused, naming the level. The scope's default names a user of its
+    own pool; with none, the config's applies. A user that a device's default names cannot be
+    removed. An engineer reads `list` and `default` of a scope of their own
 
 scope snmp <name> clients list|add|remove [<cidr>[,<cidr>...]]
 

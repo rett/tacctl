@@ -151,6 +151,7 @@ func (inv *invocation) hostRename(args []string) error {
 	// that names what stayed and how to put it right.
 	inv.hostRenameRecord(p)
 	inv.hostRenameStaging(p)
+	inv.lockdownHostRenamed(oldName, newName)
 	if p.holdAddr != "" {
 		// The hold stays on the same address and follows the name (it prints
 		// its own warning when it cannot).
@@ -281,11 +282,12 @@ func (inv *invocation) hostRenameChecks(reg *hosts.Registry, oldArg, newName str
 }
 
 // hostRenameStrays counts the staging entries of a host equal to newName
-// ignoring case that is not oldName: they belong to no registry line.
+// ignoring case that are not oldName's either (compared the same way): they
+// belong to no registry line.
 func (inv *invocation) hostRenameStrays(oldName, newName string) int {
 	n := 0
 	for _, s := range inv.stagingLoad() {
-		if s.Kind == "host" && s.Name != oldName && strings.EqualFold(s.Name, newName) {
+		if s.Kind == "host" && !strings.EqualFold(s.Name, oldName) && strings.EqualFold(s.Name, newName) {
 			n++
 		}
 	}
@@ -394,7 +396,11 @@ func (inv *invocation) hostRenameRecord(p *hostRenamePlan) {
 }
 
 // hostRenameStaging renames the host's staging entries, and drops the strays
-// of the new name. A failure is a warning that names the addresses.
+// of the new name. Names compare without regard to case, as the registry's do:
+// the old name is matched first, so a line spelled differently is the host's
+// and a rename of the spelling only keeps it, and only a line of the new name
+// that is not the host's own is a stray. A failure is a warning that names
+// the addresses.
 func (inv *invocation) hostRenameStaging(p *hostRenamePlan) {
 	entries := inv.stagingLoad()
 	var out []stagingEntry
@@ -402,11 +408,12 @@ func (inv *invocation) hostRenameStaging(p *hostRenamePlan) {
 	var addrs []string
 	for _, s := range entries {
 		switch {
-		case s.Kind == "host" && s.Name == p.oldName:
+		case s.Kind == "host" && strings.EqualFold(s.Name, p.oldName):
 			s.Name, changed = p.newName, true
 			addrs = append(addrs, s.addr())
 		case s.Kind == "host" && strings.EqualFold(s.Name, p.newName):
 			changed = true
+			addrs = append(addrs, s.addr())
 			continue
 		}
 		out = append(out, s)

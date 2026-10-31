@@ -17,6 +17,40 @@ const PasswordChangeKey = "password_change_required"
 // rollback must see the key in a store that no longer validates too. A file
 // that cannot be read is an error.
 func PasswordChangeKeys(path string) ([]string, error) {
+	return userKeyHolders(path, PasswordChangeKey)
+}
+
+// RollbackPasswordChange removes PasswordChangeKey from every user of the
+// store at path, in one validated write under the store's lock (before runs
+// first, as a snapshot; an error from it stops the write). It reports the
+// users that had the key and whether the file was written; a store without
+// the key is not touched. The removal is the whole change: nothing else of
+// the store is rewritten but what any write canonicalises.
+func RollbackPasswordChange(path string, before func() error) (removed []string, changed bool, err error) {
+	return rollbackUserKey(path, PasswordChangeKey, before)
+}
+
+// EmailKey is the user key of an email address (0.2.23). Every release
+// before 0.2.23 refuses the key ("user '<name>': unknown field 'email'"), so
+// a rollback removes it (RollbackEmail).
+const EmailKey = "email"
+
+// EmailKeys are the users of the store at path that carry EmailKey, by name,
+// read as PasswordChangeKeys reads its key. The addresses are not returned:
+// a rollback names the users, never the address.
+func EmailKeys(path string) ([]string, error) { return userKeyHolders(path, EmailKey) }
+
+// RollbackEmail removes EmailKey from every user of the store at path, as
+// RollbackPasswordChange removes its key: one validated write under the
+// store's lock after before, which a rollback uses to take the snapshot that
+// keeps the addresses.
+func RollbackEmail(path string, before func() error) (removed []string, changed bool, err error) {
+	return rollbackUserKey(path, EmailKey, before)
+}
+
+// userKeyHolders are the users of the store at path that have key, by name,
+// from the file as it is.
+func userKeyHolders(path, key string) ([]string, error) {
 	raw, err := LoadRaw(path)
 	if err != nil {
 		return nil, err
@@ -35,20 +69,15 @@ func PasswordChangeKeys(path string) ([]string, error) {
 	}
 	var out []string
 	for _, name := range sortedKeys(um) {
-		if u, ok := mapOf(get(um, name)); ok && u.Has(PasswordChangeKey) {
+		if u, ok := mapOf(get(um, name)); ok && u.Has(key) {
 			out = append(out, name)
 		}
 	}
 	return out, nil
 }
 
-// RollbackPasswordChange removes PasswordChangeKey from every user of the
-// store at path, in one validated write under the store's lock (before runs
-// first, as a snapshot; an error from it stops the write). It reports the
-// users that had the key and whether the file was written; a store without
-// the key is not touched. The removal is the whole change: nothing else of
-// the store is rewritten but what any write canonicalises.
-func RollbackPasswordChange(path string, before func() error) (removed []string, changed bool, err error) {
+// rollbackUserKey removes key from every user of the store at path.
+func rollbackUserKey(path, key string, before func() error) (removed []string, changed bool, err error) {
 	if before != nil {
 		if err := before(); err != nil {
 			return nil, false, err
@@ -57,7 +86,7 @@ func RollbackPasswordChange(path string, before func() error) (removed []string,
 	changed, err = mutate(path, false, nil, func(s *Store) error {
 		users := s.section("users")
 		for _, name := range sortedKeys(users) {
-			if u, ok := mapOf(get(users, name)); ok && u.Delete(PasswordChangeKey) {
+			if u, ok := mapOf(get(users, name)); ok && u.Delete(key) {
 				removed = append(removed, name)
 			}
 		}

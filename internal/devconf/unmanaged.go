@@ -5,14 +5,38 @@ package devconf
 // difference. A section that lacks nothing and differs only by such
 // statements reads ok, with their number (SectionResult.Unmanaged).
 //
+// The principle is the planner's: a statement it leaves alone and that is
+// about the device, not about who can log in or which method asks the
+// server, is the device's own. A statement that decides who can
+// authenticate stays a finding whether the planner removes it or leaves it.
+//
 // The shapes mirror the Kept column of the planner's ownership rows
 // (plan/owned.go, named by Row; a test there keeps the two in step) and the
 // statements of no row at all ('snmp name', the engine id, 'snmp-server
 // host'). A trap group is the device's own unless a configuration block
-// names it (0.2.7). Only the 'snmp' and 'system' sections have them: an
-// extra of the other sections (another server, a login class, a filter, a
-// user nobody recorded) is a finding about who can log in, and stays a
+// names it (0.2.7). The 'snmp', 'system', 'netconf' and 'aaa' sections have
+// them; an extra of the other sections (a login class, a filter, a user
+// nobody recorded) is a finding about who can log in, and stays a
 // difference.
+//
+// In the 'aaa' section the device's own are the leaves under the server
+// block tacctl renders that the rendering does not state (a source address,
+// a timeout, a retry count, a routing instance), the vrf, the source
+// interface and the dead time of the IOS server group tacctl renders, and the options of the
+// client ('tacplus-options', 'radius-options') that do not decide who can
+// log in or what they may do. A leaf the rendering states with another value
+// is a difference, which the plan replaces in place. A TACACS+ port is never
+// the device's own: the rendering states it only for a listener that is not
+// on the default, so a port on the device against a server on the default is
+// the device asking the wrong port. Another server or server block, another
+// group, a method list or a login list of another name, the login leaf of a
+// line and the options that change the service asked for or how a password
+// is checked are findings: they decide who can authenticate, which method is
+// asked or what the login gets (a server line of tacctl's own group is one:
+// 'server', 'server name' and 'server-private' stay findings). The source interface ('ip tacacs
+// source-interface') and the other leaves of a line never reach the section
+// when the rendering states none (the extraction leaves them out), so they
+// need no shape.
 //
 // A WTI unit (wti.go) has its own: the system name and the trap settings of
 // the snmp section, the RADIUS items the walkthrough leaves alone, the whole
@@ -97,6 +121,64 @@ var (
 			return len(w) >= 4 && w[0] == "ip" && w[1] == "domain" && w[2] == "name" && w[3] != "vrf"
 		})
 	}
+	// a leaf under the server block tacctl renders (Junos 'system
+	// tacplus-server <addr> <leaf>', IOS 'tacacs server <name> <leaf>') that
+	// the rendering says nothing of: the device's own (a source address, a
+	// timeout, a routing instance). The leaf keyword decides, as it does for
+	// the planner; a leaf the rendering states, with another value, is a
+	// difference, and every leaf of another server is a finding (that server
+	// is not tacctl's). A TACACS+ 'port' is a finding when the rendering
+	// states none: it states one only for a listener off the default port, so
+	// the device's is then the wrong one and no login reaches the server. (The
+	// RADIUS ports are always rendered.)
+	ownServerLeaf = func(words []string, exp *renderedSet) bool {
+		if len(words) < 4 || !exp.has(words[:3]) || exp.has(words[:4]) {
+			return false
+		}
+		tacacs := words[0] == "tacacs" || words[1] == "tacplus-server"
+		return !tacacs || words[3] != "port"
+	}
+	// a leaf of the IOS server group tacctl renders ('aaa group server
+	// tacacs+|radius <name> <leaf>') that is the device's own: its vrf
+	// ('ip vrf forwarding'), its own source interface ('ip tacacs|radius
+	// source-interface') and its dead time, when the rendering states none.
+	// The group's servers ('server', 'server name', 'server-private') are
+	// not: a server that is not tacctl's is who can log in, whatever group of
+	// tacctl's it sits in. Another group's leaves are a finding as well.
+	ownGroupLeaf = func(words []string, exp *renderedSet) bool {
+		if len(words) < 6 || !exp.has(words[:5]) {
+			return false
+		}
+		n := 0
+		switch leaf := words[5:]; {
+		case leaf[0] == "deadtime":
+			n = 1
+		case len(leaf) >= 3 && leaf[0] == "ip" && (leaf[1] == "vrf" && leaf[2] == "forwarding" ||
+			(leaf[1] == "tacacs" || leaf[1] == "radius") && leaf[2] == "source-interface"):
+			n = 3
+		default:
+			return false
+		}
+		return len(words) >= 5+n && !exp.has(words[:5+n])
+	}
+	// a leaf of the client's options ('system tacplus-options <leaf>',
+	// 'system radius-options <leaf>') the rendering says nothing of: the
+	// device's own, but for the options that change the service asked for or
+	// how a password is checked (below), which decide what a login gets.
+	ownClientOption = func(words []string, exp *renderedSet) bool {
+		if len(words) < 3 || exp.has(words[:3]) {
+			return false
+		}
+		switch leaf := words[1] + " " + words[2]; leaf {
+		case "tacplus-options service-name":
+			// junos-exec is what tacctl's policy answers to, and what Junos
+			// asks for with none set; another service is never answered
+			return len(words) >= 4 && words[3] == "junos-exec"
+		case "tacplus-options strict-authorization", "radius-options password-protocol":
+			return false
+		}
+		return true
+	}
 )
 
 // keptShapes are the shapes per family; the first whose pattern a statement
@@ -117,6 +199,13 @@ var keptShapes = map[string][]keptShape{
 		// no row: the name, the engine id, the rest of v3 and anything else
 		// under 'snmp'
 		{Pattern: "snmp", keep: always},
+		// The aaa section: the leaves of tacctl's server the rendering says
+		// nothing of, and the options of the client. Another server is a
+		// finding.
+		{Row: "junos.aaa.tacplus", Pattern: "system tacplus-server $ $", keepStmt: ownServerLeaf},
+		{Row: "junos.aaa.tacplus", Pattern: "system tacplus-options $", keepStmt: ownClientOption},
+		{Row: "junos.aaa.radius", Pattern: "system radius-server $ $", keepStmt: ownServerLeaf},
+		{Row: "junos.aaa.radius", Pattern: "system radius-options $", keepStmt: ownClientOption},
 		// The system section (0.2.7) is additive: what the device holds
 		// beside the block's statements is its own, and a single value the
 		// block states and the device holds otherwise is a difference (the
@@ -183,6 +272,13 @@ var keptShapes = map[string][]keptShape{
 		{Row: "ios.snmp.block-trap-source", Pattern: "snmp-server trap-source", keep: notRendered},
 		// no row: the rest of 'snmp-server'
 		{Pattern: "snmp-server", keep: always},
+		// The aaa section: the leaves of tacctl's server block the rendering
+		// says nothing of. Another server block, the legacy host lines, a
+		// group's leaves and the login leaves of the lines are findings.
+		{Row: "ios.aaa.server-block", Pattern: "tacacs server $ $", keepStmt: ownServerLeaf},
+		{Row: "ios.aaa.radius-block", Pattern: "radius server $ $", keepStmt: ownServerLeaf},
+		{Row: "ios.aaa.group", Pattern: "aaa group server tacacs+ $ $", keepStmt: ownGroupLeaf},
+		{Row: "ios.aaa.radius-group", Pattern: "aaa group server radius $ $", keepStmt: ownGroupLeaf},
 		// The system section (0.2.7) is additive, as on Junos: what the
 		// device holds beside the block's statements is its own, and a single
 		// value the block states and the device holds otherwise is a
@@ -335,7 +431,7 @@ func unmanaged(fam, section string, x stmt, rs *renderedSet) bool {
 		if wtiKept(section, x, rs) {
 			return true
 		}
-	} else if section != SectionSNMP && section != SectionSystem && (fam != FamilyJunos || section != SectionNetconf) ||
+	} else if section != SectionSNMP && section != SectionSystem && section != SectionAAA && (fam != FamilyJunos || section != SectionNetconf) ||
 		strings.HasPrefix(x.stem, "deactivate ") {
 		return false
 	}

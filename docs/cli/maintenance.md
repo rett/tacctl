@@ -78,9 +78,15 @@ backup diff [<timestamp>]      Diff store.yaml and tacctl.yaml against a snapsho
 backup restore <ts> [--legacy|--keep-uids]
                                Restore a snapshot (with confirmation); --legacy for an old-style
                                backup; --keep-uids leaves the UID ledger as it is
+backup keep <ts> [--note <text>]
+                               Copy a snapshot to backups-kept/, where no retention reaches it
+backup unkeep <ts> [--yes]     Remove the kept copy of a snapshot (with confirmation)
+backup recover <snapshot> [--only <kind>[,<kind>...]] [--dry-run] [--yes]
+                               Put back one kind of data from a snapshot (kinds: email,
+                               snmp-users); nothing else changes
 ```
 
-A backup is a snapshot of the canonical files, `/etc/tacctl/backups/<timestamp>/{store.yaml,tacctl.yaml,manifest}`, taken automatically before every change that would alter them (nothing is added when they already equal the newest snapshot). The manifest records `rendered.json`, the tacctl version and who took the snapshot: `sid` (the session id of the audit lines), `user` and `command` (the command's words, without arguments). The newest 30 snapshots are kept. Snapshots hold shared secrets and password hashes: the directory is `0700`, the files `0600`, and `backup diff` and `backup restore` are superuser-only.
+A backup is a snapshot of the canonical files, `/etc/tacctl/backups/<timestamp>/{store.yaml,tacctl.yaml,manifest}`, taken automatically before every change that would alter them (nothing is added when they already equal the newest snapshot). The manifest records `rendered.json`, the tacctl version and who took the snapshot: `sid` (the session id of the audit lines), `user` and `command` (the command's words, without arguments). The newest 30 snapshots are kept. Snapshots hold shared secrets and password hashes: the directory is `0700`, the files `0600`, and `backup diff`, `backup restore`, `backup keep`, `backup unkeep` and `backup recover` are superuser-only.
 
 A snapshot also holds the files of the enrolled Linux hosts: `linux-hosts`
 (the registry), `hosts/` (one record per host), `staging` (the staging
@@ -104,6 +110,63 @@ the records whole. The snapshot `backup restore` takes first compares
 everything, records included, since it is what undoes the restore.
 
 `backup restore <ts>` puts back both files, re-renders every enabled backend's config (a hand-edited file is kept under `backups/legacy/` first), and restarts the backends. It snapshots the current state first, so a restore can be undone with another restore, and it changes nothing if the snapshot is invalid or the render fails. The snapshot's `backends.enabled` comes back with the rest of `tacctl.yaml`: a backend it enables must already be installed (otherwise nothing changes and the message says to run `backend enable`) and is started; one it leaves out is stopped and disabled.
+
+`backup keep <ts> [--note <text>]` copies a snapshot to
+`/etc/tacctl/backups-kept/<ts>/` (0700, the files 0600), where no retention
+reaches it: this release prunes `backups/` beyond the newest 30, and the older
+releases a rollback goes to do the same without knowing any marker. The copy
+is a snapshot like any other (the same files, the manifest included) with a
+file `kept` that records the note, who last set it (the user and the session
+id of the audit lines) and when: the keeper until a new `--note` replaces the
+note, and then whoever replaced it. The note is free text of at most 200
+printable characters (no control or format character, no line break); it is
+stored in the copy and shown by `backup list`, and it is not a place for
+secrets. Keeping a snapshot that is kept already says so and changes nothing,
+but for `--note`, which replaces the note. `backup list` marks a kept snapshot
+`snapshot, kept` and shows its note in a NOTE column, and `kept only` when its
+original has been pruned from `backups/`. `backup diff`, `backup restore` and
+`backup recover` look an id up in `backups/` first and then among the kept
+copies, so they work on a copy whose original is gone; a restore does not
+touch `backups-kept/`. `backup unkeep <ts>` removes the kept copy after a
+confirmation (`--yes` does not ask), and says first when no snapshot of that
+id remains in `backups/` (the kept copy is then the only copy); the snapshot
+in `backups/` is not touched. `uninstall` archives `backups-kept/` with
+`backups/` when the backups are preserved. The audit lines are `backup keep
+id= note=yes|no already=yes|no` and `backup unkeep id= only-copy=yes|no`, and
+the note is written as `<redacted>` in the command line they follow.
+
+`backup recover <snapshot>` puts back from a snapshot one kind of data and
+leaves everything else as it is, where `backup restore` puts back the whole
+state. It is the way back for what `tacctl rollback` removed: the rollback
+keeps the snapshot it took (`backup keep`) and names it (see [Rolling
+back](../install/upgrading.md#rolling-back)). The kinds are `email` (the email
+addresses of users, `user email`) and `snmp-users` (the SNMPv3 users a
+rollback dropped). Without `--only` it recovers every kind. For `snmp-users`
+it reads the credential files of the snapshot (`snmp.yaml`, `snmp/<scope>.yaml`,
+`snmp/devices/<device>.yaml`) and adds each user to the pool of the same level
+now, and a default where the level has none and the user it chose is there; it
+never overwrites a default. A scope or a device that no longer exists is
+skipped and named, a user the level has already is nothing to do, and a name
+that another pool a device can see holds now is skipped (the current user is
+kept), saying which pool; the lists name levels and count users, never a user
+or a passphrase, and the audit line holds counts and snapshot ids. For `email` it reads
+the snapshot's `store.yaml` and sets the address of each user who has one
+there and exists now with none, in one store write that goes through the same
+validation as `user email`. A user who no longer exists, a user who has
+another address now (the current one is kept) and an address another user
+holds now are skipped and named; a user who has the address already is nothing
+to do. The lists name users, never an address. The snapshot is looked up in
+`backups/` and then among the copies `backup keep` made in `backups-kept/`,
+which no retention reaches (a rollback keeps the snapshot it names there, so
+the data it dropped can be recovered after an older release pruned
+`backups/`); a kept copy that was read is named, with `backup unkeep`, which
+removes it once the data is recovered. `--dry-run` lists what would be
+recovered and changes nothing; otherwise the command asks for confirmation
+(`--yes` does not), snapshots the current state first (the snapshot being read
+is not taken by the retention), and ends with the number recovered and
+skipped. Nothing is rendered or restarted. A snapshot from before the data
+existed, or an old-style backup, recovers nothing. The audit line is `backup
+recover id= pre= kinds= restored= skipped=`, with no address.
 
 A snapshot that knows the hosts also puts the host files back: `linux-hosts`
 whole, `hosts/` made to match (a record the snapshot lacks is removed),

@@ -168,8 +168,11 @@ func escapeEntry(line string) string {
 // Redact is the line as the history stores it. Everything from the first
 // value that may be a secret on is replaced by RedactedMark:
 //
-//   - after '--secret', '--hash' or '--password' ('--secret=<v>' keeps the
-//     name);
+//   - after '--secret', '--hash', '--password', '--email' or '--note'
+//     ('--secret=<v>' keeps the name);
+//   - after the name in 'user email <name> <address>' (an address typed in
+//     the place of the name goes too; 'user email <name>' and 'user email
+//     <name> clear' are kept);
 //   - after 'set' in 'secret … set …' ('scope secret lab set x' is stored as
 //     'scope secret lab set …(redacted)');
 //   - after 'import' when a value follows it;
@@ -213,10 +216,35 @@ func redactAt(toks []string) int {
 	if toks[0] == "passwd" {
 		return 1
 	}
+	if len(toks) >= 2 && toks[0] == "user" && toks[1] == "email" {
+		return redactUserEmail(toks)
+	}
+	keep := redactFlags(toks)
+	if k := redactSNMP(toks); k >= 0 && (keep < 0 || k < keep) {
+		keep = k
+	}
+	if toks[0] == "user" {
+		// A name of a user, a group or a scope cannot hold an '@': the first
+		// word that does is an email address typed in the place of a name (or
+		// the value of --email), and the line is kept up to it.
+		for i, t := range toks[1:] {
+			if i++; strings.Contains(t, "@") {
+				if keep < 0 || i < keep-1 {
+					return i
+				}
+				break
+			}
+		}
+	}
+	return keep
+}
+
+// redactFlags is redactAt by the words that introduce a secret.
+func redactFlags(toks []string) int {
 	for i, t := range toks {
 		name, _, hasVal := strings.Cut(t, "=")
 		switch {
-		case name == "--secret" || name == "--hash" || name == "--password":
+		case name == "--secret" || name == "--hash" || name == "--password" || name == "--email" || name == "--note":
 			if hasVal {
 				toks[i] = name + "="
 			}
@@ -232,4 +260,97 @@ func redactAt(toks []string) int {
 		}
 	}
 	return -1
+}
+
+// redactSNMP is redactAt of the SNMP verbs that read a secret from a prompt or
+// standard input ('config snmp community', 'scope snmp <scope> v3-user add
+// <user>', 'device snmp <device> v3-user add <user>'): a word the verb does
+// not take is a secret typed on the line (the verb refuses it), so the line
+// is kept up to it. A 'v3-user' word that is none of its actions
+// is the retired 'v3-user <user> <passphrase>': everything after the user is
+// the secret. A switch given a value ('--stdin=x') keeps its name.
+func redactSNMP(toks []string) int {
+	if len(toks) < 3 || toks[1] != "snmp" {
+		return -1
+	}
+	// The verb word: after 'config snmp', after the scope or the device in
+	// 'scope snmp <scope>' and 'device snmp <device>'.
+	verb := 2
+	switch toks[0] {
+	case "config":
+	case "scope", "device":
+		verb = 3
+	default:
+		return -1
+	}
+	if len(toks) <= verb {
+		return -1
+	}
+	switch toks[verb] {
+	case "community":
+		return redactSNMPWords(toks, verb+1, 0)
+	case "v3-user":
+		takes := 2
+		for _, t := range toks[verb+1:] {
+			if strings.HasPrefix(t, "-") {
+				continue
+			}
+			if t != "add" && t != "remove" && t != "default" && t != "list" {
+				takes = 1
+			}
+			break
+		}
+		return redactSNMPWords(toks, verb+1, takes)
+	}
+	return -1
+}
+
+// redactSNMPWords is the index of the first word of toks[from:] that is
+// neither a flag of the SNMP verbs nor one of the takes positionals the verb
+// takes, or of a switch given a value ('--stdin=x', which keeps its name).
+func redactSNMPWords(toks []string, from, takes int) int {
+	pos := 0
+	for i := from; i < len(toks); i++ {
+		t := toks[i]
+		if strings.HasPrefix(t, "-") && len(t) >= 2 {
+			name, _, hasVal := strings.Cut(t, "=")
+			switch name {
+			case "--auth", "--priv":
+				if !hasVal {
+					i++
+				}
+			case "--stdin", "--default", "--none":
+				if hasVal {
+					toks[i] = name + "="
+					return i + 1
+				}
+			default:
+				// Not a flag of the verb: a passphrase can start with '-'.
+				return i
+			}
+			continue
+		}
+		if pos >= takes {
+			return i
+		}
+		pos++
+	}
+	return -1
+}
+
+// redactUserEmail is redactAt of 'user email ...': the words after the user's
+// name are the address (or 'clear'), and a word with an '@' in the place of
+// the name is one too (a user name cannot hold it).
+func redactUserEmail(toks []string) int {
+	rest := toks[2:]
+	if len(rest) == 0 {
+		return -1
+	}
+	if strings.Contains(rest[0], "@") {
+		return 2
+	}
+	if len(rest) == 1 || (len(rest) == 2 && rest[1] == "clear") {
+		return -1
+	}
+	return 3
 }

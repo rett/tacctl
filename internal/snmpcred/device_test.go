@@ -19,7 +19,7 @@ func TestDeviceFileNeverLeavesTheDirectory(t *testing.T) {
 		if _, err := LoadDevice(dir, bad); err == nil {
 			t.Errorf("LoadDevice(%q) accepted", bad)
 		}
-		if err := SaveDevice(dir, bad, Creds{Community: "x"}); err == nil {
+		if err := SaveDevice(dir, bad, Creds{Community: "x"}, true); err == nil {
 			t.Errorf("SaveDevice(%q) accepted", bad)
 		}
 		if err := RemoveDevice(dir, bad); err == nil {
@@ -51,11 +51,11 @@ func TestDeviceFilesModesAndRemoval(t *testing.T) {
 		t.Fatal(err)
 	}
 	sw1 := Creds{Community: "dev-community-1"}
-	sw2 := Creds{User: "alice", AuthPass: "auth-pass-1", PrivPass: "priv-pass-2"}
-	if err := SaveDevice(dir, "SW1", sw1); err != nil {
+	sw2 := Creds{Users: []User{{"alice", "auth-pass-1", "priv-pass-2"}}, Default: "alice"}
+	if err := SaveDevice(dir, "SW1", sw1, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := SaveDevice(dir, "sw2", sw2); err != nil {
+	if err := SaveDevice(dir, "sw2", sw2, true); err != nil {
 		t.Fatal(err)
 	}
 	for _, d := range []string{dir, filepath.Join(dir, "devices")} {
@@ -69,13 +69,13 @@ func TestDeviceFilesModesAndRemoval(t *testing.T) {
 			t.Errorf("%s: %v %v", f, fi, err)
 		}
 	}
-	if got, err := LoadDevice(dir, "sw1"); err != nil || got != sw1 {
+	if got, err := LoadDevice(dir, "sw1"); err != nil || !same(got, sw1) {
 		t.Errorf("sw1: %+v %v", got, err)
 	}
-	if got, err := LoadDevice(dir, "Sw1"); err != nil || got != sw1 {
+	if got, err := LoadDevice(dir, "Sw1"); err != nil || !same(got, sw1) {
 		t.Errorf("Sw1 (another spelling): %+v %v", got, err)
 	}
-	if got, err := LoadDevice(dir, "sw2"); err != nil || got != sw2 {
+	if got, err := LoadDevice(dir, "sw2"); err != nil || !same(got, sw2) {
 		t.Errorf("sw2: %+v %v", got, err)
 	}
 	// The scope loader sees none of it: a scope named like a device has a
@@ -101,7 +101,7 @@ func TestDeviceFilesModesAndRemoval(t *testing.T) {
 		t.Errorf("a scope's removal took a device's file: %v", err)
 	}
 	// Saving nothing removes the file; the last one takes the directories.
-	if err := SaveDevice(dir, "sw1", Creds{}); err != nil {
+	if err := SaveDevice(dir, "sw1", Creds{}, true); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "devices", "sw1.yaml")); !os.IsNotExist(err) {
@@ -122,10 +122,10 @@ func TestDeviceFilesModesAndRemoval(t *testing.T) {
 // the spelling alone keeps it.
 func TestRenameDevice(t *testing.T) {
 	dir := t.TempDir()
-	if err := SaveDevice(dir, "sw1", Creds{Community: "c-one"}); err != nil {
+	if err := SaveDevice(dir, "sw1", Creds{Community: "c-one"}, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := SaveDevice(dir, "sw9", Creds{Community: "leftover"}); err != nil {
+	if err := SaveDevice(dir, "sw9", Creds{Community: "leftover"}, true); err != nil {
 		t.Fatal(err)
 	}
 	err := RenameDevice(dir, "sw1", "sw9")
@@ -162,7 +162,7 @@ func TestCheckNoDeviceFile(t *testing.T) {
 	if err := CheckNoDeviceFile(dir, "sw1"); err != nil {
 		t.Errorf("no file: %v", err)
 	}
-	if err := SaveDevice(dir, "sw1", Creds{Community: "x"}); err != nil {
+	if err := SaveDevice(dir, "sw1", Creds{Community: "x"}, true); err != nil {
 		t.Fatal(err)
 	}
 	err := CheckNoDeviceFile(dir, "SW1")
@@ -175,12 +175,13 @@ func TestCheckNoDeviceFile(t *testing.T) {
 }
 
 // The order is the device's value, then the scope's, then the default's,
-// then the built-in, setting by setting; the v3 user and its passphrases
-// come from one level.
+// then the built-in, setting by setting; the v3 user is the first default
+// user, found in a pool the level may use.
 func TestResolveDevice(t *testing.T) {
-	def := Layer{Version: snmp.V2c, Port: 1161, Auth: snmp.AuthSHA256, Creds: Creds{Community: "def-c", User: "defuser", AuthPass: "def-auth-1", PrivPass: "def-priv-1"}}
+	def := Layer{Version: snmp.V2c, Port: 1161, Auth: snmp.AuthSHA256, Creds: Creds{Community: "def-c",
+		Users: []User{{"alice", "def-auth-1", "def-priv-1"}}, Default: "alice"}}
 	scope := Layer{Port: 2161, Timeout: 4, Creds: Creds{Community: "scope-c"}}
-	dev := Layer{Version: snmp.V3, Timeout: 7, Creds: Creds{User: "devuser", AuthPass: "dev-auth-1", PrivPass: "dev-priv-1"}}
+	dev := Layer{Version: snmp.V3, Timeout: 7, Creds: Creds{Users: []User{{"dave", "dev-auth-1", "dev-priv-1"}}, Default: "dave"}}
 	e := ResolveDevice(dev, scope, def)
 	if e.Version != snmp.V3 || e.VersionFrom != FromDevice {
 		t.Errorf("version %q (%s)", e.Version, e.VersionFrom)
@@ -197,14 +198,13 @@ func TestResolveDevice(t *testing.T) {
 	if e.Community != "scope-c" || e.CommunityFrom != FromScope {
 		t.Errorf("community %q (%s)", e.Community, e.CommunityFrom)
 	}
-	if e.User != "devuser" || e.V3From != FromDevice || e.CredFrom() != FromDevice {
+	if e.User != "dave" || e.V3From != FromDevice || e.DefaultFrom != FromDevice || e.CredFrom() != FromDevice || !e.HasV3() {
 		t.Errorf("v3 %q (%s), cred %s", e.User, e.V3From, e.CredFrom())
 	}
-	// A user the device sets with half its passphrases is still the
-	// device's whole: nothing is taken from the scope or the default.
-	half := ResolveDevice(Layer{Creds: Creds{User: "u"}}, scope, def)
-	if half.User != "u" || half.AuthPass != "" || half.V3From != FromDevice {
-		t.Errorf("half: %+v", half)
+	// A device without a default of its own takes its scope's, else the
+	// default level's.
+	if e := ResolveDevice(Layer{}, scope, def); e.User != "alice" || e.V3From != FromDefault || e.DefaultFrom != FromDefault {
+		t.Errorf("inherited: %+v", e)
 	}
 	// A zero device layer is the old Resolve.
 	if got, want := ResolveDevice(Layer{}, scope, def), Resolve(scope, def); got != want {

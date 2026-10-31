@@ -167,6 +167,20 @@ func MoveDeviceBlocks(c *conf.Config, old, newName string) error {
 	return c.MoveBlockDevice(old, newName)
 }
 
+// CopyDeviceBlocks gives the device dst the blocks in force of the device src
+// (a clone), vendor by vendor; src keeps its own. dst must have none
+// (nothing is merged), which the caller checks.
+func CopyDeviceBlocks(c *conf.Config, src, dst string) error {
+	for _, v := range blocks.Vendors {
+		if names := DeviceBlockNames(c, src, v); len(names) > 0 {
+			if err := WriteDeviceBlockNames(c, dst, v, names); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // ForgetDeviceBlocks removes a device's manifest entries (a device removed).
 func ForgetDeviceBlocks(c *conf.Config, device string) error {
 	return c.UnsetBlockDevice(device)

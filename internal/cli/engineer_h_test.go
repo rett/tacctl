@@ -270,8 +270,9 @@ func TestGroupShowInvalidTierWording(t *testing.T) {
 	}
 }
 
-// S3: every verb that can take a tier or an account away syncs the server
-// (the table of engineer_fixes_test.go has the others).
+// S3: the group verbs that can take a tier away sync the server (the table
+// of engineer_fixes_test.go has the others; the user verbs sync after every
+// change, user_sync_test.go).
 func TestMoreLoweringVerbsSyncTheServer(t *testing.T) {
 	synced := "syncing this server's accounts (authsrv)."
 	for _, c := range []struct {
@@ -282,16 +283,6 @@ func TestMoreLoweringVerbsSyncTheServer(t *testing.T) {
 		sync  bool
 		left  string
 	}{
-		// alice is a superuser (prod, lab), bob an operator (lab), carol readonly (lab, dmz).
-		{name: "user disable", args: []string{"user", "disable", "bob"}, sync: true, left: "'bob' keeps the groups of the old tier"},
-		{name: "user remove", args: []string{"user", "remove", "bob"}, stdin: "y\n", sync: true, left: "'bob' keeps the groups of the old tier"},
-		{name: "user remove, cancelled", args: []string{"user", "remove", "bob"}, stdin: "n\n"},
-		{name: "user scope remove the server's scope", args: []string{"user", "scope", "bob", "remove", "lab"}, sync: true, left: "'bob' keeps the groups of the old tier"},
-		{name: "user scope replace without it", args: []string{"user", "scope", "bob", "replace", "prod"}, sync: true, left: "'bob' keeps the groups of the old tier"},
-		{name: "user scope remove --all", args: []string{"user", "scope", "bob", "remove", "--all"}, stdin: "y\n", sync: true, left: "'bob' keeps the groups of the old tier"},
-		{name: "user scope remove another scope", args: []string{"user", "scope", "carol", "remove", "dmz"}},
-		{name: "user scope add", args: []string{"user", "scope", "bob", "add", "prod"}},
-		{name: "user enable", args: []string{"user", "enable", "bob"}},
 		{
 			name: "group remove (it has no members)", args: []string{"group", "remove", "spare"}, stdin: "y\n",
 			setup: func(hs *hostSandbox) {

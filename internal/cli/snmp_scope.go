@@ -51,7 +51,7 @@ func (inv *invocation) snmpDefaultLayer() (snmpcred.Layer, error) {
 		Port:    inv.snmpLayerNum("snmp.port", 1, 65535),
 		Timeout: inv.snmpLayerNum("snmp.timeout", snmp.MinTimeout, snmp.MaxTimeout),
 		Auth:    str("snmp.v3.auth"), Priv: str("snmp.v3.priv"),
-		Creds: creds,
+		Creds: creds, Name: "the config", Setter: snmpSetter(""),
 	}, nil
 }
 
@@ -66,7 +66,8 @@ func (inv *invocation) snmpScopeLayer(scope string) (snmpcred.Layer, error) {
 		return snmpcred.Layer{}, err
 	}
 	s := policy.SNMPSettings(inv.app.Conf(), scope)
-	return snmpcred.Layer{Version: s.Version, Port: s.Port, Timeout: s.Timeout, Auth: s.Auth, Priv: s.Priv, Creds: creds}, nil
+	return snmpcred.Layer{Version: s.Version, Port: s.Port, Timeout: s.Timeout, Auth: s.Auth, Priv: s.Priv, Creds: creds,
+		Name: "scope " + scope, Setter: snmpSetter(scope)}, nil
 }
 
 // snmpEffective is what a device of scope is read with; scope "" (a device
@@ -119,13 +120,20 @@ func (inv *invocation) snmpConfigOwn(scope string, own deviceSNMPOwn) (snmp.Conf
 	// one that has begun is finished through its own verbs; a device that
 	// has chosen a version or credentials is finished through its own.
 	setter := snmpSetter(scope)
-	if sc == (snmpcred.Layer{}) {
+	if sc.Empty() {
 		setter = snmpSetter("")
 	}
 	if own.chosen() {
 		setter = "tacctl device snmp " + shellquote.Q(own.Name)
 	}
-	c, problem := snmpcred.ResolveDevice(own.layer(), sc, def).Config(setter)
+	eff := snmpcred.ResolveDevice(own.layer(), sc, def)
+	c, problem := eff.Config(setter)
+	// A user's name is the engineer tier's to read: below it (device check,
+	// device scan) the problem says that a chosen user cannot be used, as
+	// 'device show' does, without the name.
+	if eff.V3Problem != "" && problem == eff.V3Problem && !inv.snmpUserVisible() {
+		problem = "an SNMPv3 user is chosen that cannot be used (the engineer tier and above are told which)"
+	}
 	// The wait for an answer is multiplied by the timing scale in force for
 	// the device (its own, its scope's, the server's), never above the most
 	// SNMP takes.
@@ -210,6 +218,7 @@ func (inv *invocation) walkthroughSNMPOwn(scope string, dev devices.SNMPInput, o
 	in.Version = e.Version
 	in.Community = e.Community
 	in.V3User, in.V3Auth, in.V3Priv, in.V3AuthPass, in.V3PrivPass = e.User, e.Auth, e.Priv, e.AuthPass, e.PrivPass
+	in.V3Fix = e.V3Fix
 	in.CredFrom = e.CredFrom()
 	sc := policy.SNMPSettings(inv.app.Conf(), scope)
 	in.Ranges = sc.Clients
