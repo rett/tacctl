@@ -36,7 +36,45 @@ Graphical login: SDDM and GDM authenticate these users, and GNOME's lock screen 
 
 Debian, Ubuntu and their derivatives are supported, and so is the RHEL family (RHEL, AlmaLinux, Rocky, CentOS Stream, Oracle Linux). Both methods are tested on Ubuntu 24.04, Debian 12 and 13, and AlmaLinux and Rocky 8, 9 and 10. On RHEL-family hosts the script adds an `include` line in front of the service's `password-auth`/`system-auth` line instead of replacing a Debian `@include`, leaves the authselect-managed files alone, uses `dnf`, and, when SELinux is enabled, installs a small policy module (`tacctl_pam`, which labels the TACACS+ port and lets `sshd`, `login` and `sudo` connect to it; `tacctl_pam_radius` for RADIUS). SELinux in enforcing mode is not verified for either method.
 
-The removal script undoes the PAM edits and deletes the secret, module, SELinux policy module and sudoers drop-in of either method (packages stay installed). Accounts, home directories and the `tac-*` groups stay; it lists any account left with neither a local password nor an SSH key.
+The removal script undoes the PAM edits and deletes the secret, module, SELinux policy module, sudoers drop-in and sshd's lockdown drop-in (below) of either method (packages stay installed). Accounts, home directories and the `tac-*` groups stay; it lists any account left with neither a local password nor an SSH key.
+
+**Emergency lockdown on a host.** While the host's scope is locked down
+(`emergency lockdown`), `host enroll` and `host sync` write one sshd drop-in,
+`/etc/ssh/sshd_config.d/00-tacctl-0-lockdown.conf`, and remove it when the
+scope is not locked down. It holds `Match Group tac-users,!tac-superuser` with
+`PubkeyAuthentication no`, `AllowTcpForwarding no`,
+`AllowStreamLocalForwarding no`, `X11Forwarding no` and
+`AllowAgentForwarding no`: no account of a tier that is not a superuser's logs
+in with a key or forwards a port, whichever groups the lockdown names (the
+host knows tiers, not the store's groups). Superusers, root and the
+provisioning login, which is in no `tac-*` group, are not matched. The name
+sorts before `00-tacctl-engineer.conf` and the console's drop-in, so its
+values are the first sshd takes.
+
+The script checks the file before sshd reads it: `sshd -t`, then `sshd -T -C
+user=<account>,...,laddr=127.0.0.1,lport=22` for an account the file matches
+(the five keywords must be `no`) and for one it does not (sshd's answer must be
+what it was before). A check that fails puts the old file back and fails the
+run, and so does a `sshd -T` that fails itself (its first line is shown). sshd
+is reloaded (`systemctl reload`, or a SIGHUP to the process in
+`/run/sshd.pid` where there is no systemd), never restarted, and `restorecon`
+runs on the file. `/var/lib/tacctl-client/lockdown` says what the running sshd
+may enforce (`on` once the file is loaded, `off` while a lift is under way): a
+reload that fails fails the run and the next sync tries it again, even when the
+file is already gone. A host whose `/etc/ssh/sshd_config` does not include
+`sshd_config.d` (RHEL 8, OpenSSH before 8.2) is refused before anything
+changes: the file would be ignored and the host would only look locked down.
+A host provisioned through a tacctl account that is not a superuser's is
+refused too, with the account named: the lockdown would close its key (the
+check is made again right before the file is written, since the sync in between
+can make the account a member, and not for the server's own script, which runs
+locally and loses no login). At the step that begins a lockdown the
+script also ends the live sessions of the accounts the file matches
+(`loginctl terminate-user`, else their processes), never root, a superuser,
+the provisioning login, the account the script runs from or any account under
+UID 1000. The script's
+header says which state the host gets in `TAC_LOCKDOWN` (client script
+protocol 7).
 
 ## Pages
 

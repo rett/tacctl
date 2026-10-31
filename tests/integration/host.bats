@@ -322,7 +322,7 @@ on_tty() {
     assert_line "TAC_UID_LAST=89999"
     assert_line "TAC_UID_PREVIOUS=''"
     assert_line "TAC_ENGINEER_SUDO=ALL"
-    assert_line "TAC_PROTOCOL=6"
+    assert_line "TAC_PROTOCOL=7"
     # The ID maps, then the accounts, were read over the shared connection,
     # read-only, before the copy.
     stub_called "^ssh -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=~/.ssh/tacctl-%C -o ControlPersist=60 -o ForwardAgent=no -o ClearAllForwardings=yes -T web1 getent passwd$"
@@ -1296,7 +1296,7 @@ _container_ssh() {
     stub_cmd ssh 'case "$*" in
         *tacctl-check*) printf "tacctl-check %s\n" "group tac-users 80000" "group tac-superuser 1002" "group tac-engineer 80005" \
             "account alice 80000 80000 700 /home/alice" "pam tacctl-auth a" "pam tacctl-account b" "pam tacctl-session c" \
-            "pam-written tacctl-auth a" "pam-written tacctl-account b" "pam-written tacctl-session c" "protocol 6" ;;
+            "pam-written tacctl-auth a" "pam-written tacctl-account b" "pam-written tacctl-session c" "protocol 7" ;;
         *) true ;;
     esac'
     run "$TACCTL_BIN_SCRIPT" host show web1 --check
@@ -1329,7 +1329,7 @@ _container_ssh() {
         *web2.example.net*tacctl-check*) echo "sudo needs a password" >&2; false ;;
         *tacctl-check*) printf "tacctl-check %s\n" "group tac-users 80000" "group tac-superuser 1002" "group tac-engineer 80005" \
             "account alice 80000 80000 700 /home/alice" "pam tacctl-auth a" "pam tacctl-account b" "pam tacctl-session c" \
-            "pam-written tacctl-auth a" "pam-written tacctl-account b" "pam-written tacctl-session c" "protocol 6" ;;
+            "pam-written tacctl-auth a" "pam-written tacctl-account b" "pam-written tacctl-session c" "protocol 7" ;;
         *) true ;;
     esac'
     run --separate-stderr "$TACCTL_BIN_SCRIPT" host check --all
@@ -1362,7 +1362,7 @@ _container_ssh() {
         *web2.example.net*tacctl-check*) echo "sudo needs a password" >&2; false ;;
         *tacctl-check*) printf "tacctl-check %s\n" "group tac-users 80000" "group tac-superuser 1002" "group tac-engineer 80005" \
             "account alice 80000 80000 700 /home/alice" "pam tacctl-auth a" "pam tacctl-account b" "pam tacctl-session c" \
-            "pam-written tacctl-auth a" "pam-written tacctl-account b" "pam-written tacctl-session c" "protocol 6" ;;
+            "pam-written tacctl-auth a" "pam-written tacctl-account b" "pam-written tacctl-session c" "protocol 7" ;;
         *) true ;;
     esac'
     run --separate-stderr "$TACCTL_BIN_SCRIPT" host check web2 web1 --concurrency 2
@@ -1394,7 +1394,7 @@ _container_ssh() {
     run "$TACCTL_BIN_SCRIPT" host show web1 --check
     assert_failure 1
     assert_line "  - bob is an engineer but is still in tac-superuser (full sudo; the engineer tier gets tac-engineer). Fix: tacctl host sync web1"
-    assert_line "  - the host ran client script protocol 5; this tacctl writes 6. Fix: tacctl host sync web1"
+    assert_line "  - the host ran client script protocol 5; this tacctl writes 7. Fix: tacctl host sync web1"
     refute_output --partial "alice is an engineer"
     refute_output --partial "tac-engineer is missing"
     assert_line "  3 differences."

@@ -74,8 +74,13 @@ type Script struct {
 	// RevokeEngineer is TAC_REVOKE_ENGINEER=1, the script of 'tacctl rollback
 	// --hosts' (D50): the body writes no %tac-engineer line and takes the
 	// engineer-tier accounts out of tac-superuser and tac-engineer, so the
-	// engineers have no sudo on the host. The protocol stays 6.
+	// engineers have no sudo on the host.
 	RevokeEngineer bool
+	// Lockdown is TAC_LOCKDOWN, the emergency lockdown the scope wants on the
+	// host: LockdownOn writes sshd's lockdown drop-in, LockdownOnEnd also ends
+	// the live sessions of the accounts it matches, "" (nothing written)
+	// removes the drop-in.
+	Lockdown string
 	// Body is client-install.sh; nil means the embedded copy.
 	Body []byte
 }
@@ -95,12 +100,24 @@ type Script struct {
 // first+5, on every host; a host's engineers move from tac-superuser to
 // it) and TAC_ENGINEER_SUDO, its line in the host's sudoers drop-in
 // (written on hosts other than the tacctl server only, and at a sync as
-// well as at an install); 0.2.14 added TAC_INACTIVE_UIDS (optional, written
-// only when there is one: the body tolerates its absence). The body refuses
+// well as at an install); 7 adds TAC_LOCKDOWN, the state of the emergency
+// lockdown on the host (optional, written only while the scope is locked
+// down: its absence removes sshd's lockdown drop-in, and a sync writes or
+// removes that file in both of its forms); 0.2.14 added TAC_INACTIVE_UIDS
+// (optional, written only when there is one: the body tolerates its
+// absence). The body refuses
 // a header of another protocol,
 // and a body of an earlier release has no TAC_PROTOCOL check but never
 // sees this header (both are written into one file by one tacctl).
-const ScriptProtocol = "6"
+const ScriptProtocol = "7"
+
+// The values of TAC_LOCKDOWN (Script.Lockdown): the drop-in is written, and
+// the drop-in is written and the live sessions of the accounts it matches are
+// ended (the host has not had the lockdown yet).
+const (
+	LockdownOn    = "on"
+	LockdownOnEnd = "on-end"
+)
 
 // EngineerSudoAll is TAC_ENGINEER_SUDO for every command.
 const EngineerSudoAll = "ALL"
@@ -198,6 +215,9 @@ func (s Script) Header() string {
 	if s.RevokeEngineer {
 		q("TAC_REVOKE_ENGINEER", "1")
 	}
+	if s.Lockdown != "" {
+		q("TAC_LOCKDOWN", s.Lockdown)
+	}
 	q("TAC_PROTOCOL", ScriptProtocol)
 	return b.String()
 }
@@ -278,6 +298,8 @@ type ScriptRequest struct {
 	EngineerSudo string
 	// RevokeEngineer is the header's TAC_REVOKE_ENGINEER=1 (Script.RevokeEngineer).
 	RevokeEngineer bool
+	// Lockdown is the header's TAC_LOCKDOWN (Script.Lockdown).
+	Lockdown string
 }
 
 // ScriptResult is what the script was written with (LINUX_SCRIPT_USERS,
@@ -357,7 +379,7 @@ func (e *Env) WriteScript(req ScriptRequest) (ScriptResult, error) {
 		Secret: req.Secret, Users: users, Generated: e.now(), Range: e.rng(), Previous: previous,
 		Inactive: strings.Join(linuxNames(expired), "\n"), RemoveHomes: homes,
 		Local: req.Local, EngineerSudo: req.EngineerSudo, RevokeEngineer: req.RevokeEngineer,
-		InactiveUIDs: inactiveUIDs,
+		InactiveUIDs: inactiveUIDs, Lockdown: req.Lockdown,
 	}
 	if embed {
 		s.Tarball = tarball

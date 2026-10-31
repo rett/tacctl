@@ -433,6 +433,66 @@ current behaviour; this file is where history lives.
     The dry run lists levels and counts, never a name or a passphrase; the
     audit line carries counts and snapshot ids.
 
+19. **The client script writes and removes sshd's lockdown drop-in, and speaks
+    protocol 7.** A host enrolled in a scope that is locked down gets one
+    static sshd drop-in, `/etc/ssh/sshd_config.d/00-tacctl-0-lockdown.conf`,
+    with `Match Group tac-users,!tac-superuser` and `PubkeyAuthentication no`,
+    `AllowTcpForwarding no`, `AllowStreamLocalForwarding no`, `X11Forwarding
+    no` and `AllowAgentForwarding no`: it closes ssh key logins and every
+    forwarding for each account of tacctl's tiers that is not a superuser. It
+    matches the tiers' groups, not the store's, so it cannot tell the groups
+    of a lockdown apart; the provisioning login has no `tac-users` group and
+    is not matched. The header of the script has one new variable,
+    `TAC_LOCKDOWN` (`on`, or `on-end`, which also ends the live sessions of
+    the matched accounts; with none the drop-in is removed), so the script
+    protocol is 7, and `host show --check` reports a host that ran protocol 6
+    until its next sync. Both forms of the script write or remove the file: a
+    sync (`--accounts-only`) and an install.
+
+    The file is checked before sshd reads it, with `sshd -t` and with `sshd -T
+    -C user=<account>,host=localhost,addr=127.0.0.1,laddr=127.0.0.1, lport=22`
+    for one account it matches (the five keywords are `no`) and one it does
+    not (what sshd says is what it was before); a failed check puts the old
+    file back and fails the run, and so does a `sshd -T` that itself fails,
+    which is said as that (the first line of what sshd printed), not taken for
+    a keyword that is not set. A host whose `sshd_config` does not include its
+    `sshd_config.d` directory (RHEL 8 and OpenSSH before 8.2) is refused
+    before anything changes, because the file would be silently inert and only
+    look like a lockdown, and so is a run started from a tacctl account that
+    is not a superuser (a member of `tac-users` and not of `tac-superuser`,
+    named in the message), as when the host is provisioned through one: the
+    lockdown would close that account's key and with it the way to the host.
+    The check is made again, for runs over ssh only, right before the file is
+    written, because the sync in between can make the account a member (it
+    creates `tac-users` and adds the accounts of the scope), and it is skipped
+    for the server's own script (`TAC_LOCAL=1`), which tacctl runs locally: an
+    engineer or operator running a user verb there loses no ssh login.
+
+    sshd is reloaded, never restarted (`systemctl reload`, or the SIGHUP to
+    the process its pid file names where there is no systemd, as in a
+    container), and `restorecon` runs on the file. The state file
+    `/var/lib/tacctl-client/lockdown` says what the running sshd may enforce:
+    `on` once the file is loaded, `off` while a lift is under way. A reload
+    that fails, after a write or after a removal, fails the run and is tried
+    again by the next sync, which finishes it even when the file is gone (a
+    lift is not forgotten because its file was removed first).
+
+    `on-end` ends the live sessions after the file is in place and sshd is
+    reloaded: `loginctl terminate-user` for each matched account where
+    systemd-logind knows it, else its processes are ended; root, the
+    superusers, the provisioning login, the account the script was started
+    from (`SUDO_USER`, `LOGNAME`, `USER`) and any account under UID 1000 (a
+    system account, such as the one sshd's listener runs as) are never
+    touched, the last one with a warning. `client-remove.sh` (`config linux
+    remove-script`, `host unenroll`) removes the file and reloads sshd. A lift
+    on a host whose sshd is gone says that nothing was reloaded. The name
+    sorts before `00-tacctl-engineer.conf` and the console's drop-in, in the
+    byte order and in a locale's, so its values are the first sshd takes (the
+    engineer drop-in may let agent forwarding through); the test hooks
+    `TACCTL_CLIENT_LOCKDOWN_DROPIN`, `TACCTL_CLIENT_SSHD_CONFIG` and
+    `TACCTL_CLIENT_SSHD_PIDFILE` move the paths for the test sandbox. The
+    verbs that set the state come with the next item.
+
 ## 0.2.22 (2026-10-29)
 
 1. **A device `ssh-keyscan` reads nothing from, but plain `ssh` reaches, gets

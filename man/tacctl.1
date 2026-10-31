@@ -4200,6 +4200,21 @@ a local account named like a user that it did not create is left alone and
 that user gets no account. It refuses
 to run when no local administrator with a usable password exists outside
 the TACACS+ user list, and puts the PAM files back if any step fails.
+While the scope is locked down (\fBemergency lockdown\fR) the script also
+writes sshd's lockdown drop-in
+.IR /etc/ssh/sshd_config.d/00\-tacctl\-0\-lockdown.conf :
+\fBMatch Group tac\-users,!tac\-superuser\fR with \fBPubkeyAuthentication no\fR
+and no TCP, stream\-local, X11 or agent forwarding, so no account of a tier
+that is not a superuser's logs in with a key or forwards a port; the file
+sorts before the engineer tier's and the console's drop\-ins. It is checked
+with \fBsshd \-t\fR and \fBsshd \-T \-C\fR (an account it matches and one it
+does not) before sshd, which is reloaded and never restarted, reads it, and a
+host whose \fIsshd_config\fR does not include \fIsshd_config.d\fR is refused
+before anything changes, and so is a run over ssh from a tacctl account that is
+not a superuser (it would lose its own key; checked again just before the file is
+written, and not for the server's own script, which runs locally). A failed reload fails the run
+and the next sync tries it again, though the file is gone. A script of a scope
+that is not locked down removes the file. The header's \fBTAC_LOCKDOWN\fR (protocol 7) says which.
 The server's port in it is the configured listener's
 .RB ( "server listen" ):
 the TACACS+
@@ -4368,8 +4383,9 @@ Requires: \fBsuperuser\fR.
 .B "config linux remove-script " "[ \-\-output " file " ]"
 Write a script that removes TACACS+ or RADIUS login from a host (either
 method): it undoes the PAM edits, deletes the files holding the shared
-secret, the module, the SELinux module and the sudoers drop-in, and reports
-accounts left with no way to log in. Local accounts, home directories, the
+secret, the module, the SELinux module, the sudoers drop-in and sshd's
+lockdown drop-in (sshd is reloaded), and reports accounts left with no way to
+log in. Local accounts, home directories, the
 tac-* groups and installed packages are left in place.
 .\" BEGIN GENERATED: command config linux remove-script
 .RS

@@ -11,7 +11,10 @@
 # script), TAC_ENGINEER_SUDO (what tac-engineer may run through sudo here:
 # ALL, or absolute command paths separated by commas), TAC_REVOKE_ENGINEER (1
 # only in the script of 'tacctl rollback --hosts': engineers get no sudo here;
-# absent otherwise) and TAC_PROTOCOL (the contract between header and body, 6). TAC_METHOD picks the PAM
+# absent otherwise), TAC_LOCKDOWN (the emergency lockdown of the scope: "on"
+# or "on-end" write sshd's lockdown drop-in, "on-end" also ends the live
+# sessions of the accounts it matches; absent or "off" removes the drop-in)
+# and TAC_PROTOCOL (the contract between header and body, 7). TAC_METHOD picks the PAM
 # module the host authenticates through; accounts, tiers, sudo and the
 # fallback to local passwords are the same for both:
 #
@@ -42,6 +45,12 @@ SUDOERS_HOST_FILE="${TACCTL_CLIENT_SUDOERS:-/etc/sudoers.d/tacctl-host}"
 # tiers sudoers drop-in (see host_sudoers).
 SERVER_MARKERS="${TACCTL_CLIENT_SERVER_MARKERS:-/usr/local/bin/tacctl /etc/sudoers.d/tacctl-tiers}"
 XDG_DIR="${TACCTL_CLIENT_XDG:-/etc/xdg}"
+# sshd's drop-in of the emergency lockdown (host_lockdown), and the main
+# configuration that has to include its directory. The name sorts before the
+# engineer tier's 00-tacctl-engineer.conf and the console's drop-in: sshd takes
+# the first value of a keyword across Match blocks, in file-name order.
+LOCKDOWN_DROPIN="${TACCTL_CLIENT_LOCKDOWN_DROPIN:-/etc/ssh/sshd_config.d/00-tacctl-0-lockdown.conf}"
+SSHD_CONFIG="${TACCTL_CLIENT_SSHD_CONFIG:-/etc/ssh/sshd_config}"
 # sudo-i is the service 'sudo -i' uses; where it exists it has its own copy
 # of the includes (Debian) or simply includes sudo (RHEL family). sddm and
 # gdm-password are the graphical logins; GNOME's lock screen also unlocks
@@ -67,8 +76,8 @@ done
 
 # The header and this body are one contract. A header of another protocol
 # was not written together with this body: stop before anything changes.
-if [[ "${TAC_PROTOCOL:-1}" != "6" ]]; then
-    die "This script's header speaks protocol ${TAC_PROTOCOL:-1} and its body protocol 6: they were not written by
+if [[ "${TAC_PROTOCOL:-1}" != "7" ]]; then
+    die "This script's header speaks protocol ${TAC_PROTOCOL:-1} and its body protocol 7: they were not written by
         the same tacctl. Nothing was changed. Write a new script with 'tacctl config linux script', or use
         'tacctl host enroll|sync'."
 fi
@@ -114,6 +123,19 @@ case "${TAC_REVOKE_ENGINEER:-0}" in
             REVOKE_ENGINEER=1
         fi ;;
     *) die "The header's TAC_REVOKE_ENGINEER is neither 0 nor 1. Nothing was changed." ;;
+esac
+
+# TAC_LOCKDOWN is the state the emergency lockdown of the scope wants here:
+# "on" has sshd's drop-in written (host_lockdown), "on-end" does that and also
+# ends the live sessions of the accounts it matches (the header of a host that
+# has not had the lockdown yet); "off", or no variable, removes the drop-in.
+LOCKDOWN="off"
+LOCKDOWN_END=0
+case "${TAC_LOCKDOWN:-off}" in
+    off) ;;
+    on) LOCKDOWN="on" ;;
+    on-end) LOCKDOWN="on"; LOCKDOWN_END=1 ;;
+    *) die "The header's TAC_LOCKDOWN is not off, on or on-end. Nothing was changed." ;;
 esac
 
 # TACCTL_CLIENT_TEST=1 is for the bats suite only: it skips the root check
@@ -180,6 +202,258 @@ if [[ "${TACCTL_FORCE:-0}" != "1" && -z "$(local_admins)" ]]; then
         Every sudo-capable account would depend on the ${PROTO} server. Give one local
         admin account a password first, or re-run with TACCTL_FORCE=1."
 fi
+
+# --- Emergency lockdown (TAC_LOCKDOWN) -----------------------------------------
+# One static sshd drop-in closes key logins and every forwarding for the
+# accounts of the tiers that are not superusers: it matches tac-users and not
+# tac-superuser, so it holds whatever the groups of the store are. The
+# provisioning login is no member of tac-users and is not matched. The file is
+# written and removed in a sync and in an install, and is checked before sshd
+# reads it: 'sshd -t', then 'sshd -T -C user=...' for an account it matches (all
+# five keywords no) and for one it does not (the answer is what it was before).
+# A host whose sshd does not include the drop-in directory is refused before
+# anything changes: the file would be inert and the lockdown would only look
+# in force.
+LOCKDOWN_KEYS='pubkeyauthentication|allowtcpforwarding|allowstreamlocalforwarding|x11forwarding|allowagentforwarding'
+
+lockdown_text() {
+    cat <<DROPIN
+# Managed by tacctl (emergency lockdown of scope '${TAC_SCOPE}'); do not edit.
+# Key logins and every forwarding are closed for the accounts of tac-users that
+# are not in tac-superuser. It is removed when the lockdown is lifted.
+Match Group ${G_USERS},!tac-superuser
+    PubkeyAuthentication no
+    AllowTcpForwarding no
+    AllowStreamLocalForwarding no
+    X11Forwarding no
+    AllowAgentForwarding no
+DROPIN
+}
+
+# lockdown_matched: the accounts the drop-in matches, as sshd reads them: in
+# tac-users (listed, or with it as primary group) and not in tac-superuser.
+lockdown_matched() {
+    local gid name groups
+    gid=$(getent group "$G_USERS" 2>/dev/null | cut -d: -f3 || true)
+    for name in $({ getent group "$G_USERS" 2>/dev/null | cut -d: -f4 | tr ',' '\n'
+        if [[ -n "$gid" ]]; then getent passwd | awk -F: -v g="$gid" '$4 == g { print $1 }'; fi; } | sed '/^$/d' | sort -u); do
+        groups=" $(id -nG "$name" 2>/dev/null || true) "
+        if [[ "$groups" == *" ${G_USERS} "* && "$groups" != *" tac-superuser "* ]]; then echo "$name"; fi
+    done
+    return 0
+}
+
+# lockdown_unmatched: an account the drop-in leaves alone: a superuser, else root.
+lockdown_unmatched() {
+    local name
+    name=$(getent group tac-superuser 2>/dev/null | cut -d: -f4 | cut -d, -f1 || true)
+    echo "${name:-root}"
+}
+
+# lockdown_keys <user>: what sshd applies to the user for the five keywords,
+# asked as for a login from the host itself (laddr and lport too, so a
+# configuration with Match LocalAddress, LocalPort or RDomain can be evaluated).
+# A failed 'sshd -T' is a failure of its own, said on standard error: it is
+# never read as "no keyword set".
+lockdown_keys() {
+    local out rc=0
+    out=$(sshd -T -C "user=$1,host=localhost,addr=127.0.0.1,laddr=127.0.0.1,lport=22" 2>&1) || rc=$?
+    if (( rc != 0 )); then
+        echo "[ERROR] 'sshd -T -C user=$1' failed (status ${rc}): $(head -n 1 <<< "$out")" >&2
+        return 1
+    fi
+    grep -Ei "^(${LOCKDOWN_KEYS}) " <<< "$out" | sort || true
+}
+
+lockdown_includes() {
+    local dir
+    dir=$(dirname "$LOCKDOWN_DROPIN")
+    grep -Eqi "^[[:space:]]*include[[:space:]].*${dir}/" "$SSHD_CONFIG" 2>/dev/null
+}
+
+# lockdown_reload: sshd is told to read its configuration again (reload, never
+# a restart: open sessions stay until they are ended on purpose). Through
+# systemd where there is one; else, as on a host with another init or in a
+# container, sshd gets the SIGHUP it reads its configuration on, by the process
+# its pid file names (and only when that process is an sshd).
+SSHD_PIDFILE="${TACCTL_CLIENT_SSHD_PIDFILE:-/run/sshd.pid}"
+if [[ "$CLIENT_TEST" == "1" && -z "${TACCTL_CLIENT_SSHD_PIDFILE:-}" ]]; then
+    SSHD_PIDFILE="$STATE_DIR/sshd.pid"
+fi
+lockdown_reload() {
+    local unit pid
+    if command -v systemctl >/dev/null; then
+        for unit in sshd.service ssh.service; do
+            if systemctl reload "$unit" 2>/dev/null; then return 0; fi
+        done
+    fi
+    pid=$(cat "$SSHD_PIDFILE" 2>/dev/null || true)
+    [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+    if [[ "$CLIENT_TEST" != "1" || -z "${TACCTL_CLIENT_SSHD_PIDFILE:-}" ]]; then
+        [[ "$(cat "/proc/${pid}/comm" 2>/dev/null || true)" == "sshd" ]] || return 1
+    fi
+    kill -HUP "$pid" 2>/dev/null
+}
+
+# The checks of a host that is to be locked down, before anything is changed.
+lockdown_precheck() {
+    [[ "$LOCKDOWN" == "on" ]] || return 0
+    command -v sshd >/dev/null || return 0
+    if ! lockdown_includes; then
+        die "The lockdown cannot be applied: ${SSHD_CONFIG} does not include $(dirname "$LOCKDOWN_DROPIN")/*.conf, so sshd would ignore its drop-in and keys and forwarding would stay open. Nothing was changed. Add the Include line (OpenSSH 8.2 or later) or close those logins another way."
+    fi
+    if lockdown_login_closed; then
+        die "$(lockdown_login_message) Nothing was changed."
+    fi
+}
+
+# lockdown_login_closed: this run came in over ssh through a tacctl account that
+# the drop-in would close (a member of tac-users, not of tac-superuser), as
+# the provisioning login does when it is a tacctl user: it would lose its key
+# at once, and with it the way to the host. The server's own script
+# (TAC_LOCAL=1) is run locally by tacctl: it loses no login, so it is not asked.
+# It is asked twice, before anything changes and again before the file is
+# written, because the sync in between can make the account a member (it
+# creates tac-users, and adds the accounts of the scope).
+lockdown_login_closed() {
+    local matched
+    [[ "${TAC_LOCAL:-0}" != "1" && -n "${SUDO_USER:-}" ]] || return 1
+    matched=$(lockdown_matched)
+    grep -qxF "$SUDO_USER" <<< "$matched"
+}
+lockdown_login_message() {
+    echo "The account '${SUDO_USER}' this run was started from is a tacctl account that is not a superuser (a member of ${G_USERS}, not of tac-superuser), so the lockdown would close its key login: the host would be out of reach. Enroll the host through a local account that is not a tacctl user: tacctl host enroll <account>@<host>."
+}
+
+# lockdown_user_pids <name>: the processes of the account, read from /proc (no
+# pgrep or pkill: a minimal image has neither). The test sandbox moves the
+# directory (TACCTL_CLIENT_PROC).
+PROC_DIR="/proc"
+if [[ "$CLIENT_TEST" == "1" && -n "${TACCTL_CLIENT_PROC:-}" ]]; then PROC_DIR="$TACCTL_CLIENT_PROC"; fi
+lockdown_user_pids() {
+    local uid d
+    uid=$(id -u "$1" 2>/dev/null) || return 0
+    for d in "$PROC_DIR"/[0-9]*; do
+        if [[ "$(awk '/^Uid:/ { print $2 }' "$d/status" 2>/dev/null)" == "$uid" ]]; then echo "${d##*/}"; fi
+    done
+    return 0
+}
+
+# lockdown_end_sessions: ends every live session of the accounts the drop-in
+# matches. Superusers, root, the provisioning login (no tac-users member) and the
+# account this run was started from are never touched. systemd-logind's
+# terminate-user where it runs, else the account's processes.
+lockdown_end_sessions() {
+    local own name pids uid ended="" n=0
+    own=" root ${SUDO_USER:-} $(id -un 2>/dev/null || true) ${LOGNAME:-} ${USER:-} "
+    for name in $(lockdown_matched); do
+        [[ "$own" == *" ${name} "* ]] && continue
+        # a system account (root, the account sshd's listener or a service runs as)
+        # is never ended, whatever groups it has
+        uid=$(id -u "$name" 2>/dev/null || echo 0)
+        if (( uid < 1000 )); then
+            warn "'${name}' is a system account (UID ${uid}); its sessions were not ended."
+            continue
+        fi
+        if command -v loginctl >/dev/null && loginctl show-user "$name" >/dev/null 2>&1; then
+            loginctl terminate-user "$name" 2>/dev/null || warn "'${name}': its sessions could not be ended."
+        elif pids=$(lockdown_user_pids "$name"); [[ -n "$pids" ]]; then
+            # shellcheck disable=SC2086
+            kill -TERM $pids 2>/dev/null || true
+            sleep 1
+            # shellcheck disable=SC2046
+            kill -KILL $(lockdown_user_pids "$name") 2>/dev/null || true
+        else
+            continue
+        fi
+        ended+=" $name"; n=$((n + 1))
+    done
+    if (( n > 0 )); then
+        info "Lockdown: the sessions of ${n} account(s) were ended:${ended}."
+    else
+        info "Lockdown: no session of an account it matches was open."
+    fi
+}
+
+host_lockdown() {
+    local want prior="" had=0 matched unmatched before after now key
+    if [[ "$LOCKDOWN" != "on" ]]; then
+        # The state file says what the running sshd may still enforce: "on"
+        # (the file was loaded) or "off" (a lift is under way: the file is
+        # gone, the reload is not confirmed). It is cleared only after the
+        # reload, so a lift that failed is finished by the next sync even
+        # though the file is gone.
+        if [[ -e "$LOCKDOWN_DROPIN" || -s "$STATE_DIR/lockdown" ]]; then
+            rm -f "$LOCKDOWN_DROPIN"
+            echo "off" > "$STATE_DIR/lockdown"
+            if command -v sshd >/dev/null; then
+                if ! sshd -t 2>/dev/null; then
+                    die "sshd rejects its configuration now that the lockdown drop-in is gone; ${LOCKDOWN_DROPIN} was removed but sshd was not reloaded, so the lockdown still applies. Fix sshd, then sync again."
+                fi
+                lockdown_reload || die "The lockdown drop-in ${LOCKDOWN_DROPIN} was removed, but sshd could not be reloaded (systemctl reload sshd), so it still applies. Reload it, then sync again."
+                rm -f "$STATE_DIR/lockdown"
+                info "Lockdown lifted: sshd drop-in ${LOCKDOWN_DROPIN} removed, sshd reloaded."
+            else
+                rm -f "$STATE_DIR/lockdown"
+                info "Lockdown lifted: sshd drop-in ${LOCKDOWN_DROPIN} removed; there is no sshd on this host, so nothing was reloaded."
+            fi
+        fi
+        return 0
+    fi
+    if ! command -v sshd >/dev/null; then
+        info "Lockdown: no sshd on this host, so there is nothing to close."
+        return 0
+    fi
+    lockdown_includes || die "The lockdown cannot be applied: ${SSHD_CONFIG} does not include $(dirname "$LOCKDOWN_DROPIN")/*.conf."
+    # the sync that has just run may have made the login of this run a member
+    if lockdown_login_closed; then
+        die "$(lockdown_login_message) The accounts were synced; the lockdown drop-in was not written."
+    fi
+    want=$(lockdown_text)
+    if [[ -e "$LOCKDOWN_DROPIN" ]]; then
+        had=1
+        prior=$(cat "$LOCKDOWN_DROPIN")
+    fi
+    unmatched=$(lockdown_unmatched)
+    before=$(lockdown_keys "$unmatched") || die "The lockdown was not applied: sshd cannot say what it applies to '${unmatched}' (see above), so the drop-in cannot be checked. Nothing was changed."
+    if [[ "$had" != "1" || "$prior" != "$want" ]]; then
+        printf '%s\n' "$want" > "$LOCKDOWN_DROPIN.new"
+        chmod 0644 "$LOCKDOWN_DROPIN.new"
+        mv -f "$LOCKDOWN_DROPIN.new" "$LOCKDOWN_DROPIN"
+        rm -f "$STATE_DIR/lockdown"
+        if command -v restorecon >/dev/null; then restorecon "$LOCKDOWN_DROPIN" 2>/dev/null || true; fi
+    fi
+    lockdown_undo() {
+        if [[ "$had" == "1" ]]; then printf '%s\n' "$prior" > "$LOCKDOWN_DROPIN"; else rm -f "$LOCKDOWN_DROPIN"; fi
+    }
+    if ! sshd -t 2>/dev/null; then
+        lockdown_undo
+        die "sshd rejected the lockdown drop-in; ${LOCKDOWN_DROPIN} was put back as it was. Nothing is locked down on this host."
+    fi
+    matched=$(lockdown_matched | sed -n 1p)
+    if [[ -n "$matched" ]]; then
+        after=$(lockdown_keys "$matched") || { lockdown_undo; die "sshd cannot say what it applies to '${matched}' (see above), so the drop-in cannot be checked; ${LOCKDOWN_DROPIN} was put back as it was. Nothing is locked down on this host."; }
+        for key in ${LOCKDOWN_KEYS//|/ }; do
+            if ! grep -qix "${key} no" <<< "$after"; then
+                lockdown_undo
+                die "sshd does not apply the lockdown to '${matched}' (${key} is not no under 'sshd -T -C user=${matched}'); ${LOCKDOWN_DROPIN} was put back as it was. Nothing is locked down on this host."
+            fi
+        done
+    fi
+    now=$(lockdown_keys "$unmatched") || { lockdown_undo; die "sshd cannot say what it applies to '${unmatched}' (see above), so the drop-in cannot be checked; ${LOCKDOWN_DROPIN} was put back as it was. Nothing is locked down on this host."; }
+    if [[ "$now" != "$before" ]]; then
+        lockdown_undo
+        die "the lockdown drop-in changes what sshd applies to '${unmatched}', who it must leave alone; ${LOCKDOWN_DROPIN} was put back as it was. Nothing is locked down on this host."
+    fi
+    if [[ ! -e "$STATE_DIR/lockdown" ]]; then
+        lockdown_reload || die "The lockdown drop-in ${LOCKDOWN_DROPIN} is in place, but sshd could not be reloaded (systemctl reload sshd), so it does not apply yet. Reload it, then sync again."
+        echo "on" > "$STATE_DIR/lockdown"
+        info "Lockdown: sshd drop-in ${LOCKDOWN_DROPIN} written, sshd reloaded (key logins and forwarding are closed for every account that is not a superuser)."
+    fi
+    if [[ "$LOCKDOWN_END" == "1" ]]; then lockdown_end_sessions; fi
+    return 0
+}
+lockdown_precheck
 
 mkdir -p "$STATE_DIR/backup"
 chmod 700 "$STATE_DIR"
@@ -1508,6 +1782,8 @@ host_sudoers() {
 }
 
 sync_accounts
+# The lockdown follows the accounts, in a sync and in an install.
+host_lockdown
 if [[ "$ACCOUNTS_ONLY" == "1" ]]; then
     if [[ -f "$SUDOERS_HOST_FILE" ]]; then host_sudoers sync; fi
     info "Accounts synced for scope '${TAC_SCOPE}'."

@@ -121,7 +121,7 @@ config linux script [--scope <name>] [--server <address>] [--method tacplus|radi
 
 config linux remove-script [--output <file>]
 
-    Write the removal script (no secrets; removes either method)
+    Write the removal script (no secrets; removes either method and sshd's lockdown drop-in)
 
 config linux uid [<user> [<uid>]]
 

@@ -600,7 +600,7 @@ _engineer() {
 }
 
 # 'tacctl rollback --hosts' (D50) sends TAC_REVOKE_ENGINEER=1 in the header
-# (protocol 6 still): the engineers lose their sudo on the host, nobody else
+# (protocol 7): the engineers lose their sudo on the host, nobody else
 # is touched.
 _revoke_header() {
     grep -q '^TAC_REVOKE_ENGINEER=1$' "$OUT" || sed -i 's/^TAC_PROTOCOL=/TAC_REVOKE_ENGINEER=1\nTAC_PROTOCOL=/' "$OUT"
@@ -688,6 +688,488 @@ _revoke_header() {
     assert_failure
     assert_output --partial "The header's TAC_REVOKE_ENGINEER is neither 0 nor 1. Nothing was changed."
     run grep -cE "^(useradd|groupadd|usermod)" "$CALLS_LOG"
+    assert_output "0"
+}
+
+# --- the emergency lockdown (protocol 7, TAC_LOCKDOWN) --------------------------
+
+# A host whose sshd includes the drop-in directory: the main configuration
+# and the directory are scratch, the lockdown drop-in is the hook's. The sshd
+# stub answers 'sshd -T -C user=<name>' as sshd would: every keyword yes, the
+# five of the lockdown no for a user that is not a superuser while the drop-in
+# is there (SSHD_INERT=1: whatever the file says, as when sshd ignores it);
+# 'sshd -t' answers SSHD_T_RC. Superusers are alice (tac-superuser; the group
+# file lists nobody, so the script's account to leave alone is root); the
+# other accounts have tac-users only.
+_lockdown_host() {
+    _client_env
+    export TACCTL_CLIENT_LOCKDOWN_DROPIN="${BATS_TEST_TMPDIR}/sshd_config.d/00-tacctl-0-lockdown.conf"
+    export TACCTL_CLIENT_SSHD_CONFIG="${BATS_TEST_TMPDIR}/sshd_config"
+    mkdir -p "${BATS_TEST_TMPDIR}/sshd_config.d"
+    printf '%s\n' 'UsePAM yes' "Include ${BATS_TEST_TMPDIR}/sshd_config.d/*.conf" > "$TACCTL_CLIENT_SSHD_CONFIG"
+    stub_cmd id '[[ "$1" == -u ]] && { echo "${FAKE_UID:-4242}"; exit 0; }
+        case "$2" in alice) echo "alice tac-users tac-superuser" ;; *) echo "$2 tac-users" ;; esac'
+    stub_cmd sshd 'if [[ "$1" == "-t" ]]; then exit "${SSHD_T_RC:-0}"; fi
+        user=$(sed "s/.*user=\([^,]*\).*/\1/" <<< "$*")
+        v=yes
+        if [[ -e "$TACCTL_CLIENT_LOCKDOWN_DROPIN" && -z "${SSHD_INERT:-}" && "$user" != alice && "$user" != root ]]; then v=no; fi
+        printf "usepam yes\npasswordauthentication yes\n"
+        for k in pubkeyauthentication allowtcpforwarding allowstreamlocalforwarding x11forwarding allowagentforwarding; do echo "$k $v"; done'
+    stub_cmd systemctl 'exit "${SYSTEMCTL_RC:-0}"'
+    stub_cmd loginctl 'exit 1'
+    stub_cmd sleep
+}
+
+_lockdown_header() {
+    sed -i "s/^TAC_PROTOCOL=/TAC_LOCKDOWN=$1\nTAC_PROTOCOL=/" "$OUT"
+}
+
+@test "client install: TAC_LOCKDOWN=on writes the sshd drop-in, checks it, reloads sshd, and a second sync leaves it" {
+    _gen > /dev/null
+    _lockdown_host
+    _lockdown_header on
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[INFO] Lockdown: sshd drop-in ${TACCTL_CLIENT_LOCKDOWN_DROPIN} written, sshd reloaded"
+    [[ "$(stat -c %a "$TACCTL_CLIENT_LOCKDOWN_DROPIN")" == "644" ]]
+    run cat "$TACCTL_CLIENT_LOCKDOWN_DROPIN"
+    assert_line "Match Group tac-users,!tac-superuser"
+    assert_line "    PubkeyAuthentication no"
+    assert_line "    AllowTcpForwarding no"
+    assert_line "    AllowStreamLocalForwarding no"
+    assert_line "    X11Forwarding no"
+    assert_line "    AllowAgentForwarding no"
+    stub_called "^sshd -t$"
+    stub_called "^sshd -T -C user=bob,host=localhost,addr=127.0.0.1,laddr=127.0.0.1,lport=22$"
+    # no superuser is listed in the group file: root is the account to leave alone
+    stub_called "^sshd -T -C user=root,host=localhost,addr=127.0.0.1,laddr=127.0.0.1,lport=22$"
+    stub_called "^systemctl reload sshd.service$"
+    # on, not on-end: nobody's session is ended
+    run grep -cE "^(loginctl|pkill)" "$CALLS_LOG"
+    assert_output "0"
+    : > "$CALLS_LOG"
+    run bash "$OUT" --accounts-only
+    assert_success
+    refute_output --partial "Lockdown"
+    run grep -c "^systemctl reload" "$CALLS_LOG"
+    assert_output "0"
+}
+
+@test "client install: the account the drop-in must leave alone is a member of tac-superuser when there is one" {
+    _gen > /dev/null
+    _lockdown_host
+    bash "$OUT" --accounts-only > /dev/null
+    sed -i 's/^\(tac-superuser:x:[0-9]*:\).*/\1alice/' "$FAKE_DB/group"
+    _lockdown_header on
+    : > "$CALLS_LOG"
+    run bash "$OUT" --accounts-only
+    assert_success
+    stub_called "^sshd -T -C user=alice,host=localhost,addr=127.0.0.1,laddr=127.0.0.1,lport=22$"
+    stub_called "^sshd -T -C user=bob,host=localhost,addr=127.0.0.1,laddr=127.0.0.1,lport=22$"
+    run grep -c "sshd -T -C user=root" "$CALLS_LOG"
+    assert_output "0"
+}
+
+@test "client install: a full install writes the lockdown drop-in as a sync does" {
+    _gen > /dev/null
+    _lockdown_host
+    _lockdown_header on
+    run bash "$OUT"
+    assert_success
+    run cat "$TACCTL_CLIENT_LOCKDOWN_DROPIN"
+    assert_line "Match Group tac-users,!tac-superuser"
+    stub_called "^systemctl reload sshd.service$"
+}
+
+@test "client install: without TAC_LOCKDOWN the drop-in of an earlier sync is removed, sshd reloaded, once" {
+    _gen > /dev/null
+    _lockdown_host
+    _lockdown_header on
+    run bash "$OUT" --accounts-only
+    assert_success
+    [[ -f "$TACCTL_CLIENT_LOCKDOWN_DROPIN" ]]
+    _gen > /dev/null
+    : > "$CALLS_LOG"
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[INFO] Lockdown lifted: sshd drop-in ${TACCTL_CLIENT_LOCKDOWN_DROPIN} removed, sshd reloaded."
+    [[ ! -e "$TACCTL_CLIENT_LOCKDOWN_DROPIN" ]]
+    stub_called "^systemctl reload sshd.service$"
+    # nothing to lift the next time: no word, no reload
+    : > "$CALLS_LOG"
+    run bash "$OUT" --accounts-only
+    assert_success
+    refute_output --partial "Lockdown"
+    run grep -c "^systemctl reload" "$CALLS_LOG"
+    assert_output "0"
+}
+
+@test "client install: TAC_LOCKDOWN=off is the same as no variable" {
+    _gen > /dev/null
+    _lockdown_host
+    _lockdown_header on
+    bash "$OUT" --accounts-only > /dev/null
+    sed -i 's/^TAC_LOCKDOWN=on$/TAC_LOCKDOWN=off/' "$OUT"
+    run bash "$OUT" --accounts-only
+    assert_success
+    [[ ! -e "$TACCTL_CLIENT_LOCKDOWN_DROPIN" ]]
+}
+
+@test "client install: TAC_LOCKDOWN=on-end ends the sessions of the accounts the drop-in matches, after the reload, and no others" {
+    _gen > /dev/null
+    _lockdown_host
+    _lockdown_header on-end
+    # logind knows bob and alice; the script runs from alice's login (SUDO_USER)
+    stub_cmd loginctl 'case "$1" in show-user) exit 0 ;; esac'
+    SUDO_USER=alice run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[INFO] Lockdown: the sessions of 1 account(s) were ended: bob."
+    stub_called "^loginctl terminate-user bob$"
+    run grep -cE "^loginctl terminate-user (alice|root)$" "$CALLS_LOG"
+    assert_output "0"
+    # the reload came before the first session was ended
+    run grep -nE "^(systemctl reload|loginctl terminate-user)" "$CALLS_LOG"
+    assert_line --index 0 --partial "systemctl reload sshd.service"
+    assert_line --index 1 --partial "loginctl terminate-user bob"
+}
+
+@test "client install: a lockdown is refused, before anything changes, on a host provisioned through a tacctl account that is not a superuser" {
+    _gen > /dev/null
+    _lockdown_host
+    # the host was enrolled before: tac-users exists, and the provisioning
+    # account is one of its members by mistake
+    bash "$OUT" --accounts-only > /dev/null
+    _lockdown_header on
+    printf '%s\n' 'prov:x:80050:80000::/home/prov:/bin/bash' >> "$FAKE_DB/passwd"
+    : > "$CALLS_LOG"
+    SUDO_USER=prov run bash "$OUT" --accounts-only
+    assert_failure
+    assert_output --partial "[ERROR] The account 'prov' this run was started from is a tacctl account that is not a superuser (a member of tac-users, not of tac-superuser)"
+    assert_output --partial "Nothing was changed."
+    [[ ! -e "$TACCTL_CLIENT_LOCKDOWN_DROPIN" ]]
+    run grep -cE "^(useradd|groupadd|usermod)" "$CALLS_LOG"
+    assert_output "0"
+    # lifting it is not refused
+    _gen > /dev/null
+    SUDO_USER=prov run bash "$OUT" --accounts-only
+    assert_success
+}
+
+@test "client install: the server's own script is run locally, so the account it runs from is no reason to refuse" {
+    _gen > /dev/null
+    _lockdown_host
+    _local_header
+    bash "$OUT" --accounts-only > /dev/null
+    _lockdown_header on
+    printf '%s\n' 'prov:x:80050:80000::/home/prov:/bin/bash' >> "$FAKE_DB/passwd"
+    # an operator or engineer (a tac-users member) running a user verb on the server
+    SUDO_USER=prov run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "Lockdown: sshd drop-in"
+    [[ -f "$TACCTL_CLIENT_LOCKDOWN_DROPIN" ]]
+}
+
+@test "client install: a sync that makes the login of the run a tacctl non-superuser refuses before it writes the file" {
+    _gen > /dev/null
+    _lockdown_host
+    _lockdown_header on
+    # first sync: tac-users does not exist yet (the check before the sync passes),
+    # and the sync creates bob in it
+    SUDO_USER=bob run bash "$OUT" --accounts-only
+    assert_failure
+    assert_output --partial "[ERROR] The account 'bob' this run was started from is a tacctl account that is not a superuser"
+    assert_output --partial "The accounts were synced; the lockdown drop-in was not written."
+    [[ ! -e "$TACCTL_CLIENT_LOCKDOWN_DROPIN" ]]
+    run grep -c "^systemctl reload" "$CALLS_LOG"
+    assert_output "0"
+}
+
+@test "client install: the account the run is logged in as is spared (LOGNAME, USER), a system account never ended" {
+    _gen > /dev/null
+    _lockdown_host
+    _lockdown_header on-end
+    stub_cmd loginctl 'case "$1" in show-user) exit 0 ;; esac'
+    LOGNAME=bob run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[INFO] Lockdown: no session of an account it matches was open."
+    run grep -c "^loginctl terminate-user" "$CALLS_LOG"
+    assert_output "0"
+    rm -f "$TACCTL_CLIENT_STATE/lockdown" "$TACCTL_CLIENT_LOCKDOWN_DROPIN"
+    USER=bob run bash "$OUT" --accounts-only
+    assert_success
+    run grep -c "^loginctl terminate-user" "$CALLS_LOG"
+    assert_output "0"
+    # an account under UID 1000 that has the groups: root's number, say
+    rm -f "$TACCTL_CLIENT_STATE/lockdown" "$TACCTL_CLIENT_LOCKDOWN_DROPIN"
+    FAKE_UID=0 run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[WARN] 'bob' is a system account (UID 0); its sessions were not ended."
+    run grep -c "^loginctl terminate-user" "$CALLS_LOG"
+    assert_output "0"
+    # a normal account is ended
+    rm -f "$TACCTL_CLIENT_STATE/lockdown" "$TACCTL_CLIENT_LOCKDOWN_DROPIN"
+    run bash "$OUT" --accounts-only
+    assert_success
+    stub_called "^loginctl terminate-user bob$"
+}
+
+@test "client install: lifting on a host whose sshd is gone says nothing was reloaded" {
+    _gen > /dev/null
+    _lockdown_host
+    _lockdown_header on
+    bash "$OUT" --accounts-only > /dev/null
+    [[ "$(cat "$TACCTL_CLIENT_STATE/lockdown")" == "on" ]]
+    rm -f "${STUB_BIN}/sshd"
+    _gen > /dev/null
+    : > "$CALLS_LOG"
+    run env PATH="${STUB_BIN}:/usr/bin:/bin" bash "$OUT" --accounts-only
+    assert_success
+    if ! command -v sshd >/dev/null; then
+        assert_output --partial "removed; there is no sshd on this host, so nothing was reloaded."
+        refute_output --partial "sshd reloaded"
+    fi
+    [[ ! -e "$TACCTL_CLIENT_LOCKDOWN_DROPIN" ]]
+    [[ ! -e "$TACCTL_CLIENT_STATE/lockdown" ]]
+}
+
+@test "client install: on-end without systemd-logind ends the account's processes (read from /proc), not another account's" {
+    _gen > /dev/null
+    _lockdown_host
+    _lockdown_header on-end
+    # a stand-in for bob's process, and one for a superuser's: the script reads
+    # the owner of each from its status file (a fake /proc, as the hook allows)
+    /bin/sleep 60 &
+    local bobs=$!
+    /bin/sleep 60 &
+    local others=$!
+    export TACCTL_CLIENT_PROC="${BATS_TEST_TMPDIR}/proc"
+    mkdir -p "$TACCTL_CLIENT_PROC/$bobs" "$TACCTL_CLIENT_PROC/$others"
+    printf 'Name:\tsleep\nUid:\t4242\t4242\t4242\t4242\n' > "$TACCTL_CLIENT_PROC/$bobs/status"
+    printf 'Name:\tsleep\nUid:\t0\t0\t0\t0\n' > "$TACCTL_CLIENT_PROC/$others/status"
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "were ended: bob."
+    for _ in $(seq 20); do kill -0 "$bobs" 2>/dev/null || break; /bin/sleep 0.1; done
+    ! kill -0 "$bobs" 2>/dev/null
+    kill -0 "$others"
+    kill "$others"
+    wait "$others" 2>/dev/null || true
+    wait "$bobs" 2>/dev/null || true
+}
+
+@test "client install: on-end with no session open says so" {
+    _gen > /dev/null
+    _lockdown_host
+    _lockdown_header on-end
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "[INFO] Lockdown: no session of an account it matches was open."
+}
+
+@test "client install: a sshd that does not include its drop-in directory is refused before anything changes" {
+    _gen > /dev/null
+    _lockdown_host
+    printf '%s\n' 'UsePAM yes' > "$TACCTL_CLIENT_SSHD_CONFIG"
+    _lockdown_header on
+    run bash "$OUT" --accounts-only
+    assert_failure
+    assert_output --partial "[ERROR] The lockdown cannot be applied: ${TACCTL_CLIENT_SSHD_CONFIG} does not include ${BATS_TEST_TMPDIR}/sshd_config.d/*.conf"
+    assert_output --partial "Nothing was changed."
+    [[ ! -e "$TACCTL_CLIENT_LOCKDOWN_DROPIN" ]]
+    run grep -cE "^(useradd|groupadd|usermod)" "$CALLS_LOG"
+    assert_output "0"
+    # lifting needs no such line
+    _gen > /dev/null
+    run bash "$OUT" --accounts-only
+    assert_success
+}
+
+@test "client install: sshd rejecting the drop-in puts the old file back and fails the run" {
+    _gen > /dev/null
+    _lockdown_host
+    _lockdown_header on
+    SSHD_T_RC=1 run bash "$OUT" --accounts-only
+    assert_failure
+    assert_output --partial "sshd rejected the lockdown drop-in"
+    assert_output --partial "Nothing is locked down on this host."
+    [[ ! -e "$TACCTL_CLIENT_LOCKDOWN_DROPIN" ]]
+    run grep -c "^systemctl reload" "$CALLS_LOG"
+    assert_output "0"
+    # an earlier file is put back as it was
+    printf '%s\n' '# an earlier text' > "$TACCTL_CLIENT_LOCKDOWN_DROPIN"
+    SSHD_T_RC=1 run bash "$OUT" --accounts-only
+    assert_failure
+    run cat "$TACCTL_CLIENT_LOCKDOWN_DROPIN"
+    assert_output "# an earlier text"
+}
+
+@test "client install: a drop-in sshd does not apply to an account it must match is taken back out" {
+    _gen > /dev/null
+    _lockdown_host
+    _lockdown_header on
+    SSHD_INERT=1 run bash "$OUT" --accounts-only
+    assert_failure
+    assert_output --partial "sshd does not apply the lockdown to 'bob' (pubkeyauthentication is not no under 'sshd -T -C user=bob')"
+    [[ ! -e "$TACCTL_CLIENT_LOCKDOWN_DROPIN" ]]
+    run grep -c "^systemctl reload" "$CALLS_LOG"
+    assert_output "0"
+}
+
+@test "client install: a failed 'sshd -T' is said as such: nothing is written before the drop-in, the old file is put back after" {
+    _gen > /dev/null
+    _lockdown_host
+    _lockdown_header on
+    # sshd -T cannot run (here: it names an unknown criterion)
+    stub_cmd sshd 'if [[ "$1" == "-t" ]]; then exit 0; fi
+        echo "sshd: unsupported option" >&2; exit 255'
+    run bash "$OUT" --accounts-only
+    assert_failure
+    assert_output --partial "'sshd -T -C user=root' failed (status 255): sshd: unsupported option"
+    assert_output --partial "sshd cannot say what it applies to 'root'"
+    assert_output --partial "Nothing was changed."
+    [[ ! -e "$TACCTL_CLIENT_LOCKDOWN_DROPIN" ]]
+    # it works before the drop-in and fails after it: the file is put back
+    stub_cmd sshd 'if [[ "$1" == "-t" ]]; then exit 0; fi
+        if [[ -e "$TACCTL_CLIENT_LOCKDOWN_DROPIN" ]]; then echo "sshd: bad configuration" >&2; exit 255; fi
+        printf "pubkeyauthentication yes\n"'
+    run bash "$OUT" --accounts-only
+    assert_failure
+    assert_output --partial "'sshd -T -C user=bob' failed (status 255): sshd: bad configuration"
+    assert_output --partial "was put back as it was. Nothing is locked down on this host."
+    [[ ! -e "$TACCTL_CLIENT_LOCKDOWN_DROPIN" ]]
+    # the connection the check asks as carries the local address and port
+    stub_called "^sshd -T -C user=root,host=localhost,addr=127.0.0.1,laddr=127.0.0.1,lport=22$"
+}
+
+@test "client install: a lift whose reload fails is finished by the next sync, though the file is gone" {
+    _gen > /dev/null
+    _lockdown_host
+    _lockdown_header on
+    run bash "$OUT" --accounts-only
+    assert_success
+    [[ "$(cat "$TACCTL_CLIENT_STATE/lockdown")" == "on" ]]
+    _gen > /dev/null
+    : > "$CALLS_LOG"
+    SYSTEMCTL_RC=1 run bash "$OUT" --accounts-only
+    assert_failure
+    assert_output --partial "was removed, but sshd could not be reloaded"
+    [[ ! -e "$TACCTL_CLIENT_LOCKDOWN_DROPIN" ]]
+    [[ "$(cat "$TACCTL_CLIENT_STATE/lockdown")" == "off" ]]
+    # sshd -t failing is the same: the marker stays
+    SSHD_T_RC=1 run bash "$OUT" --accounts-only
+    assert_failure
+    assert_output --partial "the lockdown still applies"
+    [[ "$(cat "$TACCTL_CLIENT_STATE/lockdown")" == "off" ]]
+    # the plain sync reloads and clears the marker, once
+    : > "$CALLS_LOG"
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "Lockdown lifted"
+    stub_called "^systemctl reload sshd.service$"
+    [[ ! -e "$TACCTL_CLIENT_STATE/lockdown" ]]
+    : > "$CALLS_LOG"
+    run bash "$OUT" --accounts-only
+    assert_success
+    refute_output --partial "Lockdown"
+    run grep -c "^systemctl reload" "$CALLS_LOG"
+    assert_output "0"
+}
+
+@test "client install: a drop-in that changes what sshd says for an account it must leave alone is taken back out" {
+    _gen > /dev/null
+    _lockdown_host
+    _lockdown_header on
+    # as if the match caught everyone, the superuser too
+    stub_cmd sshd 'if [[ "$1" == "-t" ]]; then exit 0; fi
+        v=yes; [[ -e "$TACCTL_CLIENT_LOCKDOWN_DROPIN" ]] && v=no
+        for k in pubkeyauthentication allowtcpforwarding allowstreamlocalforwarding x11forwarding allowagentforwarding; do echo "$k $v"; done'
+    run bash "$OUT" --accounts-only
+    assert_failure
+    assert_output --partial "changes what sshd applies to 'root', who it must leave alone"
+    [[ ! -e "$TACCTL_CLIENT_LOCKDOWN_DROPIN" ]]
+}
+
+@test "client install: when sshd cannot be reloaded the run fails, and the next sync reloads it" {
+    _gen > /dev/null
+    _lockdown_host
+    _lockdown_header on
+    SYSTEMCTL_RC=1 run bash "$OUT" --accounts-only
+    assert_failure
+    assert_output --partial "but sshd could not be reloaded"
+    [[ -f "$TACCTL_CLIENT_LOCKDOWN_DROPIN" ]]
+    : > "$CALLS_LOG"
+    run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "written, sshd reloaded"
+    stub_called "^systemctl reload sshd.service$"
+}
+
+@test "client install: where systemctl cannot reload sshd it gets a SIGHUP by its pid file; no usable pid file fails the run" {
+    _gen > /dev/null
+    _lockdown_host
+    _lockdown_header on
+    export TACCTL_CLIENT_SSHD_PIDFILE="${BATS_TEST_TMPDIR}/sshd.pid"
+    local hupped="${BATS_TEST_TMPDIR}/hupped"
+    # a stand-in for sshd: it notes the SIGHUP
+    ( trap 'touch "$hupped"' HUP; i=0; while [[ ! -e "$hupped" && $i -lt 100 ]]; do /bin/sleep 0.1; i=$((i + 1)); done ) &
+    local pid=$!
+    echo "$pid" > "$TACCTL_CLIENT_SSHD_PIDFILE"
+    SYSTEMCTL_RC=1 run bash "$OUT" --accounts-only
+    assert_success
+    assert_output --partial "written, sshd reloaded"
+    for _ in $(seq 30); do [[ -e "$hupped" ]] && break; /bin/sleep 0.1; done
+    [[ -e "$hupped" ]]
+    wait "$pid" || true
+    # a pid file that names nothing that runs: the reload failed, said so
+    rm -f "${TACCTL_CLIENT_STATE}/lockdown"
+    echo 999999 > "$TACCTL_CLIENT_SSHD_PIDFILE"
+    SYSTEMCTL_RC=1 run bash "$OUT" --accounts-only
+    assert_failure
+    assert_output --partial "but sshd could not be reloaded"
+}
+
+@test "client install: with no sshd on the host there is nothing to close, and the run succeeds" {
+    _gen > /dev/null
+    _lockdown_host
+    rm -f "${STUB_BIN}/sshd"
+    _lockdown_header on
+    # a PATH with no sshd at all: the stub directory and the basic tools
+    run env PATH="${STUB_BIN}:/usr/bin:/bin" bash "$OUT" --accounts-only
+    assert_success
+    if ! command -v sshd >/dev/null; then
+        assert_output --partial "no sshd on this host"
+    fi
+}
+
+@test "client install: a header with another TAC_LOCKDOWN value stops the run before anything changes" {
+    _gen > /dev/null
+    _lockdown_host
+    _lockdown_header yes
+    run bash "$OUT" --accounts-only
+    assert_failure
+    assert_output --partial "The header's TAC_LOCKDOWN is not off, on or on-end. Nothing was changed."
+    run grep -cE "^(useradd|groupadd|usermod)" "$CALLS_LOG"
+    assert_output "0"
+}
+
+@test "client remove: takes the lockdown drop-in out and reloads sshd; no file, no reload" {
+    _gen > /dev/null
+    _lockdown_host
+    _lockdown_header on
+    bash "$OUT" --accounts-only > /dev/null
+    [[ -f "$TACCTL_CLIENT_LOCKDOWN_DROPIN" ]]
+    "$TACCTL_BIN_SCRIPT" config linux remove-script --output "$BATS_TEST_TMPDIR/remove.sh" > /dev/null
+    : > "$CALLS_LOG"
+    run bash "$BATS_TEST_TMPDIR/remove.sh"
+    assert_success
+    assert_output --partial "[INFO] Lockdown drop-in ${TACCTL_CLIENT_LOCKDOWN_DROPIN} removed; sshd reloaded."
+    [[ ! -e "$TACCTL_CLIENT_LOCKDOWN_DROPIN" ]]
+    stub_called "^systemctl reload sshd.service$"
+    : > "$CALLS_LOG"
+    run bash "$BATS_TEST_TMPDIR/remove.sh"
+    assert_success
+    refute_output --partial "Lockdown"
+    run grep -c "^systemctl reload" "$CALLS_LOG"
     assert_output "0"
 }
 
@@ -880,10 +1362,10 @@ _revoke_header() {
 @test "client install: a header of another protocol stops the run before anything changes" {
     _gen > /dev/null
     _client_env
-    sed -i 's/^TAC_PROTOCOL=6$/TAC_PROTOCOL=5/' "$OUT"
+    sed -i 's/^TAC_PROTOCOL=7$/TAC_PROTOCOL=5/' "$OUT"
     run bash "$OUT" --accounts-only
     assert_failure
-    assert_output --partial "This script's header speaks protocol 5 and its body protocol 6"
+    assert_output --partial "This script's header speaks protocol 5 and its body protocol 7"
     sed -i '/^TAC_PROTOCOL=/d' "$OUT"
     run bash "$OUT" --accounts-only
     assert_failure
