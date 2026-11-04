@@ -196,8 +196,8 @@ func TestOpeningEndsOrOpensTheSession(t *testing.T) {
 			if r, _ := p.sh.End(); r != EndLocked {
 				t.Errorf("reason %q", r)
 			}
-			if strings.Contains(string(p.buf), "host> ") {
-				t.Errorf("a prompt after an ended opening: %q", p.buf)
+			if out := p.output(); strings.Contains(out, "host> ") {
+				t.Errorf("a prompt after an ended opening: %q", out)
 			}
 			continue
 		}
@@ -280,8 +280,8 @@ func TestOpeningIsHeldToTheIdleTime(t *testing.T) {
 	if r, _ := p.sh.End(); r != EndIdle {
 		t.Errorf("reason %q", r)
 	}
-	if strings.Contains(string(p.buf), "host> ") {
-		t.Errorf("a prompt after the idle opening: %q", p.buf)
+	if out := p.output(); strings.Contains(out, "host> ") {
+		t.Errorf("a prompt after the idle opening: %q", out)
 	}
 	// finished in time: the prompt follows
 	o.Opening = func(context.Context) (bool, int) { return false, 0 }
