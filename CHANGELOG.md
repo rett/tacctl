@@ -26,6 +26,16 @@ current behaviour; this file is where history lives.
    from ...`); an origin set by hand is left alone, and a failure to repoint
    is a warning, the checkout still pulling from upstream.
 
+3. **CI runs `make lint`, and the man page margin is pinned by a test.** For
+   developers: a `lint` job of the `test` workflow runs `make lint` on Ubuntu
+   24.04 (its shellcheck and groff 1.23, golangci-lint at the version the
+   Makefile pins), so a lint failure no longer waits for a maintainer's
+   machine; `TestManPageSetsTheBodyMargin` fails when `man/tacctl.1` loses its
+   `.nr BP 7n` line, which the pager search of `tacctl man` relies on, and the
+   pre-push hook (`make hooks`) also runs `no-short-yes.sh` and
+   `no-os-tempdir.sh`. `make lint` and the man search tests must pass on both
+   the CI tools and newer ones (`tests/README.md`).
+
 ## 0.2.23 (2026-10-31)
 
 1. **`tacctl rollback 0.2.22`, the release before this one, is a target.**
