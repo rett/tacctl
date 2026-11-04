@@ -144,7 +144,8 @@ func (b *Backend) logClear(ctx context.Context, flag string, w io.Writer) {
 }
 
 // Accounting is backend_tacacs_accounting: 'tacctl log accounting [n]'
-// (sub "tail"), the last lines of every listener's accounting log;
+// (sub "tail"), the last lines of every listener's accounting log, each
+// record with the name of the device that sent it (Env.DeviceName; acctlog.go);
 // ErrUnsupported for another sub-command.
 func (b *Backend) Accounting(_ context.Context, sub string, args []string, w io.Writer) error {
 	if sub != "tail" {
@@ -162,7 +163,7 @@ func (b *Backend) Accounting(_ context.Context, sub string, args []string, w io.
 	} else if isEmptyFile(acct) {
 		writeString(w, "  No entries yet in "+acct+"\n")
 	} else {
-		b.tail(w, acct, count)
+		b.tailAcct(w, acct, count)
 	}
 	// The other listeners' logs, each under its name.
 	for _, log := range b.acctLogs(false) {
@@ -175,10 +176,18 @@ func (b *Backend) Accounting(_ context.Context, sub string, args []string, w io.
 			writeString(w, "  No entries yet.\n")
 			continue
 		}
-		b.tail(w, log, count)
+		b.tailAcct(w, log, count)
 	}
 	writeString(w, "\n")
 	return nil
+}
+
+// tailAcct is tail of an accounting log, each record shown with AcctDisplay
+// (acctlog.go).
+func (b *Backend) tailAcct(w io.Writer, path, count string) {
+	var buf bytes.Buffer
+	b.tail(&buf, path, count)
+	_, _ = w.Write(b.displayAcct(buf.Bytes()))
 }
 
 // isEmptyFile is a file with nothing in it.

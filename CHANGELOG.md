@@ -26,6 +26,28 @@ current behaviour; this file is where history lives.
    from ...`); an origin set by hand is left alone, and a failure to repoint
    is a warning, the checkout still pulling from upstream.
 
+3. **An accounting record names the device that sent it, and is readable.**
+   A record in the TACACS+ accounting log carried `RemAddr`, where the person
+   connected from, and nothing that said which device sent it, so with
+   several devices the log could not answer "which device was changed". The
+   new patch `patches/0006-acct-device-address.patch` makes both accounters
+   append `"Device"`, the address of the connection as the server saw it, to
+   the record (`unknown` when there is none); the existing fields keep their
+   names and order, so a reader of the old line still parses the new one.
+   `tacctl log accounting` shows the registered name of the device or
+   enrolled host at that address (`"Device":"sw1"`), the address when none is
+   registered, and no device for a record written before the patch. The same
+   patch writes `<`, `>` and `&` in a record as they are: Go escaped them as
+   `<`, `>` and `&`, so a Junos command read
+   `<unconfigured> -> "test"<cr>`. The line is still
+   one line of valid JSON. `log accounting` shows the values decoded, those
+   of records already in the file too, and leaves out the `<cr>` Junos
+   appends to a `cmd=` value, in the display only (the file keeps it). A host
+   rebuilds tacquito once to get the patch (`tacctl upgrade`; `tacctl
+   install` applies it); until then its records have no device and keep the
+   escapes. `log tail` and `log search` read the journal and are not
+   changed.
+
 ## 0.2.23 (2026-10-31)
 
 1. **`tacctl rollback 0.2.22`, the release before this one, is a target.**

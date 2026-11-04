@@ -6076,6 +6076,30 @@ Show the last
 accounting records
 .RI ( /var/log/tacquito/accounting.log ;
 the RADIUS detail file).
+Each TACACS+ record is shown with its values decoded (a record written before
+tacquito patch 0006 has
+.BR \\eu003c ,
+.B \\eu003e
+and
+.B \\eu0026
+in the file for
+.BR < ,
+.B >
+and
+.BR & )
+and names the device that sent it.
+Tacquito built with patch 0006 writes the address of the device as
+.B Device
+in every record; the record is shown with the name of the registered device or
+enrolled host at that address, with the address when none is registered, and
+with no device when the record has none.
+.B RemAddr
+is still where the person connected from.
+The
+.B <cr>
+that Junos appends to a
+.B cmd=
+value is left out of the display, not of the file.
 .\" BEGIN GENERATED: command log accounting
 .RS
 .PP
