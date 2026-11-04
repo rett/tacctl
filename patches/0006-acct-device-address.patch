@@ -1,0 +1,207 @@
+diff --git a/cmds/server/config/accounters/local/local.go b/cmds/server/config/accounters/local/local.go
+index c1236d5..94ad40c 100644
+--- a/cmds/server/config/accounters/local/local.go
++++ b/cmds/server/config/accounters/local/local.go
+@@ -9,6 +9,7 @@
+ package local
+ 
+ import (
++	"bytes"
+ 	"context"
+ 	"encoding/json"
+ 	"fmt"
+@@ -75,6 +76,45 @@ func (a Accounter) New(options map[string]string) tq.Handler {
+ 	return &Accounter{loggerProvider: a.loggerProvider, sink: a.sink}
+ }
+ 
++// acctRecord is a logged accounting record (tacctl patch 0006): the request's
++// fields, in the order and under the names upstream writes them, and after
++// them the device that sent the request. A reader that does not know "Device"
++// ignores it.
++type acctRecord struct {
++	tq.AcctRequest
++	// Device is the address of the TACACS+ client (the network device) as the
++	// server saw the connection: the value tacquito stores in the request
++	// context under tq.ContextConnRemoteAddr for every packet of a connection.
++	// "RemAddr" is the end user's address, as the device reports it. "unknown"
++	// when the context carries none.
++	Device string
++}
++
++// deviceAddr is the address of the connection the request arrived on.
++func deviceAddr(ctx context.Context) string {
++	if ctx != nil {
++		if a, _ := ctx.Value(tq.ContextConnRemoteAddr).(string); a != "" {
++			return a
++		}
++	}
++	return "unknown"
++}
++
++// marshalRecord is the record as one line of JSON, without a trailing newline.
++// "<", ">" and "&" are written as they are, not as the \u003c, \u003e and
++// \u0026 that json.Marshal escapes them to for HTML (tacctl patch 0006): a
++// command a device sends ("<cr>", "<unconfigured> -> ...") stays readable in
++// the log. The line is valid JSON either way.
++func marshalRecord(r acctRecord) ([]byte, error) {
++	var buf bytes.Buffer
++	enc := json.NewEncoder(&buf)
++	enc.SetEscapeHTML(false)
++	if err := enc.Encode(r); err != nil {
++		return nil, err
++	}
++	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
++}
++
+ // Handle ...
+ func (a Accounter) Handle(response tq.Response, request tq.Request) {
+ 	var body tq.AcctRequest
+@@ -88,7 +128,10 @@ func (a Accounter) Handle(response tq.Response, request tq.Request) {
+ 		return
+ 	}
+ 
+-	jsonLog, err := json.Marshal(body)
++	// The record names the device that sent it (tacctl patch 0006): the
++	// request's fields as upstream writes them, then "Device", the address
++	// of the connection.
++	jsonLog, err := marshalRecord(acctRecord{AcctRequest: body, Device: deviceAddr(request.Context)})
+ 	if err != nil {
+ 		response.Reply(
+ 			tq.NewAcctReply(
+diff --git a/cmds/server/config/accounters/syslog/syslog.go b/cmds/server/config/accounters/syslog/syslog.go
+index 35f99a7..13595e3 100644
+--- a/cmds/server/config/accounters/syslog/syslog.go
++++ b/cmds/server/config/accounters/syslog/syslog.go
+@@ -10,6 +10,7 @@
+ package syslog
+ 
+ import (
++	"bytes"
+ 	"context"
+ 	"encoding/json"
+ 	"log/syslog"
+@@ -43,6 +44,45 @@ func (a Accounter) New(options map[string]string) tq.Handler {
+ 	return &Accounter{loggerProvider: a.loggerProvider, Writer: a.Writer}
+ }
+ 
++// acctRecord is a logged accounting record (tacctl patch 0006): the request's
++// fields, in the order and under the names upstream writes them, and after
++// them the device that sent the request. A reader that does not know "Device"
++// ignores it.
++type acctRecord struct {
++	tq.AcctRequest
++	// Device is the address of the TACACS+ client (the network device) as the
++	// server saw the connection: the value tacquito stores in the request
++	// context under tq.ContextConnRemoteAddr for every packet of a connection.
++	// "RemAddr" is the end user's address, as the device reports it. "unknown"
++	// when the context carries none.
++	Device string
++}
++
++// deviceAddr is the address of the connection the request arrived on.
++func deviceAddr(ctx context.Context) string {
++	if ctx != nil {
++		if a, _ := ctx.Value(tq.ContextConnRemoteAddr).(string); a != "" {
++			return a
++		}
++	}
++	return "unknown"
++}
++
++// marshalRecord is the record as one line of JSON, without a trailing newline.
++// "<", ">" and "&" are written as they are, not as the \u003c, \u003e and
++// \u0026 that json.Marshal escapes them to for HTML (tacctl patch 0006): a
++// command a device sends ("<cr>", "<unconfigured> -> ...") stays readable in
++// the log. The line is valid JSON either way.
++func marshalRecord(r acctRecord) ([]byte, error) {
++	var buf bytes.Buffer
++	enc := json.NewEncoder(&buf)
++	enc.SetEscapeHTML(false)
++	if err := enc.Encode(r); err != nil {
++		return nil, err
++	}
++	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
++}
++
+ // Handle ...
+ func (a Accounter) Handle(response tq.Response, request tq.Request) {
+ 	var body tq.AcctRequest
+@@ -56,7 +96,10 @@ func (a Accounter) Handle(response tq.Response, request tq.Request) {
+ 		return
+ 	}
+ 
+-	jsonLog, err := json.Marshal(body)
++	// The record names the device that sent it (tacctl patch 0006): the
++	// request's fields as upstream writes them, then "Device", the address
++	// of the connection.
++	jsonLog, err := marshalRecord(acctRecord{AcctRequest: body, Device: deviceAddr(request.Context)})
+ 	if err != nil {
+ 		response.Reply(
+ 			tq.NewAcctReply(
+diff --git a/cmds/server/test/local_acct_test.go b/cmds/server/test/local_acct_test.go
+index 648b6f8..186d9e8 100644
+--- a/cmds/server/test/local_acct_test.go
++++ b/cmds/server/test/local_acct_test.go
+@@ -9,6 +9,7 @@ package test
+ 
+ import (
+ 	"context"
++	"encoding/json"
+ 	"fmt"
+ 	"testing"
+ 
+@@ -141,3 +142,54 @@ func TestLocalHandleAcctFlags(t *testing.T) {
+ 		})
+ 	}
+ }
++
++// A record names the device that sent it, after the request's own fields,
++// and writes "<", ">" and "&" as they are: one line of valid JSON, no
++// trailing newline (tacctl patch 0006).
++func TestLocalRecordNamesTheDevice(t *testing.T) {
++	a, _, sink := newLocalTestAccounter(t)
++	req := localMakeRequest(t, localMakeFlag(tq.AcctFlagStart))
++	req.Context = context.WithValue(req.Context, tq.ContextConnRemoteAddr, "192.0.2.10")
++	a.Handle(newMockedResponse(), req)
++	// A connection with no address in its context.
++	a.Handle(newMockedResponse(), localMakeRequest(t, localMakeFlag(tq.AcctFlagStop)))
++
++	assert.Len(t, sink.messages, 2)
++	assert.Regexp(t, `^\{"Flags":\d+,"Method":\d+,"PrivLvl":\d+,"Type":\d+,"Service":\d+,"User":"testuser","Port":"","RemAddr":"","Args":[^{]*,"Device":"192\.0\.2\.10"\}$`, sink.messages[0])
++	assert.Regexp(t, `,"Device":"unknown"\}$`, sink.messages[1])
++	for _, m := range sink.messages {
++		assert.True(t, json.Valid([]byte(m)), m)
++		assert.NotContains(t, m, "\n")
++	}
++}
++
++func TestLocalRecordKeepsAngleBracketsAndAmpersands(t *testing.T) {
++	a, _, sink := newLocalTestAccounter(t)
++	body := tq.NewAcctRequest(
++		tq.SetAcctRequestFlag(localMakeFlag(tq.AcctFlagStop)),
++		tq.SetAcctRequestMethod(tq.AuthenMethodTacacsPlus),
++		tq.SetAcctRequestPrivLvl(tq.PrivLvlRoot),
++		tq.SetAcctRequestType(tq.AuthenTypeASCII),
++		tq.SetAcctRequestService(tq.AuthenServiceLogin),
++		tq.SetAcctRequestUser("alice"),
++		tq.SetAcctRequestArgs(tq.Args{"cmd=set: [interfaces ge-0/0/1 description] <unconfigured> -> \"a&b\"<cr>"}),
++	)
++	b, err := body.MarshalBinary()
++	assert.NoError(t, err)
++	req := localMakeRequest(t, localMakeFlag(tq.AcctFlagStop))
++	req.Body = b
++	req.Context = context.WithValue(req.Context, tq.ContextConnRemoteAddr, "192.0.2.10")
++	a.Handle(newMockedResponse(), req)
++
++	assert.Len(t, sink.messages, 1)
++	assert.Contains(t, sink.messages[0], `"cmd=set: [interfaces ge-0/0/1 description] <unconfigured> -> \"a&b\"<cr>"`)
++	assert.NotContains(t, sink.messages[0], `\u00`)
++	var rec struct {
++		User   string
++		Args   []string
++		Device string
++	}
++	assert.NoError(t, json.Unmarshal([]byte(sink.messages[0]), &rec))
++	assert.Equal(t, "alice", rec.User)
++	assert.Equal(t, "192.0.2.10", rec.Device)
++}
