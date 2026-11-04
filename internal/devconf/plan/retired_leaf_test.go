@@ -95,6 +95,20 @@ func TestIOSLegacyHostLineLosesSingleConnection(t *testing.T) {
 	if !strings.Contains(region, "! aaa: the TACACS+ server line, typed again without single-connection (the standard no longer renders it)\ntacacs-server host 192.0.2.10 timeout 5 key ") {
 		t.Errorf("the host line has no comment of its own:\n%s", region)
 	}
+	// what the device holds after the paste needs nothing (the device
+	// replaces the entry of the address: the host line of an IOS 12.x image
+	// holds one entry per address)
+	exp := expectedSections(t, f.expected)
+	c := ParseIOS(capture(t, f.raw))
+	if err := c.Apply(d.Lines); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(c.Text(), "single-connection") {
+		t.Errorf("the entry kept the word:\n%s", c.Text())
+	}
+	if d2 := planText(t, f, exp, c.Text(), Options{}); len(lines(d2, "aaa")) != 0 {
+		t.Errorf("a second plan: %v", lines(d2, "aaa"))
+	}
 }
 
 // the items of the leaf name it, whatever the vendor
@@ -118,14 +132,28 @@ func TestRetiredLeafItemsNameTheLeaf(t *testing.T) {
 // the leaf is a difference of the section, not an unmanaged setting of the
 // device
 func TestSingleConnectionIsADifferenceNotUnmanaged(t *testing.T) {
-	for _, c := range []struct{ fixture, stmt string }{
-		{"juniper.synthetic-lab", "set system tacplus-server 192.0.2.10 single-connection"},
+	for _, c := range []struct {
+		fixture string
+		mut     func(t *testing.T, raw string) string
+	}{
+		{"juniper.synthetic-lab", func(t *testing.T, raw string) string {
+			cfg := ParseJunos(raw)
+			cfg.Add("set system tacplus-server 192.0.2.10 single-connection")
+			return cfg.Text()
+		}},
+		{"cisco.reference-lab", func(t *testing.T, raw string) string {
+			cfg := ParseIOS(raw)
+			b := cfg.blockFor("tacacs server TACACS")
+			if b == nil {
+				t.Fatal("no tacacs server TACACS block")
+			}
+			typeChild(b, []string{"tacacs server TACACS"}, "single-connection")
+			return cfg.Text()
+		}},
 	} {
 		f := fixtureNamed(t, c.fixture)
 		exp := expectedSections(t, f.expected)
-		cfg := ParseJunos(capture(t, f.raw))
-		cfg.Add(c.stmt)
-		cur, err := devconf.Extract(f.vendor, cfg.Text(), exp...)
+		cur, err := devconf.Extract(f.vendor, c.mut(t, capture(t, f.raw)), exp...)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -133,10 +161,17 @@ func TestSingleConnectionIsADifferenceNotUnmanaged(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		seen := false
 		for _, r := range res {
-			if r.Name == devconf.SectionAAA && (r.State != devconf.StateDiffers || r.Unmanaged != 0) {
-				t.Errorf("aaa: state %s, unmanaged %d", r.State, r.Unmanaged)
+			if r.Name == devconf.SectionAAA {
+				seen = true
+				if r.State != devconf.StateDiffers || r.Unmanaged != 0 {
+					t.Errorf("%s aaa: state %s, unmanaged %d", c.fixture, r.State, r.Unmanaged)
+				}
 			}
+		}
+		if !seen {
+			t.Errorf("%s: no aaa result", c.fixture)
 		}
 	}
 }
