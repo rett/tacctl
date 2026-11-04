@@ -26,6 +26,26 @@ current behaviour; this file is where history lives.
    from ...`); an origin set by hand is left alone, and a failure to repoint
    is a warning, the checkout still pulling from upstream.
 
+3. **The walkthroughs no longer set `single-connection`.** tacquito closes a
+   connection that has been idle for 15 seconds. A device with
+   `single-connection` keeps one connection open for many sessions, so after
+   the close it held a dead socket (`CLOSE_WAIT` on Junos) and a later login
+   over it failed (`Network read timed out`), and the server logged each idle
+   close as an error. `config juniper` no longer prints `set system
+   tacplus-server <address> single-connection`; `config cisco` prints no
+   `single-connection` line under `tacacs server TACACS`, and with `--legacy`
+   the host line is `tacacs-server host <address> [port <n>] timeout 5 key
+   ...` (the port, when the listener is not on 49, now follows the address).
+   A device that already has it is converged: `device config plan` and
+   `apply` delete it from tacctl's server (`delete system tacplus-server
+   <address> single-connection` on Junos, `no single-connection` under
+   `tacacs server TACACS` on IOS; the IOS 12.x host line is typed again
+   without it), and `diff` and `plan` list it as an extra on the `aaa`
+   section, no longer as the device's own setting. A custom template keeps
+   whatever it says; a copy of `cisco.template` or `cisco-legacy.template`
+   made earlier still renders the line. Another server's `single-connection`
+   is left alone.
+
 ## 0.2.23 (2026-10-31)
 
 1. **`tacctl rollback 0.2.22`, the release before this one, is a target.**

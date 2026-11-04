@@ -21,7 +21,7 @@ The generated Cisco, Juniper, and WTI output is rendered from template files usi
 | `${SERVER_IP}` | All | Auto-detected server IP address |
 | `${SECRET}` | All | Shared secret of the scope |
 | `${AUTH_PORT}`, `${ACCT_PORT}` | Cisco, WTI RADIUS | UDP ports of the RADIUS `auth` and `acct` listeners |
-| `${TACACS_PORT_LINE}`, `${TACACS_HOST_PORT}` | Cisco TACACS+ | The TACACS+ port of a listener that is not on 49: `  port <n>` (the leaf of `tacacs server`) and ` port <n>` (the word of the legacy `tacacs-server host` line, after `single-connection`); empty for 49 |
+| `${TACACS_PORT_LINE}`, `${TACACS_HOST_PORT}` | Cisco TACACS+ | The TACACS+ port of a listener that is not on 49: `  port <n>` (the leaf of `tacacs server`) and ` port <n>` (the word of the legacy `tacacs-server host` line, after the address); empty for 49 |
 | `${TACACS_PORT}` | WTI TACACS+ | The TACACS+ listener's port (49 by default) |
 | `${RADIUS_GROUP}` | Cisco RADIUS | `aaa group server radius` label (`scope radius-group`, default `RADIUS-GROUP`) |
 | `${AUTHN_METHODS}`, `${AUTHZ_EXEC_METHODS}`, `${EXEC_TIMEOUT}`, `${VTY_ACL_BLOCK}`, `${VTY_ACCESS_CLASS}` | Cisco | Method lists (from `aaa-order`), idle timeout and the management-ACL blocks |
