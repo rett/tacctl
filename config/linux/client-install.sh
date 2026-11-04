@@ -36,7 +36,7 @@
 #   --remove-home (either form)                   delete removed users' home directories too
 #
 # TACCTL_FORCE=1 skips the local-administrator (lockout) check.
-# shellcheck shell=bash disable=SC2154,SC2317
+# shellcheck shell=bash disable=SC2154,SC2317,SC2329
 
 STATE_DIR="${TACCTL_CLIENT_STATE:-/var/lib/tacctl-client}"
 PAM_DIR="${TACCTL_CLIENT_PAM_DIR:-/etc/pam.d}"

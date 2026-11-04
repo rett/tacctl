@@ -126,6 +126,14 @@ func (p *inproc) ends() int {
 	return -1
 }
 
+// output is what the shell has written so far; the reader goroutine may still
+// be appending, so it is read under the lock.
+func (p *inproc) output() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return string(p.buf)
+}
+
 func TestInProcessInteractive(t *testing.T) {
 	var ran []string
 	var sys []bool

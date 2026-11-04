@@ -3,6 +3,23 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.24 (unreleased)
+
+1. **`tacctl man` finds each entry on groff 1.24.** groff 1.24 narrowed the
+   default body margin of the man macros from 7 to 5 columns and sets the text
+   of a six-character tag on the line below it, so the search that puts the
+   pager on an entry (`tacctl man device add`) found no line and the pager
+   stayed at the top of the page. The page now sets its own margin
+   (`.nr BP 7n`, the one every earlier groff drew), and the search for a tag
+   of six characters (`status`) no longer includes the first word of its text.
+   Three runs of unbreakable words (the `secret-read` line, the SNMP setting
+   names and the options `device ssh` adds for a `legacy-ssh` device) are set
+   unjustified, so the page is silent under `groff -k -ww` on 1.24.
+   The Go tests that read `sshd -T` (OpenSSH 10.6 prints the keywords in
+   CamelCase) and the ones that lay the page out and search it in a pager now
+   pass on these tools, and `make lint-sh` passes on shellcheck 0.11 (SC2329
+   is disabled where SC2317 already was).
+
 ## 0.2.23 (2026-10-31)
 
 1. **`tacctl rollback 0.2.22`, the release before this one, is a target.**

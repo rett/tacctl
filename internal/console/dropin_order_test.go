@@ -138,6 +138,21 @@ func TestDropInsSortEngineerFirst(t *testing.T) {
 	}
 }
 
+// sshdHas reports whether the output of 'sshd -T' holds the line "keyword
+// value": the keyword is compared without regard to case (OpenSSH 10.6 prints
+// AllowTcpForwarding where earlier releases printed allowtcpforwarding), the
+// value exactly.
+func sshdHas(out, line string) bool {
+	kw, val, _ := strings.Cut(line, " ")
+	for _, l := range strings.Split(out, "\n") {
+		k, v, _ := strings.Cut(l, " ")
+		if strings.EqualFold(k, kw) && v == val {
+			return true
+		}
+	}
+	return false
+}
+
 // The same with sshd itself ('sshd -T -f ... -C'), where the machine has
 // one: the three group names are replaced by a group of the account running
 // the test, because a Match Group needs a group sshd can resolve for a real
@@ -194,7 +209,7 @@ func TestDropInsSortEngineerFirstInSshd(t *testing.T) {
 		t.Skipf("sshd -T cannot run here: %s", out)
 	}
 	for _, want := range []string{"allowtcpforwarding no", "x11forwarding no", "permittunnel no", "gatewayports no"} {
-		if !strings.Contains(out, want+"\n") {
+		if !sshdHas(out, want) {
 			t.Errorf("sshd -T lacks %q with the engineer drop-in first:\n%s", want, out)
 		}
 	}
@@ -204,7 +219,7 @@ func TestDropInsSortEngineerFirstInSshd(t *testing.T) {
 		t.Fatal(err)
 	}
 	write(filepath.Base(p.SSHDEngineerDropInOld), EngineerDropIn(false))
-	if out, _ := eval(); !strings.Contains(out, "allowtcpforwarding yes\n") {
+	if out, _ := eval(); !sshdHas(out, "allowtcpforwarding yes") {
 		t.Errorf("under the old name the console's forwarding tier was expected to win (the control):\n%s", out)
 	}
 }
@@ -304,13 +319,13 @@ func TestLockdownDropInInSshd(t *testing.T) {
 	if !ok {
 		t.Skipf("sshd -T cannot run here: %s", before)
 	}
-	if !strings.Contains(before, "allowagentforwarding yes\n") {
+	if !sshdHas(before, "allowagentforwarding yes") {
 		t.Fatalf("the control: agent forwarding should be on before the lockdown:\n%s", before)
 	}
 	write(paths.SSHDLockdownDropInName, lockdownDropIn)
 	out, _ := eval()
 	for _, want := range []string{"pubkeyauthentication no", "allowtcpforwarding no", "allowstreamlocalforwarding no", "x11forwarding no", "allowagentforwarding no"} {
-		if !strings.Contains(out, want+"\n") {
+		if !sshdHas(out, want) {
 			t.Errorf("sshd -T lacks %q with the lockdown drop-in:\n%s", want, out)
 		}
 	}
