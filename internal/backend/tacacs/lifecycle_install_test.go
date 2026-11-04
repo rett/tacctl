@@ -145,7 +145,7 @@ func TestBuildPullFastForwardsOrResets(t *testing.T) {
 			}
 			// the reset follows the checkout of the patched files and the
 			// failed pull, and the build is of the upstream's commit
-			var pull, reset, build int = -1, -1, -1
+			pull, reset, build := -1, -1, -1
 			for i, a := range e.run.Argvs() {
 				switch {
 				case a == "git pull --ff-only --quiet":
