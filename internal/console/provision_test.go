@@ -3,6 +3,7 @@ package console
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -118,6 +119,56 @@ func TestDropInHeld(t *testing.T) {
 	}
 	if got := HeldNames([]string{"carol", "alice", "carol", "root", "x y"}); !slices.Equal(got, []string{"alice", "carol"}) {
 		t.Errorf("HeldNames = %q", got)
+	}
+}
+
+// Many held users are written in several 'Match User' blocks of at most
+// HeldPerBlock names, all before the tier blocks, and read back as one list.
+func TestDropInHeldSplitsLongLists(t *testing.T) {
+	var held []string
+	for i := 1; i <= 301; i++ {
+		held = append(held, fmt.Sprintf("u%03d", i))
+	}
+	slices.Reverse(held)
+	d := DropIn(testConsole, false, false, []tier.Tier{tier.Superuser, tier.Operator}, held)
+	var lines []string
+	for _, l := range strings.Split(d, "\n") {
+		if strings.HasPrefix(l, "Match User ") {
+			lines = append(lines, strings.TrimPrefix(l, "Match User "))
+		}
+	}
+	if len(lines) != 7 {
+		t.Fatalf("%d Match User blocks for 301 names, want 7", len(lines))
+	}
+	for i, l := range lines {
+		names := strings.Split(l, ",")
+		if want := min(HeldPerBlock, 301-i*HeldPerBlock); len(names) != want {
+			t.Errorf("block %d lists %d names, want %d", i, len(names), want)
+		}
+		// sorted across the blocks
+		if want := fmt.Sprintf("u%03d", i*HeldPerBlock+1); names[0] != want {
+			t.Errorf("block %d starts at %s, want %s", i, names[0], want)
+		}
+	}
+	// every block comes before the first tier block, and each closes the same
+	if op, last := strings.Index(d, "Match Group tac-console Group tac-operator\n"), strings.LastIndex(d, "Match User "); last < 0 || last >= op {
+		t.Errorf("a held block is after the tier blocks:\n%s", d)
+	}
+	if n := strings.Count(d, "    DisableForwarding yes\n    AllowTcpForwarding no\n    AllowStreamLocalForwarding no\n    X11Forwarding no\n    AllowAgentForwarding no\n    PermitTunnel no\n    GatewayPorts no\n"); n != 7 {
+		t.Errorf("%d blocks close every forwarding in the held block's order, want the 7 held ones", n)
+	}
+	// the list read back is the whole list, sorted
+	want := slices.Clone(held)
+	slices.Sort(want)
+	if got := HeldInDropIn(d); !slices.Equal(got, want) {
+		t.Errorf("HeldInDropIn lists %d names, want 301", len(got))
+	}
+	// exactly one block per HeldPerBlock names: 50 names, one block
+	if strings.Count(DropIn(testConsole, false, false, nil, held[:HeldPerBlock]), "Match User ") != 1 {
+		t.Error("50 names are not one block")
+	}
+	if strings.Count(DropIn(testConsole, false, false, nil, held[:HeldPerBlock+1]), "Match User ") != 2 {
+		t.Error("51 names are not two blocks")
 	}
 }
 
