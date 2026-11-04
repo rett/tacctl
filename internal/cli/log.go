@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/rett/tacctl/internal/backend"
+	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -103,6 +104,9 @@ func (inv *invocation) logRun(sub string, args []string) error {
 		ids = []string{only}
 	}
 	multi := len(ids) > 1
+	if sub == "accounting" {
+		set.Env.DeviceName = inv.deviceNameAt()
+	}
 	for _, id := range ids {
 		b, err := set.Get(id)
 		if err != nil {
@@ -124,6 +128,41 @@ func (inv *invocation) logRun(sub string, args []string) error {
 		return inv.logFollow(ids, multi)
 	}
 	return nil
+}
+
+// deviceNameAt is the lookup 'log accounting' names the device of a record
+// with: the name of the registered device or enrolled host at an address,
+// "" for one that is not registered (the address is shown then). The registry
+// is read on the first record that names a device, without its load notes;
+// one that cannot be read names no one.
+func (inv *invocation) deviceNameAt() func(string) string {
+	var names map[string]string
+	loaded := false
+	return func(addr string) string {
+		if !loaded {
+			loaded = true
+			names = inv.deviceNamesByAddress()
+		}
+		return names[addr]
+	}
+}
+
+// deviceNamesByAddress maps the canonical address of every registry device and
+// enrolled host that has one to its name.
+func (inv *invocation) deviceNamesByAddress() map[string]string {
+	f, err := devreg.Load(inv.app.Paths.DevicesFile)
+	if err != nil {
+		return nil
+	}
+	reg, _ := inv.registry()
+	m, _ := inv.model()
+	out := map[string]string{}
+	for _, e := range devreg.NewResolver(f, reg, m).All() {
+		if a := backend.CanonAddr(e.Address); a != "" && out[a] == "" {
+			out[a] = e.Name
+		}
+	}
+	return out
 }
 
 // logFollow is 'log tail -f' after the tails: every backend's follow

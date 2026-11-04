@@ -161,6 +161,34 @@ func TestPatchesApplyTheAccountingSinkPatch(t *testing.T) {
 	mustContain(t, src, `case "non-tty", "unknown", "":`)
 }
 
+func TestPatchesApplyTheAccountingDevicePatch(t *testing.T) {
+	p := newPatchEnv(t)
+	if _, err := p.apply(); err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, p.out(), "Applied tacquito patch: 0006")
+	for _, f := range []string{p.local, p.syslog} {
+		src := readFile(t, f)
+		// The record is the request's own fields, then the device: the
+		// connection's address, from the request context.
+		mustContain(t, src, "Device string")
+		mustContain(t, src, "tq.ContextConnRemoteAddr")
+		mustContain(t, src, "acctRecord{AcctRequest: body, Device: deviceAddr(request.Context)}")
+		// "<", ">" and "&" are written as they are, on one line.
+		mustContain(t, src, "enc.SetEscapeHTML(false)")
+		mustNotContain(t, src, "json.Marshal(")
+	}
+	mustContain(t, readFile(t, filepath.Join(p.src(), "cmds", "server", "test", "local_acct_test.go")), "TestLocalRecordNamesTheDevice")
+	p.reset()
+	if ok, err := p.apply(); err != nil || ok {
+		t.Fatal(ok, err)
+	}
+	mustNotContain(t, p.out(), "Applied tacquito patch")
+	if n := strings.Count(readFile(t, p.local), "type acctRecord struct"); n != 1 {
+		t.Fatal(n)
+	}
+}
+
 func TestPatchesApplyTheFailureWithoutServerMsgPatch(t *testing.T) {
 	p := newPatchEnv(t)
 	if _, err := p.apply(); err != nil {
