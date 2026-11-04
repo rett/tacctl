@@ -25,8 +25,9 @@ make coverage        # go test -coverprofile; coverage/go.out, coverage/index.ht
 make lint            # shellcheck (bin/tacctl.sh, config/linux, tests/helpers, tests/tools, tests/diff and its stubs,
                      #   tests/containers/{crossover,fresh}), gofmt, go vet, golangci-lint (pinned; prints how
                      #   to install it when missing), the manual page (make lint-man: the Man tests of
-                     #   internal/cli and groff -k -ww), tests/tools/no-private.sh, and
-                     #   tests/tools/no-os-tempdir.sh (no read of the process's temporary directory)
+                     #   internal/cli and groff -k -ww), tests/tools/no-private.sh,
+                     #   tests/tools/no-os-tempdir.sh (no read of the process's temporary directory),
+                     #   no-logger.sh, no-short-yes.sh and doc-width.sh
 make man             # rewrite the generated blocks of man/tacctl.1 from the code (below)
 make test-pyyaml     # the yamlpy and conf PyYAML corpora regenerated with PyYAML and compared
 make test-diff CORPUS=users   # the differential runner on one corpus
@@ -44,7 +45,8 @@ process environment, signal the process, or write a package-level registry
 `tests/tools/go-test-shard.sh <index> <count>` (the top-level tests dealt
 round-robin; `--check <count>` fails unless every test is in exactly one
 shard), the ones without tags with the race detector, beside one job for
-every other package and a static job (gofmt, `go vet`). Both tag sets run,
+every other package, a static job (gofmt, `go vet`) and a lint job (`make
+lint`, below). Both tag sets run,
 as `make test-go` does; `make gate-go` (`tests/tools/gate-go.sh`, which
 `tests/integration/gate_go.bats` pins) runs the packages as one tracked run
 that ends with a single `GATE-GO PASS|FAIL` line, a FAIL for a run that was
@@ -66,6 +68,18 @@ line, or `GATE-CI FAIL ...` with `failed=<job>:<test>,...` naming each
 failing test (a package when no test failed) and `races=` counting the data
 races; it needs cgo, takes several times as long as `gate-go`, and is
 started, read and sped up (`GATE_TMPFS=1`) like it.
+
+The `lint` job of the workflow runs `make lint` on Ubuntu 24.04, with that
+release's shellcheck and groff 1.23 and the golangci-lint the Makefile pins.
+A development machine may have newer tools (groff 1.24 and shellcheck 0.11
+have been seen), and `make lint` and the man search tests (`go test
+./internal/cli -run Man`) must pass on both: a fix for a newer tool must keep
+the older one passing. The page sets its own body margin (`.nr BP 7n`)
+because groff 1.24 narrowed the default from 7n to 5n, and the pager search
+of `tacctl man` assumes 7 (`TestManPageSetsTheBodyMargin`). `make hooks`
+installs a pre-push hook that runs `no-private.sh`, `no-short-yes.sh` and
+`no-os-tempdir.sh` before a push, the lints that need no tool and take well
+under a second.
 
 The temporary directory is
 `Paths.TempDir`, the `TMPDIR` of the environment a test gives the
