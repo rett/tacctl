@@ -148,21 +148,32 @@ func (inv *invocation) deviceNameAt() func(string) string {
 }
 
 // deviceNamesByAddress maps the canonical address of every registry device and
-// enrolled host that has one to its name.
+// enrolled host that has one, and that the caller may see (the scopes of an
+// operator, an engineer or a read-only user, as 'device list' shows them), to
+// its name. A device the caller does not see shows as its address. A registry
+// file that cannot be read leaves the enrolled hosts' names.
 func (inv *invocation) deviceNamesByAddress() map[string]string {
-	f, err := devreg.Load(inv.app.Paths.DevicesFile)
-	if err != nil {
-		return nil
-	}
-	reg, _ := inv.registry()
-	m, _ := inv.model()
+	res := inv.logResolver()
 	out := map[string]string{}
-	for _, e := range devreg.NewResolver(f, reg, m).All() {
+	for _, e := range res.Visible(inv.deviceFilter()) {
 		if a := backend.CanonAddr(e.Address); a != "" && out[a] == "" {
 			out[a] = e.Name
 		}
 	}
 	return out
+}
+
+// logResolver joins the registry, the enrolled hosts and the store, without
+// the registry's load notes; a registry file that cannot be read is an empty
+// one, so that the hosts keep their names.
+func (inv *invocation) logResolver() *devreg.Resolver {
+	f, err := devreg.Load(inv.app.Paths.DevicesFile)
+	if err != nil {
+		f = devreg.Empty()
+	}
+	reg, _ := inv.registry()
+	m, _ := inv.model()
+	return devreg.NewResolver(f, reg, m)
 }
 
 // logFollow is 'log tail -f' after the tails: every backend's follow

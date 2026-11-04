@@ -36,10 +36,11 @@ current behaviour; this file is where history lives.
    names and order, so a reader of the old line still parses the new one.
    `tacctl log accounting` shows the registered name of the device or
    enrolled host at that address (`"Device":"sw1"`), the address when none is
-   registered, and no device for a record written before the patch. The same
+   registered (or outside the scopes of an operator, engineer or read-only
+   caller), and no device for a record written before the patch. The same
    patch writes `<`, `>` and `&` in a record as they are: Go escaped them as
-   `<`, `>` and `&`, so a Junos command read
-   `<unconfigured> -> "test"<cr>`. The line is still
+   `\u003c`, `\u003e` and `\u0026`, so a Junos command read
+   `\u003cunconfigured\u003e -> \"test\"\u003ccr\u003e`. The line is still
    one line of valid JSON. `log accounting` shows the values decoded, those
    of records already in the file too, and leaves out the `<cr>` Junos
    appends to a `cmd=` value, in the display only (the file keeps it). A host

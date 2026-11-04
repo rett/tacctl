@@ -13,7 +13,7 @@ package tacacs
 //
 // The display is the same line with the object decoded and written again, in
 // the order it has on disk: the values as they are (a record written before
-// the patch has "<", ">" and "&" as <, > and &, which are
+// the patch has "<", ">" and "&" as \u003c, \u003e and \u0026, which are
 // shown as the characters), "Device" as the registered device's name (the
 // address when none is registered), and the "<cr>" Junos appends to a "cmd="
 // value left out. The log itself is not changed. A line that is not such a

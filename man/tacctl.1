@@ -6091,7 +6091,8 @@ and names the device that sent it.
 Tacquito built with patch 0006 writes the address of the device as
 .B Device
 in every record; the record is shown with the name of the registered device or
-enrolled host at that address, with the address when none is registered, and
+enrolled host at that address, with the address when none is registered (or
+when the caller's tier is limited to scopes that do not hold it), and
 with no device when the record has none.
 .B RemAddr
 is still where the person connected from.
