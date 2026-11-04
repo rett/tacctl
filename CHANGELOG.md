@@ -41,19 +41,30 @@ current behaviour; this file is where history lives.
    `docs/install/upgrading.md` (Rolling back, To 0.2.23), the manual page and
    the completion list them.
 
-4. **The tacquito pull cannot stall.** `install` (on an existing checkout) and
-   `upgrade` pulled the tacquito source with a plain `git pull`, which stops
-   when the checkout cannot be merged with the fork's `main` (a rewritten
-   history, a commit made in the clone by hand), and every later `install` and
-   `upgrade` stopped at the same place. The pull is now `git pull --ff-only`;
-   when it cannot fast-forward, the checkout is reset to the branch it tracks
-   (`git reset --hard @{u}`) with a warning that names the commit it was at and
-   the one it is at now (`Tacquito source at ... could not fast-forward; reset
-   it to its upstream branch (was 1111111, now 2222222).`). The clone is only a
-   build tree (the patches applied last time are dropped before the pull and
-   applied again after), so nothing is lost. When the reset fails too, the
-   phase ends with the pull's exit status, as before; `upgrade` then puts the
-   previous binary back instead of leaving the `tacquito.bak` copy it had made.
+4. **The tacquito pull cannot stall or build old source.** `install` (on an
+   existing checkout) and `upgrade` pulled the tacquito source with a plain
+   `git pull`, which stops when the checkout cannot be merged with the fork's
+   `main` (a rewritten history, a commit made in the clone by hand), and every
+   later `install` and `upgrade` stopped at the same place. The pull is now a
+   `git fetch` and a `git merge --ff-only`. A fetch that fails (no network) ends
+   the phase with git's exit status, as the pull did, and builds nothing from
+   the stale tracking ref. When the checkout cannot fast-forward, or is ahead of
+   the fork's `main` (a commit made in the clone, which a fast-forward leaves,
+   so that every later `upgrade` would rebuild and restart on it), it is reset
+   to the branch it tracks (`git reset --hard @{u}`) with a warning that names
+   the commit it was at and the one it is at now (`Tacquito source at ... could
+   not fast-forward; reset it to its upstream branch (was 1111111, now
+   2222222).`, or `... is ahead of its upstream branch; reset ...`). The clone
+   is only a build tree (the patches applied last time are dropped before the
+   pull and applied again after), so nothing is lost. When the reset fails, the
+   phase ends with the exit status of the step that sent it there; `upgrade`
+   then puts the previous binary back instead of leaving the `tacquito.bak`
+   copy it had made. The clone and the fetch no longer wait for an operator: git
+   asks for no user name, password or key passphrase (`GIT_TERMINAL_PROMPT=0`, a
+   failing `GIT_ASKPASS`, `SSH_ASKPASS` unset, `BatchMode=yes` for an ssh
+   remote) and drops a transfer slower than 1000 bytes a second for a minute
+   (`http.lowSpeedLimit`, `http.lowSpeedTime`). `docs/install/upgrading.md` and
+   the manual page (`TACQUITO_SRC`) say so.
 
 ## 0.2.23 (2026-10-31)
 
