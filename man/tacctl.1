@@ -16978,8 +16978,11 @@ the next time
 or
 .B upgrade
 pulls it; an origin set by hand is left alone.
-A checkout that cannot fast\-forward to the fork's main (a rewritten history, or
-a commit made in the clone) is reset to it with a warning that names the commit it was at
+The pull is a fetch, then a fast\-forward. The fetch never waits for an answer
+(git asks for no user name, password or key passphrase, and drops a transfer that stays under
+1000 bytes a second for a minute), and a fetch that fails ends the install or upgrade there.
+A checkout that cannot fast\-forward to the fork's main (a rewritten history) or is ahead of it
+(a commit made in the clone) is reset to it with a warning that names the commit it was at
 and the one it is at now; the clone is only a build tree.
 .TP
 .B TMPDIR

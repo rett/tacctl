@@ -25,7 +25,8 @@ func (e *ltenv) goVersion(v string) {
 
 func (e *ltenv) dirOf(prefix ...string) string {
 	for _, c := range e.run.Calls() {
-		if slices.Equal(c.Argv()[:min(len(prefix), len(c.Argv()))], prefix) {
+		argv := unwrapNet(c).Argv()
+		if slices.Equal(argv[:min(len(prefix), len(argv))], prefix) {
 			return c.Dir
 		}
 	}
@@ -56,7 +57,7 @@ func TestInstallBuildClonesPatchesAndBuilds(t *testing.T) {
 	} {
 		mustContain(t, out, s)
 	}
-	if !e.called(`^git clone --quiet https://github\.com/rett/tacquito\.git ` + e.src() + `$`) {
+	if !e.gitCalled(`^git clone --quiet https://github\.com/rett/tacquito\.git ` + e.src() + `$`) {
 		t.Fatal(e.run.Argvs())
 	}
 	if d := e.dirOf("go", "build", "-o", e.b.tacquitoBin()); d != e.src()+"/cmds/server" {
@@ -84,20 +85,114 @@ func TestInstallBuildPullsAnExistingCheckout(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustContain(t, e.out(), "Tacquito source already exists at "+e.src()+", pulling latest...")
-	if e.dirOf("git", "checkout", "--", ".") != e.src() || e.dirOf("git", "pull", "--ff-only", "--quiet") != e.src() {
+	if e.dirOf("git", "checkout", "--", ".") != e.src() || e.dirOf("git", "fetch", "--quiet") != e.src() || e.dirOf("git", "merge", "--ff-only", "--quiet", "@{u}") != e.src() {
 		t.Fatal(e.run.Argvs())
 	}
-	if e.called(`^git clone`) || e.called(`safe.directory --add|--add safe.directory`) {
+	if e.gitCalled(`^git clone`) || e.gitCalled(`^git pull`) || e.called(`safe.directory --add|--add safe.directory`) {
 		t.Fatal(e.run.Argvs())
 	}
 }
 
-// The pull of the tacquito checkout cannot stall (install and upgrade): it
-// fast-forwards, and a checkout that cannot is reset to its upstream with a
-// warning that names both commits, since it is only a build tree. When the
-// reset fails too the phase ends with the pull's status.
-func TestBuildPullFastForwardsOrResets(t *testing.T) {
-	const warn = "Tacquito source at SRC could not fast-forward; reset it to its upstream branch (was 1111111, now 2222222)."
+// The network git commands of the tacquito checkout (the clone and the
+// fetch, of install and of upgrade) cannot wait for an operator who is not
+// there: no prompt on the terminal, no passphrase prompt, a transfer that
+// stalls is dropped. The local ones (merge, reset, rev-parse) are plain git.
+func TestBuildNetworkGitCannotPrompt(t *testing.T) {
+	wantEnv := []string{"-u", "SSH_ASKPASS", "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=false"}
+	wantOpts := "-c http.lowSpeedLimit=1000 -c http.lowSpeedTime=60"
+	for _, tc := range []struct {
+		name, verb, sshCommand, wantSSH string
+		fresh, upgrade                  bool
+	}{
+		{name: "clone", verb: "clone", fresh: true, wantSSH: "ssh -o BatchMode=yes"},
+		{name: "install fetch", verb: "fetch", wantSSH: "ssh -o BatchMode=yes"},
+		{name: "upgrade fetch", verb: "fetch", upgrade: true, wantSSH: "ssh -o BatchMode=yes"},
+		{name: "configured remote shell", verb: "fetch", sshCommand: "ssh -i /etc/tacctl/deploy-key", wantSSH: "ssh -i /etc/tacctl/deploy-key -o BatchMode=yes"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newLifeTenv(t)
+			e.goVersion(GoVersion)
+			e.tacquitoRepo(commit1)
+			if tc.sshCommand != "" {
+				e.run.On([]string{"git", "config", "--get", "core.sshCommand"}, execx.Result{Stdout: []byte(tc.sshCommand + "\n")})
+			}
+			if tc.fresh {
+				if err := os.RemoveAll(e.src()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var err error
+			if tc.upgrade {
+				writeFile(t, e.b.tacquitoBin(), "old\n")
+				writeFile(t, e.b.hashgenBin(), "old\n")
+				err = e.b.Upgrade(context.Background(), backend.PhaseBuild, "")
+			} else {
+				err = e.b.Install(context.Background(), backend.PhaseBuild, "")
+			}
+			if err != nil {
+				t.Fatalf("%v\n%s", err, e.out())
+			}
+			n := 0
+			for _, c := range e.run.Calls() {
+				verb := unwrapNet(c).Args
+				if c.Name == "git" && len(verb) > 0 && (verb[0] == "fetch" || verb[0] == "clone") {
+					t.Errorf("%q is not run without the guard against a prompt", strings.Join(c.Argv(), " "))
+				}
+				if c.Name != "env" {
+					continue
+				}
+				n++
+				args := strings.Join(c.Args, " ")
+				for _, w := range wantEnv {
+					if !slices.Contains(c.Args, w) {
+						t.Errorf("%q lacks %q", args, w)
+					}
+				}
+				if !slices.Contains(c.Args, "GIT_SSH_COMMAND="+tc.wantSSH) || !strings.Contains(args, " git "+wantOpts+" "+tc.verb+" ") {
+					t.Errorf("%q: want GIT_SSH_COMMAND=%q and git %s %s", args, tc.wantSSH, wantOpts, tc.verb)
+				}
+			}
+			if n != 1 {
+				t.Errorf("%d network git commands, want one:\n%s", n, strings.Join(e.run.Argvs(), "\n"))
+			}
+			for _, c := range e.run.Calls() {
+				if c.Name == "git" && len(c.Args) > 0 && slices.Contains([]string{"merge", "reset", "rev-parse"}, c.Args[0]) && len(c.Env) > 0 {
+					t.Errorf("a local git command has an environment of its own: %v", c.Argv())
+				}
+			}
+		})
+	}
+}
+
+// The pull of the tacquito checkout cannot stall or mislead (install and
+// upgrade): it fetches, and a failing fetch ends the phase, since the
+// tracking ref it would have moved is stale. It then fast-forwards; a
+// checkout that cannot, or that is ahead of its upstream (a commit made by
+// hand, which a fast-forward leaves in place), is reset to its upstream with
+// a warning that names both commits, since it is only a build tree. When the
+// reset fails too the phase ends with the status of the step that sent it
+// there.
+func TestBuildPullFetchesThenFastForwardsOrResets(t *testing.T) {
+	const (
+		cannot = "Tacquito source at SRC could not fast-forward; reset it to its upstream branch (was 1111111, now 2222222)."
+		ahead  = "Tacquito source at SRC is ahead of its upstream branch; reset it to its upstream branch (was 3333333, now 2222222)."
+	)
+	order := func(e *ltenv) map[string]int {
+		at := map[string]int{}
+		for i, a := range e.gitArgvs() {
+			switch {
+			case a == "git fetch --quiet":
+				at["fetch"] = i
+			case a == "git merge --ff-only --quiet @{u}":
+				at["merge"] = i
+			case a == "git reset --hard @{u}":
+				at["reset"] = i
+			case strings.HasPrefix(a, "go build") && at["build"] == 0:
+				at["build"] = i
+			}
+		}
+		return at
+	}
 	for _, upgrade := range []bool{false, true} {
 		name := "install"
 		if upgrade {
@@ -120,18 +215,27 @@ func TestBuildPullFastForwardsOrResets(t *testing.T) {
 			}
 			return e, repo
 		}
-		t.Run(name+" fast-forwards", func(t *testing.T) {
+		built := func(t *testing.T, e *ltenv) {
+			t.Helper()
+			if got := readFile(t, e.b.tacquitoBin()); got != "built at "+commit2+"\n" {
+				t.Fatalf("binary %q", got)
+			}
+		}
+		t.Run(name+" fetches and fast-forwards", func(t *testing.T) {
 			e, _ := setup(t)
 			if err := build(e); err != nil {
 				t.Fatalf("%v\n%s", err, e.out())
 			}
-			if e.dirOf("git", "pull", "--ff-only", "--quiet") != e.src() || e.called(`^git pull --quiet`) || e.called(`^git reset`) {
+			at := order(e)
+			if _, ok := at["reset"]; ok || e.gitCalled(`^git pull`) || e.countCalls(`^env .* fetch --quiet$`) != 1 {
 				t.Fatal(e.run.Argvs())
 			}
-			mustNotContain(t, e.out(), "could not fast-forward")
-			if got := readFile(t, e.b.tacquitoBin()); got != "built at "+commit2+"\n" {
-				t.Fatalf("binary %q", got)
+			if at["merge"] <= at["fetch"] || at["build"] <= at["merge"] {
+				t.Fatal(e.gitArgvs())
 			}
+			mustNotContain(t, e.out(), "could not fast-forward")
+			mustNotContain(t, e.out(), "is ahead")
+			built(t, e)
 		})
 		t.Run(name+" resets to the upstream when it cannot fast-forward", func(t *testing.T) {
 			e, repo := setup(t)
@@ -139,35 +243,41 @@ func TestBuildPullFastForwardsOrResets(t *testing.T) {
 			if err := build(e); err != nil {
 				t.Fatalf("%v\n%s", err, e.out())
 			}
-			mustContain(t, e.out(), strings.ReplaceAll(warn, "SRC", e.src()))
+			mustContain(t, e.out(), strings.ReplaceAll(cannot, "SRC", e.src()))
 			if e.dirOf("git", "reset", "--hard", "@{u}") != e.src() {
 				t.Fatal(e.run.Argvs())
 			}
-			// the reset follows the checkout of the patched files and the
-			// failed pull, and the build is of the upstream's commit
-			pull, reset, build := -1, -1, -1
-			for i, a := range e.run.Argvs() {
-				switch {
-				case a == "git pull --ff-only --quiet":
-					pull = i
-				case a == "git reset --hard @{u}":
-					reset = i
-				case strings.HasPrefix(a, "go build") && build < 0:
-					build = i
-				}
+			// the reset follows the checkout of the patched files, the fetch
+			// and the failed merge, and the build is of the upstream's commit
+			at := order(e)
+			if at["merge"] <= at["fetch"] || at["reset"] <= at["merge"] || at["build"] <= at["reset"] {
+				t.Fatal(e.gitArgvs())
 			}
-			if pull < 0 || reset < pull || build < reset {
-				t.Fatal(e.run.Argvs())
+			built(t, e)
+		})
+		t.Run(name+" resets a checkout that is ahead of the upstream", func(t *testing.T) {
+			e, repo := setup(t)
+			repo.setAhead(commit3, false)
+			if err := build(e); err != nil {
+				t.Fatalf("%v\n%s", err, e.out())
 			}
-			if got := readFile(t, e.b.tacquitoBin()); got != "built at "+commit2+"\n" {
-				t.Fatalf("binary %q", got)
+			mustContain(t, e.out(), strings.ReplaceAll(ahead, "SRC", e.src()))
+			mustNotContain(t, e.out(), "could not fast-forward")
+			at := order(e)
+			if at["merge"] <= at["fetch"] || at["reset"] <= at["merge"] || at["build"] <= at["reset"] {
+				t.Fatal(e.gitArgvs())
+			}
+			// not the local commit: the upstream's
+			built(t, e)
+			if repo.local != commit2 {
+				t.Fatalf("the checkout is at %s", repo.local)
 			}
 		})
-		t.Run(name+" fails with the pull's status when the reset fails too", func(t *testing.T) {
+		t.Run(name+" fails with the fast-forward's status when the reset fails too", func(t *testing.T) {
 			e, repo := setup(t)
 			repo.setDiverged(true, true)
 			wantCode(t, build(e), 128)
-			mustNotContain(t, e.out(), "could not fast-forward")
+			mustNotContain(t, e.out(), "could not fast-forward; reset")
 			if e.called(`^go `) {
 				t.Fatal(e.run.Argvs())
 			}
@@ -175,6 +285,40 @@ func TestBuildPullFastForwardsOrResets(t *testing.T) {
 				bin := e.b.tacquitoBin()
 				if readFile(t, bin) != "old\n" || exists(bin+".bak") {
 					t.Fatal("the previous binary is not back")
+				}
+			}
+		})
+		t.Run(name+" fails when the checkout is ahead and the reset fails", func(t *testing.T) {
+			e, repo := setup(t)
+			repo.setAhead(commit3, true)
+			wantCode(t, build(e), 128)
+			mustNotContain(t, e.out(), "reset it to its upstream")
+			if e.called(`^go `) {
+				t.Fatal(e.run.Argvs())
+			}
+			if upgrade {
+				bin := e.b.tacquitoBin()
+				if readFile(t, bin) != "old\n" || exists(bin+".bak") {
+					t.Fatal("the previous binary is not back")
+				}
+			}
+		})
+		// An install or upgrade offline stops where it stopped before, at the
+		// network: the tracking ref is as the last fetch left it, so nothing
+		// is merged, reset or built from it.
+		t.Run(name+" stops when the fetch fails", func(t *testing.T) {
+			e, repo := setup(t)
+			repo.setFetchFails(true)
+			wantCode(t, build(e), 128)
+			mustContain(t, e.stderr.String(), "unable to access")
+			if e.gitCalled(`^git (merge|reset|pull)`) || e.called(`^go `) {
+				t.Fatal(e.run.Argvs())
+			}
+			mustNotContain(t, e.out(), "could not fast-forward")
+			if upgrade {
+				bin := e.b.tacquitoBin()
+				if readFile(t, bin) != "old\n" || exists(bin+".bak") {
+					t.Fatal("the previous binary was touched")
 				}
 			}
 		})
@@ -243,16 +387,15 @@ func TestBuildRepointsAnUpstreamCheckoutAtTheFork(t *testing.T) {
 			if tc.origin == tc.want && !tc.fails && e.called(`^git remote set-url`) {
 				t.Fatal(e.run.Argvs())
 			}
-			// The origin is read and moved before anything is fetched or
-			// pulled from it.
+			// The origin is read and moved before anything is fetched from it.
 			getURL, setURL, pull := -1, -1, -1
-			for i, a := range e.run.Argvs() {
+			for i, a := range e.gitArgvs() {
 				switch {
 				case a == "git remote get-url origin" && getURL < 0:
 					getURL = i
 				case strings.HasPrefix(a, "git remote set-url origin ") && setURL < 0:
 					setURL = i
-				case (a == "git fetch --quiet" || a == "git pull --ff-only --quiet") && pull < 0:
+				case a == "git fetch --quiet" && pull < 0:
 					pull = i
 				}
 			}
@@ -298,7 +441,7 @@ func TestInstallBuildFailuresEndWithTheirStatus(t *testing.T) {
 	e := newLifeTenv(t)
 	e.goVersion(GoVersion)
 	e.tacquitoRepo(commit1)
-	e.run.On([]string{"git", "pull"}, execx.Result{Code: 1})
+	e.run.On([]string{"git", "merge"}, execx.Result{Code: 1})
 	e.run.On([]string{"git", "reset"}, execx.Result{Code: 1})
 	wantCode(t, e.b.Install(context.Background(), backend.PhaseBuild, ""), 1)
 	if e.called(`^go `) {

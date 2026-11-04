@@ -93,7 +93,7 @@ func (b *Backend) installBuild(ctx context.Context) error {
 		}
 	} else {
 		out.Info("Cloning tacquito...")
-		if code := b.sh(ctx, "", "git", "clone", "--quiet", TacquitoRepo, src); code != 0 {
+		if code := b.gitNet(ctx, "", "clone", "--quiet", TacquitoRepo, src); code != 0 {
 			return failed(code, "git clone")
 		}
 	}
@@ -124,26 +124,56 @@ func (b *Backend) installBuild(ctx context.Context) error {
 	return nil
 }
 
-// pullSource brings the tacquito checkout to its upstream (the fork's main),
-// and returns the exit status of the step that failed, 0 when it succeeded.
-// The checkout is a build tree, not a working copy: the patches applied last
-// time are dropped before and applied again after. So a pull that cannot
-// fast-forward (a history rewritten on the fork, a commit made in the
-// checkout by hand) must not stop every later install and upgrade: the
-// checkout is reset to the upstream branch it tracks and the warning names the
-// commit it was at and the one it is at now. When the reset fails too, the
-// pull's status is the result, as a failing pull always was.
+// pullSource brings the tacquito checkout to its upstream (the fork's main):
+// the fetch, then syncSource. It returns the exit status of the step that
+// failed, 0 when it succeeded. A fetch that fails (no network, a refused
+// login) ends it there: the tracking ref it would have moved is stale, and
+// syncing to a stale ref would build old source as if it were current.
 func (b *Backend) pullSource(ctx context.Context, src string) int {
-	pull := b.sh(ctx, src, "git", "pull", "--ff-only", "--quiet")
-	if pull == 0 {
-		return 0
+	if code := b.fetchSource(ctx, src); code != 0 {
+		return code
+	}
+	return b.syncSource(ctx, src)
+}
+
+// fetchSource is the 'git fetch' of the checkout, the step of an install or
+// upgrade that reaches the network (besides the first clone).
+func (b *Backend) fetchSource(ctx context.Context, src string) int {
+	return b.gitNet(ctx, src, "fetch", "--quiet")
+}
+
+// syncSource makes the checkout, after a fetch, the upstream branch it
+// tracks. The checkout is a build tree, not a working copy: the patches
+// applied last time are dropped before and applied again after. So a
+// checkout that cannot fast-forward (a history rewritten on the fork) or
+// that is ahead of its upstream (a commit made in it by hand: a
+// fast-forward leaves that commit, which would be built, and every later
+// upgrade would find the checkout differs from the upstream and rebuild)
+// must not stop or mislead every later install and upgrade: it is reset to
+// the upstream branch it tracks, and the warning names the commit it was at
+// and the one it is at now. When the reset fails, the status of the step
+// that sent it there is the result (the reset's, for a checkout that was
+// only ahead).
+func (b *Backend) syncSource(ctx context.Context, src string) int {
+	why := "could not fast-forward"
+	ff := b.sh(ctx, src, "git", "merge", "--ff-only", "--quiet", "@{u}")
+	if ff == 0 {
+		head, c1 := b.shOut(ctx, src, "git", "rev-parse", "HEAD")
+		up, c2 := b.shOut(ctx, src, "git", "rev-parse", "@{u}")
+		if c1 == 0 && c2 == 0 && head == up {
+			return 0
+		}
+		why = "is ahead of its upstream branch"
 	}
 	was, _ := b.shOut(ctx, src, "git", "rev-parse", "--short", "HEAD")
-	if b.sh(ctx, src, "git", "reset", "--hard", "@{u}") != 0 {
-		return pull
+	if code := b.sh(ctx, src, "git", "reset", "--hard", "@{u}"); code != 0 {
+		if ff != 0 {
+			return ff
+		}
+		return code
 	}
 	now, _ := b.shOut(ctx, src, "git", "rev-parse", "--short", "HEAD")
-	b.out().Warn("Tacquito source at " + src + " could not fast-forward; reset it to its upstream branch (was " + was + ", now " + now + ").")
+	b.out().Warn("Tacquito source at " + src + " " + why + "; reset it to its upstream branch (was " + was + ", now " + now + ").")
 	return 0
 }
 
@@ -189,7 +219,7 @@ func (b *Backend) upgradeBuild(ctx context.Context) error {
 
 	out.Info("Pulling latest source...")
 	b.repointOrigin(ctx, src)
-	if code := b.sh(ctx, src, "git", "fetch", "--quiet"); code != 0 {
+	if code := b.fetchSource(ctx, src); code != 0 {
 		return failed(code, "git fetch")
 	}
 	// The summary is defined even when a rebuild is driven by the patch
@@ -246,7 +276,8 @@ func (b *Backend) upgradeBuild(ctx context.Context) error {
 	// from pristine upstream plus the overlay.
 	b.shQuiet(ctx, src, "git", "checkout", "--", ".")
 	if local != remote {
-		if code := b.pullSource(ctx, src); code != 0 {
+		// The fetch above is this run's; only the sync is left.
+		if code := b.syncSource(ctx, src); code != 0 {
 			// The binary was backed up above and nothing has replaced it:
 			// put the backup back, as a failed build does, so no .bak
 			// stands for a build that never ran.
