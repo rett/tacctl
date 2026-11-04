@@ -26,6 +26,32 @@ current behaviour; this file is where history lives.
    from ...`); an origin set by hand is left alone, and a failure to repoint
    is a warning, the checkout still pulling from upstream.
 
+3. **A user who must change the password forwards no port through the
+   server, in any tier.** A forwarding (`ssh -N -L`, `-R`, `-D`, `-J`) opens no
+   session and never reaches the console that holds such a user, so a user of
+   a tier in `console forwarding tiers` (default: superuser only, who is never
+   held) kept forwarding ports with the old password; the limitation was to
+   take the tier out. sshd's drop-in for the console
+   (`/etc/ssh/sshd_config.d/tacctl-console.conf`) now begins, when anyone is
+   held, with `Match User <names>` setting `DisableForwarding yes` and
+   `AllowTcpForwarding`, `AllowStreamLocalForwarding`, `X11Forwarding`,
+   `AllowAgentForwarding`, `PermitTunnel` and `GatewayPorts` to the closed
+   value, ahead of the tier blocks (sshd keeps the first value of a keyword).
+   The names are the users held now (`user require-password-change`, `user
+   add` and an administrator's `user passwd` by default), sorted, only those
+   of a Linux account, a superuser never; with nobody held there is no block
+   and the file is the one of earlier releases. The sync of the server writes
+   the list (the `user` verbs, `host sync`, `console install`, `upgrade`; it
+   stays as it was when the store or `tacctl.yaml` cannot be read), and an
+   administrator's `user passwd` and the user's own `passwd`, which run no
+   sync, rewrite the drop-in themselves (checked with `sshd -t`, undone when
+   sshd refuses it, one warning with `tacctl console install` then).
+   `console check` counts the list as part of the drop-in: a list that is not
+   the users held now is drift, shown with both lists, and a held user is
+   probed with `sshd -T` like the first user of each kind (`console show`
+   expects forwarding closed for them). An earlier release reads the extra
+   block without complaint; its `console check` calls the file different.
+
 ## 0.2.23 (2026-10-31)
 
 1. **`tacctl rollback 0.2.22`, the release before this one, is a target.**
