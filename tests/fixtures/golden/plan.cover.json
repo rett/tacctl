@@ -407,6 +407,21 @@
     "extras": 0
   },
   {
+    "device": "dev-juniper-synthetic-inherit-retired",
+    "scope": "lab",
+    "vendor": "juniper",
+    "address": "192.0.2.21",
+    "state": "needs-change",
+    "fixes": 2,
+    "left": 2,
+    "remaining": {
+      "access": 2,
+      "monitoring": 0,
+      "cosmetic": 0
+    },
+    "extras": 2
+  },
+  {
     "device": "dev-not-pulled",
     "scope": "lab",
     "vendor": "juniper",

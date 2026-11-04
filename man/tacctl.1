@@ -11450,7 +11450,12 @@ under
 .B "tacacs server TACACS"
 on IOS; the
 .B "tacacs\-server host"
-line of IOS 12.x is typed again without it). So are the options that change the service asked for or how a password is
+line of IOS 12.x is typed again without it). A Junos
+.B single\-connection
+that only an apply-group gives cannot be deleted at the top level: it does not
+refuse the section as another inherited statement does, the plan keeps it and
+lists it as left alone (inherited from a group: remove it from the group by
+hand), and plans the other fixes. So are the options that change the service asked for or how a password is
 checked
 .RB ( "tacplus\-options service\-name" ,
 other than

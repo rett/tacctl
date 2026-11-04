@@ -41,10 +41,14 @@ current behaviour; this file is where history lives.
    <address> single-connection` on Junos, `no single-connection` under
    `tacacs server TACACS` on IOS; the IOS 12.x host line is typed again
    without it), and `diff` and `plan` list it as an extra on the `aaa`
-   section, no longer as the device's own setting. A custom template keeps
-   whatever it says; a copy of `cisco.template` or `cisco-legacy.template`
-   made earlier still renders the line. Another server's `single-connection`
-   is left alone.
+   section, no longer as the device's own setting. A Junos `single-connection`
+   that only an apply-group gives cannot be deleted at the top level: it
+   does not refuse the `aaa` section (as another inherited statement does),
+   the plan keeps it, lists it as left alone (`inherited from a group: remove
+   it from the group by hand`) and plans the other fixes. A custom template
+   keeps whatever it says; a copy of `cisco.template` or
+   `cisco-legacy.template` made earlier still renders the line. Another
+   server's `single-connection` is left alone.
 
 ## 0.2.23 (2026-10-31)
 

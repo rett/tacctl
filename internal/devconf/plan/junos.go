@@ -568,6 +568,14 @@ func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 				continue
 			}
 			if !p.inPlain(name, x.stem) {
+				if slices.Contains(retiredLeaves[row.ID], kind) && !row.kinds[objName][kind] {
+					// a retired leaf that only a group gives: the plan cannot
+					// delete it at the top level, and it is not worth
+					// refusing the section for: the other fixes stand, this
+					// one is left, to be removed from the group by hand
+					keepStem(x.stem, retiredFromGroup)
+					continue
+				}
 				refuseInherited(x.stem)
 				continue
 			}
@@ -779,6 +787,11 @@ func (p *planner) renderedPrefix(exp devices.Section, path []string) bool {
 	}
 	return false
 }
+
+// retiredFromGroup is why a retired leaf of tacctl's TACACS+ server is left
+// alone: only a group gives it, and a delete at the top level cannot take
+// away what a group gives.
+const retiredFromGroup = "inherited from a group: remove it from the group by hand"
 
 // communityNotVisible is why a leaf under a community of an older record is
 // left alone.

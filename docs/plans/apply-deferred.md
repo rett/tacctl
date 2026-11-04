@@ -174,7 +174,7 @@ Apply to 3 devices (canary sw-a first)? [y/N] y
 | `netconf` | **never by apply** (rendered commented); `set system services netconf ssh` alone by D93's verb, superuser, over the command line | — | everything (`connection-limit`, `rate-limit`, `system services ssh`, …) | `system-control` ([L1], for the record: the tier gate decides) |
 | `breakglass` | **never** | — | everything | — |
 
-Rules that cut across sections: a `deactivate` of a managed statement is reported and left; a statement inherited from a group is refused (D79); a secret is written only when absent or with `--secrets` (D80); `--section` names only writable sections (`netconf` or `breakglass` named is a usage error).
+Rules that cut across sections: a `deactivate` of a managed statement is reported and left; a statement inherited from a group is refused (D79), except a `single-connection` that only a group gives (it is kept and listed, to be removed from the group by hand); a secret is written only when absent or with `--secrets` (D80); `--section` names only writable sections (`netconf` or `breakglass` named is a usage error).
 
 ## 5. Packages and interfaces
 

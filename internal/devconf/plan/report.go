@@ -605,6 +605,8 @@ func (p *planner) buildExtras(d *Delta) {
 			switch {
 			case k.Note == communityNotVisible:
 				e.Guard = communityNotVisible
+			case k.Note == retiredFromGroup:
+				e.Guard = retiredFromGroup
 			case slices.ContainsFunc(t, isMark):
 				e.Guard = "its name is the secret and is not known to tacctl"
 			case len(t) >= 2 && t[0] == "snmp" && slices.Contains([]string{"name", "engine-id", "trap-options", "location", "contact", "description"}, t[1]),

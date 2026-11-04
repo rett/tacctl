@@ -112,3 +112,49 @@ func TestSingleConnectionIsADifferenceNotUnmanaged(t *testing.T) {
 		}
 	}
 }
+
+// A retired leaf that only an apply-group gives cannot be deleted at the top
+// level, and it does not refuse the section: the other fixes of aaa stand and
+// the leaf is kept, with the word that it is the group's to change.
+func TestJunosRetiredLeafOfAGroupIsKeptNotRefused(t *testing.T) {
+	f := fixtureNamed(t, "juniper.synthetic-inherit-retired")
+	exp, cur, plain := f.load(t)
+	d, err := Plan(f.vendor, exp, cur, plain, f.options())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st := d.Of("aaa"); st.State != StatePlanned {
+		t.Fatalf("aaa: %+v", st)
+	}
+	if len(d.Inherited) != 0 {
+		t.Errorf("inherited: %v", d.Inherited)
+	}
+	// the other fix of the section stands, the leaf is not typed
+	wantLine(t, d, "aaa", "delete system accounting events interactive-commands")
+	noLine(t, d, "aaa", "single-connection")
+	var kept bool
+	for _, k := range d.Kept {
+		if k.Section == "aaa" && strings.Contains(k.Text, "tacplus-server 192.0.2.10 single-connection") {
+			kept = k.Note == retiredFromGroup
+		}
+	}
+	if !kept {
+		t.Errorf("the leaf is not kept with the group note: %+v", d.Kept)
+	}
+	i := slices.IndexFunc(d.Items, func(it Item) bool {
+		return strings.Contains(it.Statement, "tacplus-server 192.0.2.10 single-connection")
+	})
+	if i < 0 || d.Items[i].Fixed || !strings.Contains(d.Items[i].Action, "inherited from a group") {
+		t.Errorf("the item: %+v", d.Items)
+	}
+	// no line removes it later either: a delete at the top level would not
+	// find the statement
+	for _, e := range d.Extras {
+		if strings.Contains(e.Text, "single-connection") && (len(e.Remove) != 0 || e.Guard != retiredFromGroup) {
+			t.Errorf("extra: %+v", e)
+		}
+	}
+	// the leaf in the plain view too (at the top level) is deleted, as ever
+	d2 := planJ(t, fixtureNamed(t, "juniper.synthetic-lab"), add("set system tacplus-server 192.0.2.10 single-connection"), Options{})
+	wantLine(t, d2, "aaa", "delete system tacplus-server 192.0.2.10 single-connection")
+}
