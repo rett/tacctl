@@ -13,6 +13,9 @@ import (
 // tacctl.yaml (the default of the whole server and a scope's) and in
 // devices.yaml (a device's own). Every target removes all three, and says so.
 
+// allRollbackTargets are the targets older than 0.2.23, which undo what 0.2.23
+// and the releases before it changed (the targets list of 0.2.23 itself is
+// rollback0223_test.go: it undoes nothing).
 var allRollbackTargets = []string{RollbackTarget0222, RollbackTarget0221, RollbackTarget0220, RollbackTarget0219, RollbackTarget0218, RollbackTarget0217,
 	RollbackTarget0216, RollbackTarget029, RollbackTarget}
 
