@@ -26,6 +26,19 @@ current behaviour; this file is where history lives.
    from ...`); an origin set by hand is left alone, and a failure to repoint
    is a warning, the checkout still pulling from upstream.
 
+3. **`tacctl rollback 0.2.23`, the release before this one, is a target.**
+   This release changed no stored file, so 0.2.23 reads everything it writes:
+   the rollback converts nothing, removes no key, leaves the per-tier sudoers
+   drop-in (0.2.23 and this release write the same text), takes no snapshot and
+   needs no `--yes`. The users' email addresses, the SNMPv3 users, the covered
+   staging entries and an emergency lockdown with enrolled hosts, which every
+   older target still drops or refuses, stay. The command ends with
+   `tacctl upgrade --branch 0.2.23`. A host rolled back keeps its tacquito
+   checkout pointed at the project's fork (item 2), which has the same history
+   as the upstream clone 0.2.23 made. `tacctl rollback` now takes ten targets;
+   `docs/install/upgrading.md` (Rolling back, To 0.2.23), the manual page and
+   the completion list them.
+
 ## 0.2.23 (2026-10-31)
 
 1. **`tacctl rollback 0.2.22`, the release before this one, is a target.**

@@ -5,10 +5,11 @@ import (
 	"testing"
 )
 
-// 'tacctl rollback 0.2.22', the release before this one, on the host sandbox
+// 'tacctl rollback 0.2.22', the release before 0.2.23, on the host sandbox
 // with this server enrolled. The plan's own cases are internal/lifecycle's.
 
-// 0.2.22 reads every file this release writes, so the dry run lists nothing to
+// 0.2.22 reads every file this release writes but the users' email addresses
+// (none is set here), so the dry run lists nothing to
 // do and --apply converts nothing: the server name, the timing scale (0.2.22's
 // own), the server address and the users stay, no snapshot is taken (there is
 // no file to convert) and no --yes is asked.
@@ -95,8 +96,8 @@ func TestRollback0222IsToldApartFromTheOlderTargets(t *testing.T) {
 	if !strings.Contains(hs.all(), "Until the upgrade, do not run 'tacctl device timeout-scale'") {
 		t.Errorf("0.2.21 lacks the note:\n%s", hs.all())
 	}
-	hs.run(hs.runner(), "rollback", "0.2.23")
-	hs.expect(1, "", "prepares the state for 0.2.22 (the release before this one), 0.2.21")
+	hs.run(hs.runner(), "rollback", "0.2.24")
+	hs.expect(1, "", "prepares the state for 0.2.23 (the release before this one), 0.2.22, 0.2.21")
 }
 
 // The snapshot is announced, and its state named, only when the apply takes
