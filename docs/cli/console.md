@@ -74,8 +74,10 @@ console forwarding tiers [<csv>|none]
     Tiers that may forward X11 and TCP ports: sshd, and ssh -X/-Y/-L/-R/-D to a device in the
     console (default superuser). A forwarding opens no session and never reaches the console, so
     sshd's drop-in lists the users who must change the password in a block that closes every
-    forwarding for them before the tier blocks: they forward nothing through the server in any
-    tier until the password is changed (the server's sync, or their own passwd, rewrites the list)
+    forwarding for them before the tier blocks: their new connections forward nothing through the
+    server in any tier until the password is changed (a connection already open keeps what it had
+    until it closes; the server's sync, console install, user passwd, their own passwd, store
+    import, backup restore and store rollback rewrite the list)
 
 console forwarding gateway-ports [enable|disable]
 

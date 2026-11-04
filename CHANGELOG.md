@@ -26,31 +26,42 @@ current behaviour; this file is where history lives.
    from ...`); an origin set by hand is left alone, and a failure to repoint
    is a warning, the checkout still pulling from upstream.
 
-3. **A user who must change the password forwards no port through the
-   server, in any tier.** A forwarding (`ssh -N -L`, `-R`, `-D`, `-J`) opens no
-   session and never reaches the console that holds such a user, so a user of
-   a tier in `console forwarding tiers` (default: superuser only, who is never
-   held) kept forwarding ports with the old password; the limitation was to
-   take the tier out. sshd's drop-in for the console
-   (`/etc/ssh/sshd_config.d/tacctl-console.conf`) now begins, when anyone is
-   held, with `Match User <names>` setting `DisableForwarding yes` and
-   `AllowTcpForwarding`, `AllowStreamLocalForwarding`, `X11Forwarding`,
+3. **A user who must change the password gets no port forwarded through the
+   server on a new connection, in any tier.** A forwarding (`ssh -N -L`, `-R`,
+   `-D`, `-J`) opens no session and never reaches the console that holds such
+   a user, so a user of a tier in `console forwarding tiers` (default:
+   superuser only, who is never held) kept forwarding ports with the old
+   password; the limitation was to take the tier out. sshd's drop-in for the
+   console (`/etc/ssh/sshd_config.d/tacctl-console.conf`) now begins, when
+   anyone is held, with `Match User <names>` setting `DisableForwarding yes`
+   and `AllowTcpForwarding`, `AllowStreamLocalForwarding`, `X11Forwarding`,
    `AllowAgentForwarding`, `PermitTunnel` and `GatewayPorts` to the closed
    value, ahead of the tier blocks (sshd keeps the first value of a keyword).
-   The names are the users held now (`user require-password-change`, `user
-   add` and an administrator's `user passwd` by default), sorted, only those
-   of a Linux account, a superuser never; with nobody held there is no block
-   and the file is the one of earlier releases. The sync of the server writes
-   the list (the `user` verbs, `host sync`, `console install`, `upgrade`; it
-   stays as it was when the store or `tacctl.yaml` cannot be read), and an
-   administrator's `user passwd` and the user's own `passwd`, which run no
-   sync, rewrite the drop-in themselves (checked with `sshd -t`, undone when
-   sshd refuses it, one warning with `tacctl console install` then).
-   `console check` counts the list as part of the drop-in: a list that is not
-   the users held now is drift, shown with both lists, and a held user is
-   probed with `sshd -T` like the first user of each kind (`console show`
-   expects forwarding closed for them). An earlier release reads the extra
-   block without complaint; its `console check` calls the file different.
+   sshd applies a `Match` block when a connection authenticates, so a
+   connection the user has open already keeps the forwardings it had until it
+   closes; tacctl does not end it (the administrator can:
+   `loginctl terminate-user <name>`). The names are the users held now (`user
+   require-password-change`, `user add` and an administrator's `user passwd`
+   by default), sorted, only those of a Linux account, a superuser never, at
+   most 50 to a `Match User` line (more users make further blocks, all before
+   the tier blocks); with nobody held there is no block and the file is the
+   one of earlier releases. The sync of the server writes the list (the `user`
+   verbs, `host sync`, `console install`, `upgrade`; it stays as it was when
+   the store or `tacctl.yaml` cannot be read), and so do the verbs that flag
+   or unflag users and run no sync: an administrator's `user passwd`, the
+   user's own `passwd`, `store import`, `backup restore` (a snapshot or an
+   old-style backup) and `store rollback` (legacy mode holds nobody). The
+   rewrite checks the drop-in with `sshd -t`, undoes it when sshd refuses it
+   (one warning with `tacctl console install` then), and reads the users and
+   installs the file under the apply lock, so two commands that flag users at
+   the same time cannot leave one out. Any other write of the store leaves the
+   drop-in as it is until the next of those. `console check` counts the list
+   as part of the drop-in: a list that is not the users held now is drift,
+   shown with both lists, and a held user is probed with `sshd -T` like the
+   first user of each kind (`console show` expects forwarding closed for
+   them, the agent included, whatever `console agent-forwarding` says). An
+   earlier release reads the extra block without complaint; its `console
+   check` calls the file different.
 
 ## 0.2.23 (2026-10-31)
 

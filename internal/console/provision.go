@@ -58,12 +58,15 @@ func TierGroup(t tier.Tier) string {
 // the address the client names (loopback when it names none); every other
 // console login keeps GatewayPorts no.
 //
-// held are the users held to a password change (pwchange.Pending): a block
-// before every tier block, 'Match User <names>', closes every forwarding for
+// held are the users held to a password change (pwchange.Pending): blocks
+// before every tier block, 'Match User <names>', close every forwarding for
 // them whatever their tier lets through, because a forwarding opens no
-// session and so never reaches the console that holds them. The names are
-// sorted, listed once, and only those a Linux account can have; no names, no
-// block.
+// session and so never reaches the console that holds them. sshd applies a
+// Match block when a connection authenticates: a connection of theirs that
+// is open already keeps the forwardings it had until it closes. The names are
+// sorted, listed once, and only those a Linux account can have, at most
+// HeldPerBlock to a block (one block per run of names, so no line grows
+// without bound); no names, no block.
 func DropIn(command string, agent, gateway bool, forward []tier.Tier, held []string) string {
 	var b strings.Builder
 	b.WriteString("# Managed by tacctl (tacctl console install|remove, host sync of this server); do not edit.\n")
@@ -77,14 +80,16 @@ func DropIn(command string, agent, gateway bool, forward []tier.Tier, held []str
 	b.WriteString("# they log in with their TACACS+ password only.\n")
 	if names := HeldNames(held); len(names) > 0 {
 		b.WriteString("# These users must change the password (tacctl user require-password-change): nothing is forwarded for them, whatever their tier allows.\n")
-		b.WriteString("Match User " + strings.Join(names, ",") + "\n")
-		b.WriteString("    DisableForwarding yes\n")
-		b.WriteString("    AllowTcpForwarding no\n")
-		b.WriteString("    AllowStreamLocalForwarding no\n")
-		b.WriteString("    X11Forwarding no\n")
-		b.WriteString("    AllowAgentForwarding no\n")
-		b.WriteString("    PermitTunnel no\n")
-		b.WriteString("    GatewayPorts no\n")
+		for chunk := range slices.Chunk(names, HeldPerBlock) {
+			b.WriteString("Match User " + strings.Join(chunk, ",") + "\n")
+			b.WriteString("    DisableForwarding yes\n")
+			b.WriteString("    AllowTcpForwarding no\n")
+			b.WriteString("    AllowStreamLocalForwarding no\n")
+			b.WriteString("    X11Forwarding no\n")
+			b.WriteString("    AllowAgentForwarding no\n")
+			b.WriteString("    PermitTunnel no\n")
+			b.WriteString("    GatewayPorts no\n")
+		}
 	}
 	for _, t := range Tiers {
 		if g := TierGroup(t); g != "" && slices.Contains(forward, t) {
@@ -119,6 +124,11 @@ func DropIn(command string, agent, gateway bool, forward []tier.Tier, held []str
 	return b.String()
 }
 
+// HeldPerBlock is the most names one 'Match User' line of the drop-in lists:
+// the names of more users are written in further blocks, all before the tier
+// blocks.
+const HeldPerBlock = 50
+
 // reHeldName is a user name sshd's Match User takes as one literal pattern:
 // the name of a Linux account (no *, ?, ! or comma). root is never listed.
 var reHeldName = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
@@ -136,15 +146,16 @@ func HeldNames(held []string) []string {
 	return slices.Compact(out)
 }
 
-// HeldInDropIn are the names of the 'Match User' block of a drop-in's text
-// (what DropIn wrote for held); nil when it has none.
+// HeldInDropIn are the names of the 'Match User' blocks of a drop-in's text
+// (what DropIn wrote for held), sorted and listed once; nil when it has none.
 func HeldInDropIn(text string) []string {
+	var names []string
 	for _, l := range strings.Split(text, "\n") {
 		if rest, ok := strings.CutPrefix(l, "Match User "); ok {
-			return HeldNames(strings.Split(strings.TrimSpace(rest), ","))
+			names = append(names, strings.Split(strings.TrimSpace(rest), ",")...)
 		}
 	}
-	return nil
+	return HeldNames(names)
 }
 
 // EngineerDropIn is the text of sshd's drop-in for the engineer tier, a file

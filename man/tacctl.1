@@ -1540,7 +1540,7 @@ enrolled Linux host has the account expired from its next
 .BR "host sync" ,
 until the password is changed (a device in a scope shared with the server
 excepted; see below; sshd's drop-in also closes every port forwarding through
-this server for the user, in any tier, see
+this server for the user's new connections, in any tier, see
 .BR "console forwarding" ). The user stays in the scope this server is enrolled in
 (\fBhost enroll \-\-local\fR), in the protocol of the method it is enrolled
 with, and is left out of every other scope; in the other protocol the user is
@@ -5959,7 +5959,10 @@ as the password dates are: an import never lifts it. The scope
 .B tacctl
 of a rendered file (the login of the server it came from, which every user is
 in) is not imported and is taken out of the users' scopes, in one line; a
-server registered in its own keeps it.
+server registered in its own keeps it. An import that holds users to a
+password change rewrites the list of them in the console's sshd drop-in at
+once (see
+.BR "console forwarding" ).
 .\" BEGIN GENERATED: command store import
 .RS
 .PP
@@ -5985,6 +5988,8 @@ remove the store, restart. The install is back in legacy read-only mode.
 When this server is enrolled a red line says that users whose tier fell
 keep their old groups until
 .BR "host sync" .
+Legacy mode holds nobody to a password change, so the list of them in the
+console's sshd drop-in is rewritten, empty, at once.
 .\" BEGIN GENERATED: command store rollback
 .RS
 .PP
@@ -6297,7 +6302,10 @@ provisioner entry only, so a sync alone does not make the next command take
 a snapshot; the snapshot that
 .B backup restore
 takes first compares everything. The newest 30 are retained. Without a store,
-list, diff and restore work on old-style backups only.
+list, diff and restore work on old-style backups only. A restore (of a
+snapshot or an old\-style backup) rewrites the list of users held to a password
+change in the console's sshd drop-in from the store it put back (see
+.BR "console forwarding" ).
 .\" BEGIN GENERATED: command backup restore
 .RS
 .PP
@@ -14044,18 +14052,32 @@ with
 .BR "DisableForwarding yes"
 and every single switch (TCP, stream-local, X11, agent, tunnel) at
 .BR no :
-they forward nothing through this server in any tier until the password is
-changed. The names are sorted and only those of a Linux account; no user held,
-no block; a superuser is never held. The list is rewritten by every sync of
-this server (the
+their new connections forward nothing through this server in any tier until
+the password is changed. sshd applies the drop-in when a connection
+authenticates: a connection the user has open already keeps the forwardings it
+had until it closes, and tacctl does not end it (the administrator can:
+.BR "loginctl terminate\-user" " \fIname\fR)."
+The names are sorted and only those of a Linux account, at most 50 to a block
+(more users make further
+.B "Match User"
+blocks, all before the tier blocks); no user held, no block; a superuser is
+never held. The list is rewritten by every sync of this server (the
 .B user
-verbs that change an account run one) and, as they run none, by an
-administrator's
-.B "user passwd"
-and the user's own
-.B passwd
-at once; a failure to write it is one warning and the old list stays until the
-next sync or
+verbs that change an account run one), by
+.B "console install"
+and
+.BR upgrade ,
+and, as they run no sync, at once by an administrator's
+.BR "user passwd" ,
+the user's own
+.BR passwd ,
+.BR "store import" ,
+.B "backup restore"
+(a snapshot or an old\-style backup) and
+.B "store rollback"
+(legacy mode holds nobody), each under the apply lock; any other write of the
+store leaves it as it is until the next of those. A failure to write it is one
+warning and the old list stays until the next sync or
 .BR "console install" .
 .\" BEGIN GENERATED: command console forwarding
 .RS

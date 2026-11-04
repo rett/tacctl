@@ -2,6 +2,7 @@ package console
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -371,12 +372,16 @@ func TestHeldBeatsForwardingTiers(t *testing.T) {
 				en: EngineerDropIn(agent),
 				ld: lockdownDropIn,
 			}
-			// the lockdown file belongs to an enrolled host; the server has none
-			delete(files, ld)
+			// The lockdown file belongs to an enrolled host and matches tac-users
+			// but for tac-superuser; it is read first, and the held block still
+			// closes what it leaves open. The server has the file when it is
+			// enrolled as a host of its own: the last two members.
 			for _, member := range [][]string{
-				{Group, tier.OperatorGroup, "user=alice"},  // a forwarding tier, held
-				{Group, tier.SuperuserGroup, "user=alice"}, // the default tier, held
-				{Group, tier.EngineerGroup, "user=carol"},  // an engineer, held
+				{Group, tier.OperatorGroup, "user=alice"},              // a forwarding tier, held
+				{Group, tier.SuperuserGroup, "user=alice"},             // the default tier, held
+				{Group, tier.EngineerGroup, "user=carol"},              // an engineer, held
+				{Group, "tac-users", tier.OperatorGroup, "user=alice"}, // held, and matched by the lockdown file
+				{Group, "tac-users", tier.EngineerGroup, "user=carol"},
 			} {
 				got := firstWins(files, member...)
 				for k, want := range map[string]string{
@@ -487,6 +492,25 @@ func TestHeldForwardingInSshd(t *testing.T) {
 			"allowagentforwarding no", "permittunnel no", "gatewayports no", "forcecommand " + testConsole} {
 			if !sshdHas(out, want) {
 				t.Errorf("agent=%v: sshd -T lacks %q for a held user:\n%s", agent, want, out)
+			}
+		}
+		// listed in the last of several blocks: the names are split over
+		// blocks of HeldPerBlock, and the account is in the seventh
+		var many []string
+		for i := 1; i <= 300; i++ {
+			many = append(many, fmt.Sprintf("a%03d", i))
+		}
+		write(cn, DropIn(testConsole, agent, false, fwd, append(many, "alice")))
+		if strings.Count(own.Replace(DropIn(testConsole, agent, false, fwd, append(many, "alice"))), "Match User ") != 7 {
+			t.Fatal("301 names are not seven blocks")
+		}
+		out, ok = eval()
+		if !ok {
+			t.Fatalf("sshd refuses the drop-in with seven held blocks:\n%s", out)
+		}
+		for _, want := range []string{"disableforwarding yes", "allowtcpforwarding no", "x11forwarding no", "allowagentforwarding no"} {
+			if !sshdHas(out, want) {
+				t.Errorf("agent=%v: sshd -T lacks %q for a user in the last of seven held blocks:\n%s", agent, want, out)
 			}
 		}
 		// listed, but another name: as the control
