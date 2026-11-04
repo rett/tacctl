@@ -85,19 +85,75 @@ func TestIOSLegacyHostLineLosesSingleConnection(t *testing.T) {
 	if !typed {
 		t.Errorf("the host line is not retyped:\n%s", d.Display())
 	}
+	// the item names the leaf, and the host line has a comment of its own in
+	// the paste region, not the first reason of the section
+	i := slices.IndexFunc(d.Items, func(it Item) bool { return it.Kind == KindDifferent })
+	if i < 0 || !strings.HasPrefix(d.Items[i].Words, "single-connection on the TACACS+ server 192.0.2.10, no longer rendered") {
+		t.Errorf("the item does not name the leaf: %+v", d.Items)
+	}
+	region := Block(d, f.header(), Wrapper{})
+	if !strings.Contains(region, "! aaa: the TACACS+ server line, typed again without single-connection (the standard no longer renders it)\ntacacs-server host 192.0.2.10 timeout 5 key ") {
+		t.Errorf("the host line has no comment of its own:\n%s", region)
+	}
+	// what the device holds after the paste needs nothing (the device
+	// replaces the entry of the address: the host line of an IOS 12.x image
+	// holds one entry per address)
+	exp := expectedSections(t, f.expected)
+	c := ParseIOS(capture(t, f.raw))
+	if err := c.Apply(d.Lines); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(c.Text(), "single-connection") {
+		t.Errorf("the entry kept the word:\n%s", c.Text())
+	}
+	if d2 := planText(t, f, exp, c.Text(), Options{}); len(lines(d2, "aaa")) != 0 {
+		t.Errorf("a second plan: %v", lines(d2, "aaa"))
+	}
+}
+
+// the items of the leaf name it, whatever the vendor
+func TestRetiredLeafItemsNameTheLeaf(t *testing.T) {
+	for _, c := range []struct {
+		d    Delta
+		want string
+	}{
+		{planJ(t, fixtureNamed(t, "juniper.synthetic-lab"), add("set system tacplus-server 192.0.2.10 single-connection"), Options{}),
+			"single-connection on the TACACS+ server 192.0.2.10, no longer rendered"},
+		{planI(t, fixtureNamed(t, "cisco.reference-lab"), func(c *IOSConfig) {
+			typeChild(c.blockFor("tacacs server TACACS"), []string{"tacacs server TACACS"}, "single-connection")
+		}, Options{}), "single-connection on the TACACS+ server TACACS, no longer rendered"},
+	} {
+		if !slices.ContainsFunc(c.d.Items, func(it Item) bool { return it.Kind == KindExtra && strings.HasPrefix(it.Words, c.want) }) {
+			t.Errorf("no item says %q: %+v", c.want, c.d.Items)
+		}
+	}
 }
 
 // the leaf is a difference of the section, not an unmanaged setting of the
 // device
 func TestSingleConnectionIsADifferenceNotUnmanaged(t *testing.T) {
-	for _, c := range []struct{ fixture, stmt string }{
-		{"juniper.synthetic-lab", "set system tacplus-server 192.0.2.10 single-connection"},
+	for _, c := range []struct {
+		fixture string
+		mut     func(t *testing.T, raw string) string
+	}{
+		{"juniper.synthetic-lab", func(t *testing.T, raw string) string {
+			cfg := ParseJunos(raw)
+			cfg.Add("set system tacplus-server 192.0.2.10 single-connection")
+			return cfg.Text()
+		}},
+		{"cisco.reference-lab", func(t *testing.T, raw string) string {
+			cfg := ParseIOS(raw)
+			b := cfg.blockFor("tacacs server TACACS")
+			if b == nil {
+				t.Fatal("no tacacs server TACACS block")
+			}
+			typeChild(b, []string{"tacacs server TACACS"}, "single-connection")
+			return cfg.Text()
+		}},
 	} {
 		f := fixtureNamed(t, c.fixture)
 		exp := expectedSections(t, f.expected)
-		cfg := ParseJunos(capture(t, f.raw))
-		cfg.Add(c.stmt)
-		cur, err := devconf.Extract(f.vendor, cfg.Text(), exp...)
+		cur, err := devconf.Extract(f.vendor, c.mut(t, capture(t, f.raw)), exp...)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -105,10 +161,99 @@ func TestSingleConnectionIsADifferenceNotUnmanaged(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		seen := false
 		for _, r := range res {
-			if r.Name == devconf.SectionAAA && (r.State != devconf.StateDiffers || r.Unmanaged != 0) {
-				t.Errorf("aaa: state %s, unmanaged %d", r.State, r.Unmanaged)
+			if r.Name == devconf.SectionAAA {
+				seen = true
+				if r.State != devconf.StateDiffers || r.Unmanaged != 0 {
+					t.Errorf("%s aaa: state %s, unmanaged %d", c.fixture, r.State, r.Unmanaged)
+				}
 			}
 		}
+		if !seen {
+			t.Errorf("%s: no aaa result", c.fixture)
+		}
+	}
+}
+
+// A retired leaf that only an apply-group gives cannot be deleted at the top
+// level, and it does not refuse the section: the other fixes of aaa stand and
+// the leaf is kept, with the word that it is the group's to change.
+func TestJunosRetiredLeafOfAGroupIsKeptNotRefused(t *testing.T) {
+	f := fixtureNamed(t, "juniper.synthetic-inherit-retired")
+	exp, cur, plain := f.load(t)
+	d, err := Plan(f.vendor, exp, cur, plain, f.options())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st := d.Of("aaa"); st.State != StatePlanned {
+		t.Fatalf("aaa: %+v", st)
+	}
+	if len(d.Inherited) != 0 {
+		t.Errorf("inherited: %v", d.Inherited)
+	}
+	// the other fix of the section stands, the leaf is not typed
+	wantLine(t, d, "aaa", "delete system accounting events interactive-commands")
+	noLine(t, d, "aaa", "single-connection")
+	var kept bool
+	for _, k := range d.Kept {
+		if k.Section == "aaa" && strings.Contains(k.Text, "tacplus-server 192.0.2.10 single-connection") {
+			kept = k.Note == retiredFromGroup
+		}
+	}
+	if !kept {
+		t.Errorf("the leaf is not kept with the group note: %+v", d.Kept)
+	}
+	i := slices.IndexFunc(d.Items, func(it Item) bool {
+		return strings.Contains(it.Statement, "tacplus-server 192.0.2.10 single-connection")
+	})
+	if i < 0 || d.Items[i].Fixed || !strings.Contains(d.Items[i].Action, "inherited from a group") {
+		t.Errorf("the item: %+v", d.Items)
+	}
+	// no line removes it later either: a delete at the top level would not
+	// find the statement
+	for _, e := range d.Extras {
+		if strings.Contains(e.Text, "single-connection") && (len(e.Remove) != 0 || e.Guard != retiredFromGroup) {
+			t.Errorf("extra: %+v", e)
+		}
+	}
+	// the leaf in the plain view too (at the top level) is deleted, as ever
+	d2 := planJ(t, fixtureNamed(t, "juniper.synthetic-lab"), add("set system tacplus-server 192.0.2.10 single-connection"), Options{})
+	wantLine(t, d2, "aaa", "delete system tacplus-server 192.0.2.10 single-connection")
+}
+
+// The back-out holds a secret only when a line of it does: the back-out of a
+// retyped server line holds a '<secret>' mark and a note.
+func TestBackoutWarnsOfASecretOnlyWhenItHoldsOne(t *testing.T) {
+	for _, name := range []string{"cisco.reference-12x", "cisco.real-12.4-7200"} {
+		f := fixtureNamed(t, name)
+		exp, cur, plain := f.load(t)
+		d, err := Plan(f.vendor, exp, cur, plain, f.options())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !d.HoldsSecret() || !strings.Contains(Block(d, f.header(), Wrapper{}), "THIS OUTPUT HOLDS THE TACACS+ KEY") {
+			t.Errorf("%s: the plan holds the key and does not say so", name)
+		}
+		b, err := Backout(d, f.header(), Wrapper{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(b, "THIS OUTPUT HOLDS") || strings.Contains(b, "lab-secret-0123456789abcdef") {
+			t.Errorf("%s: the back-out warns of a key it does not hold:\n%s", name, b)
+		}
+		if !strings.Contains(b, "key <secret>") {
+			t.Errorf("%s: the back-out lacks the retyped line:\n%s", name, b)
+		}
+	}
+	// a back-out that does hold one (a community's name is the secret) warns
+	f := fixtureNamed(t, "cisco.reference-bare")
+	exp, cur, plain := f.load(t)
+	d, err := Plan(f.vendor, exp, cur, plain, f.options())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := Backout(d, f.header(), Wrapper{}); err != nil || !strings.Contains(b, "THIS OUTPUT HOLDS THE SNMP COMMUNITY") {
+		t.Errorf("reference-bare back-out: %v\n%s", err, b)
 	}
 }

@@ -9,9 +9,10 @@
 #  2. aaa      ACCESS     secret not visible: a TACACS+ server 192.0.2.10 (set system tacplus-server
 #                         192.0.2.10 secret <secret>). Not fixable by this login: EN-CLASS cannot
 #                         change 'system tacplus-server' (ask a superuser).
-#  3. aaa      ACCESS     extra: a TACACS+ server 198.18.0.24 (set system tacplus-server 198.18.0.24
-#                         single-connection). Not fixable by this login: EN-CLASS cannot change
-#                         'system tacplus-server' (ask a superuser).
+#  3. aaa      ACCESS     extra: single-connection on the TACACS+ server 198.18.0.24, no longer
+#                         rendered (set system tacplus-server 198.18.0.24 single-connection). Not
+#                         fixable by this login: EN-CLASS cannot change 'system tacplus-server' (ask a
+#                         superuser).
 #  4. aaa      COSMETIC   extra: accounting sends the event interactive-commands (set system
 #                         accounting events interactive-commands). Not fixable by this login: EN-CLASS
 #                         cannot change 'system accounting' (ask a superuser).

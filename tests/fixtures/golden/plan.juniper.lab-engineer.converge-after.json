@@ -37,7 +37,7 @@
       "kind": "extra",
       "severity": "ACCESS",
       "section": "aaa",
-      "what": "a TACACS+ server 198.18.0.24",
+      "what": "single-connection on the TACACS+ server 198.18.0.24, no longer rendered",
       "statement": "set system tacplus-server 198.18.0.24 single-connection",
       "action": "Not fixable by this login: EN-CLASS cannot change 'system tacplus-server' (ask a superuser).",
       "fixed": false

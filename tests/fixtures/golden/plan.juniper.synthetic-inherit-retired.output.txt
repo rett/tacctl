@@ -1,0 +1,71 @@
+##### dev-juniper-synthetic-inherit-retired  192.0.2.21  scope lab  juniper (TACACS+) #####
+# Based on the pull of 2026-10-10 14:02 by alice over netconf (18 minutes ago; the login could see
+# secrets) and the standard of 2026-10-10 14:20 (tacctl 0.2.5).
+#
+# What is irregular on dev-juniper-synthetic-inherit-retired (4 items; the paste fixes 2, leaves 2):
+#  1. aaa      ACCESS     extra: single-connection on the TACACS+ server 192.0.2.10, no longer
+#                         rendered (set system tacplus-server 192.0.2.10 single-connection). Left
+#                         alone (inherited from a group: remove it from the group by hand).
+#  2. aaa      COSMETIC   extra: accounting sends the event interactive-commands (set system
+#                         accounting events interactive-commands). Fixed by region line 3.
+#  3. aaa      ACCESS     extra: a TACACS+ server 192.0.2.99 (set system tacplus-server 192.0.2.99
+#                         secret <secret>). Left alone. To remove it later: delete system
+#                         tacplus-server 192.0.2.99
+#  4. snmp     COSMETIC   missing: the SNMP description is Core switch (set snmp description "Core
+#                         switch"). Fixed by region line 5.
+# Consistent: roles, mgmt-acl. Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
+# Kept: snmp 2 statements of the device's own (communities, trap groups): left alone, listed by device
+# config diff.
+# Secrets: 3 present (the TACACS+ server key, the SNMP community); only their presence is checked,
+# --secrets writes them again.
+# The switch undoes this by itself in 5 minutes unless you type the one word after the check (see
+# below).
+# Paste over ssh, not the console; on a console paste at most twenty lines at a time and watch the
+# echo for 'error:'. Pasting the region twice is harmless.
+#
+# Type this first, on dev-juniper-synthetic-inherit-retired, and check the name:   show version | match Hostname
+# The prompt must end in > (operational mode) before you paste: a prompt ending in # means a
+# configuration session is open: stop.
+# The region opens configure exclusive: the session holds the configuration lock until you type exit
+# (after commit, to confirm). If it printed "error: configuration database modified", another session
+# has uncommitted changes: have that person commit or discard them, then paste again. If it printed
+# "error: configuration database locked by", another session holds the exclusive lock: wait for it to
+# exit, then paste again. Either way nothing happened (every later line is an unknown command).
+#
+##### PASTE FROM HERE: dev-juniper-synthetic-inherit-retired #####
+configure exclusive
+# aaa: the accounting events tacctl renders
+delete system accounting events interactive-commands
+# snmp: the description tacctl renders
+set snmp description "Core switch"
+show | compare | no-more
+commit check
+commit confirmed 5 comment "tacctl plan dev-juniper-synthetic-inherit-retired 2026-10-10T14:20Z by alice"
+##### PASTE TO HERE: dev-juniper-synthetic-inherit-retired #####
+#
+# If the first line printed "error: configuration database modified" or "error: configuration
+# database locked by": nothing happened (see the note above the region); paste again once it is
+# cleared. If any line printed "error:": do not type commit; the switch undoes this by itself in 5
+# minutes.
+#
+# Check now. In 5 minutes the switch undoes this by itself unless you type one word.
+#   From the tacctl server:   tacctl device config pull dev-juniper-synthetic-inherit-retired --diff     (aaa and snmp: ok)
+#   In a second terminal:     ssh dev-juniper-synthetic-inherit-retired, then: show cli authorization | no-more
+#                             show configuration system accounting | no-more
+#                             show configuration snmp | no-more
+# When both checks are fine, type this one word yourself:  commit     (before the 5 minutes end)
+# Then type exit: the session holds the configuration lock until you do.
+#
+# If your session drops before that, the switch still rolls back when the time runs out (a dropped
+# CLI session does not roll back at once): log in again and paste again.
+# To undo it after the commit: tacctl device config plan dev-juniper-synthetic-inherit-retired
+# --backout (its own region to paste; tacctl keeps this plan's back-out: after the check pull has
+# replaced the picture, the command still prints this plan's, and says which pull it undoes, until
+# the next plan with changes). Without tacctl: show system commit, then rollback <n> of the entry
+# just before the one commented "tacctl plan dev-juniper-synthetic-inherit-retired" (the newest
+# entry is that commit itself), then commit.
+# Do not: type commit before the check; paste anything outside the banners; paste this into
+# another device; keep this output in a file after the paste when it holds a secret.
+# Locked out (the paste cut your session and no login works)? A superuser runs: tacctl breakglass hold dev-juniper-synthetic-inherit-retired --reason "..."
+# then log in as the device's local user (ssh or console),
+# fix or back out, and the superuser runs: tacctl breakglass release dev-juniper-synthetic-inherit-retired

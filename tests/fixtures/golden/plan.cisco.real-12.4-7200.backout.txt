@@ -2,7 +2,6 @@
 ! BACK-OUT of the plan for dev-cisco-real-12-4-7200: it puts back what the pull of 2026-10-10 14:02
 ! showed, for the sections the plan changed. Use it only after the plan was pasted and the check was
 ! not fine.
-! THIS OUTPUT HOLDS THE TACACS+ KEY OF SCOPE lab: do not keep it in a file or a scrollback.
 ! The change is live when the paste ends. NOTHING undoes it by itself. Keep a second terminal logged
 ! in at privilege 15 until the end.
 !

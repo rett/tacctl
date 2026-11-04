@@ -142,7 +142,7 @@
       "kind": "extra",
       "severity": "ACCESS",
       "section": "aaa",
-      "what": "a TACACS+ server 192.0.2.10",
+      "what": "single-connection on the TACACS+ server 192.0.2.10, no longer rendered",
       "statement": "set system tacplus-server 192.0.2.10 single-connection",
       "action": "Fixed by region line 33.",
       "fixed": true,

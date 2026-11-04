@@ -5,13 +5,13 @@
 ! THIS OUTPUT HOLDS THE TACACS+ KEY OF SCOPE lab: do not keep it in a file or a scrollback.
 !
 ! What is irregular on dev-cisco-reference-12x (2 items; the paste fixes 2, leaves 0):
-!  1. aaa      ACCESS     different: the TACACS+ server 192.0.2.10 (the device has: the TACACS+ server
-!                         192.0.2.10) (tacacs-server host 192.0.2.10 timeout 5 key <secret>). Fixed by
+!  1. aaa      ACCESS     different: single-connection on the TACACS+ server 192.0.2.10, no longer
+!                         rendered (tacacs-server host 192.0.2.10 timeout 5 key <secret>). Fixed by
 !                         region line 3.
 !  2. aaa      ACCESS     extra: an 'enable' list that asks the server (anyone the server knows
 !                         reaches level 15 with their own password; the standard has none) (aaa
 !                         authentication enable default group LAB-TACACS enable). Fixed by region line
-!                         4.
+!                         5.
 ! Consistent: roles, snmp, mgmt-acl. Not planned: netconf, breakglass.
 ! Secrets: 1 present (the SNMP community); only their presence is checked, --secrets writes them
 ! again.
@@ -30,8 +30,9 @@
 !
 !!!!! PASTE FROM HERE: dev-cisco-reference-12x !!!!!
 configure terminal
-! aaa: the enable list: the standard has none ('enable' is the local enable secret), so a list that asks the server is removed
+! aaa: the TACACS+ server line, typed again without single-connection (the standard no longer renders it)
 tacacs-server host 192.0.2.10 timeout 5 key lab-secret-0123456789abcdef
+! aaa: the enable list: the standard has none ('enable' is the local enable secret), so a list that asks the server is removed
 no aaa authentication enable default group LAB-TACACS enable
 end
 !!!!! PASTE TO HERE: dev-cisco-reference-12x !!!!!

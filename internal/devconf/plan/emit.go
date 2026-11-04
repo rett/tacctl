@@ -329,6 +329,28 @@ func (d Delta) kept() Delta {
 	return c
 }
 
+// backoutSensitivity is the sensitivity line of the back-out: it is there
+// when a line of the back-out holds a secret's value, not when the plan's own
+// lines do (the back-out of a retyped server line holds a '<secret>' mark and
+// a note to type the key, and nothing to keep out of a scrollback).
+func backoutSensitivity(d Delta, h Header) string {
+	var kinds []string
+	for _, l := range backoutLines(d) {
+		if l.Secret && l.HasValue {
+			if k := secretKind(d.Vendor, l); k != "" && !slices.Contains(kinds, k) {
+				kinds = append(kinds, k)
+			}
+		}
+	}
+	if len(kinds) == 0 {
+		return ""
+	}
+	b := d
+	b.SecretKinds = kinds
+	b.Counts.SecretsByValue = len(kinds)
+	return sensitivityLine(b, h)
+}
+
 // Backout is the back-out as its own output (D108, review H2): the device
 // box, what it is and the check, ONE delimited region of plain lines
 // ('BACK-OUT FROM HERE' ... 'BACK-OUT TO HERE'), and after it nothing but
@@ -352,7 +374,7 @@ func Backout(d Delta, h Header, w Wrapper) (string, error) {
 	b.WriteString(boxLine(d, h) + "\n")
 	add("BACK-OUT of the plan for " + h.Device + ": it puts back what the pull of " + fmtTime(h.Pulled) +
 		" showed, for the sections the plan changed. Use it only after the plan was pasted and the check was not fine.")
-	if s := sensitivityLine(d, h); s != "" {
+	if s := backoutSensitivity(d, h); s != "" {
 		add(s)
 	}
 	if d.Vendor == devconf.FamilyIOS {

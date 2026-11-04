@@ -170,3 +170,10 @@ set system ntp source-address 192.0.2.250
 set system ntp trusted-key 1
 set system time-zone UTC
 
+# juniper.synthetic-inherit-retired
+shape 2e6817afe810 algo 1
+[aaa]
+delete system accounting events interactive-commands
+[snmp]
+set snmp description <v>
+

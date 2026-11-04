@@ -144,8 +144,19 @@ func checkConverges(t *testing.T, f fixture, exp []devices.Section, raw string, 
 		// a section refused for a statement of a group is not converged
 		return len(d.Lines)
 	}
+	// a retired leaf that only a group gives is kept, not removed: the plan of
+	// the result sees it in the view this test passes as the plain one
+	groupKept := map[string]bool{}
+	for _, k := range d.Kept {
+		if k.Note == retiredFromGroup {
+			groupKept["delete "+strings.TrimPrefix(k.Text, "set ")] = true
+		}
+	}
 	var step2 []Line
 	for _, l := range d2.Lines {
+		if l.Op == OpDelete && groupKept[l.Text] {
+			continue
+		}
 		if d.Vendor == devconf.FamilyJunos && l.Op == OpDelete && l.Secret && unattributed[strings.TrimPrefix(l.Elided, "delete ")] {
 			continue // a leaf of another community (the name is not compared)
 		}

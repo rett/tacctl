@@ -1,0 +1,2 @@
+delete system accounting events interactive-commands
+set snmp description "Core switch"

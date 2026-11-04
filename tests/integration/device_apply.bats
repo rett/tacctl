@@ -118,7 +118,7 @@ nothing_secret() {
     before=$(committed)
     apply example-sw1 --check
     assert_success
-    assert_line --regexp '^  example-sw1  checked: shape [0-9a-f]{12} \(new\) \(roles, aaa: 17 set, 1 delete\); kept 2; check ok$'
+    assert_line --regexp '^  example-sw1  checked: shape [0-9a-f]{12} \(new\) \(roles, aaa: 16 set, 1 delete\); kept 2; check ok$'
     assert_line "  1 checked"
     assert_output --partial "Nothing was committed"
     # no review, no question
@@ -161,7 +161,7 @@ import json, sys
 docs = [json.loads(l) for l in sys.stdin.read().splitlines()]
 d, s = docs
 assert d["name"] == "example-sw1" and d["phase"] == "check" and d["status"] == "checked", d
-assert d["set"] == 17 and d["delete"] == 1 and d["sections"] == ["roles", "aaa"], d
+assert d["set"] == 16 and d["delete"] == 1 and d["sections"] == ["roles", "aaa"], d
 assert any(l.startswith("set system tacplus-server 10.0.0.42 secret") for l in d["lines"]), d
 assert not any("lab-secret" in l for l in d["lines"]), d
 assert s["summary"]["checked"] == 1 and s["summary"]["exit"] == 2, s
@@ -179,10 +179,10 @@ print("fine")' <<< "$output"
     refute_output --partial "$SECRET"
     assert_output --partial "kept: 2 statements of the managed sections that the plan leaves alone"
     assert_output --partial "Apply to example-sw1 under commit confirmed 10 and kept only after a fresh login as alice works and what landed is what the check showed?"
-    assert_output --regexp "  example-sw1  shape [0-9a-f]{12} \(new\), 17 set, 1 delete"
+    assert_output --regexp "  example-sw1  shape [0-9a-f]{12} \(new\), 16 set, 1 delete"
     assert_output --partial "Type the device name to apply to example-sw1:"
     assert_output --regexp "example-sw1  committed, verifying \.\.\."
-    assert_output --regexp "example-sw1  applied \(roles,aaa: 17 set, 1 delete\) \[tacctl-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{4}\]"
+    assert_output --regexp "example-sw1  applied \(roles,aaa: 16 set, 1 delete\) \[tacctl-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{4}\]"
     assert_output --partial "1 applied"
     # what the device runs now: the plan, and nothing it was not given
     run committed
@@ -337,7 +337,7 @@ EOF
     assert_success
     assert_output --partial "--yes: every shape is one another device confirmed; going on."
     refute_output --partial "Type "
-    assert_line --regexp '^  example-sw1  applied \(roles,aaa: 17 set, 1 delete\) \[tacctl-'
+    assert_line --regexp '^  example-sw1  applied \(roles,aaa: 16 set, 1 delete\) \[tacctl-'
     run grep -E "device config apply review user=alice device=example-sw1 shape=[0-9a-f]{12} answer=approved mode=scripted sid=" "$CALLS_LOG"
     assert_success
     run grep -E "approved=1 shapes=[0-9a-f]{12} canary=example-sw1 mode=scripted sid=" "$CALLS_LOG"
