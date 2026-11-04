@@ -39,6 +39,20 @@ current behaviour; this file is where history lives.
    `docs/install/upgrading.md` (Rolling back, To 0.2.23), the manual page and
    the completion list them.
 
+4. **The tacquito pull cannot stall.** `install` (on an existing checkout) and
+   `upgrade` pulled the tacquito source with a plain `git pull`, which stops
+   when the checkout cannot be merged with the fork's `main` (a rewritten
+   history, a commit made in the clone by hand), and every later `install` and
+   `upgrade` stopped at the same place. The pull is now `git pull --ff-only`;
+   when it cannot fast-forward, the checkout is reset to the branch it tracks
+   (`git reset --hard @{u}`) with a warning that names the commit it was at and
+   the one it is at now (`Tacquito source at ... could not fast-forward; reset
+   it to its upstream branch (was 1111111, now 2222222).`). The clone is only a
+   build tree (the patches applied last time are dropped before the pull and
+   applied again after), so nothing is lost. When the reset fails too, the
+   phase ends with the pull's exit status, as before; `upgrade` then puts the
+   previous binary back instead of leaving the `tacquito.bak` copy it had made.
+
 ## 0.2.23 (2026-10-31)
 
 1. **`tacctl rollback 0.2.22`, the release before this one, is a target.**

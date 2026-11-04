@@ -88,7 +88,7 @@ func (b *Backend) installBuild(ctx context.Context) error {
 		b.repointOrigin(ctx, src)
 		// Drop the patches applied last time so the pull stays clean.
 		b.shQuiet(ctx, src, "git", "checkout", "--", ".")
-		if code := b.sh(ctx, src, "git", "pull", "--quiet"); code != 0 {
+		if code := b.pullSource(ctx, src); code != 0 {
 			return failed(code, "git pull")
 		}
 	} else {
@@ -122,6 +122,29 @@ func (b *Backend) installBuild(ctx context.Context) error {
 	out.InfoE("  Hashgen: " + hashgen)
 	b.ensureSafeDirectory(ctx, src)
 	return nil
+}
+
+// pullSource brings the tacquito checkout to its upstream (the fork's main),
+// and returns the exit status of the step that failed, 0 when it succeeded.
+// The checkout is a build tree, not a working copy: the patches applied last
+// time are dropped before and applied again after. So a pull that cannot
+// fast-forward (a history rewritten on the fork, a commit made in the
+// checkout by hand) must not stop every later install and upgrade: the
+// checkout is reset to the upstream branch it tracks and the warning names the
+// commit it was at and the one it is at now. When the reset fails too, the
+// pull's status is the result, as a failing pull always was.
+func (b *Backend) pullSource(ctx context.Context, src string) int {
+	pull := b.sh(ctx, src, "git", "pull", "--ff-only", "--quiet")
+	if pull == 0 {
+		return 0
+	}
+	was, _ := b.shOut(ctx, src, "git", "rev-parse", "--short", "HEAD")
+	if b.sh(ctx, src, "git", "reset", "--hard", "@{u}") != 0 {
+		return pull
+	}
+	now, _ := b.shOut(ctx, src, "git", "rev-parse", "--short", "HEAD")
+	b.out().Warn("Tacquito source at " + src + " could not fast-forward; reset it to its upstream branch (was " + was + ", now " + now + ").")
+	return 0
 }
 
 // --- upgrade preflight and build ---------------------------------------------
@@ -223,7 +246,16 @@ func (b *Backend) upgradeBuild(ctx context.Context) error {
 	// from pristine upstream plus the overlay.
 	b.shQuiet(ctx, src, "git", "checkout", "--", ".")
 	if local != remote {
-		if code := b.sh(ctx, src, "git", "pull", "--quiet"); code != 0 {
+		if code := b.pullSource(ctx, src); code != 0 {
+			// The binary was backed up above and nothing has replaced it:
+			// put the backup back, as a failed build does, so no .bak
+			// stands for a build that never ran.
+			if isRegular(bak) {
+				out.Error("Pull failed. Restoring previous binary.")
+				if err := b.moveBack(bak, bin); err != nil {
+					return err
+				}
+			}
 			return failed(code, "git pull")
 		}
 		nc, code := b.shOut(ctx, src, "git", "rev-parse", "--short", "HEAD")
