@@ -276,6 +276,29 @@ func (b *Backend) sh(ctx context.Context, dir, name string, args ...string) int 
 	return code
 }
 
+// gitNet runs a git command that talks to the remote (fetch, clone) so that
+// it cannot wait for an operator who is not there: tacctl's stdin is the
+// null device, but git asks on the terminal (/dev/tty) for a user name, a
+// password or a key passphrase, and a stalled transfer waits for ever.
+// Through env(1), so the environment is not read here: GIT_TERMINAL_PROMPT=0
+// and a GIT_ASKPASS that fails end the prompt, SSH_ASKPASS is unset, the
+// remote shell runs with BatchMode=yes (after the core.sshCommand of the
+// configuration, when it has one), and an http transfer slower than 1000
+// bytes per second for 60 seconds is dropped. Output is passed through, as
+// sh does.
+func (b *Backend) gitNet(ctx context.Context, dir string, args ...string) int {
+	remoteShell := "ssh"
+	if code, out := b.command(ctx, dir, nil, nil, "git", "config", "--get", "core.sshCommand"); code == 0 {
+		if cfg := strings.TrimSpace(out); cfg != "" {
+			remoteShell = cfg
+		}
+	}
+	argv := []string{"-u", "SSH_ASKPASS", "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=false",
+		"GIT_SSH_COMMAND=" + remoteShell + " -o BatchMode=yes",
+		"git", "-c", "http.lowSpeedLimit=1000", "-c", "http.lowSpeedTime=60"}
+	return b.sh(ctx, dir, "env", append(argv, args...)...)
+}
+
 // shQuiet is '<cmd> 2>/dev/null'.
 func (b *Backend) shQuiet(ctx context.Context, dir, name string, args ...string) int {
 	code, _ := b.command(ctx, dir, b.env.Out.Stdout, nil, name, args...)
