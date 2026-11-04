@@ -371,12 +371,16 @@ func TestHeldBeatsForwardingTiers(t *testing.T) {
 				en: EngineerDropIn(agent),
 				ld: lockdownDropIn,
 			}
-			// the lockdown file belongs to an enrolled host; the server has none
-			delete(files, ld)
+			// The lockdown file belongs to an enrolled host and matches tac-users
+			// but for tac-superuser; it is read first, and the held block still
+			// closes what it leaves open. The server has the file when it is
+			// enrolled as a host of its own: the last two members.
 			for _, member := range [][]string{
-				{Group, tier.OperatorGroup, "user=alice"},  // a forwarding tier, held
-				{Group, tier.SuperuserGroup, "user=alice"}, // the default tier, held
-				{Group, tier.EngineerGroup, "user=carol"},  // an engineer, held
+				{Group, tier.OperatorGroup, "user=alice"},              // a forwarding tier, held
+				{Group, tier.SuperuserGroup, "user=alice"},             // the default tier, held
+				{Group, tier.EngineerGroup, "user=carol"},              // an engineer, held
+				{Group, "tac-users", tier.OperatorGroup, "user=alice"}, // held, and matched by the lockdown file
+				{Group, "tac-users", tier.EngineerGroup, "user=carol"},
 			} {
 				got := firstWins(files, member...)
 				for k, want := range map[string]string{
