@@ -69,7 +69,11 @@ their own tree lists.
 
 ## Each release
 
-The example is 0.2.1; replace it throughout.
+The example is 0.2.1 (the release before it 0.2.0); replace it throughout.
+
+The git-flow commands of steps 1 and 4 are written out by hand: qargi's
+release tooling will replace them once it supports this project's CHANGELOG
+headings and signed assets.
 
 Before step 1, bring the tacquito fork's `main` up to upstream
 (`patches/README.md`, Following upstream) and run the gates on it: a host
@@ -78,13 +82,30 @@ pulls upstream once before the new binary points its clone at the fork, so a
 fork behind upstream makes that host rebuild tacquito at every upgrade until
 the fork catches up.
 
+Also before step 1, on `develop`:
+
+- **The rollback target.** Every release ships `tacctl rollback <previous
+  release>` (0.2.17 to 0.2.23 each did). Check that the release before this
+  one is a constant in `internal/lifecycle/rollback.go` (`RollbackTarget0222`
+  for 0.2.23) and is the one the refusal names "(the release before this
+  one)" (`internal/lifecycle/rollback_test.go`), that the `rollback` entry of
+  `man/tacctl.1` lists it the same way, and that the CHANGELOG has its item.
+- **The plans.** A plan, handoff, lab sheet or spike of this release is
+  deleted in this release (`docs/development/README.md`, Working rules) and
+  recorded under "Removed plans" in `docs/plans/README.md` with the commit
+  or tag that still holds it (`git show <commit>:docs/plans/<file>`).
+  `docs/plans/` keeps the backlog, what is deferred and the plan of the
+  release in progress.
+
 ### 1. The release branch, the dates, the tag
 
 ```sh
 git checkout develop && git pull
 git flow release start 0.2.1
 sed -i 's/^## 0\.2\.1 (unreleased)$/## 0.2.1 (YYYY-MM-DD)/' CHANGELOG.md
-# man/tacctl.1's .TH date and version, as in earlier releases
+sed -i 's/^\.TH TACCTL 1 "[^"]*" "tacctl [^"]*"/.TH TACCTL 1 "YYYY-MM-DD" "tacctl 0.2.1"/' \
+    man/tacctl.1
+git add docs/release-notes-0.2.1.md    # written now: see below
 git commit -am "docs: 0.2.1 release date"
 git push -u origin release/0.2.1
 gh pr create --base master --head release/0.2.1 --title "0.2.1" --body "Release 0.2.1"
@@ -93,6 +114,17 @@ git flow release finish -m "Release 0.2.1" 0.2.1
 git tag -f -a 0.2.1 -m "Release 0.2.1" master   # git-flow writes "Release 0.2.1 0.2.1"
 git describe master                               # 0.2.1
 ```
+
+The same commit adds the release notes, `docs/release-notes-0.2.1.md`:
+`tests/tools/release-preflight.sh` refuses to build assets without them
+(step 2), and step 4 publishes them as the release's text. Model them on
+`docs/release-notes-0.2.23.md`: a `# tacctl <version>` title, a paragraph on
+what the release does that points to its numbered CHANGELOG section for
+everything that differs from the release before, then sections by theme
+(`## Devices`, `## Rollback`, `## Upgrading`, ...).
+
+The `sed` of `man/tacctl.1` sets the date and the version of its `.TH`
+line, which must match the CHANGELOG heading (step 2).
 
 The release branch is pushed first so that the `test` workflow runs on the
 release commit (the date changes and the notes) before the tag exists; it
@@ -239,6 +271,38 @@ sha256sum -c --ignore-missing SHA256SUMS
 The fresh-install container check can then run against the published
 release: `tests/containers/fresh/run.sh --release 0.2.1`.
 
+### 6. The documentation site
+
+The site at https://rett.github.io/tacctl/ is built from the orphan
+`gh-pages` branch, which has no history in common with the code and is never
+merged into or from a code branch. After the release is published, sync it
+on a `docs/<slug>` branch cut from `gh-pages`:
+
+```sh
+git fetch origin gh-pages
+git checkout -b docs/release-0.2.1 origin/gh-pages
+python3 tools/release_sync.py --from 0.2.0 --to 0.2.1   # what changed between the releases
+# update the pages it names
+python3 tools/release_sync.py --from 0.2.0 --to 0.2.1 --finish
+git add -A && git commit -am "site: tacctl 0.2.1"
+git push -u origin docs/release-0.2.1
+gh pr create --base gh-pages --head docs/release-0.2.1 --title "site: tacctl 0.2.1" \
+    --body "Sync the site with 0.2.1"
+gh pr checks --watch          # the build check; green before the merge
+```
+
+`--finish` bumps the pages' "Checked against tacctl <version>" line, runs
+the checks, builds the site and renders the PDFs. The checks also run by
+hand, from the top of the `gh-pages` checkout:
+
+```sh
+python3 tools/check_site.py site
+python3 tools/check_commands.py site
+```
+
+Merge the pull request into `gh-pages` only once its `build` check has
+passed.
+
 ## A hotfix
 
 A fix that cannot wait for the next release starts from `master`, not from
@@ -247,4 +311,4 @@ fix and its CHANGELOG section (`## 0.2.6 (unreleased)`, numbering from 1, the
 items that differ from the release it fixes), then `git flow hotfix finish -m
 "Release 0.2.6" 0.2.6`, which tags `master` and merges back into `develop`.
 Everything else is as for a release: the date and version in `man/tacctl.1`
-and the CHANGELOG heading before the finish, and steps 2 to 5 above.
+and the CHANGELOG heading before the finish, and steps 2 to 6 above.
