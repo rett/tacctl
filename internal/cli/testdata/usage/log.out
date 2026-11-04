@@ -1,17 +1,27 @@
 
 [1mLog Commands[0m
 
-Usage: tacctl log <subcommand> [--backend <id>] [arguments]
+Usage: tacctl log <subcommand> [--backend <id>] [filters] [arguments]
 
 Subcommands:
   tail [-f] [<n>]       Show the last <n> log entries (default 20; TACACS+: journal, RADIUS: auth and daemon log)
       -f, --follow      (tail) Then print new entries as they arrive, until Ctrl-C
   search <term>         Search the logs for a username or keyword
-  failures              Show auth failures from the last 24 hours
+  failures              Show auth failures from the last 24 hours (or in the --since/--until window)
   accounting [<n>]      Show the last <n> accounting log entries
   clear [--force|--yes]  Purge each backend's logs: journal or auth log, accounting log (confirms)
       --backend <id>    Only that backend's log (every subcommand)
       --force, --yes    (clear) Purge without asking
+
+Filters (tail, search, failures, accounting; they combine, <n> counts the entries left):
+      --since <time>    Show entries from that time on
+      --until <time>    Show entries up to that time
+      --user <name>     Show the entries of that user
+      --device <name|address>  Show the entries of that device or host
+      --type login|change|command  (accounting) Show one kind of record
+      --json            Write one JSON object per entry, no headings (for jq)
+  <time> is YYYY-MM-DD[ HH:MM[:SS]], now, today, yesterday, -1h or 2 hours ago
+  (units s, m, h, d, w). tail -f applies the filters to the new entries.
 
 With more than one backend enabled each subcommand shows every backend's log in a
 section of its own; --backend <id> shows only that backend's.

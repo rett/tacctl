@@ -23,6 +23,9 @@ const rule = "--------------------------------------------"
 // yes. Any other sub-command is ErrUnsupported and writes nothing.
 func (m *Module) Log(_ context.Context, sub string, args []string, w io.Writer) error {
 	out := ui.Output{Stdout: w, Stderr: m.env.Out.Stderr}
+	if m.filtered() && (sub == "tail" || sub == "search" || sub == "failures") {
+		return m.logFiltered(sub, arg(args, 0, ""), w)
+	}
 	switch sub {
 	case "tail":
 		return m.logTail(w, arg(args, 0, "20"))
@@ -190,6 +193,9 @@ func (m *Module) Accounting(_ context.Context, sub string, args []string, w io.W
 		return backend.ErrUnsupported
 	}
 	count := arg(args, 0, "20")
+	if m.filtered() {
+		return m.accountingFiltered(w, count)
+	}
 	echo(w, "")
 	echo(w, ui.Bold+"Recent RADIUS Accounting Records"+ui.NC)
 	echo(w, rule)

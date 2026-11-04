@@ -49,6 +49,24 @@ current behaviour; this file is where history lives.
    escapes. `log tail` and `log search` read the journal and are not
    changed.
 
+4. **The logs can be filtered, and written as JSON.** `tacctl log tail`,
+   `search`, `failures` and `accounting` take `--since <time>` and `--until
+   <time>` (`YYYY-MM-DD[ HH:MM[:SS]]`, `now`, `today`, `yesterday`, `-1h` or
+   `2 hours ago`; any other form is a usage error), `--user <name>`,
+   `--device <name|address>` (a registered device or enrolled host the caller
+   may see, or an address in canonical form), `--type login|change|command`
+   (accounting only: a record with a Junos change-log command is a `change`,
+   one with any other command a `command`, one that starts or stops a session
+   a `login`) and `--json` (one object per line, no headings; an accounting
+   record keeps its fields, decoded, with `DeviceName` and `Time` added). The
+   filters combine, `tail -f` applies them to new entries, and a count limits
+   the output after filtering. Each log matches what it names: the journal
+   the bracketed user and the address of the device that asked, the
+   accounting logs the record's `User` and `Device`, the RADIUS auth log
+   `user=` and `client=`; a log that names no device (the FreeRADIUS daemon
+   log, a record written before patch 0006) shows nothing for `--device` and
+   says so. Without a filter the commands print what they did.
+
 ## 0.2.23 (2026-10-31)
 
 1. **`tacctl rollback 0.2.22`, the release before this one, is a target.**

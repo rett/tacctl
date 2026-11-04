@@ -6018,6 +6018,149 @@ reason),
 and
 .I tacctl\-radius.log
 in the package's log directory.
+.PP
+Filters.
+.BR "log tail" ", " "log search" ", " "log failures" " and " "log accounting"
+take
+.BI \-\-since " time"
+and
+.BI \-\-until " time"
+(both inclusive),
+.BI \-\-user " name" ,
+.BI \-\-device " name|address"
+and
+.BR \-\-json ;
+.B log accounting
+also takes
+.BI \-\-type " login|change|command" .
+They combine (a record or line must pass every one), they come in
+.BI \-\-name " value"
+or
+.BI \-\-name = value
+form anywhere on the line, and a count
+.I n
+limits what is left after filtering.
+.B tail \-f
+applies them to the new entries, which have the time they arrive.
+.PP
+A time is
+.IB YYYY\-MM\-DD ,
+.IB YYYY\-MM\-DD " HH:MM"
+or
+.IB YYYY\-MM\-DD " HH:MM:SS"
+(local time; a date alone is that day's midnight),
+.BR now ,
+.B today
+or
+.B yesterday
+(midnight), or an offset from now:
+.B \-1h
+or
+.BR "2 days ago" ,
+a number and one of the units
+.BR s ,
+.BR m ,
+.BR h ,
+.B d
+and
+.B w
+(or seconds, minutes, hours, days, weeks).
+Any other form is refused.
+On TACACS+,
+.BR tail ,
+.B search
+and
+.B failures
+pass the window to
+.BR journalctl (1)
+(without one,
+.B search
+reads the last 7 days and
+.B failures
+the last 24 hours); for the RADIUS logs and for the accounting logs it is compared
+with the time of each line or record (the logger's date and time of a TACACS+
+record; a line or record whose time cannot be read is left out).
+.PP
+.B \-\-user
+matches the user a record or line names, exactly as written: the
+.B User
+of a TACACS+ accounting record, the bracketed user of a tacquito line
+.RB ( "accepting user [alice] ..." ),
+the last
+.B user=
+of a RADIUS auth line, the bracketed user of a daemon log line, the
+.B User\-Name
+of a RADIUS accounting record.
+.B \-\-device
+takes a registered device or an enrolled host (by name, among those the
+caller may see; it stands for its recorded address) or an address (compared in
+canonical form: an IPv4\-mapped IPv6 address is the IPv4 address). A name that
+is none, or whose device has no address, is refused. It matches the
+.B Device
+of a TACACS+ accounting record (a record written before patch 0006 has none and
+never matches), the address a tacquito journal line names for the device that
+asked
+.RB ( "from [A]" ,
+.BR "bad secret detected for ip [A]" ,
+.BR "remote [A] has no secret providers" ),
+the
+.B client=
+of a RADIUS auth line and the
+.BR NAS\-IP\-Address ,
+.BR NAS\-IPv6\-Address ,
+.B Packet\-Src\-IP\-Address
+or
+.B Packet\-Src\-IPv6\-Address
+of a RADIUS accounting record. A line that names no device never matches; the
+FreeRADIUS daemon log names clients and not addresses, so with
+.B \-\-device
+its section says that it cannot be matched and shows no line.
+.PP
+.B \-\-type
+classifies a TACACS+ accounting record by its fields. A record with a
+.B cmd=
+argument that is not empty is a
+.B change
+when the command has the Junos change\-log form (a verb, a colon and the
+configuration path in brackets:
+.BR "cmd=set: [interfaces ge\-0/0/1 description] ..." )
+and a
+.B command
+otherwise; a record without one is a
+.B login
+when its flags start or stop a session (START, STOP). A watchdog update is none
+of them. RADIUS accounting has
+.B login
+records only (Acct\-Status\-Type Start or Stop); with
+.B change
+or
+.B command
+it says so and shows nothing.
+.PP
+.B \-\-json
+writes one JSON object per line, with no headings, for
+.BR jq (1);
+notes (a filter a log cannot apply) go to standard error. A journal, auth log
+or daemon log entry is (the fields after
+.B message
+only when the line has them; the time is UTC;
+.B device
+is the registered name)
+.PP
+.RS
+.nf
+{"time":"2026\-11\-04T12:00:00Z","backend":"tacacs","unit":"tacquito.service",
+ "message":"...","user":"alice","address":"192.0.2.10","device":"sw1","outcome":"accept"}
+.fi
+.RE
+.PP
+A TACACS+ accounting record is the record with its fields decoded as the
+display has them (\fBDevice\fR the address as it was logged), then
+.B DeviceName
+(when the address is a device or host the caller sees) and
+.B Time
+(the logger's, UTC); a RADIUS accounting record has the time, backend, user,
+address, device and its attributes.
 .TP
 .BI "log tail " "[ \-f | \-\-follow ] [ " n " ]"
 Show the last
@@ -6039,6 +6182,21 @@ Only that backend's log (every subcommand).
 .TP
 \fB\-f\fR, \fB\-\-follow\fR
 (tail) Then print new entries as they arrive, until Ctrl\-C.
+.TP
+\fB\-\-since\fR \fI<time>\fR
+Show the entries from that time on (inclusive): YYYY\-MM\-DD[ HH:MM[:SS]], now, today, yesterday, \-1h, 2 hours ago. A date alone is that day's midnight.
+.TP
+\fB\-\-until\fR \fI<time>\fR
+Show the entries up to that time (inclusive), in the forms of \-\-since.
+.TP
+\fB\-\-user\fR \fI<name>\fR
+Show the entries of that user, as the log writes the name.
+.TP
+\fB\-\-device\fR \fI<name|address>\fR
+Show the entries of that device or host: a registered device or an enrolled host by name (those the caller may see) or an address. What each log can match is described under Log inspection.
+.TP
+\fB\-\-json\fR
+Write one JSON object per line, with no headings, for jq.
 .RE
 .\" END GENERATED: command log tail
 .TP
@@ -6053,6 +6211,21 @@ Options:
 .TP
 \fB\-\-backend\fR \fI<id>\fR
 Only that backend's log (every subcommand).
+.TP
+\fB\-\-since\fR \fI<time>\fR
+Show the entries from that time on (inclusive): YYYY\-MM\-DD[ HH:MM[:SS]], now, today, yesterday, \-1h, 2 hours ago. A date alone is that day's midnight.
+.TP
+\fB\-\-until\fR \fI<time>\fR
+Show the entries up to that time (inclusive), in the forms of \-\-since.
+.TP
+\fB\-\-user\fR \fI<name>\fR
+Show the entries of that user, as the log writes the name.
+.TP
+\fB\-\-device\fR \fI<name|address>\fR
+Show the entries of that device or host: a registered device or an enrolled host by name (those the caller may see) or an address. What each log can match is described under Log inspection.
+.TP
+\fB\-\-json\fR
+Write one JSON object per line, with no headings, for jq.
 .RE
 .\" END GENERATED: command log search
 .TP
@@ -6067,6 +6240,21 @@ Options:
 .TP
 \fB\-\-backend\fR \fI<id>\fR
 Only that backend's log (every subcommand).
+.TP
+\fB\-\-since\fR \fI<time>\fR
+Show the entries from that time on (inclusive): YYYY\-MM\-DD[ HH:MM[:SS]], now, today, yesterday, \-1h, 2 hours ago. A date alone is that day's midnight.
+.TP
+\fB\-\-until\fR \fI<time>\fR
+Show the entries up to that time (inclusive), in the forms of \-\-since.
+.TP
+\fB\-\-user\fR \fI<name>\fR
+Show the entries of that user, as the log writes the name.
+.TP
+\fB\-\-device\fR \fI<name|address>\fR
+Show the entries of that device or host: a registered device or an enrolled host by name (those the caller may see) or an address. What each log can match is described under Log inspection.
+.TP
+\fB\-\-json\fR
+Write one JSON object per line, with no headings, for jq.
 .RE
 .\" END GENERATED: command log failures
 .TP
@@ -6110,6 +6298,24 @@ Options:
 .TP
 \fB\-\-backend\fR \fI<id>\fR
 Only that backend's log (every subcommand).
+.TP
+\fB\-\-since\fR \fI<time>\fR
+Show the entries from that time on (inclusive): YYYY\-MM\-DD[ HH:MM[:SS]], now, today, yesterday, \-1h, 2 hours ago. A date alone is that day's midnight.
+.TP
+\fB\-\-until\fR \fI<time>\fR
+Show the entries up to that time (inclusive), in the forms of \-\-since.
+.TP
+\fB\-\-user\fR \fI<name>\fR
+Show the entries of that user, as the log writes the name.
+.TP
+\fB\-\-device\fR \fI<name|address>\fR
+Show the entries of that device or host: a registered device or an enrolled host by name (those the caller may see) or an address. What each log can match is described under Log inspection.
+.TP
+\fB\-\-type\fR \fIlogin|change|command\fR
+Show one kind of record: command, change (a Junos change\-log entry) or login (the start or stop of a session). How a record is classified is described under Log inspection.
+.TP
+\fB\-\-json\fR
+Write one JSON object per line, with no headings, for jq.
 .RE
 .\" END GENERATED: command log accounting
 .TP

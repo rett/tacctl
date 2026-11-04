@@ -41,20 +41,21 @@ func AcctDisplay(line string, name func(address string) string) string {
 	if i < 0 {
 		return line
 	}
-	obj, ok := displayRecord(line[i:], name)
+	obj, _, ok := displayRecord(line[i:], name)
 	if !ok {
 		return line
 	}
 	return line[:i] + obj
 }
 
-// displayRecord is the JSON object at the start of s, rewritten; false when
-// s is not one object (and nothing else but white space).
-func displayRecord(s string, name func(string) string) (string, bool) {
+// displayRecord is the JSON object at the start of s, rewritten, and the
+// "Device" it names ("" when none); false when s is not one object (and
+// nothing else but white space).
+func displayRecord(s string, name func(string) string) (obj, device string, ok bool) {
 	dec := json.NewDecoder(strings.NewReader(s))
 	dec.UseNumber()
 	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
-		return "", false
+		return "", "", false
 	}
 	var out strings.Builder
 	out.WriteByte('{')
@@ -62,15 +63,18 @@ func displayRecord(s string, name func(string) string) (string, bool) {
 		t, err := dec.Token()
 		key, isKey := t.(string)
 		if err != nil || !isKey {
-			return "", false
+			return "", "", false
 		}
 		var raw json.RawMessage
 		if dec.Decode(&raw) != nil {
-			return "", false
+			return "", "", false
+		}
+		if key == "Device" {
+			_ = json.Unmarshal(raw, &device)
 		}
 		val, ok := displayValue(key, raw, name)
 		if !ok {
-			return "", false
+			return "", "", false
 		}
 		if n > 0 {
 			out.WriteByte(',')
@@ -80,13 +84,13 @@ func displayRecord(s string, name func(string) string) (string, bool) {
 		out.WriteString(val)
 	}
 	if t, err := dec.Token(); err != nil || t != json.Delim('}') {
-		return "", false
+		return "", "", false
 	}
 	if strings.TrimSpace(s[dec.InputOffset():]) != "" {
-		return "", false
+		return "", "", false
 	}
 	out.WriteByte('}')
-	return out.String(), true
+	return out.String(), device, true
 }
 
 // displayValue is the value of one field as it is shown.
