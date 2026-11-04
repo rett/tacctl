@@ -20,8 +20,9 @@
 #                         EN-CLASS permissions view). Fixed by region lines 14-30.
 #  8. roles    ACCESS     missing: template user EN-CLASS is in class EN-CLASS (set system login user
 #                         EN-CLASS class EN-CLASS). Fixed by region line 31.
-#  9. aaa      ACCESS     extra: a TACACS+ server 192.0.2.10 (set system tacplus-server 192.0.2.10
-#                         single-connection). Fixed by region line 33.
+#  9. aaa      ACCESS     extra: single-connection on the TACACS+ server 192.0.2.10, no longer
+#                         rendered (set system tacplus-server 192.0.2.10 single-connection). Fixed by
+#                         region line 33.
 # 10. snmp     MONITORING missing: SNMP client list TACCTL-SNMP: 3 statements (e.g. set snmp
 #                         client-list TACCTL-SNMP 192.0.2.10/32). Fixed by region lines 35-37.
 # 11. snmp     MONITORING missing: an SNMP community: 2 statements (e.g. set snmp community <secret:1>

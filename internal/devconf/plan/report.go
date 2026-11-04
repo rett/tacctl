@@ -106,6 +106,9 @@ func (p *planner) buildItems(d *Delta, byName map[string]devconf.SectionResult) 
 						ws = append(ws, p.words(d.Vendor, s))
 					}
 					it.Words += " (the device has: " + strings.Join(ws, "; ") + ")"
+					if w := retiredHostWords(stem, device); w != "" {
+						it.Words = w
+					}
 				}
 			}
 			if kind == KindOrder {
@@ -135,6 +138,24 @@ func (p *planner) buildItems(d *Delta, byName map[string]devconf.SectionResult) 
 	for i := range d.Items {
 		d.Items[i].N = i + 1
 	}
+}
+
+// retiredHostWords names the leaf that makes a 'tacacs-server host' line of
+// the device a different one from the rendered line: 'single-connection', which
+// the standard no longer renders, when the device's line has the word and the
+// rendered one has not. Empty when that is not the difference.
+func retiredHostWords(rendered string, device []string) string {
+	rf := strings.Fields(rendered)
+	if len(rf) < 3 || rf[0] != "tacacs-server" || rf[1] != "host" || slices.Contains(rf, "single-connection") {
+		return ""
+	}
+	for _, s := range device {
+		df := strings.Fields(s)
+		if len(df) >= 3 && df[0] == "tacacs-server" && df[1] == "host" && df[2] == rf[2] && slices.Contains(df, "single-connection") {
+			return "single-connection on the TACACS+ server " + rf[2] + ", no longer rendered"
+		}
+	}
+	return ""
 }
 
 // What the report says of an AAA source the device does not hold (D314).
@@ -415,6 +436,8 @@ func plainJunos(stem string) string {
 		w = "deactivated: " + strings.Join(t, " ")
 	case len(t) >= 3 && t[0] == "system" && t[1] == "authentication-order":
 		w = "the login order tries " + t[2]
+	case len(t) == 4 && t[0] == "system" && t[1] == "tacplus-server" && t[3] == "single-connection":
+		w = "single-connection on the TACACS+ server " + t[2] + ", no longer rendered"
 	case len(t) >= 5 && t[0] == "system" && (t[1] == "tacplus-server" || t[1] == "radius-server"):
 		proto := "TACACS+"
 		if t[1] == "radius-server" {
@@ -491,6 +514,8 @@ func plainIOS(stem string) string {
 	switch {
 	case leaf == "aaa new-model":
 		w = "AAA is not turned on"
+	case len(path) == 2 && strings.HasPrefix(path[0], "tacacs server ") && leaf == "single-connection":
+		w = "single-connection on the TACACS+ server " + strings.Fields(path[0])[2] + ", no longer rendered"
 	case len(path) == 2 && strings.HasPrefix(path[0], "tacacs server "), len(path) == 2 && strings.HasPrefix(path[0], "radius server "):
 		w = "the server " + strings.Fields(path[0])[2] + ": " + leaf
 	case len(f) >= 3 && f[0] == "tacacs-server" && f[1] == "host":

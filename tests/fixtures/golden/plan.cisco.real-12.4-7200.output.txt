@@ -5,17 +5,17 @@
 ! THIS OUTPUT HOLDS THE TACACS+ KEY OF SCOPE lab: do not keep it in a file or a scrollback.
 !
 ! What is irregular on dev-cisco-real-12-4-7200 (4 items; the paste fixes 4, leaves 0):
-!  1. aaa      ACCESS     different: the TACACS+ server 192.0.2.10 (the device has: the TACACS+ server
-!                         192.0.2.10) (tacacs-server host 192.0.2.10 timeout 5 key <secret>). Fixed by
+!  1. aaa      ACCESS     different: single-connection on the TACACS+ server 192.0.2.10, no longer
+!                         rendered (tacacs-server host 192.0.2.10 timeout 5 key <secret>). Fixed by
 !                         region line 3.
 !  2. aaa      ACCESS     missing: the console's own login list CONSOLE (local only, so a local user
 !                         always gets in there) (aaa authentication login CONSOLE local). Fixed by
-!                         region line 4.
+!                         region line 5.
 !  3. aaa      ACCESS     different: the login method of line con 0: login authentication CONSOLE (the
 !                         device has: the login method of line con 0: login authentication default)
-!                         (line con 0 > login authentication CONSOLE). Fixed by region line 17.
+!                         (line con 0 > login authentication CONSOLE). Fixed by region line 18.
 !  4. roles    COSMETIC   extra: the commands of privilege level 7: 9 statements (e.g. privilege exec
-!                         level 7 monitor). Fixed by region lines 6-14.
+!                         level 7 monitor). Fixed by region lines 7-15.
 ! Consistent: snmp, mgmt-acl. Not planned: netconf, breakglass.
 ! Secrets: 1 present (the SNMP community); only their presence is checked, --secrets writes them
 ! again.
@@ -34,8 +34,9 @@
 !
 !!!!! PASTE FROM HERE: dev-cisco-real-12-4-7200 !!!!!
 configure terminal
-! aaa: the method lists tacctl renders, each replaced by the rendered line (the console's own list is local only)
+! aaa: the TACACS+ server line, typed again without single-connection (the standard no longer renders it)
 tacacs-server host 192.0.2.10 timeout 5 key lab-secret-0123456789abcdef
+! aaa: the method lists tacctl renders, each replaced by the rendered line (the console's own list is local only)
 aaa authentication login CONSOLE local
 ! roles: the privilege lines of the levels tacctl renders
 no privilege exec level 7 monitor

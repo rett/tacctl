@@ -17,7 +17,7 @@
       "kind": "extra",
       "severity": "ACCESS",
       "section": "aaa",
-      "what": "a TACACS+ server 192.0.2.10",
+      "what": "single-connection on the TACACS+ server 192.0.2.10, no longer rendered",
       "statement": "set system tacplus-server 192.0.2.10 single-connection",
       "action": "Left alone (inherited from a group: remove it from the group by hand).",
       "fixed": false

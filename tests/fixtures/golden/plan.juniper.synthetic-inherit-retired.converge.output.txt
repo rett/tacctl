@@ -3,9 +3,9 @@
 # secrets) and the standard of 2026-10-10 14:20 (tacctl 0.2.5).
 #
 # What is irregular on dev-juniper-synthetic-inherit-retired (4 items; the paste fixes 2, leaves 2):
-#  1. aaa      ACCESS     extra: a TACACS+ server 192.0.2.10 (set system tacplus-server 192.0.2.10
-#                         single-connection). Left alone (inherited from a group: remove it from the
-#                         group by hand).
+#  1. aaa      ACCESS     extra: single-connection on the TACACS+ server 192.0.2.10, no longer
+#                         rendered (set system tacplus-server 192.0.2.10 single-connection). Left
+#                         alone (inherited from a group: remove it from the group by hand).
 #  2. aaa      COSMETIC   extra: accounting sends the event interactive-commands (set system
 #                         accounting events interactive-commands). Fixed by region line 3.
 #  3. aaa      ACCESS     extra: a TACACS+ server 192.0.2.99 (set system tacplus-server 192.0.2.99

@@ -85,6 +85,34 @@ func TestIOSLegacyHostLineLosesSingleConnection(t *testing.T) {
 	if !typed {
 		t.Errorf("the host line is not retyped:\n%s", d.Display())
 	}
+	// the item names the leaf, and the host line has a comment of its own in
+	// the paste region, not the first reason of the section
+	i := slices.IndexFunc(d.Items, func(it Item) bool { return it.Kind == KindDifferent })
+	if i < 0 || !strings.HasPrefix(d.Items[i].Words, "single-connection on the TACACS+ server 192.0.2.10, no longer rendered") {
+		t.Errorf("the item does not name the leaf: %+v", d.Items)
+	}
+	region := Block(d, f.header(), Wrapper{})
+	if !strings.Contains(region, "! aaa: the TACACS+ server line, typed again without single-connection (the standard no longer renders it)\ntacacs-server host 192.0.2.10 timeout 5 key ") {
+		t.Errorf("the host line has no comment of its own:\n%s", region)
+	}
+}
+
+// the items of the leaf name it, whatever the vendor
+func TestRetiredLeafItemsNameTheLeaf(t *testing.T) {
+	for _, c := range []struct {
+		d    Delta
+		want string
+	}{
+		{planJ(t, fixtureNamed(t, "juniper.synthetic-lab"), add("set system tacplus-server 192.0.2.10 single-connection"), Options{}),
+			"single-connection on the TACACS+ server 192.0.2.10, no longer rendered"},
+		{planI(t, fixtureNamed(t, "cisco.reference-lab"), func(c *IOSConfig) {
+			typeChild(c.blockFor("tacacs server TACACS"), []string{"tacacs server TACACS"}, "single-connection")
+		}, Options{}), "single-connection on the TACACS+ server TACACS, no longer rendered"},
+	} {
+		if !slices.ContainsFunc(c.d.Items, func(it Item) bool { return it.Kind == KindExtra && strings.HasPrefix(it.Words, c.want) }) {
+			t.Errorf("no item says %q: %+v", c.want, c.d.Items)
+		}
+	}
 }
 
 // the leaf is a difference of the section, not an unmanaged setting of the

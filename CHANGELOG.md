@@ -45,7 +45,10 @@ current behaviour; this file is where history lives.
    that only an apply-group gives cannot be deleted at the top level: it
    does not refuse the `aaa` section (as another inherited statement does),
    the plan keeps it, lists it as left alone (`inherited from a group: remove
-   it from the group by hand`) and plans the other fixes. A custom template
+   it from the group by hand`) and plans the other fixes. The report names
+   the leaf (`single-connection on the TACACS+ server <address>, no longer
+   rendered`), and the IOS 12.x host line has a comment of its own in the
+   paste region. A custom template
    keeps whatever it says; a copy of `cisco.template` or
    `cisco-legacy.template` made earlier still renders the line. Another
    server's `single-connection` is left alone.
