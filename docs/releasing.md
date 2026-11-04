@@ -282,7 +282,7 @@ on a `docs/<slug>` branch cut from `gh-pages`:
 git fetch origin gh-pages
 git checkout -b docs/release-0.2.1 origin/gh-pages
 python3 tools/release_sync.py --from 0.2.0 --to 0.2.1   # what changed between the releases
-# update the pages it names
+# update the pages it names, and add the release to site/whats-new-for-operators.md
 python3 tools/release_sync.py --from 0.2.0 --to 0.2.1 --finish
 git add -A && git commit -am "site: tacctl 0.2.1"
 git push -u origin docs/release-0.2.1
