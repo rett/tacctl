@@ -294,7 +294,7 @@ func (inv *invocation) consoleCheckUser(pol *console.Policy, user string) []stri
 	}
 	inv.echo("  sshd for " + user + ": allowtcpforwarding " + st.TCPForwarding + ", allowagentforwarding " + st.AgentForwarding +
 		", forcecommand " + dash(st.ForceCommand) + ", pubkeyauthentication " + dash(st.PubkeyAuth) + sshdGatewayPorts(st))
-	return append(problems, st.Problems(pol.AgentForwarding(), inv.userForwards(pol, user), pol.GatewayPorts(), p.ConsoleCommand)...)
+	return append(problems, st.Problems(inv.userAgent(pol, user), inv.userForwards(pol, user), pol.GatewayPorts(), p.ConsoleCommand)...)
 }
 
 // sshdGatewayPorts is ', gatewayports <value>' when sshd printed it.
@@ -381,6 +381,13 @@ func (inv *invocation) userForwards(pol *console.Policy, user string) bool {
 		return false
 	}
 	return pol.Forwarding(sudoTier(strings.Fields(string(res.Stdout))))
+}
+
+// userAgent reports whether user may forward the ssh agent through sshd:
+// the console's setting (console agent-forwarding), and never a user held to
+// a password change (heldUsers), whose drop-in block closes it.
+func (inv *invocation) userAgent(pol *console.Policy, user string) bool {
+	return pol.AgentForwarding() && !slices.Contains(inv.heldUsers(), user)
 }
 
 // consoleInstall is 'console install': consoleProvision, then the check.

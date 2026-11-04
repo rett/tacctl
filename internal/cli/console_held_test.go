@@ -168,3 +168,36 @@ func TestHeldForwardingWithoutTheDropIn(t *testing.T) {
 		t.Errorf("said something: %s", out)
 	}
 }
+
+// The check asks for no agent forwarding of a user held to a password
+// change, whatever 'console agent-forwarding' says: a drop-in that lacks his
+// block (a flag set since, no sync yet) leaves sshd answering yes for him, and
+// that is a problem; the same answer for a user that is not held is not.
+func TestConsoleCheckExpectsNoAgentForAHeldUser(t *testing.T) {
+	sb, link, _ := heldSandbox(t)
+	sb.run("", []string{"console", "agent-forwarding", "enable"})
+	sb.expect(0, "", "")
+	sb.run("", []string{"console", "install"})
+	sb.expect(0, "", "")
+	flagUser(t, sb, "bob")
+	// sshd answers as for a user the drop-in does not close
+	sb.script = both(sb.script, func(r *fake.Runner) {
+		r.On([]string{"sshd", "-T"}, execx.Result{Stdout: []byte("allowtcpforwarding no\nallowagentforwarding yes\ndisableforwarding no\nforcecommand " + link + "\npubkeyauthentication no\n")})
+	})
+	for _, args := range [][]string{{"console", "check"}, {"console", "show"}} {
+		out := plain(sb.run("", args))
+		if !strings.Contains(out, "sshd for bob:") || strings.Count(out, "allowagentforwarding is 'yes'") != 1 {
+			t.Errorf("%v: want the agent flagged for bob only, once:\n%s", args, out)
+		}
+	}
+	// the list current: sshd answers closed for bob and nothing is flagged
+	// (the install's own check still sees the old answer)
+	sb.run("", []string{"console", "install"})
+	sb.script = both(sb.script, func(r *fake.Runner) {
+		r.On([]string{"sshd", "-T"}, execx.Result{Stdout: []byte("allowtcpforwarding no\nallowagentforwarding yes\ndisableforwarding yes\nforcecommand " + link + "\npubkeyauthentication no\n")})
+	})
+	out := plain(sb.run("", []string{"console", "check"}))
+	if sb.code != 0 || strings.Contains(out, "allowagentforwarding is") {
+		t.Errorf("the held user's agent under disableforwarding yes: %d\n%s", sb.code, out)
+	}
+}
