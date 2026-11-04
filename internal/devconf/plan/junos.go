@@ -563,7 +563,7 @@ func (p *planner) junosSection(name string, r devconf.SectionResult) secOut {
 			if len(x.path) > len(row.pat) {
 				kind = x.path[len(row.pat)]
 			}
-			if !known || !row.kinds[objName][kind] {
+			if !known || !row.kinds[objName][kind] && !slices.Contains(retiredLeaves[row.ID], kind) {
 				keepStem(x.stem, "")
 				continue
 			}

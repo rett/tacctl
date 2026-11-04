@@ -67,7 +67,7 @@ func TestStandardLegacyHostWithCommandAuthorizationIsRefused(t *testing.T) {
 	}
 	wantTyped := []string{"configure terminal", "no tacacs-server host 192.0.2.10",
 		"tacacs server TACACS", " address ipv4 192.0.2.10", " key <the scope's key: tacctl scope secret show lab>",
-		" single-connection", " timeout 5", "exit",
+		" timeout 5", "exit",
 		"aaa group server tacacs+ LAB-TACACS", " server name TACACS", " no server 192.0.2.10", "exit", "end"}
 	if !slices.Equal(typed, wantTyped) {
 		t.Errorf("the by-hand lines:\n%q\nwant\n%q", typed, wantTyped)

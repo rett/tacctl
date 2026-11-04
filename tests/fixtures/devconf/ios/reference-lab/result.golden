@@ -3,7 +3,6 @@
 = aaa new-model
 = tacacs server TACACS > address ipv4 192.0.2.10
 = tacacs server TACACS > key (present, not compared)
-= tacacs server TACACS > single-connection
 = tacacs server TACACS > timeout 5
 = aaa group server tacacs+ LAB-TACACS > server name TACACS
 = aaa authentication login default local group LAB-TACACS

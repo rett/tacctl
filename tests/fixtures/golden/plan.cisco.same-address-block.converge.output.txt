@@ -5,22 +5,22 @@
 ! THIS OUTPUT HOLDS THE TACACS+ KEY OF SCOPE lab: do not keep it in a file or a scrollback.
 !
 ! What is irregular on dev-cisco-same-address-block (7 items; the paste fixes 7, leaves 0):
-!  1. aaa      ACCESS     missing: tacacs server TACACS: 4 statements (e.g. tacacs server TACACS >
-!                         address ipv4 192.0.2.10). Fixed by region lines 11-14.
+!  1. aaa      ACCESS     missing: tacacs server TACACS: 3 statements (e.g. tacacs server TACACS >
+!                         address ipv4 192.0.2.10). Fixed by region lines 11-13.
 !  2. aaa      ACCESS     missing: the server group TACACS-GROUP: server name TACACS (aaa group server
-!                         tacacs+ TACACS-GROUP > server name TACACS). Fixed by region line 16.
+!                         tacacs+ TACACS-GROUP > server name TACACS). Fixed by region line 15.
 !  3. aaa      ACCESS     missing: the console's own login list CONSOLE (local only, so a local user
 !                         always gets in there) (aaa authentication login CONSOLE local). Fixed by
-!                         region line 17.
+!                         region line 16.
 !  4. aaa      COSMETIC   missing: accounting of commands 15 (aaa accounting commands 15 default
-!                         start-stop group TACACS-GROUP). Fixed by region line 18.
+!                         start-stop group TACACS-GROUP). Fixed by region line 17.
 !  5. aaa      ACCESS     different: the login method of line con 0: login authentication CONSOLE (the
 !                         device has: the login method of line con 0: login authentication default)
-!                         (line con 0 > login authentication CONSOLE). Fixed by region line 21.
+!                         (line con 0 > login authentication CONSOLE). Fixed by region line 20.
 !  6. aaa      ACCESS     extra: the server group TACACS-GROUP: server name OLD-TACACS (aaa group
 !                         server tacacs+ TACACS-GROUP > server name OLD-TACACS). Fixed by region line
 !                         8.
-!  7. aaa      ACCESS     extra: tacacs server OLD-TACACS: 4 statements (e.g. tacacs server OLD-TACACS
+!  7. aaa      ACCESS     extra: tacacs server OLD-TACACS: 3 statements (e.g. tacacs server OLD-TACACS
 !                         > address ipv4 192.0.2.10). Fixed by region line 9.
 ! Consistent: roles, snmp, mgmt-acl. Not planned: netconf, breakglass.
 ! Kept: snmp 3 statements of the device's own (communities, trap types, trap hosts): left alone,
@@ -60,7 +60,6 @@ no tacacs server OLD-TACACS
 tacacs server TACACS
  address ipv4 192.0.2.10
  key lab-secret-0123456789abcdef
- single-connection
  timeout 5
 aaa group server tacacs+ TACACS-GROUP
  server name TACACS

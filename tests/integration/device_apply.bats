@@ -186,7 +186,7 @@ print("fine")' <<< "$output"
     assert_output --partial "1 applied"
     # what the device runs now: the plan, and nothing it was not given
     run committed
-    assert_output --partial "set system tacplus-server 10.0.0.42 single-connection"
+    assert_output --partial "set system accounting destination tacplus"
     assert_output --partial "set system authentication-order tacplus"
     assert_output --partial "set system accounting events change-log"
     assert_output --partial "set system login class RW-CLASS permissions all"
@@ -346,7 +346,7 @@ EOF
     assert_success
     nothing_secret
     run committed
-    assert_output --partial "set system tacplus-server 10.0.0.42 single-connection"
+    assert_output --partial "set system accounting destination tacplus"
 }
 
 @test "apply: a refused fresh login rolls the change back, and is not a wrong password" {
@@ -459,7 +459,7 @@ print(all(not e["confirmed"] for e in m.values()))' "${TACCTL_VAR_LIB}/device-ap
     [[ "$status" -eq 0 ]]
     assert_output --regexp "example-sw1  applied "
     run committed
-    assert_output --partial "set system tacplus-server 10.0.0.42 single-connection"
+    assert_output --partial "set system accounting destination tacplus"
 }
 
 @test "apply: --hold needs a terminal, --max caps the run, --section limits it" {

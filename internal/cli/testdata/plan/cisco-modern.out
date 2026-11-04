@@ -5,8 +5,8 @@
 ! THIS OUTPUT HOLDS THE TACACS+ KEY OF SCOPE lab: do not keep it in a file or a scrollback.
 !
 ! What is irregular on lab-c (1 item; the paste fixes 1, leaves 0):
-!  1. aaa      ACCESS     missing: tacacs server TACACS: 4 statements (e.g. tacacs server TACACS >
-!                         address ipv4 10.0.0.42). Fixed by region lines 4-7.
+!  1. aaa      ACCESS     missing: tacacs server TACACS: 3 statements (e.g. tacacs server TACACS >
+!                         address ipv4 10.0.0.42). Fixed by region lines 4-6.
 ! Consistent: roles. Not planned: netconf, breakglass.
 ! The standard has nothing for: snmp, mgmt-acl.
 ! WARNING: the device has no enable secret: with the server unreachable, level 15 is reached only
@@ -30,7 +30,6 @@ configure terminal
 tacacs server TACACS
  address ipv4 10.0.0.42
  key lab-secret-0123456789abcdef
- single-connection
  timeout 5
 end
 !!!!! PASTE TO HERE: lab-c !!!!!

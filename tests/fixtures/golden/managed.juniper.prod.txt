@@ -1,7 +1,6 @@
 [aaa]
 | set system authentication-order tacplus
 * set system tacplus-server 10.0.0.42 secret prod-secret-0123456789abcdef
-| set system tacplus-server 10.0.0.42 single-connection
 | set system accounting events [ login change-log ]
 | set system accounting destination tacplus
 [roles]

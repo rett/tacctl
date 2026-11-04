@@ -104,7 +104,7 @@ func TestDeviceConfigArguments(t *testing.T) {
 	sb.expect(1, "", "Scope 'lab' has auth-method radius (tacctl scope auth-method), and --legacy (IOS 12.x syntax) applies to TACACS+ only.")
 	sb.expect(1, "", "tacctl config cisco --scope lab --legacy --protocol tacacs")
 	sb.cfgRun("", []string{"config", "cisco", "--scope", "lab", "--legacy", "--protocol", "tacacs"}, route)
-	sb.expect(0, "tacacs-server host 10.0.0.42 single-connection timeout 5 key lab-secret-0123456789abcdef", "")
+	sb.expect(0, "tacacs-server host 10.0.0.42 timeout 5 key lab-secret-0123456789abcdef", "")
 }
 
 func TestDeviceConfigRadius(t *testing.T) {

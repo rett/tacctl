@@ -3,7 +3,7 @@
 # secrets) and the standard of 2026-10-10 14:20 (tacctl 0.2.5).
 # THIS OUTPUT HOLDS THE SNMP COMMUNITY OF SCOPE lab: do not keep it in a file or a scrollback.
 #
-# What is irregular on dev-juniper-synthetic-inherit (14 items; the paste fixes 14, leaves 0):
+# What is irregular on dev-juniper-synthetic-inherit (15 items; the paste fixes 15, leaves 0):
 #  1. roles    ACCESS     missing: login class RO-CLASS: 3 statements (e.g. set system login class
 #                         RO-CLASS permissions network). Fixed by region lines 3-5.
 #  2. roles    ACCESS     missing: template user RO-CLASS is in class RO-CLASS (set system login user
@@ -20,20 +20,22 @@
 #                         EN-CLASS permissions view). Fixed by region lines 14-30.
 #  8. roles    ACCESS     missing: template user EN-CLASS is in class EN-CLASS (set system login user
 #                         EN-CLASS class EN-CLASS). Fixed by region line 31.
-#  9. snmp     MONITORING missing: SNMP client list TACCTL-SNMP: 3 statements (e.g. set snmp
-#                         client-list TACCTL-SNMP 192.0.2.10/32). Fixed by region lines 33-35.
-# 10. snmp     MONITORING missing: an SNMP community: 2 statements (e.g. set snmp community <secret:1>
-#                         authorization read-only). Fixed by region lines 36-37.
-# 11. snmp     COSMETIC   missing: the SNMP location is Rack 4, DC1 (set snmp location "Rack 4, DC1").
-#                         Fixed by region line 38.
-# 12. snmp     COSMETIC   missing: the SNMP contact is NOC <noc@example.net> (set snmp contact "NOC
-#                         <noc@example.net>"). Fixed by region line 39.
-# 13. snmp     COSMETIC   missing: the SNMP description is Core switch (set snmp description "Core
-#                         switch"). Fixed by region line 40.
-# 14. mgmt-acl ACCESS     missing: the management filter MGMT-ACL: 22 statements (e.g. set firewall
+#  9. aaa      ACCESS     extra: a TACACS+ server 192.0.2.10 (set system tacplus-server 192.0.2.10
+#                         single-connection). Fixed by region line 33.
+# 10. snmp     MONITORING missing: SNMP client list TACCTL-SNMP: 3 statements (e.g. set snmp
+#                         client-list TACCTL-SNMP 192.0.2.10/32). Fixed by region lines 35-37.
+# 11. snmp     MONITORING missing: an SNMP community: 2 statements (e.g. set snmp community <secret:1>
+#                         authorization read-only). Fixed by region lines 38-39.
+# 12. snmp     COSMETIC   missing: the SNMP location is Rack 4, DC1 (set snmp location "Rack 4, DC1").
+#                         Fixed by region line 40.
+# 13. snmp     COSMETIC   missing: the SNMP contact is NOC <noc@example.net> (set snmp contact "NOC
+#                         <noc@example.net>"). Fixed by region line 41.
+# 14. snmp     COSMETIC   missing: the SNMP description is Core switch (set snmp description "Core
+#                         switch"). Fixed by region line 42.
+# 15. mgmt-acl ACCESS     missing: the management filter MGMT-ACL: 22 statements (e.g. set firewall
 #                         family inet filter MGMT-ACL term permit-mgmt from source-address
-#                         192.0.2.10/32). Fixed by region lines 42-63.
-# Consistent: aaa. Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
+#                         192.0.2.10/32). Fixed by region lines 44-65.
+# Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
 # Secrets: 1 present (the TACACS+ server key); only their presence is checked, --secrets writes them
 # again.
 # The switch undoes this by itself in 5 minutes unless you type the one word after the check (see
@@ -82,6 +84,8 @@ set system login class EN-CLASS permissions system
 set system login class EN-CLASS permissions system-control
 set system login class EN-CLASS permissions snmp
 set system login user EN-CLASS class EN-CLASS
+# aaa: tacctl's TACACS+ server
+delete system tacplus-server 192.0.2.10 single-connection
 # snmp: the client list tacctl renders
 set snmp client-list TACCTL-SNMP 192.0.2.10/32
 set snmp client-list TACCTL-SNMP 198.51.100.0/24
@@ -125,9 +129,10 @@ commit confirmed 5 comment "tacctl plan dev-juniper-synthetic-inherit 2026-10-10
 # minutes.
 #
 # Check now. In 5 minutes the switch undoes this by itself unless you type one word.
-#   From the tacctl server:   tacctl device config pull dev-juniper-synthetic-inherit --diff     (roles, snmp and mgmt-acl: ok)
+#   From the tacctl server:   tacctl device config pull dev-juniper-synthetic-inherit --diff     (roles, aaa, snmp and mgmt-acl: ok)
 #   In a second terminal:     ssh dev-juniper-synthetic-inherit, then: show cli authorization | no-more
 #                             show configuration system login | no-more
+#                             show configuration system tacplus-server | no-more
 #                             show configuration snmp | no-more
 #                             show configuration firewall family inet filter MGMT-ACL | no-more
 # When both checks are fine, type this one word yourself:  commit     (before the 5 minutes end)

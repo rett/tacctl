@@ -34,16 +34,6 @@
     },
     {
       "n": 3,
-      "kind": "missing",
-      "severity": "ACCESS",
-      "section": "aaa",
-      "what": "a TACACS+ server 192.0.2.10",
-      "statement": "set system tacplus-server 192.0.2.10 single-connection",
-      "action": "Not fixable by this login: EN-CLASS cannot change 'system tacplus-server' (ask a superuser).",
-      "fixed": false
-    },
-    {
-      "n": 4,
       "kind": "extra",
       "severity": "ACCESS",
       "section": "aaa",
@@ -53,7 +43,7 @@
       "fixed": false
     },
     {
-      "n": 5,
+      "n": 4,
       "kind": "extra",
       "severity": "COSMETIC",
       "section": "aaa",
@@ -63,7 +53,7 @@
       "fixed": false
     },
     {
-      "n": 6,
+      "n": 5,
       "kind": "missing",
       "severity": "MONITORING",
       "section": "snmp",
@@ -73,7 +63,7 @@
       "fixed": false
     },
     {
-      "n": 7,
+      "n": 6,
       "kind": "missing",
       "severity": "MONITORING",
       "section": "snmp",
@@ -83,7 +73,7 @@
       "fixed": false
     },
     {
-      "n": 8,
+      "n": 7,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "snmp",
@@ -93,7 +83,7 @@
       "fixed": false
     },
     {
-      "n": 9,
+      "n": 8,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "snmp",
@@ -103,7 +93,7 @@
       "fixed": false
     },
     {
-      "n": 10,
+      "n": 9,
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "snmp",
@@ -113,7 +103,7 @@
       "fixed": false
     },
     {
-      "n": 11,
+      "n": 10,
       "kind": "extra",
       "severity": "COSMETIC",
       "section": "snmp",
@@ -123,7 +113,7 @@
       "fixed": false
     },
     {
-      "n": 12,
+      "n": 11,
       "kind": "extra",
       "severity": "COSMETIC",
       "section": "snmp",
@@ -133,7 +123,7 @@
       "fixed": false
     },
     {
-      "n": 13,
+      "n": 12,
       "kind": "missing",
       "severity": "ACCESS",
       "section": "mgmt-acl",
@@ -233,7 +223,7 @@
     "commit confirmed 5 comment \"tacctl backout dev-juniper-lab-engineer 2026-10-10T14:20Z by alice\""
   ],
   "left": {
-    "access": 4,
+    "access": 3,
     "monitoring": 2,
     "cosmetic": 6
   },
@@ -267,7 +257,6 @@
   ],
   "withheld": [
     "set system login class OP-CLASS permissions clear",
-    "set system tacplus-server 192.0.2.10 single-connection",
     "set system tacplus-server 198.18.0.24 single-connection",
     "set system accounting events interactive-commands",
     "set snmp client-list TACCTL-SNMP 192.0.2.10/32",

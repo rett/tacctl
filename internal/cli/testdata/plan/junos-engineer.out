@@ -5,9 +5,9 @@
 # What is irregular on lab-j (2 items; the paste fixes 1, leaves 1):
 #  1. aaa      ACCESS     missing: the login order tries tacplus (set system authentication-order
 #                         tacplus). Fixed by region line 3.
-#  2. aaa      ACCESS     missing: the TACACS+ server 10.0.0.42: 2 statements (e.g. set system
-#                         tacplus-server 10.0.0.42 secret <secret>). Not fixable by this login:
-#                         EN-CLASS cannot change 'system tacplus-server' (ask a superuser).
+#  2. aaa      ACCESS     missing: a TACACS+ server 10.0.0.42 (set system tacplus-server 10.0.0.42
+#                         secret <secret>). Not fixable by this login: EN-CLASS cannot change 'system
+#                         tacplus-server' (ask a superuser).
 # Consistent: roles. Not planned: netconf, breakglass (walkthrough Steps 6 and 7).
 # The standard has nothing for: snmp, mgmt-acl.
 # The switch undoes this by itself in 5 minutes unless you type the one word after the check (see

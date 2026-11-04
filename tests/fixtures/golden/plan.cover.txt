@@ -3,13 +3,13 @@
 #   dev-juniper-synthetic-lab           needs change: 1 irregularity fixed by the paste, 1 left (1 ACCESS), 1 extra [break-glass held]
 #   dev-juniper-synthetic-lab-engineer  NOT consistent, nothing to paste: 3 irregularities left (2 ACCESS, 1 COSMETIC)
 #   dev-juniper-synthetic-lab-nolo0     needs change: 1 irregularity fixed by the paste, 1 left (1 ACCESS), 1 extra
-#   dev-juniper-synthetic-inherit       needs change: 14 irregularities fixed by the paste
+#   dev-juniper-synthetic-inherit       needs change: 15 irregularities fixed by the paste
 #   dev-juniper-lab-superuser           needs change: 9 irregularities fixed by the paste, 1 left (1 ACCESS), 2 extras
-#   dev-juniper-lab-engineer            needs change: 1 irregularity fixed by the paste, 12 left (4 ACCESS, 2 MONITORING, 6 COSMETIC)
+#   dev-juniper-lab-engineer            needs change: 1 irregularity fixed by the paste, 11 left (3 ACCESS, 2 MONITORING, 6 COSMETIC)
 #   dev-cisco-reference-lab             needs change: 3 irregularities fixed by the paste
 #   dev-cisco-reference-lab             needs change: 3 irregularities fixed by the paste [break-glass held]
-#   dev-cisco-reference-12x             needs change: 1 irregularity fixed by the paste
-#   dev-cisco-real-12-4-7200            needs change: 3 irregularities fixed by the paste
+#   dev-cisco-reference-12x             needs change: 2 irregularities fixed by the paste
+#   dev-cisco-real-12-4-7200            needs change: 4 irregularities fixed by the paste
 #   dev-cisco-reference-bare            needs change: 17 irregularities fixed by the paste, 2 left (2 ACCESS)
 #   dev-cisco-xe-reference-16           needs change: 3 irregularities fixed by the paste, 1 left (1 ACCESS), 1 extra
 #   dev-cisco-same-address-block        needs change: 7 irregularities fixed by the paste

@@ -123,8 +123,9 @@ func aaaOwnCases() []aaaOwnCase {
 					"set system tacplus-options service-name junos-exec")
 			},
 			differs: func(t *testing.T, text string) string {
-				// the rendered 'single-connection' is gone: the leaf is missing
-				return swapLine(t, text, "set system tacplus-server "+wordAfter(t, text, "set system tacplus-server ")+" single-connection", "# gone")
+				// a 'single-connection' the standard no longer renders (0.2.24) is
+				// a difference, not the device's own: the plan removes it
+				return appendStmts(text, "set system tacplus-server "+wordAfter(t, text, "set system tacplus-server ")+" single-connection")
 			},
 			findings: map[string]func(*testing.T, string) string{
 				"another server": func(t *testing.T, text string) string {

@@ -44,7 +44,7 @@ The walkthroughs name the port the server listens on where the device's configur
 | Device | TACACS+ listener on tcp `:4949` |
 |---|---|
 | Cisco, IOS 15.2 and later, IOS-XE | `port 4949` under `tacacs server TACACS`, after `address ipv4` |
-| Cisco, `--legacy` (IOS 12.x) | `tacacs-server host <address> single-connection port 4949 timeout 5 key <secret>` |
+| Cisco, `--legacy` (IOS 12.x) | `tacacs-server host <address> port 4949 timeout 5 key <secret>` |
 | Junos | `set system tacplus-server <address> port 4949` |
 | WTI | item 7, Authentication Port: `4949` (always written; 49 by default), and the Step 4 note that a ping does not prove `TCP/4949` |
 | Junos, management filter mode `strict` | the term `permit-auth-replies` accepts source port `4949` (the name `tacacs` when it is 49) |

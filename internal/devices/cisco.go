@@ -190,7 +190,7 @@ func CiscoVars(req Request, d Data) map[string]string {
 	}
 	// The TACACS+ port, written only when the listener is not on 49 (what
 	// IOS uses when none is given): the block's own leaf, and the word of
-	// the legacy host line, which goes after single-connection.
+	// the legacy host line, which goes after the address.
 	if port := d.tacacsPortSet(); port != "" {
 		vars["TACACS_PORT_LINE"] = "  port " + port
 		vars["TACACS_HOST_PORT"] = " port " + port
