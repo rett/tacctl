@@ -1,1 +1,2 @@
+tacacs-server host 192.0.2.10 timeout 5 key lab-secret-0123456789abcdef
 no aaa authentication enable default group LAB-TACACS enable

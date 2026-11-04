@@ -130,13 +130,15 @@ var (
 	// is not tacctl's). A TACACS+ 'port' is a finding when the rendering
 	// states none: it states one only for a listener off the default port, so
 	// the device's is then the wrong one and no login reaches the server. (The
-	// RADIUS ports are always rendered.)
+	// RADIUS ports are always rendered.) A TACACS+ 'single-connection' is a
+	// finding as well: the rendering no longer states it (0.2.24) and the plan
+	// removes it.
 	ownServerLeaf = func(words []string, exp *renderedSet) bool {
 		if len(words) < 4 || !exp.has(words[:3]) || exp.has(words[:4]) {
 			return false
 		}
 		tacacs := words[0] == "tacacs" || words[1] == "tacplus-server"
-		return !tacacs || words[3] != "port"
+		return !tacacs || words[3] != "port" && words[3] != "single-connection"
 	}
 	// a leaf of the IOS server group tacctl renders ('aaa group server
 	// tacacs+|radius <name> <leaf>') that is the device's own: its vrf

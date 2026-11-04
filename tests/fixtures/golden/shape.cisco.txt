@@ -6,13 +6,15 @@ aaa accounting commands 15 default start-stop group LAB-TACACS
 line con 0 > login authentication CONSOLE
 
 # cisco.reference-12x
-shape 341c6c0daa1f algo 1
+shape 10ba66c921f5 algo 1
 [aaa]
+tacacs-server host 192.0.2.10 timeout 5 key <secret>
 no aaa authentication enable default group LAB-TACACS enable
 
 # cisco.real-12.4-7200
-shape 3113254fcce8 algo 1
+shape 2ed72da79ccd algo 1
 [aaa]
+tacacs-server host 192.0.2.10 timeout 5 key <secret>
 aaa authentication login CONSOLE local
 line con 0 > login authentication CONSOLE
 [roles]
@@ -27,12 +29,11 @@ no privilege exec level 7 clear counters
 no privilege exec level 7 clear
 
 # cisco.reference-bare
-shape 3acf22f15cd3 algo 1
+shape e0443d6e34c5 algo 1
 [aaa]
 aaa new-model
 tacacs server TACACS > address ipv4 192.0.2.10
 tacacs server TACACS > key <secret>
-tacacs server TACACS > single-connection
 tacacs server TACACS > timeout 5
 aaa group server tacacs+ LAB-TACACS > server name TACACS
 aaa authentication login default local group LAB-TACACS
@@ -70,7 +71,7 @@ aaa session-id common
 line con 0 > login authentication CONSOLE
 
 # cisco.same-address-block
-shape c557fcd2f824 algo 1
+shape e19e8fa66678 algo 1
 [aaa]
 no aaa authorization config-commands
 no aaa authorization commands 1 default local group TACACS-GROUP
@@ -80,7 +81,6 @@ aaa group server tacacs+ TACACS-GROUP > no server name OLD-TACACS
 no tacacs server OLD-TACACS
 tacacs server TACACS > address ipv4 192.0.2.10
 tacacs server TACACS > key <secret>
-tacacs server TACACS > single-connection
 tacacs server TACACS > timeout 5
 aaa group server tacacs+ TACACS-GROUP > server name TACACS
 aaa authentication login CONSOLE local
@@ -92,13 +92,12 @@ aaa authorization commands 15 default local group TACACS-GROUP
 aaa authorization config-commands
 
 # cisco.same-address-block-nocmd
-shape 4a786e97c607 algo 1
+shape cc03ef2e6fab algo 1
 [aaa]
 aaa group server tacacs+ TACACS-GROUP > no server name OLD-TACACS
 no tacacs server OLD-TACACS
 tacacs server TACACS > address ipv4 192.0.2.10
 tacacs server TACACS > key <secret>
-tacacs server TACACS > single-connection
 tacacs server TACACS > timeout 5
 aaa group server tacacs+ TACACS-GROUP > server name TACACS
 aaa authentication login CONSOLE local

@@ -44,7 +44,7 @@ func TestSameAddressBlockRegionOrder(t *testing.T) {
 		"aaa group server tacacs+ TACACS-GROUP", " no server name OLD-TACACS",
 		"no tacacs server OLD-TACACS",
 		// (c) the standard block, the group's entry, the rest
-		"tacacs server TACACS", " address ipv4 192.0.2.10", " key lab-secret-0123456789abcdef", " single-connection", " timeout 5",
+		"tacacs server TACACS", " address ipv4 192.0.2.10", " key lab-secret-0123456789abcdef", " timeout 5",
 		"aaa group server tacacs+ TACACS-GROUP", " server name TACACS",
 		"aaa authentication login CONSOLE local",
 		"aaa accounting commands 15 default start-stop group TACACS-GROUP",
@@ -235,7 +235,6 @@ func TestSimulatorRefusesTheSecondBlockAndTheDanglingEntry(t *testing.T) {
 	asBuilt := []Line{
 		{Op: OpLine, Context: []string{"tacacs server TACACS"}, Text: "address ipv4 192.0.2.10"},
 		{Op: OpLine, Context: []string{"tacacs server TACACS"}, Text: "key lab-secret-0123456789abcdef"},
-		{Op: OpLine, Context: []string{"tacacs server TACACS"}, Text: "single-connection"},
 		{Op: OpLine, Context: []string{"aaa group server tacacs+ TACACS-GROUP"}, Text: "server name TACACS"},
 		{Op: OpNo, Context: []string{"aaa group server tacacs+ TACACS-GROUP"}, Text: "server name OLD-TACACS"},
 	}
@@ -353,7 +352,7 @@ func TestSameAddressBlockKeyOnly(t *testing.T) {
 	f := fixtureNamed(t, "cisco.same-address-block")
 	d := planI(t, f, func(c *IOSConfig) {
 		// the standard's block exists with its address, and lacks the key
-		c.insertBlock(iosBlk{lines: []string{"tacacs server TACACS", " address ipv4 192.0.2.10", " single-connection", " timeout 5"}})
+		c.insertBlock(iosBlk{lines: []string{"tacacs server TACACS", " address ipv4 192.0.2.10", " timeout 5"}})
 	}, Options{Scope: "lab"})
 	got := regionStatements(d)
 	rm := indexOf(t, got, "no tacacs server OLD-TACACS")
@@ -364,7 +363,7 @@ func TestSameAddressBlockKeyOnly(t *testing.T) {
 	// a block that has its address and key needs nothing: the old one is an
 	// extra left to --converge
 	d = planI(t, f, func(c *IOSConfig) {
-		c.insertBlock(iosBlk{lines: []string{"tacacs server TACACS", " address ipv4 192.0.2.10", " key 7 0822455D0A16", " single-connection", " timeout 5"}})
+		c.insertBlock(iosBlk{lines: []string{"tacacs server TACACS", " address ipv4 192.0.2.10", " key 7 0822455D0A16", " timeout 5"}})
 	}, Options{Scope: "lab"})
 	if slices.Contains(regionStatements(d), "no tacacs server OLD-TACACS") {
 		t.Errorf("the old block is removed with nothing to add beside it")

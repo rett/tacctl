@@ -1,6 +1,6 @@
 [aaa]
 | aaa new-model
-* tacacs-server host 10.0.0.42 single-connection timeout 5 key prod-secret-0123456789abcdef
+* tacacs-server host 10.0.0.42 timeout 5 key prod-secret-0123456789abcdef
 | aaa group server tacacs+ TACACS-GROUP
 |   server 10.0.0.42
 | aaa authentication login default group TACACS-GROUP local

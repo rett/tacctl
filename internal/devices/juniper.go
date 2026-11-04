@@ -184,7 +184,6 @@ func JuniperVars(req Request, d Data) map[string]string {
 		idleLines +
 		"set system tacplus-server " + serverIP + " secret " + secret + "\n" +
 		tacplusPort(serverIP, d.tacacsPortSet()) +
-		"set system tacplus-server " + serverIP + " single-connection\n" +
 		"# Optional: pin client source IP for prefix-ACL matching on tacquito.\n" +
 		"# Replace 10.0.0.1 with the device's management interface address, e.g.:\n" +
 		"#   set system tacplus-server " + serverIP + " source-address 10.0.0.1\n" +

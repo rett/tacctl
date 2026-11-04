@@ -2,19 +2,23 @@
 ! Based on the pull of 2026-10-10 14:02 by alice over ssh (18 minutes ago; the login could see
 ! secrets) and the standard of 2026-10-10 14:20 (tacctl 0.2.5). Checked on a device: IOS 12.4(15) (a
 ! 7200 emulator), IOS 15.6(2)T and IOS-XE 16.7.1; other trains are written from the references.
+! THIS OUTPUT HOLDS THE TACACS+ KEY OF SCOPE lab: do not keep it in a file or a scrollback.
 !
-! What is irregular on dev-cisco-real-12-4-7200 (3 items; the paste fixes 3, leaves 0):
-!  1. aaa      ACCESS     missing: the console's own login list CONSOLE (local only, so a local user
-!                         always gets in there) (aaa authentication login CONSOLE local). Fixed by
+! What is irregular on dev-cisco-real-12-4-7200 (4 items; the paste fixes 4, leaves 0):
+!  1. aaa      ACCESS     different: the TACACS+ server 192.0.2.10 (the device has: the TACACS+ server
+!                         192.0.2.10) (tacacs-server host 192.0.2.10 timeout 5 key <secret>). Fixed by
 !                         region line 3.
-!  2. aaa      ACCESS     different: the login method of line con 0: login authentication CONSOLE (the
+!  2. aaa      ACCESS     missing: the console's own login list CONSOLE (local only, so a local user
+!                         always gets in there) (aaa authentication login CONSOLE local). Fixed by
+!                         region line 4.
+!  3. aaa      ACCESS     different: the login method of line con 0: login authentication CONSOLE (the
 !                         device has: the login method of line con 0: login authentication default)
-!                         (line con 0 > login authentication CONSOLE). Fixed by region line 16.
-!  3. roles    COSMETIC   extra: the commands of privilege level 7: 9 statements (e.g. privilege exec
-!                         level 7 monitor). Fixed by region lines 5-13.
+!                         (line con 0 > login authentication CONSOLE). Fixed by region line 17.
+!  4. roles    COSMETIC   extra: the commands of privilege level 7: 9 statements (e.g. privilege exec
+!                         level 7 monitor). Fixed by region lines 6-14.
 ! Consistent: snmp, mgmt-acl. Not planned: netconf, breakglass.
-! Secrets: 2 present (the TACACS+ server key, the SNMP community); only their presence is checked,
-! --secrets writes them again.
+! Secrets: 1 present (the SNMP community); only their presence is checked, --secrets writes them
+! again.
 ! WARNING: the device has no enable secret: with the server unreachable, level 15 is reached only
 ! through the local user and 'aaa authorization exec'; set an enable secret first if you want a second
 ! way.
@@ -31,6 +35,7 @@
 !!!!! PASTE FROM HERE: dev-cisco-real-12-4-7200 !!!!!
 configure terminal
 ! aaa: the method lists tacctl renders, each replaced by the rendered line (the console's own list is local only)
+tacacs-server host 192.0.2.10 timeout 5 key lab-secret-0123456789abcdef
 aaa authentication login CONSOLE local
 ! roles: the privilege lines of the levels tacctl renders
 no privilege exec level 7 monitor

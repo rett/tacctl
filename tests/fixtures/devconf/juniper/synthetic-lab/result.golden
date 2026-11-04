@@ -3,7 +3,6 @@
 = set system authentication-order password
 = set system authentication-order tacplus
 = set system tacplus-server 192.0.2.10 secret (present, not compared)
-= set system tacplus-server 192.0.2.10 single-connection
 = set system accounting events login
 = set system accounting events change-log
 = set system accounting destination tacplus

@@ -263,11 +263,21 @@ func checkIOSBackout(t *testing.T, f fixture, exp []devices.Section, raw string,
 			if s, ok := strings.CutPrefix(u.Text, "type again with its original secret: "); ok && u.Op == OpComment && l.Op == OpNo {
 				noted[strings.TrimSuffix(s, " "+secretMark)] = true
 			}
+			// a server line retyped in place (the legacy host line that loses
+			// 'single-connection', 0.2.24) holds the key by value: the back-out
+			// notes the device's line, and the retyped one stays
+			if s, ok := strings.CutPrefix(u.Text, "type again with its original secret: "); ok && u.Op == OpComment && l.Op == OpLine &&
+				strings.HasPrefix(s, "tacacs-server host ") {
+				noted[strings.TrimSuffix(s, " "+secretMark)] = true
+				if f, _, ok := strings.Cut(l.Text, " key "); ok {
+					noted[f+" key"] = true
+				}
+			}
 		}
 	}
 	for _, name := range []string{"aaa", "roles", "snmp", "mgmt-acl"} {
 		o := slices.DeleteFunc(slices.Clone(orig.Sections[name].Lines), func(s string) bool { return noted[s] || noted[strings.TrimSuffix(s, " "+secretMark)] })
-		g := slices.Clone(got.Sections[name].Lines)
+		g := slices.DeleteFunc(slices.Clone(got.Sections[name].Lines), func(s string) bool { return noted[s] && !slices.Contains(orig.Sections[name].Lines, s) })
 		slices.Sort(o)
 		slices.Sort(g)
 		if !slices.Equal(o, g) {

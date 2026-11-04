@@ -27,6 +27,7 @@ set system login class EN-CLASS permissions system
 set system login class EN-CLASS permissions system-control
 set system login class EN-CLASS permissions snmp
 set system login user EN-CLASS class EN-CLASS
+delete system tacplus-server 192.0.2.10 single-connection
 set snmp client-list TACCTL-SNMP 192.0.2.10/32
 set snmp client-list TACCTL-SNMP 198.51.100.0/24
 set snmp client-list TACCTL-SNMP 0.0.0.0/0 restrict

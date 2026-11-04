@@ -1,7 +1,7 @@
 # secrets visible: true
 [aaa] differs
 = aaa new-model
-= tacacs-server host 192.0.2.10 single-connection timeout 5 key (present, not compared)
+- tacacs-server host 192.0.2.10 timeout 5 key (not present)
 = aaa group server tacacs+ LAB-TACACS > server 192.0.2.10
 = aaa authentication login default local group LAB-TACACS
 = aaa authentication login CONSOLE local
@@ -19,6 +19,7 @@
 = aaa authorization commands 15 default local group LAB-TACACS
 = aaa authorization config-commands
 + aaa authentication enable default group LAB-TACACS enable
++ tacacs-server host 192.0.2.10 single-connection timeout 5 key (present, not compared)
 note: no enable secret on the device: with AAA on and the server unreachable, a local user with privilege 15 is the only way to level 15
 [roles] ok
 = privilege exec level 1 show running-config

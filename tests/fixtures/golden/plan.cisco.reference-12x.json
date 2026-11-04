@@ -14,21 +14,35 @@
   "irregularities": [
     {
       "n": 1,
+      "kind": "different",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the TACACS+ server 192.0.2.10 (the device has: the TACACS+ server 192.0.2.10)",
+      "statement": "tacacs-server host 192.0.2.10 timeout 5 key \u003csecret\u003e",
+      "action": "Fixed by region line 3.",
+      "fixed": true,
+      "region_lines": [
+        3
+      ]
+    },
+    {
+      "n": 2,
       "kind": "extra",
       "severity": "ACCESS",
       "section": "aaa",
       "what": "an 'enable' list that asks the server (anyone the server knows reaches level 15 with their own password; the standard has none)",
       "statement": "aaa authentication enable default group LAB-TACACS enable",
-      "action": "Fixed by region line 3.",
+      "action": "Fixed by region line 4.",
       "fixed": true,
       "region_lines": [
-        3
+        4
       ]
     }
   ],
   "region": [
     "configure terminal",
     "! aaa: the enable list: the standard has none ('enable' is the local enable secret), so a list that asks the server is removed",
+    "tacacs-server host 192.0.2.10 timeout 5 key \u003csecret\u003e",
     "no aaa authentication enable default group LAB-TACACS enable",
     "end"
   ],
@@ -56,6 +70,7 @@
     "configure terminal",
     "! back-out: the lines as the pull showed them",
     "aaa authentication enable default group LAB-TACACS enable",
+    "! (type again with its original secret: tacacs-server host 192.0.2.10 single-connection timeout 5 key \u003csecret\u003e)",
     "end"
   ],
   "left": {
@@ -65,9 +80,8 @@
   },
   "extras": [],
   "secrets": {
-    "present": 2,
+    "present": 1,
     "kinds": [
-      "the TACACS+ server key",
       "the SNMP community"
     ]
   },
@@ -76,5 +90,5 @@
   "warnings": [
     "the device has no enable secret: with the server unreachable, level 15 is reached only through the local user and 'aaa authorization exec'; set an enable secret first if you want a second way"
   ],
-  "holds_secret": false
+  "holds_secret": true
 }

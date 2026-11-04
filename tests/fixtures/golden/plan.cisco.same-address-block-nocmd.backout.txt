@@ -28,7 +28,6 @@ no tacacs server TACACS
 tacacs server OLD-TACACS
  address ipv4 192.0.2.10
 ! (type again with its original secret: tacacs server OLD-TACACS > key <secret>)
- single-connection
  timeout 5
 aaa group server tacacs+ TACACS-GROUP
  server name OLD-TACACS
