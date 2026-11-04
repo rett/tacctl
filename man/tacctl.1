@@ -1,6 +1,9 @@
 .\" Manual page for tacctl, the management CLI for pluggable network-device AAA.
 .\" Render locally with: groff -man -Tascii man/tacctl.1 | less
 .TH TACCTL 1 "2026-10-31" "tacctl 0.2.23" "tacctl Manual"
+.\" The body margin is 7n on every groff: 1.24 narrowed its default (BP) to 5n, which moves the
+.\" columns that `tacctl man` searches for.
+.nr BP 7n
 .SH NAME
 tacctl \- manage pluggable network-device AAA: users, groups, scopes and devices
 .SH SYNOPSIS
@@ -4899,7 +4902,9 @@ and
 .B adopt
 are the superuser's).
 Each read of a secret, the superuser's too, is logged to syslog as
+.na
 \fBsecret\-read kind=scope|snmp|snmp\-device|snmp\-default|block|block\-adopt|store|config|snapshot|backup name=\fR\fIname\fR\fB by=\fR\fIuser\fR
+.ad
 (never the value). Engineers change no global setting: users, groups,
 scopes, a secret's change, backends, backups, upgrades, the default host
 method and the console's settings stay the superuser's, and so does the
@@ -7540,9 +7545,11 @@ comes from the default
 then the built-in; every
 .B show
 says which one a value is. The non-secret settings are
+.na
 .B snmp_scope.\fIscope\fR.{version,port,timeout,v3.auth,v3.priv,contact,clients}
 in
 .IR tacctl.yaml ,
+.ad
 written only when set; the community and the pool of v3 users with their
 passphrases and the default user are the file
 .IR /etc/tacctl/snmp/\fIscope\fR.yaml
@@ -13072,11 +13079,13 @@ is given, and always
 A device with
 .B legacy\-ssh
 gets
+.na
 \fB\-o KexAlgorithms=\:+diffie\-hellman\-group14\-sha1,\:diffie\-hellman\-group1\-sha1
 \-o Ciphers=\:+aes128\-cbc,\:aes192\-cbc,\:aes256\-cbc,\:3des\-cbc
 \-o HostKeyAlgorithms=\:+ssh\-rsa \-o PubkeyAcceptedAlgorithms=\:+ssh\-rsa\fR
 (old IOS; OpenSSH 8.5 or later; the CBC ciphers are appended after the strong
 ones). A device with pinned host keys adds
+.ad
 \fB\-o UserKnownHostsFile=\:/var/lib/tacctl/\:ssh/known_hosts
 \-o GlobalKnownHostsFile=none \-o StrictHostKeyChecking=yes
 \-o HostKeyAlias=\fR\fIname\fR\fB \-o UpdateHostKeys=no\fR,

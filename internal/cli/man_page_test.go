@@ -135,9 +135,14 @@ func TestManSearchPattern(t *testing.T) {
 		{manTopic{text: "a.b*c^d$e\\f[g]h(i)j+k?l{m}n'o\"p;q"}, `^ *a\.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p.q`},
 		{manTopic{text: "scope.default"}, `^ *scope\.default`},
 		{manTopic{text: "scope.default", indent: 7}, `^       scope\.default`},
-		{manTopic{text: "status", indent: 7, lead: "Show"}, `^       status  *Show`},
+		// A tag of manTagSameLine-1 characters or fewer has its text on its line
+		// on every groff; one of manTagSameLine has it on the next line on groff
+		// 1.24 and on the same line before, so it is searched for alone.
+		{manTopic{text: "stat", indent: 7, lead: "Show"}, `^       stat  *Show`},
+		{manTopic{text: "state", indent: 7, lead: "Show"}, `^       state  *Show`},
+		{manTopic{text: "status", indent: 7, lead: "Show"}, `^       status`},
 		{manTopic{text: "mode", indent: 14}, `^              mode`},
-		{manTopic{text: "tacacs", indent: 7, lead: "TACACS+,"}, `^       tacacs  *TACACS.,`},
+		{manTopic{text: "tacacs", indent: 7, lead: "TACACS+,"}, `^       tacacs`},
 	} {
 		if got := c.topic.searchPattern(); got != c.want {
 			t.Errorf("%q: %q, want %q", c.topic.text, got, c.want)
@@ -258,7 +263,7 @@ func renderPage(t *testing.T, groff, dir string, src []byte, width int) string {
 		t.Fatal(err)
 	}
 	res, err := execx.Real{}.Run(context.Background(), execx.Cmd{Name: groff,
-		Args: []string{"-man", "-Tutf8", "-rLL=" + strconv.Itoa(width) + "n", page},
+		Args: []string{"-man", "-Tutf8", "-rHY=0", "-rLL=" + strconv.Itoa(width) + "n", page},
 		Env:  []string{"PATH=/usr/bin:/bin", "LC_ALL=C.UTF-8"}})
 	if err != nil || res.Code != 0 {
 		t.Fatalf("groff: %v: %s", err, res.Stderr)

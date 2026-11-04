@@ -5,6 +5,17 @@ current behaviour; this file is where history lives.
 
 ## 0.2.24 (unreleased)
 
+1. **`tacctl man` finds each entry on groff 1.24.** groff 1.24 narrowed the
+   default body margin of the man macros from 7 to 5 columns and sets the text
+   of a six-character tag on the line below it, so the search that puts the
+   pager on an entry (`tacctl man device add`) found no line and the pager
+   stayed at the top of the page. The page now sets its own margin
+   (`.nr BP 7n`, the one every earlier groff drew), and the search for a tag
+   of six characters (`status`) no longer includes the first word of its text.
+   Three runs of unbreakable words (the `secret-read` line, the SNMP setting
+   names and the options `device ssh` adds for a `legacy-ssh` device) are set
+   unjustified, so the page is silent under `groff -k -ww` on 1.24.
+
 2. **tacquito is built from the project's fork, `rett/tacquito`.** `tacctl
    install` clones `https://github.com/rett/tacquito.git` instead of
    upstream; the fork's `main` follows upstream only by reviewed merges

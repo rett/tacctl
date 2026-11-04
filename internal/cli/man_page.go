@@ -35,8 +35,8 @@ type manTopic struct {
 	// .SH, 3 for .SS, 7 for a tag under a heading, 14 inside one level of
 	// .RS ...); 0 for a tag when unknown.
 	indent int
-	// lead is the first word of the text that follows a tag narrower than
-	// the tag column, on the same line.
+	// lead is the first word of the text that follows a tag of fewer than
+	// manTagSameLine characters, on the same line.
 	lead string
 	// names are the lower-case words that name a heading: its text, and
 	// each command of its parenthesised "(tacctl user)" group.
@@ -94,7 +94,7 @@ func manTopics(src []byte) []manTopic {
 		wantTag = false
 		if text, ok := manLineText(l); ok && manCommandLike.MatchString(text) {
 			e := manTopic{text: text, indent: manTagColumn * (depth + 1)}
-			if utf8.RuneCountInString(text) < manTagColumn {
+			if utf8.RuneCountInString(text) < manTagSameLine {
 				e.lead = manLead(lines[i+1:])
 			}
 			for _, v := range expandAlternatives(text) {
@@ -206,6 +206,13 @@ const manPatternMax = 60
 // least this wide has its text on the next line.
 const manTagColumn = 7
 
+// manTagSameLine is the width below which the text of a tag follows it on the
+// same line on every groff: 1.24 keeps a blank between the tag and
+// the column (a tag of manTagColumn-1 characters has its text on the next
+// line there, on the same line before), so a tag of that width is searched
+// for without its text.
+const manTagSameLine = manTagColumn - 1
+
 // manLiteral are the characters of a pattern that stand for themselves in
 // every regular-expression flavour (basic and extended POSIX, PCRE).
 const manLiteral = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_:,=/@%-"
@@ -215,8 +222,8 @@ const manLiteral = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567
 // run of blanks, for text the page justified; a dot is a dot; a character
 // that is not plainly literal is any character). The text is cut at
 // manPatternMax characters, since a tag goes on with its options. A tag
-// narrower than the tag column has its text on the same line: the first
-// word of that text follows it in the pattern.
+// of fewer than manTagSameLine characters has its text on the same line: the
+// first word of that text follows it in the pattern.
 func (e manTopic) searchPattern() string {
 	text, cut := e.text, false
 	if utf8.RuneCountInString(text) > manPatternMax {
@@ -234,7 +241,7 @@ func (e manTopic) searchPattern() string {
 		b.WriteString("^ *")
 	}
 	manLiteralPattern(&b, text)
-	if !e.heading && !cut && e.indent > 0 && e.lead != "" && utf8.RuneCountInString(text) < manTagColumn {
+	if !e.heading && !cut && e.indent > 0 && e.lead != "" && utf8.RuneCountInString(text) < manTagSameLine {
 		b.WriteString("  *")
 		manLiteralPattern(&b, e.lead)
 	}
