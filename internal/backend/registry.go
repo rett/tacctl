@@ -52,6 +52,9 @@ type Env struct {
 	// address, "" when none is (nil: no names). 'log accounting' names the
 	// device of each record with it; the CLI sets it for that command.
 	DeviceName func(address string) string
+	// LogFilter is the filters of the 'log' command running (logfilter.go);
+	// the CLI sets it, and the zero value filters nothing.
+	LogFilter LogFilter
 
 	// inWriter is set while the writer of a StoreApply or ApplyForced runs:
 	// a StoreApply, ApplyForced or ConfigRender then is a change inside a

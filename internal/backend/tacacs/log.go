@@ -31,6 +31,9 @@ func (b *Backend) Log(ctx context.Context, sub string, args []string, w io.Write
 	if len(args) > 0 {
 		arg = args[0]
 	}
+	if b.filtered() && (sub == "tail" || sub == "search" || sub == "failures") {
+		return b.logFiltered(ctx, sub, arg, w)
+	}
 	switch sub {
 	case "tail":
 		count := or(arg, "20")
@@ -154,6 +157,9 @@ func (b *Backend) Accounting(_ context.Context, sub string, args []string, w io.
 	count := "20"
 	if len(args) > 0 && args[0] != "" {
 		count = args[0]
+	}
+	if b.filtered() {
+		return b.accountingFiltered(w, count)
 	}
 	writeString(w, "\n")
 	echoLine(w, ui.Bold+"Recent Accounting Entries"+ui.NC)

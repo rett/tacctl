@@ -205,3 +205,76 @@ index 648b6f8..186d9e8 100644
 +	assert.Equal(t, "alice", rec.User)
 +	assert.Equal(t, "192.0.2.10", rec.Device)
 +}
+diff --git a/cmds/server/test/syslog_acct_test.go b/cmds/server/test/syslog_acct_test.go
+index 5c10684..fdad1d6 100644
+--- a/cmds/server/test/syslog_acct_test.go
++++ b/cmds/server/test/syslog_acct_test.go
+@@ -9,10 +9,13 @@ package test
+ 
+ import (
+ 	"context"
++	"encoding/json"
+ 	"fmt"
+ 	"log/syslog"
+ 	"net"
++	"strings"
+ 	"testing"
++	"time"
+ 
+ 	tq "github.com/facebookincubator/tacquito"
+ 	syslogacct "github.com/facebookincubator/tacquito/cmds/server/config/accounters/syslog"
+@@ -144,3 +147,54 @@ func TestSyslogHandleAcctFlags(t *testing.T) {
+ 		})
+ 	}
+ }
++
++// A record names the device that sent it, after the request's own fields,
++// and writes "<", ">" and "&" as they are: one line of valid JSON (tacctl
++// patch 0006).
++func TestSyslogRecordNamesTheDeviceAndKeepsAngleBrackets(t *testing.T) {
++	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
++	assert.NoError(t, err)
++	t.Cleanup(func() { conn.Close() })
++	writer, err := syslog.Dial("udp", conn.LocalAddr().String(), syslog.LOG_INFO, "tacquito-test")
++	assert.NoError(t, err)
++	t.Cleanup(func() { writer.Close() })
++	a := syslogacct.New(&syslogAcctLogger{}, writer)
++
++	// read is the record in the next syslog message: the JSON after its header.
++	read := func() string {
++		assert.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
++		buf := make([]byte, 4096)
++		n, _, err := conn.ReadFrom(buf)
++		assert.NoError(t, err)
++		msg := string(buf[:n])
++		i := strings.Index(msg, "{")
++		assert.GreaterOrEqual(t, i, 0, msg)
++		return strings.TrimSpace(msg[i:])
++	}
++
++	body := tq.NewAcctRequest(
++		tq.SetAcctRequestFlag(syslogMakeFlag(tq.AcctFlagStop)),
++		tq.SetAcctRequestMethod(tq.AuthenMethodTacacsPlus),
++		tq.SetAcctRequestPrivLvl(tq.PrivLvlRoot),
++		tq.SetAcctRequestType(tq.AuthenTypeASCII),
++		tq.SetAcctRequestService(tq.AuthenServiceLogin),
++		tq.SetAcctRequestUser("alice"),
++		tq.SetAcctRequestArgs(tq.Args{"cmd=set: [interfaces ge-0/0/1 description] <unconfigured> -> \"a&b\"<cr>"}),
++	)
++	b, err := body.MarshalBinary()
++	assert.NoError(t, err)
++	req := syslogMakeRequest(t, syslogMakeFlag(tq.AcctFlagStop))
++	req.Body = b
++	req.Context = context.WithValue(req.Context, tq.ContextConnRemoteAddr, "192.0.2.10")
++	a.Handle(newMockedResponse(), req)
++
++	rec := read()
++	assert.True(t, json.Valid([]byte(rec)), rec)
++	assert.Regexp(t, `^\{"Flags":\d+,"Method":\d+,"PrivLvl":\d+,"Type":\d+,"Service":\d+,"User":"alice","Port":"","RemAddr":"","Args":[^{]*,"Device":"192\.0\.2\.10"\}$`, rec)
++	assert.Contains(t, rec, `"cmd=set: [interfaces ge-0/0/1 description] <unconfigured> -> \"a&b\"<cr>"`)
++	assert.NotContains(t, rec, `\u00`)
++
++	// A connection with no address in its context.
++	a.Handle(newMockedResponse(), syslogMakeRequest(t, syslogMakeFlag(tq.AcctFlagStart)))
++	assert.Regexp(t, `,"Device":"unknown"\}$`, read())
++}

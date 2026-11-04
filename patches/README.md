@@ -180,7 +180,8 @@ that line is the device's, and only its syslog configuration can drop it.
 ### `0006-acct-device-address.patch`
 Names the device in every accounting record, and writes the record readably
 (`cmds/server/config/accounters/local/local.go` and `syslog/syslog.go`, with a
-test in `cmds/server/test/local_acct_test.go`).
+test of each, in `cmds/server/test/local_acct_test.go` and
+`syslog_acct_test.go`).
 
 Both accounters write one JSON line per request, e.g. a Junos `change-log`
 record:
@@ -205,8 +206,8 @@ not know `Device` ignores it (the line stays one line of valid JSON).
 `Device` and is shown without one.
 
 The patch also writes `<`, `>` and `&` as they are. Go's `json.Marshal`
-escapes them for HTML (`<`, `>`, `&`), so the log read
-`<unconfigured> -> "test"<cr>` for the command
+escapes them for HTML (`\u003c`, `\u003e`, `\u0026`), so the log read
+`\u003cunconfigured\u003e -> \"test\"\u003ccr\u003e` for the command
 above. The record is now written with a `json.Encoder` that has
 `SetEscapeHTML(false)`, and the newline `Encode` adds is cut off, so the
 accounter logs one line per record as before. Both forms are valid JSON and

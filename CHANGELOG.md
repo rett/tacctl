@@ -36,10 +36,11 @@ current behaviour; this file is where history lives.
    names and order, so a reader of the old line still parses the new one.
    `tacctl log accounting` shows the registered name of the device or
    enrolled host at that address (`"Device":"sw1"`), the address when none is
-   registered, and no device for a record written before the patch. The same
+   registered (or outside the scopes of an operator, engineer or read-only
+   caller), and no device for a record written before the patch. The same
    patch writes `<`, `>` and `&` in a record as they are: Go escaped them as
-   `<`, `>` and `&`, so a Junos command read
-   `<unconfigured> -> "test"<cr>`. The line is still
+   `\u003c`, `\u003e` and `\u0026`, so a Junos command read
+   `\u003cunconfigured\u003e -> \"test\"\u003ccr\u003e`. The line is still
    one line of valid JSON. `log accounting` shows the values decoded, those
    of records already in the file too, and leaves out the `<cr>` Junos
    appends to a `cmd=` value, in the display only (the file keeps it). A host
@@ -47,6 +48,24 @@ current behaviour; this file is where history lives.
    install` applies it); until then its records have no device and keep the
    escapes. `log tail` and `log search` read the journal and are not
    changed.
+
+4. **The logs can be filtered, and written as JSON.** `tacctl log tail`,
+   `search`, `failures` and `accounting` take `--since <time>` and `--until
+   <time>` (`YYYY-MM-DD[ HH:MM[:SS]]`, `now`, `today`, `yesterday`, `-1h` or
+   `2 hours ago`; any other form is a usage error), `--user <name>`,
+   `--device <name|address>` (a registered device or enrolled host the caller
+   may see, or an address in canonical form), `--type login|change|command`
+   (accounting only: a record with a Junos change-log command is a `change`,
+   one with any other command a `command`, one that starts or stops a session
+   a `login`) and `--json` (one object per line, no headings; an accounting
+   record keeps its fields, decoded, with `DeviceName` and `Time` added). The
+   filters combine, `tail -f` applies them to new entries, and a count limits
+   the output after filtering. Each log matches what it names: the journal
+   the bracketed user and the address of the device that asked, the
+   accounting logs the record's `User` and `Device`, the RADIUS auth log
+   `user=` and `client=`; a log that names no device (the FreeRADIUS daemon
+   log, a record written before patch 0006) shows nothing for `--device` and
+   says so. Without a filter the commands print what they did.
 
 ## 0.2.23 (2026-10-31)
 

@@ -42,22 +42,26 @@ store rollback                               Restore the pre-store tacquito.yaml
 ## Log Commands — `tacctl log`
 
 ```
-log tail [-f|--follow] [<n>] [--backend <id>]
+log tail [-f|--follow] [<n>] [--backend <id>] [<filters>]
 
     Last <n> entries (default 20): TACACS+ journal; RADIUS auth log and daemon log; -f/--follow
     follows new ones until Ctrl-C
 
-log search <term> [--backend <id>]
+log search <term> [--backend <id>] [<filters>]
 
     Search the logs for a username or keyword (TACACS+: last 7 days)
 
-log failures [--backend <id>]
+log failures [--backend <id>] [<filters>]
 
     Auth failures from the last 24 hours
 
-log accounting [<n>] [--backend <id>]
+log accounting [<n>] [--backend <id>] [<filters>]
 
     Last <n> accounting records
+
+<filters> (tail, search, failures and accounting):
+    [--since <time>] [--until <time>] [--user <name>] [--device <name|address>]
+    [--type login|change|command] [--json]
 
 log clear [--force|--yes] [--backend <id>]
 
@@ -67,7 +71,42 @@ log clear [--force|--yes] [--backend <id>]
 
 With more than one backend enabled each subcommand shows every backend's log in a section headed by its name; `--backend <id>` (anywhere on the line) shows one.
 
-`log accounting` shows each TACACS+ record as tacquito wrote it (a line of JSON after the date, time and source of the logger) with the values decoded, and names the device that sent it: tacquito built with `patches/0006` adds `"Device"`, the address the device connected from, to every record, and `log accounting` shows the name of the registered device or enrolled host at that address (`"Device":"sw1"`), the address when none is registered (a device covered by a scope's prefix only), and no `Device` for a record written before the patch. `"RemAddr"` stays what it was: where the person connected from, as the device reports it. Records written before the patch keep `<`, `>` and `&` for `<`, `>` and `&` in the log file; they are shown as the characters. The `<cr>` Junos appends to a `cmd=` value is left out of the display; the file keeps it. `log tail` and `log search` read the journal and are not affected.
+`log accounting` shows each TACACS+ record as tacquito wrote it (a line of JSON after the date, time and source of the logger) with the values decoded, and names the device that sent it: tacquito built with `patches/0006` adds `"Device"`, the address the device connected from, to every record, and `log accounting` shows the name of the registered device or enrolled host at that address (`"Device":"sw1"`), the address when none is registered (a device covered by a scope's prefix only, or one outside the scopes of an operator, engineer or read-only caller, who is told the names of their own scopes' devices only), and no `Device` for a record written before the patch. `"RemAddr"` stays what it was: where the person connected from, as the device reports it. Records written before the patch keep `\u003c`, `\u003e` and `\u0026` for `<`, `>` and `&` in the log file; they are shown as the characters. The `<cr>` Junos appends to a `cmd=` value is left out of the display; the file keeps it. `log tail` and `log search` read the journal and are not affected.
+
+### Log filters
+
+The filters of `log tail`, `log search`, `log failures` and `log accounting` combine (an entry must pass all of them), are written `--name value` or `--name=value` anywhere on the line, and apply before a count: `log accounting 5 --user alice` is alice's last five records. `log tail -f` applies them to the new entries too. `--type` is the accounting log's only. Without a filter and without `--json` the commands print what they always did.
+
+| Filter | Shows |
+| --- | --- |
+| `--since <time>`, `--until <time>` | Entries from, and up to, that time (both inclusive). |
+| `--user <name>` | Entries of that user, exactly as the log writes the name. |
+| `--device <name\|address>` | Entries of that device or host. |
+| `--type login\|change\|command` | One kind of accounting record. |
+| `--json` | One JSON object per entry, no headings, for `jq`. |
+
+`<time>` is one of `YYYY-MM-DD`, `YYYY-MM-DD HH:MM` and `YYYY-MM-DD HH:MM:SS` (local time; a date alone is that day's midnight; a `T` may stand for the space), `now`, `today` and `yesterday` (midnight), or an offset from now: `-1h`, `-30m`, `2 days ago`, with the units `s`, `m`, `h`, `d` and `w` (or `seconds`, `minutes`, `hours`, `days`, `weeks`). Any other form is a usage error, as is a `--since` later than the `--until`. On TACACS+ `tail`, `search` and `failures` hand the window to `journalctl` (without one, `search` reads the last 7 days and `failures` the last 24 hours). The RADIUS logs and the accounting logs are compared line by line with the time of the line or record (the date and time of the logger's prefix of a TACACS+ record, the date at the start of a RADIUS auth or daemon log line, the first line of a RADIUS accounting record); one whose time cannot be read is left out. With `tail -f` a new entry has the time it arrives.
+
+`--device` takes the name of a registered device or enrolled host that the caller may see (an operator, an engineer or a read-only user sees the devices and hosts of their own scopes), which stands for its recorded address, or an address, which is compared in canonical form (`2001:DB8:0:0::1` is `2001:db8::1`, and `::ffff:192.0.2.10` is `192.0.2.10`). A name that is neither is refused, and so is a device that has no address recorded. What each log can match:
+
+| Log | `--user` | `--device` |
+| --- | --- | --- |
+| TACACS+ accounting | the record's `User` | the record's `Device` (a record written before `patches/0006` has none and never matches) |
+| TACACS+ journal | a line that names the user in brackets (`accepting user [alice] ...`) | the address a tacquito line names for the device that asked: `from [A]`, `bad secret detected for ip [A:port]`, `remote [A:port] has no secret providers`, and the debug line `matches remote [A]`; the person's address in `client [A]` is not the device. A line that names no device never matches. |
+| RADIUS auth log | the last `user=` of the line | `client=` |
+| RADIUS daemon log | a line that names the user in brackets (`[alice]`, `[alice/<via Auth-Type = PAP>]`) | cannot be matched (it names clients and not addresses): with `--device` its section says so and shows no line |
+| RADIUS accounting | `User-Name` | `NAS-IP-Address`, `NAS-IPv6-Address`, `Packet-Src-IP-Address` or `Packet-Src-IPv6-Address` |
+
+`--type` classifies a TACACS+ accounting record by its fields. A record with a `cmd=` argument that is not empty is a `change` when the command has the shape of a Junos change-log entry (a verb, a colon and the configuration path in brackets: `cmd=set: [interfaces ge-0/0/1 description] ...`), and a `command` otherwise. A record without one is a `login` when its flags start or stop a session (the TACACS+ START and STOP flags). A watchdog update is none of the three. RADIUS accounting has `login` records only (`Acct-Status-Type` Start or Stop): `--type change` and `--type command` say so and show nothing.
+
+A filter that leaves nothing says so (`No matching entries.`). With `--json` the headings and such lines are left out and a note goes to standard error, so that standard output is one object per line:
+
+```
+{"time":"2026-11-04T12:00:00Z","backend":"tacacs","unit":"tacquito.service","message":"...",
+ "user":"alice","address":"192.0.2.10","device":"sw1","outcome":"accept"}
+```
+
+The time is UTC; `user`, `address`, `device` (the registered name) and `outcome` are there when the line has them. `unit` is the journal's (TACACS+), `log` the log a RADIUS line comes from (`auth` or `daemon`). A TACACS+ accounting record is the record with its fields decoded as the display has them (`Device` the address as it was logged), then `DeviceName` (when the address is a device or host the caller sees) and `Time` (the logger's, UTC). A RADIUS accounting record is `time`, `backend`, `log`, `user`, `address`, `device` and `attributes`, the record's attributes.
 
 TACACS+ authentication lines read `accepting user [<user>] from [<address>] using a bcrypt password` (or `failed to validate the user ...`). `<address>` is the device or host that asked; when it sent them, `; client [<address>] port [<port>]` follows: the person's address and terminal as the client reports them. Devices and `sshd` give them; a `sudo` prompt on the server itself gives none, so such a line names the server (`127.0.0.1`) only.
 

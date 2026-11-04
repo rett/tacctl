@@ -12,12 +12,13 @@ import (
 const acctPrefix = "2026/11/04 12:00:00 /opt/tacquito-src/cmds/server/config/accounters/local/local.go:105: "
 
 // A record as patches/0006 writes it, and the same request as an older
-// server wrote it (no "Device", "<", ">" and "&" escaped).
+// server wrote it (no "Device", "<", ">" and "&" as the escapes
+// \u003c, \u003e and \u0026).
 const (
 	acctNew = `{"Flags":4,"Method":6,"PrivLvl":1,"Type":1,"Service":0,"User":"alice","Port":"ttyp0","RemAddr":"192.0.2.50",` +
 		`"Args":["task_id=3","service=shell","session_pid = 29408","cmd=set: [interfaces ge-0/0/1 description] <unconfigured> -> \"a&b\"<cr>"],"Device":"192.0.2.10"}`
 	acctOld = `{"Flags":4,"Method":6,"PrivLvl":1,"Type":1,"Service":0,"User":"alice","Port":"ttyp0","RemAddr":"192.0.2.50",` +
-		`"Args":["task_id=3","service=shell","session_pid = 29408","cmd=set: [interfaces ge-0/0/1 description] <unconfigured> -> \"a&b\"<cr>"]}`
+		`"Args":["task_id=3","service=shell","session_pid = 29408","cmd=set: [interfaces ge-0/0/1 description] \u003cunconfigured\u003e -> \"a\u0026b\"\u003ccr\u003e"]}`
 	acctShown = `"Args":["task_id=3","service=shell","session_pid = 29408","cmd=set: [interfaces ge-0/0/1 description] <unconfigured> -> \"a&b\""]`
 	acctHead  = `{"Flags":4,"Method":6,"PrivLvl":1,"Type":1,"Service":0,"User":"alice","Port":"ttyp0","RemAddr":"192.0.2.50",` + acctShown
 )

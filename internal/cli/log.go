@@ -24,10 +24,10 @@ import (
 
 // logSpecs are the arguments of each verb, for completion (args.go).
 var logSpecs = map[string]Spec{
-	"tail":       {MaxArgs: 1, Flags: []Flag{logBackendFlag, {Names: []string{"-f", "--follow"}}}},
-	"search":     {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}, Flags: []Flag{logBackendFlag}},
-	"failures":   {Flags: []Flag{logBackendFlag}},
-	"accounting": {MaxArgs: 1, Flags: []Flag{logBackendFlag}},
+	"tail":       {MaxArgs: 1, Flags: append([]Flag{logBackendFlag, {Names: []string{"-f", "--follow"}}}, logFilterFlags(false)...)},
+	"search":     {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}, Flags: append([]Flag{logBackendFlag}, logFilterFlags(false)...)},
+	"failures":   {Flags: append([]Flag{logBackendFlag}, logFilterFlags(false)...)},
+	"accounting": {MaxArgs: 1, Flags: append([]Flag{logBackendFlag}, logFilterFlags(true)...)},
 	"clear":      {Flags: []Flag{logBackendFlag, {Names: []string{"--force", "--yes"}}}},
 }
 
@@ -65,8 +65,16 @@ func logCmd(inv *invocation) *cobra.Command {
 func (inv *invocation) logRun(sub string, args []string) error {
 	only, hasOnly, follow := "", false, false
 	var rest []string
+	var fa logFilterArgs
 	for i := 0; i < len(args); i++ {
 		a := args[i]
+		if sub != "clear" {
+			if handled, err := fa.take(inv, sub, args, &i); err != nil {
+				return err
+			} else if handled {
+				continue
+			}
+		}
 		switch {
 		case sub == "tail" && (a == "-f" || a == "--follow"):
 			follow = true
@@ -104,7 +112,12 @@ func (inv *invocation) logRun(sub string, args []string) error {
 		ids = []string{only}
 	}
 	multi := len(ids) > 1
-	if sub == "accounting" {
+	var filter backend.LogFilter
+	if sub != "clear" {
+		if filter, err = fa.build(inv); err != nil {
+			return err
+		}
+		set.Env.LogFilter = filter
 		set.Env.DeviceName = inv.deviceNameAt()
 	}
 	for _, id := range ids {
@@ -112,7 +125,7 @@ func (inv *invocation) logRun(sub string, args []string) error {
 		if err != nil {
 			return err
 		}
-		if multi {
+		if multi && !filter.JSON {
 			inv.write(backend.Heading(b))
 		}
 		if sub == "accounting" {
@@ -125,7 +138,7 @@ func (inv *invocation) logRun(sub string, args []string) error {
 		}
 	}
 	if follow {
-		return inv.logFollow(ids, multi)
+		return inv.logFollow(ids, multi, filter)
 	}
 	return nil
 }
@@ -148,16 +161,14 @@ func (inv *invocation) deviceNameAt() func(string) string {
 }
 
 // deviceNamesByAddress maps the canonical address of every registry device and
-// enrolled host that has one to its name.
+// enrolled host that has one, and that the caller may see (the scopes of an
+// operator, an engineer or a read-only user, as 'device list' shows them), to
+// its name. A device the caller does not see shows as its address. A registry
+// file that cannot be read leaves the enrolled hosts' names.
 func (inv *invocation) deviceNamesByAddress() map[string]string {
-	f, err := devreg.Load(inv.app.Paths.DevicesFile)
-	if err != nil {
-		return nil
-	}
-	reg, _ := inv.registry()
-	m, _ := inv.model()
+	res := inv.logResolver()
 	out := map[string]string{}
-	for _, e := range devreg.NewResolver(f, reg, m).All() {
+	for _, e := range res.Visible(inv.deviceFilter()) {
 		if a := backend.CanonAddr(e.Address); a != "" && out[a] == "" {
 			out[a] = e.Name
 		}
@@ -165,35 +176,68 @@ func (inv *invocation) deviceNamesByAddress() map[string]string {
 	return out
 }
 
+// logResolver joins the registry, the enrolled hosts and the store, without
+// the registry's load notes; a registry file that cannot be read is an empty
+// one, so that the hosts keep their names.
+func (inv *invocation) logResolver() *devreg.Resolver {
+	f, err := devreg.Load(inv.app.Paths.DevicesFile)
+	if err != nil {
+		f = devreg.Empty()
+	}
+	reg, _ := inv.registry()
+	m, _ := inv.model()
+	return devreg.NewResolver(f, reg, m)
+}
+
 // logFollow is 'log tail -f' after the tails: every backend's follow
 // commands at once, each complete line written as it comes (prefixed with
 // the backend's id when more than one is at work), until Ctrl-C, which
-// ends the command normally.
-func (inv *invocation) logFollow(ids []string, multi bool) error {
+// ends the command normally. With filters or --json the backend's own
+// filtered commands run (backend.FilteredFollower), and the lines that pass
+// are written; a backend that has none is not followed, and says so.
+func (inv *invocation) logFollow(ids []string, multi bool, f backend.LogFilter) error {
 	a := inv.app
 	set := a.Backends()
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	followed := 0
 	ctx := inv.ctx
-	inv.echoE(ui.Bold + "Following new entries (Ctrl-C to stop)..." + ui.NC)
+	if f.JSON {
+		inv.stderrLine("Following new entries (Ctrl-C to stop)...")
+	} else {
+		inv.echoE(ui.Bold + "Following new entries (Ctrl-C to stop)..." + ui.NC)
+	}
+	filtered := f.Active() || f.JSON
 	for _, id := range ids {
 		b, err := set.Get(id)
 		if err != nil {
 			return err
 		}
-		f, ok := b.(backend.Follower)
-		if !ok {
-			a.Out.WarnE("Backend '" + id + "' has no log to follow.")
-			continue
+		var sources []backend.FollowSource
+		if filtered {
+			ff, ok := b.(backend.FilteredFollower)
+			if !ok {
+				a.Out.WarnE("Backend '" + id + "' cannot follow its log with filters.")
+				continue
+			}
+			sources = ff.FollowFiltered(f)
+		} else {
+			fl, ok := b.(backend.Follower)
+			if !ok {
+				a.Out.WarnE("Backend '" + id + "' has no log to follow.")
+				continue
+			}
+			for _, argv := range fl.FollowArgv() {
+				sources = append(sources, backend.FollowSource{Argv: argv})
+			}
 		}
 		prefix := ""
-		if multi {
+		if multi && !f.JSON {
 			prefix = "[" + id + "] "
 		}
-		for _, argv := range f.FollowArgv() {
+		for _, src := range sources {
 			followed++
-			w := &lineWriter{mu: &mu, w: inv.stdout(), prefix: prefix}
+			w := &lineWriter{mu: &mu, w: inv.stdout(), prefix: prefix, xform: src.Line}
 			wg.Add(1)
 			go func(argv []string) {
 				defer wg.Done()
@@ -204,7 +248,7 @@ func (inv *invocation) logFollow(ids []string, multi bool) error {
 					a.Out.WarnE("Stopped following " + id + ": " + strings.Join(argv, " ") + " ended.")
 					mu.Unlock()
 				}
-			}(argv)
+			}(src.Argv)
 		}
 	}
 	if followed == 0 {
@@ -218,11 +262,13 @@ func (inv *invocation) logFollow(ids []string, multi bool) error {
 }
 
 // lineWriter writes whole lines to w, each behind prefix, one writer at a
-// time (mu is shared by every followed source).
+// time (mu is shared by every followed source). With xform each line (without
+// its newline) is first turned into the text to write, or left out.
 type lineWriter struct {
 	mu     *sync.Mutex
 	w      io.Writer
 	prefix string
+	xform  func(line string) (string, bool)
 	buf    []byte
 }
 
@@ -233,9 +279,19 @@ func (l *lineWriter) Write(p []byte) (int, error) {
 		if i < 0 {
 			break
 		}
-		l.mu.Lock()
-		_, _ = io.WriteString(l.w, l.prefix+string(l.buf[:i+1]))
-		l.mu.Unlock()
+		text := string(l.buf[:i+1])
+		if l.xform != nil {
+			out, ok := l.xform(strings.TrimSuffix(text[:len(text)-1], "\r"))
+			text = out + "\n"
+			if !ok {
+				text = ""
+			}
+		}
+		if text != "" {
+			l.mu.Lock()
+			_, _ = io.WriteString(l.w, l.prefix+text)
+			l.mu.Unlock()
+		}
 		l.buf = l.buf[i+1:]
 	}
 	return len(p), nil

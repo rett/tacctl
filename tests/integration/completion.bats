@@ -288,7 +288,9 @@ complete_words() {
 
 @test "completion: log subcommands take --backend, and its value is a backend id" {
     complete_words tacctl log tail --
-    assert_output "$(printf -- '--backend\n--follow')"
+    assert_output "$(printf -- '--backend\n--follow\n--since\n--until\n--user\n--device\n--json')"
+    complete_words tacctl log accounting --type ""
+    assert_output "$(printf 'login\nchange\ncommand')"
     complete_words tacctl log tail --backend ""
     assert_output "$(printf 'tacacs\nradius')"
     complete_words tacctl log clear ""
