@@ -56,7 +56,7 @@ func TestInstallBuildClonesPatchesAndBuilds(t *testing.T) {
 	} {
 		mustContain(t, out, s)
 	}
-	if !e.called(`^git clone --quiet https://github.com/facebookincubator/tacquito.git ` + e.src() + `$`) {
+	if !e.called(`^git clone --quiet https://github\.com/rett/tacquito\.git ` + e.src() + `$`) {
 		t.Fatal(e.run.Argvs())
 	}
 	if d := e.dirOf("go", "build", "-o", e.b.tacquitoBin()); d != e.src()+"/cmds/server" {
@@ -89,6 +89,58 @@ func TestInstallBuildPullsAnExistingCheckout(t *testing.T) {
 	}
 	if e.called(`^git clone`) || e.called(`safe.directory --add|--add safe.directory`) {
 		t.Fatal(e.run.Argvs())
+	}
+}
+
+// A checkout cloned from upstream tacquito (before 0.2.24) is pointed at
+// the fork before it is pulled, by install and by upgrade; an origin set by
+// hand stays, and a set-url that fails is a warning.
+func TestBuildRepointsAnUpstreamCheckoutAtTheFork(t *testing.T) {
+	for _, tc := range []struct {
+		name, origin, want string
+		fails, upgrade     bool
+		say                string
+	}{
+		{name: "install", origin: TacquitoUpstreamRepo, want: TacquitoRepo,
+			say: "Tacquito source now pulls from " + TacquitoRepo + " (was " + TacquitoUpstreamRepo + ")."},
+		{name: "upgrade", origin: TacquitoUpstreamRepo, want: TacquitoRepo, upgrade: true,
+			say: "Tacquito source now pulls from " + TacquitoRepo},
+		{name: "no .git", origin: "https://github.com/facebookincubator/tacquito/", want: TacquitoRepo,
+			say: "(was https://github.com/facebookincubator/tacquito)."},
+		{name: "by hand", origin: "https://git.example.com/tacquito.git", want: "https://git.example.com/tacquito.git"},
+		{name: "fork", origin: TacquitoRepo, want: TacquitoRepo},
+		{name: "fails", origin: TacquitoUpstreamRepo, want: TacquitoUpstreamRepo, fails: true,
+			say: "Could not point " + "SRC" + " at " + TacquitoRepo + "; it still pulls from " + TacquitoUpstreamRepo + "."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newLifeTenv(t)
+			e.goVersion(GoVersion)
+			repo := e.tacquitoRepo(commit1)
+			repo.setOrigin(tc.origin)
+			repo.setURLFails = tc.fails
+			var err error
+			if tc.upgrade {
+				writeFile(t, e.b.tacquitoBin(), "old\n")
+				err = e.b.Upgrade(context.Background(), backend.PhaseBuild, "")
+			} else {
+				err = e.b.Install(context.Background(), backend.PhaseBuild, "")
+			}
+			if err != nil {
+				t.Fatalf("%v\n%s", err, e.out())
+			}
+			if got := repo.originURL(); got != tc.want {
+				t.Fatalf("origin %q, want %q", got, tc.want)
+			}
+			if tc.say != "" {
+				mustContain(t, e.out(), strings.ReplaceAll(tc.say, "SRC", e.src()))
+			}
+			if tc.origin == tc.want && !tc.fails && e.called(`^git remote set-url`) {
+				t.Fatal(e.run.Argvs())
+			}
+			if pull := `^git (pull|fetch) --quiet$`; !e.called(pull) {
+				t.Fatal(e.run.Argvs())
+			}
+		})
 	}
 }
 

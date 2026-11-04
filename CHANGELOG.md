@@ -3,6 +3,18 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.24 (unreleased)
+
+2. **tacquito is built from the project's fork, `rett/tacquito`.** `tacctl
+   install` clones `https://github.com/rett/tacquito.git` instead of
+   upstream; the fork's `main` follows upstream only by reviewed merges
+   (`patches/README.md`, Following upstream), so a host no longer builds
+   whatever upstream pushed last. The patch overlay stays in `patches/`. A
+   checkout cloned from upstream by an earlier release is pointed at the fork
+   the next time `install` or `upgrade` pulls it (`Tacquito source now pulls
+   from ...`); an origin set by hand is left alone, and a failure to repoint
+   is a warning, the checkout still pulling from upstream.
+
 ## 0.2.23 (2026-10-31)
 
 1. **`tacctl rollback 0.2.22`, the release before this one, is a target.**

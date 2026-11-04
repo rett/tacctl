@@ -200,10 +200,14 @@ func (e *tenv) serviceCalls() []string {
 type fakeTacquito struct {
 	mu            sync.Mutex
 	local, remote string
+	// origin is the URL of the checkout's origin; setURLFails makes
+	// 'git remote set-url' fail.
+	origin      string
+	setURLFails bool
 }
 
 func (e *tenv) tacquitoRepo(commit string) *fakeTacquito {
-	f := &fakeTacquito{local: commit, remote: commit}
+	f := &fakeTacquito{local: commit, remote: commit, origin: TacquitoRepo}
 	src := e.src()
 	inSrc := func(c execx.Cmd) bool {
 		if c.Name != "git" {
@@ -227,6 +231,13 @@ func (e *tenv) tacquitoRepo(commit string) *fakeTacquito {
 			return res(f.remote + "\n")
 		case a == "pull --quiet":
 			f.local = f.remote
+		case a == "remote get-url origin":
+			return res(f.origin + "\n")
+		case strings.HasPrefix(a, "remote set-url origin "):
+			if f.setURLFails {
+				return execx.Result{Code: 2}, nil
+			}
+			f.origin = c.Args[3]
 		case strings.HasPrefix(a, "log --oneline "):
 			return res(f.remote[:7] + " upstream change\n")
 		}
@@ -242,6 +253,18 @@ func (e *tenv) tacquitoRepo(commit string) *fakeTacquito {
 			return execx.Result{}, os.Chmod(c.Args[2], 0o755)
 		})
 	return f
+}
+
+func (f *fakeTacquito) setOrigin(url string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.origin = url
+}
+
+func (f *fakeTacquito) originURL() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.origin
 }
 
 func (f *fakeTacquito) setRemote(commit string) {

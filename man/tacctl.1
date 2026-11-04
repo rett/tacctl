@@ -152,7 +152,7 @@ Answer yes to the confirmations.
 .BI "upgrade [--branch " name "]"
 Move tacctl state into
 .I /etc/tacctl
-(idempotent), pull and rebuild tacquito when upstream or the patch overlay
+(idempotent), pull and rebuild tacquito when its source or the patch overlay
 changed, pull the tacctl repository in
 .I /opt/tacctl
 (after switching to
@@ -16943,7 +16943,16 @@ The clone of the tacquito source that
 and
 .B upgrade
 build the server from (default
-.IR /opt/tacquito\-src ).
+.IR /opt/tacquito\-src ),
+cloned from the project's fork of tacquito,
+.IR https://github.com/rett/tacquito ,
+whose main follows upstream by reviewed merges.
+A clone of upstream tacquito made by an earlier release is pointed at the fork
+the next time
+.B install
+or
+.B upgrade
+pulls it; an origin set by hand is left alone.
 .TP
 .B TMPDIR
 The directory where tacctl stages private copies while it works (rendered

@@ -85,6 +85,7 @@ func (b *Backend) installBuild(ctx context.Context) error {
 	src := b.env.Paths.TacquitoSrc
 	if isDir(src) {
 		out.InfoE("Tacquito source already exists at " + src + ", pulling latest...")
+		b.repointOrigin(ctx, src)
 		// Drop the patches applied last time so the pull stays clean.
 		b.shQuiet(ctx, src, "git", "checkout", "--", ".")
 		if code := b.sh(ctx, src, "git", "pull", "--quiet"); code != 0 {
@@ -164,6 +165,7 @@ func (b *Backend) upgradeBuild(ctx context.Context) error {
 	out.InfoE("Current commit: " + cur)
 
 	out.Info("Pulling latest source...")
+	b.repointOrigin(ctx, src)
 	if code := b.sh(ctx, src, "git", "fetch", "--quiet"); code != 0 {
 		return failed(code, "git fetch")
 	}

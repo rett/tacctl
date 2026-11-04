@@ -1,9 +1,14 @@
 # tacquito source patches
 
-`tacctl` builds the tacquito server from an upstream checkout of
+`tacctl` builds the tacquito server from a checkout of the project's fork,
+[`rett/tacquito`](https://github.com/rett/tacquito), at `/opt/tacquito-src`.
+The fork's `main` is upstream
 [`facebookincubator/tacquito`](https://github.com/facebookincubator/tacquito)
-at `/opt/tacquito-src`. A few behaviors we depend on are not upstream, so we
-carry them here as a **patch overlay** rather than forking.
+and nothing else: it moves only when upstream changes are merged into it
+(below), so a host builds only the upstream changes that were reviewed. A few
+behaviors we depend on are not upstream; we carry them here as a **patch
+overlay**, not as commits on the fork, so merging upstream stays
+conflict-free.
 
 Every `*.patch` in this directory is a `git apply`-able unified diff rooted at
 the tacquito source tree. On `tacctl install` and `tacctl upgrade`, after the
@@ -22,6 +27,32 @@ already-applied patch is detected (reverse-check) and skipped.
 
 Keep patches to **modifications of existing files only** (no new files), so the
 revert-before-pull step (`git checkout -- .`) fully cleans the tree.
+
+## Following upstream
+
+The fork is updated by hand, periodically and whenever upstream moves; it is
+never synced automatically. From a clone of the fork:
+
+```
+git remote add upstream https://github.com/facebookincubator/tacquito.git  # once
+git fetch upstream
+git log --oneline main..upstream/main      # what upstream changed
+git diff main...upstream/main              # review it
+git checkout main
+git merge --ff-only upstream/main          # main carries no commits of its own
+git push origin main
+```
+
+Before the push, check that every patch here still applies and the server
+builds (`git apply --check patches/*.patch` in a scratch copy of the merged
+tree, then `go build ./cmds/server`); refresh a patch that no longer applies
+in the same tacctl change that documents it. The next `tacctl upgrade` on a
+host pulls the merged commit and rebuilds.
+
+A checkout cloned from upstream by a release before 0.2.24 is pointed at the
+fork the next time `tacctl install` or `tacctl upgrade` pulls it (`git remote
+set-url origin`: both have the same history). An origin set to any other URL
+is left alone.
 
 ## Current patches
 
