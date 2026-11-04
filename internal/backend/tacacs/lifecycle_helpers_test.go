@@ -204,6 +204,7 @@ type fakeTacquito struct {
 	// 'git remote set-url' fail.
 	origin      string
 	setURLFails bool
+	getURLFails bool
 }
 
 func (e *tenv) tacquitoRepo(commit string) *fakeTacquito {
@@ -232,6 +233,9 @@ func (e *tenv) tacquitoRepo(commit string) *fakeTacquito {
 		case a == "pull --quiet":
 			f.local = f.remote
 		case a == "remote get-url origin":
+			if f.getURLFails {
+				return execx.Result{Code: 2, Stderr: []byte("error: No such remote 'origin'\n")}, nil
+			}
 			return res(f.origin + "\n")
 		case strings.HasPrefix(a, "remote set-url origin "):
 			if f.setURLFails {

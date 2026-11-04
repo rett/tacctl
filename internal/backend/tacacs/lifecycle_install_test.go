@@ -99,6 +99,7 @@ func TestBuildRepointsAnUpstreamCheckoutAtTheFork(t *testing.T) {
 	for _, tc := range []struct {
 		name, origin, want string
 		fails, upgrade     bool
+		getFails, rerun    bool
 		say                string
 	}{
 		{name: "install", origin: TacquitoUpstreamRepo, want: TacquitoRepo,
@@ -111,6 +112,14 @@ func TestBuildRepointsAnUpstreamCheckoutAtTheFork(t *testing.T) {
 		{name: "fork", origin: TacquitoRepo, want: TacquitoRepo},
 		{name: "fails", origin: TacquitoUpstreamRepo, want: TacquitoUpstreamRepo, fails: true,
 			say: "Could not point " + "SRC" + " at " + TacquitoRepo + "; it still pulls from " + TacquitoUpstreamRepo + "."},
+		{name: "upgrade fails", origin: TacquitoUpstreamRepo, want: TacquitoUpstreamRepo, fails: true, upgrade: true,
+			say: "Could not point " + "SRC" + " at " + TacquitoRepo},
+		{name: "no origin", origin: TacquitoUpstreamRepo, want: TacquitoUpstreamRepo, getFails: true, upgrade: true},
+		// The run re-executed by the self-update (the new binary): the old
+		// binary's run pulled upstream and built, left tacquito.bak, and
+		// could not repoint; this run does, before it fetches.
+		{name: "re-exec", origin: TacquitoUpstreamRepo, want: TacquitoRepo, upgrade: true, rerun: true,
+			say: "Tacquito source now pulls from " + TacquitoRepo},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := newLifeTenv(t)
@@ -118,9 +127,17 @@ func TestBuildRepointsAnUpstreamCheckoutAtTheFork(t *testing.T) {
 			repo := e.tacquitoRepo(commit1)
 			repo.setOrigin(tc.origin)
 			repo.setURLFails = tc.fails
+			repo.getURLFails = tc.getFails
 			var err error
+			if tc.rerun {
+				writeFile(t, e.b.tacquitoBin(), "built at "+commit1+"\n")
+				writeFile(t, e.b.tacquitoBin()+".bak", "old\n")
+				e.b.SetUpgradeFrom("0000000")
+			}
 			if tc.upgrade {
-				writeFile(t, e.b.tacquitoBin(), "old\n")
+				if !tc.rerun {
+					writeFile(t, e.b.tacquitoBin(), "old\n")
+				}
 				err = e.b.Upgrade(context.Background(), backend.PhaseBuild, "")
 			} else {
 				err = e.b.Install(context.Background(), backend.PhaseBuild, "")
@@ -137,8 +154,27 @@ func TestBuildRepointsAnUpstreamCheckoutAtTheFork(t *testing.T) {
 			if tc.origin == tc.want && !tc.fails && e.called(`^git remote set-url`) {
 				t.Fatal(e.run.Argvs())
 			}
-			if pull := `^git (pull|fetch) --quiet$`; !e.called(pull) {
+			// The origin is read and moved before anything is fetched or
+			// pulled from it.
+			getURL, setURL, pull := -1, -1, -1
+			for i, a := range e.run.Argvs() {
+				switch {
+				case a == "git remote get-url origin" && getURL < 0:
+					getURL = i
+				case strings.HasPrefix(a, "git remote set-url origin ") && setURL < 0:
+					setURL = i
+				case (a == "git fetch --quiet" || a == "git pull --quiet") && pull < 0:
+					pull = i
+				}
+			}
+			if pull < 0 || getURL < 0 || getURL > pull || (setURL >= 0 && setURL > pull) {
 				t.Fatal(e.run.Argvs())
+			}
+			if tc.rerun {
+				mustContain(t, e.out(), "The binary built from it is not running yet.")
+				if e.called(`^go build`) {
+					t.Fatal(e.run.Argvs())
+				}
 			}
 		})
 	}

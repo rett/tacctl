@@ -71,6 +71,13 @@ their own tree lists.
 
 The example is 0.2.1; replace it throughout.
 
+Before step 1, bring the tacquito fork's `main` up to upstream
+(`patches/README.md`, Following upstream) and run the gates on it: a host
+builds the fork's head, and a host upgrading from a release before 0.2.24
+pulls upstream once before the new binary points its clone at the fork, so a
+fork behind upstream makes that host rebuild tacquito at every upgrade until
+the fork catches up.
+
 ### 1. The release branch, the dates, the tag
 
 ```sh
