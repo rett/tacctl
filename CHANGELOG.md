@@ -15,10 +15,16 @@ current behaviour; this file is where history lives.
    Three runs of unbreakable words (the `secret-read` line, the SNMP setting
    names and the options `device ssh` adds for a `legacy-ssh` device) are set
    unjustified, so the page is silent under `groff -k -ww` on 1.24.
-   The Go tests that read `sshd -T` (OpenSSH 10.6 prints the keywords in
-   CamelCase) and the ones that lay the page out and search it in a pager now
-   pass on these tools, and `make lint-sh` passes on shellcheck 0.11 (SC2329
-   is disabled where SC2317 already was).
+
+2. **tacquito is built from the project's fork, `rett/tacquito`.** `tacctl
+   install` clones `https://github.com/rett/tacquito.git` instead of
+   upstream; the fork's `main` follows upstream only by reviewed merges
+   (`patches/README.md`, Following upstream), so a host no longer builds
+   whatever upstream pushed last. The patch overlay stays in `patches/`. A
+   checkout cloned from upstream by an earlier release is pointed at the fork
+   the next time `install` or `upgrade` pulls it (`Tacquito source now pulls
+   from ...`); an origin set by hand is left alone, and a failure to repoint
+   is a warning, the checkout still pulling from upstream.
 
 ## 0.2.23 (2026-10-31)
 
