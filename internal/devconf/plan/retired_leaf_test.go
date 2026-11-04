@@ -221,3 +221,39 @@ func TestJunosRetiredLeafOfAGroupIsKeptNotRefused(t *testing.T) {
 	d2 := planJ(t, fixtureNamed(t, "juniper.synthetic-lab"), add("set system tacplus-server 192.0.2.10 single-connection"), Options{})
 	wantLine(t, d2, "aaa", "delete system tacplus-server 192.0.2.10 single-connection")
 }
+
+// The back-out holds a secret only when a line of it does: the back-out of a
+// retyped server line holds a '<secret>' mark and a note.
+func TestBackoutWarnsOfASecretOnlyWhenItHoldsOne(t *testing.T) {
+	for _, name := range []string{"cisco.reference-12x", "cisco.real-12.4-7200"} {
+		f := fixtureNamed(t, name)
+		exp, cur, plain := f.load(t)
+		d, err := Plan(f.vendor, exp, cur, plain, f.options())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !d.HoldsSecret() || !strings.Contains(Block(d, f.header(), Wrapper{}), "THIS OUTPUT HOLDS THE TACACS+ KEY") {
+			t.Errorf("%s: the plan holds the key and does not say so", name)
+		}
+		b, err := Backout(d, f.header(), Wrapper{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(b, "THIS OUTPUT HOLDS") || strings.Contains(b, "lab-secret-0123456789abcdef") {
+			t.Errorf("%s: the back-out warns of a key it does not hold:\n%s", name, b)
+		}
+		if !strings.Contains(b, "key <secret>") {
+			t.Errorf("%s: the back-out lacks the retyped line:\n%s", name, b)
+		}
+	}
+	// a back-out that does hold one (a community's name is the secret) warns
+	f := fixtureNamed(t, "cisco.reference-bare")
+	exp, cur, plain := f.load(t)
+	d, err := Plan(f.vendor, exp, cur, plain, f.options())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := Backout(d, f.header(), Wrapper{}); err != nil || !strings.Contains(b, "THIS OUTPUT HOLDS THE SNMP COMMUNITY") {
+		t.Errorf("reference-bare back-out: %v\n%s", err, b)
+	}
+}

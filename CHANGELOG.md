@@ -48,8 +48,10 @@ current behaviour; this file is where history lives.
    it from the group by hand`) and plans the other fixes. The report names
    the leaf (`single-connection on the TACACS+ server <address>, no longer
    rendered`), and the IOS 12.x host line has a comment of its own in the
-   paste region. A custom template
-   keeps whatever it says; a copy of `cisco.template` or
+   paste region. The back-out of a plan says `THIS OUTPUT HOLDS THE ...` only
+   when a line of it holds a value; the back-out of a retyped server line
+   holds `<secret>` and a note to type the key, and no longer warns. A custom
+   template keeps whatever it says; a copy of `cisco.template` or
    `cisco-legacy.template` made earlier still renders the line. Another
    server's `single-connection` is left alone.
 
