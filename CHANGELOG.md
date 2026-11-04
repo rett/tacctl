@@ -26,7 +26,17 @@ current behaviour; this file is where history lives.
    from ...`); an origin set by hand is left alone, and a failure to repoint
    is a warning, the checkout still pulling from upstream.
 
-3. **`tacctl rollback 0.2.23`, the release before this one, is a target.**
+3. **CI runs `make lint`, and the man page margin is pinned by a test.** For
+   developers: a `lint` job of the `test` workflow runs `make lint` on Ubuntu
+   24.04 (its shellcheck and groff 1.23, golangci-lint at the version the
+   Makefile pins), so a lint failure no longer waits for a maintainer's
+   machine; `TestManPageSetsTheBodyMargin` fails when `man/tacctl.1` loses its
+   `.nr BP 7n` line, which the pager search of `tacctl man` relies on, and the
+   pre-push hook (`make hooks`) also runs `no-short-yes.sh` and
+   `no-os-tempdir.sh`. `make lint` and the man search tests must pass on both
+   the CI tools and newer ones (`tests/README.md`).
+
+4. **`tacctl rollback 0.2.23`, the release before this one, is a target.**
    This release changed no stored file, so 0.2.23 reads everything it writes:
    the rollback converts nothing, removes no key, leaves the per-tier sudoers
    drop-in (0.2.23 and this release write the same text), takes no snapshot and
@@ -41,7 +51,7 @@ current behaviour; this file is where history lives.
    `docs/install/upgrading.md` (Rolling back, To 0.2.23), the manual page and
    the completion list them.
 
-4. **The tacquito pull cannot stall or build old source.** `install` (on an
+5. **The tacquito pull cannot stall or build old source.** `install` (on an
    existing checkout) and `upgrade` pulled the tacquito source with a plain
    `git pull`, which stops when the checkout cannot be merged with the fork's
    `main` (a rewritten history, a commit made in the clone by hand), and every
