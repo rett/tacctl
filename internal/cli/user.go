@@ -872,6 +872,9 @@ func (inv *invocation) userPasswd(args []string) error {
 	out := inv.app.Out
 	out.Info("Password changed for '" + username + "'.")
 	var hostsNote func() error
+	if require || lifted {
+		inv.refreshHeldForwarding()
+	}
 	switch {
 	case require:
 		inv.detailPwChange(username, true, "passwd")
