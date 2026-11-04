@@ -87,7 +87,7 @@ func TestRollbackUndoes(t *testing.T) {
 	}{
 		{"0.2.21", "0.2.22", true}, {"0.2.3", "0.2.22", true}, {"0.2.9", "0.2.22", true}, {"0.2.16", "0.2.22", true},
 		{"0.2.22", "0.2.22", false}, {"v0.2.22", "0.2.22", false}, {"0.2.22", "0.2.23", true},
-		{"0.2.23", "0.2.22", false}, {"0.3.0", "0.2.22", false}, {"0.2.9", "0.2.10", true}, {"0.2.10", "0.2.9", false},
+		{"0.2.23", "0.2.22", false}, {"0.2.23", "0.2.23", false}, {"v0.2.23", "0.2.24", true}, {"0.3.0", "0.2.22", false}, {"0.2.9", "0.2.10", true}, {"0.2.10", "0.2.9", false},
 		{"", "0.2.22", false}, {"0.2.22", "x", false},
 	} {
 		if got := RollbackUndoes(c.target, c.release); got != c.want {
@@ -97,22 +97,22 @@ func TestRollbackUndoes(t *testing.T) {
 }
 
 // A change registered once in the list of additions reaches the plan of every
-// target older than its release, the ones that return early (0.2.22, 0.2.21,
-// 0.2.20) included, and none newer: this is how a later release adds a step
-// without touching the plan of a target. The entry here is of the next
+// target older than its release, the ones that return early (0.2.23, 0.2.22,
+// 0.2.21, 0.2.20) included, and none newer: this is how a later release adds a
+// step without touching the plan of a target. The entry here is of the next
 // release, so it reaches all of them.
 func TestPlanRollbackAdditionReachesEveryTarget(t *testing.T) {
 	var reads, adds []string
-	add := rollbackAddition{Release: "0.2.23",
+	add := rollbackAddition{Release: "0.2.24",
 		Read: func(p *RollbackPlan) error { reads = append(reads, p.target()); return nil },
 		Add: func(p *RollbackPlan) {
 			adds = append(adds, p.target())
 			p.Steps = append(p.Steps, RollbackStep{Title: "the additional step of " + p.target(), Lines: []string{"added by a registered change"}})
 			p.Notes = append(p.Notes, "a registered note")
 		}}
-	newer := rollbackAddition{Release: "0.2.22", // not for the 0.2.22 target itself
+	newer := rollbackAddition{Release: "0.2.22", // not for the 0.2.22 target itself, nor the 0.2.23 one
 		Add: func(p *RollbackPlan) { p.Notes = append(p.Notes, "a change of 0.2.22") }}
-	for _, target := range allRollbackTargets {
+	for _, target := range append([]string{RollbackTarget0223}, allRollbackTargets...) {
 		t.Run(target, func(t *testing.T) {
 			reads, adds = nil, nil
 			s := newRBSandbox(t)
@@ -131,7 +131,7 @@ func TestPlanRollbackAdditionReachesEveryTarget(t *testing.T) {
 			if !strings.Contains(notes, "a registered note") {
 				t.Errorf("notes:\n%s", notes)
 			}
-			if has := strings.Contains(notes, "a change of 0.2.22"); has != (target != RollbackTarget0222) {
+			if has := strings.Contains(notes, "a change of 0.2.22"); has != (target != RollbackTarget0222 && target != RollbackTarget0223) {
 				t.Errorf("the change of 0.2.22 reached %s: %v", target, has)
 			}
 		})
@@ -141,10 +141,10 @@ func TestPlanRollbackAdditionReachesEveryTarget(t *testing.T) {
 // A Read that fails stops the plan with its error, for any target.
 func TestPlanRollbackAdditionErrorStopsThePlan(t *testing.T) {
 	boom := errors.New("cannot read the new file")
-	for _, target := range allRollbackTargets {
+	for _, target := range append([]string{RollbackTarget0223}, allRollbackTargets...) {
 		s := newRBSandbox(t)
 		s.in.Target = target
-		_, err := planRollbackWith(s.in, []rollbackAddition{{Release: "0.2.23", Read: func(*RollbackPlan) error { return boom }}})
+		_, err := planRollbackWith(s.in, []rollbackAddition{{Release: "0.2.24", Read: func(*RollbackPlan) error { return boom }}})
 		if !errors.Is(err, boom) {
 			t.Errorf("%s: %v", target, err)
 		}

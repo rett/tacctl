@@ -205,6 +205,11 @@ type fakeTacquito struct {
 	origin      string
 	setURLFails bool
 	getURLFails bool
+	// diverged makes 'pull --ff-only' fail (exit 128, as git does when the
+	// local history is not an ancestor of the upstream's); resetFails makes
+	// 'reset --hard @{u}' fail.
+	diverged   bool
+	resetFails bool
 }
 
 func (e *tenv) tacquitoRepo(commit string) *fakeTacquito {
@@ -230,8 +235,17 @@ func (e *tenv) tacquitoRepo(commit string) *fakeTacquito {
 			return res(f.local + "\n")
 		case a == "rev-parse @{u}":
 			return res(f.remote + "\n")
-		case a == "pull --quiet":
+		case a == "pull --ff-only --quiet":
+			if f.diverged {
+				return execx.Result{Code: 128, Stderr: []byte("fatal: Not possible to fast-forward, aborting.\n")}, nil
+			}
 			f.local = f.remote
+		case a == "reset --hard @{u}":
+			if f.resetFails {
+				return execx.Result{Code: 128, Stderr: []byte("fatal: Could not reset index file to revision '@{u}'.\n")}, nil
+			}
+			f.local = f.remote
+			return res("HEAD is now at " + f.local[:7] + " upstream change\n")
 		case a == "remote get-url origin":
 			if f.getURLFails {
 				return execx.Result{Code: 2, Stderr: []byte("error: No such remote 'origin'\n")}, nil
@@ -269,6 +283,14 @@ func (f *fakeTacquito) originURL() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.origin
+}
+
+// setDiverged makes the checkout's history unable to fast-forward to the
+// upstream's; resetFails also makes the reset to the upstream fail.
+func (f *fakeTacquito) setDiverged(diverged, resetFails bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.diverged, f.resetFails = diverged, resetFails
 }
 
 func (f *fakeTacquito) setRemote(commit string) {
