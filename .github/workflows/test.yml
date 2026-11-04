@@ -84,10 +84,10 @@ jobs:
         run: |
           sudo rm -rf /usr/local/go
           sudo ln -s "$(go env GOROOT)" /usr/local/go
-      - name: shellcheck, groff and less
+      - name: shellcheck, groff, less and man-db
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends shellcheck groff less
+          sudo apt-get install -y --no-install-recommends shellcheck groff less man-db
       - name: golangci-lint, at the version the Makefile pins
         run: |
           v=$(sed -n 's/^GOLANGCI_LINT_VERSION := \(v[0-9.]*\)$/\1/p' Makefile)
