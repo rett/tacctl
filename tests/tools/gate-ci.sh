@@ -155,7 +155,7 @@ verdict() { # <note>
     [[ "$v" = PASS ]]
 }
 
-# shellcheck disable=SC2317  # called through the trap
+# shellcheck disable=SC2317,SC2329  # called through the trap
 interrupted() {
     if [[ -n "$child" ]]; then
         kill -TERM -- "-$child" 2>/dev/null || kill -TERM "$child" 2>/dev/null
