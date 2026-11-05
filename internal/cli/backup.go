@@ -787,6 +787,8 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 		}
 	}
 	inv.reconcileBackends(before)
+	// the restored users may be held to a password change, or no longer
+	inv.refreshHeldForwarding()
 	if err := set.RestartAll(inv.ctx); err != nil {
 		return err
 	}
@@ -1464,6 +1466,8 @@ func (inv *invocation) restoreLegacy(id string) error {
 		}
 		return inv.usageErr("Old-style backup " + id + " was not restored. Store, tacctl.yaml and " + set.AllArtifactNames() + " are as they were.")
 	}
+	// the restored users may be held to a password change
+	inv.refreshHeldForwarding()
 	if err := set.RestartAll(inv.ctx); err != nil {
 		return err
 	}

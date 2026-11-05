@@ -1,6 +1,6 @@
-  example-sw1  checked: shape 249aecb82c59 (confirmed on example-sw1) (roles, aaa: 17 set, 1 delete); kept 2; check ok
+  example-sw1  checked: shape 622f0cedaadc (confirmed on example-sw1) (roles, aaa: 16 set, 1 delete); kept 2; check ok
 
-Shape 249aecb82c59, 1 device (example-sw1), confirmed on example-sw1:
+Shape 622f0cedaadc, 1 device (example-sw1), confirmed on example-sw1:
   roles    the login classes tacctl renders (every leaf of a rendered class, allow-*/deny-* included); the class of the template users
     set system login class RO-CLASS permissions network
     set system login class RO-CLASS permissions view
@@ -17,7 +17,6 @@ Shape 249aecb82c59, 1 device (example-sw1), confirmed on example-sw1:
     delete system authentication-order
     set system authentication-order tacplus
     set system tacplus-server 10.0.0.42 secret <secret>
-    set system tacplus-server 10.0.0.42 single-connection
     set system accounting events login
     set system accounting events change-log
     set system accounting destination tacplus
@@ -30,7 +29,7 @@ Apply to example-sw1 under commit confirmed 10 and kept only after a fresh login
   example-sw1  checked ...
   example-sw1  committed, verifying ...
   example-sw1  confirming ...
-  example-sw1  applied (roles,aaa: 17 set, 1 delete) [<id>]
+  example-sw1  applied (roles,aaa: 16 set, 1 delete) [<id>]
 
   1 applied
   timing:

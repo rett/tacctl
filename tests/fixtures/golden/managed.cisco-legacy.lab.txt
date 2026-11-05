@@ -1,6 +1,6 @@
 [aaa]
 | aaa new-model
-* tacacs-server host 10.0.0.42 single-connection timeout 5 key lab-secret-0123456789abcdef
+* tacacs-server host 10.0.0.42 timeout 5 key lab-secret-0123456789abcdef
 | aaa group server tacacs+ LAB-TACACS
 |   server 10.0.0.42
 | aaa authentication login default local group LAB-TACACS

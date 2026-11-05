@@ -240,8 +240,8 @@ password), and a fact is said once.
 **A required password change.** A user who must change the password can log in to the tacctl
 server only: every device refuses the user, as it refuses an unknown user, and every other enrolled
 Linux host has the account expired from its next `host sync`, until the password is changed (a
-device in a scope shared with the server and port forwarding by a tier of `console forwarding
-tiers` excepted: see *Devices* below and [Console](console.md)). `user add` and `user passwd` (an
+device in a scope shared with the server excepted: see *Devices* below; sshd's drop-in also closes
+every port forwarding through the server for the user's new connections, in any tier; a connection already open keeps what it had until it closes: [Console](console.md)). `user add` and `user passwd` (an
 administrator's reset, as opposed to the user's own `tacctl passwd`) require it by default and
 `--no-change-required` skips it; `user require-password-change <name>|--all [on|off]` flags or
 clears users on demand. An existing user is

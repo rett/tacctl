@@ -53,7 +53,7 @@ _normalize() {
 @test "config cisco --legacy: emits legacy tacacs-server host syntax, not the IOS 15.0 block" {
     run "$TACCTL_BIN_SCRIPT" config cisco --legacy --scope lab
     assert_success
-    assert_output --partial "tacacs-server host 10.0.0.42 single-connection timeout 5 key "
+    assert_output --partial "tacacs-server host 10.0.0.42 timeout 5 key "
     assert_output --partial "aaa group server tacacs+ TACACS-GROUP"
     assert_output --partial "  server 10.0.0.42"
     # Refute the real (substituted) IOS 15.0 config lines — not bare tokens, which

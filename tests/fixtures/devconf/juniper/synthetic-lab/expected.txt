@@ -7,7 +7,6 @@
 [aaa]
 | set system authentication-order [ password tacplus ]
 * set system tacplus-server 192.0.2.10 secret lab-secret-0123456789abcdef
-| set system tacplus-server 192.0.2.10 single-connection
 | set system accounting events [ login change-log ]
 | set system accounting destination tacplus
 [roles]

@@ -30,6 +30,7 @@ import (
 	"github.com/rett/tacctl/internal/lifecycle"
 	"github.com/rett/tacctl/internal/paths"
 	"github.com/rett/tacctl/internal/snapshot"
+	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -408,7 +409,8 @@ func templatesSync(o *ohost) (lifecycle.TemplateSync, int) {
 // item 59: wti.template and wti-radius.template; 0.2.3 item 77: all seven,
 // for the break-glass step; 0.2.6 item 1: the three Cisco ones, for the
 // enable list; 0.2.22 item 1: cisco.template, cisco-legacy.template and
-// wti.template, for the TACACS+ port; 'sha256sum' of each). The
+// wti.template, for the TACACS+ port; 0.2.24 item 7: cisco.template and
+// cisco-legacy.template, for single-connection; 'sha256sum' of each). The
 // format is still 0.1.16's. A second sync writes nothing.
 func TestTemplatesSyncFreshAndManifestGolden(t *testing.T) {
 	o := newOhost(t)
@@ -1468,7 +1470,7 @@ func TestUpgradeRefreshesConsoleDropIn(t *testing.T) {
 	if code := upgrade(o); code != 0 {
 		t.Fatalf("exit %d\n%s", code, o.stderr)
 	}
-	if readFile(t, o.p.SSHDDropIn) != console.DropIn(o.p.ConsoleCommand, false, false, []tier.Tier{tier.Superuser}) || !strings.Contains(o.text(), "[INFO]   Updated: sshd drop-in") ||
+	if readFile(t, o.p.SSHDDropIn) != console.DropIn(o.p.ConsoleCommand, false, false, []tier.Tier{tier.Superuser}, nil) || !strings.Contains(o.text(), "[INFO]   Updated: sshd drop-in") ||
 		!o.run.Called("sshd", "-t") || !o.run.Called("systemctl", "reload", "ssh.service") {
 		t.Errorf("not refreshed:\n%s\n%q", o.text(), o.run.Argvs())
 	}
@@ -1495,13 +1497,70 @@ func TestUpgradeRefreshesConsoleDropIn(t *testing.T) {
 	}
 }
 
+// The upgrade writes the list of the users held to a password change into the
+// drop-in it refreshes: from the store when it reads it, else the names the
+// drop-in on disk has stay (an unreadable store never opens a forwarding).
+func TestUpgradeRefreshesHeldUsersOfTheDropIn(t *testing.T) {
+	o := newOhost(t)
+	o.cloned()
+	o.run.On([]string{"sshd", "-t"}, execx.Result{})
+	want := func(held ...string) string {
+		return console.DropIn(o.p.ConsoleCommand, false, false, []tier.Tier{tier.Superuser}, held)
+	}
+	// no store: the names of the file stay, and the file is rewritten as it was
+	o.write(o.p.SSHDDropIn, want("alice", "bob"))
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s", code, o.stderr)
+	}
+	if got := readFile(t, o.p.SSHDDropIn); got != want("alice", "bob") || !strings.Contains(o.text(), "Unchanged: sshd drop-in\n") {
+		t.Errorf("without a store:\n%s\n%s", got, o.text())
+	}
+	// a store that cannot be read: the same
+	o.write(o.p.StoreFile, "not: [a store\n")
+	o.write(o.p.SSHDDropIn, "Match User bob\n    AllowTcpForwarding no\n")
+	o.stdout.Reset()
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s", code, o.stderr)
+	}
+	if got := readFile(t, o.p.SSHDDropIn); got != want("bob") {
+		t.Errorf("with a store that cannot be read:\n%s", got)
+	}
+	// a store: alice (operator) and carol (readonly) are held, bob is not, and
+	// dave, a superuser, is never held
+	hash := hex.EncodeToString([]byte("$2b$12$" + strings.Repeat("A", 53)))
+	st := store.Empty()
+	if err := st.ScopeSet("lab", "prefixes=192.0.2.0/24", "secret=example-secret-example-secret"); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range [][]string{
+		{"alice", "group=operator", "scopes=lab", "hash=" + hash, "disabled=false", "password_change_required=true"},
+		{"bob", "group=operator", "scopes=lab", "hash=" + hash, "disabled=false"},
+		{"carol", "group=readonly", "scopes=lab", "hash=" + hash, "disabled=false", "password_change_required=true"},
+		{"dave", "group=superuser", "scopes=lab", "hash=" + hash, "disabled=false", "password_change_required=true"},
+	} {
+		if err := st.UserSet(f[0], f[1:]...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.Write(o.p.StoreFile, st); err != nil {
+		t.Fatal(err)
+	}
+	o.stdout.Reset()
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s", code, o.stderr)
+	}
+	if got := readFile(t, o.p.SSHDDropIn); got != want("alice", "carol") || !strings.Contains(o.text(), "Updated: sshd drop-in\n") {
+		t.Errorf("with a store:\n%s\n%s", got, o.text())
+	}
+}
+
 // Uninstall leaves no account with the console as its shell: each gets
 // /bin/bash back (named), then sshd's drop-in, the /etc/shells line and the
 // symlink go.
 func TestUninstallRestoresConsoleShells(t *testing.T) {
 	o := newOhost(t)
 	o.installed()
-	o.write(o.p.SSHDDropIn, console.DropIn(o.p.ConsoleCommand, false, false, []tier.Tier{tier.Superuser}))
+	o.write(o.p.SSHDDropIn, console.DropIn(o.p.ConsoleCommand, false, false, []tier.Tier{tier.Superuser}, nil))
 	o.write(o.p.SSHDEngineerDropIn, console.EngineerDropIn(false))
 	o.write(o.p.ShellsFile, "/bin/sh\n/bin/bash\n"+o.p.ConsoleCommand+"\n")
 	if err := os.Symlink(o.p.Command, o.p.ConsoleCommand); err != nil {

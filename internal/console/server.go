@@ -145,7 +145,7 @@ func (s SSHD) ForwardingProblems(agentAllowed, tcpAllowed, gatewayAllowed bool) 
 	if s.GatewayPorts != "" && s.GatewayPorts != "no" && s.DisableForwarding != "yes" && s.TCPForwarding != "no" && (!tcpAllowed || !gatewayAllowed) {
 		out = append(out, "gatewayports is '"+s.GatewayPorts+"'")
 	}
-	if s.AgentForwarding != "no" && !agentAllowed {
+	if s.AgentForwarding != "no" && !agentAllowed && s.DisableForwarding != "yes" {
 		out = append(out, "allowagentforwarding is '"+s.AgentForwarding+"'")
 	}
 	return out

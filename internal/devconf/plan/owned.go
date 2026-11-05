@@ -76,6 +76,17 @@ type OwnedRow struct {
 	Block bool
 }
 
+// retiredLeaves are, by ModeRenderedLeaves row, the leaves of tacctl's TACACS+
+// server that earlier versions rendered and the standard no longer does, and
+// that are still tacctl's: 'single-connection' (a device keeps one connection
+// open for many sessions, and the server closes an idle one; 0.2.24). A
+// device that has one gets it removed, so it converges. Nothing is deleted
+// under a server the rendering does not set.
+var retiredLeaves = map[string][]string{
+	"junos.aaa.tacplus":    {"single-connection"},
+	"ios.aaa.server-block": {"single-connection"},
+}
+
 // junosOwned is the plan §4 table for Junos.
 var junosOwned = []OwnedRow{
 	{ID: "junos.roles.class", Section: "roles", Pattern: "system login class $", Mode: ModeWhole,

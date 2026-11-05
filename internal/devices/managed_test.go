@@ -514,7 +514,7 @@ func TestManagedCisco(t *testing.T) {
 	aaa, _ := sectionOf(secs, "aaa")
 	for _, want := range []string{
 		"aaa new-model",
-		"tacacs server TACACS", "  address ipv4 10.0.0.42", "  key lab-secret-0123456789abcdef", "  single-connection",
+		"tacacs server TACACS", "  address ipv4 10.0.0.42", "  key lab-secret-0123456789abcdef",
 		"aaa group server tacacs+ LAB-TACACS", "  server name TACACS",
 		"aaa authentication login default local group LAB-TACACS",
 		"aaa authorization exec default local group LAB-TACACS if-authenticated",
@@ -570,7 +570,7 @@ func TestManagedCisco(t *testing.T) {
 	req, d = lab.input(m, c, variants[1])
 	secs = mustManaged(t, req, d)
 	aaa, _ = sectionOf(secs, "aaa")
-	if !slices.Contains(aaa.Lines, "tacacs-server host 10.0.0.42 single-connection timeout 5 key lab-secret-0123456789abcdef") ||
+	if !slices.Contains(aaa.Lines, "tacacs-server host 10.0.0.42 timeout 5 key lab-secret-0123456789abcdef") ||
 		!slices.Contains(aaa.Lines, "  server 10.0.0.42") {
 		t.Errorf("legacy aaa:\n%s", strings.Join(aaa.Lines, "\n"))
 	}
@@ -666,11 +666,10 @@ func TestManagedJuniper(t *testing.T) {
 	want := []string{
 		"set system authentication-order [ password tacplus ]",
 		"set system tacplus-server 10.0.0.42 secret lab-secret-0123456789abcdef",
-		"set system tacplus-server 10.0.0.42 single-connection",
 		"set system accounting events [ login change-log ]",
 		"set system accounting destination tacplus",
 	}
-	if !slices.Equal(aaa.Lines, want) || !slices.Equal(aaa.Secret, []bool{false, true, false, false, false}) {
+	if !slices.Equal(aaa.Lines, want) || !slices.Equal(aaa.Secret, []bool{false, true, false, false}) {
 		t.Errorf("aaa: %q %v", aaa.Lines, aaa.Secret)
 	}
 

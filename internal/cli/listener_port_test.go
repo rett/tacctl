@@ -107,7 +107,7 @@ func TestPullAndPlanFollowTheTACACSListener(t *testing.T) {
 		b.ciscoDevice("")
 		b.run("device", "ios-syntax", "lab-c", "ios12")
 		text := b.expected("lab-c")
-		if !strings.Contains(text, "tacacs-server host 10.0.0.42 single-connection port 4949 timeout 5 key ") {
+		if !strings.Contains(text, "tacacs-server host 10.0.0.42 port 4949 timeout 5 key ") {
 			t.Fatalf("the expected text has no port:\n%s", text)
 		}
 		b.serve("cisco", text)
@@ -115,7 +115,7 @@ func TestPullAndPlanFollowTheTACACSListener(t *testing.T) {
 		if out := b.run("device", "config", "pull", "lab-c", "--diff"); !strings.Contains(out, "1 ok") || strings.Contains(out, "differ") {
 			t.Errorf("the moved port is not in step:\n%s", out)
 		}
-		b.serve("cisco", strings.Replace(text, " single-connection port 4949 timeout", " single-connection timeout", 1))
+		b.serve("cisco", strings.Replace(text, " port 4949 timeout", " timeout", 1))
 		b.version(ciscoVersion12)
 		out := b.run("device", "config", "pull", "lab-c", "--diff")
 		if !strings.Contains(out, "1 differ") || !strings.Contains(out, "port 4949") {

@@ -24,6 +24,7 @@ delete snmp contact
 delete snmp location
 delete snmp community lab-ro-community
 delete snmp client-list TACCTL-SNMP
+set system tacplus-server 192.0.2.10 single-connection
 delete system login user EN-CLASS
 delete system login class EN-CLASS
 delete system login user RW-CLASS

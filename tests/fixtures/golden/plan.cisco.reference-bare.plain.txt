@@ -2,7 +2,6 @@ aaa new-model
 tacacs server TACACS
  address ipv4 192.0.2.10
  key lab-secret-0123456789abcdef
- single-connection
  timeout 5
 aaa group server tacacs+ LAB-TACACS
  server name TACACS

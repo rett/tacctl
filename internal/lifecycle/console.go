@@ -18,6 +18,9 @@ import (
 
 	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/model"
+	"github.com/rett/tacctl/internal/policy"
+	"github.com/rett/tacctl/internal/pwchange"
 )
 
 // ensureConsoleLink makes paths.ConsoleCommand a symlink to
@@ -129,7 +132,7 @@ func (h *Host) updateConsoleDropIn(ctx context.Context) int {
 	}
 	n := 0
 	if errC == nil {
-		n += h.updateDropIn(ctx, "sshd drop-in", p.SSHDDropIn, console.DropIn(p.ConsoleCommand, f.AgentForwarding, f.GatewayPorts, f.ForwardingTiers))
+		n += h.updateDropIn(ctx, "sshd drop-in", p.SSHDDropIn, console.DropIn(p.ConsoleCommand, f.AgentForwarding, f.GatewayPorts, f.ForwardingTiers, h.heldUsers()))
 	}
 	// The engineer tier's lockdown lived in the console's drop-in before it
 	// had a file of its own: an install that has one gets the other. The
@@ -151,6 +154,27 @@ func (h *Host) updateConsoleDropIn(ctx context.Context) int {
 		}
 	}
 	return n
+}
+
+// heldUsers are the users the console's drop-in closes forwarding for, the
+// users held to a password change now (pwchange.Pending). When the store or
+// tacctl.yaml cannot be read, the names the drop-in on disk lists stay, so
+// an upgrade never opens a forwarding it had closed.
+func (h *Host) heldUsers() []string {
+	if prob := h.Conf.Problem(); prob == "" && policy.TierProblem(h.Conf) == "" {
+		if _, m, _, err := model.Load(model.Paths{
+			Store: h.Paths.StoreFile, Config: h.Paths.Config, DatesDir: h.Paths.PWDatesDir,
+			DisabledDir: filepath.Join(h.Paths.BackupDir, "disabled"),
+		}); err == nil {
+			var out []string
+			for _, u := range pwchange.Pending(h.Conf, m) {
+				out = append(out, u.Name)
+			}
+			return console.HeldNames(out)
+		}
+	}
+	data, _ := os.ReadFile(h.Paths.SSHDDropIn)
+	return console.HeldInDropIn(string(data))
 }
 
 // updateDropIn makes the drop-in at path hold text (see updateConsoleDropIn).

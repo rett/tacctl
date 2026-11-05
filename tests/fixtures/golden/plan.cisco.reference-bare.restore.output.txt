@@ -7,46 +7,46 @@
 !
 ! What is irregular on dev-cisco-reference-bare (19 items; the paste fixes 17, leaves 2):
 !  1. aaa      ACCESS     missing: AAA is not turned on (aaa new-model). Fixed by region line 3.
-!  2. aaa      ACCESS     missing: tacacs server TACACS: 4 statements (e.g. tacacs server TACACS >
-!                         address ipv4 192.0.2.10). Fixed by region lines 5-8.
+!  2. aaa      ACCESS     missing: tacacs server TACACS: 3 statements (e.g. tacacs server TACACS >
+!                         address ipv4 192.0.2.10). Fixed by region lines 5-7.
 !  3. aaa      ACCESS     missing: the server group LAB-TACACS: server name TACACS (aaa group server
-!                         tacacs+ LAB-TACACS > server name TACACS). Fixed by region line 10.
+!                         tacacs+ LAB-TACACS > server name TACACS). Fixed by region line 9.
 !  4. aaa      ACCESS     missing: the default login method list (aaa authentication login default
-!                         local group LAB-TACACS). Fixed by region line 11.
+!                         local group LAB-TACACS). Fixed by region line 10.
 !  5. aaa      ACCESS     missing: the console's own login list CONSOLE (local only, so a local user
 !                         always gets in there) (aaa authentication login CONSOLE local). Fixed by
-!                         region line 12.
+!                         region line 11.
 !  6. aaa      ACCESS     missing: the default exec authorization list (without it every new login
 !                         lands at privilege 1) (aaa authorization exec default local group LAB-TACACS
-!                         if-authenticated). Fixed by region line 13.
+!                         if-authenticated). Fixed by region line 12.
 !  7. aaa      COSMETIC   missing: accounting: 5 statements (e.g. aaa accounting exec default
-!                         start-stop group LAB-TACACS). Fixed by region lines 14-18.
+!                         start-stop group LAB-TACACS). Fixed by region lines 13-17.
 !  8. aaa      ACCESS     missing: the accounting session id is common (aaa session-id common). Fixed
-!                         by region line 19.
+!                         by region line 18.
 !  9. aaa      ACCESS     missing: the login method of line con 0: login authentication CONSOLE (line
-!                         con 0 > login authentication CONSOLE). Fixed by region line 39.
+!                         con 0 > login authentication CONSOLE). Fixed by region line 38.
 ! 10. aaa      ACCESS     different: the login method of line vty 0 15: login authentication default
 !                         (the device has: the login method of line vty 0 4: login local) (line vty 0
-!                         15 > login authentication default). Fixed by region line 41.
+!                         15 > login authentication default). Fixed by region line 40.
 ! 11. aaa      ACCESS     missing: command authorization: 4 statements (e.g. aaa authorization
 !                         commands 1 default local group LAB-TACACS). command authorization is not in
 !                         this paste: log in on a new session with your own account and check 'show
 !                         privilege', then plan again; it is the one group of lines left.
 ! 12. roles    COSMETIC   missing: level 1 may run show running-config (privilege exec level 1 show
-!                         running-config). Fixed by region line 21.
+!                         running-config). Fixed by region line 20.
 ! 13. roles    COSMETIC   missing: level 7 may run undebug all (privilege exec level 7 undebug all).
-!                         Fixed by region line 22.
+!                         Fixed by region line 21.
 ! 14. snmp     MONITORING missing: ip access-list standard TACCTL-SNMP: 3 statements (e.g. ip
 !                         access-list standard TACCTL-SNMP > permit 192.0.2.10). Fixed by region lines
-!                         25-27.
+!                         24-26.
 ! 15. snmp     MONITORING missing: an SNMP community (snmp-server community <secret:1> RO
-!                         TACCTL-SNMP). Fixed by region line 28.
+!                         TACCTL-SNMP). Fixed by region line 27.
 ! 16. snmp     COSMETIC   missing: the SNMP location is Rack 4, DC1 (snmp-server location Rack 4,
-!                         DC1). Fixed by region line 29.
+!                         DC1). Fixed by region line 28.
 ! 17. snmp     COSMETIC   missing: the SNMP contact is NOC <noc@example.net> (snmp-server contact NOC
-!                         <noc@example.net>). Fixed by region line 30.
+!                         <noc@example.net>). Fixed by region line 29.
 ! 18. mgmt-acl ACCESS     missing: ip access-list standard VTY-ACL: 4 statements (e.g. ip access-list
-!                         standard VTY-ACL > permit 192.0.2.10). Fixed by region lines 33-36.
+!                         standard VTY-ACL > permit 192.0.2.10). Fixed by region lines 32-35.
 ! 19. mgmt-acl ACCESS     missing: the access-class binding of line vty 0 15 (line vty 0 15 >
 !                         access-class VTY-ACL in). Left to you: the walkthrough's access-class line
 !                         is never part of this output.
@@ -86,7 +86,6 @@ aaa new-model
 tacacs server TACACS
  address ipv4 192.0.2.10
  key lab-secret-0123456789abcdef
- single-connection
  timeout 5
 aaa group server tacacs+ LAB-TACACS
  server name TACACS

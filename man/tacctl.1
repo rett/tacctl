@@ -1560,10 +1560,9 @@ A user who must change the password can log in to this server only:
 every device refuses the user, as it refuses an unknown user, and every other
 enrolled Linux host has the account expired from its next
 .BR "host sync" ,
-until the password is changed (a device in a scope shared with the server, and
-port forwarding by a tier of
-.BR "console forwarding tiers" ,
-excepted; see below and
+until the password is changed (a device in a scope shared with the server
+excepted; see below; sshd's drop-in also closes every port forwarding through
+this server for the user's new connections, in any tier, see
 .BR "console forwarding" ). The user stays in the scope this server is enrolled in
 (\fBhost enroll \-\-local\fR), in the protocol of the method it is enrolled
 with, and is left out of every other scope; in the other protocol the user is
@@ -5395,7 +5394,7 @@ one line on standard error that says so);
 .B --legacy
 is the explicit override. It differs from the modern output only in the server
 block (the global
-.B "tacacs-server host ... single-connection timeout 5 key ..."
+.B "tacacs-server host ... timeout 5 key ..."
 line and
 .B "server <ip>"
 under the group, in place of
@@ -5982,7 +5981,10 @@ as the password dates are: an import never lifts it. The scope
 .B tacctl
 of a rendered file (the login of the server it came from, which every user is
 in) is not imported and is taken out of the users' scopes, in one line; a
-server registered in its own keeps it.
+server registered in its own keeps it. An import that holds users to a
+password change rewrites the list of them in the console's sshd drop-in at
+once (see
+.BR "console forwarding" ).
 .\" BEGIN GENERATED: command store import
 .RS
 .PP
@@ -6008,6 +6010,8 @@ remove the store, restart. The install is back in legacy read-only mode.
 When this server is enrolled a red line says that users whose tier fell
 keep their old groups until
 .BR "host sync" .
+Legacy mode holds nobody to a password change, so the list of them in the
+console's sshd drop-in is rewritten, empty, at once.
 .\" BEGIN GENERATED: command store rollback
 .RS
 .PP
@@ -6556,7 +6560,10 @@ provisioner entry only, so a sync alone does not make the next command take
 a snapshot; the snapshot that
 .B backup restore
 takes first compares everything. The newest 30 are retained. Without a store,
-list, diff and restore work on old-style backups only.
+list, diff and restore work on old-style backups only. A restore (of a
+snapshot or an old\-style backup) rewrites the list of users held to a password
+change in the console's sshd drop-in from the store it put back (see
+.BR "console forwarding" ).
 .\" BEGIN GENERATED: command backup restore
 .RS
 .PP
@@ -11696,7 +11703,27 @@ replaces in place. A TACACS+
 .B port
 is a difference: the standard states one only for a server off the default
 port, so a port on the device against a server on the default is the wrong
-one. So are the options that change the service asked for or how a password is
+one. So is
+.BR single\-connection :
+the standard no longer renders it (the server closes a connection that has been
+idle for 15 seconds, and a device that keeps one open is left with a dead
+socket), so the plan removes it from tacctl's server
+.RB ( "delete system tacplus\-server <address> single\-connection"
+on Junos,
+.B "no single\-connection"
+under
+.B "tacacs server TACACS"
+on IOS; the
+.B "tacacs\-server host"
+line of IOS 12.x is typed again without it). A Junos
+.B single\-connection
+that only an apply-group gives cannot be deleted at the top level: it does not
+refuse the section as another inherited statement does, the plan keeps it and
+lists it as left alone (inherited from a group: remove it from the group by
+hand), and plans the other fixes. The report names the leaf (single\-connection
+on the TACACS+ server <address>, no longer rendered), and the retyped
+.B "tacacs\-server host"
+line has a comment of its own in the paste region. So are the options that change the service asked for or how a password is
 checked
 .RB ( "tacplus\-options service\-name" ,
 other than
@@ -14294,12 +14321,57 @@ to a device accepts
 and
 .BR \-D .
 Agent, stream-local and tunnel forwarding stay as for every console user.
-A forwarding opens no session and never reaches the console, so a user of such
-a tier who must change the password
+A forwarding opens no session and never reaches the console, so sshd's drop-in
+lists the users who must change the password
 .RB ( "user require\-password\-change" )
-still forwards ports through this server with the old password until it is
-changed; the default tier, superuser, is never held, so list another tier only
-while none of its users must change the password.
+in a block of its own before the tier blocks,
+.BR "Match User" " \fInames\fR,"
+with
+.BR "DisableForwarding yes"
+and every single switch (TCP, stream-local, X11, agent, tunnel) at
+.BR no :
+their new connections forward nothing through this server in any tier until
+the password is changed. sshd applies the drop-in when a connection
+authenticates: a connection the user has open already keeps the forwardings it
+had until it closes, and tacctl does not end it (the administrator can:
+.BR "loginctl terminate\-user" " \fIname\fR)."
+The names are sorted and only those of a Linux account, at most 50 to a block
+(more users make further
+.B "Match User"
+blocks, all before the tier blocks); no user held, no block; a superuser is
+never held. The list is rewritten by every sync of this server (the
+.B user
+verbs that change an account run one), by
+.B "console install"
+and
+.BR upgrade ,
+and by the verbs that change who is held, each at once and by itself, so that
+it is current whether or not a sync of this server follows and gets as far as
+the drop-in (a server that is not enrolled, a sync that stops at its checks, a
+scope in which no user gets the console):
+.B "user require\-password\-change"
+in every form,
+.BR "user add" ,
+.BR "user remove" ,
+.BR "user rename" ,
+.BR "user move" ,
+an administrator's
+.BR "user passwd" ,
+the user's own
+.BR passwd ,
+a group command that lowers a tier,
+.BR "store import" ,
+.B "backup restore"
+(a snapshot or an old\-style backup) and
+.B "store rollback"
+(legacy mode holds nobody), under the apply lock; any other write of the
+store leaves it as it is until the next of those. Only a change that lowers a
+group's tier syncs this server (and so lists a flagged user whose group stops
+being a superuser's); raising a tier leaves the list as it was until the next
+rewrite, which can only close forwarding: a user who has become a superuser
+stays listed, and his new connections stay closed, until then. A failure to
+write it is one warning and the old list stays until the next sync or
+.BR "console install" .
 .\" BEGIN GENERATED: command console forwarding
 .RS
 .PP
@@ -14644,7 +14716,15 @@ a block before it sets
 .BR "DisableForwarding no" ,
 .B "AllowTcpForwarding yes"
 and
-.BR "X11Forwarding yes" ),
+.BR "X11Forwarding yes" ;
+for the users who must change the password a
+.B "Match User"
+block before those sets
+.B "DisableForwarding yes"
+and every single switch to
+.BR no ,
+see
+.BR "console forwarding" ),
 .BR "AllowTcpForwarding no" ,
 .BR "AllowStreamLocalForwarding no" ,
 .BR "X11Forwarding no" ,
@@ -14714,7 +14794,10 @@ in
 .IR /etc/ssh/sshd_config ,
 and
 .B "sshd \-T"
-for the first account whose shell is the console. It also checks the
+for the first account whose shell is the console, for the first user held to a
+password change (whose forwarding the drop-in closes in any tier) and for the
+first that is not. A drop-in whose list of users held to a password change is
+not the list held now differs: the check shows both lists. It also checks the
 engineers (the drop-in of the engineer tier and that its name sorts before
 the console's, a leftover
 .IR tacctl\-engineer.conf ,

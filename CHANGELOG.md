@@ -40,7 +40,7 @@ current behaviour; this file is where history lives.
    This release changed no stored file, so 0.2.23 reads everything it writes:
    the rollback converts no file, removes no key, takes no snapshot and needs
    no `--yes`. It puts back 0.2.23's per-tier sudoers drop-in, without the
-   operator's `log failures *` (item 7), when the file is exactly this
+   operator's `log failures *` (item 9), when the file is exactly this
    release's text (the dry run shows the step, `--apply` writes it after
    `visudo -cf`; a file tacctl did not write is left), and every older target
    recognises this release's text and 0.2.23's as tacctl's own and puts back
@@ -80,7 +80,79 @@ current behaviour; this file is where history lives.
    (`http.lowSpeedLimit`, `http.lowSpeedTime`). `docs/install/upgrading.md` and
    the manual page (`TACQUITO_SRC`) say so.
 
-6. **An accounting record names the device that sent it, and is readable.**
+6. **A user who must change the password gets no port forwarded through the
+   server on a new connection, in any tier.** A forwarding (`ssh -N -L`, `-R`,
+   `-D`, `-J`) opens no session and never reaches the console that holds such
+   a user, so a user of a tier in `console forwarding tiers` (default:
+   superuser only, who is never held) kept forwarding ports with the old
+   password; the limitation was to take the tier out. sshd's drop-in for the
+   console (`/etc/ssh/sshd_config.d/tacctl-console.conf`) now begins, when
+   anyone is held, with `Match User <names>` setting `DisableForwarding yes`
+   and `AllowTcpForwarding`, `AllowStreamLocalForwarding`, `X11Forwarding`,
+   `AllowAgentForwarding`, `PermitTunnel` and `GatewayPorts` to the closed
+   value, ahead of the tier blocks (sshd keeps the first value of a keyword).
+   sshd applies a `Match` block when a connection authenticates, so a
+   connection the user has open already keeps the forwardings it had until it
+   closes; tacctl does not end it (the administrator can:
+   `loginctl terminate-user <name>`). The names are the users held now (`user
+   require-password-change`, `user add` and an administrator's `user passwd`
+   by default), sorted, only those of a Linux account, a superuser never, at
+   most 50 to a `Match User` line (more users make further blocks, all before
+   the tier blocks); with nobody held there is no block and the file is the
+   one of earlier releases. The sync of the server writes the list (the `user`
+   verbs, `host sync`, `console install`, `upgrade`; it stays as it was when
+   the store or `tacctl.yaml` cannot be read), and so do the verbs that change
+   who is held, each by itself, because a sync of the server reaches the
+   drop-in only when the server is enrolled, its checks pass and a user of the
+   scope gets the console: `user require-password-change` in every form,
+   `user add`, `user remove`, `user rename`, `user move`, an administrator's
+   `user passwd`, the user's own `passwd`, a group command that lowers a tier
+   (the one change of a group's tier that syncs the server; raising a tier
+   leaves the list as it was until the next rewrite, which only closes
+   forwarding), `store import`, `backup restore` (a snapshot or an old-style
+   backup) and `store rollback` (legacy mode holds nobody). The
+   rewrite checks the drop-in with `sshd -t`, undoes it when sshd refuses it
+   (one warning with `tacctl console install` then), and reads the users and
+   installs the file under the apply lock, so two commands that flag users at
+   the same time cannot leave one out. Any other write of the store leaves the
+   drop-in as it is until the next of those. `console check` counts the list
+   as part of the drop-in: a list that is not the users held now is drift,
+   shown with both lists, and a held user is probed with `sshd -T` like the
+   first user of each kind (`console show` expects forwarding closed for
+   them, the agent included, whatever `console agent-forwarding` says). An
+   earlier release reads the extra block without complaint; its `console
+   check` calls the file different.
+
+7. **The walkthroughs no longer set `single-connection`.** tacquito closes a
+   connection that has been idle for 15 seconds. A device with
+   `single-connection` keeps one connection open for many sessions, so after
+   the close it held a dead socket (`CLOSE_WAIT` on Junos) and a later login
+   over it failed (`Network read timed out`), and the server logged each idle
+   close as an error. `config juniper` no longer prints `set system
+   tacplus-server <address> single-connection`; `config cisco` prints no
+   `single-connection` line under `tacacs server TACACS`, and with `--legacy`
+   the host line is `tacacs-server host <address> [port <n>] timeout 5 key
+   ...` (the port, when the listener is not on 49, now follows the address).
+   A device that already has it is converged: `device config plan` and
+   `apply` delete it from tacctl's server (`delete system tacplus-server
+   <address> single-connection` on Junos, `no single-connection` under
+   `tacacs server TACACS` on IOS; the IOS 12.x host line is typed again
+   without it), and `diff` and `plan` list it as an extra on the `aaa`
+   section, no longer as the device's own setting. A Junos `single-connection`
+   that only an apply-group gives cannot be deleted at the top level: it
+   does not refuse the `aaa` section (as another inherited statement does),
+   the plan keeps it, lists it as left alone (`inherited from a group: remove
+   it from the group by hand`) and plans the other fixes. The report names
+   the leaf (`single-connection on the TACACS+ server <address>, no longer
+   rendered`), and the IOS 12.x host line has a comment of its own in the
+   paste region. The back-out of a plan says `THIS OUTPUT HOLDS THE ...` only
+   when a line of it holds a value; the back-out of a retyped server line
+   holds `<secret>` and a note to type the key, and no longer warns. A custom
+   template keeps whatever it says; a copy of `cisco.template` or
+   `cisco-legacy.template` made earlier still renders the line. Another
+   server's `single-connection` is left alone.
+
+8. **An accounting record names the device that sent it, and is readable.**
    A record in the TACACS+ accounting log carried `RemAddr`, where the person
    connected from, and nothing that said which device sent it, so with
    several devices the log could not answer "which device was changed". The
@@ -103,7 +175,7 @@ current behaviour; this file is where history lives.
    escapes. `log tail` and `log search` read the journal and are not
    changed.
 
-7. **The logs can be filtered, and written as JSON.** `tacctl log tail`,
+9. **The logs can be filtered, and written as JSON.** `tacctl log tail`,
    `search`, `failures` and `accounting` take `--since <time>` and `--until
    <time>` (`YYYY-MM-DD[ HH:MM[:SS]]`, `now`, `today`, `yesterday`, `-1h` or
    `2 hours ago`; any other form is a usage error), `--user <name>`,

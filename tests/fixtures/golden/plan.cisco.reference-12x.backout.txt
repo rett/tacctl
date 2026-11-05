@@ -14,6 +14,7 @@
 configure terminal
 ! back-out: the lines as the pull showed them
 aaa authentication enable default group LAB-TACACS enable
+! (type again with its original secret: tacacs-server host 192.0.2.10 single-connection timeout 5 key <secret>)
 end
 !!!!! BACK-OUT TO HERE: dev-cisco-reference-12x !!!!!
 !
