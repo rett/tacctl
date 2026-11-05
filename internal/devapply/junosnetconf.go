@@ -437,7 +437,7 @@ func (j *JunosNetconf) runCmd(ctx context.Context, cmd string) (string, error) {
 	var re devssh.RPCError
 	switch {
 	case errors.As(err, &re):
-		return "", answerError(cmd, []string{rpcMsg{Severity: re.Severity, Tag: re.Tag, Message: re.Message}.text(j.m)}, j.m)
+		return "", answerErrorWide(cmd, []string{rpcMsg{Severity: re.Severity, Tag: re.Tag, Message: re.Message}.text(j.m)}, j.m)
 	case err != nil:
 		j.dropRead(s)
 		return "", err
@@ -516,7 +516,7 @@ func (j *JunosNetconf) Read(ctx context.Context) (string, error) {
 	}
 	for _, l := range nonBlank(lines(out)) {
 		if !strings.HasPrefix(l, "set ") && !strings.HasPrefix(l, "deactivate ") {
-			return "", answerError(j.read, []string{l}, j.m)
+			return "", answerErrorWide(j.read, []string{l}, j.m)
 		}
 	}
 	return out, nil
@@ -623,7 +623,7 @@ func (j *JunosNetconf) SharedDirty(ctx context.Context) (Dirty, error) {
 			d.Staged = true
 			return d, nil
 		}
-		return Dirty{}, answerError("lock candidate", []string{rpcMsg{Severity: re.Severity, Tag: re.Tag, Message: re.Message}.text(j.m)}, j.m)
+		return Dirty{}, answerErrorWide("lock candidate", []string{rpcMsg{Severity: re.Severity, Tag: re.Tag, Message: re.Message}.text(j.m)}, j.m)
 	}
 	j.logf("netconf: unlock candidate (the gate)")
 	if _, err := rpc(`<unlock-configuration/>`); err != nil {
@@ -641,7 +641,7 @@ func (j *JunosNetconf) SharedDirty(ctx context.Context) (Dirty, error) {
 func (j *JunosNetconf) gateError(err error, cmd string) error {
 	var re devssh.RPCError
 	if errors.As(err, &re) {
-		return answerError(cmd, []string{rpcMsg{Severity: re.Severity, Tag: re.Tag, Message: re.Message}.text(j.m)}, j.m)
+		return answerErrorWide(cmd, []string{rpcMsg{Severity: re.Severity, Tag: re.Tag, Message: re.Message}.text(j.m)}, j.m)
 	}
 	return err
 }
@@ -707,7 +707,7 @@ func (j *JunosNetconf) Open(ctx context.Context, allow func(string) error) error
 		case strings.Contains(re.Message, "modified"):
 			return &LockedError{Modified: true}
 		}
-		return answerError(word, []string{rpcMsg{Severity: re.Severity, Tag: re.Tag, Message: re.Message}.text(j.m)}, j.m)
+		return answerErrorWide(word, []string{rpcMsg{Severity: re.Severity, Tag: re.Tag, Message: re.Message}.text(j.m)}, j.m)
 	case err != nil:
 		j.dropHeld()
 		return fmt.Errorf("%w: %s: %v", ErrSessionLost, word, j.m.text(err.Error()))
@@ -723,7 +723,7 @@ func (j *JunosNetconf) Open(ctx context.Context, allow func(string) error) error
 		if strings.Contains(e.Message, "exclusive") {
 			return &LockedError{}
 		}
-		return answerError(word, []string{e.text(j.m)}, j.m)
+		return answerErrorWide(word, []string{e.text(j.m)}, j.m)
 	}
 	j.mu.Lock()
 	j.open = true
@@ -753,7 +753,7 @@ func (j *JunosNetconf) cleanUnderLock(ctx context.Context) error {
 		var re devssh.RPCError
 		j.dropHeld()
 		if errors.As(err, &re) {
-			return answerError(plan.ApplyCompare, []string{rpcMsg{Severity: re.Severity, Tag: re.Tag, Message: re.Message}.text(j.m)}, j.m)
+			return answerErrorWide(plan.ApplyCompare, []string{rpcMsg{Severity: re.Severity, Tag: re.Tag, Message: re.Message}.text(j.m)}, j.m)
 		}
 		return fmt.Errorf("%w: %s: %v", ErrSessionLost, plan.ApplyCompare, j.m.text(err.Error()))
 	}
@@ -828,13 +828,13 @@ func (j *JunosNetconf) memberRefusal(cmd string, r rpcReply, commit bool) error 
 		if commit {
 			why = "the chassis' NETCONF answer names no member: nothing proves that " + strings.Join(set, ", ") + " committed, and a confirmed commit rolls back by itself; use the command line transport (the default)"
 		}
-		return answerError(cmd, []string{why}, j.m)
+		return answerErrorWide(cmd, []string{why}, j.m)
 	}
 	var names []string
 	seqs := map[string][]string{}
 	for _, m := range r.Members {
 		if m.Name == "" {
-			return answerError(cmd, []string{"a member without a name"}, j.m)
+			return answerErrorWide(cmd, []string{"a member without a name"}, j.m)
 		}
 		if !slices.Contains(names, m.Name) {
 			names = append(names, m.Name)
@@ -861,16 +861,16 @@ func (j *JunosNetconf) memberRefusal(cmd string, r rpcReply, commit bool) error 
 			continue
 		}
 		if len(seqs[n]) == 0 {
-			return answerError(cmd, []string{fmt.Sprintf("member %s did not answer <%s/>", cut(n), map[bool]string{false: "commit-check-success", true: "commit-success"}[commit])}, j.m)
+			return answerErrorWide(cmd, []string{fmt.Sprintf("member %s did not answer <%s/>", cut(n), map[bool]string{false: "commit-check-success", true: "commit-success"}[commit])}, j.m)
 		}
-		return answerError(cmd, []string{fmt.Sprintf("member %s answered %s, not %s", cut(n), "<"+strings.Join(seqs[n], "/><")+"/>", map[bool]string{false: "<commit-check-success/>", true: "<commit-check-success/> and <commit-success/>, or <commit-success/>"}[commit])}, j.m)
+		return answerErrorWide(cmd, []string{fmt.Sprintf("member %s answered %s, not %s", cut(n), "<"+strings.Join(seqs[n], "/><")+"/>", map[bool]string{false: "<commit-check-success/>", true: "<commit-check-success/> and <commit-success/>, or <commit-success/>"}[commit])}, j.m)
 	}
 	if setKind(set) == "re" && len(names) == 1 && slices.Contains(set, names[0]) {
 		// a plain commit of two routing engines: the one that ran it
 		return nil
 	}
 	if why := setFault(set, names); why != "" {
-		return answerError(cmd, []string{why}, j.m)
+		return answerErrorWide(cmd, []string{why}, j.m)
 	}
 	return nil
 }
@@ -892,7 +892,7 @@ func (j *JunosNetconf) firstError(cmd string, r rpcReply) error {
 	if len(ls) == 0 {
 		ls = []string{"error: refused"}
 	}
-	e := answerError(cmd, ls, j.m)
+	e := answerErrorWide(cmd, ls, j.m)
 	// an error that stands in a member's element names the member
 	for i, er := range r.Errs {
 		if er.Member != "" && i < len(e.Lines) && i < maxAnswerLines {
@@ -978,7 +978,7 @@ func (j *JunosNetconf) heldCompareText(ctx context.Context) (string, error) {
 	var re devssh.RPCError
 	switch {
 	case errors.As(err, &re):
-		return "", answerError(plan.ApplyCompare, []string{rpcMsg{Severity: re.Severity, Tag: re.Tag, Message: re.Message}.text(j.m)}, j.m)
+		return "", answerErrorWide(plan.ApplyCompare, []string{rpcMsg{Severity: re.Severity, Tag: re.Tag, Message: re.Message}.text(j.m)}, j.m)
 	case err != nil:
 		j.dropHeld()
 		return "", fmt.Errorf("%w: %s: %v", ErrSessionLost, plan.ApplyCompare, j.m.text(err.Error()))

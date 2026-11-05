@@ -38,6 +38,91 @@ current behaviour; this file is where history lives.
    changed is the apply-pause line of `tacctl config devices`, which now ends
    `0-3600, from one device's end to the next one's start`.
 
+3. **A Junos device's NETCONF hello is read as it is sent, and a failed hello
+   says why.** A Junos device names its capabilities with the XML namespace's
+   prefix (`urn:ietf:params:xml:ns:netconf:base:1.0`) where RFC 6241 has
+   `urn:ietf:params:netconf:base:1.0`; the client looked for the second only, so
+   such a device was recorded as `no hello` although it answered, a pull read
+   it over the command line, `device check` showed `NETCONF: no hello`, and an
+   apply that enabled the service was rolled back with `the device does not
+   answer NETCONF after the change`. Both spellings are now the same
+   capability (the candidate and the confirmed commit are found in either, so
+   such a device is also applied over NETCONF). The hello is also read as a
+   device prints it: comments, an XML declaration, a byte order mark or text
+   (even with a `&` or a `<`) before `<hello>`, and white space or line breaks
+   inside a capability; a device that ends the channel right after its hello
+   still gives it. A hello that is none is no longer silent. The pull records
+   `no hello` for every failure to open the session but a refused subsystem
+   (`port closed`), and its line (`ok via ssh (netconf: no hello: the device's
+   first message is <rpc-error>, not a hello; the device sent
+   "<rpc-error>...")`, and `fallback` in `--json`) gives the reason (not a
+   hello, not a hello but another message, no `base:1.0` framing with the
+   capabilities offered, the channel closed after the subsystem was accepted,
+   no hello in time) and the first 120 bytes the device sent, on one line with
+   control characters shown as `?`. The message of an apply that enabled
+   NETCONF gives the reason in the same form (`the device does not answer
+   NETCONF after the change (no hello: ...; the record's NETCONF probe stays
+   'port closed')`) only when the device answered with something that is not a
+   usable hello (not a hello, another message, no `base:1.0` framing). A device
+   that closed the channel after the subsystem was accepted, or sent no hello
+   in time, is one the probe cannot tell about, as before, for a change that
+   disables the service too: the message is `the NETCONF probe could not tell:
+   session closed: the channel closed after the subsystem was accepted` (or
+   `timed out: no hello from the device in time`), cut to 120 bytes with what
+   the device sent, and the proof fails. The record still stores `hello ok`,
+   `port closed`, `no hello` or `not probed` only, so `device check` shows the
+   word without the reason.
+
+4. **A slow device no longer fails `device config apply` or a pull with
+   `open: configure exclusive` or `pre-flight ...: not recognised`.** On a
+   device that answers slowly (a satellite or WAN link, a loaded switch) the
+   ssh client types its empty line a second time to learn the prompt, and the
+   answer to that second line could still be on its way when the first command
+   was typed. It then arrived in front of the command's echo, and the answer to
+   the command began with the device's prompt and the echo on one line
+   (`alice@sw1> configure exclusive`) instead of the echo alone: the
+   parser refused an answer that was otherwise exact, and on a run where it
+   arrived before the command was typed the session failed with `output between
+   commands`. The same device usually worked on another run. The first command
+   now takes that late answer for what it is: the line break, the line a Junos
+   virtual chassis prints before every prompt, the `# commit confirmed will be
+   rolled back in N minutes` line it prints before every prompt while a
+   confirmed commit is pending (as it is on the verification login of every
+   apply) and the prompt in front of the echo are dropped and the echo stays;
+   anything else between commands, and a prompt more than the commands account
+   for, is still refused.
+
+5. **A Junos virtual chassis whose master prints its own label is applied to.**
+   `device config apply` rolled back every apply on a virtual chassis of two
+   members (FPC 0 the master, FPC 1 the backup) with `the confirmed commit's
+   answer: ... a line "commit confirmed will be automatically rolled back in 10
+   minutes unless confirmed" outside the members' answers`: this chassis prints
+   a label for every member, the master too, and a label opens several lines,
+   not one (`fpc0:`, its check and the note; `fpc1:`, `commit complete` and the
+   note; `fpc0:`, `commit complete`). The reader of a commit's answer now takes
+   a label and the lines up to the next label as a block, joins a member's
+   blocks in the order they appear, and holds each member's lines to rules:
+   the check (optional, first), then `commit complete` and, on a confirmed
+   commit only, the note, once each and in either order, and nothing else.
+   Every member of `show version` must be in the answer and finish with
+   `commit complete`. A line before the first label, a member `show version` did
+   not list or one missing, a label with no line, labels of two kinds, a line
+   twice or none of these, a confirmed commit whose note a member does not
+   print and a note on the confirming commit are refused, and the error names
+   the member and the line. Only a chassis of two is read so (the capture is of
+   two members): in a chassis of three or more members that all print a label,
+   the answer is read one line per label as before, and an answer refused in
+   that layout says when a label appears twice (no capture of a larger chassis
+   exists); every other layout (an unlabelled master, a single member, two
+   routing engines, a cluster) is read as before. A refused answer was shown
+   cut to its first six lines of 200 bytes, which hid the layout that mattered;
+   the error now shows the answer's lines, up to 40, each cut at 120 bytes (the
+   reasons that name a member are cut at 200 bytes, and so is every line of an
+   answer over NETCONF). The device's text in these lines is shown with every
+   control character (C0, DEL and C1, as U+009B), formatting character (the
+   bidirectional overrides) and line separator replaced by `?`, in the
+   terminal line and in `--json`; only C0 controls and DEL were before.
+
 ## 0.2.24 (2026-11-05)
 
 1. **`tacctl man` finds each entry on groff 1.24.** groff 1.24 narrowed the

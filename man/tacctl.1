@@ -11314,7 +11314,9 @@ A juniper device also has a NETCONF row: what the probe of its last pull found
 .BR "no hello" ),
 with the time, or
 .B "not probed"
-and the command that probes it; the check itself logs in to nothing. It is
+and the command that probes it; the check itself logs in to nothing. The row
+keeps the probe's word only: why a device gave no hello is shown by the pull
+that found it and by an apply that needed it. It is
 .B netconf
 in the JSON.
 .\" BEGIN GENERATED: command device check
@@ -11497,7 +11499,21 @@ RPC) where the device answers and over an ssh exec channel otherwise;
 .B \-\-transport netconf
 and
 .B ssh
-never fall back. IOS and IOS\-XE are read over the ssh command line, with
+never fall back. A device whose session cannot be opened for any reason but a
+refused subsystem
+.RB ( "port closed" )
+(it answers with something that is not a usable hello, ends the channel after
+accepting the subsystem, or sends no hello in time) is recorded as
+.BR "no hello" ;
+the record keeps only that word, and the line of the pull says why and what the
+device sent, in the first 120 bytes with control characters shown as
+.BR ? ,
+as in
+.BR "ok via ssh (netconf: no hello: the device's first message is <rpc\-error>, not a hello; the device sent \(dq<rpc\-error>...\(dq)" .
+A hello that names its capabilities with the XML namespace's prefix
+.RB ( urn:ietf:params:xml:ns:netconf:... ,
+as a Junos device does) is read as the same capabilities. IOS and IOS\-XE are
+read over the ssh command line, with
 paging off, after
 .BR "show version | include Version" ,
 whose line is kept on the record with the configuration syntax it says (see
@@ -13032,7 +13048,35 @@ last; a member's block is the check (optional on a commit),
 .B "commit complete"
 and, on a confirmed commit only, the note, which every member of a confirmed
 commit must print; each line once and in that order. A line that is none of
-these, a label twice and two members without a block fail the step. A chassis of one member answers like a single
+these, a label twice and two members without a block fail the step. A virtual chassis of two members whose master
+prints its own label too (captured from a real chassis of two) is read by its
+blocks: a label opens a block of lines up to the next label, and the master's
+lines come in two blocks, its check and the note first and its
+.B "commit complete"
+last, after the other member's block. A member's blocks are joined in the order
+they appear and its lines held to rules: the check (optional, first), then
+.B "commit complete"
+and, on a confirmed commit only, the note, once each and in either order (the
+master prints the note before its
+.BR "commit complete" ,
+the other member after it), and nothing else. Every member of
+.B "show version"
+must be in the answer and end in
+.BR "commit complete" .
+A line before the first label, a member that
+.B "show version"
+did not list, a member without lines or missing, a line twice or none of these,
+a confirmed commit whose note a member does not print, and a note on the
+confirming commit fail the step, and the error names the member and the line.
+Only a chassis of two is read so: in a chassis of three or more in which every
+member has a label, the answer is read one line per label as before, and an
+answer refused in that layout says when a label appears twice (no capture of a
+larger one shows how the blocks fall). The error of a refused answer shows its
+lines, up to 40, each cut at 120 bytes (200 over NETCONF, and for the reason
+that names a member), with control characters (C0, DEL and C1), formatting
+characters (such as the bidirectional overrides) and line separators shown as
+.BR ? ,
+so that a layout not seen before shows itself. A chassis of one member answers like a single
 device:
 .B "show version"
 prints its header
@@ -13050,9 +13094,10 @@ members committed (a confirmed commit rolls back by itself), and the command
 line transport (the default) can be used; a chassis of one member is read like
 a single device, with no member element or one named by that member, and
 another name is refused. The shape of these replies over NETCONF is inferred:
-no capture of it exists, nor of the commits' replies of a chassis in which every
-member has a label on the command line (the shape with an unlabelled master was
-captured from a real three-member chassis). A proof that fails cancels the commit
+no capture of it exists, nor of the commits' replies of a chassis of three or
+more in which every member has a label on the command line (the shape with an
+unlabelled master was captured from a real three-member chassis, and the shape
+with a labelled master from a real chassis of two). A proof that fails cancels the commit
 .RB ( "rollback 1" ,
 .BR commit )
 and the device is
@@ -13141,8 +13186,20 @@ disabling it must find the hello no longer answered
 .RB ( "port closed"
 or
 .BR "no hello" );
-a probe that cannot tell fails the proof and the change is rolled back. The
-line says
+a probe that cannot tell fails the proof and the change is rolled back. When
+enabling finds
+.B "no hello"
+because the device answered with something that is not a usable hello, the
+message says why and what the device sent
+.RB ( "no hello: the device's hello is not a hello; the device sent \(dq...\(dq" ).
+When the device ends the channel after accepting the subsystem, or sends no
+hello in time, the probe cannot tell: the message is
+.B "the NETCONF probe could not tell: session closed: the channel closed after the subsystem was accepted"
+or
+.BR "the NETCONF probe could not tell: timed out: no hello from the device in time" ,
+cut to 120 bytes, whether the change enables or disables the service, and the
+proof fails.
+The line says
 .B "[NETCONF verified: hello ok]"
 or
 .BR "[NETCONF verified: not answering]" ,

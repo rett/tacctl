@@ -207,16 +207,16 @@ func checkAnswer(body []string, set []string) (ok bool, why string) {
 // readCommitted reports whether a commit's answer is want, after the
 // check's 'configuration check succeeds' that a commit prints first [C] (or
 // without it). A chassis whose master answers without a label is read by
-// chassisReply [C]. A device in which every member has a label prints a
-// block for each of them (by analogy with the check's blocks and the commit
-// of two routing engines; no capture of one): every member's text is the
-// check's success, optionally, then the commit's note, optionally, and last
-// 'commit complete'; the note may also stand alone between the members'
-// blocks, where the single device prints it. why names the member and the
-// text that cannot be read. set is the members 'show version' listed (none
-// for a single device): the answer names exactly those, and every one of
-// them ends in 'commit complete', so the commit's members are the check's;
-// for one member, and for two routing engines, the plain answer is read too
+// chassisReply [C]. A device in which every member has a label is read
+// by readBlocks for a chassis of two members (a label opens a block of
+// lines, a member's blocks may be apart, the master's too, and every member
+// prints the note [C]) and by readLines for the others (a line for each
+// label: by analogy with the check's blocks and the commit of two routing
+// engines). why names the member and the text that
+// cannot be read. set is the members 'show version' listed (none for a
+// single device): the answer names exactly those, and every one of them
+// ends in 'commit complete', so the commit's members are the check's; for
+// one member, and for two routing engines, the plain answer is read too
 // (plainOK), and so are the lines of a chassis' master (chassisReply).
 func readCommitted(body []string, set []string, want ...string) (ok bool, why string) {
 	plain, members, why := splitMembers(body)
@@ -236,7 +236,20 @@ func readCommitted(body []string, set []string, want ...string) (ok bool, why st
 			return chassisReply(set, owner, body, want)
 		}
 	}
-	notes := notesOf(want)
+	if blocksOK(set) {
+		return readBlocks(body, set, want)
+	}
+	ok, why = readLines(plain, members, set, notesOf(want))
+	return ok, hintLarger(set, body, why)
+}
+
+// readLines reads the commit's answer of a device in which every member has
+// a label, a line for each label: the layout the analogy of the check
+// gives and two routing engines print. Every member's text is the check's
+// success, optionally, then the commit's note, optionally, and last 'commit
+// complete'; the note may also stand alone between the members' blocks,
+// where the single device prints it.
+func readLines(plain []string, members []*memberText, set, notes []string) (ok bool, why string) {
 	// the stand-alone lines are the note, or none when the members print it
 	inMembers := false
 	var unfinished []string
@@ -278,6 +291,119 @@ func readCommitted(body []string, set []string, want ...string) (ok bool, why st
 		return false, fmt.Sprintf("no member and no line says %q", cut(notes[0]))
 	}
 	return true, ""
+}
+
+// blocksOK reports whether readBlocks reads the answer for this set: the
+// members of a virtual chassis of exactly two, the one layout with every
+// member labelled that a capture shows, and a stricter one than readLines
+// reads (every member prints the note). Larger chassis are not read in
+// blocks (hintLarger).
+func blocksOK(set []string) bool {
+	return len(set) == 2 && setKind(set) == "fpc"
+}
+
+// hintLarger adds to the reason of an answer that is refused what is known
+// of the layouts not read: a label that appears twice in the answer of a
+// chassis of three or more members, every member labelled, is the layout
+// of two members' blocks [C], for which there is no capture of a larger
+// chassis.
+func hintLarger(set, body []string, why string) string {
+	if why == "" || len(set) < 3 || setKind(set) != "fpc" {
+		return why
+	}
+	seen := map[string]bool{}
+	_, groups := splitGroups(body)
+	for _, g := range groups {
+		if seen[g.label] {
+			return fmt.Sprintf("%s (a label appears twice: a chassis of %d members whose members all print a label is read in blocks for two members only; no capture of a larger one)", why, len(set))
+		}
+		seen[g.label] = true
+	}
+	return why
+}
+
+// readBlocks reads the commit's answer of a virtual chassis of two members
+// in which every member, the master too, prints its label [C]. A label
+// opens a block, all the lines up to the next label; a member's blocks are
+// joined in the order they appear, and the master's come apart: its check
+// and the note first, the backup's block, and its 'commit complete' last:
+//
+//	fpc0:
+//	configuration check succeeds        a confirmed commit
+//	commit confirmed will be ...
+//	fpc1:
+//	commit complete
+//	commit confirmed will be ...
+//	fpc0:
+//	commit complete
+//
+// The confirming commit holds the same without the note. Each member's
+// joined lines are the check (optional, first), then the lines of want,
+// 'commit complete' and the note (exactly when the commit has one), once
+// each in either order (the master prints the note before its 'commit
+// complete', the backup after), and nothing else. A line before the first
+// label, a member the set does not list and a member of the set that is
+// not in the answer are refused with the member named.
+func readBlocks(body []string, set []string, want []string) (ok bool, why string) {
+	head, groups := splitGroups(body)
+	if len(head) > 0 {
+		return false, fmt.Sprintf("a line %q outside the members' answers", head[0])
+	}
+	var labels []string
+	lines := map[string][]string{}
+	for _, g := range groups {
+		if _, ok := lines[g.label]; !ok {
+			labels = append(labels, g.label)
+		}
+		lines[g.label] = append(lines[g.label], g.lines...)
+	}
+	// a line that is wrong is named before a member that is not done
+	var unfinished string
+	for _, l := range labels {
+		bad, missing := blocksFault(l, lines[l], want)
+		if bad != "" {
+			return false, bad
+		}
+		if unfinished == "" {
+			unfinished = missing
+		}
+	}
+	if why := setFault(set, labels); why != "" {
+		return false, why
+	}
+	return unfinished == "", unfinished
+}
+
+// blocksFault compares all the lines a member printed with the check
+// (optional, first) and the lines it must hold once each in any order. bad
+// names the first line that is none of them, comes twice or is out of order;
+// missing, when no line is bad, the line the member did not print ('commit
+// complete' first).
+func blocksFault(member string, got, want []string) (bad, missing string) {
+	left := slices.Clone(want)
+	for i, t := range got {
+		if t == textCheckOK {
+			if i > 0 {
+				return fmt.Sprintf("member %s answered %q again or out of order", member, t), ""
+			}
+			continue
+		}
+		if k := slices.Index(left, t); k >= 0 {
+			left = slices.Delete(left, k, k+1)
+			continue
+		}
+		if slices.Contains(want, t) {
+			return fmt.Sprintf("member %s answered %q twice", member, t), ""
+		}
+		return fmt.Sprintf("member %s answered %q besides its own lines", member, t), ""
+	}
+	switch {
+	case slices.Contains(left, textCommitComplete):
+		return "", fmt.Sprintf("member %s did not answer %q", member, textCommitComplete)
+	case len(left) > 0:
+		return "", fmt.Sprintf("member %s did not answer %q", member, left[0])
+	}
+	return "", ""
 }
 
 // notesOf are the commit's notes among the lines a commit's answer is

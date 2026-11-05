@@ -17,6 +17,7 @@ import (
 	"github.com/rett/tacctl/internal/devconf"
 	"github.com/rett/tacctl/internal/devconf/batch"
 	"github.com/rett/tacctl/internal/devreg"
+	"github.com/rett/tacctl/internal/devssh"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -134,10 +135,11 @@ func sessionsText(n int) string {
 }
 
 // cleanLine makes device-controlled text safe for a terminal: control
-// characters become '?'.
+// characters (C0, DEL and C1), formatting characters (bidirectional
+// overrides) and line separators become '?'.
 func cleanLine(s string) string {
 	return strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f || (r >= 0x80 && r < 0xa0) {
+		if devssh.UnsafeRune(r) {
 			return '?'
 		}
 		return r
