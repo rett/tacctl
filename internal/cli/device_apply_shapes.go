@@ -240,7 +240,7 @@ func (inv *invocation) deviceConfigShapesList(p Parsed) error {
 		}
 		note := "-"
 		if j.Nearest != "" {
-			note = fmt.Sprintf("nearest confirmed %s, %d lines differ", j.Nearest, j.Differing)
+			note = "nearest confirmed " + j.Nearest + ", " + howMany(j.Differing, "line") + plural(j.Differing, " differs", " differ")
 		}
 		now := "-"
 		if len(j.Devices) > 0 {

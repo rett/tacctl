@@ -170,6 +170,12 @@ current behaviour; this file is where history lives.
    taken and the note is not printed, as before. `docs/install/upgrading.md`
    (To 0.2.23) and the manual page say so.
 
+8. **`tacctl device config shapes` says "1 line differs".** The note of a new
+   shape that is one line away from a confirmed one read `nearest confirmed
+   <shape>, 1 lines differ`; it now reads `1 line differs` and, for any other
+   number, `N lines differ` as before. `--json` is unchanged (`nearest_differs`
+   is the number). The planning page says so.
+
 ## 0.2.24 (2026-11-05)
 
 1. **`tacctl man` finds each entry on groff 1.24.** groff 1.24 narrowed the

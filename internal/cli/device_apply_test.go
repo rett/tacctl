@@ -350,7 +350,7 @@ func TestShapesListManyDevices(t *testing.T) {
 		{Section: "aaa", Op: plan.OpSet, Text: "set system accounting events change-log"}}}
 	hash2, lines2 := plan.Shape(other)
 	// a confirmed shape one line from the first: the first shape's row has a
-	// real note ("nearest confirmed <hash>, N lines differ") beside its
+	// real note ("nearest confirmed <hash>, 1 line differs" or "N lines differ") beside its
 	// 50-device cell
 	near := plan.Delta{Vendor: devconf.FamilyJunos, Lines: append(slices.Clone(d.Lines),
 		plan.Line{Section: "aaa", Op: plan.OpSet, Text: "set system accounting events interactive-commands"})}
@@ -404,6 +404,11 @@ func TestShapesListManyDevices(t *testing.T) {
 	}
 	if !strings.Contains(head, "nearest confirmed "+hash3+", ") {
 		t.Errorf("no note on the first shape's row: %q", head)
+	}
+	// one line from the confirmed shape reads "1 line differs", three "3 lines differ"
+	if !strings.Contains(head, "nearest confirmed "+hash3+", 1 line differs") || !strings.Contains(head, "nearest confirmed "+hash3+", 3 lines differ") ||
+		strings.Contains(head, "1 lines") {
+		t.Errorf("the notes do not count the lines: %q", head)
 	}
 	// A row with a note and a NOW cell of "50 devices" is 103 columns, wider
 	// than 100. What holds, whatever the number of devices, is that the NOW
