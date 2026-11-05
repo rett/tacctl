@@ -98,8 +98,20 @@ func TestShellPtyHelper(t *testing.T) {
 	}
 }
 
+// startCLIShell runs the shell helper on a pty. The shell is a process of its
+// own with a home of its own: it sets nothing in this process (no
+// environment, no working directory, no registry), so the test that starts it
+// runs side by side with the others.
 func startCLIShell(t *testing.T, cols uint16, extra ...string) *testpty.Session {
 	t.Helper()
+	return startCLIShellFor(t, 0, cols, extra...)
+}
+
+// startCLIShellFor is startCLIShell with the hard limit of the session
+// (testpty's own when zero).
+func startCLIShellFor(t *testing.T, deadline time.Duration, cols uint16, extra ...string) *testpty.Session {
+	t.Helper()
+	parallel(t)
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -108,7 +120,7 @@ func startCLIShell(t *testing.T, cols uint16, extra ...string) *testpty.Session 
 		Path: exe,
 		Argv: append([]string{exe, shellPtyHelperRun, "-test.count=1"}, extra...),
 		Env:  []string{"PATH=/usr/bin:/bin", "TERM=xterm", "LC_ALL=C.UTF-8", "HOME=" + t.TempDir()},
-		Rows: 60, Cols: cols,
+		Rows: 60, Cols: cols, Deadline: deadline,
 	})
 	if err != nil {
 		t.Fatal(err)

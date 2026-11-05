@@ -98,6 +98,11 @@ func noCanaries(t *testing.T, canary string) {
 	}
 }
 
+// manPtyDeadline is the hard limit of a session that opens pages: manSession
+// waits up to 20 s for each of its dozen steps, and groff and less are slow
+// on a machine that runs the other tests beside them.
+const manPtyDeadline = 30 * time.Second
+
 // manSession drives a prompt: man opens the page at a heading, the keys that
 // run a program, edit or write are refused, q returns to the prompt.
 func manSession(t *testing.T, p interface {
@@ -156,7 +161,7 @@ func manSession(t *testing.T, p interface {
 func TestPtyShellMan(t *testing.T) {
 	manToolsOrSkip(t)
 	canary := filepath.Join(t.TempDir(), "x")
-	s := startCLIShell(t, 120, shellPtyMan, manPtyCanary+canary)
+	s := startCLIShellFor(t, manPtyDeadline, 120, shellPtyMan, manPtyCanary+canary)
 	manSession(t, s, `tacctl> `, canary)
 	if err := s.Send("exit\r"); err != nil {
 		t.Fatal(err)
@@ -167,7 +172,7 @@ func TestPtyConsoleMan(t *testing.T) {
 	manToolsOrSkip(t)
 	canary := filepath.Join(t.TempDir(), "x")
 	host := regexp.QuoteMeta(shortHostname())
-	p := startConsole(t, ptyPolicyRO, "carol,tac-users,tac-readonly", manPtyCanary+canary)
+	p := startConsoleFor(t, manPtyDeadline, ptyPolicyRO, "carol,tac-users,tac-readonly", manPtyCanary+canary)
 	p.expect(host + `> `)
 	manSession(t, p.Session, host+`> `, canary)
 	p.send("exit\r")

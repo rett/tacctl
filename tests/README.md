@@ -45,8 +45,10 @@ default under test that way. A fixture that builds its own configuration
 (`newSwEnv`, `newHarness`) does not hash a password and is not changed.
 
 The tests of `internal/cli` run in parallel inside one process: the
-sandbox helpers (`newSandbox`, `newHarness`, `newSwEnv`) call `parallel(t)`,
-and everything a test replaces (a dial, a prompt, a terminal check) is a
+sandbox helpers (`newSandbox`, `newHarness`, `newSwEnv`) and the helpers that
+start a process on a pseudo-terminal (`startConsole`, `startCLIShell`,
+`bashKeySession`: each is a process of its own, in a directory of its own) call
+`parallel(t)`, and everything a test replaces (a dial, a prompt, a terminal check) is a
 field of the `hooks` value of its invocation, not a package variable. A test
 that cannot share the process calls `serial(t)` as its first statement
 (Go runs every serial test before the first parallel one): those that set the
