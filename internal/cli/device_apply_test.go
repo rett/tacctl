@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -348,6 +349,12 @@ func TestShapesListManyDevices(t *testing.T) {
 	other := plan.Delta{Vendor: devconf.FamilyJunos, Lines: []plan.Line{
 		{Section: "aaa", Op: plan.OpSet, Text: "set system accounting events change-log"}}}
 	hash2, lines2 := plan.Shape(other)
+	// a confirmed shape one line from the first: the first shape's row has a
+	// real note ("nearest confirmed <hash>, N lines differ") beside its
+	// 50-device cell
+	near := plan.Delta{Vendor: devconf.FamilyJunos, Lines: append(slices.Clone(d.Lines),
+		plan.Line{Section: "aaa", Op: plan.OpSet, Text: "set system accounting events interactive-commands"})}
+	hash3, lines3 := plan.Shape(near)
 	shapes := devapply.OpenShapes(sb.path("var-lib", "device-apply"))
 	for _, o := range []struct {
 		h string
@@ -357,11 +364,14 @@ func TestShapesListManyDevices(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if err := shapes.Confirm(hash3, lines3, devapply.Confirmation{Device: "core1", At: time.Now(), By: "alice"}); err != nil {
+		t.Fatal(err)
+	}
 	file := func(names []string, shape string) {
 		store := devconf.Store{Records: sb.path("var-lib", "devices-config.json"), Dir: sb.path("var-lib", "device-config")}
 		recs, _ := store.Load()
 		for _, n := range names {
-			recs.Put(n, devconf.Record{Vendor: "juniper", Address: "192.168.1.6",
+			recs.Put(n, devconf.Record{Vendor: "juniper", Address: "192.0.2.6",
 				Applied: &devconf.Applied{Result: devconf.AppliedChecked, Shape: shape, Kind: devconf.AppliedKindCheck, At: time.Now(), By: "alice"}})
 		}
 		if err := store.Save(recs); err != nil {
@@ -380,7 +390,7 @@ func TestShapesListManyDevices(t *testing.T) {
 		names = append(names, fmt.Sprintf("sw%d", i))
 	}
 	file(names, hash)
-	file([]string{"example-sw1"}, hash2)
+	file([]string{"rtr1"}, hash2)
 	out = run("shapes")
 	if sb.code != 0 {
 		t.Fatalf("list: %d %q", sb.code, sb.err.String())
@@ -392,15 +402,30 @@ func TestShapesListManyDevices(t *testing.T) {
 	if !ok {
 		t.Fatalf("no block: %q", out)
 	}
+	if !strings.Contains(head, "nearest confirmed "+hash3+", ") {
+		t.Errorf("no note on the first shape's row: %q", head)
+	}
+	// A row with a note and a NOW cell of "50 devices" is 103 columns, wider
+	// than 100. What holds, whatever the number of devices, is that the NOW
+	// cell is a count and never a name, so a row is bounded by its other
+	// cells (the longest note is 46 columns) and not by the devices: no line
+	// is wider than tableMaxWidth (the 103 of today, with a little room).
+	const tableMaxWidth = 106
 	for _, l := range strings.Split(head, "\n") {
-		if n := len([]rune(l)); n > 100 {
-			t.Errorf("table line of %d columns: %q", n, l)
+		if n := len([]rune(l)); n > tableMaxWidth {
+			t.Errorf("table line of %d columns (limit %d): %q", n, tableMaxWidth, l)
+		}
+		if strings.HasPrefix(l, "  "+hash+" ") {
+			cells := regexp.MustCompile(`\s{2,}`).Split(strings.TrimSpace(l), -1)
+			if len(cells) != 6 || cells[3] != "50 devices" {
+				t.Errorf("row of the first shape: %q", cells)
+			}
 		}
 	}
 	if !strings.Contains(head, "50 devices") || !strings.Contains(head, "1 device ") {
 		t.Errorf("counts: %q", head)
 	}
-	if strings.Contains(head, "sw1,") || strings.Contains(head, "example-sw1") {
+	if strings.Contains(head, "sw1,") || strings.Contains(head, "rtr1") {
 		t.Errorf("a name is in the table: %q", head)
 	}
 	blockLines := strings.Split(strings.TrimRight(block, "\n"), "\n")
@@ -438,7 +463,7 @@ func TestShapesListManyDevices(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("names in the block:\n got %q\nwant %q", got, want)
 	}
-	if len(entries) != 2 || !slices.Equal(entries[hash2], []string{"example-sw1"}) {
+	if len(entries) != 2 || !slices.Equal(entries[hash2], []string{"rtr1"}) {
 		t.Errorf("entries: %q", entries)
 	}
 
@@ -474,7 +499,7 @@ func TestShapesListManyDevices(t *testing.T) {
 				t.Errorf("json: %d devices", len(o.Devices))
 			}
 		case hash2:
-			if !slices.Equal(o.Devices, []string{"example-sw1"}) {
+			if !slices.Equal(o.Devices, []string{"rtr1"}) {
 				t.Errorf("json: %q", o.Devices)
 			}
 		}

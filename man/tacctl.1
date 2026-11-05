@@ -13150,7 +13150,7 @@ and the record's NETCONF probe becomes what was proved.
 .PP
 .B \-\-check
 stops after the device's own check: nothing is committed, the device's shape
-is filed as new and the result is recorded
+is filed as new unless it is already known, and the result is recorded
 .RB ( \-\-exit\-code :
 exit 2 when a device needs a change).
 .B \-\-confirmed
@@ -13181,7 +13181,9 @@ waits from one device's end to the next one's start and
 applies several at a time (default one; the checks run in the pool of
 .BR pull ).
 .B \-\-max\-failures
-defaults to 1. At the start of each device's apply the break\-glass hold, the
+defaults to 1, so a canary that failed also stops the run: the rest of its
+shape is skipped and every device not yet started, of any shape, is not
+started (the other shapes go on only under a higher limit). At the start of each device's apply the break\-glass hold, the
 registry entry (name, address, vendor, hostname, port, host keys) and the
 scope that covers it are read again: a device held, changed or no longer
 yours since the review fails with the reason and nothing is sent to it.
@@ -13363,7 +13365,7 @@ The address the devices are told to authenticate against, for devices behind a t
 The address this server reaches the devices from (not stored).
 .TP
 \fB\-\-check\fR
-Stop after the device's own commit check: nothing is committed, the device's shape (its change, as one id) is filed as new.
+Stop after the device's own commit check: nothing is committed, the device's shape (its change, as one id) is filed as new unless it is already known.
 .TP
 \fB\-\-confirmed\fR
 Apply only the shapes a verified apply confirmed, or 'shapes seed' filed (the others are skipped), the one form \-\-yes answers the review of.
@@ -13372,7 +13374,7 @@ Apply only the shapes a verified apply confirmed, or 'shapes seed' filed (the ot
 Apply at most n devices in one run, in registry order (default 5; the rest are skipped, run it again).
 .TP
 \fB\-\-pause\fR \fI<seconds>\fR
-Wait n seconds after a device ends before the next one starts, 0\-3600 (default device.apply.pause; the first device starts at once).
+Wait <seconds> from one device's end to the next one's start, 0\-3600 (default device.apply.pause; the first device starts at once).
 .TP
 \fB\-\-hold\fR
 After the fresh login keep the change only when you log in with one account of each class and type OK (needs a terminal).
@@ -13393,7 +13395,7 @@ One object per device and phase, then the summary; the review goes to standard e
 With \-\-check: exit 2 when a device needs a change (and none failed).
 .TP
 \fB\-\-yes\fR
-Answer the review (only with \-\-confirmed: every shape is one an earlier apply confirmed; no terminal needed).
+Answer the review (only with \-\-confirmed: every shape is one a verified apply confirmed or 'shapes seed' filed; no terminal needed).
 .RE
 .\" END GENERATED: command device config apply
 .TP
