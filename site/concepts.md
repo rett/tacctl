@@ -9,7 +9,7 @@ doctype: explanation
 
 # Concepts
 
-*Users, groups, scopes and tiers, and the other words tacctl uses · Checked against tacctl 0.2.22*
+*Users, groups, scopes and tiers, and the other words tacctl uses · Checked against tacctl 0.2.24*
 
 [Printable PDF](../pdf/tacctl-concepts.pdf){: .pdf-link }
 
