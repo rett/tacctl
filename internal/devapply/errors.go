@@ -284,7 +284,7 @@ func answerErrorWhy(cmd string, lines []string, m *masker, why string) *AnswerEr
 	return e
 }
 
-// cut shortens a line and replaces its control characters.
+// cut shortens a line and replaces its control and formatting characters.
 func cut(s string) string { return cutTo(s, maxLine) }
 
 // cutTo is cut at n bytes.
@@ -295,7 +295,7 @@ func cutTo(s string, n int) string {
 			b.WriteString("...")
 			break
 		}
-		if r < 0x20 || r == 0x7f {
+		if devssh.UnsafeRune(r) {
 			r = '?'
 		}
 		b.WriteRune(r)
