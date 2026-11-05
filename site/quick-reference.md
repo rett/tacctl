@@ -51,6 +51,9 @@ usage. In the console and `tacctl shell`, `?` shows help.
 | Read config | `tacctl device config pull <n>\|--scope s` | E |
 | Diff / plan | `tacctl device config diff <n>` · `device config plan <n>` | E |
 | Junos apply | `tacctl device config apply <n> [--check]` | E |
+| Junos rollout of a scope | `device config apply --scope <s> --check`, then `apply <n>`, then `apply --scope <s>` (a script: `--confirmed --yes`) | E |
+| List the shapes of a rollout | `tacctl device config shapes [list [--show <hash>]]` | S |
+| File a hand-verified shape as confirmed | `tacctl device config shapes seed <n>` | S |
 | Where the time of a run goes | `--timing` on `device config pull`, `diff --pull`, `plan --pull` or `apply` | E |
 | Timing scale of a slow or distant device | `tacctl device timeout-scale <n> [<1-10>\|clear]` (the scale is in `device show`) | S |
 | Back-out | `tacctl device config plan <n> --backout` | E |
