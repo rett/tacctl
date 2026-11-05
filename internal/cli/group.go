@@ -413,7 +413,7 @@ func (inv *invocation) groupRemove(args []string) error {
 	if err := inv.requireStore(); err != nil {
 		return err
 	}
-	if contains(policy.Builtins, group) {
+	if slices.Contains(policy.Builtins, group) {
 		return inv.usageErr("Cannot remove built-in group '" + group + "'.")
 	}
 	m, err := inv.model()
@@ -1121,7 +1121,7 @@ func (inv *invocation) groupPrivilege(args []string) error {
 		}
 		var changed, skipped []string
 		for _, x := range requested {
-			has := contains(current, x)
+			has := slices.Contains(current, x)
 			switch {
 			case sub == "add" && !has:
 				changed = append(changed, x)
@@ -1199,7 +1199,7 @@ func (inv *invocation) groupPrivilegeSeed(args []string) error {
 	}
 	candidates := policy.Builtins
 	if target != "" {
-		if len(policy.DefaultPrivileges(target)) == 0 && !contains(policy.Builtins, target) {
+		if len(policy.DefaultPrivileges(target)) == 0 && !slices.Contains(policy.Builtins, target) {
 			return inv.usageErr("seed only supports the built-in groups (readonly, operator, superuser).")
 		}
 		candidates = []string{target}

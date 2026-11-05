@@ -37,16 +37,35 @@ func logFilterFlags(accounting bool) []Flag {
 		Long: "Write one JSON object per line, with no headings, for jq"})
 }
 
+// logFilterUsage is the usage line of the filter errors, as every other usage
+// error of the command has one: the verb and the options the error is about,
+// with the values as the help lists them.
+func logFilterUsage(sub string, names ...string) string {
+	var b strings.Builder
+	b.WriteString("Usage: tacctl log " + sub)
+	for _, n := range names {
+		for _, f := range logFilterFlags(true) {
+			if f.Names[0] == n {
+				b.WriteString(" [" + n + " " + f.Arg + "]")
+			}
+		}
+	}
+	b.WriteString(" ...")
+	return b.String()
+}
+
 // logFilterArgs are the filters as typed.
 type logFilterArgs struct {
 	since, until, user, device, typ string
 	json                            bool
+	sub                             string // the verb, for the usage line of an error
 }
 
 // take reads the filter flag at args[*i], if it is one: --name value or
 // --name=value. handled is false for any other word.
 func (a *logFilterArgs) take(inv *invocation, sub string, args []string, i *int) (handled bool, err error) {
 	w := args[*i]
+	a.sub = sub
 	if w == "--json" {
 		a.json = true
 		return true, nil
@@ -69,7 +88,7 @@ func (a *logFilterArgs) take(inv *invocation, sub string, args []string, i *int)
 		return false, nil
 	}
 	if name == "--type" && sub != "accounting" {
-		return true, inv.usageErr("--type applies to 'log accounting' only. Usage: tacctl log accounting [--type login|change|command] ...")
+		return true, inv.usageErr("--type applies to 'log accounting' only.", logFilterUsage("accounting", "--type"))
 	}
 	if !hasVal {
 		val = arg(args, *i+1)
@@ -83,7 +102,7 @@ func (a *logFilterArgs) take(inv *invocation, sub string, args []string, i *int)
 		}
 	}
 	if val == "" {
-		return true, inv.usageErr(name + " needs " + what + ". Usage: tacctl log " + sub + " [" + name + " <value>] ...")
+		return true, inv.usageErr(name+" needs "+what+".", logFilterUsage(sub, name))
 	}
 	*dst = val
 	return true, nil
@@ -97,23 +116,23 @@ func (a *logFilterArgs) build(inv *invocation) (backend.LogFilter, error) {
 	var err error
 	if a.since != "" {
 		if f.Since, err = backend.ParseLogTime(a.since, now); err != nil {
-			return f, inv.usageErr("--since: " + err.Error())
+			return f, inv.usageErr("--since: "+err.Error()+".", logFilterUsage(a.sub, "--since"))
 		}
 	}
 	if a.until != "" {
 		if f.Until, err = backend.ParseLogTime(a.until, now); err != nil {
-			return f, inv.usageErr("--until: " + err.Error())
+			return f, inv.usageErr("--until: "+err.Error()+".", logFilterUsage(a.sub, "--until"))
 		}
 	}
 	if !f.Since.IsZero() && !f.Until.IsZero() && f.Since.After(f.Until) {
-		return f, inv.usageErr("--since (" + f.Since.Format(backend.LogTimeLayout) + ") is later than --until (" + f.Until.Format(backend.LogTimeLayout) + ").")
+		return f, inv.usageErr("--since ("+f.Since.Format(backend.LogTimeLayout)+") is later than --until ("+f.Until.Format(backend.LogTimeLayout)+").", logFilterUsage(a.sub, "--since", "--until"))
 	}
 	if a.typ != "" && !slices.Contains(backend.LogTypes, a.typ) {
-		return f, inv.usageErr("Unknown --type '" + a.typ + "' (use " + strings.Join(backend.LogTypes, ", ") + ").")
+		return f, inv.usageErr("Unknown --type '"+a.typ+"' (use "+strings.Join(backend.LogTypes, ", ")+").", logFilterUsage(a.sub, "--type"))
 	}
 	if a.device != "" {
 		f.Device = a.device
-		if f.Addrs, err = inv.logDeviceAddrs(a.device); err != nil {
+		if f.Addrs, err = inv.logDeviceAddrs(a.sub, a.device); err != nil {
 			return f, err
 		}
 	}
@@ -123,12 +142,12 @@ func (a *logFilterArgs) build(inv *invocation) (backend.LogFilter, error) {
 // logDeviceAddrs are the canonical addresses --device stands for: the address
 // itself, or the address of the registered device or enrolled host of that
 // name that the caller may see.
-func (inv *invocation) logDeviceAddrs(v string) ([]string, error) {
+func (inv *invocation) logDeviceAddrs(sub, v string) ([]string, error) {
 	if a := backend.CanonAddr(v); a != "" {
 		return []string{a}, nil
 	}
 	if _, err := netip.ParseAddr(v); err == nil {
-		return nil, inv.usageErr("--device: '" + v + "' is not an address of a device.")
+		return nil, inv.usageErr("--device: '"+v+"' is not an address of a device.", logFilterUsage(sub, "--device"))
 	}
 	e, ok := inv.logResolver().Lookup(v, inv.deviceFilter())
 	if !ok {

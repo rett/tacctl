@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -257,7 +258,7 @@ func (m *Model) GroupInfo() []string {
 		}
 	}
 	for _, g := range m.Groups {
-		if !contains(order, g.Name) {
+		if !slices.Contains(order, g.Name) {
 			rest = append(rest, g.Name)
 		}
 	}
@@ -376,7 +377,7 @@ func (m *Model) DeviceProblems(scope, prefixCSV, tagCIDR, tagVendor string) (lin
 		if s.Name == scope {
 			found = true
 			ds.Prefixes = prefixes
-			if tagCIDR != "" && !contains(ds.Devices, tagCIDR) {
+			if tagCIDR != "" && !slices.Contains(ds.Devices, tagCIDR) {
 				ds.Devices = append(ds.Devices, tagCIDR)
 			}
 		}
@@ -760,7 +761,7 @@ func (m *Model) Validate(full bool) []string {
 	if full {
 		for _, n := range m.UserNames() {
 			u := m.users[n]
-			if contains(names.ReservedUsers, n) {
+			if slices.Contains(names.ReservedUsers, n) {
 				errs = append(errs, fmt.Sprintf(`User "%s" uses a reserved name (remove with: tacctl user remove %s)`, n, n))
 			}
 			if m.groups[u.Group] == nil {

@@ -270,7 +270,7 @@ func (inv *invocation) parseCIDRList(input string) ([]string, error) {
 		if err != nil {
 			return nil, inv.usageErr("Invalid CIDR: '" + entry + "'")
 		}
-		if c := n.String(); !contains(out, c) {
+		if c := n.String(); !slices.Contains(out, c) {
 			out = append(out, c)
 		}
 	}
@@ -906,13 +906,13 @@ func collisionAdvice(collisions []string, remedy ...string) []string {
 func (inv *invocation) scopeVendorList(csv string) (string, error) {
 	words := shellWords(csv)
 	for _, v := range words {
-		if !contains(scopeVendors, v) {
+		if !slices.Contains(scopeVendors, v) {
 			return "", inv.usageErr("Unknown vendor '" + v + "'. Known vendors: " + strings.Join(scopeVendors, ", "))
 		}
 	}
 	var out []string
 	for _, known := range scopeVendors {
-		if contains(words, known) {
+		if slices.Contains(words, known) {
 			out = append(out, known)
 		}
 	}
@@ -1016,7 +1016,7 @@ func (inv *invocation) scopeAdd(args []string) error {
 	var protocols []string
 	if protocolsArg != "" {
 		for _, p := range shellWords(protocolsArg) {
-			if !contains(scopeProtocols, p) {
+			if !slices.Contains(scopeProtocols, p) {
 				return inv.usageErr("Unknown protocol '" + p + "'. Known protocols: " + strings.Join(scopeProtocols, ", "))
 			}
 		}
@@ -1535,7 +1535,7 @@ func (inv *invocation) scopePrefixes(args []string) error {
 				"  tacctl scope prefixes <owner> remove <cidr>")...)...)
 		}
 		for _, c := range requested {
-			if contains(current, c) {
+			if slices.Contains(current, c) {
 				skipped = append(skipped, c)
 			} else {
 				changed = append(changed, c)
@@ -1549,7 +1549,7 @@ func (inv *invocation) scopePrefixes(args []string) error {
 		}
 	} else {
 		for _, c := range requested {
-			if contains(current, c) {
+			if slices.Contains(current, c) {
 				changed = append(changed, c)
 				current = without(current, c)
 			} else {
@@ -1619,7 +1619,7 @@ func (inv *invocation) scopePrefixesMove(m *model.Model, from, list, to string) 
 	src, dst := m.ScopePrefixes(from), m.ScopePrefixes(to)
 	var missing []string
 	for _, c := range requested {
-		if !contains(src, c) {
+		if !slices.Contains(src, c) {
 			missing = append(missing, c)
 		}
 	}
@@ -1628,7 +1628,7 @@ func (inv *invocation) scopePrefixesMove(m *model.Model, from, list, to string) 
 	}
 	for _, c := range requested {
 		src = without(src, c)
-		if !contains(dst, c) {
+		if !slices.Contains(dst, c) {
 			dst = append(dst, c)
 		}
 	}
@@ -1980,14 +1980,14 @@ func (inv *invocation) scopeProtocols(args []string) error {
 			if p == "" {
 				continue
 			}
-			if !contains(scopeProtocols, p) {
+			if !slices.Contains(scopeProtocols, p) {
 				return inv.usageErr("Unknown protocol '" + p + "'. Known protocols: " + known)
 			}
 			wanted = append(wanted, p)
 		}
 		var list []string
 		for _, k := range scopeProtocols {
-			if contains(wanted, k) {
+			if slices.Contains(wanted, k) {
 				list = append(list, k)
 			}
 		}
@@ -2002,7 +2002,7 @@ func (inv *invocation) scopeProtocols(args []string) error {
 		}
 		// A filter without the scope's auth-method would leave the
 		// defaults it names pointing at a backend that ignores the scope.
-		if am := inv.scopeAuthMethod(scope); am != "" && !contains(list, am) {
+		if am := inv.scopeAuthMethod(scope); am != "" && !slices.Contains(list, am) {
 			return inv.usageErr("Scope '"+scope+"' has auth-method "+am+", which protocols '"+newList+"' would leave unserved. Nothing was changed.",
 				"Change or clear the auth-method first: tacctl scope auth-method "+scope+" tacacs|radius|clear   (or keep "+am+" in the list)")
 		}
@@ -2011,7 +2011,7 @@ func (inv *invocation) scopeProtocols(args []string) error {
 		}
 		inv.detail("scope protocols", kvp("scope", scope), kvp("from", orWord(current, "all")), kvp("to", newList))
 		a.Out.Info("Scope '" + scope + "' protocols set to " + newList + ".")
-		if !contains(list, "tacacs") {
+		if !slices.Contains(list, "tacacs") {
 			a.Out.Warn("Scope '" + scope + "' is no longer served over TACACS+: its devices and its users' grant of it are left out of tacquito.yaml.")
 		}
 		inv.echo("")
@@ -2045,7 +2045,7 @@ func (inv *invocation) scopeVendorRadiusNotes(scope string) {
 	}
 	if protocols != "" && !strings.Contains(","+protocols+",", ",radius,") {
 		a.Out.Warn("Scope '" + scope + "' is limited to " + protocols + " (tacctl scope protocols), so it is not served over RADIUS and this has no effect yet.")
-	} else if ids, err := a.Backends().Enabled(); err == nil && !contains(ids, backend.RADIUS) {
+	} else if ids, err := a.Backends().Enabled(); err == nil && !slices.Contains(ids, backend.RADIUS) {
 		a.Out.Warn("The RADIUS backend is not enabled on this server, so this has no effect yet: tacctl backend enable radius")
 	}
 }
@@ -2287,7 +2287,7 @@ func (inv *invocation) scopeDevices(args []string) error {
 		return nil
 	}
 
-	if !contains(scopeVendors, vendor) {
+	if !slices.Contains(scopeVendors, vendor) {
 		return inv.usageErr("Unknown vendor '" + vendor + "'. Known vendors: " + vendors)
 	}
 	if had == vendor {
@@ -2538,7 +2538,7 @@ func (inv *invocation) scopeAuthMethodCmd(args []string) error {
 	}
 	inv.detail("scope auth-method", kvp("scope", scope), kvp("from", current), kvp("to", method))
 	a.Out.Info("Scope '" + scope + "' auth-method set to " + method + ".")
-	if ids, err := a.Backends().Enabled(); err == nil && !contains(ids, method) {
+	if ids, err := a.Backends().Enabled(); err == nil && !slices.Contains(ids, method) {
 		a.Out.Warn("The " + method + " backend is not enabled on this server: tacctl backend enable " + method)
 	}
 	inv.echo("")

@@ -9,6 +9,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/rett/tacctl/internal/cidr"
@@ -51,7 +52,7 @@ func (inv *invocation) parseACLEntries(input string) ([]string, error) {
 			}
 			return nil, inv.usageErr(err.Error())
 		}
-		if s := e.String(); !contains(out, s) {
+		if s := e.String(); !slices.Contains(out, s) {
 			out = append(out, s)
 		}
 	}
@@ -89,7 +90,7 @@ func aclChange(current []string, remove bool, requested []string) (next, changed
 	next = append([]string(nil), current...)
 	for _, r := range requested {
 		if !remove {
-			if contains(next, r) {
+			if slices.Contains(next, r) {
 				skipped = append(skipped, r)
 				continue
 			}

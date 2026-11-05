@@ -5,7 +5,13 @@
 # on standard output and as the last line of the log:
 #
 #   GATE-GO PASS|FAIL rc=<go test status> packages=<ok or no-test>/<listed>
-#           failures=<FAIL and panic lines> secs=<n> log=<path>
+#           failures=<FAIL and panic lines> secs=<n> skipped=<n> log=<path>
+#
+# skipped counts the '--- SKIP' lines of the log (go test runs with -v, the
+# only way it reports a skip; a subtest counts as well as its parent). The
+# names of the skipped tests (at most 20) are listed above the verdict line: a
+# test that skips for a missing tool passes silently, so a green run whose
+# skip count is not the expected one did not test what it should.
 #
 # A run is a PASS only when go test exited 0, every listed package printed an
 # ok or no-test-files line and no FAIL or panic line is in the log. A run that
@@ -74,13 +80,22 @@ start=$(date +%s)
 child=""
 
 verdict() { # <rc> <note>
-    local rc=$1 note=${2:-} got bad v secs
+    local rc=$1 note=${2:-} got bad v secs skipped names n max=20
     got=$(grep -cE '^(ok|\?)[[:space:]]' "$log")
     bad=$(grep -cE '^(FAIL|--- FAIL|panic:)' "$log")
     secs=$(($(date +%s) - start))
+    skipped=$(grep -cE '^[[:space:]]*--- SKIP: ' "$log")
+    if [[ "$skipped" -gt 0 ]]; then
+        names=$(sed -n 's/^[[:space:]]*--- SKIP: \([^ ]*\).*/\1/p' "$log" | sort -u)
+        n=$(grep -c . <<<"$names")
+        head -n "$max" <<<"$names" | sed 's/^/gate-go: skipped: /' | tee -a "$log"
+        if [[ "$n" -gt "$max" ]]; then
+            echo "gate-go: skipped: +$((n - max)) more" | tee -a "$log"
+        fi
+    fi
     v=FAIL
     if [[ "$rc" -eq 0 && "$got" -eq "$want" && "$want" -gt 0 && "$bad" -eq 0 && -z "$note" ]]; then v=PASS; fi
-    echo "GATE-GO $v rc=$rc packages=$got/$want failures=$bad secs=$secs${note:+ $note} log=$log" | tee -a "$log"
+    echo "GATE-GO $v rc=$rc packages=$got/$want failures=$bad secs=$secs skipped=$skipped${note:+ $note} log=$log" | tee -a "$log"
     [[ "$v" = PASS ]]
 }
 
@@ -95,7 +110,7 @@ interrupted() {
 }
 trap interrupted TERM INT HUP
 
-setsid "$GO" test -timeout "$timeout" "${tagflag[@]}" "${pkgs[@]}" </dev/null >"$log" 2>&1 &
+setsid "$GO" test -v -timeout "$timeout" "${tagflag[@]}" "${pkgs[@]}" </dev/null >"$log" 2>&1 &
 child=$!
 wait "$child"
 rc=$?

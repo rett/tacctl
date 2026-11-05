@@ -51,7 +51,7 @@ Commands:
   <b>backend</b> <o><subcommand></o>                  Auth backends: list, status, enable <o><id></o>, disable <o><id></o>
   <b>store</b> <o><subcommand></o>                    The canonical store: show, import, rollback
   <b>config</b> <o><subcommand></o>                   Configuration (show, render, cisco, juniper, wti, validate, ...)
-  <b>log</b> <o><subcommand></o>                      Log viewer (tail, search, failures, accounting; <o>--backend <id></o>)
+  <b>log</b> <o><subcommand></o>                      Log viewer (tail, search, failures, accounting; filters; <o>--backend <id></o>)
   <b>backup</b> <o><subcommand></o>                   Backup management (list, diff, restore, keep, unkeep, recover)
   <b>hash</b> <o><subcommand></o>                     Bcrypt helper (generate, commands — runs as invoking user, no sudo)
   <b>completion</b> bash|zsh|fish              Print the shell completion script

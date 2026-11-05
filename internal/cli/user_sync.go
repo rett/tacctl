@@ -26,6 +26,7 @@ import (
 	"errors"
 	"io"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -219,7 +220,7 @@ func ownSyncText(he *hosts.Env, who []string, uid func(string) string) string {
 	var parts []string
 	if n := len(c.Created); n > 0 {
 		t := strconv.Itoa(n) + " created"
-		if n == 1 && contains(who, c.Created[0]) {
+		if n == 1 && slices.Contains(who, c.Created[0]) {
 			if u := uid(c.Created[0]); u != "-" {
 				t += " (UID " + u + ")"
 			}

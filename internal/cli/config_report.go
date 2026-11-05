@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -405,7 +406,7 @@ func (inv *invocation) collectValidate(r *validateReport) {
 	}
 
 	// scope.default in tacctl.yaml must name an existing scope.
-	if def, _ := cfg.Get("scope.default", ""); merr == nil && def != "" && !contains(scopeNames, def) {
+	if def, _ := cfg.Get("scope.default", ""); merr == nil && def != "" && !slices.Contains(scopeNames, def) {
 		text := "Default scope override points at '" + def + "' which is not a defined scope"
 		r.found(howEchoE, "  "+R+"Error:"+NC+"                "+text, validateFinding{Section: "scope_default", Level: levelError, Text: text})
 	} else {

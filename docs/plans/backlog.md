@@ -138,7 +138,6 @@ Device names: shipped in 0.2.1 (CHANGELOG `## 0.2.1`, item 2): a fully qualified
 
 Shipped: SNMP credentials and client lists per scope in 0.2.3, per-device overrides and the `snmp` managed section in 0.2.4, and `device config apply` for Junos in 0.2.9 (D128-D144; the engineer tier since 0.2.19). Still open:
 
-- `config snmp test` and `device add` should say when the server is not in the scope's SNMP client list.
 - Configuration deployment beyond Junos over the ssh CLI: NETCONF as a second transport (`apply-deferred.md`), IOS and IOS-XE apply (no commit-confirm on IOS; `configure replace` with a timer), WTI, and the tier that may push beyond the superuser.
 
 ## 3g. Findings from comparing the standard block with three real Cisco images (filed 2026-10-11, for the WP13.2 review)

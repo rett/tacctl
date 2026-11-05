@@ -17,6 +17,7 @@ package cli
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -206,7 +207,7 @@ func (inv *invocation) serverAddressList(csv string) ([]string, error) {
 		if p := conf.ServerAddressProblem(f); p != "" {
 			return nil, inv.usageErr("'" + f + "' " + p + ". Nothing was changed.")
 		}
-		if c := canonAddr(f); !contains(out, c) {
+		if c := canonAddr(f); !slices.Contains(out, c) {
 			out = append(out, c)
 		}
 	}

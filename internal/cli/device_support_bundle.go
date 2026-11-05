@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -94,7 +95,7 @@ func (inv *invocation) deviceSupportBundle(args []string) error {
 		return err
 	}
 	vendorFlag := strings.ToLower(p.Value("--vendor"))
-	if p.Has("--vendor") && !contains(bundleVendors, vendorFlag) {
+	if p.Has("--vendor") && !slices.Contains(bundleVendors, vendorFlag) {
 		return inv.argErr("--vendor takes cisco, juniper or wti: '"+p.Value("--vendor")+"'", supportBundleUse)
 	}
 	var local *localLogin
@@ -127,7 +128,7 @@ func (inv *invocation) deviceSupportBundle(args []string) error {
 	switch {
 	case e.Source == devreg.SourceHost:
 		return inv.usageErr("'" + e.Name + "' is an enrolled Linux host; a bundle is made of a network device.")
-	case !contains(bundleVendors, vendor):
+	case !slices.Contains(bundleVendors, vendor):
 		return inv.usageErr("Device '"+e.Name+"' has vendor '"+e.Vendor+"', which has no command list.",
 			"Name the vendor for this run: tacctl device support-bundle "+e.Name+" --vendor cisco|juniper|wti")
 	case !e.Configured:
