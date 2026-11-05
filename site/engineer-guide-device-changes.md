@@ -439,8 +439,8 @@ tacctl device config apply --scope site-a --confirmed --yes
 | Any time | `tacctl device config shapes` lists the shapes and where each device is | No | No | S |
 
 Only `apply` without `--check` writes to a device. An engineer sees the facts
-of a shape in the check lines and in the review (`new`, or `confirmed on
-<device>`); the `shapes` command is the superuser's.
+of a shape in the check lines and in the review (`new`, or
+`confirmed on <device>`); the `shapes` command is the superuser's.
 
 Other forms of the command:
 
