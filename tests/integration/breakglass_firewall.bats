@@ -92,7 +92,7 @@ hold() {
     assert_output --partial "Invalid value: 'block'. Use: reject, drop, off"
     run plain config breakglass-firewall reject
     assert_success
-    run grep -c breakglass "${TACCTL_STATE_DIR}/tacctl.yaml"
+    run grep -c firewall "${TACCTL_STATE_DIR}/tacctl.yaml"
     assert_output "0"
 }
 
