@@ -77,7 +77,7 @@ func TestNetRemoteShell(t *testing.T) {
 // configuration apply. A command with a Dir, or with '-C', keeps looking there.
 func TestNetCloneLookupIsNotInTheWorkingDirectory(t *testing.T) {
 	var f fake.Runner
-	gitx.Net(context.Background(), &f, execx.Cmd{Name: "git", Args: []string{"clone", "--quiet", "https://git.example.com/tacctl.git", "/srv/clone"}})
+	gitx.Net(context.Background(), &f, execx.Cmd{Name: "git", Args: []string{"clone", "--quiet", "https://git.example.net/tacctl.git", "/srv/clone"}})
 	calls := f.Calls()
 	if len(calls) != 1 || calls[0].Dir != "/" || !slices.Equal(calls[0].Argv(), []string{"git", "config", "--get", "core.sshCommand"}) {
 		t.Fatalf("lookup %q in %q", f.Argvs(), calls[0].Dir)

@@ -303,7 +303,8 @@ credential helper, and for an ssh remote its host key must already be in
 unknown host). A `GIT_SSH_COMMAND` of your own is replaced, not honoured:
 set `core.sshCommand` in the clone (run
 `git config core.sshCommand "ssh -i /home/user/.ssh/deploy-key"` in
-`/opt/tacctl`) to choose the key; `BatchMode=yes` is added after it. Its messages and exit status are unchanged.
+`/opt/tacctl`) to choose the key; `BatchMode=yes` is added after it. Its
+messages and exit status are unchanged.
 
 ## `config validate --fix-names`
 

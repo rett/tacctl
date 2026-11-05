@@ -227,13 +227,18 @@ current behaviour; this file is where history lives.
     after it (for a clone not made yet, git's global and system configuration
     is read, not the repository the operator stands in). A remote that needs a
     password now fails where it used to ask:
-    `git fetch failed. Check network / credentials.` for the upgrade, the exit
+    `git fetch failed. Check network / credentials.` for the upgrade (or, when
+    the upgrade has to make the clone, the warning
+    `Failed to clone management repo.`, and it goes on), the exit
     status of `git clone` for an install (a failed pull of an existing clone is
     still not an error, as before), and the unchanged messages of
     `config branch`; use a key, the agent or a credential helper. An ssh remote
     whose host key is not in `known_hosts` now fails too, where ssh used to ask
     whether to trust it (`BatchMode=yes`): an ssh remote needs a key, the
-    agent or a credential helper, and its host key in `known_hosts`. The manual
+    agent or a credential helper, and its host key in `known_hosts` (unless
+    ssh's own configuration sets `StrictHostKeyChecking accept-new`). An
+    operator's `GIT_SSH` is replaced as well, and a `core.sshCommand` that is
+    not OpenSSH's `ssh` (one that refuses `-o`) fails. The manual
     page (`upgrade`, `install`, `config branch`, `TACQUITO_SRC`),
     `docs/install/upgrading.md` and `docs/cli/config.md` say so. The clone of
     `pam_tacplus` that `tacctl config linux build` makes (also when the

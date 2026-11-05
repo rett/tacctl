@@ -17377,7 +17377,9 @@ pulls it; an origin set by hand is left alone.
 The pull is a fetch, then a fast\-forward. The fetch never waits for an answer
 (git asks for no user name, password or key passphrase, and drops a transfer that stays under
 1000 bytes a second for a minute; an ssh remote needs a key, the agent or a credential helper, and its
-host key in known_hosts, since an unknown one fails where ssh used to ask), and a fetch that fails ends
+host key in
+.IR known_hosts ,
+since an unknown one fails where ssh used to ask), and a fetch that fails ends
 the install or upgrade there.
 A checkout that cannot fast\-forward to the fork's main (a rewritten history) or is ahead of it
 (a commit made in the clone) is reset to it with a warning that names the commit it was at
