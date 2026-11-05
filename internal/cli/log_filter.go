@@ -73,7 +73,14 @@ func (a *logFilterArgs) take(inv *invocation, sub string, args []string, i *int)
 	}
 	if !hasVal {
 		val = arg(args, *i+1)
-		*i++
+		// The next word is another option, not this one's value ('--user
+		// --json'): a value of its own is needed. A single dash is a value
+		// ('--since -1h').
+		if strings.HasPrefix(val, "--") {
+			val = ""
+		} else {
+			*i++
+		}
 	}
 	if val == "" {
 		return true, inv.usageErr(name + " needs " + what + ". Usage: tacctl log " + sub + " [" + name + " <value>] ...")

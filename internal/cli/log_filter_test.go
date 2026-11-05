@@ -101,6 +101,8 @@ func TestLogFilterFlagErrors(t *testing.T) {
 		{[]string{"search", "alice", "--user"}, "--user needs a user name."},
 		{[]string{"failures", "--device"}, "--device needs a device name or an address."},
 		{[]string{"accounting", "--type"}, "--type needs login, change or command."},
+		{[]string{"accounting", "--user", "--json"}, "--user needs a user name."},
+		{[]string{"tail", "--device", "--since", "-1h"}, "--device needs a device name or an address."},
 		{[]string{"tail", "--since", "last week"}, "--since: invalid time 'last week' (use YYYY-MM-DD[ HH:MM[:SS]], now, today, yesterday, -1h, 2 hours ago)"},
 		{[]string{"tail", "--until=tomorrow"}, "--until: invalid time 'tomorrow'"},
 		{[]string{"tail", "--since", "1h"}, "--since: invalid time '1h'"},
