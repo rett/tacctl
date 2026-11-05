@@ -271,15 +271,6 @@ func (m *Model) GroupInfo() []string {
 	return out
 }
 
-func contains(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
-}
-
 // ScopePrefixes is model_scope_prefixes: the scope's prefixes in display
 // order (longest prefix first); nothing for an unknown scope.
 func (m *Model) ScopePrefixes(scope string) []string {
