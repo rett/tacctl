@@ -92,6 +92,32 @@ current behaviour; this file is where history lives.
    anything else between commands, and a prompt more than the commands account
    for, is still refused.
 
+5. **A Junos virtual chassis whose master prints its own label is applied to.**
+   `device config apply` rolled back every apply on a virtual chassis of two
+   members (FPC 0 the master, FPC 1 the backup) with `the confirmed commit's
+   answer: ... a line "commit confirmed will be automatically rolled back in 10
+   minutes unless confirmed" outside the members' answers`: this chassis prints
+   a label for every member, the master too, and a label opens several lines,
+   not one (`fpc0:`, its check and the note; `fpc1:`, `commit complete` and the
+   note; `fpc0:`, `commit complete`). The reader of a commit's answer now takes
+   a label and the lines up to the next label as a block, joins a member's
+   blocks in the order they appear, and holds each member's lines to rules:
+   the check (optional, first), then `commit complete` and, on a confirmed
+   commit only, the note, once each and in either order, and nothing else.
+   Every member of `show version` must be in the answer and finish with
+   `commit complete`. A line before the first label, a member `show version` did
+   not list or one missing, a label with no line, labels of two kinds, a line
+   twice or none of these, a confirmed commit whose note a member does not
+   print and a note on the confirming commit are refused, and the error names
+   the member and the line. Only a chassis of two is read so (the capture is of
+   two members): in a chassis of three or more members that all print a label,
+   a label that appears twice is refused with that said, and every other
+   layout (an unlabelled master, a single member, two routing engines, a
+   cluster) is read as before. A refused answer was shown cut to its first six
+   lines of 200 bytes, which hid the layout that mattered; the error now shows
+   the answer's lines, up to 40, each cut at 120 bytes (the reasons that name a
+   member is cut at 200 bytes).
+
 ## 0.2.24 (2026-11-05)
 
 1. **`tacctl man` finds each entry on groff 1.24.** groff 1.24 narrowed the

@@ -13048,7 +13048,31 @@ last; a member's block is the check (optional on a commit),
 .B "commit complete"
 and, on a confirmed commit only, the note, which every member of a confirmed
 commit must print; each line once and in that order. A line that is none of
-these, a label twice and two members without a block fail the step. A chassis of one member answers like a single
+these, a label twice and two members without a block fail the step. A virtual chassis of two members whose master
+prints its own label too (captured from a real chassis of two) is read by its
+blocks: a label opens a block of lines up to the next label, and the master's
+lines come in two blocks, its check and the note first and its
+.B "commit complete"
+last, after the other member's block. A member's blocks are joined in the order
+they appear and its lines held to rules: the check (optional, first), then
+.B "commit complete"
+and, on a confirmed commit only, the note, once each and in either order (the
+master prints the note before its
+.BR "commit complete" ,
+the other member after it), and nothing else. Every member of
+.B "show version"
+must be in the answer and end in
+.BR "commit complete" .
+A line before the first label, a member that
+.B "show version"
+did not list, a member without lines or missing, a line twice or none of these,
+a confirmed commit whose note a member does not print, and a note on the
+confirming commit fail the step, and the error names the member and the line.
+Only a chassis of two is read so: in a chassis of three or more in which every
+member has a label, a label that appears twice is refused (no capture of a
+larger one shows how the blocks fall). The error of a refused answer shows its
+lines, up to 40, each cut at 120 bytes, so that a layout not seen before shows
+itself. A chassis of one member answers like a single
 device:
 .B "show version"
 prints its header
@@ -13066,9 +13090,10 @@ members committed (a confirmed commit rolls back by itself), and the command
 line transport (the default) can be used; a chassis of one member is read like
 a single device, with no member element or one named by that member, and
 another name is refused. The shape of these replies over NETCONF is inferred:
-no capture of it exists, nor of the commits' replies of a chassis in which every
-member has a label on the command line (the shape with an unlabelled master was
-captured from a real three-member chassis). A proof that fails cancels the commit
+no capture of it exists, nor of the commits' replies of a chassis of three or
+more in which every member has a label on the command line (the shape with an
+unlabelled master was captured from a real three-member chassis, and the shape
+with a labelled master from a real chassis of two). A proof that fails cancels the commit
 .RB ( "rollback 1" ,
 .BR commit )
 and the device is

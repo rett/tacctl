@@ -258,3 +258,95 @@ func TestApplyOnAVirtualChassisMasterUnlabelledOddCommit(t *testing.T) {
 		})
 	}
 }
+
+// labelledMasterKnobs is the virtual chassis of two members of the capture:
+// 'show version' lists fpc0 (the master) and fpc1, and the master prints its
+// own label in the answers of a commit, in two blocks (the knob
+// 'chassis.master' with the word 'labelled').
+func labelledMasterKnobs() map[string]string {
+	return map[string]string{
+		"chassis":            "fpc0 ex4600-40f\nfpc1 ex4600-40f\n",
+		"device":             "hostname jsw1.example.net\nmodel ex4600-40f\njunos 21.4R3-S2.4\n",
+		"chassis.master":     "labelled",
+		"commit.synchronize": "",
+	}
+}
+
+// A chassis of two whose master prints its own label is applied to on the
+// command line, the whole apply: the check, the confirmed commit, the
+// verification and the confirming commit; and the next run finds nothing to
+// change. (NETCONF names every member as before.)
+func TestApplyOnAVirtualChassisMasterLabelled(t *testing.T) {
+	t.Parallel()
+	both(t, labelledMasterKnobs(), func(t *testing.T, d *device) {
+		p := &planner{desired: desiredLines()}
+		o := apply(t, d, p, nil)
+		wantExit(t, o, ExitApplied, ResultApplied)
+		if !slices.Equal(o.Identity.Members, []string{"fpc0", "fpc1"}) {
+			t.Errorf("identity %+v", o.Identity)
+		}
+		if h := d.srv.History(); len(h) < 3 || !strings.HasPrefix(h[0].Comment, "tacctl apply confirm ") {
+			t.Errorf("history %+v", h[:2])
+		}
+		o = apply(t, d, p, nil)
+		wantExit(t, o, ExitNoChange, ResultNoChange)
+	})
+}
+
+// A member of that chassis that fails the check stops the apply before
+// anything is committed, and the reason names the member: the master, which
+// prints a label, as well as the backup.
+func TestApplyOnAVirtualChassisMasterLabelledMemberRefuses(t *testing.T) {
+	t.Parallel()
+	for _, member := range []string{"fpc0", "fpc1"} {
+		t.Run(member, func(t *testing.T) {
+			t.Parallel()
+			knobs := labelledMasterKnobs()
+			knobs["chassis.check"] = member + " => warning: member is out of sync\n"
+			both(t, knobs, func(t *testing.T, d *device) {
+				before := d.srv.Committed()
+				o := apply(t, d, &planner{desired: desiredLines()}, nil)
+				if o.Exit == ExitApplied || o.Exit == ExitPending {
+					t.Fatalf("exit %s: %s", o.Exit, o.Line())
+				}
+				if !strings.Contains(o.Reason, "member "+member) {
+					t.Errorf("the reason does not name the member: %q", o.Reason)
+				}
+				if d.srv.Committed() != before {
+					t.Error("committed")
+				}
+				if _, pending := d.srv.PendingUntil(); pending || d.srv.ExclusiveHolder() != "" {
+					t.Error("pending or locked")
+				}
+			})
+		})
+	}
+}
+
+// A confirmed commit that a member answers with something else than 'commit
+// complete' is not taken for an applied change, whichever member it is: the
+// apply cancels it, names the member, and the device is rolled back.
+func TestApplyOnAVirtualChassisMasterLabelledOddCommit(t *testing.T) {
+	t.Parallel()
+	for _, member := range []string{"fpc0", "fpc1"} {
+		t.Run(member, func(t *testing.T) {
+			t.Parallel()
+			knobs := labelledMasterKnobs()
+			knobs["chassis.commit"] = member + " => warning: the member is behind\n"
+			both(t, knobs, func(t *testing.T, d *device) {
+				before := d.srv.Committed()
+				o := apply(t, d, &planner{desired: desiredLines()}, nil)
+				wantExit(t, o, ExitRolledBack, ResultRolledBack)
+				if !strings.Contains(o.Reason, "member "+member) {
+					t.Errorf("the reason does not name the member: %q", o.Reason)
+				}
+				if d.srv.Committed() != before {
+					t.Error("the change was kept")
+				}
+				if _, pending := d.srv.PendingUntil(); pending {
+					t.Error("a commit is pending")
+				}
+			})
+		})
+	}
+}
