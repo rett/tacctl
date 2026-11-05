@@ -93,9 +93,13 @@ A new IOS 15.6 router may need `--legacy-ssh` and still speak `modern`.
   adds a block to paste first; `configure replace` with that file backs out.
 - **Server port.** When the TACACS+ listener is not on 49
   (`tacctl server listen`), the walkthrough adds `port <n>` under
-  `tacacs server TACACS`, after `address ipv4` (with `--legacy`, after
-  `single-connection` on the `tacacs-server host` line). On 49 it adds
-  nothing.
+  `tacacs server TACACS`, after `address ipv4` (with `--legacy`, after the
+  address on the `tacacs-server host` line). On 49 it adds nothing.
+- **No `single-connection`.** From 0.2.24 the walkthrough and `--legacy`
+  (`tacacs-server host <address> [port <n>] timeout 5 key ...`) leave it out,
+  and `plan` removes it from a device that has it: tacquito closes a
+  connection idle for 15 seconds
+  ([Engineer Guide](engineer-guide-device-changes.md) §4).
 - **Vendor detection** by SNMP does not name IOS 12.x devices (or ASA and
   IOS XR). Register them with `--vendor cisco`.
 
