@@ -71,7 +71,18 @@ renders
 from it, installs the systemd units, and enables the service. An existing
 store, or an existing
 .IR tacquito.yaml ,
-is kept (the latter goes through the upgrade's store gate). The clone in
+is kept (the latter goes through the upgrade's store gate). It also installs the
+.B nftables
+package and writes and enables the boot unit
+.I tacctl\-breakglass\-firewall.service
+(a oneshot that loads the rules file
+.IR /etc/tacctl/breakglass\-firewall.nft ),
+loading the table of the break-glass firewall (see
+.BR "config breakglass\-firewall" )
+for the holds and the setting that stand; a package that cannot be installed is a
+warning that names the fix, and
+.B nftables.service
+is never enabled or touched. The clone in
 .I /opt/tacctl
 is made, or pulled when it exists, without waiting for an operator, as the
 pull of the tacquito source (see
@@ -228,6 +239,19 @@ configuration and the services are not changed); run
 .B "tacctl upgrade"
 again after the rename to finish. Run on 0.2.22 itself, the refusal comes before
 anything is changed. A store that cannot be read does not hold it up.
+.IP
+The upgrade installs the
+.B nftables
+package (as
+.B install
+does, trying again after
+.B "apt\-get update"
+when the first try fails), writes and enables the boot unit
+.IR tacctl\-breakglass\-firewall.service ,
+and loads the table of the break-glass firewall for the holds and the setting
+that stand: an upgrade from 0.2.23 with holds standing renders and loads the
+table, so those holds get the fix. A table that cannot be loaded while an address
+is held is a warning with the fix, not a failure of the upgrade.
 .IP
 The shell completion is rewritten only when its content changed (the output
 says
@@ -483,8 +507,28 @@ A clone that still waits for its
 .B "device rename \-\-replace"
 loses its entry, and after a re-upgrade the verb refuses it as not staged: remove the clone and clone again from the original, or restore the snapshot. Every other entry stays.
 .IP
+Every target removes the break\-glass firewall: the key
+.B breakglass.firewall
+(when set; every older release refuses it, so it is removed after the snapshot
+like the other keys they do not know), the nftables table
+.B "inet tacctl"
+(with nft; the rest of the ruleset is not touched),
+.I /etc/tacctl/breakglass\-firewall.nft
+and the boot unit
+.I tacctl\-breakglass\-firewall.service
+(disabled first), and says so; the
+.B nftables
+package stays. A hold that stands stays (0.2.23 and every older release that has
+holds take the record as it is), without the firewall: the server completes the
+TCP handshake of the held address again, as before 0.2.24, and the plan says so in a
+note. Until the older release is installed
+.B "config breakglass\-firewall"
+writes the key and loads the table again; run the rollback again then.
+.IP
 .B "rollback 0.2.23"
-converts no file: this release changed no stored file, so 0.2.23 reads every file it
+converts no file but the key
+.B breakglass.firewall
+(0.2.24's; when it is set the snapshot is taken): this release changed no other stored file, so 0.2.23 reads every file it
 writes (the email addresses, the SNMP credential files, the covered staging
 entries, the server name, the timing scale, the server address, the users' login
 to this server, a user name with a period and an emergency lockdown, with or
@@ -493,7 +537,7 @@ without enrolled hosts, all stay), the per\-tier sudoers drop\-in is put back as
 .BR "log failures *" ;
 when it is exactly this release's text it is rewritten, after
 .BR "visudo \-cf" ,
-and any other file is left), no snapshot is taken and
+and any other file is left), no snapshot is taken for them and
 .B \-\-yes
 is never needed. It is refused only while a device's apply is not settled.
 Every older target that rewrites that drop\-in recognises this release's text and
@@ -954,7 +998,9 @@ Accepted; the hosts need nothing for this target (no host is synced).
 Remove tacctl and every backend that is enabled or installed: the tacquito
 service, units, binaries, configuration and logs; tacctl's FreeRADIUS
 configuration, unit drop-in and logs (the FreeRADIUS package stays, with its
-own configuration as shipped); the state directory, sudoers rules,
+own configuration as shipped); the break\-glass firewall (the nftables table
+.BR "inet tacctl" ,
+its rules file and its boot unit; the nftables package stays); the state directory, sudoers rules,
 completion, man page and management repository. Offers to preserve backups
 and each backend's logs by archiving them to
 .IR /root/ .
@@ -2782,7 +2828,7 @@ has a
 .B section
 (a fixed token for each label of the text report:
 .BR store ", " yaml ", " overrides ", " command_rules ", " structure ", "
-.BR scope_default ", " linux_hosts ", " names ", " breakglass ", " snmp_users ", " breakglass_hold ", "
+.BR scope_default ", " linux_hosts ", " names ", " breakglass ", " snmp_users ", " breakglass_hold ", " breakglass_firewall ", "
 .BR emergency_lockdown ", " config_blocks ", " operator_policy ", " group_settings ", " orphan_settings ", "
 .BR orphan_files ", " leftovers ", " devices ", " backends ", " rendered ", " drift " and "
 .BR vendor_attrs ),
@@ -5161,6 +5207,106 @@ the detail line is
 Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config audit-strict
+.TP
+.BI "config breakglass\-firewall " [ "reject|drop|off" ]
+Show or set
+.BR breakglass.firewall ,
+what the server does with the TCP connections of an address that is held
+.RB ( "breakglass hold" ).
+A hold takes the address out of every scope's prefixes, so FreeRADIUS (UDP)
+ignores the device and it times out; tacquito listens on TCP, where the kernel
+completes the handshake and tacquito accepts, finds no secret for the address
+and closes the connection. A device whose fallback to its local accounts needs
+the server to be unreachable (a WTI unit with
+.BR "Fallback Local: On (Transport Failure)" ,
+a Junos switch with
+.BR "authentication\-order [ tacplus password ]" )
+sees a reachable server and never falls back. The setting makes tacctl load an
+nftables table of its own,
+.BR "inet tacctl" ,
+that refuses the connection first.
+.B reject
+(the default) answers a TCP connection from a held address to a port of a
+tacquito listener with a TCP reset,
+.B drop
+discards its packets (the device times out), and
+.B off
+has no table: the server completes the handshake, as 0.2.23 did. With no
+argument the command shows the setting and where it comes from
+.RI ( default
+or
+.IR tacctl.yaml ),
+the addresses held and the ports, and whether the live table is as the holds
+and the setting ask for.
+.B reject
+removes the key, the other two write it. Whatever the value, the table is
+loaded again at once and the command says what it did, so
+.B "config breakglass\-firewall reject"
+is also the repair of a table that was not loaded (nft installed late, a table
+flushed by hand): it loads the table even when the setting is unchanged.
+.PP
+The table is the only part of the host's ruleset tacctl touches: two sets (the
+held IPv4 and IPv6 addresses) and one chain on the input hook at priority \-10
+(policy accept) whose rules match a source address in a set and a TCP
+destination port of a tacquito listener
+.RB ( "server listen" ;
+every listener counts, and a change of a listener loads the table again), with
+no connection\-state match, so a session that is open from the address is cut
+too. RADIUS ports are not matched (UDP already times out). Devices and Linux
+hosts are held alike. tacctl writes the whole table to
+.I /etc/tacctl/breakglass\-firewall.nft
+and loads it with
+.BR "nft \-f" ,
+which replaces it in one step; the file is rewritten and loaded by every hold,
+release, move of a held device
+.RB ( "device address" ),
+rename of a held device or host, restore of a snapshot that changes the holds,
+change of a listener and change of the setting, and by the boot unit
+.I tacctl\-breakglass\-firewall.service
+(a oneshot installed and enabled by
+.B install
+and
+.BR upgrade ;
+tacctl never enables or touches
+.BR nftables.service ).
+.B install
+and
+.B upgrade
+install the
+.B nftables
+package, and an upgrade from 0.2.23 with holds standing loads the table, so
+those holds get the fix.
+.PP
+When nft is missing or fails, the hold (or release) stands: the record, the
+rendering and the restarts are as before. The report then says in red that the
+server still completes the TCP handshake on the port(s) for the address, so a
+device that falls back only when the server is unreachable will not, names the
+fix
+.RB ( "sudo apt\-get install nftables" ,
+then this command with the current setting), and the command exits 1. A release
+that cannot load the table says that the address may still be refused.
+.B status
+and
+.B "config validate"
+compare the live table
+.RB ( "nft \-j list table inet tacctl" )
+with the holds and the setting and name each difference (a missing table, an
+address missing or extra, a wrong verdict, wrong ports) with this command; when
+nft cannot be read (not root, not installed with nothing held) they say so and do
+not fail.
+.B "breakglass list"
+shows the firewall state. Superuser only. The detail line is
+.BR "config breakglass\-firewall from=reject to=drop firewall=drop" ;
+the
+.B auth.info
+lines of hold and release carry
+.BR firewall=reject|drop|off|failed .
+.\" BEGIN GENERATED: command config breakglass-firewall
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config breakglass-firewall
 .TP
 .B "config allow " "{ list | add | remove | clear } " [ cidr[,cidr...] ]
 Manage the connection allow list (IP ACL).
@@ -13755,13 +13901,60 @@ and
 say so for as long as it stands. Both verbs write an
 .B auth.info
 line per device (the reason is in the hold's:
-.BI "breakglass hold device=" name " addr=" ip " reason=\(dq" text "\(dq by=" user
+.BI "breakglass hold device=" name " addr=" ip " reason=\(dq" text "\(dq by=" user " firewall=" state
 and
-.BI "breakglass release device=" name " addr=" ip " held=" duration " by=" user )
-and take the snapshot every change takes. A hold that
+.BI "breakglass release device=" name " addr=" ip " held=" duration " by=" user " firewall=" state )
+and take the snapshot every change takes;
+.I state
+is what the nftables table did (reject, drop, off or failed: see below). A hold that
 .B "device address"
 moves writes
-.BI "breakglass hold\-move device=" name " from=" ip " to=" ip " by=" user .
+.BI "breakglass hold\-move device=" name " from=" ip " to=" ip " by=" user " firewall=" state .
+.PP
+A hold also refuses the TCP connections of the held address, so a device that
+falls back to its local accounts only when the server is unreachable does:
+FreeRADIUS (UDP) ignores an address its scopes do not cover and the device times
+out, but tacquito listens on TCP, where the kernel completes the handshake and
+tacquito closes the connection afterwards. tacctl owns one nftables table,
+.BR "inet tacctl" ,
+whose sets hold the held addresses and whose rule on the input hook (priority
+\-10) rejects with a TCP reset, or drops, a source address in a set that connects
+to a TCP port of a tacquito listener. It is written to
+.I /etc/tacctl/breakglass\-firewall.nft
+and loaded with
+.B "nft \-f"
+at the point the backends restart, by every hold, release, move
+.RB ( "device address" ),
+rename, restore that changes the holds, change of a listener and change of the
+setting, and at boot by
+.IR tacctl\-breakglass\-firewall.service .
+Its setting is
+.B "config breakglass\-firewall"
+.RB ( reject ,
+the default,
+.B drop
+or
+.BR off ,
+which is the behaviour before 0.2.24). The report of a hold has a
+.B "Firewall:"
+line
+.RB ( "Firewall: " address " refused on tcp/49 (reject)" ),
+the report of a release the reverse
+.RB ( "Firewall: " address " accepted again on tcp/49" ).
+When nft is missing or fails the hold stands (the record, the rendering and the
+restarts are as above) and the report says in red that the server still completes
+the TCP handshake on the port(s) for the address, so a device that falls back only
+when the server is unreachable (a WTI unit with Fallback Local
+.BR "On (Transport Failure)" ,
+a Junos switch with
+.BR "authentication\-order [ tacplus password ]" )
+will not, names the fix
+.RB ( "sudo apt\-get install nftables" ,
+then
+.B "tacctl config breakglass\-firewall"
+with the current setting, which loads the table even when the setting is
+unchanged) and exits 1; a release that cannot load the table says the address may
+still be refused and exits 1 the same way.
 .TP
 .BI "breakglass hold " "name[=reason][,name[=reason]...]" " [\-\-reason " text ]
 Hold break\-glass on registered devices and enrolled Linux hosts, given as one comma
@@ -13799,6 +13992,10 @@ does not answer it,
 (every hold that stands) and
 .B "When done:"
 (the release of the devices held).
+A
+.B "Firewall:"
+line says what the nftables table does with the TCP connections of the address
+(or, in red, that it could not be loaded, with the fix; the verb then exits 1).
 A
 .B "Carved:"
 line says that only the registered address is carved and that a device that
@@ -13838,7 +14035,10 @@ that is not an address) is removed by name.
 A restart that failed is reported as
 .B "NOT restarted"
 and the verb exits 1. The report names how long it was held, by whom and why,
-what was rendered, the check
+what was rendered, the
+.B "Firewall:"
+line (the address accepted again, or in red that the table could not be
+loaded and the address may still be refused, which exits 1), the check
 .RB ( "tacctl device config pull " device " \-\-diff" ,
 then a new ssh login as yourself) and the holds that remain. Superuser only.
 Given a comma list, the devices that are held (or whose entry carved nothing)
@@ -13866,8 +14066,17 @@ and
 has
 .BR orphan:true ,
 and
-.BR kind ).
-An engineer sees the devices and hosts of their own scopes only.
+.BR kind ;
+it also has
+.B firewall
+for each row, the setting
+.BR breakglass.firewall ).
+A last line
+.RB ( Firewall: )
+says what the nftables table does for the held addresses and whether the live table
+is as the holds and the setting ask for (red, with the command that fixes it, when
+it is not; yellow when the setting is off or nft could not be read). An engineer sees
+the devices and hosts of their own scopes only, and no firewall line.
 .\" BEGIN GENERATED: command breakglass list
 .RS
 .PP
@@ -15377,8 +15586,8 @@ scope vendor\-attrs, server listen, server metrics, server name,
 user email, user scope
 .TP
 .B "mixed, auth.notice"
-config audit\-strict, config sudoers, console system\-shell, rollback,
-store import
+config audit\-strict, config breakglass\-firewall, config sudoers,
+console system\-shell, rollback, store import
 .\" END GENERATED: audit-classes
 .PP
 The fields, in the order written:
@@ -16715,6 +16924,10 @@ Where tacquito's Prometheus exporter listens. Set with \fBtacctl server metrics 
 integer, 10 to 14. Default: 12.
 Cost of the bcrypt hashes tacctl makes from now on. Set with \fBtacctl config bcrypt\-cost\fR.
 .TP
+.B breakglass.firewall
+one of reject, drop, off. Default: reject.
+What the server does with the TCP connections of an address that is held (breakglass hold): reject refuses them with a TCP reset, drop discards their packets, off leaves them to tacquito, which accepts and closes the connection (the 0.2.23 behaviour). Any value but off makes tacctl load the nftables table inet tacctl for the held addresses and the ports of the tacquito listeners; the table is the only part of the host's ruleset it touches. Set with \fBtacctl config breakglass\-firewall\fR.
+.TP
 .B device.apply.confirm_timeout
 integer, 3 to 60. Default: 10.
 Minutes of the commit confirmed of every device config apply: the device undoes the change by itself after that long unless the confirming commit is typed. Set with \fBtacctl config devices apply\-confirm\-timeout\fR.
@@ -17428,6 +17641,29 @@ setter refuses with
 .RI "\(lqtacctl.yaml: could not parse " path ": " reason \(rq
 and exits 1, and commands that only read use the defaults and warn once on
 stderr.
+.TP
+.I /etc/tacctl/breakglass\-firewall.nft
+The nftables table
+.B "inet tacctl"
+that refuses the TCP connections of the held addresses
+.RB ( "tacctl config breakglass\-firewall" ):
+the whole table, which
+.B "nft \-f"
+replaces in one step. Mode 0600, root only; rewritten and loaded by every
+change of a hold, a listener or the setting; with the setting
+.B off
+it only removes the table. Not part of a snapshot (it is derived). Do not edit it.
+.TP
+.I /etc/systemd/system/tacctl\-breakglass\-firewall.service
+The oneshot unit that loads the file above at boot, before the network and
+tacquito. Written and enabled by
+.B install
+and
+.BR upgrade ,
+removed by
+.BR uninstall
+and by a rollback. tacctl never enables or touches
+.BR nftables.service .
 .TP
 .I /etc/tacctl/devices.yaml
 The device registry (see

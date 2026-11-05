@@ -48,6 +48,7 @@ func Uninstall(ctx context.Context, h *Host, args []string) error {
 	h.echo("")
 	h.echo("This will remove:")
 	h.echo("  - Management CLI (tacctl), its state directory (" + p.StateDir + ": store, tacctl.yaml, backups, kept backups)")
+	h.echo("  - The break-glass firewall: the nftables table inet tacctl, " + p.FirewallRules + " and " + p.FirewallUnit + " (the nftables package stays)")
 	h.echo("  - Sudoers rules (" + p.SudoersFile + ", " + p.TierSudoersFile + ")")
 	h.echo("  - Bash completion (" + p.Completion + ") and man page")
 	h.echo("  - Linux host build data (" + p.LinuxDir + ") and the generated known_hosts (" + p.KnownHosts + ")")
@@ -103,6 +104,8 @@ func Uninstall(ctx context.Context, h *Host, args []string) error {
 	if err := h.phase(ids, func(b backend.Backend) error { return b.Uninstall(ctx, backend.PhaseProgram, false) }); err != nil {
 		return err
 	}
+
+	h.firewallRemove(ctx)
 
 	out.Info("Removing sudoers rules and Linux host build data...")
 	if err := h.removeAccess(); err != nil {

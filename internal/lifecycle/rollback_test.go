@@ -168,6 +168,7 @@ func newRBSandbox(t *testing.T) *rbSandbox {
 		"TACCTL_SSHD_DROPIN=" + filepath.Join(w, "sshd_config.d", "tacctl-console.conf"),
 		"TACCTL_TIER_SUDOERS_FILE=" + filepath.Join(w, "sudoers.d", "tacctl-tiers"),
 		"TACCTL_SUDOERS_FILE=" + filepath.Join(w, "sudoers.d", "tacctl"),
+		"TACCTL_SYSTEMD_DIR=" + filepath.Join(w, "systemd"),
 	}
 	s := &rbSandbox{t: t, w: w}
 	s.p = paths.Resolve(paths.NewEnv(vars), "", func(string) bool { return false })

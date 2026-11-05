@@ -46,8 +46,8 @@ current behaviour; this file is where history lives.
 
 4. **`tacctl rollback 0.2.23`, the release before this one, is a target.**
    This release changed no stored file, so 0.2.23 reads everything it writes:
-   the rollback converts no file, removes no key, takes no snapshot and needs
-   no `--yes`. It puts back 0.2.23's per-tier sudoers drop-in, without the
+   the rollback converts no file, removes no key but `breakglass.firewall`
+   (item 11; a snapshot is taken when it is set), and needs no `--yes`. It puts back 0.2.23's per-tier sudoers drop-in, without the
    operator's `log failures *` (item 9), when the file is exactly this
    release's text (the dry run shows the step, `--apply` writes it after
    `visudo -cf`; a file tacctl did not write is left), and every older target
@@ -254,6 +254,64 @@ current behaviour; this file is where history lives.
     `pam_tacplus` that `tacctl config linux build` makes (also when the
     upgrade makes it) is guarded the same way (`docs/hosts/README.md`, manual
     page).
+
+11. **A held address no longer sees a server that answers.** `tacctl
+    breakglass hold` took the address out of every scope's prefixes, which
+    silences RADIUS (UDP): FreeRADIUS ignores the device and it times out. But
+    tacquito listens on TCP: the kernel completed the handshake, tacquito
+    accepted, found no secret for the address and closed the connection. A
+    device whose fallback to its local accounts needs the server to be
+    unreachable (a WTI unit with `Fallback Local: On (Transport Failure)`, a
+    Junos switch with `authentication-order [ tacplus password ]`) saw a
+    reachable server and never fell back. tacctl now owns one nftables table,
+    `inet tacctl` (nothing else of the host's ruleset is read, flushed or
+    touched): two sets of held addresses (IPv4, IPv6) and one input-hook chain
+    at priority -10, policy accept, whose rules match a source address in a set
+    and a TCP destination port of a tacquito listener (every listener) and
+    either `reject with tcp reset` or `drop`. There is no connection-state
+    match, so a session that is open from the address is cut too. Devices and
+    Linux hosts are held alike; the RADIUS ports are not matched.
+    `tacctl config breakglass-firewall reject|drop|off` (superuser; the new key
+    `breakglass.firewall` of `tacctl.yaml`, `reject` by default) chooses the
+    verdict, and `off` loads no table (the 0.2.23 behaviour); a change is
+    applied at once and the command says what it did. tacctl writes the whole
+    table to `/etc/tacctl/breakglass-firewall.nft` (it starts with `table inet
+    tacctl` and `delete table inet tacctl`, so `nft -f` replaces it in one
+    step; empty sets when nothing is held) and loads it at the point the
+    backends restart, on every hold, release, `device address` move of a held
+    device, rename of a held device or host, `backup restore` that changes the
+    holds, `server listen` change and change of the setting. The report of a
+    hold has a line `Firewall: <address> refused on tcp/49 (reject)` (or
+    `drop`, or `off: the server still completes the TCP handshake ...`), the
+    report of a release the reverse, and the `auth.info` lines of hold,
+    release and hold-move end `firewall=reject|drop|off|failed`. When `nft` is
+    missing or fails the hold still stands (the record, the rendering and the
+    restarts are as before), the report says in red that the server still
+    completes the TCP handshake on the port(s) for the address, so a device
+    that falls back only when the server is unreachable will not, it names the
+    fix (`sudo apt-get install nftables`, then `tacctl config
+    breakglass-firewall <the current setting>`, which loads the table even when
+    the setting is unchanged) and the command exits 1; a release that cannot
+    load the table says the address may still be refused and exits 1 the same
+    way. `status`, `config validate` and `breakglass list` (the superuser's)
+    compare the live table (`nft -j list table inet tacctl`) with the holds and
+    the setting and name each difference with the command that fixes it (a
+    table that differs is a `config validate` error, section
+    `breakglass_firewall`; a table that cannot be read, or the setting `off`,
+    is said and is no finding); `breakglass list --json` rows have `firewall`.
+    `install` and `upgrade` install the `nftables` package like FreeRADIUS's
+    (a failed install retries after `apt-get update`; a package that cannot be
+    had is a warning), write and enable the oneshot unit
+    `tacctl-breakglass-firewall.service` that loads the file at boot before the
+    network and tacquito, and load the table: an upgrade from 0.2.23 with holds
+    standing gives those holds the fix. `nftables.service` is never enabled or
+    touched. Every `tacctl rollback` target removes the setting (older
+    releases refuse the key), the table, the rules file and the boot unit,
+    leaves the package, and says so; a hold that stands stays, without the
+    firewall, as in 0.2.23. `uninstall` removes the same three. The manual
+    page, `docs/devices/break-glass.md` (The firewall), `docs/cli/config.md`,
+    `docs/cli/tunables.md`, `docs/install/installing.md`,
+    `docs/install/upgrading.md` and `docs/security/audit.md` describe it.
 
 ## 0.2.23 (2026-10-31)
 

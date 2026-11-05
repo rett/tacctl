@@ -18,6 +18,7 @@ import (
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/firewall"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/policy"
 	"github.com/rett/tacctl/internal/pyyaml"
@@ -517,6 +518,23 @@ func (inv *invocation) collectValidate(r *validateReport) {
 			text := h.Device + " (" + h.Address + ") held since " + holdTime(h) + " by " + h.By +
 				" (" + holdAge(h, now) + "): the server does not answer it"
 			r.found(howEchoE, "  "+Y+"Break-glass hold:"+NC+"    "+text+" ("+fix+")", validateFinding{Section: "breakglass_hold", Level: levelWarning, Text: text, Fix: fix})
+		}
+	}
+	// The nftables table that refuses the TCP connections of the held
+	// addresses (0.2.24): a table that differs from the holds and the setting
+	// is an error (a held device still sees a server that answers its TCP
+	// handshake); one that was not read, or a setting of off, is said and is
+	// no finding.
+	if spec, chk, ok := inv.firewallCheck(); ok && (len(spec.Held) > 0 || chk.State == firewall.Differs) {
+		text, level := firewallState(spec, chk)
+		switch {
+		case chk.State == firewall.Differs:
+			r.found(howEchoE, "  "+R+"Break-glass firewall:"+NC+" "+text+" ("+chk.Fix+")",
+				validateFinding{Section: "breakglass_firewall", Level: levelError, Text: text, Fix: chk.Fix})
+		case level == "warn":
+			r.line(howEchoE, "  "+Y+"Break-glass firewall:"+NC+" "+text)
+		default:
+			r.line(howEchoE, "  "+G+"Break-glass firewall:"+NC+" "+text)
 		}
 	}
 	if !inv.callerScopes().restricted {

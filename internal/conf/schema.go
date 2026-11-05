@@ -178,6 +178,12 @@ func NewSchema(backends []string) *Schema {
 			// 0.2.21 binary does not know the key (Added0222, rollback.go).
 			TimeoutScaleKey: {Type: TypeInt, Min: intp(TimeoutScaleMin), Max: intp(TimeoutScaleMax),
 				Default: TimeoutScaleMin, HasDefault: true},
+			// What the server does with the TCP connections of a held
+			// address (0.2.24, 'config breakglass-firewall'): refuse them
+			// with a reset, drop them, or leave them to tacquito. A 0.2.23
+			// binary does not know the key (Added0224, rollback.go).
+			BreakglassFirewallKey: {Type: TypeEnum, Values: []string{"reject", "drop", "off"},
+				Default: "reject", HasDefault: true},
 		},
 		wildcards: append([]wildcard{
 			{"privileges.", Rule{Type: TypeCiscoCmdList}},

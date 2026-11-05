@@ -5,7 +5,9 @@ logs be filtered by time, user, device and kind and written as JSON, keeps a
 user who must change the password from forwarding ports through the server,
 stops setting `single-connection` on devices and removes it where it is, and
 builds tacquito from the project's fork, with git pulls that wait for no
-answer and drop a stalled transfer. The numbered list in `CHANGELOG.md` (0.2.24) is
+answer and drop a stalled transfer, and makes a held address stop completing
+TCP handshakes with the server, so a device that falls back to its local
+accounts only when the server is unreachable falls back. The numbered list in `CHANGELOG.md` (0.2.24) is
 everything that differs from 0.2.23.
 
 ## Logs and accounting
@@ -50,6 +52,38 @@ everything that differs from 0.2.23.
   of `cisco.template` or `cisco-legacy.template` made earlier keep theirs.
   The upgrade changes no device: run `device config plan` and `apply` on
   the devices that have the line.
+
+## Break-glass
+
+- A hold took the address out of the scopes' prefixes, which silences RADIUS
+  (UDP), but tacquito (TCP) still completed the handshake and closed the
+  connection afterwards. A WTI unit with `Fallback Local: On (Transport
+  Failure)` and a Junos switch with `authentication-order [ tacplus password ]`
+  saw a reachable server and never used their local accounts. tacctl now loads
+  an nftables table of its own, `inet tacctl` (the rest of the ruleset is never
+  touched): the held addresses in two sets, one input-hook chain at priority
+  -10 that rejects with a TCP reset (`reject`, the default) or drops (`drop`) a
+  held source address connecting to a tacquito port, an open session included.
+  `tacctl config breakglass-firewall reject|drop|off` sets it (`off` is the
+  0.2.23 behaviour) and loads the table at once.
+- The table is loaded with `nft -f /etc/tacctl/breakglass-firewall.nft`, a file
+  that replaces the whole table in one step, by every hold, release, move of a
+  held device (`device address`), rename, `backup restore` that changes the
+  holds, `server listen` change and change of the setting, and at boot by the
+  oneshot unit `tacctl-breakglass-firewall.service`. `install` and `upgrade`
+  install the `nftables` package, and an upgrade with holds standing loads the
+  table for them. `nftables.service` is never enabled or touched.
+- The report of a hold has a `Firewall:` line, the report of a release the
+  reverse, and the audit lines of hold, release and hold-move end
+  `firewall=reject|drop|off|failed`. When `nft` is missing or fails the hold
+  stands, the report says in red what the server still does and the fix (`sudo
+  apt-get install nftables`, then `tacctl config breakglass-firewall
+  <setting>`), and the command exits 1. `status`, `config validate` and
+  `breakglass list` compare the live table with the holds and the setting.
+- `tacctl rollback` (every target) removes `breakglass.firewall`, the table,
+  the rules file and the boot unit and leaves the package; a hold that stands
+  stays, without the firewall, as in 0.2.23. 0.2.23 refuses the key, so a
+  rollback to it takes a snapshot when it is set.
 
 ## Installing and upgrading
 

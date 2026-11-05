@@ -18,6 +18,7 @@ import (
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/devreg"
+	"github.com/rett/tacctl/internal/firewall"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/shellquote"
 	"github.com/rett/tacctl/internal/snmpcred"
@@ -229,7 +230,8 @@ func (inv *invocation) replaceClearHold(m *model.Model, h conf.Hold) (string, er
 	if t := h.SinceTime(); !t.IsZero() {
 		held = a.Knobs.Now().Sub(t).Round(time.Minute).String()
 	}
-	res, err := a.Backends().StoreApply(inv.ctx, backend.ApplyOptions{}, func() error {
+	var fw firewall.Result
+	res, err := a.Backends().StoreApply(inv.ctx, backend.ApplyOptions{After: inv.firewallAfter(&fw)}, func() error {
 		return a.Conf().UnsetHold(h.Device)
 	})
 	inv.loaded = false
@@ -237,9 +239,12 @@ func (inv *invocation) replaceClearHold(m *model.Model, h conf.Hold) (string, er
 		inv.releaseFailed("breakglass release device="+h.Device+" addr="+h.Address, failReason(err, "store"))
 		return "", err
 	}
-	a.Audit().Raw("auth.info", "breakglass release device="+h.Device+" addr="+h.Address+" held="+held+" by="+inv.sudoUser()+" result=ok")
+	a.Audit().Raw("auth.info", "breakglass release device="+h.Device+" addr="+h.Address+" held="+held+" by="+inv.sudoUser()+" firewall="+firewallWord(fw)+" result=ok")
 	if len(res.RestartFailed) > 0 {
 		return "", errors.New("the record is removed and the rendered files are kept, but the release is not in force until the backend that serves " + h.Address + " is restarted")
+	}
+	if !fw.OK() {
+		return "", errors.New("the record is removed and the rendered files are as they were, but the firewall table was not loaded (" + fw.Why + "), so " + h.Address + " may still be refused on " + firewall.PortList(fw.Ports) + ": " + firewallFixText(fw))
 	}
 	return inv.renderedSentence(m, h.Address, res, false), nil
 }
