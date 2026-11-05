@@ -26,6 +26,9 @@ const TestKnobs = true
 const (
 	// EnvTestDeviceDial is the loopback host:port every device is dialled at.
 	EnvTestDeviceDial = "TACCTL_TEST_DEVICE_DIAL"
+	// EnvTestDeviceQuiet is the quiet period of every device session, a Go
+	// duration of at most one second.
+	EnvTestDeviceQuiet = "TACCTL_TEST_DEVICE_QUIET"
 	// EnvTestDevicePassword is the password a pull logs in with.
 	EnvTestDevicePassword = "TACCTL_TEST_DEVICE_PASSWORD"
 	// EnvTestLocalPassword is the password of the local account of
@@ -84,6 +87,13 @@ func loadKnobs(env paths.Env) (Knobs, error) {
 			return Knobs{}, fmt.Errorf("%s=%q: not a loopback host:port (127.0.0.1:2222)", EnvTestDeviceDial, v)
 		}
 		k.dial = v
+	}
+	if v := env.Get(EnvTestDeviceQuiet); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d < 0 || d > time.Second {
+			return Knobs{}, fmt.Errorf("%s=%q: not a duration of at most 1s (25ms)", EnvTestDeviceQuiet, v)
+		}
+		k.quiet = d
 	}
 	if v := env.Get(EnvTestResolve); v != "" {
 		k.resolve = map[string][]string{}

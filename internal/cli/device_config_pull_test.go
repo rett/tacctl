@@ -87,6 +87,7 @@ func newPullBoxIn(t *testing.T, dir string, opts ...fakedev.Option) *pullBox {
 	b.sb.hooks.deviceDial = func(ctx context.Context, network, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, network, addr)
 	}
+	b.sb.hooks.deviceQuiet = fakeQuiet
 	b.sb.hooks.devicePasswords = func(*invocation) devicePasswords { return b.pw }
 	return b
 }
@@ -1300,10 +1301,10 @@ func TestPullWithoutTerminalRefuses(t *testing.T) {
 // A device that never answers costs its timeout and nothing else: the line
 // says so, the record says timeout, the run exits 1.
 func TestPullTimeout(t *testing.T) {
-	if testing.Short() {
-		t.Skip("the shortest timeout is 10 s")
-	}
 	b := newPullBox(t)
+	// --timeout 10 is the shortest the verb accepts; the box counts its
+	// seconds as 100 ms, so the device that never answers costs 1 s
+	b.sb.hooks.timeoutSecond = 100 * time.Millisecond
 	b.devices([3]string{"lab-j", "192.168.1.20", "juniper"})
 	if err := os.WriteFile(filepath.Join(b.dir, junosReadCmd+".hang"), nil, 0o644); err != nil {
 		t.Fatal(err)

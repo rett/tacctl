@@ -84,6 +84,7 @@ func dial(t *testing.T, tg devssh.Target) *devssh.Client {
 func bg() context.Context { return context.Background() }
 
 func TestPasswordAndKeyboardInteractive(t *testing.T) {
+	t.Parallel()
 	dir := transcript(t, nil)
 	for name, methods := range map[string][]fakedev.AuthMethod{
 		"password only":             {fakedev.AuthPassword},
@@ -91,6 +92,7 @@ func TestPasswordAndKeyboardInteractive(t *testing.T) {
 		"both":                      {fakedev.AuthPassword, fakedev.AuthKeyboardInteractive},
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			srv := serve(t, dir, fakedev.WithAuth(methods...))
 			var calls atomic.Int32
 			c := dial(t, target(t, srv, &calls))
@@ -108,6 +110,7 @@ func TestPasswordAndKeyboardInteractive(t *testing.T) {
 }
 
 func TestWrongPasswordIsOneAttempt(t *testing.T) {
+	t.Parallel()
 	srv := serve(t, transcript(t, nil))
 	tg := target(t, srv, nil)
 	const bad = "not-the-password-0123"
@@ -127,6 +130,7 @@ func TestWrongPasswordIsOneAttempt(t *testing.T) {
 }
 
 func TestPasswordSourceErrorAndNil(t *testing.T) {
+	t.Parallel()
 	srv := serve(t, transcript(t, nil))
 	tg := target(t, srv, nil)
 	boom := errors.New("no terminal")
@@ -146,6 +150,7 @@ func TestPasswordSourceErrorAndNil(t *testing.T) {
 }
 
 func TestHostKeyPinning(t *testing.T) {
+	t.Parallel()
 	srv := serve(t, transcript(t, nil))
 	other := serve(t, transcript(t, nil), fakedev.WithRandomHostKey())
 
@@ -198,6 +203,7 @@ func TestHostKeyPinning(t *testing.T) {
 }
 
 func TestShellCLI(t *testing.T) {
+	t.Parallel()
 	dir := transcript(t, map[string]string{
 		"prompt":                         "rtr1#",
 		"banner":                         "Authorized use only\n",
@@ -239,6 +245,7 @@ func TestShellCLI(t *testing.T) {
 }
 
 func TestShellPagingGuard(t *testing.T) {
+	t.Parallel()
 	cfg := configLines(60)
 	for name, files := range map[string]map[string]string{
 		"ios marker":  {"prompt": "rtr1#", "paging": "20", "show running-config.out": cfg},
@@ -246,6 +253,7 @@ func TestShellPagingGuard(t *testing.T) {
 		"no paging":   {"prompt": "rtr1#", "show running-config.out": cfg},
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			srv := serve(t, transcript(t, files))
 			s, err := dial(t, target(t, srv, nil)).CLI(devssh.VendorCisco)
 			if err != nil {
@@ -267,12 +275,14 @@ func TestShellPagingGuard(t *testing.T) {
 }
 
 func TestShellWithoutEchoAndWithPTY(t *testing.T) {
+	t.Parallel()
 	dir := transcript(t, map[string]string{"prompt": "rtr1#", "show version.out": "v1\n"})
 	for name, opts := range map[string][]devssh.CLIOption{
 		"plain": nil,
 		"pty":   {devssh.WithPTY()},
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			srv := serve(t, dir, fakedev.WithEcho(false))
 			s, err := dial(t, target(t, srv, nil)).CLI(devssh.VendorCisco, opts...)
 			if err != nil {
@@ -286,6 +296,7 @@ func TestShellWithoutEchoAndWithPTY(t *testing.T) {
 }
 
 func TestExecCLI(t *testing.T) {
+	t.Parallel()
 	dir := transcript(t, map[string]string{
 		"show configuration | display set.out": "# vendor: juniper\n# transport: ssh\n# ---\nset system host-name sw1\nset system services ssh\n",
 		"show denied.err":                      "error: permission denied",
@@ -319,6 +330,7 @@ func TestExecCLI(t *testing.T) {
 }
 
 func TestJunosOverShellChannel(t *testing.T) {
+	t.Parallel()
 	cfg := configLines(30)
 	dir := transcript(t, map[string]string{
 		"prompt": "gotest@sw1> ", "paging": "10 junos",
@@ -336,6 +348,7 @@ func TestJunosOverShellChannel(t *testing.T) {
 }
 
 func TestNetconfRPC(t *testing.T) {
+	t.Parallel()
 	cfg := "set system host-name sw1\nset system login message \"a < b & c\"\n"
 	dir := transcript(t, map[string]string{
 		"show configuration | display set.out": cfg,
@@ -393,6 +406,7 @@ func TestNetconfRPC(t *testing.T) {
 }
 
 func TestNetconfFraming(t *testing.T) {
+	t.Parallel()
 	cfg := "set system host-name sw1\n"
 	dir := transcript(t, map[string]string{"show configuration | display set.out": cfg})
 	for _, tc := range []struct {
@@ -411,6 +425,7 @@ func TestNetconfFraming(t *testing.T) {
 		{"eom server, chunked client", fakedev.FramingEOM, devssh.FramingChunked, devssh.ErrProtocol},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			srv := serve(t, dir, fakedev.WithNetconfFraming(tc.server))
 			n, err := dial(t, target(t, srv, nil)).NETCONF(devssh.WithFraming(tc.client))
 			if tc.wantErr != nil {
@@ -434,6 +449,7 @@ func TestNetconfFraming(t *testing.T) {
 }
 
 func TestNetconfLargeReply(t *testing.T) {
+	t.Parallel()
 	cfg := configLines(20000)
 	dir := transcript(t, map[string]string{"show configuration | display set.out": cfg})
 	for _, f := range []fakedev.Framing{fakedev.FramingEOM, fakedev.FramingChunked} {
@@ -454,6 +470,7 @@ func TestNetconfLargeReply(t *testing.T) {
 }
 
 func TestNetconfRefused(t *testing.T) {
+	t.Parallel()
 	srv := serve(t, transcript(t, nil), fakedev.WithNetconfOff())
 	c := dial(t, target(t, srv, nil))
 	if _, err := c.NETCONF(); !errors.Is(err, devssh.ErrNoSubsystem) {
@@ -470,6 +487,7 @@ func TestNetconfRefused(t *testing.T) {
 }
 
 func TestConnectTimeout(t *testing.T) {
+	t.Parallel()
 	srv := serve(t, transcript(t, nil), fakedev.WithHang(fakedev.HangAccept))
 	tg := target(t, srv, nil)
 	tg.ConnectTimeout = 150 * time.Millisecond
@@ -480,6 +498,8 @@ func TestConnectTimeout(t *testing.T) {
 }
 
 func TestSessionTimeouts(t *testing.T) {
+	// Serial on purpose: the login must finish within a connect timeout of 200
+	// ms: load would break the margin.
 	srv := serve(t, transcript(t, map[string]string{"prompt": "rtr1#"}), fakedev.WithHang(fakedev.HangSession))
 	tg := target(t, srv, nil)
 	tg.ConnectTimeout = 200 * time.Millisecond
@@ -506,6 +526,7 @@ func TestSessionTimeouts(t *testing.T) {
 }
 
 func TestRunWithADoneContextTouchesNothing(t *testing.T) {
+	t.Parallel()
 	srv := serve(t, transcript(t, map[string]string{"prompt": "rtr1#", "show version.out": "v\n"}))
 	c := dial(t, target(t, srv, nil))
 	for _, v := range []string{devssh.VendorCisco, devssh.VendorJuniper} {
@@ -532,6 +553,7 @@ func TestRunWithADoneContextTouchesNothing(t *testing.T) {
 // A command that is abandoned mid-way leaves the stream out of step: the
 // shell is closed, and says so afterwards.
 func TestRunDeadlineClosesShell(t *testing.T) {
+	t.Parallel()
 	srv := serve(t, transcript(t, map[string]string{"prompt": "rtr1#", "show version.out": "v\n", "show hang.hang": ""}))
 	s, err := dial(t, target(t, srv, nil)).CLI(devssh.VendorCisco)
 	if err != nil {
@@ -548,6 +570,7 @@ func TestRunDeadlineClosesShell(t *testing.T) {
 }
 
 func TestDialContextScopesClient(t *testing.T) {
+	t.Parallel()
 	srv := serve(t, transcript(t, map[string]string{"prompt": "rtr1#", "show version.out": "v\n"}))
 	ctx, cancel := context.WithCancel(bg())
 	c, err := devssh.Dial(ctx, target(t, srv, nil))
@@ -580,6 +603,7 @@ func TestDialContextScopesClient(t *testing.T) {
 }
 
 func TestDeadlineOfDialContext(t *testing.T) {
+	t.Parallel()
 	srv := serve(t, transcript(t, nil), fakedev.WithHang(fakedev.HangAccept))
 	ctx, cancel := context.WithTimeout(bg(), 100*time.Millisecond)
 	defer cancel()
@@ -598,6 +622,7 @@ func TestDeadlineOfDialContext(t *testing.T) {
 // 32 sessions at once against one fake, over both transports and both CLI
 // channel types.
 func TestConcurrentSessions(t *testing.T) {
+	t.Parallel()
 	cfg := configLines(200)
 	dir := transcript(t, map[string]string{
 		"prompt": "rtr1#", "paging": "50",
@@ -677,6 +702,7 @@ func TestConcurrentSessions(t *testing.T) {
 }
 
 func TestDialerIsUsed(t *testing.T) {
+	t.Parallel()
 	srv := serve(t, transcript(t, nil))
 	tg := target(t, srv, nil)
 	tg.Host, tg.Port = "device.example.net", 0 // never resolved: the dialer decides
@@ -695,6 +721,7 @@ func TestDialerIsUsed(t *testing.T) {
 // <configuration-information>; the text is found at any depth (a capture of
 // a real device's reply had this shape).
 func TestReplyTextNestedAndDeclared(t *testing.T) {
+	t.Parallel()
 	reply := `<?xml version="1.0" encoding="us-ascii"?>
 <rpc-reply xmlns:junos="http://xml.juniper.net/junos/25.4R1-S2.3/junos" message-id="1" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
 <configuration-information>
@@ -721,6 +748,7 @@ set system login message &quot;hi &lt;there&gt;&quot;
 // one): the text of an item is led by the member's label, the block a
 // command line prints, and a reply of the single device is as it was.
 func TestReplyTextMultiRoutingEngine(t *testing.T) {
+	t.Parallel()
 	const reply = `<rpc-reply><multi-routing-engine-results>` +
 		`<multi-routing-engine-item><re-name>fpc0</re-name><output>Hostname: jsw1.example.net
 Model: ex4600-40f

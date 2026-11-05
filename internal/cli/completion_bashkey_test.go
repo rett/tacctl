@@ -72,9 +72,13 @@ type bashKey struct {
 }
 
 // bashKeySession starts it, TACCTL_HELP_KEY as given ("-": unset), in a
-// directory that holds the file f.c.
+// directory that holds the file f.c. Each session is a bash of its own in a
+// directory of its own and sets nothing in this process (no environment, no
+// working directory, no registry), so the test that starts it runs side by
+// side with the others.
 func bashKeySession(t *testing.T, key string) *bashKey {
 	t.Helper()
+	parallel(t)
 	var r execx.Real
 	bash, err := r.LookPath("bash")
 	if err != nil {
@@ -154,6 +158,7 @@ func (b *bashKey) onlyHelp(what string) {
 // help-only entry point, whatever the words are: a flag that waits for a
 // value, a '--' earlier, a hidden or underscore command, an empty line.
 func TestBashHelpKeyQuestionMark(t *testing.T) {
+	parallel(t)
 	for _, c := range []struct {
 		name, keys, help, line string
 	}{
@@ -173,35 +178,37 @@ func TestBashHelpKeyQuestionMark(t *testing.T) {
 		{"inside a word", "tacctl device description sw1 why?", `HELP\[-- device description sw1\]`, "device description sw1 why"},
 		{"no command at all", "tacctl nosuch --x ?", `HELP\[-- nosuch --x\]`, "nosuch --x "},
 	} {
-		s := bashKeySession(t, "-")
-		if err := s.Send(c.keys); err != nil {
-			t.Fatal(err)
-		}
-		if err := s.Expect(c.help, 5*time.Second); err != nil {
-			t.Fatalf("%s: %v", c.name, err)
-		}
-		s.Settle(300 * time.Millisecond)
-		// Before the line is run: only the help-only entry point was called.
-		s.onlyHelp(c.name)
-		if got := len(s.recorded()); got != 1 {
-			t.Errorf("%s: %d calls, want 1", c.name, got)
-		}
-		// The line is untouched: Enter runs it without a question mark.
-		if err := s.Send("\r"); err != nil {
-			t.Fatal(err)
-		}
-		out := s.Settle(500 * time.Millisecond)
-		if strings.Contains(out, "?]") || strings.Contains(out, "HELP[") {
-			t.Errorf("%s: the line was changed or run as help:\n%q", c.name, out)
-		}
-		want := "RAN[" + strings.TrimSpace(c.line)
-		if !strings.Contains(out, want) {
-			t.Errorf("%s: the line run is not %q:\n%q", c.name, want, out)
-		}
+		t.Run(c.name, func(t *testing.T) {
+			s := bashKeySession(t, "-")
+			if err := s.Send(c.keys); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Expect(c.help, 5*time.Second); err != nil {
+				t.Fatalf("%s: %v", c.name, err)
+			}
+			s.Settle(300 * time.Millisecond)
+			// Before the line is run: only the help-only entry point was called.
+			s.onlyHelp(c.name)
+			if got := len(s.recorded()); got != 1 {
+				t.Errorf("%s: %d calls, want 1", c.name, got)
+			}
+			// The line is untouched: Enter runs it without a question mark.
+			if err := s.Send("\r"); err != nil {
+				t.Fatal(err)
+			}
+			out := s.Settle(500 * time.Millisecond)
+			if strings.Contains(out, "?]") || strings.Contains(out, "HELP[") {
+				t.Errorf("%s: the line was changed or run as help:\n%q", c.name, out)
+			}
+			want := "RAN[" + strings.TrimSpace(c.line)
+			if !strings.Contains(out, want) {
+				t.Errorf("%s: the line run is not %q:\n%q", c.name, want, out)
+			}
+		})
 	}
 	// A carriage return before the cursor (typed with Ctrl-V) is no blank: the
 	// key types the character, and tacctl is never called.
-	{
+	t.Run("a carriage return", func(t *testing.T) {
 		s := bashKeySession(t, "-")
 		if err := s.Send("tacctl user\x16\radd ?"); err != nil {
 			t.Fatal(err)
@@ -213,7 +220,7 @@ func TestBashHelpKeyQuestionMark(t *testing.T) {
 		if err := s.Send("\x03"); err != nil {
 			t.Fatal(err)
 		}
-	}
+	})
 	for _, c := range []struct {
 		name, keys, want string
 	}{
@@ -228,22 +235,24 @@ func TestBashHelpKeyQuestionMark(t *testing.T) {
 		{"a glob on a tacctl line", "tacctl user a*?\r", `RAN\[user a\*\?\]`},
 		{"a non-ASCII word", "tacctl user \u00e9?\r", `RAN\[user \S*\?\]`},
 	} {
-		s := bashKeySession(t, "-")
-		if err := s.Send(c.keys); err != nil {
-			t.Fatal(err)
-		}
-		if err := s.Expect(c.want, 5*time.Second); err != nil {
-			t.Fatalf("%s: %v", c.name, err)
-		}
-		if out := s.Settle(300 * time.Millisecond); strings.Contains(out, "HELP[") {
-			t.Errorf("%s: help was printed:\n%q", c.name, out)
-		}
-		// Only the line run (a RAN above) and never a help call.
-		for _, call := range s.recorded() {
-			if strings.HasPrefix(call, "__help") {
-				t.Errorf("%s: the key called %q", c.name, call)
+		t.Run(c.name, func(t *testing.T) {
+			s := bashKeySession(t, "-")
+			if err := s.Send(c.keys); err != nil {
+				t.Fatal(err)
 			}
-		}
+			if err := s.Expect(c.want, 5*time.Second); err != nil {
+				t.Fatalf("%s: %v", c.name, err)
+			}
+			if out := s.Settle(300 * time.Millisecond); strings.Contains(out, "HELP[") {
+				t.Errorf("%s: help was printed:\n%q", c.name, out)
+			}
+			// Only the line run (a RAN above) and never a help call.
+			for _, call := range s.recorded() {
+				if strings.HasPrefix(call, "__help") {
+					t.Errorf("%s: the key called %q", c.name, call)
+				}
+			}
+		})
 	}
 }
 

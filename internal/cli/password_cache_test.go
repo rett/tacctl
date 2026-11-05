@@ -1375,9 +1375,14 @@ func TestAskpassHelperNeverStores(t *testing.T) {
 }
 
 // shortSocketBase is where a test makes a directory for an agent's socket:
-// TMPDIR, unless it is too long for the 108 bytes of a socket path.
+// TMPDIR, unless it is too long for the 108 bytes of a socket path. What the
+// tests put under it, at its longest, is 73 bytes: "/pc" and the ten digits
+// os.MkdirTemp adds, "/tacctl", "/ap-", a host name of 24 bytes (the longest
+// the socket name keeps), "-" and a pid of ten digits, "-" and eight hex
+// digits, ".sock". The socket path must not exceed 107 bytes
+// (askpass.sunPathMax), so TMPDIR is used up to 33 bytes, one to spare.
 func shortSocketBase() string {
-	if base := os.TempDir(); len(base) <= 40 {
+	if base := os.TempDir(); len(base) <= 33 {
 		return base
 	}
 	return "/tmp" // shared-proc-ok: only when TMPDIR is too long for a socket path

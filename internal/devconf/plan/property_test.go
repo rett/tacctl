@@ -540,8 +540,10 @@ func mutateIOS(raw string, exp []devices.Section, r *rand.Rand, legacy bool) (st
 func TestPropertyFuzz(t *testing.T) {
 	// The fuzz is pure CPU on one goroutine: the race detector has nothing
 	// to find in it and slows it down about nine times (two minutes of a
-	// CI job), so a -race build runs fewer cases per fixture. Every fixture
-	// is still covered, and the run without -race keeps the full count.
+	// CI job), so a -race build runs fewer cases per fixture (10 instead of
+	// 45). Every fixture is still covered. Only the run without -race keeps
+	// the full count: make gate-go has no -race, while CI and make gate-ci
+	// run this package with it.
 	perFixture := 45
 	if raceEnabled {
 		perFixture = 10

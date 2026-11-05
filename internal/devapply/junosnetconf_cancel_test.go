@@ -51,6 +51,7 @@ func committedHeld(t *testing.T, d *device) (*JunosNetconf, plan.Delta) {
 // Closing the held session leaves the commit pending; the window's end
 // rolls it back, not the close (RollsBackOnClose is false).
 func TestNetconfClosingTheHeldSessionIsNotACancel(t *testing.T) {
+	t.Parallel()
 	d := netDevice(t, nil, ModeAuto)
 	before := d.srv.Committed()
 	j, _ := committedHeld(t, d)
@@ -75,6 +76,7 @@ func TestNetconfClosingTheHeldSessionIsNotACancel(t *testing.T) {
 // cancel's comment; the pending marker is gone and the configuration is the
 // one before the change.
 func TestNetconfCancelCommitsTheInverse(t *testing.T) {
+	t.Parallel()
 	d := netDevice(t, nil, ModeAuto)
 	before := d.srv.Committed()
 	j, _ := committedHeld(t, d)
@@ -103,6 +105,7 @@ func TestNetconfCancelCommitsTheInverse(t *testing.T) {
 // After the device's own rollback 'rollback 1' loads the change itself;
 // Cancel must commit nothing.
 func TestNetconfCancelAfterTheWindowCommitsNothing(t *testing.T) {
+	t.Parallel()
 	d := netDevice(t, nil, ModeAuto)
 	before := d.srv.Committed()
 	j, _ := committedHeld(t, d)
@@ -124,6 +127,7 @@ func TestNetconfCancelAfterTheWindowCommitsNothing(t *testing.T) {
 // compare is another one) is discarded and nothing is committed; the
 // pending commit stays for the window.
 func TestNetconfCancelRefusesWhatIsNotTheInverse(t *testing.T) {
+	t.Parallel()
 	d := netDevice(t, nil, ModeAuto)
 	j, rev := committedHeld(t, d)
 	// the held session's last compare is now the (empty) candidate against
@@ -147,6 +151,7 @@ func TestNetconfCancelRefusesWhatIsNotTheInverse(t *testing.T) {
 // Revert needs the pending marker to be absent: a commit that still
 // stands is not committed over.
 func TestNetconfRevertRefusesAPendingCommit(t *testing.T) {
+	t.Parallel()
 	d := netDevice(t, nil, ModeAuto)
 	j, _ := committedHeld(t, d)
 	n := len(d.srv.History())
@@ -183,6 +188,7 @@ func (c checkedN) CommitConfirmed(ctx context.Context, minutes int, id, user str
 // Without the proof the change is reverted in the held session, as over the
 // command line.
 func TestNetconfConfirmedBeforeVerifyIsReverted(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name   string
 		verify func(d *device) func(context.Context) (Reader, error)
@@ -193,6 +199,7 @@ func TestNetconfConfirmedBeforeVerifyIsReverted(t *testing.T) {
 		}, "the fresh login was refused"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			d := netDevice(t, nil, ModeAuto)
 			before := d.srv.Committed()
 			o := apply(t, d, &planner{desired: desiredLines()}, func(in *Input) {
@@ -219,6 +226,7 @@ func TestNetconfConfirmedBeforeVerifyIsReverted(t *testing.T) {
 // A stranger's commit before the verification: the change is applied by
 // someone else only with the verification's proof.
 func TestNetconfConfirmedBeforeVerifyNeedsProof(t *testing.T) {
+	t.Parallel()
 	d := netDevice(t, nil, ModeAuto)
 	before := d.srv.Committed()
 	o := apply(t, d, &planner{desired: desiredLines()}, func(in *Input) {
@@ -250,6 +258,7 @@ func endsWithSub(log []string, words ...string) bool {
 // second locker (a line break after 'locked by:', which reaches the transport
 // as '?').
 func TestHolderOfTheDevicesLockDenied(t *testing.T) {
+	t.Parallel()
 	for name, msg := range map[string]string{
 		"raw":       "\nconfiguration database locked by:\n  admin terminal  (pid 85829) on since 2026-10-15 05:47:43 UTC\n      exclusive \n",
 		"sanitised": "?configuration database locked by:?  admin terminal  (pid 85829) on since 2026-10-15 05:47:43 UTC?      exclusive ?",

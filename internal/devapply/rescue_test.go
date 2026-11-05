@@ -8,6 +8,7 @@ import (
 // The rescue line 'show system commit' ends with when a rescue
 // configuration is saved is a marker: no entry, never entry 0.
 func TestParseHistoryRescueLine(t *testing.T) {
+	t.Parallel()
 	const e0 = "0   2026-10-13 14:00:00 UTC by alice via cli commit confirmed, rollback in 10mins\n    tacctl apply x by alice\n"
 	const e1 = "1   2026-10-12 01:00:00 UTC by root via other\n"
 	const rescue = "rescue 2024-01-04 11:42:38 UTC by root via cli\n"

@@ -135,6 +135,7 @@ func (p *inproc) output() string {
 }
 
 func TestInProcessInteractive(t *testing.T) {
+	t.Parallel()
 	var ran []string
 	var sys []bool
 	o := Options{
@@ -188,6 +189,7 @@ func TestInProcessInteractive(t *testing.T) {
 }
 
 func TestInProcessIdleAndEOF(t *testing.T) {
+	t.Parallel()
 	p := startInProcess(t, Options{Idle: 200 * time.Millisecond, Exec: func(context.Context, []string, io.Reader) int { return 0 }}, 24, 80)
 	p.expect(`idle timeout after 200ms`)
 	if s := p.ends(); s != 0 {

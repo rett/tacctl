@@ -241,6 +241,8 @@ func (d *scripted) shell(ch ssh.Channel) {
 // prompts for two commands' worth, and the read ends in an error, never in
 // the truncated output; the session is closed.
 func TestShellLastLineIsPrompt(t *testing.T) {
+	// Serial on purpose: the device pauses 100 ms, inside the default quiet
+	// period (150 ms): a loaded machine could stretch the pause past it.
 	d := &scripted{
 		login: []step{{data: "banner\r\nrtr1#"}},
 		perCmd: func(cmd string) []step {
@@ -275,6 +277,7 @@ func TestShellLastLineIsPrompt(t *testing.T) {
 // A prompt-looking line in the middle of the output, with more output
 // after it, in two writes.
 func TestShellPromptLookalikeMidOutput(t *testing.T) {
+	t.Parallel()
 	d := &scripted{
 		login: []step{{data: "banner\r\nrtr1#"}},
 		perCmd: func(cmd string) []step {
@@ -311,11 +314,13 @@ func TestShellPromptLookalikeMidOutput(t *testing.T) {
 // a short pause is bridged, a long one fails the login, and neither ever
 // learns the banner line.
 func TestShellBannerIsNotThePrompt(t *testing.T) {
+	t.Parallel()
 	for name, pause := range map[string]time.Duration{
 		"pause shorter than the quiet period": 40 * time.Millisecond,
 		"pause longer than the quiet period":  400 * time.Millisecond,
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			d := &scripted{
 				login: []step{{data: "##########", pause: pause}, {data: "\r\nAuthorized only\r\n##########\r\nrtr1#"}},
 				perCmd: func(cmd string) []step {
@@ -344,11 +349,13 @@ func TestShellBannerIsNotThePrompt(t *testing.T) {
 
 // Two banner lines that read like the prompt, at a pause.
 func TestShellTwoBannerLinesAreNotThePrompt(t *testing.T) {
+	t.Parallel()
 	for name, pause := range map[string]time.Duration{
 		"short pause": 40 * time.Millisecond,
 		"long pause":  400 * time.Millisecond,
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			d := &scripted{
 				login: []step{{data: "####\r\n####", pause: pause}, {data: "\r\nrtr1#"}},
 				perCmd: func(cmd string) []step {
@@ -378,6 +385,8 @@ func TestShellTwoBannerLinesAreNotThePrompt(t *testing.T) {
 // Learning fails closed when it cannot be sure: a device that answers an
 // empty line with two prompts, or with none.
 func TestShellLearningAmbiguousOrSilent(t *testing.T) {
+	// Serial on purpose: it is about learnPatience (10 quiet periods of 60 ms),
+	// which load would stretch.
 	for name, answer := range map[string][]step{
 		"two prompts": {{data: "\r\nrtr1#\r\nrtr1#"}},
 		"no prompt":   nil,
@@ -405,6 +414,8 @@ func TestShellLearningAmbiguousOrSilent(t *testing.T) {
 // A device that flushes what was typed ahead at login loses the first
 // empty line: it is sent once more.
 func TestShellLearningRetriesOnce(t *testing.T) {
+	// Serial on purpose: it is about learnPatience (10 quiet periods of 60 ms),
+	// which load would stretch.
 	var blanks atomic.Int32
 	d := &scripted{
 		login: []step{{data: "banner\r\nrtr1#"}},
@@ -434,6 +445,9 @@ func TestShellLearningRetriesOnce(t *testing.T) {
 // (a loaded device) has it sent once more and answers both: the prompt is
 // learned, and nothing is left in flight for the first command.
 func TestShellLearningSlowAnswerToTheEmptyLine(t *testing.T) {
+	// Serial on purpose: the device answers in 200 ms against a quiet period of
+	// 40 ms, and learnPatience is 10 of them: the margins are the test, and load
+	// would break them.
 	var blanks atomic.Int32
 	d := &scripted{
 		login: []step{{data: "banner\r\nrtr1#"}},
@@ -464,6 +478,7 @@ func TestShellLearningSlowAnswerToTheEmptyLine(t *testing.T) {
 
 // Junos switches print a line before every prompt.
 func TestShellLinePrintedBeforeEachPrompt(t *testing.T) {
+	t.Parallel()
 	d := &scripted{
 		login: []step{{data: "Last login\r\n\r\n{master:0}\r\nu@sw1> "}},
 		perCmd: func(cmd string) []step {
@@ -489,6 +504,8 @@ func TestShellLinePrintedBeforeEachPrompt(t *testing.T) {
 // A more-prompt takes the empty line that was typed ahead (as the key
 // that scrolls one line); the count starts again after it.
 func TestShellPagerConsumesTypedAheadLine(t *testing.T) {
+	// Serial on purpose: the device pauses 100 ms against a quiet period of 100
+	// ms: the timing is the test, and load would break it.
 	const erase = "\b\b\b\b\b\b\b\b        \b\b\b\b\b\b\b\b"
 	d := &scripted{
 		login: []step{{data: "rtr1#"}},
@@ -523,6 +540,8 @@ func TestShellPagerConsumesTypedAheadLine(t *testing.T) {
 // A more-prompt look-alike that is followed by more output at once is not
 // answered: nothing is typed ahead into the next command.
 func TestShellPagerLookalikeIsNotAnswered(t *testing.T) {
+	// Serial on purpose: the second write follows after 3 ms and must come
+	// within the quiet period (200 ms): a loaded machine could break the margin.
 	d := &scripted{
 		login: []step{{data: "rtr1#"}},
 		perCmd: func(cmd string) []step {
@@ -559,6 +578,8 @@ func TestShellPagerLookalikeIsNotAnswered(t *testing.T) {
 // A device that stops reading: a write that blocks ends with the context
 // (the client is closed), and Close returns promptly.
 func TestShellWriteBlockedOnDevice(t *testing.T) {
+	// Serial on purpose: it runs with a quiet period of 60 ms and a call that
+	// must end within 400 ms: load would break the margins.
 	d := &scripted{
 		login:             []step{{data: "rtr1#"}},
 		perCmd:            func(string) []step { return []step{{data: "\r\nrtr1#"}} },
@@ -594,6 +615,7 @@ func TestShellWriteBlockedOnDevice(t *testing.T) {
 // A device that does not echo the empty line answers it with the prompt
 // on the same line.
 func TestShellNoEchoOfEmptyLine(t *testing.T) {
+	t.Parallel()
 	d := &scripted{
 		login: []step{{data: "rtr1#"}},
 		perCmd: func(cmd string) []step {
@@ -617,6 +639,7 @@ func TestShellNoEchoOfEmptyLine(t *testing.T) {
 }
 
 func TestKeyboardInteractiveRoundsAndOTP(t *testing.T) {
+	t.Parallel()
 	t.Run("a repeated password prompt gets the password once", func(t *testing.T) {
 		d := &scripted{rounds: [][]string{{"Password: "}, {"Password: "}, {"Password: "}}}
 		tg, stop := d.start(t)
@@ -664,6 +687,7 @@ func TestKeyboardInteractiveRoundsAndOTP(t *testing.T) {
 }
 
 func TestServerVersionIsCleaned(t *testing.T) {
+	t.Parallel()
 	d := &scripted{version: "SSH-2.0-evil\x1b[2Jtext"}
 	tg, stop := d.start(t)
 	defer stop()

@@ -25,6 +25,7 @@ test) case "$STUB_MODE" in
         printf 'ok  \tp/a\t0.1s\n?   \tp/b\t[no test files]\n' ;;
     hang) exec sleep 30 ;;
     tmp) printf '%s\n' "$TMPDIR" >"$STUB_TMP_OUT"; printf 'ok  \tp/a\t0.1s\n?   \tp/b\t[no test files]\n' ;;
+    args) printf '%s\n' "$*" >"$STUB_ARGS_OUT"; printf 'ok  \tp/a\t0.1s\n?   \tp/b\t[no test files]\n' ;;
     esac ;;
 esac
 SH
@@ -148,4 +149,10 @@ sleeper_below() {
     export STUB_TMP_OUT="$BATS_TEST_TMPDIR/tmpdir"
     STUB_MODE=tmp TMPDIR="$BATS_TEST_TMPDIR" run -0 "$GATE" -o "$LOG"
     [[ "$(cat "$STUB_TMP_OUT")" == "$BATS_TEST_TMPDIR" ]]
+}
+
+@test "go test runs with -parallel 16 for the whole run" {
+    export STUB_ARGS_OUT="$BATS_TEST_TMPDIR/args"
+    STUB_MODE=args run -0 "$GATE" -o "$LOG"
+    [[ "$(cat "$STUB_ARGS_OUT")" == "test -v -parallel 16 -timeout 40m ./internal/..." ]]
 }

@@ -40,9 +40,14 @@ EOF
     # A to 0, B to 1, C to 1 (8 < 9), D to 0 (9 < 13), E to 0 (a tie, as many tests), F to 1:
     # round-robin by name would give A C E and B D F
     run --separate-stderr -0 "$SHARD" 0 2
-    [[ "$output" == 'go test ./internal/cli -run ^(TestA|TestD|TestE)$ -count=1' ]]
+    [[ "$output" == 'go test ./internal/cli -run ^(TestA|TestD|TestE)$ -count=1 -parallel 16' ]]
     run --separate-stderr -0 "$SHARD" 1 2 -v
-    [[ "$output" == 'go test ./internal/cli -run ^(TestB|TestC|TestF)$ -count=1 -v' ]]
+    [[ "$output" == 'go test ./internal/cli -run ^(TestB|TestC|TestF)$ -count=1 -parallel 16 -v' ]]
+}
+
+@test "the shard runs with -parallel 16, and a -parallel among its flags comes after it and wins" {
+    run --separate-stderr -0 "$SHARD" 0 2 -parallel 4
+    [[ "$output" == *" -count=1 -parallel 16 -parallel 4" ]]
 }
 
 @test "the shard says how many tests it holds and about how long they should take" {
@@ -56,9 +61,9 @@ EOF
     printf 'TestA 2 serial\nTestB 4\nTestC 3\nTestD 1\n' >"$SHARD_DURATIONS"
     STUB_TESTS="TestA TestB TestC TestD" run --separate-stderr -0 "$SHARD" 0 2
     # A weighs 8: alone in shard 0; B C D weigh 4 + 3 + 1
-    [[ "$output" == 'go test ./internal/cli -run ^(TestA)$ -count=1' ]]
+    [[ "$output" == 'go test ./internal/cli -run ^(TestA)$ -count=1 -parallel 16' ]]
     STUB_TESTS="TestA TestB TestC TestD" run --separate-stderr -0 "$SHARD" 1 2
-    [[ "$output" == 'go test ./internal/cli -run ^(TestB|TestC|TestD)$ -count=1' ]]
+    [[ "$output" == 'go test ./internal/cli -run ^(TestB|TestC|TestD)$ -count=1 -parallel 16' ]]
 }
 
 @test "--plan prints the tests and the planned seconds of each shard" {
@@ -72,12 +77,12 @@ EOF
 @test "without a durations file, or with one that lists none of the tests, the tests are dealt round-robin by name" {
     rm -f "$SHARD_DURATIONS"
     run --separate-stderr -0 "$SHARD" 0 2
-    [[ "$output" == 'go test ./internal/cli -run ^(TestA|TestC|TestE)$ -count=1' ]]
+    [[ "$output" == 'go test ./internal/cli -run ^(TestA|TestC|TestE)$ -count=1 -parallel 16' ]]
     run --separate-stderr -0 "$SHARD" 1 2
-    [[ "$output" == 'go test ./internal/cli -run ^(TestB|TestD|TestF)$ -count=1' ]]
+    [[ "$output" == 'go test ./internal/cli -run ^(TestB|TestD|TestF)$ -count=1 -parallel 16' ]]
     printf '# nothing\nTestOther 5\n' >"$SHARD_DURATIONS"
     run --separate-stderr -0 "$SHARD" 0 2
-    [[ "$output" == 'go test ./internal/cli -run ^(TestA|TestC|TestE)$ -count=1' ]]
+    [[ "$output" == 'go test ./internal/cli -run ^(TestA|TestC|TestE)$ -count=1 -parallel 16' ]]
 }
 
 @test "a test the file does not list counts as a short parallel one and lands in a shard" {

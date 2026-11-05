@@ -32,6 +32,7 @@ func MaxOutputLines() int { return devssh.MaxOutput/100 + 20000 }
 // A device cannot make the client buffer more than MaxOutput of one
 // command's output, on any channel type.
 func TestMaxOutputEndToEnd(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("writes more than MaxOutput")
 	}
@@ -42,6 +43,7 @@ func TestMaxOutputEndToEnd(t *testing.T) {
 	srv := serve(t, dir)
 
 	t.Run("exec", func(t *testing.T) {
+		t.Parallel()
 		c := dial(t, target(t, srv, nil))
 		s, err := c.CLI(devssh.VendorJuniper)
 		if err != nil {
@@ -57,6 +59,7 @@ func TestMaxOutputEndToEnd(t *testing.T) {
 		}
 	})
 	t.Run("shell", func(t *testing.T) {
+		t.Parallel()
 		c := dial(t, target(t, srv, nil))
 		s, err := c.CLI(devssh.VendorCisco)
 		if err != nil {
@@ -71,6 +74,7 @@ func TestMaxOutputEndToEnd(t *testing.T) {
 		}
 	})
 	t.Run("netconf", func(t *testing.T) {
+		t.Parallel()
 		c := dial(t, target(t, srv, nil))
 		n, err := c.NETCONF()
 		if err != nil {
@@ -89,6 +93,8 @@ func TestMaxOutputEndToEnd(t *testing.T) {
 // Channel opens and requests that a device never answers end with the
 // context, as ErrTimeout, and do not hang the caller.
 func TestUnansweredChannelCalls(t *testing.T) {
+	// Serial on purpose: the login must finish within a connect timeout of 300
+	// ms: load would break the margin.
 	for name, stage := range map[string]fakedev.Stage{
 		"channel never confirmed": fakedev.HangChannel,
 		"requests never answered": fakedev.HangRequests,
@@ -135,6 +141,7 @@ func TestUnansweredChannelCalls(t *testing.T) {
 }
 
 func TestBlockingPasswordSourceEndsWithTheDeadline(t *testing.T) {
+	t.Parallel()
 	srv := serve(t, transcript(t, nil))
 	tg := target(t, srv, nil)
 	release := make(chan struct{})
@@ -153,6 +160,7 @@ func TestBlockingPasswordSourceEndsWithTheDeadline(t *testing.T) {
 }
 
 func TestExecWithoutExitStatusIsAnError(t *testing.T) {
+	t.Parallel()
 	dir := transcript(t, map[string]string{"show version.out": "partial\n"})
 	srv := serve(t, dir, fakedev.WithNoExitStatus())
 	s, err := dial(t, target(t, srv, nil)).CLI(devssh.VendorJuniper)
@@ -168,6 +176,7 @@ func TestExecWithoutExitStatusIsAnError(t *testing.T) {
 // Close returns at once while a command or an RPC is in flight, and the
 // call in flight ends with an error.
 func TestCloseDoesNotWaitForTheCall(t *testing.T) {
+	t.Parallel()
 	// inFlight says the device has the call: the test closes only then.
 	check := func(t *testing.T, run func() error, closeIt func() error, inFlight func() bool) {
 		t.Helper()
@@ -234,6 +243,7 @@ func TestCloseDoesNotWaitForTheCall(t *testing.T) {
 }
 
 func TestRPCBodyAndReplyChecks(t *testing.T) {
+	t.Parallel()
 	dir := transcript(t, map[string]string{"show version.out": "v\n"})
 	srv := serve(t, dir)
 	n, err := dial(t, target(t, srv, nil)).NETCONF()
@@ -269,6 +279,7 @@ func TestRPCBodyAndReplyChecks(t *testing.T) {
 }
 
 func TestDeviceTextIsCleaned(t *testing.T) {
+	t.Parallel()
 	dir := transcript(t, map[string]string{"show x.err": "denied\n\u202eevil\u0085"})
 	srv := serve(t, dir)
 	n, err := dial(t, target(t, srv, nil)).NETCONF()
@@ -289,6 +300,7 @@ func TestDeviceTextIsCleaned(t *testing.T) {
 }
 
 func TestCommandsWithControlCharactersAreRefused(t *testing.T) {
+	t.Parallel()
 	srv := serve(t, transcript(t, map[string]string{"prompt": "rtr1#"}))
 	c := dial(t, target(t, srv, nil))
 	for _, v := range []string{devssh.VendorJuniper, devssh.VendorCisco} {
@@ -310,6 +322,7 @@ func TestCommandsWithControlCharactersAreRefused(t *testing.T) {
 // Backspaces and more-prompt look-alikes in the output are output; only the
 // erase sequence after a more-prompt answered is removed.
 func TestPagingKeepsDeviceText(t *testing.T) {
+	t.Parallel()
 	cfg := "line a\nwith \x08 backspace\nbanner motd --More--\n" + configLines(30)
 	dir := transcript(t, map[string]string{"prompt": "rtr1#", "paging": "5", "show running-config.out": cfg})
 	srv := serve(t, dir)
@@ -324,6 +337,7 @@ func TestPagingKeepsDeviceText(t *testing.T) {
 }
 
 func TestLegacyAlgorithmNegotiation(t *testing.T) {
+	t.Parallel()
 	dir := transcript(t, nil)
 	for _, tc := range []struct {
 		name string
@@ -338,6 +352,7 @@ func TestLegacyAlgorithmNegotiation(t *testing.T) {
 		{"an old device, all three", []fakedev.Option{fakedev.WithLegacy()}, "algorithm"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			srv := serve(t, dir, tc.opts...)
 			tg := target(t, srv, nil)
 			_, err := devssh.Dial(bg(), tg)
@@ -358,6 +373,7 @@ func TestLegacyAlgorithmNegotiation(t *testing.T) {
 }
 
 func TestUnreachableIsClassified(t *testing.T) {
+	t.Parallel()
 	tg := devssh.Target{
 		Host: "192.0.2.1", User: "u", HostKeys: []string{fakedev.HostKey()},
 		Password: func() (string, error) { return "x", nil },
@@ -372,6 +388,7 @@ func TestUnreachableIsClassified(t *testing.T) {
 
 // Concurrent Close and Run on one client and its sessions are race-free.
 func TestConcurrentCloseIsRaceFree(t *testing.T) {
+	t.Parallel()
 	dir := transcript(t, map[string]string{"prompt": "rtr1#", "show version.out": "v\n"})
 	srv := serve(t, dir)
 	for range 8 {
@@ -398,6 +415,7 @@ func TestConcurrentCloseIsRaceFree(t *testing.T) {
 }
 
 func TestQuestionMarkInShellOnly(t *testing.T) {
+	t.Parallel()
 	srv := serve(t, transcript(t, map[string]string{"prompt": "rtr1#", "show interfaces ?.out": "help\n"}))
 	c := dial(t, target(t, srv, nil))
 	sh, err := c.CLI(devssh.VendorCisco)
@@ -422,6 +440,10 @@ func TestQuestionMarkInShellOnly(t *testing.T) {
 // A NETCONF device that stopped reading: the write that blocks ends with
 // the context, and Close, in either order, returns promptly.
 func TestNetconfDeviceThatNeverReads(t *testing.T) {
+	// Serial on purpose: a 3 MiB write must end with a context of 400 ms and the
+	// call return within 5 s (3 s for Close): a loaded machine, a race build
+	// above all, stretches the margins (it did, to 7 s, with the package's tests
+	// around it).
 	srv := serve(t, transcript(t, nil), fakedev.WithNoRead())
 	tg := target(t, srv, nil)
 	c, err := devssh.Dial(bg(), tg)
@@ -466,6 +488,8 @@ func (c *countingConn) Write(p []byte) (int, error) {
 // Close with an RPC blocked in its write: the channel is closed under it
 // and Close does not wait for the window.
 func TestNetconfCloseWithBlockedWrite(t *testing.T) {
+	// Serial on purpose: Close must return within 3 s and the call in flight
+	// within 5 s, behind a blocked 3 MiB write: load would stretch the margins.
 	srv := serve(t, transcript(t, nil), fakedev.WithNoRead())
 	tg := target(t, srv, nil)
 	// The bytes the client has put on the wire: once a channel window's worth

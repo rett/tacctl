@@ -40,6 +40,7 @@ func captured(t *testing.T) map[string]string {
 }
 
 func TestCapturedTexts(t *testing.T) {
+	t.Parallel()
 	c := captured(t)
 	get := func(k string) string {
 		t.Helper()
@@ -86,6 +87,7 @@ func TestCapturedTexts(t *testing.T) {
 }
 
 func TestParseBannerFailsClosed(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		area    []string
 		pending bool
@@ -119,6 +121,7 @@ func TestParseBannerFailsClosed(t *testing.T) {
 
 // A TACACS+ login names its template account and the person apart [C].
 func TestAuthorizationOfATacacsLogin(t *testing.T) {
+	t.Parallel()
 	lg, err := parseAuthorization("Current user: 'EN-CLASS' login: 'gotesteng' class 'EN-CLASS'\nPermissions:\n    rollback view view-configuration\n")
 	if err != nil || lg.Class != "EN-CLASS" || lg.User != "EN-CLASS" || lg.Name != "gotesteng" || lg.CanCommit() {
 		t.Errorf("%+v %v", lg, err)
@@ -145,6 +148,7 @@ func (b bannerHeldT) Compare(ctx context.Context, d plan.Delta) (plan.CompareTex
 }
 
 func TestCheckRefusedUnderTheBanner(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	before := d.srv.Committed()
 	o := check(t, d, &planner{desired: desiredLines()}, func(in *Input) {
@@ -186,6 +190,7 @@ func (n noBannerT) CommitConfirmed(ctx context.Context, minutes int, id, user st
 }
 
 func TestCommitConfirmedWithoutBanner(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	before := d.srv.Committed()
 	o := apply(t, d, &planner{desired: desiredLines()}, func(in *Input) {
@@ -232,13 +237,13 @@ func (l hashLandedT) LandedCompare(ctx context.Context, d plan.Delta) (plan.Comp
 
 func assertNoHash(t *testing.T, o Outcome, state string) {
 	t.Helper()
-	allSecrets = append(allSecrets, hashText, "zzHashOfAPassword")
-	defer func() { allSecrets = allSecrets[:len(allSecrets)-2] }()
-	assertNoSecret(t, o, state)
+	assertNoSecret(t, o, state, hashText, "zzHashOfAPassword")
 }
 
 func TestDeviceSecretsNeverLeave(t *testing.T) {
+	t.Parallel()
 	t.Run("candidate", func(t *testing.T) {
+		t.Parallel()
 		d := newDevice(t, nil)
 		o := check(t, d, &planner{desired: desiredLines()}, func(in *Input) {
 			in.Transport = &hashExtraT{JunosCLI: in.Transport.(*JunosCLI)}
@@ -250,6 +255,7 @@ func TestDeviceSecretsNeverLeave(t *testing.T) {
 		assertNoHash(t, o, d.state)
 	})
 	t.Run("landed", func(t *testing.T) {
+		t.Parallel()
 		d := newDevice(t, nil)
 		before := d.srv.Committed()
 		o := apply(t, d, &planner{desired: desiredLines()}, func(in *Input) {

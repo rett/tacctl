@@ -27,7 +27,9 @@ test)
     *" -list "*) printf 'TestA\nTestB\nTestC\nTestD\nok  \tp/internal/cli\t0.1s\n'; exit 0 ;;
     esac
     [[ "$STUB_MODE" != hang ]] || exec sleep 30
-    echo "flags: race=$raced tags=$tagged env-flags=$GOFLAGS cgo=$CGO_ENABLED" >>"$STUB_CALLS"
+    par=0
+    case " $* " in *" -parallel 16 "*) par=1 ;; esac
+    echo "flags: race=$raced tags=$tagged env-flags=$GOFLAGS cgo=$CGO_ENABLED parallel16=$par" >>"$STUB_CALLS"
     case " $* " in
     *" p/a p/b "*)
         case "$STUB_MODE" in
@@ -120,17 +122,17 @@ sleeper_below() {
     [[ "$output" != *"gate-ci: slowest:"* ]]
 }
 
-@test "the race detector and cgo are on for the other packages and the untagged shards, the knobs run has no -race" {
+@test "the race detector and cgo are on for the other packages and the untagged shards, the knobs run has no -race; the shards run with -parallel 16" {
     STUB_MODE=ok run -0 "$GATE" -o "$LOG"
     # untagged: the other packages, the two shards; then the same with the knobs
     mapfile -t calls <"$STUB_CALLS"
     [[ "${#calls[@]}" -eq 6 ]]
-    [[ "${calls[0]}" == "flags: race=1 tags=0 env-flags= cgo=1" ]]
-    [[ "${calls[1]}" == "flags: race=1 tags=0 env-flags=-race cgo=1" ]]
-    [[ "${calls[2]}" == "flags: race=1 tags=0 env-flags=-race cgo=1" ]]
-    [[ "${calls[3]}" == "flags: race=1 tags=1 env-flags= cgo=1" ]]
-    [[ "${calls[4]}" == "flags: race=0 tags=1 env-flags=-tags=testknobs cgo=1" ]]
-    [[ "${calls[5]}" == "flags: race=0 tags=1 env-flags=-tags=testknobs cgo=1" ]]
+    [[ "${calls[0]}" == "flags: race=1 tags=0 env-flags= cgo=1 parallel16=0" ]]
+    [[ "${calls[1]}" == "flags: race=1 tags=0 env-flags=-race cgo=1 parallel16=1" ]]
+    [[ "${calls[2]}" == "flags: race=1 tags=0 env-flags=-race cgo=1 parallel16=1" ]]
+    [[ "${calls[3]}" == "flags: race=1 tags=1 env-flags= cgo=1 parallel16=0" ]]
+    [[ "${calls[4]}" == "flags: race=0 tags=1 env-flags=-tags=testknobs cgo=1 parallel16=1" ]]
+    [[ "${calls[5]}" == "flags: race=0 tags=1 env-flags=-tags=testknobs cgo=1 parallel16=1" ]]
 }
 
 @test "a data race fails both tag runs of the other packages, named, and the other jobs still run" {

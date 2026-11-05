@@ -147,6 +147,7 @@ func waitEvent(t *testing.T, srv *fakedev.Server, want string) {
 }
 
 func TestWTIFakeBannerAndPortList(t *testing.T) {
+	t.Parallel()
 	u := openWTI(t, "lab-superuser")
 	ports := u.login("DSM> ")
 	for _, want := range []string{"Console Server", "Site ID: wti.site.example.net", "PORT|", "Enter /H for command menu."} {
@@ -168,6 +169,7 @@ func TestWTIFakeBannerAndPortList(t *testing.T) {
 }
 
 func TestWTIFakeBannerAsksAgainAndExit(t *testing.T) {
+	t.Parallel()
 	u := openWTI(t, "lab-user")
 	u.expect(contains("Do you wish to continue?"))
 	u.send("hello\r")
@@ -182,6 +184,7 @@ func TestWTIFakeBannerAsksAgainAndExit(t *testing.T) {
 }
 
 func TestWTIFakeHelpPerLevel(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		unit    string
 		present []string
@@ -202,6 +205,7 @@ func TestWTIFakeHelpPerLevel(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.unit, func(t *testing.T) {
+			t.Parallel()
 			u := openWTI(t, c.unit)
 			u.login("DSM> ")
 			text := u.help("DSM> ", " ")
@@ -226,6 +230,7 @@ func TestWTIFakeHelpPerLevel(t *testing.T) {
 }
 
 func TestWTIFakeHelpPagerKeys(t *testing.T) {
+	t.Parallel()
 	// ENTER gives one line and asks again.
 	u := openWTI(t, "lab-user")
 	u.login("DSM> ")
@@ -248,6 +253,7 @@ func TestWTIFakeHelpPagerKeys(t *testing.T) {
 }
 
 func TestWTIFakeLevelRefusesWhatHelpDoesNotList(t *testing.T) {
+	t.Parallel()
 	u := openWTI(t, "lab-user")
 	u.login("DSM> ")
 	for _, cmd := range []string{"/N", "/F", "/P", "/AC"} {
@@ -270,6 +276,7 @@ func TestWTIFakeLevelRefusesWhatHelpDoesNotList(t *testing.T) {
 }
 
 func TestWTIFakeNetworkStatus(t *testing.T) {
+	t.Parallel()
 	u := openWTI(t, "lab-superuser")
 	u.login("DSM> ")
 	u.send("/SN\r")
@@ -309,6 +316,7 @@ func TestWTIFakeNetworkStatus(t *testing.T) {
 }
 
 func TestWTIFakeSessionUsersAndSiteID(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	manifest := "screens " + wtiScreens(t) + "\nsessions 3\nsession-users alice " + fakedev.DefaultUser + "\n"
 	if err := os.WriteFile(filepath.Join(dir, "menu"), []byte(manifest), 0o600); err != nil {
@@ -329,6 +337,7 @@ func TestWTIFakeSessionUsersAndSiteID(t *testing.T) {
 }
 
 func TestWTIFakeWalkAndBackWithoutSaving(t *testing.T) {
+	t.Parallel()
 	u := openWTI(t, "lab-superuser")
 	u.login("DSM> ")
 	top := u.page("/N\r")
@@ -378,6 +387,7 @@ func TestWTIFakeWalkAndBackWithoutSaving(t *testing.T) {
 }
 
 func TestWTIFakeEscAtTopSaves(t *testing.T) {
+	t.Parallel()
 	u := openWTI(t, "lab-engineer")
 	u.login("DSM> ")
 	for _, top := range []string{"/N", "/F", "/P", "/AC"} {
@@ -395,6 +405,7 @@ func TestWTIFakeEscAtTopSaves(t *testing.T) {
 }
 
 func TestWTIFakeTopLevelPages(t *testing.T) {
+	t.Parallel()
 	u := openWTI(t, "lab-engineer")
 	u.login("DSM> ")
 	for _, c := range []struct{ cmd, want string }{
@@ -413,6 +424,7 @@ func TestWTIFakeTopLevelPages(t *testing.T) {
 }
 
 func TestWTIFakeIPTablesPages(t *testing.T) {
+	t.Parallel()
 	u := openWTI(t, "lab-superuser")
 	u.login("DSM> ")
 	u.page("/N\r")
@@ -453,6 +465,7 @@ func TestWTIFakeIPTablesPages(t *testing.T) {
 }
 
 func TestWTIFakeIPTablesEmpty(t *testing.T) {
+	t.Parallel()
 	u := openWTI(t, "lab-engineer")
 	u.login("DSM> ")
 	u.page("/N\r")
@@ -466,6 +479,7 @@ func TestWTIFakeIPTablesEmpty(t *testing.T) {
 }
 
 func TestWTIFakeIPTablesFromFile(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	var list strings.Builder
 	list.WriteString("iptables -A INPUT -j ACCEPT\niptables -P INPUT DROP\n")
@@ -486,6 +500,7 @@ func TestWTIFakeIPTablesFromFile(t *testing.T) {
 }
 
 func TestWTIFakeUserDirectory(t *testing.T) {
+	t.Parallel()
 	u := openWTI(t, "lab-superuser")
 	u.login("DSM> ")
 	u.page("/F\r")
@@ -518,6 +533,7 @@ func TestWTIFakeUserDirectory(t *testing.T) {
 }
 
 func TestWTIFakeUnknownEntries(t *testing.T) {
+	t.Parallel()
 	u := openWTI(t, "lab-superuser")
 	u.login("DSM> ")
 	u.page("/N\r")
@@ -560,6 +576,7 @@ func TestWTIFakeUnknownEntries(t *testing.T) {
 // take nothing: a value or a CR is an 'entry' event and the page again, ESC
 // repaints the SNMP access menu, and no save is logged.
 func TestWTIFakeTextPromptPages(t *testing.T) {
+	t.Parallel()
 	u := openWTI(t, "lab-superuser")
 	u.login("DSM> ")
 	u.page("/N\r")
@@ -623,6 +640,7 @@ func TestWTIFakeTextPromptPages(t *testing.T) {
 }
 
 func TestWTIFakeCloseMidPager(t *testing.T) {
+	t.Parallel()
 	u := openWTI(t, "lab-superuser")
 	u.login("DSM> ")
 	u.send("/H\r")
@@ -637,6 +655,7 @@ func TestWTIFakeCloseMidPager(t *testing.T) {
 }
 
 func TestWTIFakeCloseAtBannerPromptAndStatus(t *testing.T) {
+	t.Parallel()
 	u := openWTI(t, "lab-superuser")
 	u.expect(contains("Do you wish to continue?"))
 	_ = u.s.Close()
@@ -656,6 +675,7 @@ func TestWTIFakeCloseAtBannerPromptAndStatus(t *testing.T) {
 }
 
 func TestWTIFakeOldVersion(t *testing.T) {
+	t.Parallel()
 	u := openWTI(t, "lab-old")
 	ports := u.login("LAB-WTI> ")
 	if !strings.HasSuffix(ports, "LAB-WTI> ") {
@@ -668,6 +688,7 @@ func TestWTIFakeOldVersion(t *testing.T) {
 }
 
 func TestWTIFakeScreensOption(t *testing.T) {
+	t.Parallel()
 	// A manifest copied away from the captures finds them by the option.
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "menu"), []byte("level user\n"), 0o600); err != nil {
@@ -680,6 +701,7 @@ func TestWTIFakeScreensOption(t *testing.T) {
 }
 
 func TestWTIFakeBadManifestIsReported(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "menu"), []byte("lvel user\n"), 0o600); err != nil {
 		t.Fatal(err)

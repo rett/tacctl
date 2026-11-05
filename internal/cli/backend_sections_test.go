@@ -20,6 +20,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rett/tacctl/internal/app"
 	"github.com/rett/tacctl/internal/backend"
@@ -73,6 +74,9 @@ func newSectionsSandbox(t *testing.T, withStore bool) *sectionsSandbox {
 	t.Helper()
 	serial(t) // withFakeBackend swaps the process-wide default registry
 	sb := newSandbox(t, withStore)
+	// the fake backend is up the moment it is started: do not wait the
+	// product's 2 s for it
+	sb.hooks.backendStartWait = time.Millisecond
 	sandboxRADIUS(sb)
 	s := &sectionsSandbox{
 		sandbox: sb,

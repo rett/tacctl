@@ -353,10 +353,11 @@ func TestPullOfAScaledDevice(t *testing.T) {
 // scale: a device at scale 10 that never answers costs the 10 s typed, not the
 // 100 s the scale would give.
 func TestTypedTimeoutWinsOverTheScale(t *testing.T) {
-	if testing.Short() {
-		t.Skip("the shortest timeout is 10 s")
-	}
 	b := newPullBox(t)
+	// --timeout 10 is the shortest the verb accepts; the box counts its
+	// seconds as 100 ms, so the typed budget is 1 s, where the scale would
+	// give the 10 s floor of a scaled budget or more
+	b.sb.hooks.timeoutSecond = 100 * time.Millisecond
 	b.devices([3]string{"lab-j", "192.168.1.20", "juniper"})
 	if err := os.WriteFile(filepath.Join(b.dir, junosReadCmd+".hang"), nil, 0o644); err != nil {
 		t.Fatal(err)
@@ -367,7 +368,7 @@ func TestTypedTimeoutWinsOverTheScale(t *testing.T) {
 	if b.sb.code != 1 || !strings.Contains(out, "failed: timed out") {
 		t.Errorf("exit %d\n%s", b.sb.code, out)
 	}
-	if d := time.Since(start); d > 40*time.Second {
+	if d := time.Since(start); d > 5*time.Second {
 		t.Errorf("took %v: the scale replaced the typed --timeout", d)
 	}
 }

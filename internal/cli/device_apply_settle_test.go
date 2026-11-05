@@ -18,9 +18,10 @@ func TestApplySettlePrintedAndAudited(t *testing.T) {
 	b.register("example-sw1")
 	b.seed("example-sw1")
 	before := b.committed()
-	// a minute of the window lasts a second; the held session drops after
-	// the confirmed commit (a dead tacctl): the record says pending
-	b.knob("timer.minute", "1\n")
+	// a minute of the window lasts a tenth of a second of the fake's clock
+	// (the ten minutes of the apply, one second); the held session drops
+	// after the confirmed commit (a dead tacctl): the record says pending
+	b.knob("timer.minute", "0.1\n")
 	b.knob("commit.drop", "")
 	code, out, errs := b.apply("example-sw1", "--confirmed", "--yes")
 	pend := b.applied("example-sw1")

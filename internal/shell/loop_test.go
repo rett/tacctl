@@ -50,6 +50,7 @@ func newFakeShell(hist *History) *fakeShell {
 }
 
 func TestBatchStopsAtTheFirstFailure(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		script string
 		status int
@@ -84,6 +85,7 @@ func TestBatchStopsAtTheFirstFailure(t *testing.T) {
 }
 
 func TestBatchStopsWhenCancelled(t *testing.T) {
+	t.Parallel()
 	f := newFakeShell(nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	f.sh.o.Exec = func(context.Context, []string, io.Reader) int { cancel(); return 0 }
@@ -93,6 +95,7 @@ func TestBatchStopsWhenCancelled(t *testing.T) {
 }
 
 func TestBatchPassesWordsLiterally(t *testing.T) {
+	t.Parallel()
 	f := newFakeShell(nil)
 	f.sh.Batch(context.Background(), strings.NewReader("user show 'a b' $(id) `id` ;|>\n"))
 	want := []string{"user", "show", "a b", "$(id)", "`id`", ";|>"}
@@ -102,6 +105,7 @@ func TestBatchPassesWordsLiterally(t *testing.T) {
 }
 
 func TestCommandRecordsTheRedactedLine(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "history")
 	f := newFakeShell(NewHistory(path, nil))
 	in := strings.NewReader("y\n")
@@ -121,6 +125,7 @@ func TestCommandRecordsTheRedactedLine(t *testing.T) {
 }
 
 func TestBuiltins(t *testing.T) {
+	t.Parallel()
 	f := newFakeShell(NewHistory("", nil))
 	f.sh.o.History.Add("user list")
 	f.sh.o.History.Add("scope secret lab set x")
@@ -141,6 +146,7 @@ func TestBuiltins(t *testing.T) {
 }
 
 func TestSystemShellWord(t *testing.T) {
+	t.Parallel()
 	// Without Options.SystemShell the word is a command like any other.
 	f := newFakeShell(nil)
 	f.sh.Command(context.Background(), "system-shell", nil)
@@ -172,6 +178,7 @@ func TestSystemShellWord(t *testing.T) {
 }
 
 func TestEndReasons(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		script, reason string
 		lines          int
@@ -203,6 +210,7 @@ func TestEndReasons(t *testing.T) {
 }
 
 func TestRows(t *testing.T) {
+	t.Parallel()
 	if got := Rows(false); !slices.EqualFunc(got, BuiltinRows, func(a, b Row) bool { return a.Left == b.Left }) {
 		t.Errorf("Rows(false) = %v", got)
 	}
@@ -222,6 +230,7 @@ func TestRows(t *testing.T) {
 // A pasted command line starts with the command the shell implies: it is
 // run, and answered, as the line without it.
 func TestLeadingBinaryIsNoWord(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		script string
 		status int
@@ -274,6 +283,7 @@ func TestLeadingBinaryIsNoWord(t *testing.T) {
 // The history stores what was typed, the leading command included, and
 // keeps redacting what follows it.
 func TestCommandKeepsTheTypedLineInTheHistory(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "history")
 	f := newFakeShell(NewHistory(path, nil))
 	f.sh.Command(context.Background(), "tacctl scope secret lab set x", nil)

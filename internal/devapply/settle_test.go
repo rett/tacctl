@@ -20,6 +20,7 @@ import (
 // { ... }'): the check's compare, the landed compare and the cancel's
 // inverse all read it.
 func TestApplyBesideExistingEntries(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, map[string]string{"compare.context": ""})
 	before := d.srv.Committed()
 	p := &planner{desired: desiredLines()}
@@ -51,6 +52,7 @@ func TestApplyBesideExistingEntries(t *testing.T) {
 // The gate's compare with context lines parses, and the reason is the
 // stranger's staged change.
 func TestGateStagedBesideExisting(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, map[string]string{"compare.context": "", "dirty.shared": "user carol\nset snmp community zz-staged authorization read-only\n"})
 	j := d.dial()
 	defer func() { _ = j.Close() }()
@@ -93,6 +95,7 @@ func changed(empty bool) func(context.Context, string) (plan.Delta, error) {
 // rendering finds nothing to do. The settle is rolled back all the same:
 // the rollbacks decide, no planner.
 func TestSettleExpiryRenderingChanged(t *testing.T) {
+	t.Parallel()
 	d, o := pendingApply(t)
 	before := o
 	d.clk.Advance(11 * time.Minute)
@@ -118,6 +121,7 @@ func TestSettleExpiryRenderingChanged(t *testing.T) {
 // A stranger's commit confirmed tacctl's (any commit confirms a pending
 // one): applied by someone else, with or without the rendering's say.
 func TestSettleForeignCommitConfirmed(t *testing.T) {
+	t.Parallel()
 	d, o := pendingApply(t)
 	runShell(t, d, "configure", "commit comment \"bob's\"")
 	if _, p := d.srv.PendingUntil(); p {
@@ -139,6 +143,7 @@ func TestSettleForeignCommitConfirmed(t *testing.T) {
 // configuration is neither tacctl's nor the one before it. Unknown, even
 // when today's rendering finds nothing to do.
 func TestSettleBothDiffer(t *testing.T) {
+	t.Parallel()
 	d, o := pendingApply(t)
 	runShell(t, d, "configure", "set snmp contact bob", "commit")
 	d.clk.Advance(11 * time.Minute)
@@ -177,6 +182,7 @@ func (h historyMovesR) State(ctx context.Context) (CommitState, error) {
 // Without the compares the planner is the last fallback, and it only ever
 // says unknown; a history that moved between the reads is unknown too.
 func TestSettleFallbacksNeverApplied(t *testing.T) {
+	t.Parallel()
 	d, o := pendingApply(t)
 	d.clk.Advance(11 * time.Minute)
 	for _, facts := range []func(context.Context, string) (plan.Delta, error){changed(true), changed(false), nil} {
@@ -201,6 +207,7 @@ func TestSettleFallbacksNeverApplied(t *testing.T) {
 // The compare's text is never quoted: a refusal or a stranger's line gives
 // the line number and why.
 func TestRollbackCompareNotQuoted(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	j := d.dial()
 	defer func() { _ = j.Close() }()
@@ -221,6 +228,7 @@ func TestRollbackCompareNotQuoted(t *testing.T) {
 // The capture of 2026-10-14: the history of two applies the device rolled
 // back, with the rescue line, settles from the rollbacks.
 func TestCapturedExpiryHistory(t *testing.T) {
+	t.Parallel()
 	c := captured(t)
 	h, err := parseHistory(c["show system commit (2026-10-14: two applies rolled back by the device at their window's end)"])
 	if err != nil || len(h) != 9 {

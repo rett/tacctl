@@ -128,6 +128,29 @@ func TestDeviceKnobs(t *testing.T) {
 	}
 }
 
+// The quiet knob is a Go duration of at most one second; unset is zero (the
+// devssh default).
+func TestDeviceQuietKnob(t *testing.T) {
+	k, err := load(t, EnvTestDeviceQuiet+"=25ms")
+	if err != nil || k.DeviceQuiet() != 25*time.Millisecond {
+		t.Errorf("25ms: %v %v", k.DeviceQuiet(), err)
+	}
+	k, err = load(t, EnvTestDeviceQuiet+"=1s")
+	if err != nil || k.DeviceQuiet() != time.Second {
+		t.Errorf("1s: %v %v", k.DeviceQuiet(), err)
+	}
+	for _, bad := range []string{"25", "garbage", "-5ms", "1.5s", "2s", "1001ms"} {
+		_, err := load(t, EnvTestDeviceQuiet+"="+bad)
+		if err == nil || !strings.Contains(err.Error(), EnvTestDeviceQuiet) {
+			t.Errorf("%q: err = %v", bad, err)
+		}
+	}
+	k, err = load(t)
+	if err != nil || k.DeviceQuiet() != 0 {
+		t.Errorf("unset: %v %v", k.DeviceQuiet(), err)
+	}
+}
+
 // The resolve knob is a fixed name table: a name it lacks does not resolve.
 func TestResolveKnob(t *testing.T) {
 	k, err := load(t, EnvTestResolve+"=a.example.net=192.0.2.1,192.0.2.2; B.example.net=192.0.2.3")

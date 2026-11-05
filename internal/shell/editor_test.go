@@ -98,6 +98,7 @@ func newTestEditor() (*editor, *screen) {
 }
 
 func TestTabCompletion(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		line    string
 		want    string
@@ -143,6 +144,7 @@ func TestTabCompletion(t *testing.T) {
 }
 
 func TestTabInTheMiddle(t *testing.T) {
+	t.Parallel()
 	e, _ := newTestEditor()
 	got, pos, _ := e.key("us list", 2, '\t')
 	if got != "user  list" || pos != 5 {
@@ -151,6 +153,7 @@ func TestTabInTheMiddle(t *testing.T) {
 }
 
 func TestSecondTabLists(t *testing.T) {
+	t.Parallel()
 	e, sc := newTestEditor()
 	e.key("user ", 5, '\t')
 	if strings.Contains(sc.String(), "show") {
@@ -179,6 +182,7 @@ func TestSecondTabLists(t *testing.T) {
 // can it prints the Explainer's text, or says there is nothing; inside
 // quotes and after a backslash it is a character. It never changes the line.
 func TestQuestionKey(t *testing.T) {
+	t.Parallel()
 	e, sc := newTestEditor()
 	got, pos, ok := e.key("user ", 5, '?')
 	if !ok || got != "user " || pos != 5 {
@@ -212,6 +216,7 @@ func TestQuestionKey(t *testing.T) {
 }
 
 func TestQuestionKeyAfterTheBinary(t *testing.T) {
+	t.Parallel()
 	for _, line := range []string{"tacctl ", "sudo tacctl ", "/usr/local/bin/tacctl "} {
 		e, sc := newTestEditor()
 		if got, pos, ok := e.key(line, len(line), '?'); !ok || got != line || pos != len(line) {
@@ -236,6 +241,7 @@ func TestQuestionKeyAfterTheBinary(t *testing.T) {
 }
 
 func TestOtherKeysPassThrough(t *testing.T) {
+	t.Parallel()
 	e, _ := newTestEditor()
 	if _, _, ok := e.key("x", 1, 'a'); ok {
 		t.Error("a printable key was taken")
@@ -246,6 +252,7 @@ func TestOtherKeysPassThrough(t *testing.T) {
 }
 
 func TestInterruptMarker(t *testing.T) {
+	t.Parallel()
 	e, _ := newTestEditor()
 	got, pos, ok := e.key("user li", 3, markInterrupt)
 	if !ok || got != "user li^C" || pos != len(got) || !e.interrupted {
@@ -254,6 +261,7 @@ func TestInterruptMarker(t *testing.T) {
 }
 
 func TestReverseSearch(t *testing.T) {
+	t.Parallel()
 	e, _ := newTestEditor()
 	for _, l := range []string{"user list", "scope list", "user show bob", "scope show lab"} {
 		e.hist.Add(l)
@@ -318,6 +326,7 @@ func TestReverseSearch(t *testing.T) {
 }
 
 func TestInputRewrite(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		in   []string
@@ -353,6 +362,7 @@ func TestInputRewrite(t *testing.T) {
 // spaces, other control characters are dropped, runs of blanks stay, and
 // nothing is held back, with the setting on or off.
 func TestPasteIsUnchanged(t *testing.T) {
+	t.Parallel()
 	const start, end = "\x1b[200~", "\x1b[201~"
 	cases := []struct {
 		name string
@@ -385,6 +395,7 @@ func TestPasteIsUnchanged(t *testing.T) {
 }
 
 func TestPasteIsCapped(t *testing.T) {
+	t.Parallel()
 	in := &input{fd: -1, ed: &editor{}, wake: -1}
 	got := in.rewrite([]byte("\x1b[200~" + strings.Repeat("a\n", PasteMax) + "\x1b[201~z"))
 	body := strings.TrimSuffix(strings.TrimPrefix(string(got), "\x1b[200~"), "\x1b[201~z")
@@ -397,6 +408,7 @@ func TestPasteIsCapped(t *testing.T) {
 }
 
 func TestCommonPrefix(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in   []string
 		want string
@@ -418,6 +430,7 @@ func TestCommonPrefix(t *testing.T) {
 // The Tab list is the words alone, down then across in as many columns as
 // fit, as bash lists them; one column when none fit.
 func TestColumns(t *testing.T) {
+	t.Parallel()
 	var cs []Candidate
 	for _, w := range []string{"ar1", "dev", "web1", "core-sw1", "edge"} {
 		cs = append(cs, Candidate{Word: w, Desc: "ignored", Label: w + " <x>"})
@@ -441,6 +454,7 @@ func TestColumns(t *testing.T) {
 // The '?' list is alphabetical, a Label standing for the word; the
 // shell's own words are not listed with others, and are when alone.
 func TestListingOrderLabels(t *testing.T) {
+	t.Parallel()
 	e, _ := newTestEditor()
 	e.complete = func([]string, string) []Candidate {
 		return []Candidate{
@@ -464,6 +478,7 @@ func TestListingOrderLabels(t *testing.T) {
 }
 
 func TestLongListHelpers(t *testing.T) {
+	t.Parallel()
 	if got := wrapRows("abcde\n\nxy\n", 2); !slices.Equal(got, []string{"ab", "cd", "e", "", "xy"}) {
 		t.Errorf("wrapRows = %q", got)
 	}
@@ -493,6 +508,7 @@ func TestLongListHelpers(t *testing.T) {
 // A typed space, rule by rule (D32). taken is whether the editor took the
 // key (false: the Terminal inserts the blank as typed).
 func TestSpaceRules(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		line    string
@@ -569,6 +585,7 @@ func TestSpaceRules(t *testing.T) {
 // changing the line; a list over ListMax prints nothing; the rest of the
 // line, the live names and a mixed list are left out of it.
 func TestSpaceListsAmbiguousWords(t *testing.T) {
+	t.Parallel()
 	e, sc := newSpaceEditor(t)
 	got, pos, ok := e.key("s", 1, ' ')
 	if !ok || got != "s" || pos != 1 {
@@ -613,6 +630,7 @@ func TestSpaceListsAmbiguousWords(t *testing.T) {
 
 // With the setting off a blank is a blank.
 func TestSpaceOff(t *testing.T) {
+	t.Parallel()
 	for _, line := range []string{"gr", "s", "", "user "} {
 		e, sc := newSpaceEditor(t)
 		e.spaces = false
@@ -625,6 +643,7 @@ func TestSpaceOff(t *testing.T) {
 // During a Ctrl-R search a space is part of the query, wherever the line
 // stands.
 func TestSpaceInSearch(t *testing.T) {
+	t.Parallel()
 	e, _ := newSpaceEditor(t)
 	e.hist.Add("user show bob")
 	line, pos := "gr", 2
@@ -650,6 +669,7 @@ func TestSpaceInSearch(t *testing.T) {
 
 // Tab, '?' and the other keys keep their meaning with the setting on.
 func TestSpaceKeepsOtherKeys(t *testing.T) {
+	t.Parallel()
 	e, _ := newSpaceEditor(t)
 	if got, _, ok := e.key("gr", 2, '\t'); !ok || got != "group " {
 		t.Errorf("Tab: %q,%v", got, ok)
@@ -666,6 +686,7 @@ func TestSpaceKeepsOtherKeys(t *testing.T) {
 // interrupts, so what comes after it in the paste is never run as typed
 // keys, with the setting on or off and wherever the reads end.
 func TestCtrlCInAPasteIsContent(t *testing.T) {
+	t.Parallel()
 	const start, end = "\x1b[200~", "\x1b[201~"
 	feed := func(spaces bool, reads ...string) string {
 		in := &input{fd: -1, ed: &editor{spaces: spaces}, wake: -1}
@@ -695,6 +716,7 @@ func TestCtrlCInAPasteIsContent(t *testing.T) {
 // so a pager never eats the end mark of a pasted line; else it takes the
 // next byte.
 func TestKeyLeavesPasteMarks(t *testing.T) {
+	t.Parallel()
 	const start, end = "\x1b[200~", "\x1b[201~"
 	for _, pending := range []string{start + "bbb" + end, "bbb" + end, "x" + start + "bbb", end} {
 		in := &input{fd: -1, ed: &editor{}, wake: -1, pending: []byte(pending)}
@@ -713,6 +735,7 @@ func TestKeyLeavesPasteMarks(t *testing.T) {
 // A typed blank asks completeFixed (which does not look up live names),
 // Tab and '?' ask complete.
 func TestSpaceAsksTheFixedCompleter(t *testing.T) {
+	t.Parallel()
 	e, _ := newSpaceEditor(t)
 	var full, fixed int
 	e.complete = func(words []string, partial string) []Candidate { full++; return spaceCompleter(words, partial) }

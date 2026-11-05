@@ -13,6 +13,7 @@ import (
 )
 
 func TestFailedAllowNotReady(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	o := check(t, d, &planner{desired: desiredLines()}, func(in *Input) { in.Allow.Expected = nil })
 	wantExit(t, o, ExitFailed, ResultFailed)
@@ -24,6 +25,7 @@ func TestFailedAllowNotReady(t *testing.T) {
 }
 
 func TestFailedOwnClass(t *testing.T) {
+	t.Parallel()
 	// the held login is super-user: a leaf of that class that the rendering
 	// does not set is refused
 	d := newDevice(t, nil)
@@ -39,6 +41,7 @@ func TestFailedOwnClass(t *testing.T) {
 }
 
 func TestLockBusy(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	lk, err := LockDevice(d.state, "example-sw1")
 	if err != nil {
@@ -59,6 +62,7 @@ func TestLockBusy(t *testing.T) {
 }
 
 func TestCancelMarginNothingTyped(t *testing.T) {
+	t.Parallel()
 	// the verification fails with less than the cancel margin left: a
 	// 'rollback 1' then could load the change itself, so nothing is typed
 	d := newDevice(t, nil)
@@ -83,6 +87,7 @@ func (confirmT) Confirm(context.Context, string, string) error {
 }
 
 func TestConfirmAnswerUnknown(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	o := apply(t, d, &planner{desired: desiredLines()}, func(in *Input) {
 		in.Transport = confirmT{in.Transport.(*JunosCLI)}
@@ -99,6 +104,7 @@ func TestConfirmAnswerUnknown(t *testing.T) {
 }
 
 func TestSettle(t *testing.T) {
+	t.Parallel()
 	id := "tacctl-20261013T140000Z-3f2a"
 	at := func(s string) CommitEntry {
 		return CommitEntry{TimeText: "2026-10-13 " + s + " UTC", User: "alice", Via: "cli"}
@@ -175,6 +181,7 @@ func TestSettle(t *testing.T) {
 }
 
 func TestParsersFailClosed(t *testing.T) {
+	t.Parallel()
 	if _, err := parseHistory("0   2026-10-13 14:00:00 UTC by alice via cli commit something new\n"); !errors.Is(err, ErrUnrecognised) {
 		t.Errorf("an unknown tail on entry 0: %v", err)
 	}
@@ -239,6 +246,7 @@ func TestParsersFailClosed(t *testing.T) {
 }
 
 func TestShapesStore(t *testing.T) {
+	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "device-apply")
 	s := OpenShapes(dir)
 	lines := []string{"[aaa]", "set system accounting events login"}
@@ -278,6 +286,7 @@ func TestShapesStore(t *testing.T) {
 }
 
 func TestNameMatchesAndID(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		rep   string
 		names []string
@@ -307,6 +316,7 @@ func TestNameMatchesAndID(t *testing.T) {
 }
 
 func TestMasker(t *testing.T) {
+	t.Parallel()
 	m := newMasker(desiredLines())
 	for _, s := range []string{
 		"error: could not set " + secretKey,

@@ -24,6 +24,7 @@ func both(t *testing.T, knobs map[string]string, fn func(t *testing.T, d *device
 		netconf bool
 	}{{"cli", false}, {"netconf", true}} {
 		t.Run(tr.name, func(t *testing.T) {
+			t.Parallel()
 			d := newDevice(t, knobs)
 			d.netconf = tr.netconf
 			fn(t, d)
@@ -42,6 +43,7 @@ func netDevice(t *testing.T, knobs map[string]string, mode NetconfMode) *device 
 // --- the exits, once per transport ------------------------------------------------------------
 
 func TestBothApplied(t *testing.T) {
+	t.Parallel()
 	both(t, nil, func(t *testing.T, d *device) {
 		before := d.srv.Committed()
 		o := apply(t, d, &planner{desired: desiredLines()}, nil)
@@ -71,6 +73,7 @@ func TestBothApplied(t *testing.T) {
 }
 
 func TestBothChecked(t *testing.T) {
+	t.Parallel()
 	both(t, nil, func(t *testing.T, d *device) {
 		before := d.srv.Committed()
 		o := check(t, d, &planner{desired: desiredLines()}, nil)
@@ -85,6 +88,7 @@ func TestBothChecked(t *testing.T) {
 }
 
 func TestBothFailedBeforeOpen(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		knobs map[string]string
@@ -96,6 +100,7 @@ func TestBothFailedBeforeOpen(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			both(t, c.knobs, func(t *testing.T, d *device) {
 				before := d.srv.Committed()
 				o := check(t, d, &planner{desired: desiredLines()}, nil)
@@ -117,6 +122,7 @@ func TestBothFailedBeforeOpen(t *testing.T) {
 }
 
 func TestBothFailedLoad(t *testing.T) {
+	t.Parallel()
 	knobs := map[string]string{"load.errors": "set system tacplus-server 192.0.2.11 secret => error: could not set " + secretKey + "\n"}
 	both(t, knobs, func(t *testing.T, d *device) {
 		before := d.srv.Committed()
@@ -133,6 +139,7 @@ func TestBothFailedLoad(t *testing.T) {
 }
 
 func TestBothFailedCheck(t *testing.T) {
+	t.Parallel()
 	knobs := map[string]string{"check.errors": "set system accounting events => error: accounting needs a destination\n"}
 	both(t, knobs, func(t *testing.T, d *device) {
 		before := d.srv.Committed()
@@ -148,6 +155,7 @@ func TestBothFailedCheck(t *testing.T) {
 }
 
 func TestBothRolledBackFreshLoginRefused(t *testing.T) {
+	t.Parallel()
 	both(t, map[string]string{"verify.fail": "deny"}, func(t *testing.T, d *device) {
 		before := d.srv.Committed()
 		o := apply(t, d, &planner{desired: desiredLines()}, nil)
@@ -165,6 +173,7 @@ func TestBothRolledBackFreshLoginRefused(t *testing.T) {
 }
 
 func TestBothRolledBackVerifyLoginRefused(t *testing.T) {
+	t.Parallel()
 	both(t, nil, func(t *testing.T, d *device) {
 		before := d.srv.Committed()
 		o := apply(t, d, &planner{desired: desiredLines()}, func(in *Input) {
@@ -178,6 +187,7 @@ func TestBothRolledBackVerifyLoginRefused(t *testing.T) {
 }
 
 func TestBothInterruptBeforeCommit(t *testing.T) {
+	t.Parallel()
 	both(t, nil, func(t *testing.T, d *device) {
 		before := d.srv.Committed()
 		ctx, cancel := context.WithCancel(context.Background())
@@ -203,6 +213,7 @@ func TestBothInterruptBeforeCommit(t *testing.T) {
 }
 
 func TestBothInterruptAfterCommit(t *testing.T) {
+	t.Parallel()
 	both(t, nil, func(t *testing.T, d *device) {
 		before := d.srv.Committed()
 		ctx, cancel := context.WithCancel(context.Background())
@@ -251,8 +262,10 @@ func (c *cancelN) Load(ctx context.Context, l plan.Line) (Loaded, error) {
 // line: the driver cannot cancel from another session and says PENDING
 // until the window's end, which the device then rolls back.
 func TestNetconfSessionDroppedLeavesTheCommitPending(t *testing.T) {
+	t.Parallel()
 	for _, knob := range []string{"", "after-output"} {
 		t.Run("drop="+knob, func(t *testing.T) {
+			t.Parallel()
 			d := netDevice(t, map[string]string{"commit.drop": knob}, ModeAuto)
 			before := d.srv.Committed()
 			o := apply(t, d, &planner{desired: desiredLines()}, nil)
@@ -287,6 +300,7 @@ func TestNetconfSessionDroppedLeavesTheCommitPending(t *testing.T) {
 // pending over NETCONF (from the history's label: no prompt, no banner), and
 // nothing is sent to the device.
 func TestNetconfPendingAtPreflight(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, map[string]string{"commit.drop": ""})
 	o := apply(t, d, &planner{desired: desiredLines()}, nil)
 	wantExit(t, o, ExitPending, ResultPending)
@@ -316,6 +330,7 @@ func TestNetconfPendingAtPreflight(t *testing.T) {
 // With the fresh login's state unreadable and the held session gone, the
 // outcome is unknown, never applied.
 func TestNetconfStateUnreadableIsUnknown(t *testing.T) {
+	t.Parallel()
 	d := netDevice(t, map[string]string{"commit.drop": ""}, ModeAuto)
 	o := apply(t, d, &planner{desired: desiredLines()}, func(in *Input) {
 		in.Verify = func(context.Context) (Reader, error) { return nil, errors.New("no login") }
@@ -329,6 +344,7 @@ func TestNetconfStateUnreadableIsUnknown(t *testing.T) {
 // transaction is not switched in the middle. The default mode never tries a
 // private session: it takes the candidate's lock at once and applies.
 func TestNetconfPrivateConfirmRefused(t *testing.T) {
+	t.Parallel()
 	d := netDevice(t, nil, ModePrivate)
 	before := d.srv.Committed()
 	p := &planner{desired: desiredLines()}
@@ -392,6 +408,7 @@ func TestNetconfPrivateConfirmRefused(t *testing.T) {
 // The lock mode refuses a candidate that another editor staged (the commit
 // would carry it), and leaves no lock behind.
 func TestNetconfLockModeRefusesAStagedCandidate(t *testing.T) {
+	t.Parallel()
 	d := netDevice(t, map[string]string{"dirty.shared": "user carol\nset snmp contact carol\n"}, ModeAuto)
 	j := d.dialNetconf(ModeAuto)
 	defer func() { _ = j.Close() }()
@@ -409,6 +426,7 @@ func TestNetconfLockModeRefusesAStagedCandidate(t *testing.T) {
 // never the label, which rounds down to 0mins for a one-minute window; the
 // 'rollback in' label of a command-line commit still parses as before.
 func TestNetconfPendingIsTheDevicesLineNotTheLabel(t *testing.T) {
+	t.Parallel()
 	h, err := parseHistory("0   2026-10-15 04:09:56 UTC by admin via netconf commit confirmed, rollback in 0mins\n" +
 		"    tacctl lab N1\n    rollback pending\n" +
 		"1   2026-10-15 00:41:23 UTC by admin via junoscript\n")
@@ -429,6 +447,7 @@ func TestNetconfPendingIsTheDevicesLineNotTheLabel(t *testing.T) {
 }
 
 func TestNetconfExclusiveModeLocksOut(t *testing.T) {
+	t.Parallel()
 	d := netDevice(t, nil, ModeExclusive)
 	j := d.dialNetconf(ModeExclusive)
 	defer func() { _ = j.Close() }()
@@ -452,6 +471,7 @@ func TestNetconfExclusiveModeLocksOut(t *testing.T) {
 // denied; a private session opens with a warning that nothing can be
 // committed, which is refused the same way).
 func TestNetconfOpenUnderForeignLock(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []NetconfMode{ModeAuto, ModeExclusive, ModePrivate} {
 		d := netDevice(t, map[string]string{"exclusive.held-by": "bob\n"}, mode)
 		j := d.dialNetconf(mode)
@@ -487,6 +507,7 @@ func (c *countRevert) Cancel(ctx context.Context, id string) error {
 }
 
 func TestNetconfCancelIsTheRollbackWhileTheCommitPends(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		knobs map[string]string
@@ -506,6 +527,7 @@ func TestNetconfCancelIsTheRollbackWhileTheCommitPends(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			d := netDevice(t, c.knobs, ModeAuto)
 			p := &planner{desired: desiredLines()}
 			rev := d.reviewed(p)
@@ -532,6 +554,7 @@ func TestNetconfCancelIsTheRollbackWhileTheCommitPends(t *testing.T) {
 }
 
 func TestNetconfConfirmsNeedsCapabilitiesAndClass(t *testing.T) {
+	t.Parallel()
 	hello := func(caps ...string) string {
 		var b strings.Builder
 		b.WriteString(`<?xml version="1.0" encoding="us-ascii"?><hello xmlns="urn:ietf:params:xml:ns:netconf:base:1.0"><capabilities>`)
@@ -556,6 +579,7 @@ func TestNetconfConfirmsNeedsCapabilitiesAndClass(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			d := netDevice(t, c.knobs, ModeAuto)
 			j := d.dialNetconf(ModeAuto)
 			defer func() { _ = j.Close() }()
@@ -574,6 +598,7 @@ func TestNetconfConfirmsNeedsCapabilitiesAndClass(t *testing.T) {
 
 // The reads yield the same typed values as the command line's.
 func TestNetconfReadsAgreeWithTheCommandLine(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	cli := d.dial()
 	defer func() { _ = cli.Close() }()
@@ -630,6 +655,7 @@ func TestNetconfReadsAgreeWithTheCommandLine(t *testing.T) {
 // Nothing the transport sends or logs holds a secret, and the guards refuse
 // what the command line's refuse.
 func TestNetconfGuardsAndLog(t *testing.T) {
+	t.Parallel()
 	d := netDevice(t, nil, ModeAuto)
 	j := d.dialNetconf(ModeAuto)
 	defer func() { _ = j.Close() }()

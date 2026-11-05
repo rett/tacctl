@@ -47,6 +47,11 @@
 # The package's tests need a session (setsid) and no stdin; the script gives
 # both. GO names the go command (default: go); GOFLAGS (for example
 # -tags=testknobs) is passed through.
+#
+# The shard runs with -parallel 16: most parallel tests of the package wait on
+# a timer or a pseudo-terminal and use little CPU, so more of them than the
+# cores (go test's default) shorten the run. A -parallel among the flags after
+# <count> wins (the last one counts).
 set -euo pipefail
 
 GO="${GO:-go}"
@@ -191,4 +196,4 @@ names="$(awk -F '\t' -v i="$idx" '$1 == i { print $3 }' <<<"$plan" | LC_ALL=C so
 planned="$(awk -F '\t' -v i="$idx" '$1 == i { t += $2 } END { printf "%.0f", t / 4000 }' <<<"$plan")"
 regex="^($(paste -sd'|' <<<"$names"))\$"
 echo "go-test-shard: shard $idx of $count: $(wc -l <<<"$names") tests, about $planned s planned" >&2
-exec setsid -w "$GO" test "$pkg" -run "$regex" -count=1 "$@" </dev/null
+exec setsid -w "$GO" test "$pkg" -run "$regex" -count=1 -parallel 16 "$@" </dev/null
