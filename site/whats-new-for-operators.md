@@ -98,8 +98,9 @@ Released 2026-10-31 ·
 >   addresses and writes the SNMP credential files in version 1 again (one v3
 >   user per level, the default), after a snapshot it keeps, and needs `--yes`
 >   when it drops anything. Afterwards the older release reports the rendered
->   config as out of date until its first render. `tacctl backup recover
->   <snapshot>` returns what was dropped once 0.2.23 or later is installed
+>   config as out of date until its first render.
+>   `tacctl backup recover <snapshot>` returns what was dropped once 0.2.23 or
+>   later is installed
 >   again. The rollback is refused while an emergency lockdown has enrolled
 >   hosts: lift it and sync the hosts first.
 
