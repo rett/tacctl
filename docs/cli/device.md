@@ -626,9 +626,13 @@ device config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vend
 device config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale
                     | --differs | --name <text> | --ip <addr|cidr|text> [--pull]
 
-    Engineers, Junos devices: check each device's plan on the device (exclusive configure session,
-    the device's own `commit check`, the candidate discarded), show the devices that need a change
-    grouped by shape with every secret elided, ask for each device in turn (its line, then its name
+    Engineers, Junos devices: type the plan into the devices themselves, under a confirmed commit
+    that is kept only when the change is proved. A shape is the same change on several devices; the
+    review shows it once, and the first device of each shape (the canary) is applied before the rest
+    of it (devices/planning.md, "Applying a plan": a rollout in five steps, what a shape is, canary
+    and confirmed). A run checks each device's plan on the device (exclusive configure session,
+    the device's own `commit check`, the candidate discarded), shows the devices that need a change
+    grouped by shape with every secret elided, asks for each device in turn (its line, then its name
     typed back, spaces and tabs around it ignored: anything else, another case, a carriage return,
     Enter or the end of input declines it, with no second try and no answer for several devices;
     all are asked before the first commit), then commit each approved
@@ -646,16 +650,19 @@ device config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <ven
     `--confirmed --yes`
 
     --check
-        Stop after the device's own commit check: nothing is committed, the shape is recorded
+        Stop after the device's own commit check: nothing is committed, and the device's shape (the
+        hash of its change, secrets removed and per-device values masked) is filed as `new`
         (`--exit-code`: exit 2 when a device needs a change)
     --confirmed
-        Apply only shapes an earlier apply confirmed and skip the others; the one form `--yes`
-        answers the review of (every device's question, no terminal needed; the lines say
-        `mode=scripted`)
+        Apply only confirmed shapes and skip the others: a shape is confirmed once an apply of one
+        device was proved (a fresh login and the landed change), or `shapes seed` filed it on a
+        person's word. The one form `--yes` answers the review of (every device's question, no
+        terminal needed; the lines say `mode=scripted`)
     --max <n>, --pause <seconds>, --no-canary
-        At most n devices of a run (default 5); wait between devices after each shape's first
+        At most n devices of a run, after `--confirmed` and in registry order (default 5; the rest
+        are skipped, run it again); wait that long from one device's end to the next one's start
         (0-3600, default `device.apply.pause`); start a shape's devices together instead of its
-        first alone
+        first device (the canary) alone, the rest of the shape following only when it applied
     --hold
         After the fresh login keep the change only when you log in with one account of each class
         and type `OK` (needs a terminal; not with `--json`). A line typed after the device before
@@ -701,8 +708,11 @@ device config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <ven
 
 device config shapes [list [--show <hash>] [--json] | seed <name>[,<name>...] [--yes]]
 
-    Superusers: the shapes of the changes `apply` has seen (the same change on two devices is one
-    shape), which a verified apply confirmed, how many devices are at each now (`NOW`:
+    Superusers: list the shapes of the changes `apply` has seen, and file a shape as confirmed on
+    your word (devices/planning.md, "Applying a plan": what a shape is, canary and confirmed). A
+    shape is the same change on several devices; it is `new` when only a check has seen it,
+    `confirmed` once a verified apply of one device went through, and `seeded` once a person said so
+    with `seed`. The list gives each shape's state, how many devices are at each now (`NOW`:
     `49 devices`, `1 device`, `-`) and, for a new one, the nearest confirmed shape. The names of
     the devices at each shape follow the table under `At a shape now (last check or apply):`, one
     entry per shape wrapped at 80 columns (no block when no shape has a device). `--show` prints
