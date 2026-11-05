@@ -14083,17 +14083,32 @@ verbs that change an account run one), by
 .B "console install"
 and
 .BR upgrade ,
-and, as they run no sync, at once by an administrator's
+and by the verbs that change who is held, each at once and by itself, so that
+it is current whether or not a sync of this server follows and gets as far as
+the drop-in (a server that is not enrolled, a sync that stops at its checks, a
+scope in which no user gets the console):
+.B "user require\-password\-change"
+in every form,
+.BR "user add" ,
+.BR "user remove" ,
+.BR "user rename" ,
+.BR "user move" ,
+an administrator's
 .BR "user passwd" ,
 the user's own
 .BR passwd ,
+a group command that lowers a tier,
 .BR "store import" ,
 .B "backup restore"
 (a snapshot or an old\-style backup) and
 .B "store rollback"
-(legacy mode holds nobody), each under the apply lock; any other write of the
-store leaves it as it is until the next of those. A failure to write it is one
-warning and the old list stays until the next sync or
+(legacy mode holds nobody), under the apply lock; any other write of the
+store leaves it as it is until the next of those. Only a change that lowers a
+group's tier syncs this server (and so lists a flagged user whose group stops
+being a superuser's); raising a tier leaves the list as it was until the next
+rewrite, which can only close forwarding: a user who has become a superuser
+stays listed, and his new connections stay closed, until then. A failure to
+write it is one warning and the old list stays until the next sync or
 .BR "console install" .
 .\" BEGIN GENERATED: command console forwarding
 .RS
