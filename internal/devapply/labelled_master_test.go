@@ -8,7 +8,7 @@ import (
 	"github.com/rett/tacctl/internal/devconf/plan"
 )
 
-// The first capture of a virtual chassis of two members (two EX4400, FPC 0
+// The first capture of a virtual chassis of two members (two switches of one model, FPC 0
 // the master, FPC 1 the backup) whose master prints its own label: the
 // answers of a confirmed commit and of the confirming commit, as the device
 // printed them (the banner, the location line and the prompt that follow

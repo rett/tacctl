@@ -265,8 +265,8 @@ func TestApplyOnAVirtualChassisMasterUnlabelledOddCommit(t *testing.T) {
 // 'chassis.master' with the word 'labelled').
 func labelledMasterKnobs() map[string]string {
 	return map[string]string{
-		"chassis":            "fpc0 ex4400-48p\nfpc1 ex4400-48p\n",
-		"device":             "hostname jsw1.example.net\nmodel ex4400-48p\njunos 21.4R3-S2.4\n",
+		"chassis":            "fpc0 ex4600-40f\nfpc1 ex4600-40f\n",
+		"device":             "hostname jsw1.example.net\nmodel ex4600-40f\njunos 21.4R3-S2.4\n",
 		"chassis.master":     "labelled",
 		"commit.synchronize": "",
 	}

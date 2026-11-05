@@ -1048,7 +1048,7 @@ func TestJunosKnobChassisMasterUnlabelled(t *testing.T) {
 // the note. A failing member is named by its label, and any other count of
 // members answers all labelled.
 func TestJunosKnobChassisMasterLabelled(t *testing.T) {
-	const two = "fpc0 ex4400-48p\nfpc1 ex4400-48p\n"
+	const two = "fpc0 ex4600-40f\nfpc1 ex4600-40f\n"
 	srv, _, _ := newJunos(t, map[string]string{"chassis": two, "chassis.master": "labelled"})
 	c, _ := shell(t, srv, DefaultUser, DefaultPassword)
 	c.send("configure exclusive")
@@ -1077,7 +1077,7 @@ func TestJunosKnobChassisMasterLabelled(t *testing.T) {
 	}
 
 	// three members answer all labelled, as without the knob
-	srv, _, _ = newJunos(t, map[string]string{"chassis": two + "fpc2 ex4400-48p\n", "chassis.master": "labelled"})
+	srv, _, _ = newJunos(t, map[string]string{"chassis": two + "fpc2 ex4600-40f\n", "chassis.master": "labelled"})
 	c, _ = shell(t, srv, DefaultUser, DefaultPassword)
 	c.send("configure exclusive")
 	c.send("set system login idle-timeout 30")
