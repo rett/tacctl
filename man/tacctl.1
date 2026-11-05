@@ -71,7 +71,12 @@ renders
 from it, installs the systemd units, and enables the service. An existing
 store, or an existing
 .IR tacquito.yaml ,
-is kept (the latter goes through the upgrade's store gate). RADIUS
+is kept (the latter goes through the upgrade's store gate). The clone in
+.I /opt/tacctl
+is made, or pulled when it exists, without waiting for an operator, as the
+pull of the tacquito source (see
+.BR upgrade ).
+RADIUS
 is not installed: see
 .BR "backend enable" .
 The plan is shown and confirmed
@@ -178,6 +183,33 @@ template restarts nothing, and neither does an upgrade with nothing new.
 Listener, log-level and metrics settings in
 .I tacctl.yaml
 survive.
+.IP
+The clone, the fetch and the pull of the tacctl repository in
+.I /opt/tacctl
+never wait for an answer, as the pull of the tacquito source
+.RB ( TACQUITO_SRC ):
+git asks for no user name, password or key passphrase
+.RB ( GIT_TERMINAL_PROMPT=0 ,
+a failing
+.BR GIT_ASKPASS ,
+.B SSH_ASKPASS
+unset, and
+.B BatchMode=yes
+for an ssh remote, after the
+.B core.sshCommand
+of the clone when it has one), and drops a transfer that stays under 1000 bytes
+a second for a minute. A
+.B GIT_SSH_COMMAND
+of your own is replaced, not honoured: set
+.B core.sshCommand
+in the clone (for example
+.B git config core.sshCommand "ssh \-i /home/user/.ssh/deploy\-key"
+run in
+.IR /opt/tacctl )
+to choose the key. The remote needs a key, the agent or a credential helper,
+since no password can be typed; a fetch that fails still ends the upgrade
+with
+.BR "git fetch failed. Check network / credentials." .
 .IP
 The upgrade is refused while the store has a user whose name has a period
 (0.2.20 and 0.2.21 allowed one; a user name is letters, digits, \&'_' and \&'\-'):
@@ -5832,6 +5864,17 @@ Options:
 .BI "config branch " [ name ]
 Show or change the tacctl repository branch used by
 .BR "tacctl upgrade" .
+Its fetch and pull of the clone in
+.I /opt/tacctl
+never wait for an answer, as those of
+.BR "tacctl upgrade" :
+no prompt for a user name, password or key passphrase, ssh in
+.BR BatchMode ,
+a transfer under 1000 bytes a second for a minute dropped, and a
+.B GIT_SSH_COMMAND
+of your own replaced (the
+.B core.sshCommand
+of the clone is honoured).
 .\" BEGIN GENERATED: command config branch
 .RS
 .PP
@@ -17325,6 +17368,13 @@ The pull is a fetch, then a fast\-forward. The fetch never waits for an answer
 A checkout that cannot fast\-forward to the fork's main (a rewritten history) or is ahead of it
 (a commit made in the clone) is reset to it with a warning that names the commit it was at
 and the one it is at now; the clone is only a build tree.
+The clone of tacctl itself in
+.I /opt/tacctl
+is pulled the same way, by
+.BR install ,
+.B upgrade
+and
+.BR "config branch" .
 .TP
 .B TMPDIR
 The directory where tacctl stages private copies while it works (rendered
