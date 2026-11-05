@@ -75,7 +75,7 @@ With more than one backend enabled each subcommand shows every backend's log in 
 
 ### Log filters
 
-The filters of `log tail`, `log search`, `log failures` and `log accounting` combine (an entry must pass all of them), are written `--name value` or `--name=value` anywhere on the line, and apply before a count: `log accounting 5 --user alice` is alice's last five records. `log tail -f` applies them to the new entries too. `--type` is the accounting log's only. Without a filter and without `--json` the commands print what they always did.
+The filters of `log tail`, `log search`, `log failures` and `log accounting` combine (an entry must pass all of them), are written `--name value` or `--name=value` anywhere on the line, and apply before a count: `log accounting 5 --user alice` is alice's last five records. `log tail -f` applies them to the new entries too. `--type` is the accounting log's only. Without a filter and without `--json` the commands print what they always did. An operator may pass the filters, and `--backend`, to all four commands through sudo: the per-tier sudoers drop-in allows `log failures` with arguments from this release on (`tacctl upgrade` rewrites an installed one).
 
 | Filter | Shows |
 | --- | --- |

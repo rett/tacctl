@@ -446,14 +446,20 @@ A clone that still waits for its
 loses its entry, and after a re-upgrade the verb refuses it as not staged: remove the clone and clone again from the original, or restore the snapshot. Every other entry stays.
 .IP
 .B "rollback 0.2.23"
-converts nothing: this release changed no stored file, so 0.2.23 reads every file it
+converts no file: this release changed no stored file, so 0.2.23 reads every file it
 writes (the email addresses, the SNMP credential files, the covered staging
 entries, the server name, the timing scale, the server address, the users' login
 to this server, a user name with a period and an emergency lockdown, with or
-without enrolled hosts, all stay), the per\-tier sudoers drop\-in is left (0.2.23 and this release write
-the same text), no snapshot is taken and
+without enrolled hosts, all stay), the per\-tier sudoers drop\-in is put back as 0.2.23 wrote it
+(without the operator's
+.BR "log failures *" ;
+when it is exactly this release's text it is rewritten, after
+.BR "visudo \-cf" ,
+and any other file is left), no snapshot is taken and
 .B \-\-yes
 is never needed. It is refused only while a device's apply is not settled.
+Every older target that rewrites that drop\-in recognises this release's text and
+0.2.23's as tacctl's own and puts back its own.
 The tacquito clone keeps pointing at the project's fork, which has the same
 history as the upstream clone 0.2.23 made.
 .B \-\-hosts
@@ -462,7 +468,7 @@ is accepted and does nothing. The command ends with the next step,
 .IP
 .B "rollback 0.2.22"
 converts nothing but the email addresses, the SNMP credential files, the covered staging entries and the per\-tier sudoers drop\-in
-(when it is exactly this release's text it is rewritten, after
+(when it is exactly this release's text or 0.2.23's it is rewritten, after
 .BR "visudo \-cf" ,
 with 0.2.22's: the engineer's rule of
 .B "device clone"
@@ -486,7 +492,7 @@ is accepted and does nothing. The command ends with the next step,
 .B "rollback 0.2.21"
 removes
 .B server.name
-and the timing scale, rewrites the per\-tier sudoers drop\-in when it is exactly this release's text (with 0.2.21's, which is 0.2.22's: the engineer's rule of
+and the timing scale, rewrites the per\-tier sudoers drop\-in when it is exactly this release's text or 0.2.23's (with 0.2.21's, which is 0.2.22's: the engineer's rule of
 .B "device clone"
 is taken out; an edited drop\-in is left) and converts nothing else: no scope is added to the users, and a user name with
 a period and an emergency lockdown stay, as 0.2.21 reads both. It needs no
@@ -507,7 +513,7 @@ removes
 .B server.addresses
 and
 .B server.name
-and the timing scale, adds the scope to the users (above) and rewrites the per\-tier sudoers drop\-in when it is exactly this release's text (with 0.2.20's, which is 0.2.22's: the engineer's rule of
+and the timing scale, adds the scope to the users (above) and rewrites the per\-tier sudoers drop\-in when it is exactly this release's text or 0.2.23's (with 0.2.20's, which is 0.2.22's: the engineer's rule of
 .B "device clone"
 is taken out; an edited drop\-in is left); 0.2.20 reads every other file this
 release writes, so nothing else is converted, and
@@ -6058,6 +6064,11 @@ form anywhere on the line, and a count
 limits what is left after filtering.
 .B tail \-f
 applies them to the new entries, which have the time they arrive.
+An operator may pass them, and
+.BR \-\-backend ,
+to all four commands through sudo
+.RB ( "log failures"
+takes arguments in the per\-tier sudoers drop\-in from this release on).
 .PP
 A time is
 .IB YYYY\-MM\-DD ,
