@@ -178,6 +178,9 @@ func Install(ctx context.Context, h *Host, args []string) error {
 	if err := h.install(ctx, ids, backend.PhaseStart, tree); err != nil {
 		return err
 	}
+	// The table that refuses the TCP connections of the held addresses (an
+	// existing configuration may have holds), and the unit that loads it.
+	h.firewallStep(ctx)
 	// This machine's own login: every user can log in to this server.
 	h.ownLogin(ctx, OwnLoginOptions{Install: true, Yes: yes, Server: server})
 	h.auditLine("install", audit.Pair("branch", branch))

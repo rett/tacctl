@@ -69,7 +69,8 @@ func (inv *invocation) rollback(args []string) error {
 	in := lifecycle.RollbackInput{Paths: a.Paths, Conf: a.Conf(), HasStore: isRegularFile(a.Paths.StoreFile), WithHosts: withHosts, Target: version,
 		InstallSudoers: func(body, dst string) error {
 			return tier.InstallSudoers(inv.ctx, a.Runner, a.Out.Stdout, a.Out.Stderr, a.Paths.TempDir, body, dst)
-		}}
+		},
+		RemoveFirewall: func() ([]string, error) { return inv.firewallEngine().Remove(inv.ctx) }}
 	plan, err := lifecycle.PlanRollback(in)
 	if err != nil {
 		// A break-glass hold, a management ACL entry with services or an
@@ -184,6 +185,9 @@ func (inv *invocation) rollback(args []string) error {
 	a.Conf().Reload()
 
 	inv.rollbackNextSteps(version, plan.PendingFiles())
+	if plan.FirewallTodo() {
+		inv.rollbackFirewallNote(version, plan)
+	}
 	if len(emailUsers) > 0 {
 		inv.rollbackEmailNote(version, snapID, emailUsers)
 	}
@@ -300,6 +304,20 @@ func (inv *invocation) rollbackSnapshotNote(snapshot bool, tail string) {
 	inv.echo("")
 	inv.echo("The snapshot the rollback took first (the newest entry of 'tacctl backup list') holds the " + rollbackFrom + " state. Restore it with " + rollbackFrom + " only: 'tacctl backup restore <id>' of this release brings that")
 	inv.echo("state back and loses what changed since" + tail)
+}
+
+// rollbackFirewallNote says, after a rollback that removed the break-glass
+// firewall (every target): what went and what stays, what a hold that stands
+// gets from the older release, and that the setting command writes the key it
+// refuses.
+func (inv *invocation) rollbackFirewallNote(version string, plan *lifecycle.RollbackPlan) {
+	p := inv.app.Paths
+	inv.echo("")
+	inv.echo("The break-glass firewall is removed: the nftables table inet tacctl, " + p.FirewallRules + " and the boot unit " + p.FirewallUnit + ". The nftables package stays installed; no other table of the ruleset was touched.")
+	if holds := plan.FirewallHolds(); len(holds) > 0 {
+		inv.echo("The hold of " + strings.Join(holds, ", ") + " stands, and " + version + " takes it as it is: its server completes the TCP handshake of the held address (it answers nothing), as before 0.2.24.")
+	}
+	inv.echo("Until the upgrade, do not run 'tacctl config breakglass-firewall': it writes the setting " + version + " refuses, and loads the table again. If it was run, run 'tacctl rollback " + version + " --apply' again (it removes both).")
 }
 
 // rollbackEmailNote says, after a rollback that removed the users' email

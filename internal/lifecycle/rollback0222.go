@@ -26,6 +26,7 @@ import "github.com/rett/tacctl/internal/tier"
 // records hold no unsettled apply) for the release before this one.
 func planRollback0222(p *RollbackPlan) (*RollbackPlan, error) {
 	pt := p.in.Paths
+	p.keys = p.in.Conf.RollbackKeys0223()
 	p.Steps = append(p.Steps, p.lockdownKeysStep(RollbackTarget0222))
 	p.Steps = append(p.Steps, p.tiers0222Step(RollbackTarget0222)...)
 	p.Steps = append(p.Steps, RollbackStep{Title: "leave every other file untouched",

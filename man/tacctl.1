@@ -71,7 +71,18 @@ renders
 from it, installs the systemd units, and enables the service. An existing
 store, or an existing
 .IR tacquito.yaml ,
-is kept (the latter goes through the upgrade's store gate). The clone in
+is kept (the latter goes through the upgrade's store gate). It also installs the
+.B nftables
+package and writes and enables the boot unit
+.I tacctl\-breakglass\-firewall.service
+(a oneshot that loads the rules file
+.IR /etc/tacctl/breakglass\-firewall.nft ),
+loading the table of the break-glass firewall (see
+.BR "config breakglass\-firewall" )
+for the holds and the setting that stand; a package that cannot be installed is a
+warning that names the fix, and
+.B nftables.service
+is never enabled or touched. The clone in
 .I /opt/tacctl
 is made, or pulled when it exists, without waiting for an operator, as the
 pull of the tacquito source (see
@@ -228,6 +239,19 @@ configuration and the services are not changed); run
 .B "tacctl upgrade"
 again after the rename to finish. Run on 0.2.22 itself, the refusal comes before
 anything is changed. A store that cannot be read does not hold it up.
+.IP
+The upgrade installs the
+.B nftables
+package (as
+.B install
+does, trying again after
+.B "apt\-get update"
+when the first try fails), writes and enables the boot unit
+.IR tacctl\-breakglass\-firewall.service ,
+and loads the table of the break-glass firewall for the holds and the setting
+that stand: an upgrade from 0.2.23 with holds standing renders and loads the
+table, so those holds get the fix. A table that cannot be loaded while an address
+is held is a warning with the fix, not a failure of the upgrade.
 .IP
 The shell completion is rewritten only when its content changed (the output
 says
@@ -483,8 +507,28 @@ A clone that still waits for its
 .B "device rename \-\-replace"
 loses its entry, and after a re-upgrade the verb refuses it as not staged: remove the clone and clone again from the original, or restore the snapshot. Every other entry stays.
 .IP
+Every target removes the break\-glass firewall: the key
+.B breakglass.firewall
+(when set; every older release refuses it, so it is removed after the snapshot
+like the other keys they do not know), the nftables table
+.B "inet tacctl"
+(with nft; the rest of the ruleset is not touched),
+.I /etc/tacctl/breakglass\-firewall.nft
+and the boot unit
+.I tacctl\-breakglass\-firewall.service
+(disabled first), and says so; the
+.B nftables
+package stays. A hold that stands stays (0.2.23 and every older release that has
+holds take the record as it is), without the firewall: the server completes the
+TCP handshake of the held address again, as before 0.2.24, and the plan says so in a
+note. Until the older release is installed
+.B "config breakglass\-firewall"
+writes the key and loads the table again; run the rollback again then.
+.IP
 .B "rollback 0.2.23"
-converts no file: this release changed no stored file, so 0.2.23 reads every file it
+converts no file but the key
+.B breakglass.firewall
+(0.2.24's; when it is set the snapshot is taken): this release changed no other stored file, so 0.2.23 reads every file it
 writes (the email addresses, the SNMP credential files, the covered staging
 entries, the server name, the timing scale, the server address, the users' login
 to this server, a user name with a period and an emergency lockdown, with or
@@ -493,7 +537,7 @@ without enrolled hosts, all stay), the per\-tier sudoers drop\-in is put back as
 .BR "log failures *" ;
 when it is exactly this release's text it is rewritten, after
 .BR "visudo \-cf" ,
-and any other file is left), no snapshot is taken and
+and any other file is left), no snapshot is taken for them and
 .B \-\-yes
 is never needed. It is refused only while a device's apply is not settled.
 Every older target that rewrites that drop\-in recognises this release's text and
@@ -954,7 +998,9 @@ Accepted; the hosts need nothing for this target (no host is synced).
 Remove tacctl and every backend that is enabled or installed: the tacquito
 service, units, binaries, configuration and logs; tacctl's FreeRADIUS
 configuration, unit drop-in and logs (the FreeRADIUS package stays, with its
-own configuration as shipped); the state directory, sudoers rules,
+own configuration as shipped); the break\-glass firewall (the nftables table
+.BR "inet tacctl" ,
+its rules file and its boot unit; the nftables package stays); the state directory, sudoers rules,
 completion, man page and management repository. Offers to preserve backups
 and each backend's logs by archiving them to
 .IR /root/ .

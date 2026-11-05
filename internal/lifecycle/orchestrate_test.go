@@ -298,13 +298,18 @@ func (o *ohost) dpkg(have ...string) {
 	})
 }
 
+// allDeps are every package EnsureDependencies looks for.
+func allDeps() []string {
+	return slices.Concat(lifecycle.DepsCore, lifecycle.DepsLinuxHosts, lifecycle.DepsFirewall)
+}
+
 func deps(o *ohost) int {
 	return o.do(func(ctx context.Context, h *lifecycle.Host, _ []string) error { return h.EnsureDependencies(ctx) })
 }
 
 func TestDepsNothingMissingInstallsNothing(t *testing.T) {
 	o := newOhost(t)
-	o.dpkg(append(slices.Clone(lifecycle.DepsCore), lifecycle.DepsLinuxHosts...)...)
+	o.dpkg(allDeps()...)
 	if deps(o) != 0 || !strings.Contains(o.text(), "Required packages: all present.") || o.run.Called("apt-get") {
 		t.Errorf("out %q calls %v", o.text(), o.run.Argvs())
 	}
@@ -316,7 +321,7 @@ func TestDepsNothingMissingInstallsNothing(t *testing.T) {
 
 func TestDepsInstallsOnlyWhatIsMissing(t *testing.T) {
 	o := newOhost(t)
-	have := append(slices.Clone(lifecycle.DepsCore), lifecycle.DepsLinuxHosts...)
+	have := allDeps()
 	o.dpkg(slices.DeleteFunc(have, func(p string) bool { return p == "podman" || p == "uidmap" })...)
 	if deps(o) != 0 {
 		t.Fatalf("exit: %s", o.stderr)
@@ -337,9 +342,36 @@ func TestDepsInstallsOnlyWhatIsMissing(t *testing.T) {
 	}
 }
 
+// The package of nft (0.2.24): installed with apt-get like the others, and the
+// install is tried again after 'apt-get update'; failing to get it only warns,
+// with the fix.
+func TestDepsInstallsNftables(t *testing.T) {
+	o := newOhost(t)
+	o.dpkg(slices.Concat(lifecycle.DepsCore, lifecycle.DepsLinuxHosts)...)
+	if deps(o) != 0 || !o.run.Called("apt-get", "install", "-y", "-qq", "nftables") || o.run.Count("apt-get", "install") != 1 ||
+		!strings.Contains(o.text(), "Installing the package of the break-glass firewall: nftables") {
+		t.Errorf("out %q calls %v", o.text(), o.run.Argvs())
+	}
+	// a stale index: update, then once more
+	o = newOhost(t)
+	o.dpkg(slices.Concat(lifecycle.DepsCore, lifecycle.DepsLinuxHosts)...)
+	o.run.Seq([]string{"apt-get", "install"}, execx.Result{Code: 100}, execx.Result{})
+	if deps(o) != 0 || !o.run.Called("apt-get", "update", "-qq") || o.run.Count("apt-get", "install") != 2 || strings.Contains(o.text(), "Could not install") {
+		t.Errorf("out %q calls %v", o.text(), o.run.Argvs())
+	}
+	// cannot be had: a warning that says what a hold then lacks, and the command goes on
+	o = newOhost(t)
+	o.dpkg(slices.Concat(lifecycle.DepsCore, lifecycle.DepsLinuxHosts)...)
+	o.run.On([]string{"apt-get", "install"}, execx.Result{Code: 100})
+	if code := deps(o); code != 0 || !strings.Contains(o.text(), "[WARN] Could not install: nftables. Without nft a break-glass hold cannot refuse the TCP connections") ||
+		!strings.Contains(o.text(), "sudo apt-get install nftables") {
+		t.Errorf("exit %d out %q", code, o.text())
+	}
+}
+
 func TestDepsMissingCorePackageThatCannotBeInstalledIsFatal(t *testing.T) {
 	o := newOhost(t)
-	o.dpkg(append([]string{"git"}, lifecycle.DepsLinuxHosts...)...)
+	o.dpkg(append(append([]string{"git"}, lifecycle.DepsLinuxHosts...), lifecycle.DepsFirewall...)...)
 	o.run.On([]string{"apt-get", "install"}, execx.Result{Code: 100})
 	if code := deps(o); code != 1 {
 		t.Errorf("exit %d", code)
@@ -352,7 +384,7 @@ func TestDepsMissingCorePackageThatCannotBeInstalledIsFatal(t *testing.T) {
 
 func TestDepsMissingLinuxHostPackagesOnlyWarn(t *testing.T) {
 	o := newOhost(t)
-	o.dpkg(lifecycle.DepsCore...)
+	o.dpkg(append(slices.Clone(lifecycle.DepsCore), lifecycle.DepsFirewall...)...)
 	o.run.On([]string{"apt-get", "install"}, execx.Result{Code: 100})
 	if code := deps(o); code != 0 || !strings.Contains(o.text(), "everything else works") {
 		t.Errorf("exit %d out %q", code, o.text())
@@ -363,14 +395,14 @@ func TestDepsMissingLinuxHostPackagesOnlyWarn(t *testing.T) {
 // the install goes on.
 func TestDepsWarnsWhenLoggerIsMissing(t *testing.T) {
 	o := newOhost(t)
-	o.dpkg(append(slices.Clone(lifecycle.DepsCore), lifecycle.DepsLinuxHosts...)...)
+	o.dpkg(allDeps()...)
 	o.run.Missing("logger")
 	if code := deps(o); code != 0 || strings.Count(o.text(), "[WARN] logger (package util-linux) is not installed") != 1 ||
 		!strings.Contains(o.text(), "Required packages: all present.") {
 		t.Errorf("exit %d out %q", code, o.text())
 	}
 	o = newOhost(t)
-	o.dpkg(append(slices.Clone(lifecycle.DepsCore), lifecycle.DepsLinuxHosts...)...)
+	o.dpkg(allDeps()...)
 	if deps(o) != 0 || strings.Contains(o.text(), "util-linux") {
 		t.Errorf("logger present, out %q", o.text())
 	}

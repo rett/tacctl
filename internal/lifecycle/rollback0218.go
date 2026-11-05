@@ -144,6 +144,8 @@ func (p *RollbackPlan) lockdownKeysStep(target string) RollbackStep {
 			what = append(what, "the server name is 0.2.22's (the console shows the host name again)")
 		case conf.Added0222Key(k) && k != conf.ServerNameKey && !slices.Contains(what, "the timeout scale is 0.2.22's (the fixed timings apply again)"):
 			what = append(what, "the timeout scale is 0.2.22's (the fixed timings apply again)")
+		case conf.Added0224Key(k) && !slices.Contains(what, "the break-glass firewall setting is 0.2.24's (the table goes with it)"):
+			what = append(what, "the break-glass firewall setting is 0.2.24's (the table goes with it)")
 		}
 	}
 	s.Lines = append(s.Lines, "("+strings.Join(what, ", ")+"; "+target+"'s schema refuses it: its 'config validate' reports it and its 'backup restore' refuses a snapshot that has it; every other key is one it has and stays)")

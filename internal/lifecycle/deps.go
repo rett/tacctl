@@ -22,6 +22,11 @@ var (
 	DepsCore       = []string{"git", "wget"}
 	DepsLinuxHosts = []string{"openssh-client", "autoconf", "automake", "libtool", "gnulib", "gcc", "make",
 		"libpam0g-dev", "podman", "uidmap"}
+	// DepsFirewall is the package of nft, which loads the nftables table that
+	// refuses the TCP connections of the held addresses (0.2.24, internal/
+	// firewall). Failing to get it only warns: a hold then stands without the
+	// table, and every report of a hold says so.
+	DepsFirewall = []string{"nftables"}
 	// BashReleaseDeps are what a bash release (0.1.x) needs before its first
 	// line runs; 'upgrade --branch <bash release>' installs them before it
 	// hands over (docs/plans/go-rewrite.md 3.9 item 32).
@@ -44,10 +49,15 @@ func (h *Host) EnsureDependencies(ctx context.Context) error {
 	}
 	if !h.has("apt-get") || !h.has("dpkg-query") {
 		out.Warn("Not a Debian/Ubuntu system; make sure the equivalents of these are installed:")
-		out.Warn("  " + strings.Join(DepsCore, " ") + " " + strings.Join(DepsLinuxHosts, " "))
+		out.Warn("  " + strings.Join(DepsCore, " ") + " " + strings.Join(DepsLinuxHosts, " ") + " " + strings.Join(DepsFirewall, " "))
 		return nil
 	}
-	var core, extra []string
+	var core, extra, fw []string
+	for _, p := range DepsFirewall {
+		if !h.pkgInstalled(ctx, p) {
+			fw = append(fw, p)
+		}
+	}
 	for _, p := range DepsCore {
 		if !h.pkgInstalled(ctx, p) {
 			core = append(core, p)
@@ -58,7 +68,7 @@ func (h *Host) EnsureDependencies(ctx context.Context) error {
 			extra = append(extra, p)
 		}
 	}
-	if len(core) == 0 && len(extra) == 0 {
+	if len(core) == 0 && len(extra) == 0 && len(fw) == 0 {
 		out.Info("Required packages: all present.")
 		return nil
 	}
@@ -73,6 +83,12 @@ func (h *Host) EnsureDependencies(ctx context.Context) error {
 		out.Info("Installing packages for Linux host support: " + strings.Join(extra, " "))
 		if !h.aptInstall(ctx, extra) {
 			out.Warn("Could not install: " + strings.Join(extra, " ") + ". 'tacctl host' and 'tacctl config linux' need them; everything else works.")
+		}
+	}
+	if len(fw) > 0 {
+		out.Info("Installing the package of the break-glass firewall: " + strings.Join(fw, " "))
+		if !h.aptInstall(ctx, fw) {
+			out.Warn("Could not install: " + strings.Join(fw, " ") + ". Without nft a break-glass hold cannot refuse the TCP connections of the held address (its report says so); install it (sudo apt-get install " + strings.Join(fw, " ") + "), then run 'tacctl config breakglass-firewall <setting>'.")
 		}
 	}
 	return nil

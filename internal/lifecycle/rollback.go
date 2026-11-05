@@ -418,6 +418,10 @@ type RollbackInput struct {
 	// InstallSudoers writes a sudoers drop-in the way the commands do
 	// ('visudo -cf', then install); nil: the drop-ins are listed and left.
 	InstallSudoers func(body, dst string) error
+	// RemoveFirewall takes the nftables table inet tacctl, its rules file and
+	// its boot unit away (0.2.24, internal/firewall) and says what went; nil:
+	// the step is listed and does nothing.
+	RemoveFirewall func() (removed []string, err error)
 }
 
 // RollbackStep is one line of the plan: what is done (Todo) or what is
@@ -487,6 +491,11 @@ type RollbackPlan struct {
 	// (0.2.18, D273; the targets 0.2.17, 0.2.16 and 0.2.9).
 	syntaxKeyDev []devSyntax
 	sudoers      []sudoersPlan
+	// firewallFiles are the rules file and the boot unit that exist, and
+	// firewallHolds the holds that stand (rollback_firewall.go).
+	firewallFiles []string
+	firewallHolds []string
+	firewallTodo  bool
 	// notWritten says, after ApplyRollback, which drop-ins could not be
 	// rewritten and why (the apply goes on: 0.2.3's upgrade rewrites the
 	// tiers one itself).
@@ -519,7 +528,7 @@ type sudoersPlan struct {
 
 // Pending: there is a file to convert.
 func (p *RollbackPlan) Pending() bool {
-	return p.PendingFiles() || len(p.todoSudoers()) > 0 || len(p.rootLeaf) > 0
+	return p.PendingFiles() || len(p.todoSudoers()) > 0 || len(p.rootLeaf) > 0 || p.firewallTodo
 }
 
 // PendingFiles: there is a file of tacctl's own to convert (the snapshot
@@ -1150,6 +1159,14 @@ func ApplyRollback(p *RollbackPlan) ([]string, error) {
 			return done, fmt.Errorf("%s: %w", pt.Overrides, err)
 		}
 		done = append(done, fmt.Sprintf("%s: removed %d %s", pt.Overrides, len(p.keys), plural(len(p.keys), "key", "keys")))
+	}
+	if line, err := p.applyFirewall(); err != nil {
+		if line != "" {
+			done = append(done, line)
+		}
+		return done, err
+	} else if line != "" {
+		done = append(done, line)
 	}
 	if line, err := p.applyManagedScope(); err != nil {
 		return done, fmt.Errorf("%s: %w", pt.StoreFile, err)
