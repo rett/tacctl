@@ -127,12 +127,16 @@ need no tool and take well under a second.
 
 A test stays inside its own sandbox so that runs can share a machine:
 `t.TempDir()`, `BATS_TEST_TMPDIR` or the `TMPDIR` of its environment, never
-`/tmp` or `/dev/shm` itself, and no `pgrep -f`, `pkill -f` or `killall`
-(they match the processes of every other run; keep the pid). The lint
+`/tmp` or `/dev/shm` itself, and no `pgrep -f`, `pkill` or `killall` (they
+match the processes of every other run; keep the pid; looking for or signalling
+the children of a pid, `pgrep -P` and `pkill -P`, is fine). The lint
 `tests/tools/no-shared-proc.sh` (`make lint-shared-proc`, part of `make lint`)
-holds this. A line that must name one, such as the fallback for a `TMPDIR`
-too long for a socket path, says `shared-proc-ok: <reason>` in a comment; the
-script itself names the few files it excuses whole.
+holds this: `-f` or `--full` after any options, `pkill` by name, the same
+commands run through Go's `os/exec`, and a `/tmp` named by `mktemp`, `cd`, a
+redirection, a `TMPDIR` assignment or a Go string literal. A line that must
+name a shared path, such as the fallback for a `TMPDIR` too long for a socket
+path, says `shared-proc-ok: <reason>` in a comment (a reason is required; the
+comment never excuses a process-wide command), and no file is excused whole.
 
 The temporary directory is
 `Paths.TempDir`, the `TMPDIR` of the environment a test gives the
