@@ -52,6 +52,22 @@ tacctl log failures              # failures in the last 24 hours
 tacctl log accounting 100        # device command accounting
 ```
 
+From 0.2.24 these take filters and `--json`, which makes the evidence
+repeatable:
+
+```bash
+tacctl log accounting --since 2026-11-01 --until 2026-11-02 --user alice --device sw1
+tacctl log accounting --type change --since -24h --json | jq .
+tacctl log failures --since yesterday --json
+```
+
+- Accounting records name the device that sent them (`"Device":"sw1"`, the
+  registered name when the caller may see it, else the address).
+- `--type change` is the records that carry a Junos change-log entry;
+  `command` is any other command; `login` the start and stop of a session.
+- `--json` is one object per line; the time is UTC. The filters are described
+  in [Day-to-Day Device Operations](day-to-day-device-operations.md) §1.4.
+
 ---
 
 ## 2. Reading an audit line
@@ -109,6 +125,10 @@ $J | grep 'password-change DENY'                 # commands refused until the pa
 $J | grep 'secret-read'                          # every time a secret was shown, and by whom
 $J | grep 'scope secret set'                     # secret rotations
 $J | grep -E 'emergency lockdown|breakglass'     # lockdowns and holds, with reasons
+$J | grep 'breakglass hold' | grep 'firewall=failed'   # holds whose firewall did not load
+$J | grep -E 'backup (keep|unkeep|recover)'      # snapshots kept, dropped or recovered
+$J | grep 'user email'                           # email changes (op=set|clear, never the address)
+$J | grep -E 'device (clone|replace)'            # a device copied at a bench address, then moved in
 $J | grep 'device config apply'                  # device changes: review, approval, apply
 $J | grep 'scope mgmt-acl scope=.* op=mode'      # Junos filter mode changes (value=strict|ssh-only)
 $J | grep -E 'server (addresses|listen|metrics|name)'   # changes of this server's settings
@@ -172,7 +192,9 @@ same way: `scope timeout-scale` writes `scope=`, `from=` and `to=`,
 
 Passwords, hashes and shared secrets never appear in any line. Values passed
 with `--hash`, `--secret`, `scope secret … set` and similar options are
-replaced with `<redacted>`.
+replaced with `<redacted>`. So are a user's email address (`--email` of
+`user add`, the address of `user email`: the detail line says only
+`op=set` or `op=clear`) and the `--note` of `backup keep`.
 
 Free text **is** logged as typed: `--reason` for lockdowns and holds, and
 arguments after `--` on `ssh`. **Never put secrets in a reason.**

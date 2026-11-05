@@ -482,7 +482,17 @@ tacctl log tail 100 --backend radius
 tacctl log search alice             # by username or keyword (TACACS+: last 7 days)
 tacctl log failures                 # auth failures, last 24 hours
 tacctl log accounting 50            # last 50 accounting records (who ran what)
+tacctl log failures --since -1h --user alice   # filters combine
+tacctl log accounting --device sw1 --json | jq .
 ```
+
+`tail`, `search`, `failures` and `accounting` take `--since`, `--until`,
+`--user` and `--device` (and `--type login|change|command` for accounting);
+`--json` prints one object per line. With two backends enabled each shows a
+section per backend, and `--backend <id>` shows one. The RADIUS daemon log
+names clients, not addresses, so with `--device` its section says so and shows
+nothing. The filters and their time forms are in
+[Day-to-Day Device Operations](day-to-day-device-operations.md) §1.4.
 
 ---
 
