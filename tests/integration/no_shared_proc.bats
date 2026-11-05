@@ -38,10 +38,11 @@ lint() {
 
 @test "a tree of tests that stay in their sandbox passes" {
     put internal/x/a_test.go '	dir := t.TempDir(); p := os.TempDir(); env := "LD_LIBRARY_PATH='"$SHARED"'"'
-    put tests/integration/a.bats '    d="$(mktemp -d "${BATS_TEST_TMPDIR}/x.XXXXXX")"; '"$PG"' -P "$pid"; '"$PG"' sleep'
+    put tests/integration/a.bats '    d="$(mktemp -d "${BATS_TEST_TMPDIR}/x.XXXXXX")"; '"$PG"' -P "$pid"; '"$PG"' sleep; cd "$d"'
     put tests/integration/b.bats '    stub_called "ssh .*rm -f '"$SHARED"'/tacctl.AbCd1234"; rm -f '"$SHARED"'/tacctl.AbCd1234'
     put tests/helpers/h.bash 'tmpdir() { mktemp -d "${BATS_TEST_TMPDIR}/h.XXXXXX"; }'
-    put tests/e2e/e.bats '    '"$PK"' -P "$pid"'
+    put tests/e2e/e.bats '    '"$PK"' -P "$pid"; '"$PK"' -9 -P "$pid"; stub_cmd '"$PK"' "exit 1"; grep -cE "^(loginctl|'"$PK"')" "$LOG"'
+    put internal/x/b_test.go '	exec.Command("'"$PG"'", "-P", pid); exec.Command("'"$PK"'", "-P", pid); calls = "'"$PK"' -TERM -u old"'
     put internal/x/data.go 'var p = "'"$SHARED"'"'
     lint -0
     [[ -z "$output" ]]
@@ -49,7 +50,8 @@ lint() {
 
 @test "the process-wide commands fail in a Go test, a bats file, a helper and e2e" {
     for where in internal/x/a_test.go tests/integration/a.bats tests/helpers/h.bash tests/e2e/e.bats; do
-        for cmd in "$PG -f sleep" "$PG -af sleep" "$PK -9 -f sleep" "$PK --full sleep" "$KA sleep" "x; $KA -9 sleep"; do
+        for cmd in "$PG -f sleep" "$PG -af sleep" "$PK -9 -f sleep" "$PK --full sleep" "$KA sleep" "x; $KA -9 sleep" \
+            "$PG -u \"\$USER\" -f x" "$PG -x -u 0 -f x" "$PK -u root -9 -f x" "$PG -l --full x" "x | $PG -fa y"; do
             git -C "$REPO" rm -rq --cached . 2>/dev/null || true
             put "$where" "    $cmd"
             run -1 "$REPO/tests/tools/no-shared-proc.sh"
@@ -57,6 +59,41 @@ lint() {
             [[ "$output" == *"processes of the whole machine"* ]]
         done
     done
+}
+
+@test "killing by name, with or without options, fails in a bats file, a helper and e2e" {
+    for where in tests/integration/a.bats tests/helpers/h.bash tests/e2e/e.bats; do
+        for cmd in "$PK tacquito" "$PK -x tacquito" "$PK -9 tacquito" "$PK -TERM -u root tacquito" "sudo $PK tacquito" \
+            "run $PK tacquito" "run -0 $PK -x tacquito" "run ! $PK tacquito" "x; $PK tacquito" "x && $PK -x tacquito" \
+            "x | $PK tacquito" "\$($PK tacquito)" "if x; then $PK tacquito; fi"; do
+            git -C "$REPO" rm -rq --cached . 2>/dev/null || true
+            put "$where" "    $cmd"
+            run -1 "$REPO/tests/tools/no-shared-proc.sh"
+            [[ "$output" == *"$where:1:"* ]] || { echo "$where: $cmd: $output"; false; }
+            [[ "$output" == *"processes of the whole machine"* ]]
+        done
+    done
+}
+
+@test "the same commands run through Go's os/exec fail, with their options" {
+    for line in "exec.Command(\"$PK\", \"-f\", \"x\")" "exec.Command(\"$PG\", \"-f\", \"x\")" "exec.Command(\"$KA\", \"x\")" \
+        "exec.CommandContext(ctx, \"$PK\", \"-f\", \"x\")" "exec.CommandContext(ctx, \"$KA\", \"-9\", \"x\")" \
+        "exec.Command(\"$PG\", \"-u\", \"x\", \"-f\", \"y\")" "exec.Command(\"$PG\", \"-af\", \"y\")" \
+        "exec.Command(\"$PG\", \"--full\", \"y\")" "exec.Command(\"$PK\", \"tacquito\")" "exec.Command(\"$PK\", \"-x\", \"tacquito\")" \
+        "exec.CommandContext(ctx, \"$PK\", \"-9\", \"tacquito\")"; do
+        git -C "$REPO" rm -rq --cached . 2>/dev/null || true
+        put internal/x/a_test.go "	$line"
+        run -1 "$REPO/tests/tools/no-shared-proc.sh"
+        [[ "$output" == *"internal/x/a_test.go:1:"* ]] || { echo "$line: $output"; false; }
+        [[ "$output" == *"processes of the whole machine"* ]]
+    done
+}
+
+@test "looking for or signalling the children of a pid is allowed, in shell and in Go" {
+    put tests/integration/a.bats "    for p in \$($PG -P \"\$1\"); do $PK -P \"\$p\"; $PK -9 -P \"\$p\"; done; $PG sleep; $PG -x sleep"
+    put tests/e2e/e.bats "    run $PK -TERM -P \"\$pid\""
+    put internal/x/a_test.go "	exec.Command(\"$PG\", \"-P\", pid); exec.CommandContext(ctx, \"$PK\", \"-P\", pid); exec.Command(\"$PG\", \"-x\", \"sleep\")"
+    lint -0
 }
 
 @test "a name that only contains the command is not a hit" {
@@ -100,11 +137,42 @@ lint() {
     done
 }
 
-@test "a line that says shared-proc-ok with a reason is allowed" {
+@test "a line that says shared-proc-ok with a reason excuses a shared path" {
     put internal/x/a_test.go "	base = \"$SHARED\" // shared-proc-ok: TMPDIR is too long for a socket path"
     put tests/integration/a.bats "    mkdir -p $SHARED/x # shared-proc-ok: the test of the fallback"
-    put tests/integration/b.bats "    $PG -f sleep # shared-proc-ok: the process is named by the test"
     lint -0
+}
+
+@test "shared-proc-ok never excuses a process-wide command, with a reason or without" {
+    for where in internal/x/a_test.go tests/integration/a.bats tests/helpers/h.bash tests/e2e/e.bats; do
+        for line in "$PG -f sleep # shared-proc-ok: the process is named by the test" "$KA sleep # shared-proc-ok: x" \
+            "$PK -f sleep # shared-proc-ok:" "$PK -f sleep // shared-proc-ok: why"; do
+            git -C "$REPO" rm -rq --cached . 2>/dev/null || true
+            put "$where" "    $line"
+            run -1 "$REPO/tests/tools/no-shared-proc.sh"
+            [[ "$output" == *"$where:1:"* ]] || { echo "$where: $line: $output"; false; }
+            [[ "$output" == *"processes of the whole machine"* ]]
+        done
+    done
+    for where in tests/integration/a.bats tests/e2e/e.bats; do
+        git -C "$REPO" rm -rq --cached . 2>/dev/null || true
+        put "$where" "    $PK tacquito # shared-proc-ok: the test of the fallback"
+        run -1 "$REPO/tests/tools/no-shared-proc.sh"
+        [[ "$output" == *"$where:1:"* ]]
+    done
+}
+
+@test "shared-proc-ok without a reason excuses nothing" {
+    for line in "base = \"$SHARED\" // shared-proc-ok:" "base = \"$SHARED\" // shared-proc-ok:   " "base = \"$SHARED\" // shared-proc-ok"; do
+        git -C "$REPO" rm -rq --cached . 2>/dev/null || true
+        put internal/x/a_test.go "	$line"
+        run -1 "$REPO/tests/tools/no-shared-proc.sh"
+        [[ "$output" == *"internal/x/a_test.go:1:"* ]] || { echo "$line: $output"; false; }
+        [[ "$output" == *"shared temporary path"* ]]
+    done
+    put tests/integration/a.bats "    mkdir -p $SHARED/x # shared-proc-ok:"
+    lint -1
+    [[ "$output" == *"tests/integration/a.bats:1:"* ]]
 }
 
 @test "no file is excused whole: the files once excused are checked like any other" {
