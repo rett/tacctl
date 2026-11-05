@@ -47,7 +47,7 @@ lint() {
     [[ -z "$output" ]]
 }
 
-@test "pgrep -f, pkill -f and killall fail in a Go test, a bats file, a helper and e2e" {
+@test "the process-wide commands fail in a Go test, a bats file, a helper and e2e" {
     for where in internal/x/a_test.go tests/integration/a.bats tests/helpers/h.bash tests/e2e/e.bats; do
         for cmd in "$PG -f sleep" "$PG -af sleep" "$PK -9 -f sleep" "$PK --full sleep" "$KA sleep" "x; $KA -9 sleep"; do
             git -C "$REPO" rm -rq --cached . 2>/dev/null || true
@@ -70,7 +70,7 @@ lint() {
     lint -0
 }
 
-@test "/dev/shm fails in a Go test, a bats file and a helper" {
+@test "the shared memory directory fails in a Go test, a bats file and a helper" {
     for where in internal/x/a_test.go tests/integration/a.bats tests/helpers/h.bash; do
         git -C "$REPO" rm -rq --cached . 2>/dev/null || true
         put "$where" "    x=$SHM/work"
