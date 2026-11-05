@@ -99,7 +99,8 @@ type Paths struct {
 	// loads it, and so does every change of a hold.
 	FirewallRules string
 	// FirewallUnit is the systemd unit that loads FirewallRules at boot
-	// (SystemdDir/tacctl-breakglass-firewall.service).
+	// (TacacsUnitDir/tacctl-breakglass-firewall.service: next to tacquito's units,
+	// /etc/systemd/system).
 	FirewallUnit string
 
 	SudoersFile     string // TACCTL_SUDOERS_FILE (SUDOERS_FILE)
@@ -201,7 +202,7 @@ func Resolve(env Env, exe string, exists func(string) bool) Paths {
 	p.TacacsUnitDir = env.Or("TACCTL_SYSTEMD_DIR", filepath.Dir(p.OverrideDir))
 	p.SystemdDir = env.Or("TACCTL_SYSTEMD_DIR", "/etc/systemd/system")
 	p.FirewallRules = p.StateDir + "/breakglass-firewall.nft"
-	p.FirewallUnit = p.SystemdDir + "/tacctl-breakglass-firewall.service"
+	p.FirewallUnit = p.TacacsUnitDir + "/tacctl-breakglass-firewall.service"
 	p.LogrotateDir = env.Or("TACCTL_LOGROTATE_DIR", "/etc/logrotate.d")
 	p.SettleSeconds = env.Or("TACCTL_SETTLE_SECONDS", DefaultSettleSeconds)
 
