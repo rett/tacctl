@@ -195,6 +195,10 @@ How each vendor takes the fix:
 | Junos | Let tacctl apply it under `commit confirmed` | Engineer Guide §5.1 |
 | WTI | Type the menu checklist. No paste, no rollback. | Engineer Guide §5.6 |
 
+For several Junos devices, check the scope first (`device config apply --scope
+site-a --check`), apply one device to review and prove the change, then apply
+the rest (Engineer Guide §5.1; what a shape and a canary are: §5.2 and §5.3).
+
 > **`PENDING until <time>`** on a Junos apply means: **type nothing on that
 > device until the time passes.** Any `commit` would confirm the change.
 

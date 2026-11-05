@@ -145,7 +145,10 @@ scopes `system`).
 | **Plan** | Prints the exact lines to paste, the checks and the back-out | No (uses the last pull) |
 | **Apply** | Junos only: commits under `commit confirmed`, proves it with a fresh login as you, then confirms | Yes |
 
-Cisco plans are pasted by hand; WTI plans are a menu checklist. The whole
+When an apply covers several devices, devices that need the same change share
+a **shape**; the first device of each shape goes alone (the canary), and a
+shape that an earlier apply proved is **confirmed**. Cisco plans are pasted by
+hand; WTI plans are a menu checklist. The whole
 workflow is in [Engineer Guide: Device Changes](engineer-guide-device-changes.md),
 and the vendor differences in [Vendor Notes](vendor-notes.md).
 

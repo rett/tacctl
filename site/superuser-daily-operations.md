@@ -291,7 +291,11 @@ tacctl device config apply rtr1 --check       # Junos: device-side commit check 
 
 The full change workflow (plans, Cisco paste, Junos apply, WTI checklist,
 back-out) is in [Engineer Guide: Device Changes](engineer-guide-device-changes.md).
-Superusers follow the same steps, for every scope.
+Superusers follow the same steps, for every scope. Only a superuser can list
+the shapes of a rollout (`tacctl device config shapes`) or file one that was
+applied and verified by hand (`tacctl device config shapes seed <name>`); what
+a shape is and when it counts as confirmed is in
+[Engineer Guide: Device Changes](engineer-guide-device-changes.md) §5.2 and §5.3.
 
 ### 4.9 Slow or distant devices
 
