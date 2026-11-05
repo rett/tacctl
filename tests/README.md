@@ -72,9 +72,11 @@ started, read and sped up (`GATE_TMPFS=1`) like it.
 The `lint` job of the workflow runs `make lint` on Ubuntu 24.04, with that
 release's shellcheck and groff 1.23 and the golangci-lint the Makefile pins.
 A development machine may have newer tools (groff 1.24 and shellcheck 0.11
-have been seen), and `make lint` and the man search tests (`go test
-./internal/cli -run Man`) must pass on both: a fix for a newer tool must keep
-the older one passing. The page sets its own body margin (`.nr BP 7n`)
+have been seen), and `make lint` and the man search tests (`make lint-man`,
+which runs `go test ./internal/cli` with `-run` set to `MAN_TESTS` in the
+Makefile: the `TestMan<Word>` and `TestPty*Man` tests, not the `TestManaged*`
+ones) must pass on both: a fix for a newer tool must keep the older one
+passing. The page sets its own body margin (`.nr BP 7n`)
 because groff 1.24 narrowed the default from 7n to 5n, and the pager search
 of `tacctl man` assumes 7 (`TestManPageSetsTheBodyMargin`). `make hooks`
 installs a pre-push hook that runs `no-private.sh`, `no-short-yes.sh` and
