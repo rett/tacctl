@@ -24,10 +24,10 @@ package lifecycle
 // whose single-connection this release removed reads as missing it in
 // 0.2.23's plan.
 //
-// What the target does not touch is the checkout of tacquito in the deploy
-// directory: it keeps pointing at the project's fork, which has the same
-// history as the upstream clone 0.2.23 made, so 0.2.23's own pull carries on
-// from the commit that is checked out.
+// What the target does not touch is the tacquito clone (TACQUITO_SRC,
+// /opt/tacquito-src): it keeps pointing at the project's fork, which has the
+// same history as the upstream clone 0.2.23 made, so 0.2.23's own pull carries
+// on from the commit that is checked out.
 
 import "github.com/rett/tacctl/internal/tier"
 

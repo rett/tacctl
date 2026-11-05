@@ -27,6 +27,7 @@ import (
 	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
+	"github.com/rett/tacctl/internal/gitx"
 	"github.com/rett/tacctl/internal/lifecycle"
 	"github.com/rett/tacctl/internal/paths"
 	"github.com/rett/tacctl/internal/snapshot"
@@ -127,7 +128,7 @@ type ohost struct {
 func newOhost(t *testing.T) *ohost {
 	t.Helper()
 	w := t.TempDir()
-	o := &ohost{t: t, w: w, run: &fake.Runner{}, stdout: &bytes.Buffer{}, stderr: &bytes.Buffer{},
+	o := &ohost{t: t, w: w, run: &fake.Runner{Rewrite: gitx.Unwrap}, stdout: &bytes.Buffer{}, stderr: &bytes.Buffer{},
 		storeAt: map[string]bool{}, heldAt: map[string]int{}, commit: "c0ffee", head: "c0ffee"}
 	o.out = ui.Output{Stdout: o.stdout, Stderr: o.stderr}
 	j := func(p ...string) string { return filepath.Join(append([]string{w}, p...)...) }

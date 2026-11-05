@@ -17,6 +17,7 @@ import (
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
+	"github.com/rett/tacctl/internal/gitx"
 	"github.com/rett/tacctl/internal/lifecycle"
 	"github.com/rett/tacctl/internal/paths"
 	"github.com/rett/tacctl/internal/snapshot"
@@ -50,7 +51,7 @@ type tenv struct {
 func newTenv(t *testing.T) *tenv {
 	t.Helper()
 	w := t.TempDir()
-	e := &tenv{t: t, w: w, run: &fake.Runner{}, stdout: &bytes.Buffer{}, stderr: &bytes.Buffer{}}
+	e := &tenv{t: t, w: w, run: &fake.Runner{Rewrite: gitx.Unwrap}, stdout: &bytes.Buffer{}, stderr: &bytes.Buffer{}}
 	for _, d := range []string{"etc", "state/backups/password-dates", "log", "bin", "systemd", "tmp"} {
 		if err := os.MkdirAll(filepath.Join(w, d), 0o700); err != nil {
 			t.Fatal(err)

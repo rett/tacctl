@@ -163,8 +163,11 @@ lint: lint-sh lint-go lint-man lint-private lint-tempdir lint-logger lint-short-
 # variable, exit status and tier row is in the page; the generated blocks are
 # current), then the page under groff with all warnings on, which must print
 # nothing. No terminal is needed. A stale page: run 'make man'.
+# MAN_TESTS selects the tests named TestMan<Word> (not the TestManaged* ones,
+# which are about managed servers) and the TestPty*Man ones.
+MAN_TESTS ?= ^(TestMan([^a]|a[^g]|$$)|TestPty.*Man$$)
 lint-man:
-	LANG=C.UTF-8 $(GO) test -count=1 ./internal/cli -run Man
+	LANG=C.UTF-8 $(GO) test -count=1 ./internal/cli -run '$(MAN_TESTS)'
 	@command -v groff > /dev/null 2>&1 || { echo "make: groff not found (apt install groff); it checks man/tacctl.1"; exit 1; }
 	@out=$$(groff -k -ww -man -Tutf8 man/tacctl.1 2>&1 > /dev/null); if [ -n "$$out" ]; then \
 		echo "groff -k -ww -man man/tacctl.1:"; echo "$$out"; exit 1; fi

@@ -218,6 +218,40 @@ current behaviour; this file is where history lives.
    filters, and a filter option typed wrongly is refused with the problem and
    a usage line, as every other command does.
 
+10. **The pulls of tacctl's own clone no longer wait for an operator.**
+    Item 5 gave the clone and the fetch of the tacquito source a guard; the
+    clone in `/opt/tacctl` ran plain git, so `tacctl upgrade`, `tacctl install`
+    and `tacctl config branch` could stop at a user name, password or key
+    passphrase asked on `/dev/tty`, or wait for ever on a stalled transfer.
+    Their `git clone`, `git fetch` and `git pull` (not the local `checkout`,
+    `rev-parse` and the like) now run with git asking for nothing
+    (`GIT_TERMINAL_PROMPT=0`, a failing `GIT_ASKPASS`, `SSH_ASKPASS` unset,
+    `BatchMode=yes` for an ssh remote) and dropping a transfer slower than
+    1000 bytes a second for a minute (`http.lowSpeedLimit`,
+    `http.lowSpeedTime`), through one shared implementation (`internal/gitx`).
+    A `GIT_SSH_COMMAND` of the operator's is replaced, as for the tacquito
+    pull; the `core.sshCommand` of the clone is honoured, with `BatchMode=yes`
+    after it (for a clone not made yet, git's global and system configuration
+    is read, not the repository the operator stands in). A remote that needs a
+    password now fails where it used to ask:
+    `git fetch failed. Check network / credentials.` for the upgrade (or, when
+    the upgrade has to make the clone, the warning
+    `Failed to clone management repo.`, and it goes on), the exit
+    status of `git clone` for an install (a failed pull of an existing clone is
+    still not an error, as before), and the unchanged messages of
+    `config branch`; use a key, the agent or a credential helper. An ssh remote
+    whose host key is not in `known_hosts` now fails too, where ssh used to ask
+    whether to trust it (`BatchMode=yes`): an ssh remote needs a key, the
+    agent or a credential helper, and its host key in `known_hosts` (unless
+    ssh's own configuration sets `StrictHostKeyChecking accept-new`). An
+    operator's `GIT_SSH` is replaced as well, and a `core.sshCommand` that is
+    not OpenSSH's `ssh` (one that refuses `-o`) fails. The manual
+    page (`upgrade`, `install`, `config branch`, `TACQUITO_SRC`),
+    `docs/install/upgrading.md` and `docs/cli/config.md` say so. The clone of
+    `pam_tacplus` that `tacctl config linux build` makes (also when the
+    upgrade makes it) is guarded the same way (`docs/hosts/README.md`, manual
+    page).
+
 ## 0.2.23 (2026-10-31)
 
 1. **`tacctl rollback 0.2.22`, the release before this one, is a target.**
