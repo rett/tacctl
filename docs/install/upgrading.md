@@ -335,7 +335,7 @@ server name, the timing scale, the server address, the users' login to this
 server, a user name with a period and an emergency lockdown (with or without
 enrolled hosts) all stay. It still refuses while an apply is not settled.
 What this release changed outside the stored files is 0.2.23's to undo or keep. The `tacctl upgrade --branch 0.2.23` that ends the rollback writes the console's sshd drop-in from 0.2.23's text, without the block of users held to a password change, so their new connections forward again as their tier allows. It keeps the tacquito this release built until it next rebuilds it (a new commit on the fork's `main`), so accounting records keep `"Device"` and the literal `<`, `>` and `&`; 0.2.23's `log accounting` shows them as they are written. On a device whose `single-connection` this release removed, 0.2.23's `device config diff` and `plan` show the line as missing, and applying that plan types it again.
-`--hosts` is accepted and does nothing. The tacquito checkout in `/opt/tacctl`
+`--hosts` is accepted and does nothing. The tacquito clone in `/opt/tacquito-src`
 keeps pointing at the project's fork, which has the same history as the
 upstream clone 0.2.23 made, so 0.2.23's own
 upgrade pulls from it unchanged.

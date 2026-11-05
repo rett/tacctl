@@ -15,7 +15,9 @@ import (
 // entry names a command the tree lacks, so a removed verb cannot linger.
 // man_gate_test.go and man_gen_test.go gate the rest (flags, keys, paths,
 // environment, exit statuses, tiers; the generated blocks): 'make lint' runs
-// them all, 'go test ./internal/cli -run Man'.
+// them all, 'make lint-man'. That target picks the tests by name (MAN_TESTS
+// in the Makefile: TestMan<Word>, not TestManaged*, and TestPty...Man), so a
+// new man test is named that way.
 
 // manText is the page as a reader sees it, one string per output line of
 // source: font macros and escapes removed. tags are the lines that head a

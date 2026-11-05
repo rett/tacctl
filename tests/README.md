@@ -72,9 +72,11 @@ started, read and sped up (`GATE_TMPFS=1`) like it.
 The `lint` job of the workflow runs `make lint` on Ubuntu 24.04, with that
 release's shellcheck and groff 1.23 and the golangci-lint the Makefile pins.
 A development machine may have newer tools (groff 1.24 and shellcheck 0.11
-have been seen), and `make lint` and the man search tests (`go test
-./internal/cli -run Man`) must pass on both: a fix for a newer tool must keep
-the older one passing. The page sets its own body margin (`.nr BP 7n`)
+have been seen), and `make lint` and the man search tests (`make lint-man`,
+which runs `go test ./internal/cli` with `-run` set to `MAN_TESTS` in the
+Makefile: the `TestMan<Word>` and `TestPty*Man` tests, not the `TestManaged*`
+ones) must pass on both: a fix for a newer tool must keep the older one
+passing. The page sets its own body margin (`.nr BP 7n`)
 because groff 1.24 narrowed the default from 7n to 5n, and the pager search
 of `tacctl man` assumes 7 (`TestManPageSetsTheBodyMargin`). `make hooks`
 installs a pre-push hook that runs `no-private.sh`, `no-short-yes.sh` and
@@ -90,6 +92,16 @@ The bats files run in parallel (`bats --jobs`, one file per job, the tests of
 a file in order) when GNU `parallel` is installed: `BATS_JOBS` sets the number
 of jobs (default: the CPU count), `BATS_JOBS=1` runs serially. `BATS_FLAGS`
 is passed to bats (default `--print-output-on-failure`).
+
+The bats suite runs as an ordinary user: any account that is not root and is
+not inside a `sudo` session, and no particular account name is needed. The
+helper (`tests/helpers/tmpenv.bash`) sets `TACCTL_SKIP_SUDO=1`, so tacctl does
+not re-execute itself through `sudo`, and unsets `SUDO_UID`; a test that
+needs a calling user sets `SUDO_USER` itself (`as_user` in
+`tests/integration/tiers.bats`) and one that needs none runs the binary with
+`env -u SUDO_USER`, so start the suite from a normal login shell, not from
+`sudo`. The callers the tests name (`tester` in the stubbed `id` of
+`tests/integration/shell.bats`) are made up, not accounts of the machine.
 
 Run a single file or test (after `make build`):
 
