@@ -123,6 +123,8 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `server addresses` | `op=add\|replace` `address` |
 | `config devices` | `key` `from` `to` |
 | `config audit-strict` | `from` `to` (`on` or `off`); `auth.notice` |
+| `config breakglass-firewall` | `from` `to` (`reject`, `drop` or `off`) `firewall` (what the table did: the setting, or `failed`); `auth.notice` |
+| `firewall reload` (after `server listen` of a tacquito listener, when an address is held or a table was written) | `reason=listener` `firewall` |
 | `config cisco source-interface` | `scope` `from` `to` |
 | `config render` | `backends` `force` |
 | `config linux uid` | `user` `uid` |

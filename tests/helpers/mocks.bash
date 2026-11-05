@@ -25,6 +25,15 @@ echo "getaddrinfo ${!#}: Name or service not known" >&2
 exit 0
 STUB
     chmod +x "${STUB_BIN}/ssh-keyscan"
+    # tacctl loads its nftables table of the held addresses with nft (0.2.24):
+    # by default a stub that loads nothing and prints nothing, so no test
+    # loads a real table or fails for want of root. A test that checks the
+    # calls or the failure stubs it with stub_cmd (which also logs them).
+    cat > "${STUB_BIN}/nft" <<'STUB'
+#!/usr/bin/env bash
+exit 0
+STUB
+    chmod +x "${STUB_BIN}/nft"
 }
 
 # stub_cmd <name> <body>

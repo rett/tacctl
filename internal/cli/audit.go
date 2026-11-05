@@ -436,6 +436,7 @@ var auditTable = map[string]auditEntry{
 	"config snmp":                withSecret(mixed(), secretSNMPSurplus(0, func() map[string]Spec { return configSNMPSpecs })),
 	"config sudoers":             mixed().weighty(),
 	"config audit-strict":        notStrict(mixed().weighty()),
+	"config breakglass-firewall": mixed().weighty(),
 	"config validate":            mixed(),
 
 	"console show":             read(),

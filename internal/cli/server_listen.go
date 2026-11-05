@@ -133,6 +133,13 @@ func (inv *invocation) listenerChange(ops backend.ListenerOps, id, name string, 
 	err := set()
 	if after := text(); err == nil && before != after {
 		inv.detail("server listen", kvp("backend", id), kvp("listener", name), kvp("from", before), kvp("to", after))
+		// The ports the table of the held addresses matches are tacquito's.
+		if id == backend.TACACS {
+			if res, failed := inv.firewallListenerNote(); failed {
+				inv.firewallFailedError(res)
+				return exit(1)
+			}
+		}
 	}
 	return err
 }

@@ -1026,6 +1026,7 @@ Hold break-glass on lab-sw (192.168.1.1, scope lab, cisco)?
 Break-glass HELD on lab-sw (192.168.1.1) since <T> by root.
   Reason:   console recovery
   Rendered: 192.168.0.0/16 of scope 'lab' answers as 16 prefixes without 192.168.1.1; tacacs restarted.
+  Firewall: 192.168.1.1 refused on tcp/49 (reject)
   Carved:   only 192.168.1.1, the address registered for lab-sw. A device that sends its AAA from another address (a source interface, a NAT) is still answered.
 
   ssh: log in as a local account; the device waits for the server first (a few seconds), then takes the local
@@ -1061,6 +1062,7 @@ Break-glass HELD on lab-sw (192.168.1.1) since <T> by root.
 
 Break-glass RELEASED on lab-sw (192.168.1.1): held under 1 min by root (console recovery).
   Rendered: 192.168.0.0/16 of scope 'lab' answers whole again; tacacs restarted.
+  Firewall: 192.168.1.1 accepted again on tcp/49
   Check:    tacctl device config pull lab-sw --diff (aaa: ok), then a new ssh login as yourself.
   Still held: none
 

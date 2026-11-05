@@ -246,6 +246,10 @@ func Upgrade(ctx context.Context, h *Host, args []string) error {
 	if err := h.upgrade(ctx, ids, backend.PhaseFinish, ""); err != nil {
 		return err
 	}
+	// The table that refuses the TCP connections of the held addresses, and
+	// the unit that loads it: an upgrade from 0.2.23 with holds standing
+	// loads it, so those holds get the fix.
+	h.firewallStep(ctx)
 	// This machine's own login: set up when this server has one already
 	// (repaired when it drifted) or the operator agrees; else one line.
 	h.ownLogin(ctx, OwnLoginOptions{})

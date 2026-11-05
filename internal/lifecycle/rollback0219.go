@@ -70,7 +70,9 @@ import (
 func planRollback0219(p *RollbackPlan) (*RollbackPlan, error) {
 	in := p.in
 	pt := in.Paths
-	p.keys = slices.DeleteFunc(in.Conf.RollbackKeys0218(), func(k string) bool { return !conf.Added0220Key(k) && !conf.Added0221Key(k) && !conf.Added0222Key(k) })
+	p.keys = slices.DeleteFunc(in.Conf.RollbackKeys0218(), func(k string) bool {
+		return !conf.Added0220Key(k) && !conf.Added0221Key(k) && !conf.Added0222Key(k) && !conf.Added0224Key(k)
+	})
 	tiers := p.tiersPlan(tier.Sudoers0219(), tier.Sudoers(), tier.Sudoers0223(), tier.Sudoers0222())
 	p.sudoers = []sudoersPlan{tiers}
 	p.Steps = append(p.Steps, p.lockdownKeysStep(RollbackTarget0219), p.tiersStep(RollbackTarget0219, tiers,

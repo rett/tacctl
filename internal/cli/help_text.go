@@ -439,6 +439,7 @@ Subcommands:
   <b>password-min-length</b> [<o><8-64></o>]         Show or set minimum interactive password length (default 12)
   <b>secret-min-length</b> [<o><16-128></o>]         Show or set minimum shared-secret length (default 16)
   <b>audit-strict</b> [on|off]                Show or set whether a change or a reveal is refused when its audit line cannot be written (default off)
+  <b>breakglass-firewall</b> [reject|drop|off]  Show or set the TCP firewall of held addresses (default reject)
   <b>allow</b> list|add|remove|clear          Manage connection allow list (IP ACL; add/remove accept comma-lists)
   <b>deny</b> list|add|remove|clear           Manage connection deny list (IP ACL; add/remove accept comma-lists)
   <b>mgmt-acl</b> list|add|remove|clear       Manage Cisco VTY-ACL + Juniper lo0-filter + WTI IP Tables permits

@@ -262,6 +262,20 @@ config audit-strict [on|off]
     secret, is refused when its audit line cannot be written; this command is never refused, so
     `off` works while logger is down
 
+config breakglass-firewall [reject|drop|off]
+
+    Show or set what the server does with the TCP connections of a held address (default reject):
+    `reject` answers with a TCP reset, `drop` discards the packets, `off` loads no table and leaves
+    the connection to tacquito, which accepts and closes it (the 0.2.23 behaviour). The table
+    `inet tacctl` is loaded at once and again by every hold, release, move, rename, restore and
+    listener change; `reject` is also the repair of a table that was not loaded, even when the
+    setting is unchanged. Exits 1 when the table could not be loaded (nft failing; or nft missing
+    while the table would
+    refuse an address, or while the boot unit of an earlier load stands, since a table may still be
+    in the kernel); without nft and with nothing to refuse (the setting `off`, nothing held, no
+    TCP listener) it loads nothing and says so. Superuser. See
+    [Break-glass](../devices/break-glass.md#the-firewall)
+
 config allow list|add|remove|clear
 
     Manage connection allow list (IP ACL; add/remove accept comma-lists)
@@ -429,7 +443,7 @@ parse), `overrides` (`tacctl.yaml`), `command_rules`, `structure` (users,
 groups and scopes), `scope_default`, `linux_hosts`, `names`, `breakglass`,
 `snmp_users` (an SNMPv3 user name that two pools a device can see hold: a warning that names the
 levels, never the user; the device's own pool is searched first, then its scope's, then the
-config's), `breakglass_hold`, `emergency_lockdown`, `config_blocks`, `operator_policy`, `group_settings`,
+config's), `breakglass_hold`, `breakglass_firewall`, `emergency_lockdown`, `config_blocks`, `operator_policy`, `group_settings`,
 `orphan_settings`, `orphan_files`, `leftovers`, `devices` (`devices.yaml` does not
 load, a device's `timeout_scale` outside 1 to 10 among the reasons), `backends` (the enabled list
 cannot be read), `rendered`, `drift` and `vendor_attrs`. A line of the text

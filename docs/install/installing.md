@@ -20,6 +20,15 @@ for what a re-run keeps), starts the service, and ends with the summary and
 the shared secret of the new `lab` scope, shown once. (Lines of output are
 wrapped in the examples below.)
 
+**The break-glass firewall (0.2.24).** `install` also installs the `nftables`
+package (a failed install retries after `apt-get update`; a package that
+cannot be had is a warning, not a failure), writes and enables the boot unit
+`tacctl-breakglass-firewall.service` and loads the nftables table `inet
+tacctl`, which refuses the TCP connections of the addresses held with `tacctl
+breakglass hold` ([The firewall](../devices/break-glass.md#the-firewall)). The
+table is empty until an address is held, and `nftables.service` is never
+enabled or touched.
+
 **This machine's own login.** Every user can log in to the tacctl server and
 its console, so `install` sets up the server's own login too, with the
 machinery of `tacctl host enroll --local`: the scope tacctl manages for it
