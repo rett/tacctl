@@ -11,6 +11,7 @@ import (
 // reads it as the newest one and goes on, on either transport. It was
 // 'pre-flight: show system commit: entry 0 ends "commit synchronize"'.
 func TestPreflightReadsSynchronizedCommits(t *testing.T) {
+	t.Parallel()
 	both(t, map[string]string{"commit.synchronize": ""}, func(t *testing.T, d *device) {
 		p := &planner{desired: desiredLines()}
 		o := apply(t, d, p, nil)

@@ -43,6 +43,7 @@ func sameSteps(t *testing.T, got []string, want ...string) {
 // exchange up to the host key) and then the end of the login: the two apart,
 // in that order, and the session each opens after them.
 func TestDialMarksConnectThenLogin(t *testing.T) {
+	t.Parallel()
 	srv := serve(t, transcript(t, map[string]string{"prompt": "rtr1#", "show version.out": "Cisco IOS Software\n"}))
 	got := marked(t, func(ctx context.Context) batch.Result {
 		c, err := devssh.Dial(ctx, target(t, srv, nil))
@@ -61,6 +62,7 @@ func TestDialMarksConnectThenLogin(t *testing.T) {
 }
 
 func TestNetconfMarksTheSession(t *testing.T) {
+	t.Parallel()
 	srv := serve(t, transcript(t, nil))
 	got := marked(t, func(ctx context.Context) batch.Result {
 		c, err := devssh.Dial(ctx, target(t, srv, nil))
@@ -81,6 +83,7 @@ func TestNetconfMarksTheSession(t *testing.T) {
 // A login that the device refuses has reached the connection and not the
 // login.
 func TestRefusedLoginMarksOnlyTheConnect(t *testing.T) {
+	t.Parallel()
 	srv := serve(t, transcript(t, nil))
 	got := marked(t, func(ctx context.Context) batch.Result {
 		tg := target(t, srv, nil)
@@ -96,6 +99,7 @@ func TestRefusedLoginMarksOnlyTheConnect(t *testing.T) {
 
 // A host key that is not pinned stops the connection before either mark.
 func TestUnpinnedKeyMarksNothing(t *testing.T) {
+	t.Parallel()
 	srv := serve(t, transcript(t, nil))
 	other := serve(t, transcript(t, nil), fakedev.WithRandomHostKey())
 	got := marked(t, func(ctx context.Context) batch.Result {

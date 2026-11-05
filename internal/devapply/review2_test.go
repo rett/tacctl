@@ -44,6 +44,7 @@ func (c checkedT) Revert(ctx context.Context, id string) error {
 // A stranger's 'commit check' before the verification: the change is
 // applied by someone else only with the verification's proof.
 func TestConfirmedBeforeVerifyNeedsProof(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	before := d.srv.Committed()
 	o := apply(t, d, &planner{desired: desiredLines()}, func(in *Input) {
@@ -64,6 +65,7 @@ func TestConfirmedBeforeVerifyNeedsProof(t *testing.T) {
 
 // Without the proof the change is reverted in the held session.
 func TestConfirmedBeforeVerifyRevertedWithoutProof(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name   string
 		verify func(d *device) func(context.Context) (Reader, error)
@@ -83,6 +85,7 @@ func TestConfirmedBeforeVerifyRevertedWithoutProof(t *testing.T) {
 		}, "what landed is not the change the check showed"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			d := newDevice(t, nil)
 			before := d.srv.Committed()
 			o := apply(t, d, &planner{desired: desiredLines()}, func(in *Input) {
@@ -108,6 +111,7 @@ func TestConfirmedBeforeVerifyRevertedWithoutProof(t *testing.T) {
 
 // A revert that cannot be done leaves the record pending, never applied.
 func TestConfirmedBeforeVerifyRevertFails(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	o := apply(t, d, &planner{desired: desiredLines()}, func(in *Input) {
 		in.Transport = checkedT{JunosCLI: in.Transport.(*JunosCLI), revertErr: errors.New("refused")}
@@ -121,6 +125,7 @@ func TestConfirmedBeforeVerifyRevertFails(t *testing.T) {
 
 // Revert commits only the exact inverse, and only without a banner.
 func TestRevertGuards(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	j := d.dial()
 	defer func() { _ = j.Close() }()
@@ -142,6 +147,7 @@ func (s stateR) Log() []string                              { return nil }
 // fate is reported, the stranger's commit too, and the record keeps the
 // stranger's window.
 func TestReconcileFateUnderStrangersBanner(t *testing.T) {
+	t.Parallel()
 	id := "tacctl-20261013T140000Z-3f2a"
 	ourC := CommitEntry{TimeText: "2026-10-13 14:00:00 UTC", User: "alice", Via: "cli", Comment: "tacctl apply " + id + " by alice", RollbackIn: 10}
 	canc := CommitEntry{TimeText: "2026-10-13 14:01:00 UTC", User: "alice", Via: "cli", Comment: "tacctl apply cancel " + id}
@@ -161,6 +167,7 @@ func TestReconcileFateUnderStrangersBanner(t *testing.T) {
 // The device secrets a compare may print: an SNMP trap group's name and
 // the public keys of a login.
 func TestDeviceSecretsTrapGroupAndKeys(t *testing.T) {
+	t.Parallel()
 	m := &masker{}
 	for in, out := range map[string]string{
 		"trap-group zz-tg-name {":                                            "trap-group <secret> {",
@@ -190,6 +197,7 @@ type noAreaSession struct{ devssh.CLISession }
 func (noAreaSession) PromptArea() ([]string, bool) { return nil, false }
 
 func TestStateWithoutPromptArea(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	j := d.dial()
 	defer func() { _ = j.Close() }()
