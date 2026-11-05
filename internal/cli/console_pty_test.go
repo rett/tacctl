@@ -333,8 +333,13 @@ func TestConsolePtySystemShell(t *testing.T) {
 
 	// Started for a superuser: the stub prints its environment.
 	// A short path: the log keeps 64 bytes of a value (console.LogValue), and
-	// the line below must end with the shell's name whatever TMPDIR is.
-	stubDir, err := os.MkdirTemp("/tmp", "ss")
+	// the line below must end with the shell's name whatever TMPDIR is. It is
+	// under TMPDIR unless that is too long to leave room for the name.
+	stubBase := os.TempDir()
+	if len(stubBase) > 30 {
+		stubBase = "/tmp" // shared-proc-ok: only when TMPDIR is too long for the 64 bytes of the log value
+	}
+	stubDir, err := os.MkdirTemp(stubBase, "ss")
 	if err != nil {
 		t.Fatal(err)
 	}
