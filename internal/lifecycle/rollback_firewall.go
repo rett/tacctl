@@ -2,12 +2,12 @@ package lifecycle
 
 // The break-glass firewall (0.2.24) in a rollback. It is a setting and a set of
 // files every older release lacks: breakglass.firewall in tacctl.yaml, which
-// conf.Added0224 lists so that every target's key list removes it (a 0.2.23
-// binary refuses the key), the nftables table inet tacctl in the kernel, the
-// rules file under the state directory and the boot unit
-// tacctl-breakglass-firewall.service. Every target removes the last three,
-// through RollbackInput.RemoveFirewall (the command's seam over the runner; nil
-// lists the step and does nothing), and says so; the nftables package stays,
+// conf.Added0224 lists so that the key list of every target but 0.2.24 removes
+// it (a 0.2.23 binary refuses the key), the nftables table inet tacctl in the
+// kernel, the rules file under the state directory and the boot unit
+// tacctl-breakglass-firewall.service. Every target but 0.2.24 (which has them)
+// removes the last three, through RollbackInput.RemoveFirewall (the command's
+// seam over the runner; nil lists the step and does nothing), and says so; the nftables package stays,
 // and so does every hold: an older release that has holds (0.2.5 and later)
 // takes them as they are, and its server completes the TCP handshake of a held
 // address again, as 0.2.23 did. The step needs no snapshot: none of the three

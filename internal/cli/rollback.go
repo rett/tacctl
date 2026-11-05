@@ -294,7 +294,9 @@ func (inv *invocation) rollbackNextSteps(version string, snapshot bool) {
 }
 
 // rollbackFrom is the release this build is: the state a rollback leaves in
-// its snapshot. It moves with each release.
+// its snapshot. It moves with each release (docs/releasing.md, The rollback
+// target); TestRollbackFromIsTheReleaseOfTheChangelog compares it with the
+// first release heading of CHANGELOG.md.
 const rollbackFrom = "0.2.25"
 
 // rollbackSnapshotNote says where the state before the rollback is, when the
@@ -310,7 +312,7 @@ func (inv *invocation) rollbackSnapshotNote(snapshot bool, tail string) {
 }
 
 // rollbackFirewallNote says, after a rollback that removed the break-glass
-// firewall (every target): what went and what stays, what a hold that stands
+// firewall (every target but 0.2.24): what went and what stays, what a hold that stands
 // gets from the older release, and that the setting command writes the key it
 // refuses.
 func (inv *invocation) rollbackFirewallNote(version string, plan *lifecycle.RollbackPlan) {
@@ -324,7 +326,7 @@ func (inv *invocation) rollbackFirewallNote(version string, plan *lifecycle.Roll
 }
 
 // rollbackEmailNote says, after a rollback that removed the users' email
-// addresses (every target), where they are and how they come back, and that
+// addresses (every target but 0.2.24 and 0.2.23), where they are and how they come back, and that
 // the commands that set one write the key again.
 func (inv *invocation) rollbackEmailNote(version, snapID string, users []string) {
 	n := len(users)
@@ -396,10 +398,13 @@ func (inv *invocation) rollbackNextSteps0224(version string) {
 }
 
 // rollbackNextSteps0223 is the next steps of the rollback to 0.2.23: the
-// upgrade of the tag. 0.2.23 reads every file 0.2.24 and this release write,
-// so the rollback converted no file (it put back 0.2.23's per-tier sudoers
-// drop-in, without 'log failures *'), took no snapshot and leaves no command
-// to avoid.
+// upgrade of the tag. 0.2.23 reads every file 0.2.24 and this release write
+// but breakglass.firewall, so the rollback converted no file of tacctl's own
+// (it put back 0.2.23's per-tier sudoers drop-in, without 'log failures *')
+// and leaves no command to avoid. It takes no snapshot argument: when the key
+// was set, the apply did take a snapshot (PendingFiles is true for the key)
+// and this function does not print the snapshot note (rollbackSnapshotNote),
+// which the firewall note (rollbackFirewallNote) does not replace.
 func (inv *invocation) rollbackNextSteps0223(version string) {
 	inv.echo("")
 	inv.echo(ui.Bold + "Next steps" + ui.NC)

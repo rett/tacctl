@@ -8,10 +8,11 @@ import (
 	"github.com/rett/tacctl/internal/tier"
 )
 
-// The rollback to 0.2.23 on the sandbox of rollback_test.go: this release
-// changed no stored file, so the plan converts nothing but the per-tier
-// drop-in (TestPlanRollback0223DropIn), whatever 0.2.23 itself added to the
-// state.
+// The rollback to 0.2.23 on the sandbox of rollback_test.go: 0.2.24 and this
+// release changed no stored file 0.2.23 reads strictly but breakglass.firewall
+// (rollback_firewall_test.go), so with that key unset the plan converts nothing
+// but the per-tier drop-in (TestPlanRollback0223DropIn), whatever 0.2.23
+// itself added to the state.
 
 func plan0223(t *testing.T, s *rbSandbox) *RollbackPlan {
 	t.Helper()

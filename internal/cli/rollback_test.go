@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"sort"
@@ -773,5 +774,32 @@ func TestRollbackWarnsOfWhoGainsASystemShellOrTheCache(t *testing.T) {
 	hs.expect(0, "This was a dry run", "")
 	if strings.Contains(hs.all(), "gain a system shell") {
 		t.Errorf("a warning without a reason:\n%s", hs.all())
+	}
+}
+
+// rollbackFrom is hand-edited at each release (0.2.24 shipped with 0.2.23 in
+// the notes after a rollback). It is the release this build is, which is the
+// version of the first release heading of CHANGELOG.md ("## 0.2.25
+// (unreleased)", dated once the release starts); docs/releasing.md lists the
+// edit in "The rollback target".
+func TestRollbackFromIsTheReleaseOfTheChangelog(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "..", "CHANGELOG.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	heading := ""
+	for _, l := range strings.Split(string(src), "\n") {
+		if strings.HasPrefix(l, "## ") {
+			heading = l
+			break
+		}
+	}
+	f := strings.Fields(heading)
+	if len(f) < 2 || !regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`).MatchString(f[1]) {
+		t.Fatalf("the first '## ' heading of CHANGELOG.md is not '## X.Y.Z (...)': %q", heading)
+	}
+	if f[1] != rollbackFrom {
+		t.Errorf("rollbackFrom is %q (internal/cli/rollback.go), the first release heading of CHANGELOG.md is %q: "+
+			"move the constant with the release (docs/releasing.md, The rollback target)", rollbackFrom, heading)
 	}
 }
