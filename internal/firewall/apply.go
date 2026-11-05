@@ -36,8 +36,8 @@ const (
 	Applied = "applied"
 	// Removed: the setting is off and the table is gone.
 	Removed = "removed"
-	// Idle: nothing was to be enforced and nft is not there, so nothing was
-	// loaded; the rules file is written all the same, for the day it is.
+	// Idle: nothing was to be enforced and nft is not there (and no table of
+	// tacctl was ever loaded), so nothing was loaded and nothing is wrong.
 	Idle = "idle"
 	// Failed: the table could not be loaded, written or removed; the hold
 	// stands, the server completes the TCP handshake of the address.
@@ -63,6 +63,10 @@ type Result struct {
 // OK reports whether the table is as the holds and the setting ask for.
 func (r Result) OK() bool { return r.State != Failed }
 
+// Enforces reports whether the table asked for refuses anything (Spec.Enforces
+// of the result): a mode that is not off, an address held and a port.
+func (r Result) Enforces() bool { return r.Mode != Off && len(r.Addrs) > 0 && len(r.Ports) > 0 }
+
 // Refused is the line of the report that says what the table does: 'refused
 // on tcp/49 (reject)' for the held addresses. "" when the state is not
 // Applied.
@@ -79,26 +83,42 @@ func (r Result) Refused() string {
 // With the setting off the file removes the table. It never reads the rest of
 // the ruleset.
 //
-// Without nft there is nothing to load: that is a failure when an address is
-// held (the server still completes the handshake) or a rules file was
-// written before (a table may still be in the kernel), and nothing to say
-// otherwise (Idle).
+// Without nft nothing can be loaded, and there are three outcomes:
+//
+//   - Failed when the table is to refuse something (Spec.Enforces: a mode
+//     that is not off, an address held and a port): the server still
+//     completes the handshake.
+//   - Failed when the boot unit is there. Only a successful 'nft -f' installs
+//     it, so a table may still be in the kernel after nftables was removed,
+//     and it keeps refusing addresses that were released since. (The rules
+//     file is no such sign: it is written before the load.)
+//   - Idle otherwise: the setting is off, nothing is held or no listener
+//     binds a TCP port, and no table of tacctl was ever loaded. Nothing is
+//     said, and the rules file is not created (a file that exists is kept
+//     current only while the unit is there, for the boot after nft is back).
+//
+// A caller treats Idle as success and says nothing of it, Failed as a failure
+// and names the fix (Result.NftMissing says to install nft first).
 func (e *Engine) Apply(ctx context.Context) Result {
 	spec := SpecOf(e.Conf)
 	res := Result{State: Applied, Mode: spec.Mode, Addrs: spec.Strings(), Ports: spec.Ports}
-	_, had := statFile(e.Paths.FirewallRules)
-	if err := writeAtomic(e.Paths.FirewallRules, []byte(spec.Render()), 0o600); err != nil {
-		res.State, res.Why = Failed, "cannot write "+e.Paths.FirewallRules+": "+errText(err)
-		return res
-	}
 	if _, err := e.Runner.LookPath(Tool); err != nil {
 		res.NftMissing = true
+		_, unit := statFile(e.Paths.FirewallUnit)
 		switch {
-		case spec.Mode != Off && len(spec.Held) > 0, had:
+		case spec.Enforces():
 			res.State, res.Why = Failed, "nft is not installed"
+		case unit:
+			// best effort: the unit loads this file once nft is back
+			_ = writeAtomic(e.Paths.FirewallRules, []byte(spec.Render()), 0o600)
+			res.State, res.Why = Failed, "nft is not installed, and a table loaded earlier may still be in the kernel"
 		default:
 			res.State = Idle
 		}
+		return res
+	}
+	if err := writeAtomic(e.Paths.FirewallRules, []byte(spec.Render()), 0o600); err != nil {
+		res.State, res.Why = Failed, "cannot write "+e.Paths.FirewallRules+": "+errText(err)
 		return res
 	}
 	if why := e.load(ctx); why != "" {
@@ -106,7 +126,10 @@ func (e *Engine) Apply(ctx context.Context) Result {
 		return res
 	}
 	if spec.Mode == Off {
+		// No table is live now, so the boot unit goes too: its being there is
+		// what says that a table may be live (above).
 		res.State = Removed
+		_, _ = e.RemoveUnit(ctx)
 		return res
 	}
 	// The boot unit: written when it is missing, which a hand-removed unit or

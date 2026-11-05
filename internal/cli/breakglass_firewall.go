@@ -60,7 +60,7 @@ func firewallFix(res firewall.Result) string {
 // Either way the table is loaded again at once, so the command is also the
 // repair of a table that was not loaded (nft installed late, a table removed
 // by hand): it says what it did, and exits 1 when the table could not be
-// loaded while an address is held.
+// loaded (Apply's Failed; nft missing with nothing to enforce is no failure).
 func (inv *invocation) configBreakglassFirewall(args []string) error {
 	if len(args) > 1 {
 		return inv.usageErr("Unknown argument: '"+args[1]+"'", breakglassFirewallUsage)
@@ -137,11 +137,14 @@ const confBreakglassFirewall = "breakglass.firewall"
 
 // firewallSettingReport says what the table is now, after a change of the
 // setting or a listener, and ends the command: exit 1 when it could not be
-// loaded while an address is held.
+// loaded (Failed, with its real reason), whether or not an address is held:
+// the table may be the one of an earlier load, and the command is the repair.
+// Idle (nft is not installed and no table of tacctl was ever loaded) is no
+// failure.
 func (inv *invocation) firewallSettingReport(res firewall.Result) error {
 	held := res.Addrs
 	switch {
-	case res.State == firewall.Failed && (len(held) > 0 || res.Mode == firewall.Off):
+	case res.State == firewall.Failed:
 		for _, l := range []string{
 			"Firewall: NOT APPLIED (" + res.Why + ")",
 			"The table inet tacctl does not say what breakglass.firewall asks for; " + firewallFixText(res),
@@ -151,8 +154,8 @@ func (inv *invocation) firewallSettingReport(res firewall.Result) error {
 		inv.echo("")
 		inv.app.Out.Error("The firewall table was not loaded (" + res.Why + "): " + strings.TrimPrefix(firewallFix(res), "Fix: ") + ".")
 		return exit(1)
-	case res.State == firewall.Idle || res.State == firewall.Failed:
-		inv.echo("Firewall: nothing is held and nft is not installed, so no table is loaded; the next hold needs it (" + firewall.InstallCommand + ", then " + firewall.FixCommand(res.Mode) + ").")
+	case res.State == firewall.Idle:
+		inv.echo(firewallIdleLine(res))
 	case res.State == firewall.Removed:
 		inv.echo("Firewall: off: the table inet tacctl is removed; the server completes the TCP handshake of a held address again (the 0.2.23 behaviour).")
 	case len(held) == 0:
@@ -162,6 +165,21 @@ func (inv *invocation) firewallSettingReport(res firewall.Result) error {
 	}
 	inv.echo("")
 	return nil
+}
+
+// firewallIdleLine is what the setting command says when nft is not installed
+// and the table asked for refuses nothing: no table is loaded, and why that is
+// no failure.
+func firewallIdleLine(res firewall.Result) string {
+	switch {
+	case res.Mode == firewall.Off && len(res.Addrs) > 0:
+		return "Firewall: off: no table is loaded (nft is not installed); the server completes the TCP handshake of a held address (the 0.2.23 behaviour)."
+	case res.Mode == firewall.Off:
+		return "Firewall: off: no table is loaded."
+	case len(res.Addrs) > 0:
+		return "Firewall: no TACACS+ listener binds a TCP port, so there is nothing to refuse (RADIUS is UDP: the device times out)."
+	}
+	return "Firewall: nothing is held and nft is not installed, so no table is loaded; the next hold needs it (" + firewall.InstallCommand + ", then " + firewall.FixCommand(res.Mode) + ")."
 }
 
 // firewallFixText is firewallFix without the "Fix: " lead.

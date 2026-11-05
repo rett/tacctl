@@ -27,10 +27,16 @@ func firewallHoldLines(res firewall.Result, addrs []string) (lines []string, fai
 	list := strings.Join(addrs, ", ")
 	ports := firewall.PortList(res.Ports)
 	switch {
-	case res.State == firewall.Failed && res.Mode == firewall.Off:
+	case res.State == firewall.Failed && !res.Enforces():
+		// nothing is to be refused (the setting is off or no listener binds a
+		// TCP port), yet a table of an earlier load may still refuse it
+		why := "breakglass.firewall is off, but the table inet tacctl could not be removed"
+		if res.Mode != firewall.Off {
+			why = "no TACACS+ listener binds a TCP port, but the table inet tacctl could not be updated"
+		}
 		return []string{
 			ui.Red + "Firewall: NOT APPLIED (" + res.Why + ")" + ui.NC,
-			ui.Red + "breakglass.firewall is off, but the table inet tacctl could not be removed: it may still refuse the TCP connections of " + list + " on " + ports + "." + ui.NC,
+			ui.Red + why + ": it may still refuse the TCP connections of " + list + " on " + ports + "." + ui.NC,
 			ui.Red + firewallFix(res) + ui.NC,
 		}, true
 	case res.State == firewall.Failed:

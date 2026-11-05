@@ -87,6 +87,12 @@ func TestUpgradeFirewallStepNeverFailsTheUpgrade(t *testing.T) {
 	if code := upgrade(o); code != 0 || strings.Contains(o.text(), "Break-glass firewall") {
 		t.Fatalf("no nft, no holds: exit %d\n%s", code, o.text())
 	}
+	// ... and the next upgrade is as quiet: nothing was ever loaded, and the
+	// first one wrote no file that says otherwise
+	o.stdout.Reset()
+	if code := upgrade(o); code != 0 || strings.Contains(o.text(), "Break-glass firewall") || strings.Contains(o.text(), "NOT APPLIED") {
+		t.Fatalf("no nft, no holds, again: exit %d\n%s", code, o.text())
+	}
 
 	o = newOhost(t)
 	o.cloned()

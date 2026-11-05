@@ -329,10 +329,11 @@ func TestBreakglassHoldWhenNftIsMissingStillHolds(t *testing.T) {
 		t.Errorf("not red: %q", raw)
 	}
 
-	// the release says the address may still be refused, and exits 1
+	// the release: nothing was ever loaded (the hold's table did not load and
+	// no table of tacctl exists), so no address is left refused and nothing
+	// is red
 	out = plain(sb.run("", []string{"breakglass", "release", "lab-sw"}))
-	if sb.code != 1 || !strings.Contains(out, "may still refuse the TCP connections of 192.168.1.1 on tcp/49") ||
-		!strings.Contains(out, "Break-glass RELEASED") || !strings.Contains(out, "Fix: sudo apt-get install nftables") {
+	if sb.code != 0 || strings.Contains(out, "may still refuse") || strings.Contains(out, "NOT APPLIED") || !strings.Contains(out, "Break-glass RELEASED") {
 		t.Errorf("release: %d %q %q", sb.code, out, sb.stderr())
 	}
 	if strings.Contains(sb.overrides(), "breakglass_hold") {

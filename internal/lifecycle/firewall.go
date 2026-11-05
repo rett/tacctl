@@ -33,13 +33,14 @@ func (h *Host) firewallStep(ctx context.Context) {
 		if !res.NftMissing {
 			fix = "Fix: remove the cause, then " + firewall.FixCommand(res.Mode)
 		}
-		if len(res.Addrs) > 0 && res.Mode != firewall.Off {
+		if res.Enforces() {
 			out.Warn("Break-glass firewall: NOT APPLIED (" + res.Why + "). The server still completes the TCP handshake on " + ports + " for " + strings.Join(res.Addrs, ", ") + ", so a held device that falls back to its local accounts only when the server is unreachable will not. " + fix + ".")
 		} else {
 			out.Warn("Break-glass firewall: NOT APPLIED (" + res.Why + "). " + fix + ".")
 		}
 	case res.State == firewall.Idle:
-		// nft is not here and nothing is held: the package warning said it.
+		// nft is not here and the table would refuse nothing: the package
+		// warning said it.
 	case res.State == firewall.Removed:
 		out.Info("Break-glass firewall: off (breakglass.firewall); no table is loaded.")
 	case len(res.Addrs) > 0:

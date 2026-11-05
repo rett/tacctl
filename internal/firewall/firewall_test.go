@@ -236,6 +236,11 @@ func TestApplyOffRemovesTheTable(t *testing.T) {
 	}
 }
 
+// Without nft: Failed when the table is to refuse something (an address held,
+// a mode that is not off, a port), Idle when it is not, and Idle every time
+// until a table of tacctl was loaded (the boot unit, written only after a
+// successful load, is the sign of one). The rules file is no sign: it is not
+// even created.
 func TestApplyWithoutNft(t *testing.T) {
 	sb := newSandbox(t, holdsV4)
 	sb.runner.Missing("nft")
@@ -246,17 +251,84 @@ func TestApplyWithoutNft(t *testing.T) {
 	if sb.runner.Called("nft") {
 		t.Error("nft was run")
 	}
-	// nothing held: nothing to say, but the file is there for the day nft is
+
+	// nothing held: nothing to say, again and again
 	sb = newSandbox(t, "")
 	sb.runner.Missing("nft")
-	res = sb.eng.Apply(context.Background())
-	if res.State != Idle || !res.OK() {
-		t.Fatalf("no holds: %+v", res)
+	for i := 1; i <= 2; i++ {
+		res = sb.eng.Apply(context.Background())
+		if res.State != Idle || !res.OK() || !res.NftMissing {
+			t.Fatalf("no holds, apply %d: %+v", i, res)
+		}
 	}
-	// a file written before means a table may be live: the failure is said
-	res = sb.eng.Apply(context.Background())
-	if res.State != Failed {
+	if _, err := os.Stat(sb.eng.Paths.FirewallRules); err == nil {
+		t.Error("the rules file was written for a host that cannot load it")
+	}
+}
+
+func TestApplyWithoutNftAndTheSettingOff(t *testing.T) {
+	// off, with and without a hold: no table to load or to fail to load
+	for _, yaml := range []string{"breakglass:\n  firewall: 'off'\n", holdsV4 + "breakglass:\n  firewall: 'off'\n"} {
+		sb := newSandbox(t, yaml)
+		sb.runner.Missing("nft")
+		for i := 1; i <= 2; i++ {
+			if res := sb.eng.Apply(context.Background()); res.State != Idle || !res.OK() {
+				t.Fatalf("off, apply %d: %+v", i, res)
+			}
+		}
+	}
+	// no TACACS+ backend: no port, nothing to refuse
+	sb := newSandbox(t, holdsV4+"backends:\n  enabled: [radius]\n")
+	sb.runner.Missing("nft")
+	if res := sb.eng.Apply(context.Background()); res.State != Idle {
+		t.Fatalf("no listener: %+v", res)
+	}
+}
+
+// A table loaded earlier (the boot unit is there) may outlive the package: the
+// last hold released, or the setting turned off, is Failed until nft is
+// back, and the rules file follows the holds for the boot after it.
+func TestApplyWithoutNftAfterATableWasLoaded(t *testing.T) {
+	sb := newSandbox(t, holdsV4)
+	if res := sb.eng.Apply(context.Background()); res.State != Applied {
+		t.Fatalf("%+v", res)
+	}
+	sb.runner.Missing("nft")
+	if err := os.WriteFile(sb.eng.Paths.Overrides, []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sb.eng.Conf = conf.Load(sb.eng.Paths.Overrides, []string{"tacacs", "radius"})
+	res := sb.eng.Apply(context.Background())
+	if res.State != Failed || !res.NftMissing || !strings.Contains(res.Why, "nft is not installed") {
 		t.Fatalf("a table may be live: %+v", res)
+	}
+	if strings.Contains(sb.rules(t), "192.0.2.10") {
+		t.Error("the rules file still lists the released address")
+	}
+}
+
+// With the setting off the boot unit goes: its being there says a table may be
+// live.
+func TestApplyOffRemovesTheBootUnit(t *testing.T) {
+	sb := newSandbox(t, holdsV4)
+	sb.eng.Apply(context.Background())
+	if _, err := os.Stat(sb.eng.Paths.FirewallUnit); err != nil {
+		t.Fatal("no unit after the first load")
+	}
+	if err := os.WriteFile(sb.eng.Paths.Overrides, []byte(holdsV4+"breakglass:\n  firewall: 'off'\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sb.eng.Conf = conf.Load(sb.eng.Paths.Overrides, []string{"tacacs", "radius"})
+	if res := sb.eng.Apply(context.Background()); res.State != Removed {
+		t.Fatalf("%+v", res)
+	}
+	if _, err := os.Stat(sb.eng.Paths.FirewallUnit); err == nil {
+		t.Error("the unit is left")
+	}
+	// ... and without nft afterwards nothing is red
+	sb.runner.Missing("nft")
+	if res := sb.eng.Apply(context.Background()); res.State != Idle {
+		t.Fatalf("%+v", res)
 	}
 }
 
