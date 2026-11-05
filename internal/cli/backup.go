@@ -800,12 +800,8 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	if holdNote != "" {
 		a.Out.WarnE(holdNote)
 	}
-	fwFailed := false
-	if len(fw.Addrs) > 0 || !fw.OK() {
-		var fwLines []string
-		fwLines, fwFailed = firewallHoldLines(fw, fw.Addrs)
-		inv.echoFirewall(fwLines)
-	}
+	fwLines, fwFailed := firewallRestoreLines(fw)
+	inv.echoFirewall(fwLines)
 	if len(lockHosts) > 0 {
 		a.Out.WarnE("sshd's lockdown drop-in on " + hostsText(len(lockHosts)) + " (" + strings.Join(lockHosts, ", ") + ") follows the restored lockdown record only at their next sync: " + lockdownHostsSyncCommand(lockHosts))
 	}

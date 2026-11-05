@@ -77,6 +77,24 @@ func firewallReleaseLines(res firewall.Result, addrs []string) (lines []string, 
 	return []string{line}, false
 }
 
+// firewallRestoreLines are the lines of the report of a restore: the table
+// follows the holds the snapshot brought back, and when it brought none back
+// the risk of a failure is the other way, the addresses that were held before
+// and may still be refused.
+func firewallRestoreLines(res firewall.Result) (lines []string, failed bool) {
+	if len(res.Addrs) > 0 {
+		return firewallHoldLines(res, res.Addrs)
+	}
+	if res.State == firewall.Failed {
+		return []string{
+			ui.Red + "Firewall: NOT APPLIED (" + res.Why + ")" + ui.NC,
+			ui.Red + "No address is held after the restore, but the table inet tacctl could not be updated: it may still refuse the TCP connections of the addresses that were held before on " + firewall.PortList(res.Ports) + "." + ui.NC,
+			ui.Red + firewallFix(res) + ui.NC,
+		}, true
+	}
+	return nil, false
+}
+
 // echoFirewall prints lines indented under a report; the red ones carry their
 // own colour.
 func (inv *invocation) echoFirewall(lines []string) {
@@ -94,16 +112,18 @@ func (inv *invocation) firewallFailedError(res firewall.Result) {
 // firewallListenerNote reloads the table after a change of tacquito's
 // listeners (the ports the rules match) and says so in one line. It does
 // nothing when nothing is held and no table was ever written. It reports
-// whether the table could not be loaded (the command then exits 1).
+// whether the table could not be loaded (the command then exits 1): the
+// table failed to load, or the apply lock could not be taken, in which case
+// the listener has changed and the table keeps the old ports.
 func (inv *invocation) firewallListenerNote() (res firewall.Result, failed bool) {
 	a := inv.app
 	spec := firewall.SpecOf(a.Conf())
 	if len(spec.Held) == 0 && !isRegularFile(a.Paths.FirewallRules) {
 		return firewall.Result{}, false
 	}
-	release, err := a.BackendEnv().HoldApply(inv.ctx)
+	release, err := a.BackendEnv().HoldApplyAfter(inv.ctx, "The listener was changed, but the table inet tacctl was not loaded and keeps the old ports.")
 	if err != nil {
-		return firewall.Result{}, false
+		return firewall.Result{State: firewall.Failed, Mode: spec.Mode, Addrs: spec.Strings(), Ports: spec.Ports, Why: "the apply lock was not taken"}, true
 	}
 	defer release()
 	res = inv.firewallEngine().Apply(inv.ctx)

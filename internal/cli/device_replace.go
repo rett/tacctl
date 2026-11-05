@@ -187,9 +187,17 @@ func (inv *invocation) deviceReplace(p Parsed) error {
 
 	cleared, rendered := "no", ""
 	if held {
-		var err error
-		if rendered, err = inv.replaceClearHold(m, hold); err != nil {
-			failed = append(failed, strings.Join(msgs(err), " ")+" The hold of "+origName+" may still stand, and now on '"+origName+"', the replacement: tacctl breakglass release "+origName)
+		var (
+			err  error
+			gone bool
+		)
+		if rendered, gone, err = inv.replaceClearHold(m, hold); err != nil {
+			why := strings.Join(msgs(err), " ")
+			if !gone {
+				// the record stands: it is on the replacement now, under the original's name
+				why += " The hold of " + origName + " may still stand, and now on '" + origName + "', the replacement: tacctl breakglass release " + origName
+			}
+			failed = append(failed, why)
 		} else {
 			cleared = "yes"
 		}
@@ -223,8 +231,10 @@ func (inv *invocation) deviceReplace(p Parsed) error {
 // replaceClearHold releases the record of the original's hold, as
 // 'breakglass release' does (one render, the backends that serve the address
 // restarted), with the same audit line, and returns the sentence that says
-// what was rendered.
-func (inv *invocation) replaceClearHold(m *model.Model, h conf.Hold) (string, error) {
+// what was rendered. gone says the record is removed even when err is not nil
+// (the release is then not in force, or the table is not loaded: the failure
+// names its own way out, and 'breakglass release' has nothing left to do).
+func (inv *invocation) replaceClearHold(m *model.Model, h conf.Hold) (rendered string, gone bool, err error) {
 	a := inv.app
 	held := holdAge(h, a.Knobs.Now())
 	if t := h.SinceTime(); !t.IsZero() {
@@ -237,14 +247,14 @@ func (inv *invocation) replaceClearHold(m *model.Model, h conf.Hold) (string, er
 	inv.loaded = false
 	if err != nil {
 		inv.releaseFailed("breakglass release device="+h.Device+" addr="+h.Address, failReason(err, "store"))
-		return "", err
+		return "", false, err
 	}
 	a.Audit().Raw("auth.info", "breakglass release device="+h.Device+" addr="+h.Address+" held="+held+" by="+inv.sudoUser()+" firewall="+firewallWord(fw)+" result=ok")
 	if len(res.RestartFailed) > 0 {
-		return "", errors.New("the record is removed and the rendered files are kept, but the release is not in force until the backend that serves " + h.Address + " is restarted")
+		return "", true, errors.New("the record is removed and the rendered files are kept, but the release is not in force until the backend that serves " + h.Address + " is restarted")
 	}
 	if !fw.OK() {
-		return "", errors.New("the record is removed and the rendered files are as they were, but the firewall table was not loaded (" + fw.Why + "), so " + h.Address + " may still be refused on " + firewall.PortList(fw.Ports) + ": " + firewallFixText(fw))
+		return "", true, errors.New("the record is removed and the files are rendered without the hold, but the firewall table was not loaded (" + fw.Why + "), so " + h.Address + " may still be refused on " + firewall.PortList(fw.Ports) + ": " + firewallFixText(fw))
 	}
-	return inv.renderedSentence(m, h.Address, res, false), nil
+	return inv.renderedSentence(m, h.Address, res, false), true, nil
 }

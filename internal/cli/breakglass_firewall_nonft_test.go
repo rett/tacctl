@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -135,5 +136,57 @@ func TestBreakglassFirewallSettingWhenNftFailsWithNothingHeld(t *testing.T) {
 		if !strings.Contains(sb.stderr(), "then tacctl config breakglass-firewall "+v) {
 			t.Errorf("%s: no fix: %q", v, sb.stderr())
 		}
+	}
+}
+
+// A restore that empties the holds and cannot load the table: the risk is the
+// addresses that were held before, not the (none) held now.
+func TestBreakglassRestoreThatEmptiesTheHoldsAndFails(t *testing.T) {
+	sb := engineerSandbox(t)
+	sb.run("", []string{"config", "render"})
+	sb.hold(t, "lab-sw", "x", "lab-sw")
+	snaps, _ := filepath.Glob(sb.path("state", "backups", "2*"))
+	id := ""
+	for _, s := range snaps {
+		if !strings.Contains(sb.read("state/backups/"+filepath.Base(s)+"/tacctl.yaml"), "breakglass_hold") {
+			id = filepath.Base(s)
+		}
+	}
+	if id == "" {
+		t.Fatalf("no snapshot without the hold: %v", snaps)
+	}
+	sb.script = func(r *fake.Runner) {
+		r.On([]string{"nft", "-f"}, execx.Result{Code: 1, Stderr: []byte("Error: Operation not permitted\n")})
+	}
+	out := plain(sb.run("y\n", []string{"backup", "restore", id}))
+	if sb.code != 1 || !strings.Contains(out, "Firewall: NOT APPLIED (nft -f ") ||
+		!strings.Contains(out, "No address is held after the restore, but the table inet tacctl could not be updated: it may still refuse the TCP connections of the addresses that were held before on tcp/49.") {
+		t.Fatalf("%d %q %q", sb.code, out, sb.stderr())
+	}
+	if strings.Contains(out, "for ,") || strings.Contains(out, "for  ") || strings.Contains(out, "completes the TCP handshake") {
+		t.Errorf("hold wording with an empty list:\n%s", out)
+	}
+}
+
+// A replacement of a held device whose table cannot be loaded: the record is
+// gone, so the way out is the setting command, not 'breakglass release'.
+func TestDeviceReplaceOfAHeldDeviceWhenTheTableIsNotLoaded(t *testing.T) {
+	sb := engineerSandbox(t)
+	sb.run("", []string{"scope", "breakglass", "lab", "add", "lab-admin"})
+	sb.run("", []string{"config", "render"})
+	sb.hold(t, "lab-sw", "x", "lab-sw")
+	sb.dev("", "clone", "lab-sw", "lab-sw2", "--staging", "192.0.2.77")
+	sb.expect(0, "", "")
+	sb.script = func(r *fake.Runner) {
+		r.On([]string{"nft", "-f"}, execx.Result{Code: 1, Stderr: []byte("Error: Operation not permitted\n")})
+	}
+	sb.dev("", "rename", "lab-sw2", "lab-sw", "--replace", "--yes")
+	all := sb.stderr() + plain(sb.out.String())
+	if sb.code != 1 || !strings.Contains(all, "the record is removed and the files are rendered without the hold, but the firewall table was not loaded") ||
+		!strings.Contains(all, "then tacctl config breakglass-firewall reject") {
+		t.Fatalf("%d %q", sb.code, all)
+	}
+	if strings.Contains(all, "rendered files are as they were") || strings.Contains(all, "tacctl breakglass release lab-sw") {
+		t.Errorf("stale advice:\n%s", all)
 	}
 }
