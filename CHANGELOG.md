@@ -51,17 +51,27 @@ current behaviour; this file is where history lives.
    device prints it: comments, an XML declaration, a byte order mark or text
    (even with a `&` or a `<`) before `<hello>`, and white space or line breaks
    inside a capability; a device that ends the channel right after its hello
-   still gives it. A hello that is none is no longer silent: the pull's line
-   (`ok via ssh (netconf: no hello: the device's first message is <rpc-error>,
-   not a hello; the device sent "<rpc-error>...")`, and `fallback` in `--json`)
-   and the message of an apply that enabled NETCONF (`the device does not
-   answer NETCONF after the change (no hello: ...; the record's NETCONF probe
-   stays 'port closed')`) give the reason (not a hello, not a hello but another
-   message, no `base:1.0` framing with the capabilities offered, the channel
-   closed after the subsystem was accepted, no hello in time) and the first 120
-   bytes the device sent, on one line with control characters shown as `?`. The
-   record still stores `hello ok`, `port closed`, `no hello` or `not probed`
-   only, so `device check` shows the word without the reason.
+   still gives it. A hello that is none is no longer silent. The pull records
+   `no hello` for every failure to open the session but a refused subsystem
+   (`port closed`), and its line (`ok via ssh (netconf: no hello: the device's
+   first message is <rpc-error>, not a hello; the device sent
+   "<rpc-error>...")`, and `fallback` in `--json`) gives the reason (not a
+   hello, not a hello but another message, no `base:1.0` framing with the
+   capabilities offered, the channel closed after the subsystem was accepted,
+   no hello in time) and the first 120 bytes the device sent, on one line with
+   control characters shown as `?`. The message of an apply that enabled
+   NETCONF gives the reason in the same form (`the device does not answer
+   NETCONF after the change (no hello: ...; the record's NETCONF probe stays
+   'port closed')`) only when the device answered with something that is not a
+   usable hello (not a hello, another message, no `base:1.0` framing). A device
+   that closed the channel after the subsystem was accepted, or sent no hello
+   in time, is one the probe cannot tell about, as before, for a change that
+   disables the service too: the message is `the NETCONF probe could not tell:
+   session closed: the channel closed after the subsystem was accepted` (or
+   `timed out: no hello from the device in time`), cut to 120 bytes with what
+   the device sent, and the proof fails. The record still stores `hello ok`,
+   `port closed`, `no hello` or `not probed` only, so `device check` shows the
+   word without the reason.
 
 4. **A slow device no longer fails `device config apply` or a pull with
    `open: configure exclusive` or `pre-flight ...: not recognised`.** On a
