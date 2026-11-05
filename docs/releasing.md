@@ -273,7 +273,7 @@ release: `tests/containers/fresh/run.sh --release 0.2.1`.
 
 ### 6. The documentation site
 
-The site at https://rett.github.io/tacctl/ is built from the orphan
+The site at https://tacctl.rettware.com/ is built from the orphan
 `gh-pages` branch, which has no history in common with the code and is never
 merged into or from a code branch. After the release is published, sync it
 on a `docs/<slug>` branch cut from `gh-pages`:
