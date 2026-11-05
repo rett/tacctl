@@ -36,7 +36,10 @@ current behaviour; this file is where history lives.
    `no-os-tempdir.sh`. `make lint` and the man search tests must pass on both
    the CI tools and newer ones (`tests/README.md`). The Go test jobs install
    the tools that tests skip without (`shellcheck`, `groff`, `less`, `man-db`,
-   `openssh-server`), so those tests run in CI instead of passing as skips.
+   `openssh-server`), so those tests run in CI instead of passing as skips, and the last line of
+   `make gate-go` and `make gate-ci` carries `skipped=<n>` (the `--- SKIP`
+   lines of the run) with the names of the skipped tests listed above it, so a
+   skip no longer passes unseen.
 
 4. **`tacctl rollback 0.2.23`, the release before this one, is a target.**
    This release changed no stored file, so 0.2.23 reads everything it writes:
