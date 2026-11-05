@@ -532,11 +532,64 @@ func TestBodyDropsTheLateAnswerInFrontOfTheEcho(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			s := &shell{}
-			o := outBuf{prev: -1, prompt: "alice@rtr1> ", alt: "alice@rtr1# ", echo: cmd}
+			o := outBuf{prev: -1, prompt: "alice@rtr1> ", alt: "alice@rtr1# ", echo: cmd, late: true}
 			o.add([]byte(c.in))
 			if got := stripEcho(s.body(&o, 0), cmd); got != c.want {
 				t.Errorf("got %q, want %q", got, c.want)
 			}
 		})
+	}
+}
+
+// Only the first command after a late login can hold the late answer: the
+// same stream on any later command (late unset) is left as it is.
+func TestBodyKeepsTheSameStreamOnALaterCommand(t *testing.T) {
+	t.Parallel()
+	const cmd = "show system commit"
+	in := "\r\n{master:0}\r\nalice@rtr1> show system commit\r\nout\r\nalice@rtr1> \r\nalice@rtr1> "
+	for late, want := range map[bool]string{
+		true:  "out\n",
+		false: "\n{master:0}\nalice@rtr1> show system commit\nout\n",
+	} {
+		s := &shell{}
+		o := outBuf{prev: -1, prompt: "alice@rtr1> ", alt: "alice@rtr1# ", echo: cmd, late: late}
+		o.add([]byte(in))
+		if got := stripEcho(s.body(&o, 0), cmd); got != want {
+			t.Errorf("late %v: got %q, want %q", late, got, want)
+		}
+	}
+}
+
+// A stream that falls out of step on the fifth command, the prompt and the
+// echo of the command in front of its answer, is not repaired: the output
+// keeps the line, which the parser refuses.
+func TestOutOfStepStreamOnTheFifthCommandIsKept(t *testing.T) {
+	t.Parallel()
+	sh, _ := openScripted(t, 30*time.Millisecond, func(d *lineDev) {
+		if !slowLogin(d) {
+			return
+		}
+		for i := 1; i <= 5; i++ {
+			cmd, ok := d.next()
+			if !ok {
+				return
+			}
+			if i == 1 {
+				d.say(lateAns) // the late answer of the login, in front of the echo
+			}
+			if i == 5 {
+				d.say(lateAns) // and now one nobody expects
+			}
+			answer(d, cmd)
+		}
+	})
+	for i := 1; i <= 4; i++ {
+		if got := runCmd(t, sh, "show system commit"); got != wantOut {
+			t.Fatalf("command %d: got %q, want %q", i, got, wantOut)
+		}
+	}
+	got := runCmd(t, sh, "show system commit")
+	if want := "\n{master:0}\nalice@rtr1> show system commit\nout\n\n"; got != want {
+		t.Errorf("command 5: got %q, want %q", got, want)
 	}
 }

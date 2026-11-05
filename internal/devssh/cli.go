@@ -502,6 +502,7 @@ func (s *shell) Run(ctx context.Context, cmd string) (string, error) {
 	// still on its way when the prompt was learned (see learn): it is
 	// part of the stream the command's answer is read from, and body
 	// drops it.
+	late := s.late
 	c := s.out.take()
 	if c.overflow || (len(c.data) > 0 && (!s.late || !s.lateShape(c.data, prevArea))) {
 		return fail(fmt.Errorf("%w: %s: output between commands", ErrProtocol, s.c.addr))
@@ -512,7 +513,7 @@ func (s *shell) Run(ctx context.Context, cmd string) (string, error) {
 	if err := s.c.write(ctx, s.in, []byte(cmd+"\n")); err != nil {
 		return fail(err)
 	}
-	body, err := s.read(ctx, cmd, carry, prevArea)
+	body, err := s.read(ctx, cmd, carry, prevArea, late)
 	if err != nil {
 		return fail(err)
 	}
@@ -591,6 +592,12 @@ type outBuf struct {
 	// area is what the device printed before the prompt of the command
 	// before this one (PromptArea): body knows it for what it drops.
 	area []string
+	// late is set for the first command after a login that ended with an
+	// answer to an empty line outstanding (shell.late): only its output
+	// can hold that answer in front of the echo, so only body's dropLate
+	// looks for it there. A stream that is out of step on a later command
+	// stays as it is, for the parser to refuse.
+	late bool
 }
 
 // isEcho reports whether line, the first line of the output, is the echo
@@ -867,8 +874,8 @@ func countPrompts(buf []byte, prompt string) int {
 // A more-prompt at the end that stays for a quiet period is answered with
 // a space, and the count starts again (the more-prompt takes the line that
 // was typed ahead).
-func (s *shell) read(ctx context.Context, cmd string, carry []byte, area []string) (string, error) {
-	o := outBuf{prev: -1, prompt: s.prompt, alt: s.alt, echo: strings.TrimSpace(cmd), area: area}
+func (s *shell) read(ctx context.Context, cmd string, carry []byte, area []string, late bool) (string, error) {
+	o := outBuf{prev: -1, prompt: s.prompt, alt: s.alt, echo: strings.TrimSpace(cmd), area: area, late: late}
 	sent := 0
 	erase := 0
 	seenErased := 0 // end of the last typed-ahead-key artifact seen
@@ -977,7 +984,9 @@ func (s *shell) body(o *outBuf, k int) string {
 		start = hits[0].start
 	}
 	text := rePagerErased.ReplaceAllString(normalise(string(o.b[:start])), "")
-	text = o.dropLate(text)
+	if o.late {
+		text = o.dropLate(text)
+	}
 	// What the device printed between its first prompt and its second
 	// (the answer to the empty line, less the echo) it prints before every
 	// prompt.
