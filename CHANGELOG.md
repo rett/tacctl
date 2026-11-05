@@ -34,7 +34,9 @@ current behaviour; this file is where history lives.
    `device config shapes` in the device reference, the help, the man page and
    the text of `config devices apply-pause` (the wait from one device's end to
    the next one's start, the first device not delayed) say the same in plain
-   words. No behaviour, output, JSON or audit line changed.
+   words. No behaviour, JSON or audit line changed, and the only output that
+   changed is the apply-pause line of `tacctl config devices`, which now ends
+   `0-3600, from one device's end to the next one's start`.
 
 ## 0.2.24 (2026-11-05)
 

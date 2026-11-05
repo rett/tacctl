@@ -154,8 +154,10 @@ func NewSchema(backends []string) *Schema {
 			// its 'commit confirmed' (3-60, the range of
 			// devapply.MinConfirmMinutes and MaxConfirmMinutes: a window
 			// shorter than three minutes cannot hold the verification) and
-			// the seconds it waits between the devices of a batch, after
-			// the canary (0 is no pause). Both are written only when set.
+			// the seconds it waits from one device's end to the next one's
+			// start (the first device is not delayed, and a canary is
+			// followed by the wait too; 0 is no pause). Both are written
+			// only when set.
 			// A 0.2.8 binary does not know them: its 'config validate'
 			// reports "unknown key" and its 'backup restore' refuses a
 			// snapshot that has them, so the rollback to 0.2.8 of 0.2.9's

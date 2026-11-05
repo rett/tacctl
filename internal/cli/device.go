@@ -384,10 +384,10 @@ var deviceOptions = map[string][][2]string{
 	},
 	"config apply": {
 		{"--all", "(pull, diff, plan, apply, forget) Every device of yours that a scope covers"},
-		{"--check", "Stop after the device's own commit check: nothing is committed, the device's shape (its change, as one id) is filed as new"},
+		{"--check", "Stop after the device's own commit check: nothing is committed, the device's shape (its change, as one id) is filed as new unless it is already known"},
 		{"--confirmed", "Apply only the shapes a verified apply confirmed, or 'shapes seed' filed (the others are skipped), the one form --yes answers the review of"},
 		{"--max <n>", "Apply at most n devices in one run, in registry order (default 5; the rest are skipped, run it again)"},
-		{"--pause <seconds>", "Wait n seconds after a device ends before the next one starts, 0-3600 (default device.apply.pause; the first device starts at once)"},
+		{"--pause <seconds>", "Wait <seconds> from one device's end to the next one's start, 0-3600 (default device.apply.pause; the first device starts at once)"},
 		{"--hold", "After the fresh login keep the change only when you log in with one account of each class and type OK (needs a terminal)"},
 		{"--no-canary", "Start a shape's devices together, not its first one (the canary) alone"},
 		{"--transport auto|cli|netconf", "(apply) How the check and the apply reach a device: auto (NETCONF where the last read found it answering and the login may commit, else the command line), cli or netconf (default device.apply.transport)"},
