@@ -84,11 +84,13 @@ current behaviour; this file is where history lives.
    parser refused an answer that was otherwise exact, and on a run where it
    arrived before the command was typed the session failed with `output between
    commands`. The same device usually worked on another run. The first command
-   now takes that late answer for what it is: the line break, the line a Junos
-   virtual chassis prints before every prompt, the `# commit confirmed will be
-   rolled back in N minutes` line it prints before every prompt while a
-   confirmed commit is pending (as it is on the verification login of every
-   apply) and the prompt in front of the echo are dropped and the echo stays;
+   now takes that late answer for what it is: the line break, the `[edit]`
+   location line, the line a Junos virtual chassis prints before every prompt
+   (`{master:0}`), the `# commit confirmed will be rolled back in N minutes`
+   line it prints before every prompt while a confirmed commit is pending (as
+   it is on the verification login of every apply), a line the device printed
+   in front of the prompt of the command before, and the prompt in front of
+   the echo are dropped and the echo stays;
    anything else between commands, and a prompt more than the commands account
    for, is still refused.
 
@@ -122,6 +124,33 @@ current behaviour; this file is where history lives.
    control character (C0, DEL and C1, as U+009B), formatting character (the
    bidirectional overrides) and line separator replaced by `?`, in the
    terminal line and in `--json`; only C0 controls and DEL were before.
+
+6. **`tacctl rollback 0.2.24`, the release before this one, is a target.**
+   This release changed no stored file 0.2.24 reads strictly (the shapes list,
+   the help and the documentation, the spelling of the NETCONF capabilities
+   and the reasons of a failed hello, the readers of a device's shell session
+   and of a Junos virtual chassis's commit answers, and the cleaning of a
+   device's text are code only; a NETCONF probe is still stored as `hello ok`,
+   `port closed`, `no hello` or `not probed`), so 0.2.24 reads everything it
+   writes: the rollback converts no file, removes no key (the break-glass
+   firewall, `breakglass.firewall` and the nftables table stay, 0.2.24 has
+   them), leaves the per-tier sudoers drop-in (0.2.24 and this release write
+   the same text), takes no snapshot and needs no `--yes`. The users' email
+   addresses, the SNMPv3 users, the covered staging entries, a user name with
+   a period and an emergency lockdown with enrolled hosts, which the older
+   targets drop or refuse, stay. It is refused only while a device's apply is
+   not settled. The command ends with `tacctl upgrade --branch 0.2.24`. What
+   this release changed outside the stored files is 0.2.24's to undo or keep:
+   after that upgrade a Junos device whose hello names its capabilities with
+   the XML namespace's prefix is recorded as `no hello` again by its next
+   `device config pull`, and an apply to a Junos virtual chassis whose master
+   prints its own label is rolled back again. The top-level help, `docs/cli/conventions.md`, `docs/cli/user.md`,
+   `docs/install/upgrading.md` (Rolling back, To 0.2.24), the manual page and
+   the completion list the new target, and `tacctl rollback` now takes eleven
+   targets. The note that follows a rollback that took a snapshot (every
+   older target that converts a file) named 0.2.23 as the release whose state
+   the snapshot holds, "Restore it with 0.2.23 only"; it was not moved on in
+   0.2.24, and now names this release, 0.2.25.
 
 ## 0.2.24 (2026-11-05)
 
