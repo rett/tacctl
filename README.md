@@ -1,6 +1,6 @@
 # gh-pages: the tacctl documentation site
 
-Source of <https://rett.github.io/tacctl/>: operations guides for tacctl, built with
+Source of <https://tacctl.rettware.com/>: operations guides for tacctl, built with
 Jekyll and the just-the-docs theme. The site and its printable PDFs are built and deployed
 by a GitHub Actions workflow; nothing built is committed here.
 
@@ -27,7 +27,7 @@ python3 tools/check_commands.py site
 python3 tools/render_pdf.py --all site site/pdf      # needs weasyprint, markdown, pygments
 bundle install
 JEKYLL_ENV=production bundle exec jekyll build -s site -d _site
-bundle exec htmlproofer ./_site --disable-external --swap-urls '^/tacctl/:/'
+bundle exec htmlproofer ./_site --disable-external
 ```
 
 The reference documentation for every command is in
