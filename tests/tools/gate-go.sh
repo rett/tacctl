@@ -27,8 +27,10 @@
 # (the pattern matches the waiting command itself).
 #
 # GO names the go command (default: go on the PATH, else
-# /usr/local/go/bin/go); GOCACHE defaults to a cache under $TMPDIR; LANG is
-# C.UTF-8. The default log is a new file under $TMPDIR.
+# /usr/local/go/bin/go); GOCACHE defaults to a cache of the gates' own under
+# ${XDG_CACHE_HOME:-~/.cache}/tacctl, on disk: /tmp may be a tmpfs, and a day of
+# runs (the race and testknobs builds of gate-ci among them) grows the cache
+# past 10 GiB. LANG is C.UTF-8. The default log is a new file under $TMPDIR.
 #
 # GATE_TMPFS=1 puts $TMPDIR (the tests' sandboxes, not the log) on /dev/shm for
 # the run and removes it afterwards: the tests' fsync calls cost nothing there
@@ -43,7 +45,7 @@ if [[ -z "${GO:-}" ]]; then
     GO="$(command -v go || echo /usr/local/go/bin/go)"
 fi
 export LANG=C.UTF-8
-export GOCACHE="${GOCACHE:-${TMPDIR:-/tmp}/tacctl-gate-go-cache-$(id -u)}"
+export GOCACHE="${GOCACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/tacctl/gate-go-build}"
 logdir="${TMPDIR:-/tmp}"
 if [[ "${GATE_TMPFS:-}" = 1 ]]; then
     if [[ -d /dev/shm && -w /dev/shm && "$(df -Pk /dev/shm | awk 'NR==2 {print $4}')" -ge 2097152 ]] \

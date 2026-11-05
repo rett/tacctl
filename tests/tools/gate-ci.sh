@@ -64,7 +64,7 @@ if [[ -z "${GO:-}" ]]; then
 fi
 export GO
 export LANG=C.UTF-8
-export GOCACHE="${GOCACHE:-${TMPDIR:-/tmp}/tacctl-gate-go-cache-$(id -u)}"
+export GOCACHE="${GOCACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/tacctl/gate-go-build}"
 logdir="${TMPDIR:-/tmp}"
 if [[ "${GATE_TMPFS:-}" = 1 ]]; then
     if [[ -d /dev/shm && -w /dev/shm && "$(df -Pk /dev/shm | awk 'NR==2 {print $4}')" -ge 2097152 ]] \
