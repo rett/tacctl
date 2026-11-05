@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -329,6 +331,165 @@ func TestShapesListAndSeed(t *testing.T) {
 	b, _ := os.ReadFile(sb.path("var-lib", "device-apply", "shapes.json"))
 	if !strings.Contains(string(b), `set snmp location \u003cv\u003e`) {
 		t.Errorf("the per-device value is not masked: %s", b)
+	}
+}
+
+// 'shapes list' keeps the table narrow however many devices stand at a shape:
+// the table holds the count, and the names go below it in a block wrapped at
+// 80 columns with a hanging indent. --json still carries every name.
+func TestShapesListManyDevices(t *testing.T) {
+	sb := newSandbox(t, true)
+	run := func(args ...string) string {
+		return plain(sb.cfgRun("", append([]string{"device", "config"}, args...), nil, "SUDO_USER=alice"))
+	}
+	d := plan.Delta{Vendor: devconf.FamilyJunos, Lines: []plan.Line{
+		{Section: "aaa", Op: plan.OpSet, Text: "set system accounting events login"}}}
+	hash, lines := plan.Shape(d)
+	other := plan.Delta{Vendor: devconf.FamilyJunos, Lines: []plan.Line{
+		{Section: "aaa", Op: plan.OpSet, Text: "set system accounting events change-log"}}}
+	hash2, lines2 := plan.Shape(other)
+	shapes := devapply.OpenShapes(sb.path("var-lib", "device-apply"))
+	for _, o := range []struct {
+		h string
+		l []string
+	}{{hash, lines}, {hash2, lines2}} {
+		if err := shapes.Observe(o.h, o.l); err != nil {
+			t.Fatal(err)
+		}
+	}
+	file := func(names []string, shape string) {
+		store := devconf.Store{Records: sb.path("var-lib", "devices-config.json"), Dir: sb.path("var-lib", "device-config")}
+		recs, _ := store.Load()
+		for _, n := range names {
+			recs.Put(n, devconf.Record{Vendor: "juniper", Address: "192.168.1.6",
+				Applied: &devconf.Applied{Result: devconf.AppliedChecked, Shape: shape, Kind: devconf.AppliedKindCheck, At: time.Now(), By: "alice"}})
+		}
+		if err := store.Save(recs); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// no device at either shape: counts "-" and no block
+	out := run("shapes")
+	if sb.code != 0 || strings.Contains(out, "At a shape now") {
+		t.Errorf("no devices: %d %q", sb.code, out)
+	}
+
+	var names []string
+	for i := 1; i <= 50; i++ {
+		names = append(names, fmt.Sprintf("sw%d", i))
+	}
+	file(names, hash)
+	file([]string{"example-sw1"}, hash2)
+	out = run("shapes")
+	if sb.code != 0 {
+		t.Fatalf("list: %d %q", sb.code, sb.err.String())
+	}
+	if !strings.Contains(out, "NOW") || strings.Contains(out, "DEVICES NOW") {
+		t.Errorf("header: %q", out)
+	}
+	head, block, ok := strings.Cut(out, "At a shape now (last check or apply):\n")
+	if !ok {
+		t.Fatalf("no block: %q", out)
+	}
+	for _, l := range strings.Split(head, "\n") {
+		if n := len([]rune(l)); n > 100 {
+			t.Errorf("table line of %d columns: %q", n, l)
+		}
+	}
+	if !strings.Contains(head, "50 devices") || !strings.Contains(head, "1 device ") {
+		t.Errorf("counts: %q", head)
+	}
+	if strings.Contains(head, "sw1,") || strings.Contains(head, "example-sw1") {
+		t.Errorf("a name is in the table: %q", head)
+	}
+	blockLines := strings.Split(strings.TrimRight(block, "\n"), "\n")
+	for _, l := range blockLines {
+		if n := len([]rune(l)); n > 80 {
+			t.Errorf("block line of %d columns: %q", n, l)
+		}
+	}
+	// every name once and whole: an entry starts at two spaces and a shape,
+	// a continuation line is indented under the first name
+	indent := strings.Repeat(" ", 2+len(hash)+2)
+	entries := map[string][]string{}
+	var cur string
+	for _, l := range blockLines {
+		if strings.HasPrefix(l, indent) {
+			if strings.HasPrefix(l, indent+" ") {
+				t.Fatalf("indent too deep: %q", l)
+			}
+			if cur == "" {
+				t.Fatalf("continuation first: %q", l)
+			}
+			entries[cur] = append(entries[cur], strings.TrimPrefix(l, indent))
+			continue
+		}
+		f := strings.Fields(l)
+		if len(f) < 2 || !strings.HasPrefix(l, "  "+f[0]+"  ") {
+			t.Fatalf("entry line: %q", l)
+		}
+		cur = f[0]
+		entries[cur] = append(entries[cur], strings.TrimPrefix(l, "  "+f[0]+"  "))
+	}
+	got := strings.Split(strings.Join(entries[hash], " "), ", ")
+	want := slices.Clone(names)
+	sort.Strings(want)
+	if !slices.Equal(got, want) {
+		t.Errorf("names in the block:\n got %q\nwant %q", got, want)
+	}
+	if len(entries) != 2 || !slices.Equal(entries[hash2], []string{"example-sw1"}) {
+		t.Errorf("entries: %q", entries)
+	}
+
+	// --show wraps the same way
+	show := run("shapes", "list", "--show", hash)
+	if sb.code != 0 || !strings.Contains(show, "  at this shape now (last check or apply): sw1, ") {
+		t.Fatalf("show: %d %q", sb.code, show)
+	}
+	for _, l := range strings.Split(show, "\n") {
+		if n := len([]rune(l)); n > 80 {
+			t.Errorf("show line of %d columns: %q", n, l)
+		}
+	}
+	for _, n := range names {
+		if c := strings.Count(show, " "+n+",") + strings.Count(show, " "+n+"\n"); c != 1 {
+			t.Errorf("show: %s %d times", n, c)
+		}
+	}
+
+	// --json is unchanged: every device is listed per shape
+	js := sb.cfgRun("", []string{"device", "config", "shapes", "--json"}, nil, "SUDO_USER=alice")
+	var objs []struct {
+		Shape   string   `json:"shape"`
+		Devices []string `json:"devices"`
+	}
+	if err := json.Unmarshal([]byte(js), &objs); err != nil {
+		t.Fatalf("json: %v %q", err, js)
+	}
+	for _, o := range objs {
+		switch o.Shape {
+		case hash:
+			if len(o.Devices) != 50 {
+				t.Errorf("json: %d devices", len(o.Devices))
+			}
+		case hash2:
+			if !slices.Equal(o.Devices, []string{"example-sw1"}) {
+				t.Errorf("json: %q", o.Devices)
+			}
+		}
+	}
+}
+
+// hangList never splits a name and lays the continuation under the first one.
+func TestHangList(t *testing.T) {
+	got := hangList("  ab  ", []string{"aaaa", "bbbb", "cccc"}, 17)
+	want := []string{"  ab  aaaa, bbbb,", "      cccc"}
+	if !slices.Equal(got, want) {
+		t.Errorf("got %q want %q", got, want)
+	}
+	if got := hangList("  ab  ", []string{"a-very-long-name", "x"}, 10); !slices.Equal(got, []string{"  ab  a-very-long-name,", "      x"}) {
+		t.Errorf("long: %q", got)
 	}
 }
 
