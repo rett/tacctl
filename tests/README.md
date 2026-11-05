@@ -27,11 +27,22 @@ make lint            # shellcheck (bin/tacctl.sh, config/linux, tests/helpers, t
                      #   to install it when missing), the manual page (make lint-man: the Man tests of
                      #   internal/cli and groff -k -ww), tests/tools/no-private.sh,
                      #   tests/tools/no-os-tempdir.sh (no read of the process's temporary directory),
-                     #   no-logger.sh, no-short-yes.sh and doc-width.sh
+                     #   tests/tools/no-shared-proc.sh (no pgrep -f, pkill -f or killall, and no /tmp
+                     #   or /dev/shm path, in a test), no-logger.sh, no-short-yes.sh and doc-width.sh
 make man             # rewrite the generated blocks of man/tacctl.1 from the code (below)
 make test-pyyaml     # the yamlpy and conf PyYAML corpora regenerated with PyYAML and compared
 make test-diff CORPUS=users   # the differential runner on one corpus
 ```
+
+`newSandbox` starts every sandbox with a `state/tacctl.yaml` that holds
+`bcrypt.cost: 10`, the lowest cost the configuration allows (the default is 12,
+about four times the work, and bcrypt is most of the CPU of the tests that
+add a user or change a password). A test that asserts the default cost, or that
+`tacctl.yaml` is absent or holds only what it wrote, calls
+`sb.defaultBcryptCost()` first, which removes the file and fails if it holds
+anything else; `TestHashFamily` and `TestConfigGetAndTunables` keep the
+default under test that way. A fixture that builds its own configuration
+(`newSwEnv`, `newHarness`) does not hash a password and is not changed.
 
 The tests of `internal/cli` run in parallel inside one process: the
 sandbox helpers (`newSandbox`, `newHarness`, `newSwEnv`) call `parallel(t)`,
@@ -43,10 +54,22 @@ process environment, signal the process, or write a package-level registry
 (`withFakeBackend`, `withPasswd`). The whole package takes about six minutes
 (about 24 serially). CI (`.github/workflows/test.yml`) runs it in two shards,
 `tests/tools/go-test-shard.sh <index> <count>` (the top-level tests dealt
-round-robin; `--check <count>` fails unless every test is in exactly one
-shard), the ones without tags with the race detector, beside one job for
+longest first by the durations in `tests/tools/cli-durations.txt`, each to the
+shard with the least planned time, a serial test counting four times a
+parallel one so the shards take about the same time; a test the file lacks
+counts a short parallel one; `--check <count>` fails unless every test is in
+exactly one shard, `--plan <count>` prints each shard's tests and planned
+seconds, and `--regen <log>` rewrites the durations file from the log of a
+`make gate-ci` or `make gate-go` run, the file's header says how: it only
+balances the shards, never changes which tests run, and
+`tests/integration/go_test_shard.bats` pins it), the ones without tags with the race detector, beside one job for
 every other package, a static job (gofmt, `go vet`) and a lint job (`make
-lint`, below). The test jobs install the tools that tests skip
+lint`, below). Every job keeps the Go build and module caches between runs
+(`actions/cache`, one key per job and mode, with the Go version and the hash
+of `go.sum`). `TestPropertyFuzz` (`internal/devconf/plan`, pure CPU on one
+goroutine) runs 10 mutated devices per fixture under `-race` and 45 without
+it (`race_on_test.go`, `race_off_test.go`): every fixture is covered either
+way, and `make gate-go`, which has no `-race`, runs the 45. The test jobs install the tools that tests skip
 without (`shellcheck`, `groff`, `less` and `man-db` for the completion block
 and the man page's search and pager tests of `internal/cli`; `openssh-server`
 and `openssh-client` for the `sshd -T` tests of `internal/console`): a skip is
@@ -59,7 +82,9 @@ killed or lost a package, and whose `skipped=<n>` field counts the `--- SKIP`
 lines of the log (the tests run with `-v`, the only way `go test` reports a
 skip) with the names of the skipped tests, at most 20, listed above the line: a
 test that skips for a missing tool passes silently, and an unexpected skip
-count is how a green run shows it did not test what it should: start it with a tool that notices the process
+count is how a green run shows it did not test what it should; the ten
+slowest top-level tests of the run (`gate-go: slowest: TestX 47.1s`) follow
+the skipped names, still above the verdict line: start it with a tool that notices the process
 ending (an agent: Bash `run_in_background`), never with a trailing `&` and
 never wait for it with `pgrep -f`; `GATE_TMPFS=1 make gate-go` keeps the tests' sandboxes on `/dev/shm` (the fsync calls cost nothing there: the run takes about a third of the time; the log and `GOCACHE` stay on disk); the bats suite, the diff corpus and the container
 matrix stay on the maintainer's machine.
@@ -77,7 +102,8 @@ line, or `GATE-CI FAIL ...` with `failed=<job>:<test>,...` naming each
 failing test (a package when no test failed) and `races=` counting the data
 races (`skipped=` counts the skips of all the jobs, a test that runs in
 several jobs once for each, and the names are listed above the line as
-`gate-go` does); it needs cgo, takes several times as long as `gate-go`, and is
+`gate-go` does, followed by the ten slowest tests with their job,
+`gate-ci: slowest: TestX 83.0s (cli0)`); it needs cgo, takes several times as long as `gate-go`, and is
 started, read and sped up (`GATE_TMPFS=1`) like it.
 
 The `lint` job of the workflow runs `make lint` on Ubuntu 24.04, with that
@@ -90,9 +116,18 @@ ones) must pass on both: a fix for a newer tool must keep the older one
 passing. The page sets its own body margin (`.nr BP 7n`)
 because groff 1.24 narrowed the default from 7n to 5n, and the pager search
 of `tacctl man` assumes 7 (`TestManPageSetsTheBodyMargin`). `make hooks`
-installs a pre-push hook that runs `no-private.sh`, `no-short-yes.sh` and
-`no-os-tempdir.sh` before a push, the lints that need no tool and take well
-under a second.
+installs a pre-push hook that runs `no-private.sh`, `no-short-yes.sh`,
+`no-os-tempdir.sh` and `no-shared-proc.sh` before a push, the lints that
+need no tool and take well under a second.
+
+A test stays inside its own sandbox so that runs can share a machine:
+`t.TempDir()`, `BATS_TEST_TMPDIR` or the `TMPDIR` of its environment, never
+`/tmp` or `/dev/shm` itself, and no `pgrep -f`, `pkill -f` or `killall`
+(they match the processes of every other run; keep the pid). The lint
+`tests/tools/no-shared-proc.sh` (`make lint-shared-proc`, part of `make lint`)
+holds this. A line that must name one, such as the fallback for a `TMPDIR`
+too long for a socket path, says `shared-proc-ok: <reason>` in a comment; the
+script itself names the few files it excuses whole.
 
 The temporary directory is
 `Paths.TempDir`, the `TMPDIR` of the environment a test gives the
@@ -150,7 +185,7 @@ tests/
 ├── integration/         # the command line against real files in the test's tmpdir
 ├── e2e/                 # whole command flows with stubbed system commands
 ├── diff/                # the differential runner, its corpora, stubs and state roots
-├── tools/               # no-private.sh, no-os-tempdir.sh and no-short-yes.sh (lint), gate-go.sh and gate-ci.sh (the Go tests as one run with a verdict line, the second as CI runs them), pyyaml-corpus.py, usage-goldens.sh, permcheck.py and permcheck-baseline.txt (the lab permission check, below), pre-push, release-preflight.sh, release-stamps.sh and release-reproduce.sh (the release checks, docs/releasing.md)
+├── tools/               # no-private.sh, no-os-tempdir.sh, no-shared-proc.sh and no-short-yes.sh (lint), gate-go.sh and gate-ci.sh (the Go tests as one run with a verdict line, the second as CI runs them), pyyaml-corpus.py, usage-goldens.sh, permcheck.py and permcheck-baseline.txt (the lab permission check, below), pre-push, release-preflight.sh, release-stamps.sh and release-reproduce.sh (the release checks, docs/releasing.md)
 ├── containers/radius/   # real FreeRADIUS in podman
 ├── containers/hosts/    # 'host enroll|sync|unenroll' for real, server and client containers
 ├── containers/crossover/ # the upgrade from the bash release to the Go binary, and back

@@ -194,12 +194,14 @@ func TestConfigPreflight(t *testing.T) {
 		t.Errorf("render: %d %q", sb.code, sb.err.String())
 	}
 	sb = newSandbox(t, true)
+	sb.defaultBcryptCost()
 	sb.run("", []string{"config", "get", "bcrypt.cost"})
 	sb.expect(0, "12", "is missing; 'tacctl config render' writes it again.")
 }
 
 func TestConfigGetAndTunables(t *testing.T) {
 	sb := newSandbox(t, true)
+	sb.defaultBcryptCost()
 	cases := []struct {
 		args      []string
 		code      int

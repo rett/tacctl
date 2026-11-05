@@ -10,6 +10,16 @@
 # without tags with the race detector. Every other package is one job.
 # Each runs twice, as 'make test-go' does: without tags and with the test
 # knobs.
+# The Go build and module caches (~/.cache/go-build, ~/go/pkg/mod) are kept
+# between runs with actions/cache, not with setup-go's own cache: that one has
+# one key per go.sum, so the race, testknobs and plain builds of the matrix
+# would save one cache between them and the others would find it without their
+# objects. Here each job (static, lint, the other packages and the cli shards,
+# each with its race or tags mode) has a key of its own, with the Go version
+# and the hash of go.sum, so no build evicts another's. A change of go.sum
+# starts a new cache, restored from the last one of the mode (restore-keys);
+# the packages of this repository are rebuilt each run, what is kept is the
+# standard library (with -race it is the long part) and the modules.
 # Tests that drive a tool skip where it is missing, and a skip is silent in a
 # green run, so the two test jobs install the tools those tests look for:
 # shellcheck, groff, less and man-db (the completion block, the man page's
@@ -56,6 +66,15 @@ jobs:
           go-version: ${{ steps.go.outputs.version }}
           check-latest: false
           cache: false
+      - name: Go build and module caches
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ steps.go.outputs.version }}-static-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ steps.go.outputs.version }}-static-
       - name: gofmt
         run: test -z "$(gofmt -l cmd internal)"
       - name: go vet
@@ -85,6 +104,15 @@ jobs:
           go-version: ${{ steps.go.outputs.version }}
           check-latest: false
           cache: false
+      - name: Go build and module caches
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ steps.go.outputs.version }}-lint-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ steps.go.outputs.version }}-lint-
       - name: Link it as /usr/local/go
         run: |
           sudo rm -rf /usr/local/go
@@ -127,6 +155,15 @@ jobs:
           go-version: ${{ steps.go.outputs.version }}
           check-latest: false
           cache: false
+      - name: Go build and module caches
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ steps.go.outputs.version }}-other-${{ matrix.tags == '' && 'race' || format('race-{0}', matrix.tags) }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ steps.go.outputs.version }}-other-${{ matrix.tags == '' && 'race' || format('race-{0}', matrix.tags) }}-
       - name: Link it as /usr/local/go
         run: |
           sudo rm -rf /usr/local/go
@@ -169,6 +206,15 @@ jobs:
           go-version: ${{ steps.go.outputs.version }}
           check-latest: false
           cache: false
+      - name: Go build and module caches
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ steps.go.outputs.version }}-cli-${{ matrix.tags == '' && 'race' || matrix.tags }}-${{ matrix.shard }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ steps.go.outputs.version }}-cli-${{ matrix.tags == '' && 'race' || matrix.tags }}-${{ matrix.shard }}-
       - name: Link it as /usr/local/go
         run: |
           sudo rm -rf /usr/local/go

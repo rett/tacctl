@@ -65,7 +65,7 @@ func shortTemp(t *testing.T) string {
 	t.Helper()
 	base := os.TempDir()
 	if len(base) > 40 {
-		base = "/tmp"
+		base = "/tmp" // shared-proc-ok: only when TMPDIR is too long for a socket path
 	}
 	d, err := os.MkdirTemp(base, "ap")
 	if err != nil {

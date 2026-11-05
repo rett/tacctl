@@ -32,7 +32,10 @@ setup() {
     # The socket directory of a plain shell: short, since a socket path is
     # limited to 107 bytes (the console's scrubbed environment has none and
     # uses the user's /run/user/<uid>, or $HOME/.local/state/tacctl/run).
-    XDG_RUNTIME_DIR="$(mktemp -d /tmp/pcache.XXXXXX)"
+    # It is under TMPDIR unless that is too long for a socket path.
+    local sockbase="${TMPDIR:-/tmp}"
+    (( ${#sockbase} <= 30 )) || sockbase=/tmp # shared-proc-ok: only when TMPDIR is too long for a socket path
+    XDG_RUNTIME_DIR="$(mktemp -d "$sockbase/pcache.XXXXXX")"
     export XDG_RUNTIME_DIR
     EXE="$(readlink -f "$TACCTL_BIN_SCRIPT")"
     # The sudo stub: the policy answer (the line plus policy.extra), the

@@ -13,7 +13,8 @@ setup() {
 # STUB_MODE: ok | race (a data race in the other packages, with -race only) |
 # knobs (a test that fails only with -tags testknobs, in shard 1) | lost |
 # build (a package that does not build) | skip (two skipped tests in the
-# other packages, in both tag runs) | hang
+# other packages, in both tag runs) | slow (passing tests with durations, a
+# skipped one) | slowmany (twelve passing tests in the other packages) | hang
 tagged=0
 case " $* $GOFLAGS " in *" -tags testknobs "* | *" -tags=testknobs "*) tagged=1 ;; esac
 raced=0
@@ -35,9 +36,15 @@ test)
         build) printf 'FAIL\tp/a [build failed]\nok  \tp/b\t0.1s\n'; exit 1 ;;
         lost) printf 'ok  \tp/a\t0.1s\n'; exit 0 ;;
         skip) printf -- '--- SKIP: TestY (0.00s)\n    --- SKIP: TestZ/sub (0.00s)\n' ;;
+        slow) printf -- '--- SKIP: TestY (0.00s)\n--- PASS: TestO (%s)\n' "$([[ $tagged = 1 ]] && echo 15.00s || echo 12.34s)" ;;
+        slowmany) for i in $(seq 12); do printf -- '--- PASS: TestT%02d (%d.00s)\n' "$i" "$i"; done ;;
         esac
         printf 'ok  \tp/a\t0.1s\nok  \tp/b\t0.1s\n' ;;
     *)
+        if [[ "$STUB_MODE" = slow ]]; then
+            case " $* " in *TestA*) echo '--- PASS: TestA (1.50s)' ;; esac
+            case " $* " in *TestB*) [[ $tagged = 1 ]] && echo '--- PASS: TestB (70.00s)' || echo '--- PASS: TestB (83.00s)' ;; esac
+        fi
         if [[ "$STUB_MODE" = knobs && $tagged = 1 && " $* " == *"TestB"* ]]; then
             printf -- '--- FAIL: TestB (0.00s)\nFAIL\tp/internal/cli\t0.1s\n'; exit 1
         fi
@@ -48,6 +55,21 @@ SH
     chmod +x "$STUB"
     export GO="$STUB" GOCACHE="$BATS_TEST_TMPDIR/cache" LOG="$BATS_TEST_TMPDIR/gate.log"
     export STUB_CALLS="$BATS_TEST_TMPDIR/calls"
+}
+
+# The `sleep` the hanging stub go has become, among the processes below pid $1
+# (children, their children, ...): only the gate's own tree is looked at, so a
+# `sleep 30` of another test running at the same time (bats --jobs) is no match.
+sleeper_below() {
+    local p
+    for p in $(pgrep -P "$1"); do
+        if [[ "$(ps -o comm= -p "$p")" == sleep ]]; then
+            echo "$p"
+            return 0
+        fi
+        sleeper_below "$p" && return 0
+    done
+    return 1
 }
 
 @test "six jobs ok is a PASS, the last line of stdout and of the log" {
@@ -70,6 +92,32 @@ SH
     [[ "${lines[-3]}" == "gate-ci: skipped: TestY" ]]
     [[ "$(printf '%s\n' "${lines[@]}" | grep -c '^gate-ci: skipped:')" -eq 2 ]]
     [[ "$(tail -n 1 "$LOG")" == "${lines[-1]}" ]]
+}
+
+@test "the ten slowest top-level tests are listed with their job above the verdict, below the skipped names" {
+    # TestO is slower in the knobs run of the other packages, TestB in the untagged shard 1
+    STUB_MODE=slow run -0 "$GATE" -o "$LOG"
+    [[ "${lines[-1]}" == "GATE-CI PASS rc=0 jobs=6/6 failures=0 races=0 secs="*" skipped=2 log=$LOG" ]]
+    [[ "${lines[-2]}" == "gate-ci: slowest: TestA 1.5s (cli0)" ]]
+    [[ "${lines[-3]}" == "gate-ci: slowest: TestO 15.0s (other/testknobs)" ]]
+    [[ "${lines[-4]}" == "gate-ci: slowest: TestB 83.0s (cli1)" ]]
+    [[ "${lines[-5]}" == "gate-ci: skipped: TestY" ]]
+    # the log ends the same way
+    [[ "$(tail -n 1 "$LOG")" == "${lines[-1]}" ]]
+    [[ "$(tail -n 5 "$LOG" | head -n 4)" == "$(printf '%s\n' "${lines[@]: -5:4}")" ]]
+}
+
+@test "no more than ten slowest tests are listed" {
+    STUB_MODE=slowmany run -0 "$GATE" -o "$LOG"
+    [[ "$(printf '%s\n' "${lines[@]}" | grep -c '^gate-ci: slowest:')" -eq 10 ]]
+    [[ "${lines[-11]}" == "gate-ci: slowest: TestT12 12.0s (other)" ]]
+    [[ "${lines[-2]}" == "gate-ci: slowest: TestT03 3.0s (other)" ]]
+    [[ "$output" != *"TestT02"* ]]
+}
+
+@test "a run without a passing test lists no slowest tests" {
+    STUB_MODE=ok run -0 "$GATE" -o "$LOG"
+    [[ "$output" != *"gate-ci: slowest:"* ]]
 }
 
 @test "the race detector and cgo are on for the other packages and the untagged shards, the knobs run has no -race" {
@@ -109,12 +157,16 @@ SH
 @test "SIGTERM stops the run, reaps go and prints a FAIL verdict" {
     STUB_MODE=hang "$GATE" -o "$LOG" >"$BATS_TEST_TMPDIR/out" 2>&1 &
     pid=$!
-    for _ in $(seq 100); do pgrep -f "sleep 30" >/dev/null && break; sleep 0.1; done
+    sleeper=""
+    for _ in $(seq 100); do sleeper=$(sleeper_below "$pid") && break; sleep 0.1; done
+    [[ -n "$sleeper" ]]
     kill -TERM "$pid"
     rc=0
     wait "$pid" || rc=$?
     [ "$rc" -eq 130 ]
     grep -q '^GATE-CI FAIL rc=130 .* interrupted .*log=' "$BATS_TEST_TMPDIR/out"
+    # the go the gate started is gone (not any `sleep 30` on the machine)
+    run ! kill -0 "$sleeper"
 }
 
 @test "a usage error is status 2 and no verdict" {

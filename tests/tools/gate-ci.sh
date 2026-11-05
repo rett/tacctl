@@ -26,7 +26,11 @@
 # a test that runs in several jobs once for each). The names of the skipped
 # tests (at most 20, each once) are listed above the verdict line: a test that
 # skips for a missing tool passes silently, so a green run whose skip count is
-# not the expected one did not test what it should.
+# not the expected one did not test what it should. Below them and still above
+# the verdict line come the ten slowest top-level tests of the run, longest
+# first, each with the job it was slowest in, from the '--- PASS: TestX
+# (N.NNs)' lines ('gate-ci: slowest: TestX 83.0s (cli0)'): where the time went,
+# and the input of 'tests/tools/go-test-shard.sh --regen'.
 #
 # The shard check ('go-test-shard.sh --check 2', the static job of CI) runs
 # first: a test that no shard holds fails the run before any test runs.
@@ -175,6 +179,16 @@ verdict() { # <note>
             echo "gate-ci: skipped: +$((n - max)) more" | tee -a "$log"
         fi
     fi
+    # The ten slowest top-level tests, from the '--- PASS: TestX (N.NNs)' lines,
+    # each with the job it was slowest in.
+    awk '/^=== (other|cli[0-9]+)(\/[A-Za-z0-9_]+)?: / { job = $2; sub(/:$/, "", job); next }
+        /^--- PASS: Test/ {
+            d = $4; gsub(/[()s]/, "", d)
+            if (d ~ /^[0-9]+(\.[0-9]+)?$/ && (!($3 in m) || d + 0 > m[$3] + 0)) { m[$3] = d; j[$3] = job }
+        }
+        END { for (t in m) printf "%s %s %s\n", m[t], t, j[t] }' "$log" |
+        sort -k1,1nr -k2,2 | head -n 10 |
+        awk '{ printf "gate-ci: slowest: %s %.1fs%s\n", $2, $1, ($3 != "" ? " (" $3 ")" : "") }' | tee -a "$log"
     list=""
     if [[ ${#failed[@]} -gt 0 ]]; then
         list=$(IFS=,; echo "${failed[*]:0:max}")

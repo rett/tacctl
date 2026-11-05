@@ -58,7 +58,7 @@ func newCacheAgent(t *testing.T) *cacheAgent {
 		t.Fatal(err)
 	}
 	t.Cleanup(ag.Close)
-	dir, err := os.MkdirTemp("/tmp", "pc")
+	dir, err := os.MkdirTemp(shortSocketBase(), "pc")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -651,7 +651,7 @@ func TestOpenPasswordCache(t *testing.T) {
 		t.Errorf("batch: %v %d", c, called)
 	}
 	// Interactive and on: an agent with a socket, the lifetimes given.
-	dir, err := os.MkdirTemp("/tmp", "pc")
+	dir, err := os.MkdirTemp(shortSocketBase(), "pc")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -716,7 +716,7 @@ func TestOpenPasswordCache(t *testing.T) {
 	// A socket directory that cannot be made: one line too, and no agent
 	// left behind.
 	hk.newAskpassAgent = nil
-	bad, err := os.MkdirTemp("/tmp", "pc")
+	bad, err := os.MkdirTemp(shortSocketBase(), "pc")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1372,4 +1372,13 @@ func TestAskpassHelperNeverStores(t *testing.T) {
 	if out, code := run("Password again: "); out != "" || code != 1 {
 		t.Errorf("a second prompt of the line: %q %d", out, code)
 	}
+}
+
+// shortSocketBase is where a test makes a directory for an agent's socket:
+// TMPDIR, unless it is too long for the 108 bytes of a socket path.
+func shortSocketBase() string {
+	if base := os.TempDir(); len(base) <= 40 {
+		return base
+	}
+	return "/tmp" // shared-proc-ok: only when TMPDIR is too long for a socket path
 }

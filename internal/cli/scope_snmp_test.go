@@ -35,6 +35,7 @@ func (sb *sandbox) scopeSNMP(stdin string, args ...string) string {
 
 func TestScopeSNMPSettingsAndSecrets(t *testing.T) {
 	sb := newSandbox(t, true)
+	sb.defaultBcryptCost()
 	const secret = "scope-community-9"
 	// Reading changes nothing on disk.
 	out := sb.scopeSNMP("", "lab", "show")
