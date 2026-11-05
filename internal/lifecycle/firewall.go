@@ -48,6 +48,9 @@ func (h *Host) firewallStep(ctx context.Context) {
 	default:
 		out.Info("Break-glass firewall: the table inet tacctl is loaded (" + res.Mode + " on " + ports + ", no address held); " + firewall.UnitName + " loads it at boot.")
 	}
+	if line := res.UnitLine(); line != "" {
+		out.Warn("Break-glass firewall: " + line)
+	}
 }
 
 // firewallRemove takes the table, the rules file and the boot unit away

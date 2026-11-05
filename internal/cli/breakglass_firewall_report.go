@@ -24,6 +24,11 @@ func (inv *invocation) firewallAfter(res *firewall.Result) func(context.Context)
 // the command exits 1. A table with nothing to match (no TCP listener) says
 // so in one line.
 func firewallHoldLines(res firewall.Result, addrs []string) (lines []string, failed bool) {
+	lines, failed = firewallHoldLinesOf(res, addrs)
+	return withUnitLine(lines, res), failed
+}
+
+func firewallHoldLinesOf(res firewall.Result, addrs []string) (lines []string, failed bool) {
 	list := strings.Join(addrs, ", ")
 	ports := firewall.PortList(res.Ports)
 	switch {
@@ -56,6 +61,11 @@ func firewallHoldLines(res firewall.Result, addrs []string) (lines []string, fai
 // firewallReleaseLines are the lines of the report of a release: the reverse.
 // Addresses that stay held in the table are counted.
 func firewallReleaseLines(res firewall.Result, addrs []string) (lines []string, failed bool) {
+	lines, failed = firewallReleaseLinesOf(res, addrs)
+	return withUnitLine(lines, res), failed
+}
+
+func firewallReleaseLinesOf(res firewall.Result, addrs []string) (lines []string, failed bool) {
 	list := strings.Join(addrs, ", ")
 	ports := firewall.PortList(res.Ports)
 	switch {
@@ -86,13 +96,22 @@ func firewallRestoreLines(res firewall.Result) (lines []string, failed bool) {
 		return firewallHoldLines(res, res.Addrs)
 	}
 	if res.State == firewall.Failed {
-		return []string{
+		return withUnitLine([]string{
 			ui.Red + "Firewall: NOT APPLIED (" + res.Why + ")" + ui.NC,
 			ui.Red + "No address is held after the restore, but the table inet tacctl could not be updated: it may still refuse the TCP connections of the addresses that were held before on " + firewall.PortList(res.Ports) + "." + ui.NC,
 			ui.Red + firewallFix(res) + ui.NC,
-		}, true
+		}, res), true
 	}
-	return nil, false
+	return withUnitLine(nil, res), false
+}
+
+// withUnitLine adds the yellow line for a boot unit that could not be
+// installed (the table is loaded, but a reboot loses it).
+func withUnitLine(lines []string, res firewall.Result) []string {
+	if l := res.UnitLine(); l != "" {
+		lines = append(lines, ui.Yellow+"Firewall: "+l+ui.NC)
+	}
+	return lines
 }
 
 // echoFirewall prints lines indented under a report; the red ones carry their
@@ -134,6 +153,9 @@ func (inv *invocation) firewallListenerNote() (res firewall.Result, failed bool)
 		return res, true
 	case res.State == firewall.Applied && len(res.Addrs) > 0:
 		a.Out.Info("Firewall: " + strings.Join(res.Addrs, ", ") + " refused on " + firewall.PortList(res.Ports) + " (" + res.Mode + ")")
+	}
+	if line := res.UnitLine(); line != "" {
+		a.Out.Warn("Break-glass firewall: " + line)
 	}
 	return res, false
 }

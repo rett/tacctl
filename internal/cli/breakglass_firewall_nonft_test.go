@@ -139,6 +139,22 @@ func TestBreakglassFirewallSettingWhenNftFailsWithNothingHeld(t *testing.T) {
 	}
 }
 
+// The boot unit that cannot be enabled is a warning, not a failure: the table
+// is loaded.
+func TestBreakglassFirewallBootUnitFailureIsAWarning(t *testing.T) {
+	sb := engineerSandbox(t)
+	sb.write("state/tacctl.yaml", heldLabSw, 0o600)
+	sb.script = func(r *fake.Runner) {
+		r.On([]string{"systemctl", "enable"}, execx.Result{Code: 1})
+	}
+	out := plain(sb.run("", []string{"config", "breakglass-firewall", "reject"}))
+	if sb.code != 0 || !strings.Contains(out, "Firewall: 192.168.1.1 refused on tcp/49 (reject)") ||
+		!strings.Contains(out, "[WARN] Break-glass firewall: the boot unit tacctl-breakglass-firewall.service could not be installed") ||
+		!strings.Contains(out, "lost at the next reboot") {
+		t.Fatalf("%d %q %q", sb.code, out, sb.stderr())
+	}
+}
+
 // A restore that empties the holds and cannot load the table: the risk is the
 // addresses that were held before, not the (none) held now.
 func TestBreakglassRestoreThatEmptiesTheHoldsAndFails(t *testing.T) {

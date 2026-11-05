@@ -307,6 +307,17 @@ func TestApplyWithoutNftAfterATableWasLoaded(t *testing.T) {
 	}
 }
 
+// The boot unit that cannot be installed is the result's, not a failure: the
+// table is loaded.
+func TestApplyReportsABootUnitThatCannotBeInstalled(t *testing.T) {
+	sb := newSandbox(t, holdsV4)
+	sb.runner.Fail([]string{"systemctl", "enable"}, 1, "denied")
+	res := sb.eng.Apply(context.Background())
+	if res.State != Applied || !res.OK() || !strings.Contains(res.UnitErr, "systemctl enable") || !strings.Contains(res.UnitLine(), "lost at the next reboot") {
+		t.Fatalf("%+v", res)
+	}
+}
+
 // With the setting off the boot unit goes: its being there says a table may be
 // live.
 func TestApplyOffRemovesTheBootUnit(t *testing.T) {

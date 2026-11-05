@@ -114,6 +114,20 @@ func TestUpgradeFirewallStepNeverFailsTheUpgrade(t *testing.T) {
 	}
 }
 
+// The boot unit that cannot be enabled does not fail the upgrade; it is a
+// warning, since the table would be gone after a reboot.
+func TestUpgradeWarnsOfABootUnitThatCannotBeEnabled(t *testing.T) {
+	o := newOhost(t)
+	o.cloned()
+	o.enableBoth()
+	o.write(o.p.Overrides, "backends:\n  enabled: [tacacs]\n"+heldOverrides)
+	o.run.On([]string{"systemctl", "enable", "--quiet", "tacctl-breakglass-firewall.service"}, execx.Result{Code: 1})
+	if code := upgrade(o); code != 0 || !strings.Contains(o.text(), "[WARN] Break-glass firewall: the boot unit tacctl-breakglass-firewall.service could not be installed") ||
+		!strings.Contains(o.text(), "refused on tcp/49 (reject)") {
+		t.Fatalf("exit %d\n%s", code, o.text())
+	}
+}
+
 func TestInstallLoadsTheTable(t *testing.T) {
 	o := newOhost(t)
 	o.commit = "something-else"

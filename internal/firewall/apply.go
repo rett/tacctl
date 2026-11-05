@@ -58,6 +58,9 @@ type Result struct {
 	Why string
 	// NftMissing is whether the reason is that nft is not installed.
 	NftMissing bool
+	// UnitErr is why the boot unit could not be written or enabled (or, with
+	// the setting off, removed) after the table was loaded ("" otherwise).
+	UnitErr string
 }
 
 // OK reports whether the table is as the holds and the setting ask for.
@@ -66,6 +69,20 @@ func (r Result) OK() bool { return r.State != Failed }
 // Enforces reports whether the table asked for refuses anything (Spec.Enforces
 // of the result): a mode that is not off, an address held and a port.
 func (r Result) Enforces() bool { return r.Mode != Off && len(r.Addrs) > 0 && len(r.Ports) > 0 }
+
+// UnitLine is the warning for a table that is loaded but whose boot unit
+// could not be installed ("" when it could): the table is gone after a
+// reboot until the setting command is run again. With the setting off the
+// unit that could not be removed only loads a file that removes the table.
+func (r Result) UnitLine() string {
+	if r.UnitErr == "" {
+		return ""
+	}
+	if r.State == Removed {
+		return "the boot unit " + UnitName + " could not be removed (" + r.UnitErr + "); it loads a file that removes the table, so it does no harm."
+	}
+	return "the boot unit " + UnitName + " could not be installed (" + r.UnitErr + "), so the table is lost at the next reboot: " + FixCommand(r.Mode) + " tries again."
+}
 
 // Refused is the line of the report that says what the table does: 'refused
 // on tcp/49 (reject)' for the held addresses. "" when the state is not
@@ -129,12 +146,18 @@ func (e *Engine) Apply(ctx context.Context) Result {
 		// No table is live now, so the boot unit goes too: its being there is
 		// what says that a table may be live (above).
 		res.State = Removed
-		_, _ = e.RemoveUnit(ctx)
+		if _, err := e.RemoveUnit(ctx); err != nil {
+			res.UnitErr = err.Error()
+		}
 		return res
 	}
 	// The boot unit: written when it is missing, which a hand-removed unit or
-	// a failed upgrade leaves; its failure is the unit's own to report.
-	_, _ = e.InstallUnit(ctx)
+	// a failed upgrade leaves. A failure of its own does not fail the table,
+	// which is loaded: it is the UnitErr of the result, for the report to
+	// say that the table will be gone after a reboot.
+	if _, err := e.InstallUnit(ctx); err != nil {
+		res.UnitErr = err.Error()
+	}
 	return res
 }
 

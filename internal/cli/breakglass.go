@@ -1716,6 +1716,8 @@ func (inv *invocation) holdCarry(oldName, newName, addr string) {
 	// the same, so one that was lost meanwhile comes back.
 	if !fw.OK() {
 		a.Out.Warn("The firewall table was not loaded (" + fw.Why + "): " + firewallFixText(fw) + ".")
+	} else if line := fw.UnitLine(); line != "" {
+		a.Out.Warn("Break-glass firewall: " + line)
 	}
 }
 

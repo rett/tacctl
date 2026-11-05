@@ -256,5 +256,8 @@ func (inv *invocation) replaceClearHold(m *model.Model, h conf.Hold) (rendered s
 	if !fw.OK() {
 		return "", true, errors.New("the record is removed and the files are rendered without the hold, but the firewall table was not loaded (" + fw.Why + "), so " + h.Address + " may still be refused on " + firewall.PortList(fw.Ports) + ": " + firewallFixText(fw))
 	}
+	if line := fw.UnitLine(); line != "" {
+		a.Out.Warn("Break-glass firewall: " + line)
+	}
 	return inv.renderedSentence(m, h.Address, res, false), true, nil
 }

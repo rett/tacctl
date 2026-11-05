@@ -163,6 +163,9 @@ func (inv *invocation) firewallSettingReport(res firewall.Result) error {
 	default:
 		inv.echo("Firewall: " + strings.Join(held, ", ") + " refused on " + firewall.PortList(res.Ports) + " (" + res.Mode + ")")
 	}
+	if line := res.UnitLine(); line != "" {
+		inv.app.Out.Warn("Break-glass firewall: " + line)
+	}
 	inv.echo("")
 	return nil
 }
