@@ -154,7 +154,7 @@ and the vendor differences in [Vendor Notes](vendor-notes.md).
 ## 7. Snapshots and the audit trail
 
 - Every change takes a **snapshot** of tacctl's configuration first. A
-  superuser can compare and restore them: [Backups and Undo](backups-and-undo.md).
+  superuser can compare, restore and keep them: [Backups and Undo](backups-and-undo.md).
 - Every change writes **audit lines** to syslog (tags `tacctl` and
   `tacctl-console`): who, what, the result and the snapshot taken.
   [Audit and Compliance](audit-and-compliance.md) explains how to read them.
@@ -165,8 +165,8 @@ and the vendor differences in [Vendor Notes](vendor-notes.md).
 
 | Control | What it does | Page |
 |---|---|---|
-| **Emergency lockdown** | The server **refuses** the logins of chosen groups on a scope. Devices do not fall back to local accounts. Superusers keep access. | [Emergency Lockdown](emergency-lockdown.md) |
-| **Break-glass hold** | The server **stops answering** one device or host, so its local accounts work while the server stays up for everyone else | [Break Glass](break-glass.md) |
+| **Emergency lockdown** | The server **refuses** the logins of chosen groups on a scope. Devices do not fall back to local accounts. On enrolled Linux hosts it also closes key logins, through `host sync`. Superusers keep access. | [Emergency Lockdown](emergency-lockdown.md) |
+| **Break-glass hold** | The server **stops answering** one device or host (a firewall rule refuses its TCP connections), so its local accounts work while the server stays up for everyone else | [Break Glass](break-glass.md) |
 
 Neither one expires. A superuser lifts each one by hand.
 

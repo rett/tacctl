@@ -39,12 +39,13 @@ usage. In the console and `tacctl shell`, `?` shows help.
 | Detail | `tacctl device show <n>` | R |
 | Connect | `tacctl ssh <n> [-- <cmd>]` | R |
 | Notices | `tacctl device notice list` | R |
-| Health check | `tacctl device check <n>` | O |
+| Health check | `tacctl device check <n> [--sources]` | O |
 | Unregistered | `tacctl device discover [--snmp]` | O |
 | Register | `tacctl device add <n> <ip> --vendor cisco\|juniper\|wti [--pull]` | E |
 | Enroll discovered | `tacctl device enroll --discovered` | E |
 | Edit field | `tacctl device address\|description\|location <n> <value>` | E |
 | Rename / remove | `tacctl device rename <old> <new>` · `device remove <n>` | E |
+| Copy at a bench address, then move into place | `tacctl device clone <n> <new> --staging <ip>` · `device rename <new> <n> --replace` | E |
 | Re-pin key | `tacctl device hostkey <n> set SHA256:<fp>` | E |
 | Drift state | `tacctl device config list [--differs]` | O |
 | Read config | `tacctl device config pull <n>\|--scope s` | E |
@@ -53,13 +54,15 @@ usage. In the console and `tacctl shell`, `?` shows help.
 | Where the time of a run goes | `--timing` on `device config pull`, `diff --pull`, `plan --pull` or `apply` | E |
 | Timing scale of a slow or distant device | `tacctl device timeout-scale <n> [<1-10>\|clear]` (the scale is in `device show`) | S |
 | Back-out | `tacctl device config plan <n> --backout` | E |
+| SNMP pool and default user | `tacctl config snmp v3-user add\|default\|list` (also `scope snmp <s>`, `device snmp <n>`) | S |
 
 ## 3. Users
 
 | Task | Command | Tier |
 |---|---|---|
 | List / detail | `tacctl user list` · `user show <n>` | R |
-| Add | `tacctl user add <n> <group> --scopes <s,…>` | S |
+| Add | `tacctl user add <n> <group> --scopes <s,…> [--email <address>]` | S |
+| Email address | `tacctl user email <n> [<address>\|clear]` | S (show: R) |
 | Password reset | `tacctl user passwd <n>` | S |
 | Require / lift a password change | `tacctl user require-password-change <n> [on\|off]` | S |
 | Scopes | `tacctl user scope <n> add\|remove\|replace <s,…>` | S |
@@ -99,9 +102,11 @@ usage. In the console and `tacctl shell`, `?` shows help.
 | Lock down | `tacctl emergency lockdown <s> enable [groups] --reason "…"` | S |
 | Status | `tacctl emergency lockdown status` | S |
 | Lift | `tacctl emergency lockdown <s> disable` | S |
+| Sync the scope's hosts without being asked | `--yes` on `enable` or `disable` | S |
 | Hold device/host | `tacctl breakglass hold <n> --reason "…"` | S |
 | Release | `tacctl breakglass release <n>` | S |
 | List holds | `tacctl breakglass list` | E |
+| Firewall for held addresses | `tacctl config breakglass-firewall [reject\|drop\|off]` | S |
 
 ## 7. This server
 
@@ -124,8 +129,11 @@ usage. In the console and `tacctl shell`, `?` shows help.
 | Search | `tacctl log search <term>` | O |
 | Failures (24 h) | `tacctl log failures` | O |
 | Accounting | `tacctl log accounting [n]` | O |
+| Filter any of the four | add `--since <t>` `--until <t>` `--user <n>` `--device <d>` (`--type` for accounting), `--json` | O |
 | Snapshots | `tacctl backup list` | O |
 | Diff / restore | `tacctl backup diff [ts]` · `backup restore <ts>` | S |
+| Keep / unkeep a snapshot | `tacctl backup keep <ts>` · `backup unkeep <ts>` | S |
+| Put back email or SNMPv3 users after a rollback | `tacctl backup recover <ts> [--only email,snmp-users]` | S |
 | Audit trail | `journalctl -t tacctl -t tacctl-console` | — |
 
 ## 9. Exit codes
