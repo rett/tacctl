@@ -262,6 +262,15 @@ config audit-strict [on|off]
     secret, is refused when its audit line cannot be written; this command is never refused, so
     `off` works while logger is down
 
+config breakglass-firewall [reject|drop|off]
+
+    Show or set what the server does with the TCP connections of a held address (default reject):
+    `reject` answers with a TCP reset, `drop` discards the packets, `off` loads no table and leaves
+    the connection to tacquito, which accepts and closes it (the 0.2.23 behaviour). The table
+    `inet tacctl` is loaded at once and again by every hold, release, move, rename, restore and
+    listener change; `reject` is also the repair of a table that was not loaded, even when the
+    setting is unchanged. Superuser. See [Break-glass](../devices/break-glass.md#the-firewall)
+
 config allow list|add|remove|clear
 
     Manage connection allow list (IP ACL; add/remove accept comma-lists)

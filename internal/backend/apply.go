@@ -116,6 +116,12 @@ type ApplyOptions struct {
 	// DeferRestart are backends whose restart the caller does itself
 	// (--defer-restart); they are still in Result.Changed.
 	DeferRestart []string
+	// After, when set, runs once the restarts are done, still under the apply
+	// lock, and only when the change was made (a writer or render that failed
+	// ran nothing): what belongs beside the restarts but is not a backend, such
+	// as loading the nftables table of the break-glass holds. Its outcome is
+	// the caller's to keep; it runs whether or not a backend file changed.
+	After func(ctx context.Context)
 }
 
 // Result is what a StoreApply did.
@@ -159,6 +165,7 @@ type Result struct {
 //  5. restart  only the backends whose rendered config changed, except
 //     DeferRestart; one that did not restart is in Result.RestartFailed
 //     (the files stay rendered, the change is not undone).
+//  6. after    opts.After, when the caller gave one, under the same lock.
 //
 // It returns ErrRefused (exit 3: a rendered file was edited by hand;
 // nothing changed), ErrFailed (exit 1: nothing changed, a partial write was
@@ -235,6 +242,9 @@ func (s *Set) StoreApply(ctx context.Context, opts ApplyOptions, writer func() e
 	// start a daemon on another command's half-committed render, and the
 	// failure would be put on this command.
 	failed := s.RestartChanged(ctx, changed, opts.DeferRestart)
+	if opts.After != nil {
+		opts.After(ctx)
+	}
 	return Result{Changed: changed, Adopted: adopt, RestartFailed: failed}, nil
 }
 

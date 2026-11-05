@@ -63,6 +63,7 @@ Keys without a shipped default (`backends.*`, `listeners.*`, `snmp.*`, `device.c
 | Key | Value (default) | Set with |
 |---|---|---|
 | `audit.strict` | `true` or `false` (`false`) | `config audit-strict` |
+| `breakglass.firewall` | `reject`, `drop` or `off` (`reject`): what the server does with the TCP connections of a held address; see [The firewall](../devices/break-glass.md#the-firewall) | `config breakglass-firewall` |
 | `backends.enabled` | non-empty list of `tacacs`, `radius` (`[tacacs]`) | `backend enable`, `backend disable` |
 | `backends.tacacs.level` | 0 to 100 (20) | `config loglevel` |
 | `backends.tacacs.metrics_address` | host:port (127.0.0.1:8080) | `server metrics address` |
