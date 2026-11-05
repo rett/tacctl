@@ -104,7 +104,12 @@ func (w *tierWatch) lowered(what, left string) error {
 	if len(down) == 0 {
 		return nil
 	}
-	return inv.syncServerAfterLowering(what, left)
+	// the sync rewrites the console's drop-in only when it gets as far as
+	// the console's pieces; a user the lower tier holds to a password change
+	// is listed whatever it does
+	err = inv.syncServerAfterLowering(what, left)
+	inv.refreshHeldForwarding()
+	return err
 }
 
 // warnServerSync is the red line of a change that may have lowered tiers
