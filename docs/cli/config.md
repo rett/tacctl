@@ -438,7 +438,7 @@ parse), `overrides` (`tacctl.yaml`), `command_rules`, `structure` (users,
 groups and scopes), `scope_default`, `linux_hosts`, `names`, `breakglass`,
 `snmp_users` (an SNMPv3 user name that two pools a device can see hold: a warning that names the
 levels, never the user; the device's own pool is searched first, then its scope's, then the
-config's), `breakglass_hold`, `emergency_lockdown`, `config_blocks`, `operator_policy`, `group_settings`,
+config's), `breakglass_hold`, `breakglass_firewall`, `emergency_lockdown`, `config_blocks`, `operator_policy`, `group_settings`,
 `orphan_settings`, `orphan_files`, `leftovers`, `devices` (`devices.yaml` does not
 load, a device's `timeout_scale` outside 1 to 10 among the reasons), `backends` (the enabled list
 cannot be read), `rendered`, `drift` and `vendor_attrs`. A line of the text
