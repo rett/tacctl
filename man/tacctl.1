@@ -2782,7 +2782,7 @@ has a
 .B section
 (a fixed token for each label of the text report:
 .BR store ", " yaml ", " overrides ", " command_rules ", " structure ", "
-.BR scope_default ", " linux_hosts ", " names ", " breakglass ", " snmp_users ", " breakglass_hold ", "
+.BR scope_default ", " linux_hosts ", " names ", " breakglass ", " snmp_users ", " breakglass_hold ", " breakglass_firewall ", "
 .BR emergency_lockdown ", " config_blocks ", " operator_policy ", " group_settings ", " orphan_settings ", "
 .BR orphan_files ", " leftovers ", " devices ", " backends ", " rendered ", " drift " and "
 .BR vendor_attrs ),
@@ -14020,8 +14020,17 @@ and
 has
 .BR orphan:true ,
 and
-.BR kind ).
-An engineer sees the devices and hosts of their own scopes only.
+.BR kind ;
+it also has
+.B firewall
+for each row, the setting
+.BR breakglass.firewall ).
+A last line
+.RB ( Firewall: )
+says what the nftables table does for the held addresses and whether the live table
+is as the holds and the setting ask for (red, with the command that fixes it, when
+it is not; yellow when the setting is off or nft could not be read). An engineer sees
+the devices and hosts of their own scopes only, and no firewall line.
 .\" BEGIN GENERATED: command breakglass list
 .RS
 .PP

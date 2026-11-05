@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -469,5 +470,139 @@ func TestServerListenLoadsTheTableWithTheNewPorts(t *testing.T) {
 	out = plain(sb2.run("", []string{"server", "listen", "tcp", ":4949"}))
 	if strings.Contains(out, "Firewall") || sb2.nftLoads() != 0 {
 		t.Errorf("a listener change without holds touched the firewall: %q", out)
+	}
+}
+
+// liveTable is what 'nft -j list table inet tacctl' says for 192.168.1.1
+// refused with a reset on tcp/49.
+const liveTable = `{"nftables": [{"metainfo": {"version": "1.0.9"}},
+ {"table": {"family": "inet", "name": "tacctl", "handle": 1}},
+ {"set": {"family": "inet", "name": "held4", "table": "tacctl", "type": "ipv4_addr", "handle": 2, "elem": ["192.168.1.1"]}},
+ {"set": {"family": "inet", "name": "held6", "table": "tacctl", "type": "ipv6_addr", "handle": 3}},
+ {"chain": {"family": "inet", "table": "tacctl", "name": "input", "handle": 1, "type": "filter", "hook": "input", "prio": -10, "policy": "accept"}},
+ {"rule": {"family": "inet", "table": "tacctl", "chain": "input", "handle": 5, "expr": [
+   {"match": {"op": "==", "left": {"payload": {"protocol": "ip", "field": "saddr"}}, "right": "@held4"}},
+   {"match": {"op": "==", "left": {"payload": {"protocol": "tcp", "field": "dport"}}, "right": 49}},
+   {"reject": {"type": "tcp reset"}}]}},
+ {"rule": {"family": "inet", "table": "tacctl", "chain": "input", "handle": 6, "expr": [
+   {"match": {"op": "==", "left": {"payload": {"protocol": "ip6", "field": "saddr"}}, "right": "@held6"}},
+   {"match": {"op": "==", "left": {"payload": {"protocol": "tcp", "field": "dport"}}, "right": 49}},
+   {"reject": {"type": "tcp reset"}}]}}]}`
+
+func TestBreakglassFirewallDriftInStatusValidateAndList(t *testing.T) {
+	sb := engineerSandbox(t)
+	sb.write("state/tacctl.yaml", heldLabSw, 0o600)
+	sb.run("", []string{"config", "render"})
+
+	// in sync: green lines, nothing to fix
+	sb.script = func(r *fake.Runner) {
+		r.On([]string{"nft", "-j", "list", "table", "inet", "tacctl"}, execx.Result{Stdout: []byte(liveTable)})
+	}
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"status"}, "Break-glass firewall: 192.168.1.1 refused on tcp/49 (reject)"},
+		{[]string{"config", "validate"}, "Break-glass firewall: 192.168.1.1 refused on tcp/49 (reject)"},
+		{[]string{"breakglass", "list"}, "Firewall: 192.168.1.1 refused on tcp/49 (reject)"},
+	} {
+		if got := plain(sb.run("", c.args)); !strings.Contains(got, c.want) {
+			t.Errorf("%v lacks %q:\n%s", c.args, c.want, got)
+		}
+	}
+	if sb.run("", []string{"config", "validate"}); sb.code != 0 {
+		t.Errorf("validate exit %d with a table that is right", sb.code)
+	}
+
+	// the table is gone: red, the fix, and validate fails with a finding
+	sb.script = func(r *fake.Runner) {
+		r.Fail([]string{"nft", "-j", "list", "table"}, 1, "Error: No such file or directory")
+	}
+	status := plain(sb.run("", []string{"status"}))
+	if !strings.Contains(status, "Break-glass firewall: the table inet tacctl differs from the holds and the setting: the table inet tacctl is missing, so the server still completes the TCP handshake of 192.168.1.1 on tcp/49 (tacctl config breakglass-firewall reject)") {
+		t.Errorf("status:\n%s", status)
+	}
+	if raw := sb.run("", []string{"status"}); !strings.Contains(raw, "\x1b[0;31m    ") && !strings.Contains(raw, "\x1b[0;31mBreak-glass firewall") {
+		t.Errorf("status line is not red: %q", raw)
+	}
+	out := plain(sb.run("", []string{"config", "validate"}))
+	if sb.code != 1 || !strings.Contains(out, "Break-glass firewall: the table inet tacctl differs") || !strings.Contains(out, "(tacctl config breakglass-firewall reject)") {
+		t.Errorf("validate: %d\n%s", sb.code, out)
+	}
+	js := sb.run("", []string{"config", "validate", "--json"})
+	if f := validateJSONOf(t, js).find("breakglass_firewall"); f == nil || f.Level != levelError || f.Fix != "tacctl config breakglass-firewall reject" {
+		t.Errorf("no finding: %s", js)
+	}
+	if got := plain(sb.run("", []string{"breakglass", "list"})); !strings.Contains(got, "Firewall: the table inet tacctl differs") {
+		t.Errorf("list:\n%s", got)
+	}
+
+	// an address that is held but missing from the set, a verdict that is wrong
+	sb.write("state/tacctl.yaml", heldLabSw+"breakglass:\n  firewall: drop\n", 0o600)
+	sb.script = func(r *fake.Runner) {
+		r.On([]string{"nft", "-j", "list", "table", "inet", "tacctl"}, execx.Result{Stdout: []byte(liveTable)})
+	}
+	out = plain(sb.run("", []string{"config", "validate"}))
+	if sb.code != 1 || !strings.Contains(out, "the verdict for the set held4 is reject, not drop (breakglass.firewall is drop)") ||
+		!strings.Contains(out, "tacctl config breakglass-firewall drop") {
+		t.Errorf("verdict: %d\n%s", sb.code, out)
+	}
+
+	// not readable: said, not failed
+	sb.write("state/tacctl.yaml", heldLabSw, 0o600)
+	sb.script = func(r *fake.Runner) {
+		r.Fail([]string{"nft", "-j", "list", "table"}, 1, "netlink: Error: cannot open: Operation not permitted")
+	}
+	out = plain(sb.run("", []string{"config", "validate"}))
+	if !strings.Contains(out, "Break-glass firewall: reject; the live table was not read (nft says: netlink: Error: cannot open: Operation not permitted)") ||
+		strings.Contains(sb.stderr(), "firewall") {
+		t.Errorf("unreadable: %d\n%s", sb.code, out)
+	}
+	if got := plain(sb.run("", []string{"status"})); !strings.Contains(got, "the live table was not read") {
+		t.Errorf("status:\n%s", got)
+	}
+	// setting off with an address held: said, not a finding
+	sb.write("state/tacctl.yaml", heldLabSw+"breakglass:\n  firewall: 'off'\n", 0o600)
+	sb.script = func(r *fake.Runner) {
+		r.Fail([]string{"nft", "-j", "list", "table"}, 1, "Error: No such file or directory")
+	}
+	out = plain(sb.run("", []string{"config", "validate"}))
+	if !strings.Contains(out, "Break-glass firewall: off: the server still completes the TCP handshake of 192.168.1.1 on tcp/49") {
+		t.Errorf("off:\n%s", out)
+	}
+
+	// nothing held and no table: nothing is shown
+	sb.write("state/tacctl.yaml", "tier:\n  operator: engineer\n", 0o600)
+	if got := plain(sb.run("", []string{"status"})); strings.Contains(got, "firewall") {
+		t.Errorf("status without holds:\n%s", got)
+	}
+	// ... unless a table is left that nothing asks for
+	sb.script = func(r *fake.Runner) {
+		r.On([]string{"nft", "-j", "list", "table", "inet", "tacctl"}, execx.Result{Stdout: []byte(liveTable)})
+	}
+	if got := plain(sb.run("", []string{"status"})); !strings.Contains(got, "192.168.1.1 is in the set held4 but not held") {
+		t.Errorf("a stale table:\n%s", got)
+	}
+}
+
+func TestBreakglassListJSONNamesTheSetting(t *testing.T) {
+	sb := engineerSandbox(t)
+	sb.write("state/tacctl.yaml", heldLabSw+"breakglass:\n  firewall: drop\n", 0o600)
+	var js []holdJSON
+	if err := json.Unmarshal([]byte(sb.run("", []string{"breakglass", "list", "--json"})), &js); err != nil || len(js) != 1 || js[0].Firewall != "drop" {
+		t.Errorf("%v %+v", err, js)
+	}
+}
+
+func TestBreakglassFirewallLinesAreForTheSuperuserOnly(t *testing.T) {
+	sb := engineerSandbox(t)
+	sb.write("state/tacctl.yaml", heldLabSw, 0o600)
+	for _, args := range [][]string{{"status"}, {"breakglass", "list"}, {"config", "validate"}} {
+		if got := sb.asEngineer("", args...); strings.Contains(got, "firewall") || strings.Contains(sb.stderr(), "nft") {
+			t.Errorf("%v shows the table to an engineer:\n%s", args, got)
+		}
+	}
+	if sb.runner.Called("nft") {
+		t.Error("an engineer's command ran nft")
 	}
 }

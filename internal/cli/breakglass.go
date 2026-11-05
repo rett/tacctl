@@ -1549,10 +1549,13 @@ type holdJSON struct {
 	// at another address. The address it carves is still not answered.
 	Orphan  bool `json:"orphan"`
 	Covered bool `json:"covered"`
+	// Firewall is the setting that decides what the server does with the TCP
+	// connections of the address: reject, drop or off (breakglass.firewall).
+	Firewall string `json:"firewall"`
 }
 
 func (inv *invocation) holdJSONOf(h conf.Hold, m *model.Model, res *devreg.Resolver) holdJSON {
-	j := holdJSON{Device: h.Device, Address: h.Address, Since: h.Since, By: h.By, Reason: h.Reason}
+	j := holdJSON{Device: h.Device, Address: h.Address, Since: h.Since, By: h.By, Reason: h.Reason, Firewall: firewall.Mode(inv.app.Conf())}
 	if t := h.SinceTime(); !t.IsZero() {
 		j.HeldSecs = int64(inv.app.Knobs.Now().Sub(t) / time.Second)
 	}
@@ -1613,6 +1616,7 @@ func (inv *invocation) breakglassList(args []string) error {
 		inv.echoE(ui.Bold + title + ui.NC)
 		inv.echo(ui.Rule(title))
 		inv.echo("  None held: the server answers every device and host its scopes cover.")
+		inv.listFirewall()
 		inv.echo("")
 		return nil
 	}
@@ -1645,6 +1649,7 @@ func (inv *invocation) breakglassList(args []string) error {
 		}
 	}
 	inv.echo("  A held device or host is not answered by this server: its logins fall to its local accounts until it is released.")
+	inv.listFirewall()
 	if !inv.callerScopes().restricted {
 		inv.echo("  Release: tacctl breakglass release <name>")
 	}
@@ -1663,6 +1668,7 @@ func (inv *invocation) statusHolds() {
 			return
 		}
 		inv.echoE("    " + ui.Green + "Break-glass:        none held" + ui.NC)
+		inv.statusFirewall()
 		return
 	}
 	now := inv.app.Knobs.Now()
@@ -1676,6 +1682,7 @@ func (inv *invocation) statusHolds() {
 		inv.echoE("    " + ui.Red + "Break-glass:        HELD on " + h.Device + " (" + h.Address + ") since " + holdTime(h) + " by " + h.By +
 			" (" + holdAge(h, now) + "): the server does not answer it (tacctl breakglass list)" + ui.NC)
 	}
+	inv.statusFirewall()
 }
 
 // holdCarry moves a device's record to its new name ('device rename'): the

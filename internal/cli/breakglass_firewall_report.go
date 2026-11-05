@@ -111,3 +111,64 @@ func (inv *invocation) firewallListenerNote() (res firewall.Result, failed bool)
 	}
 	return res, false
 }
+
+// firewallCheck is the live table compared with the holds and the setting.
+// Only the superuser's view reads it (nft needs root, and a lower tier is told
+// nothing of the table): ok is false for a restricted caller.
+func (inv *invocation) firewallCheck() (spec firewall.Spec, chk firewall.Check, ok bool) {
+	if inv.callerScopes().restricted {
+		return firewall.Spec{}, firewall.Check{}, false
+	}
+	spec = firewall.SpecOf(inv.app.Conf())
+	return spec, inv.firewallEngine().Check(inv.ctx), true
+}
+
+// firewallState says in one clause what the table does for the held addresses
+// and whether it is as it should be: level is "ok", "warn" or "error".
+func firewallState(spec firewall.Spec, chk firewall.Check) (text, level string) {
+	addrs := strings.Join(spec.Strings(), ", ")
+	switch {
+	case chk.State == firewall.Differs:
+		return "the table inet tacctl differs from the holds and the setting: " + strings.Join(chk.Differences, "; "), "error"
+	case chk.State == firewall.Unreadable:
+		return spec.Mode + "; the live table was not read (" + chk.Why + ")", "warn"
+	case spec.Mode == firewall.Off:
+		return "off: the server still completes the TCP handshake of " + addrs + " on " + firewall.PortList(spec.Ports), "warn"
+	case len(spec.Ports) == 0:
+		return "no TACACS+ listener binds a TCP port, so there is nothing to refuse (RADIUS is UDP: the device times out)", "ok"
+	}
+	return addrs + " refused on " + firewall.PortList(spec.Ports) + " (" + spec.Mode + ")", "ok"
+}
+
+// statusFirewall is the Break-glass firewall line of 'status', after the holds:
+// shown when an address is held or the live table differs; green when the
+// table is as the holds and the setting ask for, yellow when it is off or was
+// not read, red with the differences and the command that fixes them.
+func (inv *invocation) statusFirewall() {
+	spec, chk, ok := inv.firewallCheck()
+	if !ok || (len(spec.Held) == 0 && chk.State != firewall.Differs) {
+		return
+	}
+	text, level := firewallState(spec, chk)
+	colour := map[string]string{"ok": ui.Green, "warn": ui.Yellow, "error": ui.Red}[level]
+	if level == "error" {
+		text += " (" + chk.Fix + ")"
+	}
+	inv.echoE("    " + colour + "Break-glass firewall: " + text + ui.NC)
+}
+
+// listFirewall is the firewall line of 'breakglass list' (the superuser's
+// view): what the table does for the held addresses, in the colours of
+// status, and the command that fixes a table that differs.
+func (inv *invocation) listFirewall() {
+	spec, chk, ok := inv.firewallCheck()
+	if !ok || (len(spec.Held) == 0 && chk.State != firewall.Differs) {
+		return
+	}
+	text, level := firewallState(spec, chk)
+	colour := map[string]string{"ok": ui.Green, "warn": ui.Yellow, "error": ui.Red}[level]
+	if level == "error" {
+		text += " (" + chk.Fix + ")"
+	}
+	inv.echoE("  " + colour + "Firewall: " + text + ui.NC)
+}
