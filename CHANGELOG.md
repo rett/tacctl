@@ -97,10 +97,16 @@ current behaviour; this file is where history lives.
    the tier blocks); with nobody held there is no block and the file is the
    one of earlier releases. The sync of the server writes the list (the `user`
    verbs, `host sync`, `console install`, `upgrade`; it stays as it was when
-   the store or `tacctl.yaml` cannot be read), and so do the verbs that flag
-   or unflag users and run no sync: an administrator's `user passwd`, the
-   user's own `passwd`, `store import`, `backup restore` (a snapshot or an
-   old-style backup) and `store rollback` (legacy mode holds nobody). The
+   the store or `tacctl.yaml` cannot be read), and so do the verbs that change
+   who is held, each by itself, because a sync of the server reaches the
+   drop-in only when the server is enrolled, its checks pass and a user of the
+   scope gets the console: `user require-password-change` in every form,
+   `user add`, `user remove`, `user rename`, `user move`, an administrator's
+   `user passwd`, the user's own `passwd`, a group command that lowers a tier
+   (the one change of a group's tier that syncs the server; raising a tier
+   leaves the list as it was until the next rewrite, which only closes
+   forwarding), `store import`, `backup restore` (a snapshot or an old-style
+   backup) and `store rollback` (legacy mode holds nobody). The
    rewrite checks the drop-in with `sshd -t`, undoes it when sshd refuses it
    (one warning with `tacctl console install` then), and reads the users and
    installs the file under the apply lock, so two commands that flag users at

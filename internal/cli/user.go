@@ -591,6 +591,10 @@ func (inv *invocation) userAdd(args []string) error {
 	if email != "" {
 		a.Out.InfoE("Email address recorded for '" + username + "'.")
 	}
+	if require {
+		// the sync below may not reach the console's drop-in
+		inv.refreshHeldForwarding()
+	}
 	shellErr := inv.userSettingsMoved(stale, username, "")
 	switch {
 	case require:
@@ -751,6 +755,8 @@ func (inv *invocation) userRemove(args []string) error {
 	}
 	inv.detail("user remove", kvp("name", username))
 	inv.app.Out.Info("User '" + username + "' removed.")
+	// a user held to a password change leaves the list of the drop-in
+	inv.refreshHeldForwarding()
 	shellErr := inv.userSettingsMoved(shell, username, "")
 	if err := inv.afterUserChange(before, []string{username}, func(h string) string {
 		return "'" + username + "' keeps its account on " + h + " until each host's next sync, which removes it"
@@ -1114,6 +1120,8 @@ func (inv *invocation) userRename(args []string) error {
 	inv.detail("user rename", kvp("from", oldname), kvp("to", newname), kvp("uid", uidWord))
 	out := inv.app.Out
 	out.Info("User renamed: " + oldname + " -> " + newname)
+	// a user held to a password change is listed under the new name
+	inv.refreshHeldForwarding()
 	shellErr := inv.userSettingsMoved(shell, oldname, newname)
 	switch {
 	case mv.err != nil:
@@ -1238,6 +1246,8 @@ func (inv *invocation) userMove(args []string) error {
 	}
 	inv.detail("user move", kvp("name", username), kvp("from", oldgroup), kvp("to", newgroup))
 	inv.app.Out.Info("User '" + username + "' moved: " + oldgroup + " -> " + newgroup)
+	// the new group's tier decides whether the user is held (a superuser never is)
+	inv.refreshHeldForwarding()
 	return inv.afterUserChange(m, []string{username}, func(h string) string {
 		return "The group of '" + username + "' changes on " + h + " at each host's next sync"
 	})
