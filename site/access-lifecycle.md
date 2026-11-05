@@ -54,9 +54,30 @@ tacctl user show alice                                   # 3. confirm (Password 
 Give alice the first password your usual way. She must change it at her
 first login to the tacctl server ([Getting Started](getting-started.md)
 §2.1): until then no device accepts her, and the other hosts keep her
-account expired. Her account on the server exists only after the sync of
-step 2, so run it before she logs in. The requirement and what to check
-are in §5.1.
+account expired. From 0.2.23 the command syncs **this server's own
+accounts** at once (`This server's accounts were synced: 1 created`), so
+alice can log in here to change the password. The other enrolled hosts get
+one warning with the `host sync` command that brings them along; on a
+terminal the command also asks `Sync these hosts now? [y/N]` (the default is
+no, and `--yes` does not answer it). Step 2 is that sync for all hosts. The
+requirement and what to check are in §5.1.
+
+**An email address (optional).** For the people who look after the accounts,
+a superuser can record one address per user. No mail is ever sent to it.
+
+```bash
+tacctl user add alice operator --scopes site-a --email alice@example.net
+tacctl user email alice                      # show it
+tacctl user email alice alice@example.net    # set or change it
+tacctl user email alice clear                # remove it
+```
+
+- An address belongs to one user: another user's address is refused, naming
+  that user.
+- `user show` prints an `Email` line to every tier that can run `user show`;
+  `user list` does not show it. `user rename` carries it along.
+- The address is never in an audit line: the `--email` value is written as
+  `<redacted>`, and the `user email` line says only `op=set` or `op=clear`.
 
 Names are lower case: letters, digits, `_` and `-` (`alice-smith`). A period
 is refused, because every user has an account on the tacctl server and a
@@ -225,10 +246,14 @@ forget` or `host unenroll` of the server, or disabling the backend of its
 login, for example) is refused with nothing changed, and names
 `tacctl user require-password-change <name> off`.
 
-> **Before you require it of everyone,** check
-> `tacctl console forwarding tiers`. A user of a listed tier can still
-> forward ports through the server with the old password until it is
-> changed. The default lists only superusers, who are never held.
+> **Forwarding through the server.** From 0.2.24, while anyone is held to a
+> password change, the console's sshd drop-in closes every kind of
+> forwarding for them, in every tier. The verbs that change who is held
+> (`require-password-change`, `user add`, `user passwd` and the like) rewrite
+> it, check it with `sshd -t` and undo it when sshd refuses it. A connection
+> the user opened before keeps its forwardings until it closes;
+> `loginctl terminate-user <name>` ends it. `tacctl console check` reports a
+> list that is not the users held now as drift and shows both lists.
 
 ---
 
@@ -260,7 +285,7 @@ tacctl scope list                # scopes
 
 | Task | Command |
 |---|---|
-| New user (prompts for the first password) | `tacctl user add <n> <group> --scopes <s,…>` |
+| New user (prompts for the first password) | `tacctl user add <n> <group> --scopes <s,…> [--email <address>]` |
 | Reset a password | `tacctl user passwd <n>` |
 | Require / lift a password change | `tacctl user require-password-change <n> [on\|off]` |
 | Add/remove scope | `tacctl user scope <n> add\|remove <s>` |
@@ -271,6 +296,7 @@ tacctl scope list                # scopes
 | Delete | `tacctl user remove <n>` |
 | Push to hosts | `tacctl host sync --all` |
 | Review | `tacctl user list` |
+| Email address: show / set / remove | `tacctl user email <n> [<address>\|clear]` |
 
 ---
 
