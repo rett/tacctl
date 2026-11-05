@@ -10,6 +10,7 @@ import (
 // synchronize', and the entry keeps the word. The pre-flight read entry 0
 // 'commit synchronize' as no command it knew and refused the device.
 func TestParseHistorySynchronizeEntries(t *testing.T) {
+	t.Parallel()
 	const out = `0   2026-05-19 12:37:55 UTC by alice via cli commit synchronize
 1   2026-05-19 12:37:06 UTC by alice via cli commit confirmed, rollback in 5mins synchronize
 2   2026-05-19 11:02:40 UTC by root via other
@@ -34,6 +35,7 @@ func TestParseHistorySynchronizeEntries(t *testing.T) {
 // Every spelling of a commit command that 'show system commit' prints at the
 // end of an entry is read, and the window of a confirmed commit is kept.
 func TestParseHistoryCommitSpellings(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		tail string
 		mins int
@@ -80,6 +82,7 @@ func TestParseHistoryCommitSpellings(t *testing.T) {
 // The entry that is no commit command stays an error for entry 0, which says
 // what could not be read, and is kept as it is for a later entry.
 func TestParseHistoryUnknownCommandText(t *testing.T) {
+	t.Parallel()
 	for _, tail := range []string{
 		" something else",
 		" commit something new",
@@ -120,6 +123,7 @@ func TestParseHistoryUnknownCommandText(t *testing.T) {
 
 // The rest of the entry layout: the user, the way, the zone, the log lines.
 func TestParseHistoryEntryLayout(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name, line string
 		user, via  string
@@ -188,6 +192,7 @@ func TestParseHistoryEntryLayout(t *testing.T) {
 // Log lines under an entry: one, several, indented with a tab, a log line
 // that looks like a commit command, and one under a synchronized entry.
 func TestParseHistoryLogLines(t *testing.T) {
+	t.Parallel()
 	const out = `0   2026-10-13 14:00:00 UTC by alice via cli commit confirmed, rollback in 5mins synchronize
     tacctl apply sw1.example.net by alice
     second line
@@ -220,6 +225,7 @@ func TestParseHistoryLogLines(t *testing.T) {
 
 // Lines that are no commit entry still fail closed.
 func TestParseHistoryNoEntryFailsClosed(t *testing.T) {
+	t.Parallel()
 	const e0 = "0   2026-10-13 14:00:00 UTC by alice via cli commit synchronize\n"
 	for name, in := range map[string]string{
 		"no number":      "   2026-10-13 14:00:00 UTC by alice via cli commit synchronize\n",

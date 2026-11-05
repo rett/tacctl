@@ -11,6 +11,7 @@ import (
 // of 'show version' once per engine under a header and a rule. Engines that
 // agree on the hostname and the release are one device.
 func TestParseVersionTwoRoutingEngines(t *testing.T) {
+	t.Parallel()
 	for name, out := range map[string]string{
 		"re": `re0:
 --------------------------------------------------------------------------
@@ -67,6 +68,7 @@ JUNOS Base OS boot [12.3R12-S15.1]
 // routing engine, the virtual-chassis member or the cluster node; the apply
 // takes the line of every role as no part of an answer.
 func TestPromptAreaOfEveryRole(t *testing.T) {
+	t.Parallel()
 	for _, role := range []string{"{master}", "{backup}", "{master:0}", "{backup:1}", "{linecard:2}", "{primary:node0}", "{secondary:node1}"} {
 		if pending, _, err := parseBanner([]string{"", role}); err != nil || pending {
 			t.Errorf("%s: %v %v", role, pending, err)

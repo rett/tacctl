@@ -3,6 +3,7 @@ package devapply
 import "testing"
 
 func TestChoose(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		in   ChooseInput
@@ -40,6 +41,7 @@ func TestChoose(t *testing.T) {
 // --transport netconf with a change to the service is a refusal that says
 // what to run instead, never a quiet change of transport.
 func TestChooseNetconfServiceChangeFails(t *testing.T) {
+	t.Parallel()
 	got := Choose(ChooseInput{Setting: SettingNetconf, Probe: ProbeHelloOK, ServiceChange: true})
 	if got.Fail == "" || got.Via != ViaCLI {
 		t.Fatalf("%+v", got)
@@ -50,6 +52,7 @@ func TestChooseNetconfServiceChangeFails(t *testing.T) {
 }
 
 func TestSettingValid(t *testing.T) {
+	t.Parallel()
 	for _, s := range []Setting{SettingAuto, SettingCLI, SettingNetconf} {
 		if !s.Valid() {
 			t.Errorf("%q is not valid", s)

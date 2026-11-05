@@ -32,6 +32,7 @@ JUNOS FIPS mode utilities [12.3R9.4]
 `
 
 func TestParseVersionEX4200Junos123(t *testing.T) {
+	t.Parallel()
 	id, err := parseVersion(ex4200v123)
 	if err != nil || id.Hostname != "sw1.example.net" || id.Model != "ex4200-24t" || id.Release != "12.3R9.4" {
 		t.Errorf("%+v %v", id, err)
@@ -41,6 +42,7 @@ func TestParseVersionEX4200Junos123(t *testing.T) {
 // Junos 15.1 prints the 'Junos:' line and the permissions as 'name -- text'
 // with no blank before the dashes of a long name.
 func TestParseAuthorizationJunos151(t *testing.T) {
+	t.Parallel()
 	const out = `Current user: 'ops-rw' login: 'alice' class 'ops-rw'
 Permissions:
     admin       -- Can view user accounts
@@ -78,6 +80,7 @@ Individual command authorization:
 }
 
 func TestParseHistoryJunos151(t *testing.T) {
+	t.Parallel()
 	const out = `0   2026-03-30 20:42:44 UTC by alice via cli
 1   2026-03-30 20:42:14 UTC by alice via cli commit confirmed, rollback in 10mins
     tacctl plan sw1.example.net 2026-10-12T13:11Z by alice
@@ -93,6 +96,7 @@ func TestParseHistoryJunos151(t *testing.T) {
 // An SRX on Junos 21.4 prints both the 'Junos:' line and the software
 // release line; a node of a standalone box has no 'node0:' header.
 func TestParseVersionSRX214(t *testing.T) {
+	t.Parallel()
 	const out = `Hostname: fw1.example.net
 Model: srx345-dc
 Junos: 21.4R3-S3.4
@@ -106,6 +110,7 @@ JUNOS Software Release [21.4R3-S3.4]
 
 // An SRX on Junos 11.4 prints the software release line and no 'Junos:' line.
 func TestParseVersionSRX114(t *testing.T) {
+	t.Parallel()
 	const out = `Hostname: fw2.example.net
 Model: srx240h2
 JUNOS Software Release [11.4R7.5]
@@ -118,6 +123,7 @@ JUNOS Software Release [11.4R7.5]
 
 // A class with 'all-control' and 'configure' commits on an 11.4 SRX too.
 func TestParseAuthorizationSRX114(t *testing.T) {
+	t.Parallel()
 	const out = `Current user: 'ops-rw' login: 'alice' class 'ops-rw'
 Permissions:
     configure   -- Can enter configuration mode
@@ -134,6 +140,7 @@ Individual command authorization:
 
 // Entries with and without a comment line under them.
 func TestParseHistorySRX214(t *testing.T) {
+	t.Parallel()
 	const out = `0   2026-10-12 13:11:00 UTC by alice via cli commit confirmed, rollback in 5mins
     tacctl plan fw1.example.net 2026-10-12T13:11Z by alice
 1   2026-10-12 12:00:00 UTC by alice via cli
@@ -169,6 +176,7 @@ const (
 // The pre-flight lists one member, and every reply of the capture is read
 // for it.
 func TestOneMemberVirtualChassisCapture(t *testing.T) {
+	t.Parallel()
 	id, err := parseVersion(oneMemberVersion)
 	if err != nil || id.Hostname != "jsw1.example.net" || id.Model != "ex4600-40f" || id.Release != "18.1R3-S6.1" {
 		t.Fatalf("%+v %v", id, err)
@@ -198,6 +206,7 @@ func TestOneMemberVirtualChassisCapture(t *testing.T) {
 // mode of a fresh login; an empty answer there is no history and is refused,
 // never read as an empty one.
 func TestEmptyShowSystemCommitIsRefused(t *testing.T) {
+	t.Parallel()
 	_, err := parseHistory("\n")
 	if !errors.Is(err, ErrUnrecognised) || !strings.HasPrefix(err.Error(), "show system commit: no entry: ") {
 		t.Errorf("%v", err)

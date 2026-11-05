@@ -47,6 +47,7 @@ func listInput(d *device, p *planner) Input {
 }
 
 func TestListElementCompare(t *testing.T) {
+	t.Parallel()
 	d := listDevice(t)
 	// the fake prints the lists as the device does: the whole leaf removed,
 	// then added
@@ -84,6 +85,7 @@ func TestListElementCompare(t *testing.T) {
 }
 
 func TestListElementCheckAndApply(t *testing.T) {
+	t.Parallel()
 	d := listDevice(t)
 	p := &planner{desired: listLines()}
 	before := d.srv.Committed()
@@ -133,6 +135,7 @@ func (e *listStrangerT) Load(ctx context.Context, l plan.Line) (Loaded, error) {
 // of the list removed, is a change outside the delta: the check fails
 // closed.
 func TestListElementStrangerFails(t *testing.T) {
+	t.Parallel()
 	for line, want := range map[string]string{
 		"set system domain-search stranger.example":  "+ system domain-search stranger.example",
 		"delete system accounting events change-log": "- system accounting events change-log",

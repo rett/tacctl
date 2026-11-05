@@ -13,6 +13,7 @@ import (
 // Observe files the lines of a shape a check saw without confirming it, and
 // leaves a shape that is confirmed as it is.
 func TestShapesObserve(t *testing.T) {
+	t.Parallel()
 	s := OpenShapes(t.TempDir())
 	d := plan.Delta{Vendor: devconf.FamilyJunos, Lines: []plan.Line{{Section: "aaa", Op: plan.OpSet, Text: "set system accounting events login"}}}
 	hash, lines := plan.Shape(d)
@@ -43,6 +44,7 @@ func TestShapesObserve(t *testing.T) {
 // ReadPlain reads the plain view through the transport's exec channel, the
 // one command beside the pull's read that the guard lets through.
 func TestReadPlain(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	j := d.dial()
 	defer func() { _ = j.Close() }()

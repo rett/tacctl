@@ -12,6 +12,7 @@ import (
 // The proof of a change to the NETCONF service (D148), once per transport.
 
 func TestBothVerifyServiceProofIsKept(t *testing.T) {
+	t.Parallel()
 	both(t, nil, func(t *testing.T, d *device) {
 		var seen int
 		o := apply(t, d, &planner{desired: desiredLines()}, func(in *Input) {
@@ -28,6 +29,7 @@ func TestBothVerifyServiceProofIsKept(t *testing.T) {
 }
 
 func TestBothVerifyServiceRefusedRollsBack(t *testing.T) {
+	t.Parallel()
 	both(t, nil, func(t *testing.T, d *device) {
 		before := d.srv.Committed()
 		o := apply(t, d, &planner{desired: desiredLines()}, func(in *Input) {
@@ -46,6 +48,7 @@ func TestBothVerifyServiceRefusedRollsBack(t *testing.T) {
 // A NETCONF fresh login names the state it read in its own words: it has no
 // prompt to show a banner. The command line keeps its 0.2.9 words.
 func TestNetconfNoPendingWord(t *testing.T) {
+	t.Parallel()
 	w := (&JunosNetconf{}).NoPendingWord()
 	if !strings.Contains(w, "commit history") || strings.Contains(w, "prompt") {
 		t.Errorf("%q", w)

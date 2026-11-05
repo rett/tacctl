@@ -63,6 +63,7 @@ const vcVersion = "fpc0:\n" + vcRule +
 // The 0.2.19 rules read the chassis: one hostname and one release for every
 // member, the model of the first.
 func TestParseVersionVirtualChassisCapture(t *testing.T) {
+	t.Parallel()
 	id, err := parseVersion(vcVersion)
 	if err != nil || id.Hostname != "jsw1.example.net" || id.Model != "ex4600-40f" || id.Release != "21.4R3-S2.4" {
 		t.Errorf("%+v %v", id, err)
@@ -74,6 +75,7 @@ func split(s string) []string { return strings.Split(strings.TrimRight(s, "\n"),
 // 'commit check' prints a block for each member; the single chassis' answer
 // reads as before.
 func TestCheckAnswerMembers(t *testing.T) {
+	t.Parallel()
 	for name, in := range map[string]string{
 		"single":        "configuration check succeeds\n",
 		"chassis":       vcCheck,
@@ -124,6 +126,7 @@ func TestCheckAnswerMembers(t *testing.T) {
 // 'commit complete' last, the check's success and the confirmed note
 // optional.
 func TestCommittedAnswerMembers(t *testing.T) {
+	t.Parallel()
 	note := plan.ApplyConfirmedNote(10)
 	chk := func(l string) string { return l + ": \nconfiguration check succeeds\n" }
 	done := func(l string) string { return l + ": \ncommit complete\n" }
@@ -183,6 +186,7 @@ func TestCommittedAnswerMembers(t *testing.T) {
 // names fewer, more or none fails closed with the missing and the unexpected
 // members named.
 func TestAnswersNameTheChassisMembers(t *testing.T) {
+	t.Parallel()
 	set := []string{"fpc0", "fpc1", "fpc2", "fpc3"}
 	if ok, why := checkAnswer(split(vcCheck), set); !ok {
 		t.Errorf("the capture: %s", why)
@@ -281,6 +285,7 @@ func TestAnswersNameTheChassisMembers(t *testing.T) {
 // The labels of 'show version' are the members, in order; two kinds, or a
 // label twice, is refused.
 func TestParseVersionMemberLabels(t *testing.T) {
+	t.Parallel()
 	id, err := parseVersion(vcVersion)
 	if err != nil || strings.Join(id.Members, ",") != "fpc0,fpc1,fpc2,fpc3" {
 		t.Errorf("%+v %v", id.Members, err)
@@ -305,6 +310,7 @@ func TestParseVersionMemberLabels(t *testing.T) {
 // commit's success after the check's or alone: never an error, never another
 // member's success.
 func TestNetconfReplyMembers(t *testing.T) {
+	t.Parallel()
 	const ck, cs = "<commit-check-success/>", "<commit-success/>"
 	re := func(name, el string) string {
 		return "<routing-engine><name>" + name + "</name>" + el + "</routing-engine>"
@@ -376,6 +382,7 @@ func TestNetconfReplyMembers(t *testing.T) {
 
 // An <rpc-error> inside a member's element names the member in the error.
 func TestNetconfMemberErrorNamesTheMember(t *testing.T) {
+	t.Parallel()
 	const reply = "<commit-results><routing-engine><name>fpc0</name><commit-check-success/></routing-engine>" +
 		"<routing-engine><name>fpc2</name><rpc-error><error-severity>error</error-severity><error-message>statement not found</error-message></rpc-error></routing-engine></commit-results>"
 	r, err := parseReply(reply)
@@ -397,6 +404,7 @@ func TestNetconfMemberErrorNamesTheMember(t *testing.T) {
 // The NETCONF reply of 'show version' as one item for each member gives the
 // same labels as the command line's blocks (the shape is inferred).
 func TestParseVersionOfMultiRoutingEngineReply(t *testing.T) {
+	t.Parallel()
 	item := func(name, model string) string {
 		return "<multi-routing-engine-item><re-name>" + name + "</re-name><output>Hostname: jsw1.example.net\nModel: " + model +
 			"\nJunos: 21.4R3-S2.4\nJUNOS Base OS boot [21.4R3-S2.4]\n</output></multi-routing-engine-item>"
@@ -418,6 +426,7 @@ func TestParseVersionOfMultiRoutingEngineReply(t *testing.T) {
 // member, a label twice and a stray line are refused. Two or more members
 // keep naming every member.
 func TestOneMemberSetAnswers(t *testing.T) {
+	t.Parallel()
 	note := plan.ApplyConfirmedNote(10)
 	for _, member := range []string{"fpc0", "re1", "node0"} {
 		set := []string{member}
@@ -523,6 +532,7 @@ func TestOneMemberSetAnswers(t *testing.T) {
 // right name that does not answer, are refused. Two members still name
 // every member.
 func TestNetconfOneMemberSet(t *testing.T) {
+	t.Parallel()
 	const ck, cs = "<commit-check-success/>", "<commit-success/>"
 	re := func(name, el string) string {
 		return "<routing-engine><name>" + name + "</name>" + el + "</routing-engine>"
