@@ -13,6 +13,7 @@ import (
 // A scale multiplies every timing of a host-key read, and 1 is the defaults
 // byte for byte.
 func TestScanTimingScaled(t *testing.T) {
+	t.Parallel()
 	d := devssh.DefaultScanTiming()
 	if got := (devssh.ScanTiming{}).Scaled(1); got != d {
 		t.Errorf("scale 1 = %+v, want the defaults %+v", got, d)
@@ -31,6 +32,7 @@ func TestScanTimingScaled(t *testing.T) {
 
 // A scale outside the bounds never shrinks a timeout nor makes it absurd.
 func TestScaleDurationBounds(t *testing.T) {
+	t.Parallel()
 	for scale, want := range map[int]time.Duration{-5: 10 * time.Second, 0: 10 * time.Second, 1: 10 * time.Second,
 		2: 20 * time.Second, 10: 100 * time.Second, 11: 100 * time.Second, 1000: 100 * time.Second} {
 		if got := devssh.ConnectTimeoutFor(scale); got != want {

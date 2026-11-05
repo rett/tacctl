@@ -11,6 +11,7 @@ import (
 )
 
 func TestIsPasswordPrompt(t *testing.T) {
+	t.Parallel()
 	for p, want := range map[string]bool{
 		"Password: ":                            true,
 		"password:":                             true,
@@ -48,6 +49,7 @@ func TestIsPasswordPrompt(t *testing.T) {
 }
 
 func TestPromptDetectors(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		vendor, line string
 		want         bool
@@ -71,6 +73,7 @@ func TestPromptDetectors(t *testing.T) {
 }
 
 func TestPagerIsAnchored(t *testing.T) {
+	t.Parallel()
 	for line, want := range map[string]bool{
 		" --More-- ":                 true,
 		"--More--":                   true,
@@ -88,6 +91,7 @@ func TestPagerIsAnchored(t *testing.T) {
 }
 
 func TestSkipErase(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		in, rest string
 		state    int
@@ -110,6 +114,7 @@ func TestSkipErase(t *testing.T) {
 }
 
 func TestOutBufCountsPromptLines(t *testing.T) {
+	t.Parallel()
 	o := outBuf{prev: -1, prompt: "rtr#"}
 	o.add([]byte("show x\r\nrtr#\r\n{master:0}\r\nrtr#"))
 	o.add([]byte("rtr#"))
@@ -134,6 +139,7 @@ func TestOutBufCountsPromptLines(t *testing.T) {
 // prompts on one line: the answer is whole, and the prompt area is not
 // told (a caller that needs it fails closed).
 func TestPromptAreaBothPromptsOnOneLine(t *testing.T) {
+	t.Parallel()
 	s := &shell{}
 	o := outBuf{prev: -1, prompt: "gotest@sw1> ", echo: "show x"}
 	o.add([]byte("show x\r\nanswer\r\n\r\ngotest@sw1> gotest@sw1> "))
@@ -155,6 +161,7 @@ func TestPromptAreaBothPromptsOnOneLine(t *testing.T) {
 }
 
 func TestPromptUnitAndRepeats(t *testing.T) {
+	t.Parallel()
 	det := profiles[VendorCisco].prompt
 	for line, want := range map[string]string{
 		"rtr1#":       "rtr1#",
@@ -178,6 +185,7 @@ func TestPromptUnitAndRepeats(t *testing.T) {
 }
 
 func TestStripEcho(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ body, cmd, want string }{
 		{"show version\nline1\nline2\n", "show version", "line1\nline2\n"},
 		{"line1\nline2\n", "show version", "line1\nline2\n"},
@@ -215,6 +223,7 @@ func feed(t *testing.T, f *framer, data string, n int) ([]string, error) {
 }
 
 func TestFramerEOM(t *testing.T) {
+	t.Parallel()
 	for _, n := range []int{1, 3, 100} {
 		var f framer
 		got, err := feed(t, &f, "  <a/>\n]]>]]>\n<b/>]]>]]>", n)
@@ -225,6 +234,7 @@ func TestFramerEOM(t *testing.T) {
 }
 
 func TestFramerChunked(t *testing.T) {
+	t.Parallel()
 	const whole = "\n#4\n<a/>\n#5\n<b></\n#3\nb>\n\n##\n"
 	for _, n := range []int{1, 2, 7, 100} {
 		f := framer{chunked: true}
@@ -248,12 +258,14 @@ func TestFramerChunked(t *testing.T) {
 // A large message arriving in small pieces is parsed in linear time: the
 // framer does not rescan or recopy what it has seen.
 func TestFramerLinear(t *testing.T) {
+	t.Parallel()
 	msg := strings.Repeat("x", 8<<20)
 	for name, data := range map[string]string{
 		"eom":     msg + eom,
 		"chunked": "\n#" + strconv.Itoa(len(msg)) + "\n" + msg + "\n##\n",
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			f := framer{chunked: name == "chunked"}
 			start := time.Now()
 			got, err := feed(t, &f, data, 512)
@@ -268,6 +280,7 @@ func TestFramerLinear(t *testing.T) {
 }
 
 func TestSinkOverflow(t *testing.T) {
+	t.Parallel()
 	s := newSink()
 	_, _ = s.Write(make([]byte, MaxOutput))
 	if c := s.take(); c.overflow || len(c.data) != MaxOutput {
@@ -281,6 +294,7 @@ func TestSinkOverflow(t *testing.T) {
 }
 
 func TestSinkWait(t *testing.T) {
+	t.Parallel()
 	s := newSink()
 	go func() { _, _ = s.Write([]byte("x")) }()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -300,6 +314,7 @@ func newMemo(src PasswordSource) *passwordMemo {
 }
 
 func TestPasswordMemoOnce(t *testing.T) {
+	t.Parallel()
 	var calls atomic.Int32
 	m := newMemo(func() (string, error) { calls.Add(1); return "pw", nil })
 	// A keyboard-interactive exchange: a password prompt, an unknown one.
@@ -337,6 +352,7 @@ func TestPasswordMemoOnce(t *testing.T) {
 // A blocking source does not hold the memo's lock, and a wait for it ends
 // with the context.
 func TestPasswordMemoBlockingSource(t *testing.T) {
+	t.Parallel()
 	release := make(chan struct{})
 	entered := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
@@ -372,6 +388,7 @@ func TestPasswordMemoBlockingSource(t *testing.T) {
 }
 
 func TestSanitize(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{
 		"plain text":             "plain text",
 		"a\x1b[31mred\x1b[0m":    "a?[31mred?[0m",
@@ -389,6 +406,7 @@ func TestSanitize(t *testing.T) {
 }
 
 func TestCheckCommand(t *testing.T) {
+	t.Parallel()
 	for _, bad := range []string{"a\nb", "a\rb", "a\tb", "a\x1bb", "a\x00b", "a\x7fb", "a\u0085b", "a\x03"} {
 		if checkCommand(bad) == nil {
 			t.Errorf("%q must be refused", bad)
@@ -402,6 +420,7 @@ func TestCheckCommand(t *testing.T) {
 }
 
 func TestCheckBody(t *testing.T) {
+	t.Parallel()
 	for _, ok := range []string{"<get-configuration format=\"set\"/>", CommandRPC("show a | b < c"), "<a/><b/>", ""} {
 		if err := checkBody(ok); err != nil {
 			t.Errorf("%q: %v", ok, err)
@@ -417,6 +436,7 @@ func TestCheckBody(t *testing.T) {
 }
 
 func TestErrHostKeyText(t *testing.T) {
+	t.Parallel()
 	e := ErrHostKey{}
 	if !e.Unpinned() || !strings.Contains(e.Error(), "no host key is pinned") {
 		t.Errorf("unpinned: %q", e.Error())
