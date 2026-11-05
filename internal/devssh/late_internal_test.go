@@ -11,9 +11,15 @@ import (
 // A shell whose device is a script in the test: the shell types into a pipe,
 // the script reads the lines it typed and writes the output in chunks of its
 // own, each one a separate write into the shell's sink, as the channel
-// delivers them. What a script waits for is something the shell typed, never
-// a time, so where a chunk stands in relation to the shell's typing is the
-// same on every run, however slow the machine.
+// delivers them. A script waits for something the shell typed, not for a
+// time, wherever it can: slowLogin reads both empty lines of the login before
+// it answers, so the shell's retry is certain, and the late answer is then
+// released by the test or by the command the shell types. Two places depend
+// on the shell's quiet period, the real timer, and say so: the gaps of
+// TestGapsInTheAnswerAreNoMatter are sleeps on purpose, and a login that
+// answers its one line at once (loginAnsweredAtOnce) can be slowed by a
+// stalled machine into the retry, which the script then answers like the
+// first line (command).
 
 // lateAns is what a Junos virtual chassis answers an empty line with: the
 // line the device prints before every prompt, and the prompt.
@@ -118,6 +124,24 @@ func slowLogin(d *lineDev) bool {
 	}
 	d.say(lateAns) // the answer to the first
 	return true
+}
+
+// command is the next command the shell types. A login that answers its
+// first empty line without a stall never sees the retry; on a machine that
+// stalls longer than the quiet period the shell types a second empty line
+// first, and the script answers it like the first (the device answers every
+// line it is given), so the answers account for the lines either way.
+func command(d *lineDev) (string, bool) {
+	for {
+		l, ok := d.next()
+		if !ok {
+			return "", false
+		}
+		if l != "" {
+			return l, true
+		}
+		d.say(lateAns)
+	}
 }
 
 // answer plays the command's answer after its echo: the output, the prompt,
@@ -283,8 +307,17 @@ func TestLateAnswerIsOnlyWhatLooksLikeOne(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+			// A login with one answer per line has no answer outstanding only
+			// if the shell does not retry, and it retries when the quiet
+			// period passes before the answer arrives: a quiet period far
+			// longer than the script needs keeps that from happening (the
+			// login takes two of them), and a retry is answered anyway.
+			quiet := 30 * time.Millisecond
+			if !c.late {
+				quiet = 300 * time.Millisecond
+			}
 			release := make(chan struct{})
-			sh, d := openScripted(t, 30*time.Millisecond, func(d *lineDev) {
+			sh, d := openScripted(t, quiet, func(d *lineDev) {
 				if c.late {
 					if !slowLogin(d) {
 						return
@@ -295,6 +328,17 @@ func TestLateAnswerIsOnlyWhatLooksLikeOne(t *testing.T) {
 						return
 					}
 					d.say(lateAns)
+					go func() { // a retry typed all the same is answered too
+						for {
+							l, ok := d.next()
+							if !ok {
+								return
+							}
+							if l == "" {
+								d.say(lateAns)
+							}
+						}
+					}()
 				}
 				select {
 				case <-release:
@@ -371,9 +415,10 @@ func TestGapsInTheAnswerAreNoMatter(t *testing.T) {
 			d.say("r1> ")
 		},
 		"inside the echo": func(d *lineDev, cmd string) {
-			d.say(cmd[:5])
+			n := min(5, len(cmd))
+			d.say(cmd[:n])
 			gap()
-			d.say(cmd[5:] + "\r\nout\r\n\r\n{master:0}\r\nalice@rtr1> ")
+			d.say(cmd[n:] + "\r\nout\r\n\r\n{master:0}\r\nalice@rtr1> ")
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -384,7 +429,7 @@ func TestGapsInTheAnswerAreNoMatter(t *testing.T) {
 					return
 				}
 				d.say(lateAns)
-				cmd, ok := d.next()
+				cmd, ok := command(d)
 				if !ok {
 					return
 				}
