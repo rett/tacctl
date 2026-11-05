@@ -77,6 +77,8 @@ for name, (fm, body) in pages.items():
     for n, line in enumerate(body.split('\n'), 1):
         if line.startswith('```'):
             infence = not infence
+        elif not infence and re.match(r'^[> \t]*<[A-Za-z/!]', line) and not re.match(r'^[> \t]*<(?:/?(?:a|br|code|details|summary|kbd|sup|sub)\b|!--)', line):
+            bad(name, f'body line {n} starts with "<": Kramdown reads it as a block of HTML and the rest of the page as raw HTML; keep a code span with a <placeholder> on one line')
         elif infence and len(line) > MAX:
             bad(name, f'code line {n} of the body has {len(line)} characters (the most is {MAX})')
         r = RETIRED.search(line)
