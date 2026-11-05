@@ -68,8 +68,8 @@ everything that differs from 0.2.23.
   0.2.23 behaviour) and loads the table at once.
 - The table is loaded with `nft -f /etc/tacctl/breakglass-firewall.nft`, a file
   that replaces the whole table in one step, by every hold, release, move of a
-  held device (`device address`), rename, `backup restore` that changes the
-  holds, `server listen` change and change of the setting, and at boot by the
+  held device (`device address`), rename, every `backup restore`,
+  `server listen` change and change of the setting, and at boot by the
   oneshot unit `tacctl-breakglass-firewall.service`. `install` and `upgrade`
   install the `nftables` package, and an upgrade with holds standing loads the
   table for them. `nftables.service` is never enabled or touched.
@@ -78,12 +78,18 @@ everything that differs from 0.2.23.
   `firewall=reject|drop|off|failed`. When `nft` is missing or fails the hold
   stands, the report says in red what the server still does and the fix (`sudo
   apt-get install nftables`, then `tacctl config breakglass-firewall
-  <setting>`), and the command exits 1. `status`, `config validate` and
-  `breakglass list` compare the live table with the holds and the setting.
+  <setting>`), and the command exits 1. Where the table would refuse nothing
+  (the setting `off`, nothing held) a missing `nft` is no failure: nothing is
+  loaded, nothing is red, the exit status is 0. `status`, `config validate`
+  and `breakglass list` compare the live table with the holds and the setting.
 - `tacctl rollback` (every target) removes `breakglass.firewall`, the table,
   the rules file and the boot unit and leaves the package; a hold that stands
   stays, without the firewall, as in 0.2.23. 0.2.23 refuses the key, so a
-  rollback to it takes a snapshot when it is set.
+  rollback to it takes a snapshot when it is set. Until the older release is
+  installed, run no verb that changes the holds, the listeners or the setting
+  (each loads the table again). A downgrade with `upgrade --branch` and no
+  rollback leaves a table the older release never updates;
+  `docs/install/upgrading.md` shows how to remove it by hand.
 
 ## Installing and upgrading
 

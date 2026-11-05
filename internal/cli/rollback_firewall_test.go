@@ -52,7 +52,8 @@ func TestRollbackRemovesTheFirewall(t *testing.T) {
 		"the nftables package stays",
 		"The break-glass firewall is removed: the nftables table inet tacctl",
 		"The hold of sw1 (10.99.0.1) stands, and 0.2.23 takes it as it is: its server completes the TCP handshake of the held address",
-		"do not run 'tacctl config breakglass-firewall'",
+		"run no verb that changes the holds, their device or host names, the listeners or the setting ('tacctl breakglass hold|release', 'device address', 'device|host rename', 'device rename --replace', 'backup restore', 'server listen', 'config breakglass-firewall')",
+		"each writes the table, its rules file and the boot unit again, and the setting 0.2.23 refuses",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("--apply lacks %q:\n%s", want, out)
