@@ -152,6 +152,14 @@ type ptySession struct {
 
 func startShell(t *testing.T, args ...string) *ptySession {
 	t.Helper()
+	return startShellFor(t, 0, args...)
+}
+
+// startShellFor is startShell with a hard limit of its own for the session
+// (the default, 10 s, when deadline is 0): a test that waits longer than that
+// for a step needs a session that outlives the wait.
+func startShellFor(t *testing.T, deadline time.Duration, args ...string) *ptySession {
+	t.Helper()
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -161,7 +169,7 @@ func startShell(t *testing.T, args ...string) *ptySession {
 		Path: exe,
 		Argv: append([]string{exe, helperArg, "-hist", hist}, args...),
 		Env:  []string{"PATH=/usr/bin:/bin", "TERM=xterm", "HOME=" + t.TempDir(), "LC_ALL=C.UTF-8"},
-		Rows: 24, Cols: 100,
+		Rows: 24, Cols: 100, Deadline: deadline,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -671,7 +679,10 @@ func TestPtyWordMoves(t *testing.T) {
 
 func TestPtyPaste(t *testing.T) {
 	t.Parallel()
-	p := startShell(t)
+	// The session lives longer than the 60 s wait for the end of the paste
+	// below: with the default 10 s the session ended first on a loaded
+	// machine, and the wait never got its time.
+	p := startShellFor(t, 90*time.Second)
 	p.send("\x1b[200~echo pasted\nline\r\tend\x1b[201~")
 	if out := p.Settle(300 * time.Millisecond); strings.Contains(out, "\npasted") {
 		t.Fatalf("a newline in a paste ran the line: %q", out)
