@@ -3,6 +3,7 @@ package devssh
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -11,13 +12,19 @@ import (
 // A shell whose device is a script in the test: the shell types into a pipe,
 // the script reads the lines it typed and writes the output in chunks of its
 // own, each one a separate write into the shell's sink, as the channel
-// delivers them. What a script waits for is something the shell typed, never
-// a time, so where a chunk stands in relation to the shell's typing is the
-// same on every run, however slow the machine.
+// delivers them. A script waits for something the shell typed, not for a
+// time, wherever it can: slowLogin reads both empty lines of the login before
+// it answers, so the shell's retry is certain, and the late answer is then
+// released by the test or by the command the shell types. Two places depend
+// on the shell's quiet period, the real timer, and say so: the gaps of
+// TestGapsInTheAnswerAreNoMatter are sleeps on purpose, and a login that
+// answers its one line at once (loginAnsweredAtOnce) can be slowed by a
+// stalled machine into the retry, which the script then answers like the
+// first line (command).
 
 // lateAns is what a Junos virtual chassis answers an empty line with: the
 // line the device prints before every prompt, and the prompt.
-const lateAns = "\r\n{master:0}\r\nu@rtr1> "
+const lateAns = "\r\n{master:0}\r\nalice@rtr1> "
 
 type nopCloser struct{}
 
@@ -109,7 +116,7 @@ func openScripted(t *testing.T, quiet time.Duration, script func(d *lineDev)) (*
 // (so the shell sees one answer to two lines, and the other still on its
 // way). It returns when both lines have been read.
 func slowLogin(d *lineDev) bool {
-	d.say("banner\r\nu@rtr1> ")
+	d.say("banner\r\nalice@rtr1> ")
 	if _, ok := d.next(); !ok { // the empty line
 		return false
 	}
@@ -120,12 +127,30 @@ func slowLogin(d *lineDev) bool {
 	return true
 }
 
+// command is the next command the shell types. A login that answers its
+// first empty line without a stall never sees the retry; on a machine that
+// stalls longer than the quiet period the shell types a second empty line
+// first, and the script answers it like the first (the device answers every
+// line it is given), so the answers account for the lines either way.
+func command(d *lineDev) (string, bool) {
+	for {
+		l, ok := d.next()
+		if !ok {
+			return "", false
+		}
+		if l != "" {
+			return l, true
+		}
+		d.say(lateAns)
+	}
+}
+
 // answer plays the command's answer after its echo: the output, the prompt,
 // the typed-ahead empty line and the prompt it is answered with.
 func answer(d *lineDev, cmd string) {
 	d.say(cmd + "\r\n")
 	d.say("out\r\n")
-	d.say("\r\n{master:0}\r\nu@rtr1> ")
+	d.say("\r\n{master:0}\r\nalice@rtr1> ")
 	if _, ok := d.next(); !ok {
 		return
 	}
@@ -150,7 +175,7 @@ func runCmd(t *testing.T, sh *shell, cmd string) string {
 // when the first command is typed, and it arrives in front of the command's
 // echo. The first line of the command's answer must still be the echo, not
 // the prompt followed by the echo ('configure exclusive' failed on a
-// satellite link with 'u@rtr1> configure exclusive' as its first line).
+// satellite link with 'alice@rtr1> configure exclusive' as its first line).
 func TestLateAnswerArrivesAfterTheCommandWasTyped(t *testing.T) {
 	t.Parallel()
 	sh, _ := openScripted(t, 30*time.Millisecond, func(d *lineDev) {
@@ -203,10 +228,12 @@ func TestLateAnswerArrivesBeforeTheCommandIsTyped(t *testing.T) {
 func TestLateAnswerInPieces(t *testing.T) {
 	t.Parallel()
 	for name, pieces := range map[string][2]string{
-		"the line break first":        {"\r\n", "{master:0}\r\nu@rtr1> "},
-		"the area line first":         {"\r\n{master:0}\r\n", "u@rtr1> "},
-		"the area line and the start": {"\r\n{master:0}\r\nu@r", "tr1> "},
-		"all but the last blank":      {"\r\n{master:0}\r\nu@rtr1>", " "},
+		"the line break first":               {"\r\n", "{master:0}\r\nalice@rtr1> "},
+		"the area line first":                {"\r\n{master:0}\r\n", "alice@rtr1> "},
+		"the area line and the start":        {"\r\n{master:0}\r\nalice@r", "tr1> "},
+		"all but the last blank":             {"\r\n{master:0}\r\nalice@rtr1>", " "},
+		"the area line without its line end": {"\r\n{master:0}", "\r\nalice@rtr1> "},
+		"the area line cut inside":           {"\r\n{mas", "ter:0}\r\nalice@rtr1> "},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -237,6 +264,66 @@ func TestLateAnswerInPieces(t *testing.T) {
 	}
 }
 
+// While a confirmed commit is pending a Junos device prints a banner line
+// before every prompt, the minutes left in it (singular for one). The login
+// that verifies a change runs in that state, so the late answer holds it:
+// before the command is typed, after, and in pieces cut at the banner.
+func TestLateAnswerWithAPendingConfirmedCommit(t *testing.T) {
+	t.Parallel()
+	for _, mins := range []string{"1 minute", "5 minutes", "12 minutes"} {
+		banner := "# commit confirmed will be rolled back in " + mins
+		area := "\r\n" + banner + "\r\n{master:0}\r\n"
+		ans := area + "alice@rtr1> "
+		for name, pieces := range map[string][2]string{
+			"before the command is typed":     {ans, ""},
+			"after the command is typed":      {"", ans},
+			"cut inside the banner":           {"\r\n# commit confirmed will be roll", "ed back in " + mins + "\r\n{master:0}\r\nalice@rtr1> "},
+			"cut inside the banner's start":   {"\r\n# comm", "it confirmed will be rolled back in " + mins + "\r\n{master:0}\r\nalice@rtr1> "},
+			"cut inside the minutes":          {"\r\n# commit confirmed will be rolled back in 1", strings.TrimPrefix(mins, "1") + "\r\n{master:0}\r\nalice@rtr1> "},
+			"the banner without its line end": {"\r\n" + banner, "\r\n{master:0}\r\nalice@rtr1> "},
+			"cut after the banner line":       {"\r\n" + banner + "\r\n", "{master:0}\r\nalice@rtr1> "},
+			"cut after the line break":        {"\r\n", banner + "\r\n{master:0}\r\nalice@rtr1> "},
+		} {
+			t.Run(mins+", "+name, func(t *testing.T) {
+				t.Parallel()
+				release := make(chan struct{})
+				sh, d := openScripted(t, 30*time.Millisecond, func(d *lineDev) {
+					d.say(ans[2:]) // the login's own prompt has the banner too
+					if _, ok := d.next(); !ok {
+						return
+					}
+					if _, ok := d.next(); !ok { // and the retry
+						return
+					}
+					d.say(ans) // the answer to the first
+					select {
+					case <-release:
+					case <-d.done:
+						return
+					}
+					d.say(pieces[0])
+					cmd, ok := d.next()
+					if !ok {
+						return
+					}
+					d.say(pieces[1])
+					d.say(cmd + "\r\nout\r\n")
+					d.say(ans)
+					if _, ok := d.next(); !ok {
+						return
+					}
+					d.say(ans)
+				})
+				close(release)
+				d.arrived(t, len(pieces[0]))
+				if got := runCmd(t, sh, "show system commit"); got != wantOut {
+					t.Errorf("got %q, want %q", got, wantOut)
+				}
+			})
+		}
+	}
+}
+
 // A session that has the late answer in front of the echo of the command that
 // leads to the other mode (the 'configure exclusive' of the report) is in
 // that mode afterwards.
@@ -254,17 +341,17 @@ func TestLateAnswerInFrontOfAModeChange(t *testing.T) {
 		d.say(cmd + "\r\n")
 		d.say("warning: uncommitted changes will be discarded on exit\r\n")
 		d.say("Entering configuration mode\r\n")
-		d.say("\r\n{master:0}[edit]\r\nu@rtr1# ")
+		d.say("\r\n{master:0}[edit]\r\nalice@rtr1# ")
 		if _, ok := d.next(); !ok {
 			return
 		}
-		d.say("\r\n{master:0}[edit]\r\nu@rtr1# ")
+		d.say("\r\n{master:0}[edit]\r\nalice@rtr1# ")
 	})
 	want := "warning: uncommitted changes will be discarded on exit\nEntering configuration mode\n\n{master:0}[edit]\n"
 	if got := runCmd(t, sh, "configure exclusive"); got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	if sh.prompt != "u@rtr1# " {
+	if sh.prompt != "alice@rtr1# " {
 		t.Errorf("the session is in the mode of %q", sh.prompt)
 	}
 }
@@ -283,18 +370,38 @@ func TestLateAnswerIsOnlyWhatLooksLikeOne(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+			// A login with one answer per line has no answer outstanding only
+			// if the shell does not retry, and it retries when the quiet
+			// period passes before the answer arrives: a quiet period far
+			// longer than the script needs keeps that from happening (the
+			// login takes two of them), and a retry is answered anyway.
+			quiet := 30 * time.Millisecond
+			if !c.late {
+				quiet = 300 * time.Millisecond
+			}
 			release := make(chan struct{})
-			sh, d := openScripted(t, 30*time.Millisecond, func(d *lineDev) {
+			sh, d := openScripted(t, quiet, func(d *lineDev) {
 				if c.late {
 					if !slowLogin(d) {
 						return
 					}
 				} else {
-					d.say("banner\r\nu@rtr1> ")
+					d.say("banner\r\nalice@rtr1> ")
 					if _, ok := d.next(); !ok {
 						return
 					}
 					d.say(lateAns)
+					go func() { // a retry typed all the same is answered too
+						for {
+							l, ok := d.next()
+							if !ok {
+								return
+							}
+							if l == "" {
+								d.say(lateAns)
+							}
+						}
+					}()
 				}
 				select {
 				case <-release:
@@ -328,7 +435,7 @@ func TestLateAnswerAndOnePromptTooMany(t *testing.T) {
 		}
 		d.say(lateAns)
 		d.say(cmd + "\r\nout\r\n")
-		d.say("\r\n{master:0}\r\nu@rtr1> ")
+		d.say("\r\n{master:0}\r\nalice@rtr1> ")
 		if _, ok := d.next(); !ok {
 			return
 		}
@@ -353,38 +460,39 @@ func TestGapsInTheAnswerAreNoMatter(t *testing.T) {
 		"between the echo and the answer": func(d *lineDev, cmd string) {
 			d.say(cmd + "\r\n")
 			gap()
-			d.say("out\r\n\r\n{master:0}\r\nu@rtr1> ")
+			d.say("out\r\n\r\n{master:0}\r\nalice@rtr1> ")
 		},
 		"between the answer and the prompt": func(d *lineDev, cmd string) {
 			d.say(cmd + "\r\nout\r\n")
 			gap()
-			d.say("\r\n{master:0}\r\nu@rtr1> ")
+			d.say("\r\n{master:0}\r\nalice@rtr1> ")
 		},
 		"between the area line and the prompt": func(d *lineDev, cmd string) {
 			d.say(cmd + "\r\nout\r\n\r\n{master:0}\r\n")
 			gap()
-			d.say("u@rtr1> ")
+			d.say("alice@rtr1> ")
 		},
 		"inside the prompt": func(d *lineDev, cmd string) {
-			d.say(cmd + "\r\nout\r\n\r\n{master:0}\r\nu@rt")
+			d.say(cmd + "\r\nout\r\n\r\n{master:0}\r\nalice@rt")
 			gap()
 			d.say("r1> ")
 		},
 		"inside the echo": func(d *lineDev, cmd string) {
-			d.say(cmd[:5])
+			n := min(5, len(cmd))
+			d.say(cmd[:n])
 			gap()
-			d.say(cmd[5:] + "\r\nout\r\n\r\n{master:0}\r\nu@rtr1> ")
+			d.say(cmd[n:] + "\r\nout\r\n\r\n{master:0}\r\nalice@rtr1> ")
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			sh, _ := openScripted(t, quiet, func(d *lineDev) {
-				d.say("banner\r\nu@rtr1> ")
+				d.say("banner\r\nalice@rtr1> ")
 				if _, ok := d.next(); !ok {
 					return
 				}
 				d.say(lateAns)
-				cmd, ok := d.next()
+				cmd, ok := command(d)
 				if !ok {
 					return
 				}
@@ -395,7 +503,7 @@ func TestGapsInTheAnswerAreNoMatter(t *testing.T) {
 				gap() // and the answer to the empty line is late too
 				d.say("\r\n{master:0}\r\n")
 				gap()
-				d.say("u@rtr1> ")
+				d.say("alice@rtr1> ")
 			})
 			if got := runCmd(t, sh, "show system commit"); got != wantOut {
 				t.Errorf("got %q, want %q", got, wantOut)
@@ -408,34 +516,120 @@ func TestGapsInTheAnswerAreNoMatter(t *testing.T) {
 func TestBodyDropsTheLateAnswerInFrontOfTheEcho(t *testing.T) {
 	t.Parallel()
 	const cmd = "show system commit"
-	tail := "\r\nu@rtr1> \r\nu@rtr1> "
+	tail := "\r\nalice@rtr1> \r\nalice@rtr1> "
 	for name, c := range map[string]struct{ in, want string }{
 		"the prompt and the echo": {
-			"u@rtr1> show system commit\r\nout" + tail, "out\n"},
+			"alice@rtr1> show system commit\r\nout" + tail, "out\n"},
 		"the line break, the area line, the prompt and the echo": {
-			"\r\n{master:0}\r\nu@rtr1> show system commit\r\nout" + tail, "out\n"},
+			"\r\n{master:0}\r\nalice@rtr1> show system commit\r\nout" + tail, "out\n"},
 		"the location line of the configure mode": {
-			"\r\n{master:0}[edit]\r\nu@rtr1> show system commit\r\nout" + tail, "out\n"},
+			"\r\n{master:0}[edit]\r\nalice@rtr1> show system commit\r\nout" + tail, "out\n"},
 		"the plain echo": {
 			"show system commit\r\nout" + tail, "out\n"},
 		"the prompt typed twice": {
-			"u@rtr1> u@rtr1> show system commit\r\nout" + tail, "out\n"},
+			"alice@rtr1> alice@rtr1> show system commit\r\nout" + tail, "out\n"},
 		"a line before it that is not the device's": {
-			"surprise\r\nu@rtr1> show system commit\r\nout" + tail,
-			"surprise\nu@rtr1> show system commit\nout\n"},
+			"surprise\r\nalice@rtr1> show system commit\r\nout" + tail,
+			"surprise\nalice@rtr1> show system commit\nout\n"},
 		"the prompt and another command": {
-			"u@rtr1> show version\r\nout" + tail, "u@rtr1> show version\nout\n"},
+			"alice@rtr1> show version\r\nout" + tail, "alice@rtr1> show version\nout\n"},
 		"the same line later in the output is output": {
-			"show system commit\r\nu@rtr1> show system commit" + tail, "u@rtr1> show system commit\n"},
+			"show system commit\r\nalice@rtr1> show system commit" + tail, "alice@rtr1> show system commit\n"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			s := &shell{}
-			o := outBuf{prev: -1, prompt: "u@rtr1> ", alt: "u@rtr1# ", echo: cmd}
+			o := outBuf{prev: -1, prompt: "alice@rtr1> ", alt: "alice@rtr1# ", echo: cmd, late: true}
 			o.add([]byte(c.in))
 			if got := stripEcho(s.body(&o, 0), cmd); got != c.want {
 				t.Errorf("got %q, want %q", got, c.want)
 			}
 		})
+	}
+}
+
+// Only the first command after a late login can hold the late answer: the
+// same stream on any later command (late unset) is left as it is.
+func TestBodyKeepsTheSameStreamOnALaterCommand(t *testing.T) {
+	t.Parallel()
+	const cmd = "show system commit"
+	in := "\r\n{master:0}\r\nalice@rtr1> show system commit\r\nout\r\nalice@rtr1> \r\nalice@rtr1> "
+	for late, want := range map[bool]string{
+		true:  "out\n",
+		false: "\n{master:0}\nalice@rtr1> show system commit\nout\n",
+	} {
+		s := &shell{}
+		o := outBuf{prev: -1, prompt: "alice@rtr1> ", alt: "alice@rtr1# ", echo: cmd, late: late}
+		o.add([]byte(in))
+		if got := stripEcho(s.body(&o, 0), cmd); got != want {
+			t.Errorf("late %v: got %q, want %q", late, got, want)
+		}
+	}
+}
+
+// A stream that falls out of step on the fifth command, the prompt and the
+// echo of the command in front of its answer, is not repaired: the output
+// keeps the line, which the parser refuses.
+func TestOutOfStepStreamOnTheFifthCommandIsKept(t *testing.T) {
+	t.Parallel()
+	sh, _ := openScripted(t, 30*time.Millisecond, func(d *lineDev) {
+		if !slowLogin(d) {
+			return
+		}
+		for i := 1; i <= 5; i++ {
+			cmd, ok := d.next()
+			if !ok {
+				return
+			}
+			if i == 1 {
+				d.say(lateAns) // the late answer of the login, in front of the echo
+			}
+			if i == 5 {
+				d.say(lateAns) // and now one nobody expects
+			}
+			answer(d, cmd)
+		}
+	})
+	for i := 1; i <= 4; i++ {
+		if got := runCmd(t, sh, "show system commit"); got != wantOut {
+			t.Fatalf("command %d: got %q, want %q", i, got, wantOut)
+		}
+	}
+	got := runCmd(t, sh, "show system commit")
+	if want := "\n{master:0}\nalice@rtr1> show system commit\nout\n\n"; got != want {
+		t.Errorf("command 5: got %q, want %q", got, want)
+	}
+}
+
+// lateShape takes a last line that is cut short when it can become one of the
+// lines in front of the prompt or the prompt, and nothing else.
+func TestLateShapeOfALineCutShort(t *testing.T) {
+	t.Parallel()
+	sh := &shell{prompt: "alice@rtr1> ", alt: "alice@rtr1# "}
+	area := []string{"Last login from 192.0.2.10"}
+	for in, want := range map[string]bool{
+		"\r\n{master:0}":      true,
+		"\r\n{mas":            true,
+		"\r\n{master:0}[ed":   true,
+		"\r\n{master:0}[edit": true,
+		"\r\n# commit confirmed will be rolled back in 12 minute":   true,
+		"\r\n# commit confirmed will be rolled back in 12 minutes":  true,
+		"\r\n# commit confirmed will be rolled back in ":            true,
+		"\r\n# commit confirmed will be rolled back in 12 mins":     false,
+		"\r\n# commit confirmed will be rolled back in 0":           false,
+		"\r\n# commit confirmed will be rolled back in 12 minutes!": false,
+		"\r\n# commit confirmed will be ro":                         true,
+		"\r\n# commit confirmed will be ro, but not":                false,
+		"\r\nLast login":                     true,
+		"\r\nLast login from 192.0.2.10":     true,
+		"\r\nsomething else":                 false,
+		"\r\n{master:0}x":                    false,
+		"\r\n{master:0}\r\nsomething":        false,
+		"\r\n{master:0}\r\nalice@rtr1> show": false,
+		"\r\n{master:0}\r\nalice@rt":         true,
+	} {
+		if got := sh.lateShape([]byte(in), area); got != want {
+			t.Errorf("lateShape(%q) = %v, want %v", in, got, want)
+		}
 	}
 }

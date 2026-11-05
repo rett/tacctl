@@ -502,6 +502,7 @@ func (s *shell) Run(ctx context.Context, cmd string) (string, error) {
 	// still on its way when the prompt was learned (see learn): it is
 	// part of the stream the command's answer is read from, and body
 	// drops it.
+	late := s.late
 	c := s.out.take()
 	if c.overflow || (len(c.data) > 0 && (!s.late || !s.lateShape(c.data, prevArea))) {
 		return fail(fmt.Errorf("%w: %s: output between commands", ErrProtocol, s.c.addr))
@@ -512,7 +513,7 @@ func (s *shell) Run(ctx context.Context, cmd string) (string, error) {
 	if err := s.c.write(ctx, s.in, []byte(cmd+"\n")); err != nil {
 		return fail(err)
 	}
-	body, err := s.read(ctx, cmd, carry, prevArea)
+	body, err := s.read(ctx, cmd, carry, prevArea, late)
 	if err != nil {
 		return fail(err)
 	}
@@ -523,24 +524,62 @@ func (s *shell) Run(ctx context.Context, cmd string) (string, error) {
 // before every prompt ('{master:0}').
 var reJunosChassis = regexp.MustCompile(`^\{[a-z-]+(?::[a-z0-9]+)?\}$`)
 
+// PendingBanner matches the line a Junos device prints before the prompt of
+// every session while a confirmed commit is pending, the minutes left in it
+// [C: '# commit confirmed will be rolled back in 2 minutes'; '1 minute' for
+// one]. The first group is the minutes. internal/devapply reads the state
+// from it.
+var PendingBanner = regexp.MustCompile(`^# commit confirmed will be rolled back in ([1-9][0-9]{0,4}) minutes?$`)
+
 // staleLine reports whether line, one the device printed in front of its
 // prompt in a late answer, is nothing but what a device prints there: a
-// blank line, the location line, the chassis line, or a line it printed
-// before the prompt of the last command (area).
+// blank line, the location line, the chassis line, the banner of a pending
+// confirmed commit, or a line it printed before the prompt of the last
+// command (area). The first command after a login has no area, and a
+// session in the state of a pending confirmed commit (the verification
+// login of an apply) has the banner in every answer.
 func staleLine(line string, area []string) bool {
 	t := strings.TrimSpace(line)
-	if t == "" || LocationLine(t) || reJunosChassis.MatchString(t) {
+	if t == "" || LocationLine(t) || reJunosChassis.MatchString(t) || PendingBanner.MatchString(t) {
 		return true
 	}
 	return slices.ContainsFunc(area, func(a string) bool { return strings.TrimSpace(a) == t })
 }
 
+// The partial forms of the lines staleLine knows: the start of a chassis or
+// location line, and what can follow the text of the banner.
+var (
+	reChassisStart  = regexp.MustCompile(`^\{[a-z-]*(?::[a-z0-9]*)?\}?$`)
+	reLocationStart = regexp.MustCompile(`^(?:\{[a-z-]+(?::[a-z0-9]+)?\})?\[[^\]]*\]?$`)
+	reBannerEnd     = regexp.MustCompile(`^(?:[1-9][0-9]{0,4}(?: (?:m(?:i(?:n(?:u(?:t(?:e(?:s)?)?)?)?)?)?)?)?)?$`)
+)
+
+// bannerStart is the text of the banner up to its minutes.
+const bannerStart = "# commit confirmed will be rolled back in "
+
+// staleStart reports whether part, a last line cut short (no line end after
+// it yet), is the start of a line staleLine accepts, or all of it.
+func staleStart(part string, area []string) bool {
+	t := strings.TrimSpace(part)
+	if staleLine(part, area) || reChassisStart.MatchString(t) || reLocationStart.MatchString(t) {
+		return true
+	}
+	if rest, ok := strings.CutPrefix(t, bannerStart); ok {
+		return reBannerEnd.MatchString(rest)
+	}
+	if strings.HasPrefix(bannerStart, part) { // part has no white space to trim off
+		return true
+	}
+	return slices.ContainsFunc(area, func(a string) bool { return strings.HasPrefix(strings.TrimSpace(a), t) })
+}
+
 // lateShape reports whether data, taken from the stream between commands,
 // can be a late answer to an empty line: lines that stand in front of a
-// prompt, and then the start of a prompt (or all of it) as the last line.
-// A prompt line that is complete is not one: the device prints the echo
-// after its prompt on the same line, and a prompt that ends its line is
-// counted by read.
+// prompt, and then the start of a prompt (or all of it) as the last line;
+// that last line can also be the start of a line in front of the prompt
+// (the data is cut inside it, with no line end yet). A prompt line that is
+// complete is not one: the device prints the echo after its prompt on the
+// same line, and a prompt that ends its line is counted by read.
 func (s *shell) lateShape(data []byte, area []string) bool {
 	lines := strings.Split(normalise(string(data)), "\n")
 	last := lines[len(lines)-1]
@@ -554,7 +593,7 @@ func (s *shell) lateShape(data []byte, area []string) bool {
 			return true
 		}
 	}
-	return last == ""
+	return last == "" || staleStart(last, area)
 }
 
 // hit is a complete line of the output that is the prompt, n times over
@@ -581,6 +620,12 @@ type outBuf struct {
 	// area is what the device printed before the prompt of the command
 	// before this one (PromptArea): body knows it for what it drops.
 	area []string
+	// late is set for the first command after a login that ended with an
+	// answer to an empty line outstanding (shell.late): only its output
+	// can hold that answer in front of the echo, so only body's dropLate
+	// looks for it there. A stream that is out of step on a later command
+	// stays as it is, for the parser to refuse.
+	late bool
 }
 
 // isEcho reports whether line, the first line of the output, is the echo
@@ -857,8 +902,8 @@ func countPrompts(buf []byte, prompt string) int {
 // A more-prompt at the end that stays for a quiet period is answered with
 // a space, and the count starts again (the more-prompt takes the line that
 // was typed ahead).
-func (s *shell) read(ctx context.Context, cmd string, carry []byte, area []string) (string, error) {
-	o := outBuf{prev: -1, prompt: s.prompt, alt: s.alt, echo: strings.TrimSpace(cmd), area: area}
+func (s *shell) read(ctx context.Context, cmd string, carry []byte, area []string, late bool) (string, error) {
+	o := outBuf{prev: -1, prompt: s.prompt, alt: s.alt, echo: strings.TrimSpace(cmd), area: area, late: late}
 	sent := 0
 	erase := 0
 	seenErased := 0 // end of the last typed-ahead-key artifact seen
@@ -967,7 +1012,9 @@ func (s *shell) body(o *outBuf, k int) string {
 		start = hits[0].start
 	}
 	text := rePagerErased.ReplaceAllString(normalise(string(o.b[:start])), "")
-	text = o.dropLate(text)
+	if o.late {
+		text = o.dropLate(text)
+	}
 	// What the device printed between its first prompt and its second
 	// (the answer to the empty line, less the echo) it prints before every
 	// prompt.
@@ -1017,7 +1064,7 @@ func (s *shell) body(o *outBuf, k int) string {
 // place. The device printed that answer (its line break, the line it
 // prints before every prompt, and its prompt) before it read the command,
 // so it stands in front of the echo, and the prompt shares its line with
-// the echo: 'u@rtr1> configure exclusive'. Only that is dropped: lines a
+// the echo: 'alice@rtr1> configure exclusive'. Only that is dropped: lines a
 // device prints in front of a prompt (staleLine), then the prompt, once or
 // more, followed by exactly the command sent. Any other line in front, or
 // any other text after the prompt, is output and stays, and so does the

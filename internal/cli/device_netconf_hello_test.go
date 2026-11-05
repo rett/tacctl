@@ -25,13 +25,13 @@ const junosStyleHello = `<!-- user alice, class j-example-class -->
 // sent; the record keeps the stored word only.
 func TestPullNoHelloSaysWhy(t *testing.T) {
 	b := newPullBox(t)
-	b.devices([3]string{"lab-j", "192.168.1.20", "juniper"})
-	b.serve("juniper", b.expected("lab-j"))
+	b.devices([3]string{"jsw1", "10.0.0.20", "juniper"})
+	b.serve("juniper", b.expected("jsw1"))
 	if err := os.WriteFile(filepath.Join(b.dir, "netconf.hello"),
 		[]byte("<rpc-error><error-message>no service</error-message></rpc-error>"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	out := b.run("device", "config", "pull", "lab-j")
+	out := b.run("device", "config", "pull", "jsw1")
 	for _, want := range []string{
 		"ok via ssh (netconf: no hello: the device's first message is <rpc-error>, not a hello;",
 		`the device sent "<rpc-error><error-message>no service</error-message></rpc-error>")`,
@@ -40,12 +40,12 @@ func TestPullNoHelloSaysWhy(t *testing.T) {
 			t.Errorf("no %q (exit %d) in:\n%s", want, b.sb.code, out)
 		}
 	}
-	rec, _ := b.records().Of("lab-j")
+	rec, _ := b.records().Of("jsw1")
 	if rec == nil || rec.Netconf != netconfNoHello || rec.Transport != "ssh" {
 		t.Errorf("record %+v", rec)
 	}
 	// the JSON has the same text in its existing field
-	b.run("device", "config", "pull", "lab-j", "--json")
+	b.run("device", "config", "pull", "jsw1", "--json")
 	if got := b.sb.out.String(); !strings.Contains(got, `"fallback"`) || !strings.Contains(got, "netconf: no hello: the device's first message") {
 		t.Errorf("json:\n%s", got)
 	}
@@ -54,16 +54,16 @@ func TestPullNoHelloSaysWhy(t *testing.T) {
 // The hello of a Junos device is a hello: a pull over NETCONF reads it.
 func TestPullJunosStyleHelloIsOK(t *testing.T) {
 	b := newPullBox(t)
-	b.devices([3]string{"lab-j", "192.168.1.20", "juniper"})
-	b.serve("juniper", b.expected("lab-j"))
+	b.devices([3]string{"jsw1", "10.0.0.20", "juniper"})
+	b.serve("juniper", b.expected("jsw1"))
 	if err := os.WriteFile(filepath.Join(b.dir, "netconf.hello"), []byte(junosStyleHello), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	out := b.run("device", "config", "pull", "lab-j")
+	out := b.run("device", "config", "pull", "jsw1")
 	if b.sb.code != 0 || !strings.Contains(out, "ok via netconf") {
 		t.Errorf("exit %d:\n%s", b.sb.code, out)
 	}
-	if rec, _ := b.records().Of("lab-j"); rec == nil || rec.Netconf != netconfHelloOK || rec.Transport != transportNetconf {
+	if rec, _ := b.records().Of("jsw1"); rec == nil || rec.Netconf != netconfHelloOK || rec.Transport != transportNetconf {
 		t.Errorf("record %+v", rec)
 	}
 }

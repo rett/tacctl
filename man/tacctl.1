@@ -11499,8 +11499,11 @@ RPC) where the device answers and over an ssh exec channel otherwise;
 .B \-\-transport netconf
 and
 .B ssh
-never fall back. A device that accepts the subsystem and gives no usable hello
-is recorded as
+never fall back. A device whose session cannot be opened for any reason but a
+refused subsystem
+.RB ( "port closed" )
+(it answers with something that is not a usable hello, ends the channel after
+accepting the subsystem, or sends no hello in time) is recorded as
 .BR "no hello" ;
 the record keeps only that word, and the line of the pull says why and what the
 device sent, in the first 120 bytes with control characters shown as
@@ -13157,8 +13160,16 @@ or
 a probe that cannot tell fails the proof and the change is rolled back. When
 enabling finds
 .B "no hello"
-the message says why and what the device sent
+because the device answered with something that is not a usable hello, the
+message says why and what the device sent
 .RB ( "no hello: the device's hello is not a hello; the device sent \(dq...\(dq" ).
+When the device ends the channel after accepting the subsystem, or sends no
+hello in time, the probe cannot tell: the message is
+.B "the NETCONF probe could not tell: session closed: the channel closed after the subsystem was accepted"
+or
+.BR "the NETCONF probe could not tell: timed out: no hello from the device in time" ,
+cut to 120 bytes, whether the change enables or disables the service, and the
+proof fails.
 The line says
 .B "[NETCONF verified: hello ok]"
 or

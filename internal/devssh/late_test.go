@@ -16,7 +16,7 @@ import (
 // for is what the client typed, never a time.
 func TestShellLateAnswerOfTheRetriedEmptyLine(t *testing.T) {
 	t.Parallel()
-	const ans = "\r\n{master:0}\r\nu@rtr1> "
+	const ans = "\r\n{master:0}\r\nalice@rtr1> "
 	d := &scripted{raw: func(ch ssh.Channel) {
 		lines := make(chan string, 16)
 		go func() {
@@ -37,7 +37,7 @@ func TestShellLateAnswerOfTheRetriedEmptyLine(t *testing.T) {
 		}()
 		say := func(s string) { _, _ = io.WriteString(ch, s) }
 		next := func() (string, bool) { l, ok := <-lines; return l, ok }
-		say("banner\r\nu@rtr1> ")
+		say("banner\r\nalice@rtr1> ")
 		if _, ok := next(); !ok { // the empty line
 			return
 		}
@@ -52,11 +52,11 @@ func TestShellLateAnswerOfTheRetriedEmptyLine(t *testing.T) {
 		say(ans) // the answer to the retry, in front of the echo
 		say(cmd + "\r\n")
 		say("warning: uncommitted changes will be discarded on exit\r\nEntering configuration mode\r\n")
-		say("\r\n{master:0}[edit]\r\nu@rtr1# ")
+		say("\r\n{master:0}[edit]\r\nalice@rtr1# ")
 		if _, ok := next(); !ok {
 			return
 		}
-		say("\r\n{master:0}[edit]\r\nu@rtr1# ")
+		say("\r\n{master:0}[edit]\r\nalice@rtr1# ")
 		<-lines
 	}}
 	tg, stop := d.start(t)
