@@ -17,7 +17,7 @@ import (
 
 // lateAns is what a Junos virtual chassis answers an empty line with: the
 // line the device prints before every prompt, and the prompt.
-const lateAns = "\r\n{master:0}\r\nu@rtr1> "
+const lateAns = "\r\n{master:0}\r\nalice@rtr1> "
 
 type nopCloser struct{}
 
@@ -109,7 +109,7 @@ func openScripted(t *testing.T, quiet time.Duration, script func(d *lineDev)) (*
 // (so the shell sees one answer to two lines, and the other still on its
 // way). It returns when both lines have been read.
 func slowLogin(d *lineDev) bool {
-	d.say("banner\r\nu@rtr1> ")
+	d.say("banner\r\nalice@rtr1> ")
 	if _, ok := d.next(); !ok { // the empty line
 		return false
 	}
@@ -125,7 +125,7 @@ func slowLogin(d *lineDev) bool {
 func answer(d *lineDev, cmd string) {
 	d.say(cmd + "\r\n")
 	d.say("out\r\n")
-	d.say("\r\n{master:0}\r\nu@rtr1> ")
+	d.say("\r\n{master:0}\r\nalice@rtr1> ")
 	if _, ok := d.next(); !ok {
 		return
 	}
@@ -150,7 +150,7 @@ func runCmd(t *testing.T, sh *shell, cmd string) string {
 // when the first command is typed, and it arrives in front of the command's
 // echo. The first line of the command's answer must still be the echo, not
 // the prompt followed by the echo ('configure exclusive' failed on a
-// satellite link with 'u@rtr1> configure exclusive' as its first line).
+// satellite link with 'alice@rtr1> configure exclusive' as its first line).
 func TestLateAnswerArrivesAfterTheCommandWasTyped(t *testing.T) {
 	t.Parallel()
 	sh, _ := openScripted(t, 30*time.Millisecond, func(d *lineDev) {
@@ -203,10 +203,10 @@ func TestLateAnswerArrivesBeforeTheCommandIsTyped(t *testing.T) {
 func TestLateAnswerInPieces(t *testing.T) {
 	t.Parallel()
 	for name, pieces := range map[string][2]string{
-		"the line break first":        {"\r\n", "{master:0}\r\nu@rtr1> "},
-		"the area line first":         {"\r\n{master:0}\r\n", "u@rtr1> "},
-		"the area line and the start": {"\r\n{master:0}\r\nu@r", "tr1> "},
-		"all but the last blank":      {"\r\n{master:0}\r\nu@rtr1>", " "},
+		"the line break first":        {"\r\n", "{master:0}\r\nalice@rtr1> "},
+		"the area line first":         {"\r\n{master:0}\r\n", "alice@rtr1> "},
+		"the area line and the start": {"\r\n{master:0}\r\nalice@r", "tr1> "},
+		"all but the last blank":      {"\r\n{master:0}\r\nalice@rtr1>", " "},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -254,17 +254,17 @@ func TestLateAnswerInFrontOfAModeChange(t *testing.T) {
 		d.say(cmd + "\r\n")
 		d.say("warning: uncommitted changes will be discarded on exit\r\n")
 		d.say("Entering configuration mode\r\n")
-		d.say("\r\n{master:0}[edit]\r\nu@rtr1# ")
+		d.say("\r\n{master:0}[edit]\r\nalice@rtr1# ")
 		if _, ok := d.next(); !ok {
 			return
 		}
-		d.say("\r\n{master:0}[edit]\r\nu@rtr1# ")
+		d.say("\r\n{master:0}[edit]\r\nalice@rtr1# ")
 	})
 	want := "warning: uncommitted changes will be discarded on exit\nEntering configuration mode\n\n{master:0}[edit]\n"
 	if got := runCmd(t, sh, "configure exclusive"); got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	if sh.prompt != "u@rtr1# " {
+	if sh.prompt != "alice@rtr1# " {
 		t.Errorf("the session is in the mode of %q", sh.prompt)
 	}
 }
@@ -290,7 +290,7 @@ func TestLateAnswerIsOnlyWhatLooksLikeOne(t *testing.T) {
 						return
 					}
 				} else {
-					d.say("banner\r\nu@rtr1> ")
+					d.say("banner\r\nalice@rtr1> ")
 					if _, ok := d.next(); !ok {
 						return
 					}
@@ -328,7 +328,7 @@ func TestLateAnswerAndOnePromptTooMany(t *testing.T) {
 		}
 		d.say(lateAns)
 		d.say(cmd + "\r\nout\r\n")
-		d.say("\r\n{master:0}\r\nu@rtr1> ")
+		d.say("\r\n{master:0}\r\nalice@rtr1> ")
 		if _, ok := d.next(); !ok {
 			return
 		}
@@ -353,33 +353,33 @@ func TestGapsInTheAnswerAreNoMatter(t *testing.T) {
 		"between the echo and the answer": func(d *lineDev, cmd string) {
 			d.say(cmd + "\r\n")
 			gap()
-			d.say("out\r\n\r\n{master:0}\r\nu@rtr1> ")
+			d.say("out\r\n\r\n{master:0}\r\nalice@rtr1> ")
 		},
 		"between the answer and the prompt": func(d *lineDev, cmd string) {
 			d.say(cmd + "\r\nout\r\n")
 			gap()
-			d.say("\r\n{master:0}\r\nu@rtr1> ")
+			d.say("\r\n{master:0}\r\nalice@rtr1> ")
 		},
 		"between the area line and the prompt": func(d *lineDev, cmd string) {
 			d.say(cmd + "\r\nout\r\n\r\n{master:0}\r\n")
 			gap()
-			d.say("u@rtr1> ")
+			d.say("alice@rtr1> ")
 		},
 		"inside the prompt": func(d *lineDev, cmd string) {
-			d.say(cmd + "\r\nout\r\n\r\n{master:0}\r\nu@rt")
+			d.say(cmd + "\r\nout\r\n\r\n{master:0}\r\nalice@rt")
 			gap()
 			d.say("r1> ")
 		},
 		"inside the echo": func(d *lineDev, cmd string) {
 			d.say(cmd[:5])
 			gap()
-			d.say(cmd[5:] + "\r\nout\r\n\r\n{master:0}\r\nu@rtr1> ")
+			d.say(cmd[5:] + "\r\nout\r\n\r\n{master:0}\r\nalice@rtr1> ")
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			sh, _ := openScripted(t, quiet, func(d *lineDev) {
-				d.say("banner\r\nu@rtr1> ")
+				d.say("banner\r\nalice@rtr1> ")
 				if _, ok := d.next(); !ok {
 					return
 				}
@@ -395,7 +395,7 @@ func TestGapsInTheAnswerAreNoMatter(t *testing.T) {
 				gap() // and the answer to the empty line is late too
 				d.say("\r\n{master:0}\r\n")
 				gap()
-				d.say("u@rtr1> ")
+				d.say("alice@rtr1> ")
 			})
 			if got := runCmd(t, sh, "show system commit"); got != wantOut {
 				t.Errorf("got %q, want %q", got, wantOut)
@@ -408,30 +408,30 @@ func TestGapsInTheAnswerAreNoMatter(t *testing.T) {
 func TestBodyDropsTheLateAnswerInFrontOfTheEcho(t *testing.T) {
 	t.Parallel()
 	const cmd = "show system commit"
-	tail := "\r\nu@rtr1> \r\nu@rtr1> "
+	tail := "\r\nalice@rtr1> \r\nalice@rtr1> "
 	for name, c := range map[string]struct{ in, want string }{
 		"the prompt and the echo": {
-			"u@rtr1> show system commit\r\nout" + tail, "out\n"},
+			"alice@rtr1> show system commit\r\nout" + tail, "out\n"},
 		"the line break, the area line, the prompt and the echo": {
-			"\r\n{master:0}\r\nu@rtr1> show system commit\r\nout" + tail, "out\n"},
+			"\r\n{master:0}\r\nalice@rtr1> show system commit\r\nout" + tail, "out\n"},
 		"the location line of the configure mode": {
-			"\r\n{master:0}[edit]\r\nu@rtr1> show system commit\r\nout" + tail, "out\n"},
+			"\r\n{master:0}[edit]\r\nalice@rtr1> show system commit\r\nout" + tail, "out\n"},
 		"the plain echo": {
 			"show system commit\r\nout" + tail, "out\n"},
 		"the prompt typed twice": {
-			"u@rtr1> u@rtr1> show system commit\r\nout" + tail, "out\n"},
+			"alice@rtr1> alice@rtr1> show system commit\r\nout" + tail, "out\n"},
 		"a line before it that is not the device's": {
-			"surprise\r\nu@rtr1> show system commit\r\nout" + tail,
-			"surprise\nu@rtr1> show system commit\nout\n"},
+			"surprise\r\nalice@rtr1> show system commit\r\nout" + tail,
+			"surprise\nalice@rtr1> show system commit\nout\n"},
 		"the prompt and another command": {
-			"u@rtr1> show version\r\nout" + tail, "u@rtr1> show version\nout\n"},
+			"alice@rtr1> show version\r\nout" + tail, "alice@rtr1> show version\nout\n"},
 		"the same line later in the output is output": {
-			"show system commit\r\nu@rtr1> show system commit" + tail, "u@rtr1> show system commit\n"},
+			"show system commit\r\nalice@rtr1> show system commit" + tail, "alice@rtr1> show system commit\n"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			s := &shell{}
-			o := outBuf{prev: -1, prompt: "u@rtr1> ", alt: "u@rtr1# ", echo: cmd}
+			o := outBuf{prev: -1, prompt: "alice@rtr1> ", alt: "alice@rtr1# ", echo: cmd}
 			o.add([]byte(c.in))
 			if got := stripEcho(s.body(&o, 0), cmd); got != c.want {
 				t.Errorf("got %q, want %q", got, c.want)

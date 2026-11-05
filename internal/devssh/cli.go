@@ -1017,7 +1017,7 @@ func (s *shell) body(o *outBuf, k int) string {
 // place. The device printed that answer (its line break, the line it
 // prints before every prompt, and its prompt) before it read the command,
 // so it stands in front of the echo, and the prompt shares its line with
-// the echo: 'u@rtr1> configure exclusive'. Only that is dropped: lines a
+// the echo: 'alice@rtr1> configure exclusive'. Only that is dropped: lines a
 // device prints in front of a prompt (staleLine), then the prompt, once or
 // more, followed by exactly the command sent. Any other line in front, or
 // any other text after the prompt, is output and stays, and so does the
