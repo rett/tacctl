@@ -4,8 +4,8 @@
 logs be filtered by time, user, device and kind and written as JSON, keeps a
 user who must change the password from forwarding ports through the server,
 stops setting `single-connection` on devices and removes it where it is, and
-builds tacquito from the project's fork, with git pulls that neither stall
-nor wait for an answer. The numbered list in `CHANGELOG.md` (0.2.24) is
+builds tacquito from the project's fork, with git pulls that wait for no
+answer and drop a stalled transfer. The numbered list in `CHANGELOG.md` (0.2.24) is
 everything that differs from 0.2.23.
 
 ## Logs and accounting
@@ -48,6 +48,8 @@ everything that differs from 0.2.23.
   apply-group gives is left alone (`inherited from a group: remove it from
   the group by hand`). Another server's line, a custom template and a copy
   of `cisco.template` or `cisco-legacy.template` made earlier keep theirs.
+  The upgrade changes no device: run `device config plan` and `apply` on
+  the devices that have the line.
 
 ## Installing and upgrading
 
@@ -55,7 +57,7 @@ everything that differs from 0.2.23.
   follows upstream only by reviewed merges. A checkout cloned from upstream
   by an earlier release is pointed at the fork at the next `install` or
   `upgrade` (`Tacquito source now pulls from ...`); an origin set by hand is
-  left alone. The upgrade rebuilds tacquito once for patch `0006`.
+  left alone. The upgrade rebuilds tacquito once for patch `0006` and restarts it.
 - The tacquito pull is a fetch and a fast-forward. A fetch that fails ends
   the install or upgrade and builds nothing; a checkout that cannot
   fast-forward, or is ahead of the fork's `main`, is reset to it with a
@@ -68,7 +70,9 @@ everything that differs from 0.2.23.
   key must be in `known_hosts` already (connect once by hand, as the user git
   runs as), unless ssh's configuration sets `StrictHostKeyChecking
   accept-new`. Your own `GIT_SSH_COMMAND` or `GIT_SSH` is replaced: choose a
-  key with `core.sshCommand` in `/opt/tacctl`.
+  key with `core.sshCommand` in the clone (`/opt/tacctl`; git's global
+  configuration for a clone not made yet), which must take OpenSSH's `-o`
+  options.
 - No stored file is rewritten. An installed per-tier sudoers drop-in gains
   the operator's `log failures *`, so an operator can pass the log filters
   to `log failures` through sudo. `tacctl man` puts the pager on an entry
