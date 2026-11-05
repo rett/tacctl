@@ -157,7 +157,12 @@ func TestResolveKnob(t *testing.T) {
 }
 
 func TestApplyPauseKnob(t *testing.T) {
-	k, err := load(t, EnvTestApplyPause+"=gate:0.2")
+	// The pause is long against the scheduler's stalls on a loaded -race shard:
+	// a no-op takes microseconds, and a pause wrongly taken at "open" would
+	// last the whole second, so the one-second bound separates the two with
+	// no reliance on the machine being quick.
+	const pauseSeconds = 1
+	k, err := load(t, EnvTestApplyPause+"=gate:1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,12 +172,13 @@ func TestApplyPauseKnob(t *testing.T) {
 	}
 	start := time.Now()
 	pause("open")
-	if time.Since(start) > 100*time.Millisecond {
-		t.Error("paused at a point the knob does not name")
+	if d := time.Since(start); d >= pauseSeconds*time.Second {
+		t.Errorf("paused for %v at a point the knob does not name", d)
 	}
+	start = time.Now()
 	pause("gate")
-	if time.Since(start) < 200*time.Millisecond {
-		t.Errorf("gate pause was %v", time.Since(start))
+	if d := time.Since(start); d < pauseSeconds*time.Second {
+		t.Errorf("gate pause was %v", d)
 	}
 	if k, _ := load(t); k.ApplyPause() != nil {
 		t.Error("a pause without the knob")
