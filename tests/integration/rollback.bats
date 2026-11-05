@@ -455,10 +455,10 @@ JSON
     assert_output --partial "Roll back to 0.2.19 (dry run)"
     assert_output --partial "put back the per-tier sudoers drop-in 0.2.19 writes"
     [[ "$(_sums)" == "$before" ]]
-    run "$TACCTL_BIN_SCRIPT" rollback 0.2.23
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.24
     assert_failure 1
-    assert_output --partial "'0.2.23' is not a release to roll back to"
-    assert_output --partial "prepares the state for 0.2.22 (the release before this one)"
+    assert_output --partial "'0.2.24' is not a release to roll back to"
+    assert_output --partial "prepares the state for 0.2.23 (the release before this one), 0.2.22"
 }
 
 @test "rollback 0.2.21: the release before 0.2.22; the dry run writes nothing and --apply takes out the server name and nothing else" {
@@ -486,7 +486,34 @@ JSON
     assert_output --partial "Nothing to convert: every file is one 0.2.21 can read."
 }
 
-@test "rollback 0.2.22: the release before this one; the dry run writes nothing and --apply converts nothing" {
+@test "rollback 0.2.23: the release before this one; the dry run writes nothing and --apply converts nothing" {
+    _state_024
+    "$TACCTL_BIN_SCRIPT" server name core-1 > /dev/null
+    "$TACCTL_BIN_SCRIPT" config devices timeout-scale 3 > /dev/null
+    before=$(_sums)
+    n=$(_snapshots)
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.23 --hosts
+    assert_success
+    assert_output --partial "Roll back to 0.2.23 (dry run)"
+    assert_output --partial "nothing to remove (every key of tacctl.yaml is one 0.2.23 knows)"
+    assert_output --partial "nothing to do for 0.2.23: this release changed nothing on the enrolled hosts"
+    assert_output --partial "--apply converts no file of tacctl's own and takes no snapshot"
+    refute_output --partial "remove device.timeout_scale"
+    assert_output --partial "This was a dry run: nothing was changed."
+    [[ "$(_sums)" == "$before" ]]
+    [[ "$(_snapshots)" == "$n" ]]
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.23 --apply
+    assert_success
+    assert_output --partial "Nothing to convert: every file is one 0.2.23 can read."
+    assert_output --partial "tacctl upgrade --branch 0.2.23"
+    # Not even the sudoers drop-in changes: 0.2.23 and this release write the same text.
+    [[ "$(_sums)" == "$before" ]]
+    [[ "$(_snapshots)" == "$n" ]]
+    run "$TACCTL_BIN_SCRIPT" config get server.name unset-marker
+    assert_output "core-1"
+}
+
+@test "rollback 0.2.22: the release before 0.2.23; the dry run writes nothing and --apply converts nothing" {
     _state_024
     "$TACCTL_BIN_SCRIPT" server name core-1 > /dev/null
     "$TACCTL_BIN_SCRIPT" config devices timeout-scale 3 > /dev/null

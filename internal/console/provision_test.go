@@ -3,6 +3,7 @@ package console
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -17,7 +18,7 @@ import (
 const testConsole = "/usr/local/bin/tacctl-console"
 
 func TestDropInText(t *testing.T) {
-	off := DropIn(testConsole, false, false, nil)
+	off := DropIn(testConsole, false, false, nil, nil)
 	for _, l := range []string{
 		"Match Group tac-console\n", "    ForceCommand " + testConsole + "\n", "    DisableForwarding yes\n",
 		"    AllowTcpForwarding no\n", "    AllowStreamLocalForwarding no\n", "    X11Forwarding no\n",
@@ -32,7 +33,7 @@ func TestDropInText(t *testing.T) {
 		t.Errorf("no header:\n%s", off)
 	}
 	// Agent forwarding on: DisableForwarding would close it too.
-	on := DropIn(testConsole, true, false, nil)
+	on := DropIn(testConsole, true, false, nil, nil)
 	if strings.Contains(on, "DisableForwarding") || !strings.Contains(on, "    AllowAgentForwarding yes\n") ||
 		!strings.Contains(on, "    AllowTcpForwarding no\n") {
 		t.Errorf("agent on:\n%s", on)
@@ -42,7 +43,7 @@ func TestDropInText(t *testing.T) {
 	}
 	// Forwarding tiers: a block per tier before the console's, matching both
 	// groups (sshd takes the first value of each keyword), in tier order.
-	fwd := DropIn(testConsole, false, false, []tier.Tier{tier.Superuser, tier.Operator})
+	fwd := DropIn(testConsole, false, false, []tier.Tier{tier.Superuser, tier.Operator}, nil)
 	op := strings.Index(fwd, "Match Group tac-console Group tac-operator\n    DisableForwarding no\n    AllowTcpForwarding yes\n    X11Forwarding yes\n")
 	su := strings.Index(fwd, "Match Group tac-console Group tac-superuser\n    DisableForwarding no\n    AllowTcpForwarding yes\n    X11Forwarding yes\n")
 	all := strings.Index(fwd, "Match Group tac-console\n")
@@ -57,14 +58,117 @@ func TestDropInText(t *testing.T) {
 	if strings.Contains(fwd, "clientspecified") || !strings.Contains(fwd[all:], "    GatewayPorts no\n") {
 		t.Errorf("gateway ports off:\n%s", fwd)
 	}
-	gw := DropIn(testConsole, false, true, []tier.Tier{tier.Superuser})
+	gw := DropIn(testConsole, false, true, []tier.Tier{tier.Superuser}, nil)
 	su = strings.Index(gw, "Match Group tac-console Group tac-superuser\n    DisableForwarding no\n    AllowTcpForwarding yes\n    X11Forwarding yes\n    GatewayPorts clientspecified\n")
 	all = strings.Index(gw, "Match Group tac-console\n")
 	if su < 0 || su >= all || strings.Count(gw, "clientspecified") != 1 || !strings.Contains(gw[all:], "    GatewayPorts no\n") {
 		t.Errorf("gateway ports on:\n%s", gw)
 	}
-	if DropIn(testConsole, false, true, nil) != DropIn(testConsole, false, false, nil) {
+	if DropIn(testConsole, false, true, nil, nil) != DropIn(testConsole, false, false, nil, nil) {
 		t.Errorf("gateway ports without a forwarding tier changed the drop-in")
+	}
+}
+
+// The users held to a password change (pwchange.Pending) get a block of their
+// own before every other: a forwarding opens no session, so the console that
+// holds them never sees it, and a tier that may forward would let it through.
+func TestDropInHeld(t *testing.T) {
+	const hold = "    DisableForwarding yes\n    AllowTcpForwarding no\n    AllowStreamLocalForwarding no\n" +
+		"    X11Forwarding no\n    AllowAgentForwarding no\n    PermitTunnel no\n    GatewayPorts no\n"
+	// No held user, no block: the text is what it was before the block existed.
+	for _, held := range [][]string{nil, {}, {"root", "*", "a,b", "Alice", "!bob", "", "a b", "a.b"}} {
+		if got := DropIn(testConsole, false, false, []tier.Tier{tier.Superuser}, held); strings.Contains(got, "Match User") ||
+			got != DropIn(testConsole, false, false, []tier.Tier{tier.Superuser}, nil) {
+			t.Errorf("held %q: a block for no user:\n%s", held, got)
+		}
+	}
+	// One user, a user of the default tier (no forwarding tier but the superuser's).
+	one := DropIn(testConsole, false, false, []tier.Tier{tier.Superuser}, []string{"alice"})
+	if !strings.Contains(one, "Match User alice\n"+hold) || strings.Count(one, "Match User") != 1 {
+		t.Errorf("one held user:\n%s", one)
+	}
+	// Several: sorted, once each, only names a Linux account can have.
+	many := DropIn(testConsole, false, false, nil, []string{"dave", "bob", "alice", "bob", "carol", "*", "root"})
+	if !strings.Contains(many, "Match User alice,bob,carol,dave\n"+hold) || strings.Count(many, "Match User") != 1 {
+		t.Errorf("several held users:\n%s", many)
+	}
+	// A user of a forwarding tier: the block comes before the tier blocks and
+	// the console's own, in each case of the agent switch and gateway ports.
+	for _, agent := range []bool{false, true} {
+		for _, gateway := range []bool{false, true} {
+			d := DropIn(testConsole, agent, gateway, []tier.Tier{tier.Superuser, tier.Operator}, []string{"bob", "alice"})
+			h := strings.Index(d, "Match User alice,bob\n"+hold)
+			op := strings.Index(d, "Match Group tac-console Group tac-operator\n")
+			su := strings.Index(d, "Match Group tac-console Group tac-superuser\n")
+			all := strings.Index(d, "Match Group tac-console\n")
+			if h < 0 || h >= op || op >= su || su >= all {
+				t.Errorf("agent=%v gateway=%v: order of the blocks:\n%s", agent, gateway, d)
+			}
+			// the held block closes agent forwarding too, whatever the console says
+			if strings.Count(d[h:op], "DisableForwarding yes") != 1 || strings.Contains(d[h:op], "ForceCommand") {
+				t.Errorf("agent=%v gateway=%v: held block:\n%s", agent, gateway, d[h:op])
+			}
+		}
+	}
+	// What a drop-in lists is what it was written for.
+	if got := HeldInDropIn(many); !slices.Equal(got, []string{"alice", "bob", "carol", "dave"}) {
+		t.Errorf("HeldInDropIn = %q", got)
+	}
+	if got := HeldInDropIn(DropIn(testConsole, false, false, nil, nil)); got != nil {
+		t.Errorf("HeldInDropIn of a drop-in without the block = %q", got)
+	}
+	if got := HeldNames([]string{"carol", "alice", "carol", "root", "x y"}); !slices.Equal(got, []string{"alice", "carol"}) {
+		t.Errorf("HeldNames = %q", got)
+	}
+}
+
+// Many held users are written in several 'Match User' blocks of at most
+// HeldPerBlock names, all before the tier blocks, and read back as one list.
+func TestDropInHeldSplitsLongLists(t *testing.T) {
+	var held []string
+	for i := 1; i <= 301; i++ {
+		held = append(held, fmt.Sprintf("u%03d", i))
+	}
+	slices.Reverse(held)
+	d := DropIn(testConsole, false, false, []tier.Tier{tier.Superuser, tier.Operator}, held)
+	var lines []string
+	for _, l := range strings.Split(d, "\n") {
+		if strings.HasPrefix(l, "Match User ") {
+			lines = append(lines, strings.TrimPrefix(l, "Match User "))
+		}
+	}
+	if len(lines) != 7 {
+		t.Fatalf("%d Match User blocks for 301 names, want 7", len(lines))
+	}
+	for i, l := range lines {
+		names := strings.Split(l, ",")
+		if want := min(HeldPerBlock, 301-i*HeldPerBlock); len(names) != want {
+			t.Errorf("block %d lists %d names, want %d", i, len(names), want)
+		}
+		// sorted across the blocks
+		if want := fmt.Sprintf("u%03d", i*HeldPerBlock+1); names[0] != want {
+			t.Errorf("block %d starts at %s, want %s", i, names[0], want)
+		}
+	}
+	// every block comes before the first tier block, and each closes the same
+	if op, last := strings.Index(d, "Match Group tac-console Group tac-operator\n"), strings.LastIndex(d, "Match User "); last < 0 || last >= op {
+		t.Errorf("a held block is after the tier blocks:\n%s", d)
+	}
+	if n := strings.Count(d, "    DisableForwarding yes\n    AllowTcpForwarding no\n    AllowStreamLocalForwarding no\n    X11Forwarding no\n    AllowAgentForwarding no\n    PermitTunnel no\n    GatewayPorts no\n"); n != 7 {
+		t.Errorf("%d blocks close every forwarding in the held block's order, want the 7 held ones", n)
+	}
+	// the list read back is the whole list, sorted
+	want := slices.Clone(held)
+	slices.Sort(want)
+	if got := HeldInDropIn(d); !slices.Equal(got, want) {
+		t.Errorf("HeldInDropIn lists %d names, want 301", len(got))
+	}
+	// exactly one block per HeldPerBlock names: 50 names, one block
+	if strings.Count(DropIn(testConsole, false, false, nil, held[:HeldPerBlock]), "Match User ") != 1 {
+		t.Error("50 names are not one block")
+	}
+	if strings.Count(DropIn(testConsole, false, false, nil, held[:HeldPerBlock+1]), "Match User ") != 2 {
+		t.Error("51 names are not two blocks")
 	}
 }
 
@@ -86,7 +190,7 @@ func TestEngineerDropIn(t *testing.T) {
 		!strings.Contains(eng, "    AllowTcpForwarding no\n") || !strings.Contains(eng, "    PermitTunnel no\n") {
 		t.Errorf("engineer drop-in with agent forwarding:\n%s", eng)
 	}
-	for _, d := range []string{DropIn(testConsole, false, false, nil), DropIn(testConsole, true, true, []tier.Tier{tier.Superuser, tier.Operator})} {
+	for _, d := range []string{DropIn(testConsole, false, false, nil, nil), DropIn(testConsole, true, true, []tier.Tier{tier.Superuser, tier.Operator}, nil)} {
 		if strings.Contains(d, "tac-engineer") {
 			t.Errorf("the console's drop-in holds an engineer block:\n%s", d)
 		}
@@ -146,7 +250,7 @@ func TestDropInInstallRemove(t *testing.T) {
 	r.On([]string{"sshd", "-t"}, execx.Result{})
 	r.On([]string{"systemctl", "reload"}, execx.Result{})
 	d := DropInFile{Runner: r, Path: path}
-	text := DropIn(testConsole, false, false, nil)
+	text := DropIn(testConsole, false, false, nil, nil)
 
 	if ch, err := d.Install(ctx, text); ch != Installed || err != nil {
 		t.Fatalf("install: %v %v", ch, err)
@@ -168,7 +272,7 @@ func TestDropInInstallRemove(t *testing.T) {
 	// sshd refuses a change: the old text comes back, no reload.
 	r.Fail([]string{"sshd", "-t"}, 255, "/etc/ssh/sshd_config.d/tacctl-console.conf line 7: Bad configuration option: DisableForwarding")
 	r.Reset()
-	ch, err := d.Install(ctx, DropIn(testConsole, true, false, nil))
+	ch, err := d.Install(ctx, DropIn(testConsole, true, false, nil, nil))
 	if ch != Unchanged || !errors.Is(err, ErrSSHD) || !strings.Contains(err.Error(), "Bad configuration option: DisableForwarding") {
 		t.Fatalf("refused: %v %v", ch, err)
 	}
@@ -193,7 +297,7 @@ func TestDropInInstallRemove(t *testing.T) {
 	r.Fail([]string{"systemctl", "reload", "ssh.service"}, 5, "Failed to reload ssh.service: Unit ssh.service not found.")
 	r.On([]string{"systemctl", "reload", "sshd.service"}, execx.Result{})
 	d.Runner = r
-	if ch, err := d.Install(ctx, DropIn(testConsole, true, false, nil)); ch != Updated || err != nil {
+	if ch, err := d.Install(ctx, DropIn(testConsole, true, false, nil, nil)); ch != Updated || err != nil {
 		t.Fatalf("update: %v %v", ch, err)
 	}
 	if got := r.Argvs(); !slices.Equal(got, []string{"sshd -t", "systemctl reload ssh.service", "systemctl reload sshd.service"}) {

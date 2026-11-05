@@ -29,6 +29,34 @@ func shippedTopics(t *testing.T) []manTopic {
 	return topics
 }
 
+// TestManPageSetsTheBodyMargin pins the `.nr BP 7n` line of man/tacctl.1
+// between .TH and the first .SH. groff 1.24 narrowed the default body margin
+// of the man macros from 7n to 5n, and the pager search of `tacctl man`
+// assumes 7 (manTagColumn, manTagSameLine): without the line a tag of six
+// characters is set on a different line and the search misses its entry. The
+// page is the same under groff 1.23 (the CI runner's) and 1.24.
+func TestManPageSetsTheBodyMargin(t *testing.T) {
+	th, sh, bp := -1, -1, -1
+	for i, line := range strings.Split(string(assets.ManPage()), "\n") {
+		switch {
+		case th < 0 && strings.HasPrefix(line, ".TH "):
+			th = i
+		case sh < 0 && strings.HasPrefix(line, ".SH "):
+			sh = i
+		case bp < 0 && strings.TrimSpace(line) == ".nr BP 7n":
+			bp = i
+		}
+	}
+	switch {
+	case th < 0 || sh < 0:
+		t.Fatalf("the page has no .TH (line %d) or no .SH (line %d)", th+1, sh+1)
+	case bp < 0:
+		t.Fatalf("man/tacctl.1 does not set the body margin: add `.nr BP 7n` after .TH (groff 1.24 defaults to 5n, the search of `tacctl man` assumes %d)", manTagColumn)
+	case bp < th || bp > sh:
+		t.Errorf("`.nr BP 7n` is on line %d, it must follow .TH (line %d) and precede the first .SH (line %d)", bp+1, th+1, sh+1)
+	}
+}
+
 func TestManTopicsReadHeadingsAndTags(t *testing.T) {
 	src := []byte(`.TH TACCTL 1
 .SH TIERS

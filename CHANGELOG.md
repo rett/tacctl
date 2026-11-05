@@ -26,7 +26,100 @@ current behaviour; this file is where history lives.
    from ...`); an origin set by hand is left alone, and a failure to repoint
    is a warning, the checkout still pulling from upstream.
 
-3. **The walkthroughs no longer set `single-connection`.** tacquito closes a
+3. **CI runs `make lint`, and the man page margin is pinned by a test.** For
+   developers: a `lint` job of the `test` workflow runs `make lint` on Ubuntu
+   24.04 (its shellcheck and groff 1.23, golangci-lint at the version the
+   Makefile pins), so a lint failure no longer waits for a maintainer's
+   machine; `TestManPageSetsTheBodyMargin` fails when `man/tacctl.1` loses its
+   `.nr BP 7n` line, which the pager search of `tacctl man` relies on, and the
+   pre-push hook (`make hooks`) also runs `no-short-yes.sh` and
+   `no-os-tempdir.sh`. `make lint` and the man search tests must pass on both
+   the CI tools and newer ones (`tests/README.md`).
+
+4. **`tacctl rollback 0.2.23`, the release before this one, is a target.**
+   This release changed no stored file, so 0.2.23 reads everything it writes:
+   the rollback converts nothing, removes no key, leaves the per-tier sudoers
+   drop-in (0.2.23 and this release write the same text), takes no snapshot and
+   needs no `--yes`. The users' email addresses, the SNMPv3 users and the
+   covered staging entries, which every older target drops, and an emergency
+   lockdown on a scope with enrolled hosts, which every older target refuses,
+   stay. The top-level help, `docs/cli/conventions.md` and `docs/cli/user.md`
+   list 0.2.23 among the targets. The command ends with
+   `tacctl upgrade --branch 0.2.23`. A host rolled back keeps its tacquito
+   checkout pointed at the project's fork (item 2), which has the same history
+   as the upstream clone 0.2.23 made. `tacctl rollback` now takes ten targets;
+   `docs/install/upgrading.md` (Rolling back, To 0.2.23), the manual page and
+   the completion list them.
+
+5. **The tacquito pull cannot stall or build old source.** `install` (on an
+   existing checkout) and `upgrade` pulled the tacquito source with a plain
+   `git pull`, which stops when the checkout cannot be merged with the fork's
+   `main` (a rewritten history, a commit made in the clone by hand), and every
+   later `install` and `upgrade` stopped at the same place. The pull is now a
+   `git fetch` and a `git merge --ff-only`. A fetch that fails (no network) ends
+   the phase with git's exit status, as the pull did, and builds nothing from
+   the stale tracking ref. When the checkout cannot fast-forward, or is ahead of
+   the fork's `main` (a commit made in the clone, which a fast-forward leaves,
+   so that every later `upgrade` would rebuild and restart on it), it is reset
+   to the branch it tracks (`git reset --hard @{u}`) with a warning that names
+   the commit it was at and the one it is at now (`Tacquito source at ... could
+   not fast-forward; reset it to its upstream branch (was 1111111, now
+   2222222).`, or `... is ahead of its upstream branch; reset ...`). The clone
+   is only a build tree (the patches applied last time are dropped before the
+   pull and applied again after), so nothing is lost. When the reset fails, the
+   phase ends with the exit status of the step that sent it there; `upgrade`
+   then puts the previous binary back instead of leaving the `tacquito.bak`
+   copy it had made. The clone and the fetch no longer wait for an operator: git
+   asks for no user name, password or key passphrase (`GIT_TERMINAL_PROMPT=0`, a
+   failing `GIT_ASKPASS`, `SSH_ASKPASS` unset, `BatchMode=yes` for an ssh
+   remote) and drops a transfer slower than 1000 bytes a second for a minute
+   (`http.lowSpeedLimit`, `http.lowSpeedTime`). `docs/install/upgrading.md` and
+   the manual page (`TACQUITO_SRC`) say so.
+
+6. **A user who must change the password gets no port forwarded through the
+   server on a new connection, in any tier.** A forwarding (`ssh -N -L`, `-R`,
+   `-D`, `-J`) opens no session and never reaches the console that holds such
+   a user, so a user of a tier in `console forwarding tiers` (default:
+   superuser only, who is never held) kept forwarding ports with the old
+   password; the limitation was to take the tier out. sshd's drop-in for the
+   console (`/etc/ssh/sshd_config.d/tacctl-console.conf`) now begins, when
+   anyone is held, with `Match User <names>` setting `DisableForwarding yes`
+   and `AllowTcpForwarding`, `AllowStreamLocalForwarding`, `X11Forwarding`,
+   `AllowAgentForwarding`, `PermitTunnel` and `GatewayPorts` to the closed
+   value, ahead of the tier blocks (sshd keeps the first value of a keyword).
+   sshd applies a `Match` block when a connection authenticates, so a
+   connection the user has open already keeps the forwardings it had until it
+   closes; tacctl does not end it (the administrator can:
+   `loginctl terminate-user <name>`). The names are the users held now (`user
+   require-password-change`, `user add` and an administrator's `user passwd`
+   by default), sorted, only those of a Linux account, a superuser never, at
+   most 50 to a `Match User` line (more users make further blocks, all before
+   the tier blocks); with nobody held there is no block and the file is the
+   one of earlier releases. The sync of the server writes the list (the `user`
+   verbs, `host sync`, `console install`, `upgrade`; it stays as it was when
+   the store or `tacctl.yaml` cannot be read), and so do the verbs that change
+   who is held, each by itself, because a sync of the server reaches the
+   drop-in only when the server is enrolled, its checks pass and a user of the
+   scope gets the console: `user require-password-change` in every form,
+   `user add`, `user remove`, `user rename`, `user move`, an administrator's
+   `user passwd`, the user's own `passwd`, a group command that lowers a tier
+   (the one change of a group's tier that syncs the server; raising a tier
+   leaves the list as it was until the next rewrite, which only closes
+   forwarding), `store import`, `backup restore` (a snapshot or an old-style
+   backup) and `store rollback` (legacy mode holds nobody). The
+   rewrite checks the drop-in with `sshd -t`, undoes it when sshd refuses it
+   (one warning with `tacctl console install` then), and reads the users and
+   installs the file under the apply lock, so two commands that flag users at
+   the same time cannot leave one out. Any other write of the store leaves the
+   drop-in as it is until the next of those. `console check` counts the list
+   as part of the drop-in: a list that is not the users held now is drift,
+   shown with both lists, and a held user is probed with `sshd -T` like the
+   first user of each kind (`console show` expects forwarding closed for
+   them, the agent included, whatever `console agent-forwarding` says). An
+   earlier release reads the extra block without complaint; its `console
+   check` calls the file different.
+
+7. **The walkthroughs no longer set `single-connection`.** tacquito closes a
    connection that has been idle for 15 seconds. A device with
    `single-connection` keeps one connection open for many sessions, so after
    the close it held a dead socket (`CLOSE_WAIT` on Junos) and a later login

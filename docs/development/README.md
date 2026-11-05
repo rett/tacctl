@@ -24,7 +24,7 @@ tacctl/
     templates/              # Device config templates: cisco, cisco-legacy, juniper, wti,
                             # and cisco-radius, juniper-radius, wti-radius for --protocol radius
     linux/                  # client-install.sh, client-remove.sh (Linux host enrollment)
-  .github/workflows/        # test.yml: the Go tests (internal/cli in two shards);
+  .github/workflows/        # test.yml: the Go tests (internal/cli in two shards) and make lint;
                             # release-reproducible.yml: rebuilds each published release and compares
   man/tacctl.1              # `man tacctl`
   patches/                  # tacquito source patch overlay (patches/README.md)
@@ -90,7 +90,11 @@ tacctl/
   `GATE-CI PASS|FAIL` line that names the failing tests, started and read
   like `gate-go`, and takes several times as long), bats as the invoking
   user, the diff corpus against the previous release, the container
-  matrix, `groff -k -ww`; the `test` workflow on the pull request. Tests
+  matrix, `groff -k -ww`; the `test` workflow on the pull request, whose
+  `lint` job runs `make lint` with Ubuntu 24.04's shellcheck and groff 1.23
+  while a development machine may have newer ones (groff 1.24, shellcheck
+  0.11): `make lint` and the man search tests must pass on both, and a fix
+  for a newer tool must keep the older one passing (`tests/README.md`). Tests
   sandbox host paths, and a test must not read a path of the machine it
   runs on. A test that needs the process environment, the lock wait or a
   package-wide registry calls `serial(t)` first; the others run in parallel

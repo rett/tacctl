@@ -284,6 +284,11 @@ func (inv *invocation) userRequirePasswordChange(args []string) error {
 		for _, n := range change {
 			inv.detailPwChange(n, required, "require")
 		}
+		// the sync below rewrites the drop-in only when it gets as far as
+		// the console's pieces (an enrolled server, a scope that still
+		// exists, a user with the console): the list is current whatever
+		// it does
+		inv.refreshHeldForwarding()
 	}
 	switch {
 	case required:

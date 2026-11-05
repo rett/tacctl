@@ -2,6 +2,7 @@ package console
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -58,10 +59,20 @@ func patternList(list string, groups []string) bool {
 }
 
 // firstWins evaluates the drop-ins the way sshd does for an account in
-// groups: the files in name order, the blocks whose Match Group lines all
-// hold, the first value of each keyword. It knows only the shapes tacctl
-// writes (Match Group g [Group h]... and keyword value lines).
+// groups: the files in name order, the blocks whose Match lines all hold,
+// the first value of each keyword. It knows only the shapes tacctl writes
+// (Match Group g [Group h]... and Match User u, and keyword value lines). A
+// member of groups written "user=name" is not a group but the account's
+// name, which Match User compares.
 func firstWins(files map[string]string, groups ...string) map[string]string {
+	account := ""
+	for i := 0; i < len(groups); i++ {
+		if n, ok := strings.CutPrefix(groups[i], "user="); ok {
+			account = n
+			groups = append(groups[:i:i], groups[i+1:]...)
+			i--
+		}
+	}
 	names := make([]string, 0, len(files))
 	for n := range files {
 		names = append(names, n)
@@ -78,7 +89,14 @@ func firstWins(files map[string]string, groups ...string) map[string]string {
 			if strings.EqualFold(f[0], "Match") {
 				active = true
 				for i := 1; i+1 < len(f); i += 2 {
-					active = active && strings.EqualFold(f[i], "Group") && patternList(f[i+1], groups)
+					switch {
+					case strings.EqualFold(f[i], "Group"):
+						active = active && patternList(f[i+1], groups)
+					case strings.EqualFold(f[i], "User"):
+						active = active && account != "" && patternList(f[i+1], []string{account})
+					default:
+						active = false
+					}
 				}
 				continue
 			}
@@ -110,7 +128,7 @@ func TestDropInsSortEngineerFirst(t *testing.T) {
 	}
 	for _, agent := range []bool{false, true} {
 		files := map[string]string{
-			cn: DropIn(testConsole, agent, true, []tier.Tier{tier.Superuser, tier.Operator}),
+			cn: DropIn(testConsole, agent, true, []tier.Tier{tier.Superuser, tier.Operator}, nil),
 			en: EngineerDropIn(agent),
 		}
 		// An engineer with the console that is also still in tac-superuser.
@@ -202,7 +220,7 @@ func TestDropInsSortEngineerFirstInSshd(t *testing.T) {
 		out := string(res.Stdout) + string(res.Stderr)
 		return out, err == nil && res.Code == 0
 	}
-	write(filepath.Base(p.SSHDDropIn), DropIn(testConsole, false, false, []tier.Tier{tier.Superuser}))
+	write(filepath.Base(p.SSHDDropIn), DropIn(testConsole, false, false, []tier.Tier{tier.Superuser}, nil))
 	write(filepath.Base(p.SSHDEngineerDropIn), EngineerDropIn(false))
 	out, ok := eval()
 	if !ok {
@@ -241,7 +259,7 @@ func TestLockdownDropInSortsFirst(t *testing.T) {
 	}
 	for _, agent := range []bool{false, true} {
 		files := map[string]string{
-			cn: DropIn(testConsole, agent, true, []tier.Tier{tier.Superuser, tier.Operator, tier.Readonly}),
+			cn: DropIn(testConsole, agent, true, []tier.Tier{tier.Superuser, tier.Operator, tier.Readonly}, nil),
 			en: EngineerDropIn(agent),
 			ld: lockdownDropIn,
 		}
@@ -313,7 +331,7 @@ func TestLockdownDropInInSshd(t *testing.T) {
 		res, err := run.Run(context.Background(), execx.Cmd{Name: sshd, Args: []string{"-T", "-f", cfg, "-C", "user=" + u.Username + ",host=h,addr=127.0.0.1"}})
 		return string(res.Stdout) + string(res.Stderr), err == nil && res.Code == 0
 	}
-	write(filepath.Base(p.SSHDDropIn), DropIn(testConsole, true, false, []tier.Tier{tier.Superuser, tier.Engineer}))
+	write(filepath.Base(p.SSHDDropIn), DropIn(testConsole, true, false, []tier.Tier{tier.Superuser, tier.Engineer}, nil))
 	write(filepath.Base(p.SSHDEngineerDropIn), EngineerDropIn(true))
 	before, ok := eval()
 	if !ok {
@@ -336,5 +354,169 @@ func TestLockdownDropInInSshd(t *testing.T) {
 	}
 	if out, _ := eval(); out != before {
 		t.Errorf("an account of the negated group changed under the lockdown:\n%s\nwas\n%s", out, before)
+	}
+}
+
+// A user held to a password change forwards nothing although the tier they are
+// in may: the console's own file lists them in a block before the tier blocks,
+// and the engineer's and the lockdown's files come before that, so neither can
+// open what it closes. An account that is not listed is as before, and so is
+// the list when it is empty.
+func TestHeldBeatsForwardingTiers(t *testing.T) {
+	p := paths.Resolve(paths.NewEnv(nil), "", nil)
+	cn, en, ld := filepath.Base(p.SSHDDropIn), filepath.Base(p.SSHDEngineerDropIn), paths.SSHDLockdownDropInName
+	for _, agent := range []bool{false, true} {
+		for _, gateway := range []bool{false, true} {
+			files := map[string]string{
+				cn: DropIn(testConsole, agent, gateway, []tier.Tier{tier.Superuser, tier.Operator, tier.Engineer}, []string{"alice", "carol"}),
+				en: EngineerDropIn(agent),
+				ld: lockdownDropIn,
+			}
+			// The lockdown file belongs to an enrolled host and matches tac-users
+			// but for tac-superuser; it is read first, and the held block still
+			// closes what it leaves open. The server has the file when it is
+			// enrolled as a host of its own: the last two members.
+			for _, member := range [][]string{
+				{Group, tier.OperatorGroup, "user=alice"},              // a forwarding tier, held
+				{Group, tier.SuperuserGroup, "user=alice"},             // the default tier, held
+				{Group, tier.EngineerGroup, "user=carol"},              // an engineer, held
+				{Group, "tac-users", tier.OperatorGroup, "user=alice"}, // held, and matched by the lockdown file
+				{Group, "tac-users", tier.EngineerGroup, "user=carol"},
+			} {
+				got := firstWins(files, member...)
+				for k, want := range map[string]string{
+					"disableforwarding": "yes", "allowtcpforwarding": "no", "x11forwarding": "no", "allowstreamlocalforwarding": "no",
+					"allowagentforwarding": "no", "permittunnel": "no", "gatewayports": "no", "forcecommand": testConsole,
+				} {
+					if agent && member[1] == tier.EngineerGroup && k == "allowagentforwarding" {
+						// the engineer's file, read first, sets AllowAgentForwarding
+						// yes and no DisableForwarding: the held block's
+						// DisableForwarding yes is what closes the agent
+						continue
+					}
+					if got[k] != want {
+						t.Errorf("agent=%v gateway=%v %v: %s = %q, want %q", agent, gateway, member, k, got[k], want)
+					}
+				}
+			}
+			// not listed: as before
+			for _, member := range [][]string{{Group, tier.OperatorGroup, "user=bob"}, {Group, tier.SuperuserGroup, "user=bob"}} {
+				if got := firstWins(files, member...); got["allowtcpforwarding"] != "yes" || got["x11forwarding"] != "yes" || got["disableforwarding"] != "no" {
+					t.Errorf("agent=%v gateway=%v %v: an unlisted user lost the tier's forwarding: %v", agent, gateway, member, got)
+				}
+			}
+		}
+	}
+	// the control: with no held user a listed name is an ordinary one
+	files := map[string]string{cn: DropIn(testConsole, false, false, []tier.Tier{tier.Operator}, nil), en: EngineerDropIn(false)}
+	if got := firstWins(files, Group, tier.OperatorGroup, "user=alice"); got["allowtcpforwarding"] != "yes" {
+		t.Errorf("the control: without the block the operator tier forwards: %v", got)
+	}
+}
+
+// The same with sshd itself where the machine has one ('sshd -T -C user=...'):
+// a user in the drop-in's list has DisableForwarding yes and every forwarding
+// closed although the account's own group is in a forwarding tier; a user
+// that is not listed (a name sshd does not know, but for the Match User line
+// that is all there is to compare) keeps what the tier gives; and an empty
+// list writes no block.
+func TestHeldForwardingInSshd(t *testing.T) {
+	run := execx.Real{}
+	sshd, err := run.LookPath("sshd")
+	if err != nil {
+		sshd = "/usr/sbin/sshd"
+		if _, serr := os.Stat(sshd); serr != nil {
+			t.Skip("no sshd on this machine")
+		}
+	}
+	keygen, err := run.LookPath("ssh-keygen")
+	if err != nil {
+		t.Skip("no ssh-keygen on this machine")
+	}
+	u, err := user.Current()
+	if err != nil {
+		t.Skip("no current user")
+	}
+	g, err := user.LookupGroupId(u.Gid)
+	if err != nil {
+		t.Skip("no primary group")
+	}
+	dir := t.TempDir()
+	if res, err := run.Run(context.Background(), execx.Cmd{Name: keygen, Args: []string{"-q", "-t", "ed25519", "-N", "", "-f", filepath.Join(dir, "hostkey")}}); err != nil || res.Code != 0 {
+		t.Skipf("ssh-keygen: %v %d %s", err, res.Code, res.Stderr)
+	}
+	p := paths.Resolve(paths.NewEnv(nil), "", nil)
+	d := filepath.Join(dir, "sshd_config.d")
+	if err := os.Mkdir(d, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The account's own group stands for tac-console and tac-superuser (the
+	// account is no engineer); the example name alice stands for the
+	// account's name.
+	own := strings.NewReplacer(Group, g.Name, tier.SuperuserGroup, g.Name, "alice", u.Username)
+	write := func(name, text string) {
+		if err := os.WriteFile(filepath.Join(d, name), []byte(own.Replace(text)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg := filepath.Join(dir, "sshd_config")
+	if err := os.WriteFile(cfg, []byte("HostKey "+filepath.Join(dir, "hostkey")+"\nInclude "+d+"/*.conf\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	eval := func() (string, bool) {
+		res, err := run.Run(context.Background(), execx.Cmd{Name: sshd, Args: []string{"-T", "-f", cfg, "-C", "user=" + u.Username + ",host=h,addr=127.0.0.1"}})
+		return string(res.Stdout) + string(res.Stderr), err == nil && res.Code == 0
+	}
+	cn := filepath.Base(p.SSHDDropIn)
+	for _, agent := range []bool{false, true} {
+		fwd := []tier.Tier{tier.Superuser}
+		write(cn, DropIn(testConsole, agent, false, fwd, nil))
+		write(filepath.Base(p.SSHDEngineerDropIn), EngineerDropIn(agent))
+		none, ok := eval()
+		if !ok {
+			t.Skipf("sshd -T cannot run here: %s", none)
+		}
+		// the control: nobody held, the account forwards through its tier
+		for _, want := range []string{"allowtcpforwarding yes", "x11forwarding yes", "disableforwarding no"} {
+			if !sshdHas(none, want) {
+				t.Errorf("agent=%v: the control lacks %q with nobody held:\n%s", agent, want, none)
+			}
+		}
+		// listed: closed, ahead of the tier block
+		write(cn, DropIn(testConsole, agent, false, fwd, []string{"alice", "bob"}))
+		out, ok := eval()
+		if !ok {
+			t.Fatalf("sshd refuses the drop-in with a held block:\n%s", out)
+		}
+		for _, want := range []string{"disableforwarding yes", "allowtcpforwarding no", "allowstreamlocalforwarding no", "x11forwarding no",
+			"allowagentforwarding no", "permittunnel no", "gatewayports no", "forcecommand " + testConsole} {
+			if !sshdHas(out, want) {
+				t.Errorf("agent=%v: sshd -T lacks %q for a held user:\n%s", agent, want, out)
+			}
+		}
+		// listed in the last of several blocks: the names are split over
+		// blocks of HeldPerBlock, and the account is in the seventh
+		var many []string
+		for i := 1; i <= 300; i++ {
+			many = append(many, fmt.Sprintf("a%03d", i))
+		}
+		write(cn, DropIn(testConsole, agent, false, fwd, append(many, "alice")))
+		if strings.Count(own.Replace(DropIn(testConsole, agent, false, fwd, append(many, "alice"))), "Match User ") != 7 {
+			t.Fatal("301 names are not seven blocks")
+		}
+		out, ok = eval()
+		if !ok {
+			t.Fatalf("sshd refuses the drop-in with seven held blocks:\n%s", out)
+		}
+		for _, want := range []string{"disableforwarding yes", "allowtcpforwarding no", "x11forwarding no", "allowagentforwarding no"} {
+			if !sshdHas(out, want) {
+				t.Errorf("agent=%v: sshd -T lacks %q for a user in the last of seven held blocks:\n%s", agent, want, out)
+			}
+		}
+		// listed, but another name: as the control
+		write(cn, DropIn(testConsole, agent, false, fwd, []string{"bob", "carol"}))
+		if out, _ := eval(); !sshdHas(out, "allowtcpforwarding yes") || !sshdHas(out, "disableforwarding no") {
+			t.Errorf("agent=%v: a user that is not held lost the tier's forwarding:\n%s", agent, out)
+		}
 	}
 }

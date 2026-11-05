@@ -272,8 +272,9 @@ The tacctl repo branch to install or upgrade from (default: the current one).
 Prepare tacctl's state for the release before this one; run on the newer
 release, before the older one is installed. A dry run by default: it lists
 every step and every warning and changes nothing. The versions it takes are
-.B 0.2.22
+.B 0.2.23
 (the release before this one),
+.BR 0.2.22 ,
 .BR 0.2.21 ,
 .BR 0.2.20 ,
 .BR 0.2.19 ,
@@ -290,12 +291,12 @@ and older are refused, with the way there (one release at a time: this
 rollback,
 .BR "tacctl upgrade \-\-branch 0.2.9" ,
 then the rollback of that release), and so is any other word (0.2.10 to
-0.2.15 included: the refusal names the targets). Every target but 0.2.22, 0.2.21, 0.2.20
+0.2.15 included: the refusal names the targets). Every target but 0.2.23, 0.2.22, 0.2.21, 0.2.20
 and 0.2.19 is refused while an emergency lockdown locks a group (the refusal lists each
 one and
 .B "emergency lockdown <scope> disable"
 lifts it; a release before 0.2.19 would render the locked users back into the
-scope; 0.2.19 has the record and keeps it), every target is refused while an emergency lockdown stands on a scope that has enrolled hosts, or a lifted one still waits for a host to drop sshd's lockdown drop\-in (older releases cannot lift it on a host; lift it and sync the hosts first), and every target is refused while a device's record says a confirmed commit of
+scope; 0.2.19 has the record and keeps it), every target but 0.2.23 is refused while an emergency lockdown stands on a scope that has enrolled hosts, or a lifted one still waits for a host to drop sshd's lockdown drop\-in (older releases cannot lift it on a host; lift it and sync the hosts first), and every target is refused while a device's record says a confirmed commit of
 .B "device config apply"
 is
 .B pending
@@ -305,7 +306,7 @@ or
 .B "device config apply <name> \-\-check"
 or
 .B "device config forget <name>"
-settles it), and every target but 0.2.22, 0.2.21 and 0.2.20 while the store has a user whose
+settles it), and every target but 0.2.23, 0.2.22, 0.2.21 and 0.2.20 while the store has a user whose
 name has a period (no other target reads such a name: the refusal lists each, with
 .B "user rename <name> <new\-name>"
 as the way out, and changes nothing; an override under such a name in the
@@ -340,7 +341,7 @@ stay, for the releases that have them) are removed and a
 of \-1 (never ask) is written as 1000, with every other setting kept and a
 snapshot first.
 .IP
-Every target but 0.2.22 and 0.2.21, which have it themselves, keeps every user's
+Every target but 0.2.23, 0.2.22 and 0.2.21, which have it themselves, keeps every user's
 login to this server: an older release answers
 it only for the users that have the server's scope
 .RB ( tacctl )
@@ -349,16 +350,16 @@ to the server and lacks it (it counts and names them; a warning, so
 .B \-\-apply
 needs
 .BR \-\-yes ),
-after a snapshot. Every target but 0.2.22 removes
+after a snapshot. Every target but 0.2.23 and 0.2.22 removes
 .B server.name
 (the name of
 .BR "server name" ),
-and every target but 0.2.22 and 0.2.21
+and every target but 0.2.23, 0.2.22 and 0.2.21
 .B server.addresses
 as well, from
 .IR tacctl.yaml ,
 which no older release knows; the host registry keeps the address in this
-server's entry. Every target but 0.2.22 also removes the timing scale:
+server's entry. Every target but 0.2.23 and 0.2.22 also removes the timing scale:
 .B device.timeout_scale
 and
 .B timeout_scale_scope.\fIscope\fR
@@ -373,7 +374,7 @@ key it does not know). It is a note in the plan, not a warning: the older
 release connects to every device with its fixed timings again, which a slow or
 distant device may not meet, and the values stay in the snapshot.
 .IP
-Every target removes the users' email addresses
+Every target but 0.2.23 removes the users' email addresses
 .RB ( "user email" ,
 .BR "user add \-\-email" )
 from
@@ -401,7 +402,7 @@ snapshot and the users. A store that cannot be read
 refuses every target. Until the older release is installed, the two verbs that
 set an address write the key again, and the command says so.
 .IP
-Every target writes the SNMP credential files
+Every target but 0.2.23 writes the SNMP credential files
 .RI ( snmp.yaml ,
 .IR snmp/ scope .yaml ,
 .IR snmp/devices/ name .yaml )
@@ -430,7 +431,7 @@ the audit line adds
 and the apply names
 .BR "tacctl backup recover <snapshot> \-\-only snmp\-users" .
 .IP
-Every target drops from
+Every target but 0.2.23 drops from
 .I state/staging
 the entries marked
 .B covered
@@ -444,6 +445,21 @@ A clone that still waits for its
 .B "device rename \-\-replace"
 loses its entry, and after a re-upgrade the verb refuses it as not staged: remove the clone and clone again from the original, or restore the snapshot. Every other entry stays.
 .IP
+.B "rollback 0.2.23"
+converts nothing: this release changed no stored file, so 0.2.23 reads every file it
+writes (the email addresses, the SNMP credential files, the covered staging
+entries, the server name, the timing scale, the server address, the users' login
+to this server, a user name with a period and an emergency lockdown, with or
+without enrolled hosts, all stay), the per\-tier sudoers drop\-in is left (0.2.23 and this release write
+the same text), no snapshot is taken and
+.B \-\-yes
+is never needed. It is refused only while a device's apply is not settled.
+The tacquito clone keeps pointing at the project's fork, which has the same
+history as the upstream clone 0.2.23 made.
+.B \-\-hosts
+is accepted and does nothing. The command ends with the next step,
+.BR "tacctl upgrade \-\-branch 0.2.23" .
+.IP
 .B "rollback 0.2.22"
 converts nothing but the email addresses, the SNMP credential files, the covered staging entries and the per\-tier sudoers drop\-in
 (when it is exactly this release's text it is rewritten, after
@@ -451,7 +467,7 @@ converts nothing but the email addresses, the SNMP credential files, the covered
 with 0.2.22's: the engineer's rule of
 .B "device clone"
 is taken out; an edited drop\-in is left): 0.2.22
-reads every other file this release writes, so the server name, the timing
+reads every other file 0.2.23 and this release write, so the server name, the timing
 scale, the server address, the users' login to this server, a user name with a
 period and an emergency lockdown (of scopes with no enrolled host) stay. With no
 address in the store, no SNMP
@@ -1538,10 +1554,9 @@ A user who must change the password can log in to this server only:
 every device refuses the user, as it refuses an unknown user, and every other
 enrolled Linux host has the account expired from its next
 .BR "host sync" ,
-until the password is changed (a device in a scope shared with the server, and
-port forwarding by a tier of
-.BR "console forwarding tiers" ,
-excepted; see below and
+until the password is changed (a device in a scope shared with the server
+excepted; see below; sshd's drop-in also closes every port forwarding through
+this server for the user's new connections, in any tier, see
 .BR "console forwarding" ). The user stays in the scope this server is enrolled in
 (\fBhost enroll \-\-local\fR), in the protocol of the method it is enrolled
 with, and is left out of every other scope; in the other protocol the user is
@@ -5960,7 +5975,10 @@ as the password dates are: an import never lifts it. The scope
 .B tacctl
 of a rendered file (the login of the server it came from, which every user is
 in) is not imported and is taken out of the users' scopes, in one line; a
-server registered in its own keeps it.
+server registered in its own keeps it. An import that holds users to a
+password change rewrites the list of them in the console's sshd drop-in at
+once (see
+.BR "console forwarding" ).
 .\" BEGIN GENERATED: command store import
 .RS
 .PP
@@ -5986,6 +6004,8 @@ remove the store, restart. The install is back in legacy read-only mode.
 When this server is enrolled a red line says that users whose tier fell
 keep their old groups until
 .BR "host sync" .
+Legacy mode holds nobody to a password change, so the list of them in the
+console's sshd drop-in is rewritten, empty, at once.
 .\" BEGIN GENERATED: command store rollback
 .RS
 .PP
@@ -6298,7 +6318,10 @@ provisioner entry only, so a sync alone does not make the next command take
 a snapshot; the snapshot that
 .B backup restore
 takes first compares everything. The newest 30 are retained. Without a store,
-list, diff and restore work on old-style backups only.
+list, diff and restore work on old-style backups only. A restore (of a
+snapshot or an old\-style backup) rewrites the list of users held to a password
+change in the console's sshd drop-in from the store it put back (see
+.BR "console forwarding" ).
 .\" BEGIN GENERATED: command backup restore
 .RS
 .PP
@@ -14056,12 +14079,57 @@ to a device accepts
 and
 .BR \-D .
 Agent, stream-local and tunnel forwarding stay as for every console user.
-A forwarding opens no session and never reaches the console, so a user of such
-a tier who must change the password
+A forwarding opens no session and never reaches the console, so sshd's drop-in
+lists the users who must change the password
 .RB ( "user require\-password\-change" )
-still forwards ports through this server with the old password until it is
-changed; the default tier, superuser, is never held, so list another tier only
-while none of its users must change the password.
+in a block of its own before the tier blocks,
+.BR "Match User" " \fInames\fR,"
+with
+.BR "DisableForwarding yes"
+and every single switch (TCP, stream-local, X11, agent, tunnel) at
+.BR no :
+their new connections forward nothing through this server in any tier until
+the password is changed. sshd applies the drop-in when a connection
+authenticates: a connection the user has open already keeps the forwardings it
+had until it closes, and tacctl does not end it (the administrator can:
+.BR "loginctl terminate\-user" " \fIname\fR)."
+The names are sorted and only those of a Linux account, at most 50 to a block
+(more users make further
+.B "Match User"
+blocks, all before the tier blocks); no user held, no block; a superuser is
+never held. The list is rewritten by every sync of this server (the
+.B user
+verbs that change an account run one), by
+.B "console install"
+and
+.BR upgrade ,
+and by the verbs that change who is held, each at once and by itself, so that
+it is current whether or not a sync of this server follows and gets as far as
+the drop-in (a server that is not enrolled, a sync that stops at its checks, a
+scope in which no user gets the console):
+.B "user require\-password\-change"
+in every form,
+.BR "user add" ,
+.BR "user remove" ,
+.BR "user rename" ,
+.BR "user move" ,
+an administrator's
+.BR "user passwd" ,
+the user's own
+.BR passwd ,
+a group command that lowers a tier,
+.BR "store import" ,
+.B "backup restore"
+(a snapshot or an old\-style backup) and
+.B "store rollback"
+(legacy mode holds nobody), under the apply lock; any other write of the
+store leaves it as it is until the next of those. Only a change that lowers a
+group's tier syncs this server (and so lists a flagged user whose group stops
+being a superuser's); raising a tier leaves the list as it was until the next
+rewrite, which can only close forwarding: a user who has become a superuser
+stays listed, and his new connections stay closed, until then. A failure to
+write it is one warning and the old list stays until the next sync or
+.BR "console install" .
 .\" BEGIN GENERATED: command console forwarding
 .RS
 .PP
@@ -14406,7 +14474,15 @@ a block before it sets
 .BR "DisableForwarding no" ,
 .B "AllowTcpForwarding yes"
 and
-.BR "X11Forwarding yes" ),
+.BR "X11Forwarding yes" ;
+for the users who must change the password a
+.B "Match User"
+block before those sets
+.B "DisableForwarding yes"
+and every single switch to
+.BR no ,
+see
+.BR "console forwarding" ),
 .BR "AllowTcpForwarding no" ,
 .BR "AllowStreamLocalForwarding no" ,
 .BR "X11Forwarding no" ,
@@ -14476,7 +14552,10 @@ in
 .IR /etc/ssh/sshd_config ,
 and
 .B "sshd \-T"
-for the first account whose shell is the console. It also checks the
+for the first account whose shell is the console, for the first user held to a
+password change (whose forwarding the drop-in closes in any tier) and for the
+first that is not. A drop-in whose list of users held to a password change is
+not the list held now differs: the check shows both lists. It also checks the
 engineers (the drop-in of the engineer tier and that its name sorts before
 the console's, a leftover
 .IR tacctl\-engineer.conf ,
@@ -16982,6 +17061,12 @@ the next time
 or
 .B upgrade
 pulls it; an origin set by hand is left alone.
+The pull is a fetch, then a fast\-forward. The fetch never waits for an answer
+(git asks for no user name, password or key passphrase, and drops a transfer that stays under
+1000 bytes a second for a minute), and a fetch that fails ends the install or upgrade there.
+A checkout that cannot fast\-forward to the fork's main (a rewritten history) or is ahead of it
+(a commit made in the clone) is reset to it with a warning that names the commit it was at
+and the one it is at now; the clone is only a build tree.
 .TP
 .B TMPDIR
 The directory where tacctl stages private copies while it works (rendered
