@@ -191,9 +191,9 @@ How each vendor takes the fix:
 
 | Vendor | You do | Details |
 |---|---|---|
-| Cisco | Paste the region by hand, with a second session open | Engineer Guide §5.2 |
+| Cisco | Paste the region by hand, with a second session open | Engineer Guide §5.5 |
 | Junos | Let tacctl apply it under `commit confirmed` | Engineer Guide §5.1 |
-| WTI | Type the menu checklist. No paste, no rollback. | Engineer Guide §5.3 |
+| WTI | Type the menu checklist. No paste, no rollback. | Engineer Guide §5.6 |
 
 > **`PENDING until <time>`** on a Junos apply means: **type nothing on that
 > device until the time passes.** Any `commit` would confirm the change.

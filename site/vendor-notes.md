@@ -35,7 +35,7 @@ links to them.
 | `enable` | Local enable secret only | — | — |
 | Host key on the console | `show ip ssh` | `file show /etc/ssh/ssh_host_ed25519_key.pub` | — |
 | Break-glass login | Local account after the server timeout; console list is local | Local `system login user`, or `root` when the scope records it; `root` on the console is always local | Only if *Fallback Local* is `On` |
-| Steps | Engineer Guide §5.2 | Engineer Guide §5.1 | Engineer Guide §5.3 |
+| Steps | Engineer Guide §5.5 | Engineer Guide §5.1 | Engineer Guide §5.6 |
 
 Junos is the only vendor tacctl writes to. For Cisco and WTI it reads,
 compares and plans; a person makes the change.
