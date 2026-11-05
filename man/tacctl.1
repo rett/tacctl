@@ -13855,13 +13855,60 @@ and
 say so for as long as it stands. Both verbs write an
 .B auth.info
 line per device (the reason is in the hold's:
-.BI "breakglass hold device=" name " addr=" ip " reason=\(dq" text "\(dq by=" user
+.BI "breakglass hold device=" name " addr=" ip " reason=\(dq" text "\(dq by=" user " firewall=" state
 and
-.BI "breakglass release device=" name " addr=" ip " held=" duration " by=" user )
-and take the snapshot every change takes. A hold that
+.BI "breakglass release device=" name " addr=" ip " held=" duration " by=" user " firewall=" state )
+and take the snapshot every change takes;
+.I state
+is what the nftables table did (reject, drop, off or failed: see below). A hold that
 .B "device address"
 moves writes
-.BI "breakglass hold\-move device=" name " from=" ip " to=" ip " by=" user .
+.BI "breakglass hold\-move device=" name " from=" ip " to=" ip " by=" user " firewall=" state .
+.PP
+A hold also refuses the TCP connections of the held address, so a device that
+falls back to its local accounts only when the server is unreachable does:
+FreeRADIUS (UDP) ignores an address its scopes do not cover and the device times
+out, but tacquito listens on TCP, where the kernel completes the handshake and
+tacquito closes the connection afterwards. tacctl owns one nftables table,
+.BR "inet tacctl" ,
+whose sets hold the held addresses and whose rule on the input hook (priority
+\-10) rejects with a TCP reset, or drops, a source address in a set that connects
+to a TCP port of a tacquito listener. It is written to
+.I /etc/tacctl/breakglass\-firewall.nft
+and loaded with
+.B "nft \-f"
+at the point the backends restart, by every hold, release, move
+.RB ( "device address" ),
+rename, restore that changes the holds, change of a listener and change of the
+setting, and at boot by
+.IR tacctl\-breakglass\-firewall.service .
+Its setting is
+.B "config breakglass\-firewall"
+.RB ( reject ,
+the default,
+.B drop
+or
+.BR off ,
+which is the behaviour before 0.2.24). The report of a hold has a
+.B "Firewall:"
+line
+.RB ( "Firewall: " address " refused on tcp/49 (reject)" ),
+the report of a release the reverse
+.RB ( "Firewall: " address " accepted again on tcp/49" ).
+When nft is missing or fails the hold stands (the record, the rendering and the
+restarts are as above) and the report says in red that the server still completes
+the TCP handshake on the port(s) for the address, so a device that falls back only
+when the server is unreachable (a WTI unit with Fallback Local
+.BR "On (Transport Failure)" ,
+a Junos switch with
+.BR "authentication\-order [ tacplus password ]" )
+will not, names the fix
+.RB ( "sudo apt\-get install nftables" ,
+then
+.B "tacctl config breakglass\-firewall"
+with the current setting, which loads the table even when the setting is
+unchanged) and exits 1; a release that cannot load the table says the address may
+still be refused and exits 1 the same way.
 .TP
 .BI "breakglass hold " "name[=reason][,name[=reason]...]" " [\-\-reason " text ]
 Hold break\-glass on registered devices and enrolled Linux hosts, given as one comma
@@ -13899,6 +13946,10 @@ does not answer it,
 (every hold that stands) and
 .B "When done:"
 (the release of the devices held).
+A
+.B "Firewall:"
+line says what the nftables table does with the TCP connections of the address
+(or, in red, that it could not be loaded, with the fix; the verb then exits 1).
 A
 .B "Carved:"
 line says that only the registered address is carved and that a device that
@@ -13938,7 +13989,10 @@ that is not an address) is removed by name.
 A restart that failed is reported as
 .B "NOT restarted"
 and the verb exits 1. The report names how long it was held, by whom and why,
-what was rendered, the check
+what was rendered, the
+.B "Firewall:"
+line (the address accepted again, or in red that the table could not be
+loaded and the address may still be refused, which exits 1), the check
 .RB ( "tacctl device config pull " device " \-\-diff" ,
 then a new ssh login as yourself) and the holds that remain. Superuser only.
 Given a comma list, the devices that are held (or whose entry carved nothing)

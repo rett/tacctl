@@ -792,10 +792,19 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	if err := set.RestartAll(inv.ctx); err != nil {
 		return err
 	}
-	inv.detail("backup restore", kvp("id", id), kvp("pre", preID), kvp("keep-uids", yesNo(keepUIDs)), kvp("legacy", "no"))
+	// The table of the held addresses follows the holds and the setting the
+	// snapshot brought back (the lock is held since before the render).
+	fw := inv.firewallEngine().Apply(inv.ctx)
+	inv.detail("backup restore", kvp("id", id), kvp("pre", preID), kvp("keep-uids", yesNo(keepUIDs)), kvp("legacy", "no"), kvp("firewall", firewallWord(fw)))
 	a.Out.InfoE("Restored snapshot " + id + ".")
 	if holdNote != "" {
 		a.Out.WarnE(holdNote)
+	}
+	fwFailed := false
+	if len(fw.Addrs) > 0 || !fw.OK() {
+		var fwLines []string
+		fwLines, fwFailed = firewallHoldLines(fw, fw.Addrs)
+		inv.echoFirewall(fwLines)
 	}
 	if len(lockHosts) > 0 {
 		a.Out.WarnE("sshd's lockdown drop-in on " + hostsText(len(lockHosts)) + " (" + strings.Join(lockHosts, ", ") + ") follows the restored lockdown record only at their next sync: " + lockdownHostsSyncCommand(lockHosts))
@@ -819,6 +828,10 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	}
 	inv.echo("")
 	inv.warnServerSync("Users whose tier is lower now keep their old groups")
+	if fwFailed {
+		inv.firewallFailedError(fw)
+		return exit(1)
+	}
 	return nil
 }
 

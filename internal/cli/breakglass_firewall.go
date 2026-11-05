@@ -33,8 +33,6 @@ func (inv *invocation) firewallEngine() *firewall.Engine {
 	return &firewall.Engine{Runner: a.Runner, Paths: a.Paths, Conf: a.Conf()}
 }
 
-// firewallAfter is the After hook of a StoreApply that changes the holds: it
-// loads the table for the holds and the setting as they are then, and keeps
 // firewallWord is the value of firewall= in the audit lines of a hold and a
 // release: the setting that was applied (reject, drop, off), or failed.
 func firewallWord(res firewall.Result) string {
@@ -55,11 +53,6 @@ func firewallFix(res firewall.Result) string {
 	return "Fix: remove the cause above, then " + cmd + " (it loads the table again even when the setting is unchanged)"
 }
 
-// firewallHoldLines are the lines of the report of a hold: what the table does
-// with the connections of addrs. failed says the report is a red warning and
-// the command exits 1. A table with nothing to match (no TCP listener) says
-// firewallReleaseLines are the lines of the report of a release: the reverse.
-// echoFirewall prints lines indented under a report; the red ones carry their
 // --- config breakglass-firewall ---------------------------------------------------
 
 // configBreakglassFirewall shows breakglass.firewall and where it comes from,
@@ -175,7 +168,3 @@ func (inv *invocation) firewallSettingReport(res firewall.Result) error {
 func firewallFixText(res firewall.Result) string {
 	return strings.TrimPrefix(firewallFix(res), "Fix: ")
 }
-
-// firewallListenerNote reloads the table after a change of tacquito's
-// listeners (the ports the rules match) and says so in one line; a table that
-// could not be loaded while an address is held is a warning. It does nothing
