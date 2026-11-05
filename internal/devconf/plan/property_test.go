@@ -538,7 +538,14 @@ func mutateIOS(raw string, exp []devices.Section, r *rand.Rand, legacy bool) (st
 }
 
 func TestPropertyFuzz(t *testing.T) {
-	const perFixture = 45
+	// The fuzz is pure CPU on one goroutine: the race detector has nothing
+	// to find in it and slows it down about nine times (two minutes of a
+	// CI job), so a -race build runs fewer cases per fixture. Every fixture
+	// is still covered, and the run without -race keeps the full count.
+	perFixture := 45
+	if raceEnabled {
+		perFixture = 10
+	}
 	total := 0
 	ops := map[Op]int{}
 	changed := 0
