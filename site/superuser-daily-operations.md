@@ -155,6 +155,7 @@ tacctl device list --probe             # adds REACH: TCP connect to the ssh port
 tacctl device show sw1                 # one device in full
 tacctl device check sw1                # checklist: scope, reachability, host key, SNMP, vendor
 tacctl device check --all
+tacctl device check sw1 --sources      # also test the AAA source addresses (host key, no login)
 ```
 
 A `STATE` of `configured` means a scope's prefixes cover the device's
@@ -176,6 +177,12 @@ when the list is narrowed by an option or a word), and an empty result says
 
 > `device check` and `--probe` connect from the tacctl server. If the server
 > has no route to the management ports, a timeout here may be a false alarm.
+
+`--sources` (and `tacctl device scan --sources`, for every device) connects to
+each address the device sends its AAA requests from, other than its registered
+one, and compares its ssh host key with the pinned one. A source that does not
+answer, or presents another key, is a warning; nothing is pinned or changed
+([Engineer Guide](engineer-guide-device-changes.md) §3.1).
 
 ### 4.2 Register a new device
 
@@ -236,6 +243,7 @@ plain `ssh` the same pinned keys. Refusals and host keys:
 
 ```bash
 tacctl device rename sw1 dc1-sw1            # registry name only; the device's hostname is unchanged
+tacctl device rename sw1-new sw1 --replace  # a clone at a bench address takes sw1's place
 tacctl device address rtr1 10.10.1.2        # device re-addressed
 tacctl device description rtr1 "Internet edge A (ISP-1)"
 tacctl device location rtr1 "Rack 5, DC1"
@@ -245,6 +253,12 @@ tacctl device vendor sw7 --from-device      # take the vendor the device reports
 tacctl device legacy-ssh sw7 enable
 tacctl device remove sw7                    # decommissioned (confirms)
 ```
+
+`device rename <replacement> <name> --replace` removes the original with its
+files, after a snapshot and one confirmation, and moves the replacement (made
+with `device clone`) to the original's address. A hold on the original is
+cleared, so it needs a superuser ([Engineer Guide](engineer-guide-device-changes.md)
+§2.5).
 
 ### 4.6 Notices
 
@@ -308,6 +322,42 @@ table. `config validate` checks all three stored values, and `rollback`
 removes them ([Backups and Undo](backups-and-undo.md) §5). To find the slow
 device of a run, use `--timing`
 ([Engineer Guide](engineer-guide-device-changes.md) §3).
+
+### 4.10 SNMP credentials: pools and defaults
+
+tacctl reads SNMP itself (v2c, or v3 at authPriv) for the name, location and
+vendor lookups of `device add`, `device check` and the like. The settings
+exist at three levels: the server (`config snmp`), a scope (`scope snmp
+<scope>`) and a device (`device snmp <name>`). Only a superuser changes them.
+
+At each level the version, port, timeout and protocols are **one setting**.
+The v3 users are a **pool** of names, each with its passphrases, and the level
+has one **default** user or none:
+
+```bash
+tacctl config snmp version v3                    # a v3 user does not set the version
+tacctl config snmp v3-user add monitor --default # asks for the passphrases twice
+tacctl config snmp v3-user list                  # names only, never a passphrase
+tacctl config snmp v3-user default monitor       # choose the default (--none clears it)
+tacctl scope snmp site-a v3-user add monitor-a --default
+tacctl device snmp rtr1 v3-user default monitor-a   # its own, its scope's or the server's user
+tacctl config snmp test sw1                      # read one device and say which settings it used
+```
+
+- A device reads with its own default user, else its scope's, else the
+  server's. A device may be told to use a user of its own pool, its scope's or
+  the server's.
+- Adding a user changes nothing but the pool: set the version and the
+  default yourself. The same name again replaces the passphrases.
+- A name stands for one user wherever a device can see it, so a name that
+  another pool holds is refused, naming the level. A user cannot be removed
+  while a device's default names it. With no default the v3 lookups fail until
+  one is chosen.
+- `config snmp version [v2c|v3]` shows or sets the version of the lookups;
+  `community` sets v2c.
+- The credential files are version 1 until a pool needs more than one user per
+  level; going back to an earlier release drops the extra users
+  ([Backups and Undo](backups-and-undo.md) §4.3 puts them back).
 
 ---
 

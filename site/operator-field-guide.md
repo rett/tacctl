@@ -111,6 +111,7 @@ tacctl device check sw1       # scope, vendor, last seen, reachable, host key vs
 tacctl device list --probe    # adds REACH: TCP connect to each ssh port (3 s)
 tacctl device list --stale    # not seen for 30 days (by default)
 tacctl device scan            # refresh "last seen" from the server's logs
+tacctl device check sw1 --sources   # also test the addresses the device sends AAA from
 ```
 
 > `check` and `--probe` connect from the tacctl server. If it has no route
