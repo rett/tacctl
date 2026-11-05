@@ -25,7 +25,7 @@ const junosStyleHello = `<!-- user alice, class j-example-class -->
 // sent; the record keeps the stored word only.
 func TestPullNoHelloSaysWhy(t *testing.T) {
 	b := newPullBox(t)
-	b.devices([3]string{"jsw1", "192.0.2.20", "juniper"})
+	b.devices([3]string{"jsw1", "10.0.0.20", "juniper"})
 	b.serve("juniper", b.expected("jsw1"))
 	if err := os.WriteFile(filepath.Join(b.dir, "netconf.hello"),
 		[]byte("<rpc-error><error-message>no service</error-message></rpc-error>"), 0o644); err != nil {
@@ -54,7 +54,7 @@ func TestPullNoHelloSaysWhy(t *testing.T) {
 // The hello of a Junos device is a hello: a pull over NETCONF reads it.
 func TestPullJunosStyleHelloIsOK(t *testing.T) {
 	b := newPullBox(t)
-	b.devices([3]string{"jsw1", "192.0.2.20", "juniper"})
+	b.devices([3]string{"jsw1", "10.0.0.20", "juniper"})
 	b.serve("juniper", b.expected("jsw1"))
 	if err := os.WriteFile(filepath.Join(b.dir, "netconf.hello"), []byte(junosStyleHello), 0o644); err != nil {
 		t.Fatal(err)
