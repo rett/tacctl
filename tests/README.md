@@ -53,7 +53,10 @@ field of the `hooks` value of its invocation, not a package variable. A test
 that cannot share the process calls `serial(t)` as its first statement
 (Go runs every serial test before the first parallel one): those that set the
 process environment, signal the process, or write a package-level registry
-(`withFakeBackend`, `withPasswd`). The whole package takes about six minutes
+(`withFakeBackend`, `withPasswd`). The package runs with `-parallel 16`
+(`go-test-shard.sh`, so `make gate-ci` and CI; `gate-go.sh` for the whole run):
+its parallel tests mostly wait on timers and pseudo-terminals, so more of them
+than the cores shorten the run. The whole package takes about six minutes
 (about 24 serially). CI (`.github/workflows/test.yml`) runs it in two shards,
 `tests/tools/go-test-shard.sh <index> <count>` (the top-level tests dealt
 longest first by the durations in `tests/tools/cli-durations.txt`, each to the
