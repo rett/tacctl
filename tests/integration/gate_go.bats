@@ -16,6 +16,9 @@ test) case "$STUB_MODE" in
     ok) printf 'ok  \tp/a\t0.1s\n?   \tp/b\t[no test files]\n' ;;
     lost) printf 'ok  \tp/a\t0.1s\n' ;;
     fail) printf -- '--- FAIL: TestX\nFAIL\tp/a\t0.1s\nok  \tp/b\t0.1s\n'; exit 1 ;;
+    skip) printf -- '--- SKIP: TestY (0.00s)\n    --- SKIP: TestZ/sub (0.00s)\nok  \tp/a\t0.1s\n?   \tp/b\t[no test files]\n' ;;
+    skipmany) for i in $(seq -w 25); do printf -- '--- SKIP: TestS%s (0.00s)\n' "$i"; done
+        printf 'ok  \tp/a\t0.1s\n?   \tp/b\t[no test files]\n' ;;
     hang) exec sleep 30 ;;
     tmp) printf '%s\n' "$TMPDIR" >"$STUB_TMP_OUT"; printf 'ok  \tp/a\t0.1s\n?   \tp/b\t[no test files]\n' ;;
     esac ;;
@@ -29,6 +32,31 @@ SH
     STUB_MODE=ok run -0 "$GATE" -o "$LOG"
     [[ "${lines[-1]}" == "GATE-GO PASS rc=0 packages=2/2 failures=0 secs="*" log=$LOG" ]]
     [[ "$(tail -n 1 "$LOG")" == "${lines[-1]}" ]]
+}
+
+@test "a run without a skipped test says skipped=0 and lists no names" {
+    STUB_MODE=ok run -0 "$GATE" -o "$LOG"
+    [[ "${lines[-1]}" == *" skipped=0 log=$LOG" ]]
+    [[ "$output" != *"gate-go: skipped:"* ]]
+}
+
+@test "skipped tests and subtests are counted and named above the PASS verdict, which stays the last line" {
+    STUB_MODE=skip run -0 "$GATE" -o "$LOG"
+    [[ "${lines[-1]}" == "GATE-GO PASS rc=0 packages=2/2 failures=0 secs="*" skipped=2 log=$LOG" ]]
+    [[ "${lines[-2]}" == "gate-go: skipped: TestZ/sub" ]]
+    [[ "${lines[-3]}" == "gate-go: skipped: TestY" ]]
+    # the log ends the same way
+    [[ "$(tail -n 1 "$LOG")" == "${lines[-1]}" ]]
+    [[ "$(tail -n 3 "$LOG" | head -n 2)" == $'gate-go: skipped: TestY\ngate-go: skipped: TestZ/sub' ]]
+}
+
+@test "more than 20 skipped names list the first 20 and a +N more line, the count stays exact" {
+    STUB_MODE=skipmany run -0 "$GATE" -o "$LOG"
+    [[ "${lines[-1]}" == "GATE-GO PASS "*" skipped=25 log=$LOG" ]]
+    [[ "${lines[-2]}" == "gate-go: skipped: +5 more" ]]
+    [[ "${lines[-3]}" == "gate-go: skipped: TestS20" ]]
+    [[ "$(printf '%s\n' "${lines[@]}" | grep -c '^gate-go: skipped: TestS')" -eq 20 ]]
+    [[ "$output" != *"TestS21"* ]]
 }
 
 @test "a package that printed nothing is a FAIL although go test exited 0" {
