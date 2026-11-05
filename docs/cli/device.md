@@ -629,9 +629,10 @@ device config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <ven
     Engineers, Junos devices: type the plan into the devices themselves, under a confirmed commit
     that is kept only when the change is proved. A shape is the same change on several devices; the
     review shows it once per shape and set of notes (usually one heading: devices of one shape whose
-    warnings, sections left out or kept statements differ get a heading each), and the first device of each shape (the canary) is applied before the rest
-    of it (devices/planning.md, "Applying a plan": a rollout in five steps, what a shape is, canary
-    and confirmed). A run checks each device's plan on the device (exclusive configure session,
+    warnings, sections left out or kept statements differ get a heading each), and the first device
+    of each shape (the canary) is applied before the rest of it (devices/planning.md, "Applying a
+    plan": a rollout in five steps, what a shape is, canary and confirmed). A run checks each
+    device's plan on the device (exclusive configure session,
     the device's own `commit check`, the candidate discarded), shows the devices that need a change
     grouped by shape with every secret elided, asks for each device in turn (its line, then its name
     typed back, spaces and tabs around it ignored: anything else, another case, a carriage return,
@@ -652,8 +653,8 @@ device config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <ven
 
     --check
         Stop after the device's own commit check: nothing is committed, and the device's shape (the
-        hash of its change, secrets removed and per-device values masked) is filed as `new` unless it is already known
-        (`--exit-code`: exit 2 when a device needs a change)
+        hash of its change, secrets removed and per-device values masked) is filed as `new` unless
+        it is already known (`--exit-code`: exit 2 when a device needs a change)
     --confirmed
         Apply only confirmed shapes and skip the others: a shape is confirmed once an apply of one
         device was proved (a fresh login and the landed change), or `shapes seed` filed it on a
@@ -692,8 +693,8 @@ device config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <ven
     --concurrency <n>, --timeout <seconds>, --max-failures <n>, --server <address|name>,
                   --source <address>
         As for `pull` (an apply runs one device at a time unless `--concurrency`; `--max-failures`
-        defaults to 1, so a canary that failed also stops the run: the rest of its shape is skipped and
-        every device not yet started, of any shape, is `not started`)
+        defaults to 1, so a canary that failed also stops the run: the rest of its shape is skipped
+        and every device not yet started, of any shape, is `not started`)
     --timing
         After the summary, where each device's time went over the whole run (the pull of `--pull`,
         the check and the apply added up): `connect`, `login`, `session`, `preflight`, `read`,
