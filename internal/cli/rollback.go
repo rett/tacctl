@@ -255,7 +255,7 @@ func (inv *invocation) rollbackNextSteps(version string, snapshot bool) {
 		inv.rollbackNextSteps0224(version)
 		return
 	case lifecycle.RollbackTarget0223:
-		inv.rollbackNextSteps0223(version)
+		inv.rollbackNextSteps0223(version, snapshot)
 		return
 	case lifecycle.RollbackTarget0222:
 		inv.rollbackNextSteps0222(version, snapshot)
@@ -401,16 +401,18 @@ func (inv *invocation) rollbackNextSteps0224(version string) {
 // upgrade of the tag. 0.2.23 reads every file 0.2.24 and this release write
 // but breakglass.firewall, so the rollback converted no file of tacctl's own
 // (it put back 0.2.23's per-tier sudoers drop-in, without 'log failures *')
-// and leaves no command to avoid. It takes no snapshot argument: when the key
-// was set, the apply did take a snapshot (PendingFiles is true for the key)
-// and this function does not print the snapshot note (rollbackSnapshotNote),
-// which the firewall note (rollbackFirewallNote) does not replace.
-func (inv *invocation) rollbackNextSteps0223(version string) {
+// and leaves no command to avoid. When the key was set the apply took a
+// snapshot (PendingFiles is true for the key), and snapshot makes this print
+// the snapshot note, whose tail says why 0.2.23 cannot restore it: its
+// tacctl.yaml has the key. The firewall note (rollbackFirewallNote) does not
+// replace the snapshot note.
+func (inv *invocation) rollbackNextSteps0223(version string, snapshot bool) {
 	inv.echo("")
 	inv.echo(ui.Bold + "Next steps" + ui.NC)
 	inv.echo("  1. Install " + version + " with the upgrade (see Upgrading in the README), which switches the clone in " + inv.app.Paths.Deploy + " to the tag, builds it and re-executes it:")
 	inv.echo("       tacctl upgrade --branch " + version)
 	inv.echo("  2. Check it: tacctl status; tacctl config validate")
+	inv.rollbackSnapshotNote(snapshot, "; "+version+"'s restore refuses a tacctl.yaml with a key it does not know.")
 }
 
 // rollbackNextSteps0222 is the next steps of the rollback to 0.2.22: the

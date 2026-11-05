@@ -158,6 +158,18 @@ current behaviour; this file is where history lives.
    lockdown with enrolled hosts, the email key and the required password
    change).
 
+7. **The next steps of `tacctl rollback 0.2.23` name the snapshot when the
+   break-glass firewall setting was set.** With `breakglass.firewall` set the
+   rollback to 0.2.23 removes the key and takes a snapshot first, but the next
+   steps did not say so: the note that names where the state before the
+   rollback is ("holds the 0.2.25 state. Restore it with 0.2.25 only") was
+   printed for every other target that takes one and not for this one. It is
+   now printed there too, ending "0.2.23's restore refuses a tacctl.yaml with a
+   key it does not know", since the snapshot's `tacctl.yaml` has the key. With
+   the key unset, nothing is converted but the sudoers drop-in, no snapshot is
+   taken and the note is not printed, as before. `docs/install/upgrading.md`
+   (To 0.2.23) and the manual page say so.
+
 ## 0.2.24 (2026-11-05)
 
 1. **`tacctl man` finds each entry on groff 1.24.** groff 1.24 narrowed the

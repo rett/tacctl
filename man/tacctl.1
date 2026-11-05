@@ -588,7 +588,9 @@ when it is exactly the text of 0.2.24 and this release it is rewritten, after
 .BR "visudo \-cf" ,
 and any other file is left), no snapshot is taken for them and
 .B \-\-yes
-is never needed. It is refused only while a device's apply is not settled.
+is never needed. When the key was set the snapshot was taken, and the next steps
+say that it holds the 0.2.25 state and is to be restored with 0.2.25 only
+(0.2.23's restore refuses its tacctl.yaml, which has the key). It is refused only while a device's apply is not settled.
 Every older target that rewrites that drop\-in recognises this release's text and
 0.2.23's as tacctl's own and puts back its own.
 The tacquito clone keeps pointing at the project's fork, which has the same

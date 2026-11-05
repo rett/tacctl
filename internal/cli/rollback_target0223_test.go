@@ -170,8 +170,8 @@ func TestRollback0223PutsBackTheDropIn(t *testing.T) {
 	if got := changedFiles(before, tree(t, hs.dir)); len(got) != 1 || !strings.HasSuffix(got[0], "sudoers.d/tacctl-tiers") {
 		t.Errorf("--apply changed %q", got)
 	}
-	if hs.snapshots() != snaps {
-		t.Error("a snapshot was taken: the drop-in is not in it")
+	if hs.snapshots() != snaps || strings.Contains(out, "took first") {
+		t.Error("a snapshot was taken or named: the drop-in is not in it")
 	}
 	hs.run(nil, "rollback", "0.2.23", "--apply")
 	hs.expect(0, "Nothing to convert: every file is one 0.2.23 can read.", "")
