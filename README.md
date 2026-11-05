@@ -12,6 +12,7 @@ from `docs/<slug>` branches; the `build` check must pass before a merge.
 |---|---|
 | `site/` | The Markdown pages, `_config.yml`, the theme overrides and a build plugin |
 | `tools/check_site.py` | Checks links, section references, front matter (incl. `doctype`), house style and code width |
+| `tools/check_render.py` | Checks the built pages against their sources: every heading, code block and table of a page is built, and no Markdown is left in the text (a line that starts with `<scope>` makes Kramdown take the rest of the page for raw HTML); run it after the Jekyll build |
 | `tools/check_commands.py` | Checks every `tacctl` command and flag on a page against `man/tacctl.1` at the release the page names; `--diff <old> <new>` lists what changed between releases |
 | `tools/release_sync.py` | The per-release routine: `--from <old> --to <new>` finds what changed, `--finish` bumps the pages, checks, builds and renders |
 | `tools/render_pdf.py` | Renders a page, or every page with `--all`, to PDF |
@@ -27,6 +28,7 @@ python3 tools/check_commands.py site
 python3 tools/render_pdf.py --all site site/pdf      # needs weasyprint, markdown, pygments
 bundle install
 JEKYLL_ENV=production bundle exec jekyll build -s site -d _site
+python3 tools/check_render.py site _site
 bundle exec htmlproofer ./_site --disable-external
 ```
 
