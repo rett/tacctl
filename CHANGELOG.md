@@ -214,7 +214,9 @@ current behaviour; this file is where history lives.
    tier's sudo rule for `log failures` now takes arguments (`log failures
    *`), so an operator can pass the filters (and `--backend`) to it through
    sudo as to the other three; `tacctl config sudoers tiers install` and the
-   upgrade write the new rule.
+   upgrade write the new rule. `tacctl help` lists the log viewer as taking
+   filters, and a filter option typed wrongly is refused with the problem and
+   a usage line, as every other command does.
 
 ## 0.2.23 (2026-10-31)
 
