@@ -114,3 +114,36 @@ hold() {
     assert_failure 1
     assert_output --partial "may still refuse the TCP connections of 192.168.1.1"
 }
+
+@test "no nft and nothing to refuse: the setting off is no failure, a hold and its release are quiet" {
+    # a host without nftables: the stub is gone, PATH holds the stubs and the system's own directories
+    rm -f "${STUB_BIN}/nft"
+    export PATH="${STUB_BIN}:/usr/bin:/bin"
+    if command -v nft > /dev/null; then
+        skip "nft is installed in /usr/bin or /bin on this machine"
+    fi
+    run plain config breakglass-firewall off
+    assert_success
+    assert_output --partial "Firewall: off: no table is loaded."
+    refute_output --partial "NOT APPLIED"
+    refute_output --partial "apt-get"
+    # again: the same, and no rules file for a host that cannot load it
+    run plain config breakglass-firewall off
+    assert_success
+    [[ ! -e "$RULES" ]]
+    run hold lab-sw "console recovery"
+    assert_success
+    assert_output --partial "Firewall: off: the server still completes the TCP handshake on tcp/49 for 192.168.1.1"
+    refute_output --partial "NOT APPLIED"
+    stub_called 'firewall=off result=ok'
+    run plain breakglass release lab-sw
+    assert_success
+    refute_output --partial "NOT APPLIED"
+
+    # an address held with the setting on is the true failure
+    run plain config breakglass-firewall reject
+    assert_success
+    run hold lab-sw "console recovery"
+    assert_failure 1
+    assert_output --partial "Firewall: NOT APPLIED (nft is not installed)"
+}

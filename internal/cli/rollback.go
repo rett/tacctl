@@ -317,7 +317,7 @@ func (inv *invocation) rollbackFirewallNote(version string, plan *lifecycle.Roll
 	if holds := plan.FirewallHolds(); len(holds) > 0 {
 		inv.echo("The hold of " + strings.Join(holds, ", ") + " stands, and " + version + " takes it as it is: its server completes the TCP handshake of the held address (it answers nothing), as before 0.2.24.")
 	}
-	inv.echo("Until the upgrade, do not run 'tacctl config breakglass-firewall': it writes the setting " + version + " refuses, and loads the table again. If it was run, run 'tacctl rollback " + version + " --apply' again (it removes both).")
+	inv.echo("Until the older release is installed, run no verb that changes the holds, their device or host names, the listeners or the setting ('tacctl breakglass hold|release', 'device address', 'device|host rename', 'device rename --replace', 'backup restore', 'server listen', 'config breakglass-firewall'): each writes the table, its rules file and the boot unit again, and the setting " + version + " refuses. If one was run, run 'tacctl rollback " + version + " --apply' again (it removes all of it).")
 }
 
 // rollbackEmailNote says, after a rollback that removed the users' email

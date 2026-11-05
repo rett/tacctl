@@ -24,13 +24,24 @@ func (inv *invocation) firewallAfter(res *firewall.Result) func(context.Context)
 // the command exits 1. A table with nothing to match (no TCP listener) says
 // so in one line.
 func firewallHoldLines(res firewall.Result, addrs []string) (lines []string, failed bool) {
+	lines, failed = firewallHoldLinesOf(res, addrs)
+	return withUnitLine(lines, res), failed
+}
+
+func firewallHoldLinesOf(res firewall.Result, addrs []string) (lines []string, failed bool) {
 	list := strings.Join(addrs, ", ")
 	ports := firewall.PortList(res.Ports)
 	switch {
-	case res.State == firewall.Failed && res.Mode == firewall.Off:
+	case res.State == firewall.Failed && !res.Enforces():
+		// nothing is to be refused (the setting is off or no listener binds a
+		// TCP port), yet a table of an earlier load may still refuse it
+		why := "breakglass.firewall is off, but the table inet tacctl could not be removed"
+		if res.Mode != firewall.Off {
+			why = "no TACACS+ listener binds a TCP port, but the table inet tacctl could not be updated"
+		}
 		return []string{
 			ui.Red + "Firewall: NOT APPLIED (" + res.Why + ")" + ui.NC,
-			ui.Red + "breakglass.firewall is off, but the table inet tacctl could not be removed: it may still refuse the TCP connections of " + list + " on " + ports + "." + ui.NC,
+			ui.Red + why + ": it may still refuse the TCP connections of " + list + " on " + ports + "." + ui.NC,
 			ui.Red + firewallFix(res) + ui.NC,
 		}, true
 	case res.State == firewall.Failed:
@@ -50,6 +61,11 @@ func firewallHoldLines(res firewall.Result, addrs []string) (lines []string, fai
 // firewallReleaseLines are the lines of the report of a release: the reverse.
 // Addresses that stay held in the table are counted.
 func firewallReleaseLines(res firewall.Result, addrs []string) (lines []string, failed bool) {
+	lines, failed = firewallReleaseLinesOf(res, addrs)
+	return withUnitLine(lines, res), failed
+}
+
+func firewallReleaseLinesOf(res firewall.Result, addrs []string) (lines []string, failed bool) {
 	list := strings.Join(addrs, ", ")
 	ports := firewall.PortList(res.Ports)
 	switch {
@@ -71,6 +87,33 @@ func firewallReleaseLines(res firewall.Result, addrs []string) (lines []string, 
 	return []string{line}, false
 }
 
+// firewallRestoreLines are the lines of the report of a restore: the table
+// follows the holds the snapshot brought back, and when it brought none back
+// the risk of a failure is the other way, the addresses that were held before
+// and may still be refused.
+func firewallRestoreLines(res firewall.Result) (lines []string, failed bool) {
+	if len(res.Addrs) > 0 {
+		return firewallHoldLines(res, res.Addrs)
+	}
+	if res.State == firewall.Failed {
+		return withUnitLine([]string{
+			ui.Red + "Firewall: NOT APPLIED (" + res.Why + ")" + ui.NC,
+			ui.Red + "No address is held after the restore, but the table inet tacctl could not be updated: it may still refuse the TCP connections of the addresses that were held before on " + firewall.PortList(res.Ports) + "." + ui.NC,
+			ui.Red + firewallFix(res) + ui.NC,
+		}, res), true
+	}
+	return withUnitLine(nil, res), false
+}
+
+// withUnitLine adds the yellow line for a boot unit that could not be
+// installed (the table is loaded, but a reboot loses it).
+func withUnitLine(lines []string, res firewall.Result) []string {
+	if l := res.UnitLine(); l != "" {
+		lines = append(lines, ui.Yellow+"Firewall: "+l+ui.NC)
+	}
+	return lines
+}
+
 // echoFirewall prints lines indented under a report; the red ones carry their
 // own colour.
 func (inv *invocation) echoFirewall(lines []string) {
@@ -88,16 +131,18 @@ func (inv *invocation) firewallFailedError(res firewall.Result) {
 // firewallListenerNote reloads the table after a change of tacquito's
 // listeners (the ports the rules match) and says so in one line. It does
 // nothing when nothing is held and no table was ever written. It reports
-// whether the table could not be loaded (the command then exits 1).
+// whether the table could not be loaded (the command then exits 1): the
+// table failed to load, or the apply lock could not be taken, in which case
+// the listener has changed and the table keeps the old ports.
 func (inv *invocation) firewallListenerNote() (res firewall.Result, failed bool) {
 	a := inv.app
 	spec := firewall.SpecOf(a.Conf())
 	if len(spec.Held) == 0 && !isRegularFile(a.Paths.FirewallRules) {
 		return firewall.Result{}, false
 	}
-	release, err := a.BackendEnv().HoldApply(inv.ctx)
+	release, err := a.BackendEnv().HoldApplyAfter(inv.ctx, "The listener was changed, but the table inet tacctl was not loaded and keeps the old ports.")
 	if err != nil {
-		return firewall.Result{}, false
+		return firewall.Result{State: firewall.Failed, Mode: spec.Mode, Addrs: spec.Strings(), Ports: spec.Ports, Why: "the apply lock was not taken"}, true
 	}
 	defer release()
 	res = inv.firewallEngine().Apply(inv.ctx)
@@ -108,6 +153,9 @@ func (inv *invocation) firewallListenerNote() (res firewall.Result, failed bool)
 		return res, true
 	case res.State == firewall.Applied && len(res.Addrs) > 0:
 		a.Out.Info("Firewall: " + strings.Join(res.Addrs, ", ") + " refused on " + firewall.PortList(res.Ports) + " (" + res.Mode + ")")
+	}
+	if line := res.UnitLine(); line != "" {
+		a.Out.Warn("Break-glass firewall: " + line)
 	}
 	return res, false
 }

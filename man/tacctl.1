@@ -521,9 +521,37 @@ and the boot unit
 package stays. A hold that stands stays (0.2.23 and every older release that has
 holds take the record as it is), without the firewall: the server completes the
 TCP handshake of the held address again, as before 0.2.24, and the plan says so in a
-note. Until the older release is installed
-.B "config breakglass\-firewall"
-writes the key and loads the table again; run the rollback again then.
+note. Until the older release is installed, run no verb that changes the holds, their
+device or host names, the listeners or the setting
+.RB ( "breakglass hold" ,
+.BR "breakglass release" ,
+.BR "device address" ,
+.B "device rename"
+and
+.BR "host rename" ,
+.BR "device rename \-\-replace" ,
+.BR "backup restore" ,
+.BR "server listen" ,
+.BR "config breakglass\-firewall" ):
+each writes the table, its rules file and the boot unit again, and the setting writes the
+key the older release refuses; run the rollback again if one was run.
+.B "upgrade \-\-branch"
+onto an older release without the rollback is not refused and does not touch the
+table, which those releases never update: an address held and released since stays
+refused on TCP, live and at boot. Remove the key
+.B breakglass.firewall
+from
+.I tacctl.yaml
+and the firewall by hand, as root:
+.BR "nft delete table inet tacctl" ,
+then
+.BR "systemctl disable \-\-now tacctl\-breakglass\-firewall.service" ,
+remove
+.I /etc/systemd/system/tacctl\-breakglass\-firewall.service
+and
+.IR /etc/tacctl/breakglass\-firewall.nft ,
+then
+.BR "systemctl daemon\-reload" .
 .IP
 .B "rollback 0.2.23"
 converts no file but the key
@@ -5260,15 +5288,18 @@ and loads it with
 which replaces it in one step; the file is rewritten and loaded by every hold,
 release, move of a held device
 .RB ( "device address" ),
-rename of a held device or host, restore of a snapshot that changes the holds,
-change of a listener and change of the setting, and by the boot unit
+rename of a held device or host, every restore of a snapshot (it loads the holds and
+the setting the snapshot brought back, changed or not), change of a listener and
+change of the setting, and by the boot unit
 .I tacctl\-breakglass\-firewall.service
 (a oneshot installed and enabled by
 .B install
 and
 .BR upgrade ;
 tacctl never enables or touches
-.BR nftables.service ).
+.BR nftables.service ;
+a unit that cannot be written or enabled is a yellow line, not a failure: the
+table is loaded, and a reboot loses it until this command is run again).
 .B install
 and
 .B upgrade
@@ -5284,7 +5315,27 @@ device that falls back only when the server is unreachable will not, names the
 fix
 .RB ( "sudo apt\-get install nftables" ,
 then this command with the current setting), and the command exits 1. A release
-that cannot load the table says that the address may still be refused.
+that cannot load the table says that the address may still be refused, and
+.B "config breakglass\-firewall"
+itself exits 1, with the real reason (nft not installed, or what
+.B "nft \-f"
+said), whenever the table could not be loaded, also with nothing held. Where the
+table would refuse nothing (the setting
+.BR off ,
+nothing held, no TACACS+ listener on a TCP port) a missing nft is no failure: no
+table is loaded, nothing is red and the exit status is 0, whatever the command
+(a release of the last hold,
+.BR "backup restore" ,
+.BR "device rename \-\-replace" ,
+.B "server listen"
+and a second
+.BR upgrade
+are as quiet). The exception is a host where a table was loaded before and nftables
+was removed since: the boot unit is the sign (only a successful load writes it, and
+the setting
+.B off
+removes it), the table may still refuse addresses that were released, and every
+command that loads the table says so in red and exits 1 until nft is back.
 .B status
 and
 .B "config validate"
@@ -5293,7 +5344,11 @@ compare the live table
 with the holds and the setting and name each difference (a missing table, an
 address missing or extra, a wrong verdict, wrong ports) with this command; when
 nft cannot be read (not root, not installed with nothing held) they say so and do
-not fail.
+not fail; with an address held, a setting that is not
+.B off
+and nft not installed,
+.B "config validate"
+reports an error and exits 1.
 .B "breakglass list"
 shows the firewall state. Superuser only. The detail line is
 .BR "config breakglass\-firewall from=reject to=drop firewall=drop" ;
@@ -13925,8 +13980,7 @@ and loaded with
 .B "nft \-f"
 at the point the backends restart, by every hold, release, move
 .RB ( "device address" ),
-rename, restore that changes the holds, change of a listener and change of the
-setting, and at boot by
+rename, every restore, change of a listener and change of the setting, and at boot by
 .IR tacctl\-breakglass\-firewall.service .
 Its setting is
 .B "config breakglass\-firewall"
@@ -17652,7 +17706,8 @@ the whole table, which
 replaces in one step. Mode 0600, root only; rewritten and loaded by every
 change of a hold, a listener or the setting; with the setting
 .B off
-it only removes the table. Not part of a snapshot (it is derived). Do not edit it.
+it only removes the table. Not written on a host without nft that has nothing to
+refuse. Not part of a snapshot (it is derived). Do not edit it.
 .TP
 .I /etc/systemd/system/tacctl\-breakglass\-firewall.service
 The oneshot unit that loads the file above at boot, before the network and

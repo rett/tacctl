@@ -87,6 +87,12 @@ func TestUpgradeFirewallStepNeverFailsTheUpgrade(t *testing.T) {
 	if code := upgrade(o); code != 0 || strings.Contains(o.text(), "Break-glass firewall") {
 		t.Fatalf("no nft, no holds: exit %d\n%s", code, o.text())
 	}
+	// ... and the next upgrade is as quiet: nothing was ever loaded, and the
+	// first one wrote no file that says otherwise
+	o.stdout.Reset()
+	if code := upgrade(o); code != 0 || strings.Contains(o.text(), "Break-glass firewall") || strings.Contains(o.text(), "NOT APPLIED") {
+		t.Fatalf("no nft, no holds, again: exit %d\n%s", code, o.text())
+	}
 
 	o = newOhost(t)
 	o.cloned()
@@ -105,6 +111,20 @@ func TestUpgradeFirewallStepNeverFailsTheUpgrade(t *testing.T) {
 	o.run.On([]string{"nft", "-f"}, execx.Result{Code: 1, Stderr: []byte("Error: Operation not permitted\n")})
 	if code := upgrade(o); code != 0 || !strings.Contains(o.text(), "NOT APPLIED (nft -f ") || !strings.Contains(o.text(), "Fix: remove the cause, then tacctl config breakglass-firewall reject.") {
 		t.Fatalf("nft fails: exit %d\n%s", code, o.text())
+	}
+}
+
+// The boot unit that cannot be enabled does not fail the upgrade; it is a
+// warning, since the table would be gone after a reboot.
+func TestUpgradeWarnsOfABootUnitThatCannotBeEnabled(t *testing.T) {
+	o := newOhost(t)
+	o.cloned()
+	o.enableBoth()
+	o.write(o.p.Overrides, "backends:\n  enabled: [tacacs]\n"+heldOverrides)
+	o.run.On([]string{"systemctl", "enable", "--quiet", "tacctl-breakglass-firewall.service"}, execx.Result{Code: 1})
+	if code := upgrade(o); code != 0 || !strings.Contains(o.text(), "[WARN] Break-glass firewall: the boot unit tacctl-breakglass-firewall.service could not be installed") ||
+		!strings.Contains(o.text(), "refused on tcp/49 (reject)") {
+		t.Fatalf("exit %d\n%s", code, o.text())
 	}
 }
 
