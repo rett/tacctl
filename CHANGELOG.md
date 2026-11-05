@@ -38,8 +38,8 @@ current behaviour; this file is where history lives.
    the tools that tests skip without (`shellcheck`, `groff`, `less`, `man-db`,
    `openssh-server`), so those tests can run in CI instead of skipping, and
    the last line of `make gate-go` and `make gate-ci` carries `skipped=<n>`
-   (the `--- SKIP` lines of the run) with the names of the skipped tests
-   listed above it, so a skip no longer passes unseen.
+   (the `--- SKIP` lines of the run) with the first 20 names of the skipped
+   tests listed above it, so a skip no longer passes unseen.
 
 4. **`tacctl rollback 0.2.23`, the release before this one, is a target.**
    This release changed no stored file, so 0.2.23 reads everything it writes:
@@ -215,8 +215,8 @@ current behaviour; this file is where history lives.
    *`), so an operator can pass the filters (and `--backend`) to it through
    sudo as to the other three; `tacctl config sudoers tiers install` and the
    upgrade write the new rule. `tacctl help` lists the log viewer as taking
-   filters, and a filter option typed wrongly is refused with the problem and
-   a usage line, as every other command does.
+   filters, and a filter option typed wrongly (or `--backend` without an id)
+   is refused with the problem on one line and the usage on the next.
 
 10. **The pulls of tacctl's own clone no longer wait for an operator.**
     Item 5 gave the clone and the fetch of the tacquito source a guard; the
