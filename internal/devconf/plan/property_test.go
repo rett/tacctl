@@ -144,8 +144,19 @@ func checkConverges(t *testing.T, f fixture, exp []devices.Section, raw string, 
 		// a section refused for a statement of a group is not converged
 		return len(d.Lines)
 	}
+	// a retired leaf that only a group gives is kept, not removed: the plan of
+	// the result sees it in the view this test passes as the plain one
+	groupKept := map[string]bool{}
+	for _, k := range d.Kept {
+		if k.Note == retiredFromGroup {
+			groupKept["delete "+strings.TrimPrefix(k.Text, "set ")] = true
+		}
+	}
 	var step2 []Line
 	for _, l := range d2.Lines {
+		if l.Op == OpDelete && groupKept[l.Text] {
+			continue
+		}
 		if d.Vendor == devconf.FamilyJunos && l.Op == OpDelete && l.Secret && unattributed[strings.TrimPrefix(l.Elided, "delete ")] {
 			continue // a leaf of another community (the name is not compared)
 		}
@@ -428,9 +439,17 @@ func iosACLBlocks(c *IOSConfig) []int {
 	return out
 }
 
-func mutateIOS(raw string, exp []devices.Section, r *rand.Rand) (string, string) {
+func mutateIOS(raw string, exp []devices.Section, r *rand.Rand, legacy bool) (string, string) {
 	c := ParseIOS(raw)
 	pool := iosPool(exp)
+	if legacy {
+		// an IOS 12.x image has no named server blocks (15.0 and later): a
+		// block beside the host line at the same address is not a device
+		pool = slices.DeleteFunc(pool, func(p string) bool {
+			return strings.HasPrefix(p, "tacacs server ") || strings.HasPrefix(p, "radius server ") ||
+				strings.HasPrefix(p, "aaa group server ") && strings.Contains(p, "server name ")
+		})
+	}
 	var what []string
 	for n := 1 + r.Intn(4); n > 0; n-- {
 		switch r.Intn(6) {
@@ -534,7 +553,7 @@ func TestPropertyFuzz(t *testing.T) {
 			if f.vendor == "juniper" {
 				text, what = mutateJunos(raw, exp, r)
 			} else {
-				text, what = mutateIOS(raw, exp, r)
+				text, what = mutateIOS(raw, exp, r, f.syntax() == SyntaxIOS12)
 			}
 			cur, err := devconf.Extract(f.vendor, text, exp...)
 			if err != nil {

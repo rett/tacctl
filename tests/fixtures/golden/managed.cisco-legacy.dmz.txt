@@ -1,6 +1,6 @@
 [aaa]
 | aaa new-model
-* tacacs-server host 203.0.113.9 single-connection timeout 5 key dmz-secret-0123456789abcdef
+* tacacs-server host 203.0.113.9 timeout 5 key dmz-secret-0123456789abcdef
 | aaa group server tacacs+ TACACS-GROUP
 |   server 203.0.113.9
 | aaa authentication login default group TACACS-GROUP local

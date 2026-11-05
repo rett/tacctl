@@ -17,15 +17,14 @@
       "kind": "missing",
       "severity": "ACCESS",
       "section": "aaa",
-      "what": "tacacs server TACACS: 4 statements",
+      "what": "tacacs server TACACS: 3 statements",
       "statement": "e.g. tacacs server TACACS \u003e address ipv4 192.0.2.10",
-      "action": "Fixed by region lines 11-14.",
+      "action": "Fixed by region lines 11-13.",
       "fixed": true,
       "region_lines": [
         11,
         12,
-        13,
-        14
+        13
       ]
     },
     {
@@ -35,10 +34,10 @@
       "section": "aaa",
       "what": "the server group TACACS-GROUP: server name TACACS",
       "statement": "aaa group server tacacs+ TACACS-GROUP \u003e server name TACACS",
-      "action": "Fixed by region line 16.",
+      "action": "Fixed by region line 15.",
       "fixed": true,
       "region_lines": [
-        16
+        15
       ]
     },
     {
@@ -48,10 +47,10 @@
       "section": "aaa",
       "what": "the console's own login list CONSOLE (local only, so a local user always gets in there)",
       "statement": "aaa authentication login CONSOLE local",
-      "action": "Fixed by region line 17.",
+      "action": "Fixed by region line 16.",
       "fixed": true,
       "region_lines": [
-        17
+        16
       ]
     },
     {
@@ -61,10 +60,10 @@
       "section": "aaa",
       "what": "accounting of commands 15",
       "statement": "aaa accounting commands 15 default start-stop group TACACS-GROUP",
-      "action": "Fixed by region line 18.",
+      "action": "Fixed by region line 17.",
       "fixed": true,
       "region_lines": [
-        18
+        17
       ]
     },
     {
@@ -74,10 +73,10 @@
       "section": "aaa",
       "what": "the login method of line con 0: login authentication CONSOLE (the device has: the login method of line con 0: login authentication default)",
       "statement": "line con 0 \u003e login authentication CONSOLE",
-      "action": "Fixed by region line 21.",
+      "action": "Fixed by region line 20.",
       "fixed": true,
       "region_lines": [
-        21
+        20
       ]
     },
     {
@@ -98,7 +97,7 @@
       "kind": "extra",
       "severity": "ACCESS",
       "section": "aaa",
-      "what": "tacacs server OLD-TACACS: 4 statements",
+      "what": "tacacs server OLD-TACACS: 3 statements",
       "statement": "e.g. tacacs server OLD-TACACS \u003e address ipv4 192.0.2.10",
       "action": "Fixed by region line 9.",
       "fixed": true,
@@ -120,7 +119,6 @@
     "tacacs server TACACS",
     " address ipv4 192.0.2.10",
     " key \u003csecret\u003e",
-    " single-connection",
     " timeout 5",
     "aaa group server tacacs+ TACACS-GROUP",
     " server name TACACS",
@@ -173,7 +171,6 @@
     "tacacs server OLD-TACACS",
     " address ipv4 192.0.2.10",
     "! (type again with its original secret: tacacs server OLD-TACACS \u003e key \u003csecret\u003e)",
-    " single-connection",
     " timeout 5",
     "aaa group server tacacs+ TACACS-GROUP",
     " server name OLD-TACACS",

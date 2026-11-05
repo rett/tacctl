@@ -182,6 +182,11 @@ func fixtures(t testing.TB) []fixture {
 		{name: "cisco.synthetic-vrf", vendor: "cisco", raw: "ios/synthetic-vrf/running-config.txt", expected: "ios/synthetic-vrf/expected.txt"},
 		{name: "cisco.synthetic-vrf-new", vendor: "cisco", raw: "ios/reference-lab/running-config.txt", expected: "ios/synthetic-vrf/expected.txt"},
 		{name: "cisco.synthetic-vrf-stray", vendor: "cisco", raw: "ios/synthetic-vrf/running-config-stray.txt", expected: "ios/synthetic-vrf/expected.txt"},
+		// 0.2.24: the retired 'single-connection' of tacctl's TACACS+ server
+		// comes from an apply-group (the plain view has it under groups
+		// only), beside an owned accounting event of the device's own that
+		// the plan can delete
+		{name: "juniper.synthetic-inherit-retired", vendor: "juniper", raw: "juniper/synthetic-inherit-retired/display-set.txt", plain: "juniper/synthetic-inherit-retired/display-set-plain.txt", expected: synthExpected},
 	}
 }
 

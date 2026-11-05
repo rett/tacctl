@@ -47,7 +47,6 @@ ip tacacs source-interface Loopback0
 tacacs server OLD-TACACS
  address ipv4 192.0.2.10
  key 7 0703204E031A1C0605171F41547B79777C6663754B5E170102525C5E
- single-connection
  timeout 5
 !
 privilege exec level 1 show running-config

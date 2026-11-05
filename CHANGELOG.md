@@ -119,6 +119,35 @@ current behaviour; this file is where history lives.
    earlier release reads the extra block without complaint; its `console
    check` calls the file different.
 
+7. **The walkthroughs no longer set `single-connection`.** tacquito closes a
+   connection that has been idle for 15 seconds. A device with
+   `single-connection` keeps one connection open for many sessions, so after
+   the close it held a dead socket (`CLOSE_WAIT` on Junos) and a later login
+   over it failed (`Network read timed out`), and the server logged each idle
+   close as an error. `config juniper` no longer prints `set system
+   tacplus-server <address> single-connection`; `config cisco` prints no
+   `single-connection` line under `tacacs server TACACS`, and with `--legacy`
+   the host line is `tacacs-server host <address> [port <n>] timeout 5 key
+   ...` (the port, when the listener is not on 49, now follows the address).
+   A device that already has it is converged: `device config plan` and
+   `apply` delete it from tacctl's server (`delete system tacplus-server
+   <address> single-connection` on Junos, `no single-connection` under
+   `tacacs server TACACS` on IOS; the IOS 12.x host line is typed again
+   without it), and `diff` and `plan` list it as an extra on the `aaa`
+   section, no longer as the device's own setting. A Junos `single-connection`
+   that only an apply-group gives cannot be deleted at the top level: it
+   does not refuse the `aaa` section (as another inherited statement does),
+   the plan keeps it, lists it as left alone (`inherited from a group: remove
+   it from the group by hand`) and plans the other fixes. The report names
+   the leaf (`single-connection on the TACACS+ server <address>, no longer
+   rendered`), and the IOS 12.x host line has a comment of its own in the
+   paste region. The back-out of a plan says `THIS OUTPUT HOLDS THE ...` only
+   when a line of it holds a value; the back-out of a retyped server line
+   holds `<secret>` and a note to type the key, and no longer warns. A custom
+   template keeps whatever it says; a copy of `cisco.template` or
+   `cisco-legacy.template` made earlier still renders the line. Another
+   server's `single-connection` is left alone.
+
 ## 0.2.23 (2026-10-31)
 
 1. **`tacctl rollback 0.2.22`, the release before this one, is a target.**

@@ -172,7 +172,7 @@ nothing_secret() {
     refute_output --partial "still logs in"
     refute_output --partial "is refused while the server answers"
     run committed
-    assert_output --partial "set system tacplus-server 10.0.0.42 single-connection"
+    assert_output --partial "set system accounting destination tacplus"
     assert_output --partial "set system authentication-order tacplus"
     # the local account and root are as they were
     assert_output --partial 'set system login user admin authentication encrypted-password'

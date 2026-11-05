@@ -14,11 +14,11 @@
   "irregularities": [
     {
       "n": 1,
-      "kind": "missing",
+      "kind": "different",
       "severity": "ACCESS",
       "section": "aaa",
-      "what": "the console's own login list CONSOLE (local only, so a local user always gets in there)",
-      "statement": "aaa authentication login CONSOLE local",
+      "what": "single-connection on the TACACS+ server 192.0.2.10, no longer rendered",
+      "statement": "tacacs-server host 192.0.2.10 timeout 5 key \u003csecret\u003e",
       "action": "Fixed by region line 3.",
       "fixed": true,
       "region_lines": [
@@ -27,41 +27,56 @@
     },
     {
       "n": 2,
+      "kind": "missing",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "the console's own login list CONSOLE (local only, so a local user always gets in there)",
+      "statement": "aaa authentication login CONSOLE local",
+      "action": "Fixed by region line 5.",
+      "fixed": true,
+      "region_lines": [
+        5
+      ]
+    },
+    {
+      "n": 3,
       "kind": "different",
       "severity": "ACCESS",
       "section": "aaa",
       "what": "the login method of line con 0: login authentication CONSOLE (the device has: the login method of line con 0: login authentication default)",
       "statement": "line con 0 \u003e login authentication CONSOLE",
-      "action": "Fixed by region line 16.",
+      "action": "Fixed by region line 18.",
       "fixed": true,
       "region_lines": [
-        16
+        18
       ]
     },
     {
-      "n": 3,
+      "n": 4,
       "kind": "extra",
       "severity": "COSMETIC",
       "section": "roles",
       "what": "the commands of privilege level 7: 9 statements",
       "statement": "e.g. privilege exec level 7 monitor",
-      "action": "Fixed by region lines 5-13.",
+      "action": "Fixed by region lines 7-15.",
       "fixed": true,
       "region_lines": [
-        5,
-        6,
         7,
         8,
         9,
         10,
         11,
         12,
-        13
+        13,
+        14,
+        15
       ]
     }
   ],
   "region": [
     "configure terminal",
+    "! aaa: the TACACS+ server line, typed again without single-connection (the standard no longer renders it)",
+    "tacacs-server host 192.0.2.10 timeout 5 key \u003csecret\u003e",
     "! aaa: the method lists tacctl renders, each replaced by the rendered line (the console's own list is local only)",
     "aaa authentication login CONSOLE local",
     "! roles: the privilege lines of the levels tacctl renders",
@@ -114,6 +129,7 @@
     "privilege exec all level 7 traceroute",
     "privilege exec level 7 monitor",
     "no aaa authentication login CONSOLE local",
+    "! (type again with its original secret: tacacs-server host 192.0.2.10 single-connection timeout 5 key \u003csecret\u003e)",
     "end"
   ],
   "left": {
@@ -123,9 +139,8 @@
   },
   "extras": [],
   "secrets": {
-    "present": 2,
+    "present": 1,
     "kinds": [
-      "the TACACS+ server key",
       "the SNMP community"
     ]
   },
@@ -134,5 +149,5 @@
   "warnings": [
     "the device has no enable secret: with the server unreachable, level 15 is reached only through the local user and 'aaa authorization exec'; set an enable secret first if you want a second way"
   ],
-  "holds_secret": false
+  "holds_secret": true
 }

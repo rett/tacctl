@@ -5388,7 +5388,7 @@ one line on standard error that says so);
 .B --legacy
 is the explicit override. It differs from the modern output only in the server
 block (the global
-.B "tacacs-server host ... single-connection timeout 5 key ..."
+.B "tacacs-server host ... timeout 5 key ..."
 line and
 .B "server <ip>"
 under the group, in place of
@@ -11461,7 +11461,27 @@ replaces in place. A TACACS+
 .B port
 is a difference: the standard states one only for a server off the default
 port, so a port on the device against a server on the default is the wrong
-one. So are the options that change the service asked for or how a password is
+one. So is
+.BR single\-connection :
+the standard no longer renders it (the server closes a connection that has been
+idle for 15 seconds, and a device that keeps one open is left with a dead
+socket), so the plan removes it from tacctl's server
+.RB ( "delete system tacplus\-server <address> single\-connection"
+on Junos,
+.B "no single\-connection"
+under
+.B "tacacs server TACACS"
+on IOS; the
+.B "tacacs\-server host"
+line of IOS 12.x is typed again without it). A Junos
+.B single\-connection
+that only an apply-group gives cannot be deleted at the top level: it does not
+refuse the section as another inherited statement does, the plan keeps it and
+lists it as left alone (inherited from a group: remove it from the group by
+hand), and plans the other fixes. The report names the leaf (single\-connection
+on the TACACS+ server <address>, no longer rendered), and the retyped
+.B "tacacs\-server host"
+line has a comment of its own in the paste region. So are the options that change the service asked for or how a password is
 checked
 .RB ( "tacplus\-options service\-name" ,
 other than

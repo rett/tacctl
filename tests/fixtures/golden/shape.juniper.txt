@@ -12,7 +12,7 @@ shape fc5bfbbbc5bb algo 1
 set snmp description <v>
 
 # juniper.synthetic-inherit
-shape aefd8ce77bf2 algo 1
+shape 832e9cf4a0f0 algo 1
 [roles]
 set system login class EN-CLASS permissions clear
 set system login class EN-CLASS permissions configure
@@ -43,6 +43,8 @@ set system login user EN-CLASS class EN-CLASS
 set system login user OP-CLASS class OP-CLASS
 set system login user RO-CLASS class RO-CLASS
 set system login user RW-CLASS class RW-CLASS
+[aaa]
+delete system tacplus-server 192.0.2.10 single-connection
 [snmp]
 set snmp client-list TACCTL-SNMP 0.0.0.0/0 restrict
 set snmp client-list TACCTL-SNMP 192.0.2.10/32
@@ -77,13 +79,12 @@ set firewall family inet filter MGMT-ACL term permit-snmp from source-address 19
 set firewall family inet filter MGMT-ACL term permit-snmp then accept
 
 # juniper.lab-superuser
-shape ebb2fc327ac3 algo 1
+shape 081f4d06cdce algo 1
 [roles]
 delete system login class OP-CLASS permissions clear
 [aaa]
 delete system accounting events interactive-commands
 set system tacplus-server 192.0.2.10 secret <secret>
-set system tacplus-server 192.0.2.10 single-connection
 [snmp]
 set snmp client-list TACCTL-SNMP 0.0.0.0/0 restrict
 set snmp client-list TACCTL-SNMP 192.0.2.10/32
@@ -168,4 +169,11 @@ set system ntp server 192.0.2.123 version 4
 set system ntp source-address 192.0.2.250
 set system ntp trusted-key 1
 set system time-zone UTC
+
+# juniper.synthetic-inherit-retired
+shape 2e6817afe810 algo 1
+[aaa]
+delete system accounting events interactive-commands
+[snmp]
+set snmp description <v>
 

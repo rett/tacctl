@@ -167,14 +167,14 @@ Apply to 3 devices (canary sw-a first)? [y/N] y
 
 | Section | Written | Owned objects (extras inside them are removed) | Kept (never deleted) | Needs (Junos bits, [L1]) |
 |---|---|---|---|---|
-| `aaa` | yes | `system authentication-order` (whole, ordered); `system accounting events`, `destination`; the rendered leaves of `system tacplus-server <server>` / `radius-server <server>` (`secret`, `single-connection`, `port`, `accounting-port`) | another server address; `source-address`, `timeout`, `retry`, any other leaf under tacctl's server; `tacplus-options`, `radius-options` | `system-control`; `secret-control` for `secret` |
+| `aaa` | yes | `system authentication-order` (whole, ordered); `system accounting events`, `destination`; the rendered leaves of `system tacplus-server <server>` / `radius-server <server>` (`secret`, `port`, `accounting-port`), and `single-connection` under tacctl's TACACS+ server, which is no longer rendered and is deleted where a device has it | another server address; `source-address`, `timeout`, `retry`, any other leaf under tacctl's server; `tacplus-options`, `radius-options` | `system-control`; `secret-control` for `secret` |
 | `roles` | yes | `system login class <rendered>` (all its leaves: permissions, and any `allow-*`/`deny-*` left from 0.2.1 walkthroughs, which the walkthrough itself says to delete [V: `juniperServerRules`]); `system login user <class>` `class` leaf | every other class and user; a template user's `uid` (Junos's) and `authentication` leaves | `admin-control` |
 | `mgmt-acl` | yes | `firewall family inet filter <acl>` (every term, every leaf, the order) | the lo0 application (`interfaces lo0 … filter input`: never written, a note as in 0.2.4); other filters | `firewall-control` |
 | `snmp` | yes | `snmp client-list <name>`; `snmp community <rendered>` (all leaves); `snmp v3 usm local-engine user <rendered>`, `vacm security-to-group … <user>`, `vacm access group <group>`, `view <view>`; `snmp location`, `contact`, `description` when rendered | `snmp name`, `trap-group`, `trap-options`, `engine-id`, another community, view, client-list, v3 user; `location`/`contact` when tacctl renders none | `snmp-control` |
 | `netconf` | **never by apply** (rendered commented); `set system services netconf ssh` alone by D93's verb, superuser, over the command line | — | everything (`connection-limit`, `rate-limit`, `system services ssh`, …) | `system-control` ([L1], for the record: the tier gate decides) |
 | `breakglass` | **never** | — | everything | — |
 
-Rules that cut across sections: a `deactivate` of a managed statement is reported and left; a statement inherited from a group is refused (D79); a secret is written only when absent or with `--secrets` (D80); `--section` names only writable sections (`netconf` or `breakglass` named is a usage error).
+Rules that cut across sections: a `deactivate` of a managed statement is reported and left; a statement inherited from a group is refused (D79), except a `single-connection` that only a group gives (it is kept and listed, to be removed from the group by hand); a secret is written only when absent or with `--secrets` (D80); `--section` names only writable sections (`netconf` or `breakglass` named is a usage error).
 
 ## 5. Packages and interfaces
 

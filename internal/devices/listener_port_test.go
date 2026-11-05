@@ -88,7 +88,7 @@ func TestTACACSPortIsWrittenOnlyWhenMoved(t *testing.T) {
 		moved  string // what a listener on 4949 adds
 	}{
 		{"cisco", false, "tacacs server TACACS\n  address ipv4 10.0.0.42\n  port 4949\n  key "},
-		{"cisco", true, "tacacs-server host 10.0.0.42 single-connection port 4949 timeout 5 key "},
+		{"cisco", true, "tacacs-server host 10.0.0.42 port 4949 timeout 5 key "},
 		{"juniper", false, "set system tacplus-server 10.0.0.42 port 4949\n"},
 		{"wti", false, "7. Authentication Port        : 4949\n"},
 	} {

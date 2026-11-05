@@ -1,7 +1,6 @@
 [aaa]
 | set system authentication-order tacplus
 * set system tacplus-server 203.0.113.9 secret dmz-secret-0123456789abcdef
-| set system tacplus-server 203.0.113.9 single-connection
 | set system accounting events [ login change-log ]
 | set system accounting destination tacplus
 [roles]

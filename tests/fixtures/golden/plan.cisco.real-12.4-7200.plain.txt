@@ -1,3 +1,4 @@
+tacacs-server host 192.0.2.10 timeout 5 key lab-secret-0123456789abcdef
 aaa authentication login CONSOLE local
 no privilege exec level 7 monitor
 no privilege exec all level 7 traceroute
