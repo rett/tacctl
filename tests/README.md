@@ -27,7 +27,8 @@ make lint            # shellcheck (bin/tacctl.sh, config/linux, tests/helpers, t
                      #   to install it when missing), the manual page (make lint-man: the Man tests of
                      #   internal/cli and groff -k -ww), tests/tools/no-private.sh,
                      #   tests/tools/no-os-tempdir.sh (no read of the process's temporary directory),
-                     #   no-logger.sh, no-short-yes.sh and doc-width.sh
+                     #   tests/tools/no-shared-proc.sh (no pgrep -f, pkill -f or killall, and no /tmp
+                     #   or /dev/shm path, in a test), no-logger.sh, no-short-yes.sh and doc-width.sh
 make man             # rewrite the generated blocks of man/tacctl.1 from the code (below)
 make test-pyyaml     # the yamlpy and conf PyYAML corpora regenerated with PyYAML and compared
 make test-diff CORPUS=users   # the differential runner on one corpus
@@ -90,9 +91,18 @@ ones) must pass on both: a fix for a newer tool must keep the older one
 passing. The page sets its own body margin (`.nr BP 7n`)
 because groff 1.24 narrowed the default from 7n to 5n, and the pager search
 of `tacctl man` assumes 7 (`TestManPageSetsTheBodyMargin`). `make hooks`
-installs a pre-push hook that runs `no-private.sh`, `no-short-yes.sh` and
-`no-os-tempdir.sh` before a push, the lints that need no tool and take well
-under a second.
+installs a pre-push hook that runs `no-private.sh`, `no-short-yes.sh`,
+`no-os-tempdir.sh` and `no-shared-proc.sh` before a push, the lints that
+need no tool and take well under a second.
+
+A test stays inside its own sandbox so that runs can share a machine:
+`t.TempDir()`, `BATS_TEST_TMPDIR` or the `TMPDIR` of its environment, never
+`/tmp` or `/dev/shm` itself, and no `pgrep -f`, `pkill -f` or `killall`
+(they match the processes of every other run; keep the pid). The lint
+`tests/tools/no-shared-proc.sh` (`make lint-shared-proc`, part of `make lint`)
+holds this. A line that must name one, such as the fallback for a `TMPDIR`
+too long for a socket path, says `shared-proc-ok: <reason>` in a comment; the
+script itself names the few files it excuses whole.
 
 The temporary directory is
 `Paths.TempDir`, the `TMPDIR` of the environment a test gives the
@@ -150,7 +160,7 @@ tests/
 ├── integration/         # the command line against real files in the test's tmpdir
 ├── e2e/                 # whole command flows with stubbed system commands
 ├── diff/                # the differential runner, its corpora, stubs and state roots
-├── tools/               # no-private.sh, no-os-tempdir.sh and no-short-yes.sh (lint), gate-go.sh and gate-ci.sh (the Go tests as one run with a verdict line, the second as CI runs them), pyyaml-corpus.py, usage-goldens.sh, permcheck.py and permcheck-baseline.txt (the lab permission check, below), pre-push, release-preflight.sh, release-stamps.sh and release-reproduce.sh (the release checks, docs/releasing.md)
+├── tools/               # no-private.sh, no-os-tempdir.sh, no-shared-proc.sh and no-short-yes.sh (lint), gate-go.sh and gate-ci.sh (the Go tests as one run with a verdict line, the second as CI runs them), pyyaml-corpus.py, usage-goldens.sh, permcheck.py and permcheck-baseline.txt (the lab permission check, below), pre-push, release-preflight.sh, release-stamps.sh and release-reproduce.sh (the release checks, docs/releasing.md)
 ├── containers/radius/   # real FreeRADIUS in podman
 ├── containers/hosts/    # 'host enroll|sync|unenroll' for real, server and client containers
 ├── containers/crossover/ # the upgrade from the bash release to the Go binary, and back

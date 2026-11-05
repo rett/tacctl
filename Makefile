@@ -1,5 +1,5 @@
 .PHONY: test test-go test-bats test-integration test-e2e test-diff test-pyyaml build \
-	coverage gate-go gate-ci lint lint-sh lint-go lint-man lint-private lint-logger lint-short-yes man hooks clean bootstrap release-assets release-verify release-reproduce
+	coverage gate-go gate-ci lint lint-sh lint-go lint-man lint-private lint-logger lint-short-yes lint-shared-proc man hooks clean bootstrap release-assets release-verify release-reproduce
 
 BATS := tests/bats/bats-core/bin/bats
 BATS_FLAGS ?= --print-output-on-failure
@@ -155,8 +155,10 @@ coverage:
 # no private names (the repo is public; see tests/tools/no-private.sh), then
 # no read of the process's temporary directory (tests/tools/no-os-tempdir.sh),
 # no logger started outside internal/audit (tests/tools/no-logger.sh), no
-# one-letter spelling of --yes (tests/tools/no-short-yes.sh).
-lint: lint-sh lint-go lint-man lint-private lint-tempdir lint-logger lint-short-yes lint-docs
+# one-letter spelling of --yes (tests/tools/no-short-yes.sh), no test that
+# names the processes or the temporary paths of the whole machine
+# (tests/tools/no-shared-proc.sh).
+lint: lint-sh lint-go lint-man lint-private lint-tempdir lint-logger lint-short-yes lint-shared-proc lint-docs
 
 # man/tacctl.1 against the code (docs/plans/0.2.3-plan.md D57): the Man tests
 # of internal/cli (every command, flag, configuration key, path, environment
@@ -193,6 +195,11 @@ lint-logger:
 # --yes has no one-letter spelling (tests/tools/no-short-yes.sh).
 lint-short-yes:
 	tests/tools/no-short-yes.sh
+
+# A test does not match the processes of the whole machine (pgrep -f, pkill -f,
+# killall) or use /tmp or /dev/shm itself (tests/tools/no-shared-proc.sh).
+lint-shared-proc:
+	tests/tools/no-shared-proc.sh
 
 # No line of a fenced code block of the user documentation is wider than
 # GitHub shows (tests/tools/doc-width.sh).
