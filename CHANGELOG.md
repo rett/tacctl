@@ -47,7 +47,17 @@ current behaviour; this file is where history lives.
    its own. The users' email addresses, the SNMPv3 users and the
    covered staging entries, which every older target drops, and an emergency
    lockdown on a scope with enrolled hosts, which every older target refuses,
-   stay. The top-level help, `docs/cli/conventions.md` and `docs/cli/user.md`
+   stay. What this release changed outside the stored files is 0.2.23's to
+   undo or keep: the `upgrade --branch 0.2.23` that ends the rollback writes
+   the console's sshd drop-in from 0.2.23's text, without the block of users
+   held to a password change (item 6), so their new connections forward again
+   as their tier allows; it keeps the tacquito this release built until it
+   next rebuilds it (a new commit on the fork's `main`), so accounting records
+   keep `"Device"` and the literal `<`, `>` and `&` (item 8), which 0.2.23's
+   `log accounting` shows as they are written; and on a device whose
+   `single-connection` this release removed (item 7), 0.2.23's `device config
+   diff` and `plan` show the line as missing, and applying that plan types it
+   again. The top-level help, `docs/cli/conventions.md` and `docs/cli/user.md`
    list 0.2.23 among the targets. The command ends with
    `tacctl upgrade --branch 0.2.23`. A host rolled back keeps its tacquito
    checkout pointed at the project's fork (item 2), which has the same history
@@ -150,7 +160,10 @@ current behaviour; this file is where history lives.
    holds `<secret>` and a note to type the key, and no longer warns. A custom
    template keeps whatever it says; a copy of `cisco.template` or
    `cisco-legacy.template` made earlier still renders the line. Another
-   server's `single-connection` is left alone.
+   server's `single-connection` is left alone. The plan of a device that has
+   the line is not the one it was, so its shape (`device config shapes`) is a
+   new one: `device config apply --confirmed` takes it once a device of that
+   shape has been applied and confirmed again.
 
 8. **An accounting record names the device that sent it, and is readable.**
    A record in the TACACS+ accounting log carried `RemAddr`, where the person

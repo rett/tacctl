@@ -15,6 +15,15 @@ package lifecycle
 // releases changed, for the targets older than the release that made the
 // change.
 //
+// What this release changed outside the stored files is 0.2.23's to undo or
+// keep, and needs no step here: 0.2.23's upgrade, which ends the rollback,
+// writes the console's sshd drop-in from its own text (without the block of
+// users held to a password change); it keeps the tacquito this release built
+// until a new commit on the fork's main rebuilds it, so accounting records
+// keep "Device" (patch 0006), which 0.2.23 shows as written; and a device
+// whose single-connection this release removed reads as missing it in
+// 0.2.23's plan.
+//
 // What the target does not touch is the checkout of tacquito in the deploy
 // directory: it keeps pointing at the project's fork, which has the same
 // history as the upstream clone 0.2.23 made, so 0.2.23's own pull carries on
