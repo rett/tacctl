@@ -446,3 +446,22 @@ func TestErrHostKeyText(t *testing.T) {
 		t.Errorf("mismatch: %q", e.Error())
 	}
 }
+
+// A Target with no Quiet (zero, or not positive) waits for DefaultQuiet; one
+// that sets it waits for that.
+func TestZeroQuietIsDefaultQuiet(t *testing.T) {
+	t.Parallel()
+	for name, c := range map[string]struct {
+		quiet time.Duration
+		want  time.Duration
+	}{
+		"zero":     {0, DefaultQuiet},
+		"negative": {-time.Second, DefaultQuiet},
+		"set":      {25 * time.Millisecond, 25 * time.Millisecond},
+		"longer":   {time.Minute, time.Minute},
+	} {
+		if got := (Target{Quiet: c.quiet}).quietPeriod(); got != c.want {
+			t.Errorf("%s: quietPeriod() = %v, want %v", name, got, c.want)
+		}
+	}
+}
