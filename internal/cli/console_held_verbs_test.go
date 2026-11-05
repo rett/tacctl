@@ -103,13 +103,12 @@ func TestHeldListFollowsEveryVerbWhateverTheSyncDoes(t *testing.T) {
 
 // A group verb that lowers a tier makes the flagged users of the group held
 // (a superuser is never): the drop-in lists them whether or not the sync it
-// runs gets to the console's pieces.
+// runs gets to the console's pieces. Where no server is enrolled (a flag can
+// still be in the store: flagUser writes it directly) the held user would
+// have no login to change the password at, so the verb is refused and the
+// drop-in is left as it was.
 func TestHeldListFollowsALoweredTier(t *testing.T) {
 	for _, sc := range heldScenarios {
-		if !sc.flags {
-			// refused: the held user would have no login here
-			continue
-		}
 		t.Run(sc.name, func(t *testing.T) {
 			sb, _, dropin := heldSandbox(t)
 			// alice, a superuser, carries a flag that binds nobody now
@@ -120,7 +119,16 @@ func TestHeldListFollowsALoweredTier(t *testing.T) {
 				t.Fatalf("the control: the drop-in lists %q", got)
 			}
 			sc.setup(t, sb)
-			sb.asAlice("", "group", "edit", "superuser", "tier", "operator")
+			out := sb.asAlice("", "group", "edit", "superuser", "tier", "operator")
+			if !sc.flags {
+				if sb.code == 0 || !strings.Contains(plain(sb.err.String()), "without a login on this server") {
+					t.Errorf("want the change refused: exit %d\n%s%s", sb.code, out, sb.err.String())
+				}
+				if got := heldList(t, dropin); got != "" {
+					t.Errorf("the refused change left the drop-in listing %q, want none", got)
+				}
+				return
+			}
 			if got := heldList(t, dropin); got != "alice" {
 				t.Errorf("the drop-in lists %q, want alice\n%s%s", got, sb.out.String(), sb.err.String())
 			}
