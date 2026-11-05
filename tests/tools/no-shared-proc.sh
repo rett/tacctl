@@ -12,14 +12,14 @@
 #       pkill at the start of a shell command, or exec.Command("pkill", ...)
 #       in Go, unless it signals the children of a pid (-P);
 #     pgrep without -f and the -P (by parent) forms stay allowed;
-#   - a shared temporary path: /dev/shm, a "/tmp" directory given to os.* or
-#     filepath.*, a bare "/tmp" string, or a shell command (mktemp, mkdir,
-#     touch, cp, mv, rm, ln, tee, install, cd, a redirection, a TMPDIR
-#     assignment) on /tmp, in a *_test.go file, tests/integration/*.bats,
-#     tests/e2e or tests/helpers (a test takes t.TempDir(), BATS_TEST_TMPDIR
-#     or the TMPDIR of its environment). The name /tmp/tacctl.* is the remote
-#     script path of the ssh stubs, and the scripts of tests/tools (gate-*.sh)
-#     are not looked at.
+#   - a shared temporary path: /dev/shm, a Go string literal that is /tmp or
+#     starts with /tmp/ (a test takes t.TempDir()), or a shell command
+#     (mktemp, mkdir, touch, cp, mv, rm, ln, tee, install, cd, a redirection,
+#     a TMPDIR assignment) on /tmp, in a *_test.go file, tests/integration/*.bats,
+#     tests/e2e or tests/helpers (a test takes BATS_TEST_TMPDIR or the TMPDIR
+#     of its environment). The name /tmp/tacctl.* is the remote script path of
+#     the ssh stubs, and the scripts of tests/tools (gate-*.sh) are not
+#     looked at.
 # A line that must name a shared path (the TMPDIR fallback of a path that has
 # to stay short, a socket path limit) carries the comment
 # 'shared-proc-ok: <reason>', with a reason. The comment excuses a shared
@@ -48,7 +48,8 @@ pkill_go_re='exec\.Command(Context)?\([^")]*"pkill"'
 parent_re="${pre}pkill[[:space:]\"${quote}]([^;|&#]*[[:space:]\"${quote}])?(-[[:alnum:]]*P[[:alnum:]]*|--parent)${post}"
 
 shm_re='/dev/shm'
-go_tmp_re='(os|ioutil|filepath)\.[A-Za-z]+\([[:space:]]*"/tmp|"/tmp"'
+# shellcheck disable=SC2016  # a backquote of the pattern, not a substitution
+go_tmp_re='(os|ioutil|filepath)\.[A-Za-z]+\([[:space:]]*"/tmp|["`]/tmp(["`/]|$)'
 sh_tmp_re="${pre}(mktemp|mkdir|touch|cp|mv|rm|ln|tee|install|cd|pushd)[[:space:]]([^|;&#]*[[:space:]\"${quote}=])?/tmp([/\"${quote}[:space:]]|\$)|>>?[[:space:]]*[\"${quote}]?/tmp/|${pre}(TMPDIR|TMP|TEMP)=[\"${quote}]?/tmp([/\"${quote}[:space:]]|\$)"
 
 # excused drops the lines that say why a shared path is fine (a reason after

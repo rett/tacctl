@@ -126,6 +126,22 @@ lint() {
     done
 }
 
+@test "a Go string literal that starts with /tmp/ fails, in quotes or backquotes, wherever it stands" {
+    for line in "dir := \"$SHARED/x\"" "run(\"touch\", \"$SHARED/x\")" "return \"$SHARED/a\"" "sock := \`$SHARED/s.sock\`" \
+        "{\"-L\", \"$SHARED/l.sock:h:443\"}," "cmd.Dir = \"$SHARED/\""; do
+        git -C "$REPO" rm -rq --cached . 2>/dev/null || true
+        put internal/x/a_test.go "	$line"
+        run -1 "$REPO/tests/tools/no-shared-proc.sh"
+        [[ "$output" == *"internal/x/a_test.go:1:"* ]] || { echo "$line: $output"; false; }
+        [[ "$output" == *"shared temporary path"* ]]
+    done
+}
+
+@test "a Go string that only contains /tmp, or names a longer directory, is no hit" {
+    put internal/x/a_test.go "	a := \"LD_LIBRARY_PATH=$SHARED\"; b := \"$SHARED""dir/x\"; c := \"x$SHARED/y\"; d := '$SHARED/z'"
+    lint -0
+}
+
 @test "a shell command or a redirection on /tmp fails in a bats file, a helper and e2e" {
     for where in tests/integration/a.bats tests/helpers/h.bash tests/e2e/e.bats; do
         for line in "d=\$(mktemp -d $SHARED/x.XXXXXX)" "mkdir -p $SHARED/x" "echo y > $SHARED/x" "echo y >>\"$SHARED/x\"" "cp a \"$SHARED/x\"" \
