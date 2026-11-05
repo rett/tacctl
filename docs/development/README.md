@@ -88,8 +88,9 @@ tacctl/
   `test` workflow runs, which `make gate-go` does not: the race detector
   and `-tags testknobs`, `internal/cli` in its two shards; it ends with one
   `GATE-CI PASS|FAIL` line that names the failing tests, started and read
-  like `gate-go`, and takes several times as long), bats as the invoking
-  user, the diff corpus against the previous release, the container
+  like `gate-go`, and takes several times as long), bats as an ordinary
+  user (any account that is not root and not a `sudo` session;
+  `tests/README.md`), the diff corpus against the previous release, the container
   matrix, `groff -k -ww`; the `test` workflow on the pull request, whose
   `lint` job runs `make lint` with Ubuntu 24.04's shellcheck and groff 1.23
   while a development machine may have newer ones (groff 1.24, shellcheck

@@ -91,6 +91,16 @@ a file in order) when GNU `parallel` is installed: `BATS_JOBS` sets the number
 of jobs (default: the CPU count), `BATS_JOBS=1` runs serially. `BATS_FLAGS`
 is passed to bats (default `--print-output-on-failure`).
 
+The bats suite runs as an ordinary user: any account that is not root and is
+not inside a `sudo` session, and no particular account name is needed. The
+helper (`tests/helpers/tmpenv.bash`) sets `TACCTL_SKIP_SUDO=1`, so tacctl does
+not re-execute itself through `sudo`, and unsets `SUDO_UID`; a test that
+needs a calling user sets `SUDO_USER` itself (`as_user` in
+`tests/integration/tiers.bats`) and one that needs none runs the binary with
+`env -u SUDO_USER`, so start the suite from a normal login shell, not from
+`sudo`. The callers the tests name (`tester` in the stubbed `id` of
+`tests/integration/shell.bats`) are made up, not accounts of the machine.
+
 Run a single file or test (after `make build`):
 
 ```sh

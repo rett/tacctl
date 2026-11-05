@@ -75,9 +75,10 @@ func Sudoers0219() string { return sudoersFrom(rules0219()) }
 // Sudoers0218 is the per-tier drop-in 0.2.18 wrote: 0.2.19's rules
 // without the engineer's rows of 'device config apply', 'device enroll',
 // 'device collect', 'device onboard' and 'device sync' (0.2.19). 'tacctl
-// rollback 0.2.18' puts it back, and the upgrade's refresh knows it as an
-// older text. It is derived (a rule that moves on again makes its own frozen
-// copy).
+// rollback 0.2.18' puts it back, and the rollbacks to older releases recognise
+// it as an older text of this tool's (the upgrade's refresh does not look at
+// older texts: it rewrites a file that differs from the current one). It is
+// derived (a rule that moves on again makes its own frozen copy).
 func Sudoers0218() string {
 	added := map[string]bool{"enroll": true, "collect": true, "onboard": true, "sync": true, "support-bundle": true}
 	var rules []Rule
@@ -139,7 +140,8 @@ func Sudoers0213() string {
 // 'device config apply', 'device onboard' and 'device collect', D141/D143)
 // and the
 // env_keep line as 0.2.8 had it. The rollback to 0.2.3 recognises it as an
-// older text, and the upgrade's refresh knows it as one. The rows of the table are
+// older text (the upgrade's refresh does not look at older texts: it rewrites
+// any file that differs from the current one). The rows of the table are
 // the same in the two releases, so it is derived from them (a rule that
 // moves on again makes its own frozen copy); the two lines that did move are
 // frozen below, and a test reads the 0.2.8 tag's golden file where the tag
@@ -190,8 +192,9 @@ func askpassKeep028(alias string) string {
 
 // Sudoers027 is the per-tier drop-in 0.2.4 to 0.2.7 wrote: 0.2.8's text
 // without the 'version --long' item and with the env_keep line that has not
-// the colour variables. It is the text 'tacctl rollback' and the upgrade's
-// refresh know as an older one; it is derived (a rule that moves on again
+// the colour variables. It is the text 'tacctl rollback' knows as an
+// older one (the upgrade's refresh rewrites any file that differs from the
+// current text, whatever it was); it is derived (a rule that moves on again
 // makes its own frozen copy).
 func Sudoers027() string {
 	t := strings.Replace(Sudoers028(), envKeep028, envKeep027, 1)
