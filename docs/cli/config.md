@@ -298,7 +298,9 @@ answer, as the pull of `tacctl upgrade`: git asks for no user name, password or
 key passphrase (`GIT_TERMINAL_PROMPT=0`, a failing `GIT_ASKPASS`, `SSH_ASKPASS`
 unset, `BatchMode=yes` for an ssh remote) and drops a transfer that stays under
 1000 bytes a second for a minute, so the remote needs a key, the agent or a
-credential helper. A `GIT_SSH_COMMAND` of your own is replaced, not honoured:
+credential helper, and for an ssh remote its host key must already be in
+`known_hosts` (`BatchMode=yes` fails where ssh used to ask whether to trust an
+unknown host). A `GIT_SSH_COMMAND` of your own is replaced, not honoured:
 set `core.sshCommand` in the clone (run
 `git config core.sshCommand "ssh -i /home/user/.ssh/deploy-key"` in
 `/opt/tacctl`) to choose the key; `BatchMode=yes` is added after it. Its messages and exit status are unchanged.
