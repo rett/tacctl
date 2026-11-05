@@ -649,9 +649,8 @@ network, address, port and unit state. `--json` has the same data:
 `listeners`.
 
 `server name [<label>|unset]` sets the name the console shows in its prompt
-(`<name>> `) and its notices (the banner of a session,
-`tacctl console on <name>`, the header of `device client-config`) in place of
-the host name. With
+(`<name>> `) and its notices (the banner of a session, the header of
+`device client-config`) in place of the host name. With
 no word it shows the name in effect and whether it is the setting or the host
 name; `unset` removes the setting. A name is 1 to 63 lower-case letters,
 digits and hyphens, a letter first and no hyphen last. Nothing else is
