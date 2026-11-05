@@ -96,22 +96,22 @@ func TestLogFilterFlagErrors(t *testing.T) {
 		args []string
 		msg  string
 	}{
-		{[]string{"tail", "--since"}, "--since needs a time. Usage: tacctl log tail [--since <value>] ..."},
-		{[]string{"tail", "--since="}, "--since needs a time."},
-		{[]string{"search", "alice", "--user"}, "--user needs a user name."},
-		{[]string{"failures", "--device"}, "--device needs a device name or an address."},
-		{[]string{"accounting", "--type"}, "--type needs login, change or command."},
-		{[]string{"accounting", "--user", "--json"}, "--user needs a user name."},
-		{[]string{"tail", "--device", "--since", "-1h"}, "--device needs a device name or an address."},
-		{[]string{"tail", "--since", "last week"}, "--since: invalid time 'last week' (use YYYY-MM-DD[ HH:MM[:SS]], now, today, yesterday, -1h, 2 hours ago)"},
-		{[]string{"tail", "--until=tomorrow"}, "--until: invalid time 'tomorrow'"},
-		{[]string{"tail", "--since", "1h"}, "--since: invalid time '1h'"},
-		{[]string{"tail", "--since", "2026-11-05", "--until", "2026-11-04"}, "--since (2026-11-05 00:00:00) is later than --until (2026-11-04 00:00:00)."},
-		{[]string{"tail", "--type", "login"}, "--type applies to 'log accounting' only."},
-		{[]string{"search", "x", "--type=login"}, "--type applies to 'log accounting' only."},
-		{[]string{"accounting", "--type", "session"}, "Unknown --type 'session' (use login, change, command)."},
-		{[]string{"tail", "--device", "sw9"}, "Unknown device or host 'sw9' (a registered device, an enrolled host or an address)."},
-		{[]string{"tail", "--device", "0.0.0.0"}, "--device: '0.0.0.0' is not an address of a device."},
+		{[]string{"tail", "--since"}, "[ERROR] --since needs a time.\n[ERROR] Usage: tacctl log tail [--since <time>] ...\n"},
+		{[]string{"tail", "--since="}, "[ERROR] --since needs a time.\n[ERROR] Usage: tacctl log tail [--since <time>] ...\n"},
+		{[]string{"search", "alice", "--user"}, "[ERROR] --user needs a user name.\n[ERROR] Usage: tacctl log search [--user <name>] ...\n"},
+		{[]string{"failures", "--device"}, "[ERROR] --device needs a device name or an address.\n[ERROR] Usage: tacctl log failures [--device <name|address>] ...\n"},
+		{[]string{"accounting", "--type"}, "[ERROR] --type needs login, change or command.\n[ERROR] Usage: tacctl log accounting [--type login|change|command] ...\n"},
+		{[]string{"accounting", "--user", "--json"}, "[ERROR] --user needs a user name.\n[ERROR] Usage: tacctl log accounting [--user <name>] ...\n"},
+		{[]string{"tail", "--device", "--since", "-1h"}, "[ERROR] --device needs a device name or an address.\n[ERROR] Usage: tacctl log tail [--device <name|address>] ...\n"},
+		{[]string{"tail", "--since", "last week"}, "[ERROR] --since: invalid time 'last week' (use YYYY-MM-DD[ HH:MM[:SS]], now, today, yesterday, -1h, 2 hours ago).\n[ERROR] Usage: tacctl log tail [--since <time>] ...\n"},
+		{[]string{"tail", "--until=tomorrow"}, "[ERROR] --until: invalid time 'tomorrow' (use YYYY-MM-DD[ HH:MM[:SS]], now, today, yesterday, -1h, 2 hours ago).\n[ERROR] Usage: tacctl log tail [--until <time>] ...\n"},
+		{[]string{"tail", "--since", "1h"}, "[ERROR] --since: invalid time '1h' (use YYYY-MM-DD[ HH:MM[:SS]], now, today, yesterday, -1h, 2 hours ago).\n[ERROR] Usage: tacctl log tail [--since <time>] ...\n"},
+		{[]string{"tail", "--since", "2026-11-05", "--until", "2026-11-04"}, "[ERROR] --since (2026-11-05 00:00:00) is later than --until (2026-11-04 00:00:00).\n[ERROR] Usage: tacctl log tail [--since <time>] [--until <time>] ...\n"},
+		{[]string{"tail", "--type", "login"}, "[ERROR] --type applies to 'log accounting' only.\n[ERROR] Usage: tacctl log accounting [--type login|change|command] ...\n"},
+		{[]string{"search", "x", "--type=login"}, "[ERROR] --type applies to 'log accounting' only.\n[ERROR] Usage: tacctl log accounting [--type login|change|command] ...\n"},
+		{[]string{"accounting", "--type", "session"}, "[ERROR] Unknown --type 'session' (use login, change, command).\n[ERROR] Usage: tacctl log accounting [--type login|change|command] ...\n"},
+		{[]string{"tail", "--device", "sw9"}, "[ERROR] Unknown device or host 'sw9' (a registered device, an enrolled host or an address).\n"},
+		{[]string{"tail", "--device", "0.0.0.0"}, "[ERROR] --device: '0.0.0.0' is not an address of a device.\n[ERROR] Usage: tacctl log tail [--device <name|address>] ...\n"},
 	} {
 		sb.logRun("", c.args...)
 		if sb.code != 1 || !strings.Contains(sb.stderr(), c.msg) {
