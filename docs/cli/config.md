@@ -269,9 +269,11 @@ config breakglass-firewall [reject|drop|off]
     the connection to tacquito, which accepts and closes it (the 0.2.23 behaviour). The table
     `inet tacctl` is loaded at once and again by every hold, release, move, rename, restore and
     listener change; `reject` is also the repair of a table that was not loaded, even when the
-    setting is unchanged. Exits 1 when the table could not be loaded (nft missing while an address
-    is held, or nft failing); without nft and with nothing to refuse (the setting `off`, nothing
-    held) it loads nothing and says so. Superuser. See
+    setting is unchanged. Exits 1 when the table could not be loaded (nft failing; or nft missing
+    while the table would
+    refuse an address, or while the boot unit of an earlier load stands, since a table may still be
+    in the kernel); without nft and with nothing to refuse (the setting `off`, nothing held, no
+    TCP listener) it loads nothing and says so. Superuser. See
     [Break-glass](../devices/break-glass.md#the-firewall)
 
 config allow list|add|remove|clear
