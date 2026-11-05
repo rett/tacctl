@@ -14,6 +14,7 @@ import (
 
 func TestScopeBreakGlassAddListRemove(t *testing.T) {
 	sb := newSandbox(t, true)
+	sb.defaultBcryptCost()
 	sb.run("", []string{"scope", "breakglass", "lab"})
 	sb.expect(0, "Scope 'lab' has no break-glass local user.", "")
 	// The default role is admin.

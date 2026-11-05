@@ -33,6 +33,16 @@ make test-pyyaml     # the yamlpy and conf PyYAML corpora regenerated with PyYAM
 make test-diff CORPUS=users   # the differential runner on one corpus
 ```
 
+`newSandbox` starts every sandbox with a `state/tacctl.yaml` that holds
+`bcrypt.cost: 10`, the lowest cost the configuration allows (the default is 12,
+about four times the work, and bcrypt is most of the CPU of the tests that
+add a user or change a password). A test that asserts the default cost, or that
+`tacctl.yaml` is absent or holds only what it wrote, calls
+`sb.defaultBcryptCost()` first, which removes the file and fails if it holds
+anything else; `TestHashFamily` and `TestConfigGetAndTunables` keep the
+default under test that way. A fixture that builds its own configuration
+(`newSwEnv`, `newHarness`) does not hash a password and is not changed.
+
 The tests of `internal/cli` run in parallel inside one process: the
 sandbox helpers (`newSandbox`, `newHarness`, `newSwEnv`) call `parallel(t)`,
 and everything a test replaces (a dial, a prompt, a terminal check) is a

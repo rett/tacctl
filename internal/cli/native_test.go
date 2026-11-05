@@ -55,6 +55,24 @@ func (sb *sandbox) runCtx() context.Context {
 	return context.Background()
 }
 
+// testBcryptOverride is what every sandbox's tacctl.yaml holds at the start.
+const testBcryptOverride = "bcrypt:\n  cost: 10\n"
+
+// defaultBcryptCost puts the sandbox's tacctl.yaml back to none, as an
+// install has it: bcrypt.cost is the product default (12) again. A test calls
+// it first when it asserts that default, or that tacctl.yaml is empty or
+// holds only what the test wrote.
+func (sb *sandbox) defaultBcryptCost() {
+	sb.t.Helper()
+	p := filepath.Join(sb.dir, "state", "tacctl.yaml")
+	if b, err := os.ReadFile(p); err != nil || string(b) != testBcryptOverride {
+		sb.t.Fatalf("defaultBcryptCost: tacctl.yaml is %q (%v), not the sandbox's own", b, err)
+	}
+	if err := os.Remove(p); err != nil {
+		sb.t.Fatal(err)
+	}
+}
+
 func newSandbox(t *testing.T, withStore bool) *sandbox {
 	t.Helper()
 	parallel(t)
@@ -64,6 +82,13 @@ func newSandbox(t *testing.T, withStore bool) *sandbox {
 		if err := os.MkdirAll(filepath.Join(w, d), 0o700); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// bcrypt.cost at its lowest the config allows (the product default is
+	// 12, about four times the work): the tests that hash a password do
+	// not need the default. A test that asserts the default, or a file
+	// that holds nothing else, calls defaultBcryptCost first.
+	if err := os.WriteFile(filepath.Join(w, "state", "tacctl.yaml"), []byte(testBcryptOverride), 0o600); err != nil {
+		t.Fatal(err)
 	}
 	if withStore {
 		data, err := os.ReadFile("../../tests/fixtures/store.multiscope.yaml")
@@ -490,6 +515,7 @@ func TestCompletionNames(t *testing.T) {
 
 func TestHashFamily(t *testing.T) {
 	sb := newSandbox(t, false)
+	sb.defaultBcryptCost()
 	for _, w := range []string{"-h", "--help"} {
 		if got := plain(sb.run("", []string{"hash", w})); sb.code != 0 || !strings.HasPrefix(got, "Possible completions:\n") || !strings.Contains(got, "  generate  ") {
 			t.Errorf("hash %s: %d %q", w, sb.code, got)
