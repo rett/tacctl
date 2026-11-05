@@ -90,19 +90,19 @@ the other hosts. Before upgrading, rename it (`tacctl scope rename tacctl
 
 ## Rolling back
 
-`tacctl rollback` takes ten targets: `0.2.23`, the release before this
-one, `0.2.22`, `0.2.21`, `0.2.20`, `0.2.19`, `0.2.18`, `0.2.17`, `0.2.16`, `0.2.9` and
+`tacctl rollback` takes eleven targets: `0.2.24`, the release before this
+one, `0.2.23`, `0.2.22`, `0.2.21`, `0.2.20`, `0.2.19`, `0.2.18`, `0.2.17`, `0.2.16`, `0.2.9` and
 `0.2.3`. All are the dry run described below until `--apply` is given, all
-refuse while an apply is not settled, all but `0.2.23`, `0.2.22`, `0.2.21` and
-`0.2.20` while a user name has a period, all but `0.2.23`, `0.2.22`, `0.2.21`,
-`0.2.20` and `0.2.19` while an emergency lockdown locks a group, all but
-`0.2.23` while an emergency lockdown has enrolled hosts, and each release's tool prepares the state for
+refuse while an apply is not settled, all but `0.2.24`, `0.2.23`, `0.2.22`,
+`0.2.21` and `0.2.20` while a user name has a period, all but `0.2.24`,
+`0.2.23`, `0.2.22`, `0.2.21`, `0.2.20` and `0.2.19` while an emergency
+lockdown locks a group, all but `0.2.24` and `0.2.23` while an emergency lockdown has enrolled hosts, and each release's tool prepares the state for
 the releases it knows. `0.2.4` to `0.2.8` and `0.2.2`
 and older are refused with the way there (one release at a time, or `tacctl
 backup restore` of a snapshot of the time); `0.2.10` to `0.2.15`, this
 release and any other word are refused with the targets named.
 
-**The break-glass firewall (0.2.24).** Every target removes the firewall of the held addresses: `breakglass.firewall` from `tacctl.yaml` (every older release refuses the key, so the key goes after the snapshot like the others they do not know), the nftables table `inet tacctl` with `nft` (the rest of the ruleset is not touched), `/etc/tacctl/breakglass-firewall.nft` and the boot unit `tacctl-breakglass-firewall.service` (disabled first). The `nftables` package stays installed. The dry run lists the step when the file or the unit exists, and the report says what went. A hold that stands stays (0.2.5 and later releases have the record) and is taken over as it is, without the firewall: the older release's server completes the TCP handshake of the held address again, so a device that falls back to its local accounts only when the server is unreachable (WTI `On (Transport Failure)`, Junos `authentication-order [ tacplus password ]`) will not; the plan names the holds in a note. Until the older release is installed, run no verb that changes the holds, their device or host names, the listeners or the setting (`breakglass hold|release`, `device address`, `device|host rename`, `device rename --replace`, `backup restore`, `server listen`, `config breakglass-firewall`): each writes the table, the rules file and the boot unit again, and the setting writes the key the older release refuses. Run the rollback again if one was run.
+**The break-glass firewall (0.2.24).** Every target but `0.2.24` removes the firewall of the held addresses: `breakglass.firewall` from `tacctl.yaml` (every older release refuses the key, so the key goes after the snapshot like the others they do not know), the nftables table `inet tacctl` with `nft` (the rest of the ruleset is not touched), `/etc/tacctl/breakglass-firewall.nft` and the boot unit `tacctl-breakglass-firewall.service` (disabled first). The `nftables` package stays installed. The dry run lists the step when the file or the unit exists, and the report says what went. A hold that stands stays (0.2.5 and later releases have the record) and is taken over as it is, without the firewall: the older release's server completes the TCP handshake of the held address again, so a device that falls back to its local accounts only when the server is unreachable (WTI `On (Transport Failure)`, Junos `authentication-order [ tacplus password ]`) will not; the plan names the holds in a note. Until the older release is installed, run no verb that changes the holds, their device or host names, the listeners or the setting (`breakglass hold|release`, `device address`, `device|host rename`, `device rename --replace`, `backup restore`, `server listen`, `config breakglass-firewall`): each writes the table, the rules file and the boot unit again, and the setting writes the key the older release refuses. Run the rollback again if one was run.
 
 **A downgrade without the rollback.** `tacctl upgrade --branch <older>` onto 0.2.23 or earlier is not refused, and does not touch the table; those releases never update it. An address held and released under them stays refused on TCP, live and at boot, and `breakglass.firewall` in `tacctl.yaml` is a key they refuse. Prefer the rollback above, which removes all of it. Without it, as root and without tacctl, remove the key from `tacctl.yaml` and the firewall:
 
@@ -120,18 +120,18 @@ systemctl daemon-reload
 **Every user's login to this server (0.2.21).** This release lets every user
 log in to the tacctl server and its console, unless disabled or of tier none,
 without the server's scope in the user's own scopes. Every older release
-needs it there (0.2.21 to 0.2.23 have it themselves), so every target but
-`0.2.23`, `0.2.22` and `0.2.21` adds the scope of this server's own login (`tacctl`) to
+needs it there (0.2.21 to 0.2.24 have it themselves), so every target but
+`0.2.24`, `0.2.23`, `0.2.22` and `0.2.21` adds the scope of this server's own login (`tacctl`) to
 the scopes of each user who logs in to the server and lacks it (the plan
 counts and names them; a warning, so `--apply` needs `--yes`), after a
-snapshot. Every target but `0.2.23` and `0.2.22` removes the server name
+snapshot. Every target but `0.2.24`, `0.2.23` and `0.2.22` removes the server name
 `server.name` (0.2.22, `tacctl server name`) from `tacctl.yaml`, and every
-target but `0.2.23`, `0.2.22` and `0.2.21` the server address `server.addresses` too; no older
+target but `0.2.24`, `0.2.23`, `0.2.22` and `0.2.21` the server address `server.addresses` too; no older
 release knows them. The host registry keeps the address in this server's
 entry, which the older release reads, and the console shows the host name
 again.
 
-**The timing scale (0.2.22).** Every target but `0.2.23` and `0.2.22` also removes the
+**The timing scale (0.2.22).** Every target but `0.2.24`, `0.2.23` and `0.2.22` also removes the
 timing scale (`tacctl device timeout-scale`, `scope timeout-scale`, `config
 devices timeout-scale`): `device.timeout_scale` and
 `timeout_scale_scope.<scope>` from `tacctl.yaml`, and the `timeout_scale` of
@@ -143,7 +143,7 @@ distant device may not meet. The values stay in the snapshot `--apply` takes
 first.
 
 **Email addresses (0.2.23).** `users.<name>.email` (`tacctl user email`, `user
-add --email`) is a key no older release reads: every target but `0.2.23`, the
+add --email`) is a key no older release reads: every target but `0.2.24` and `0.2.23`, the
 ones that return early and `0.2.22` included, removes it from `store.yaml` after a
 snapshot. The plan names the users who have an address (never the address), in
 a warning, so `--apply` needs `--yes`; a rollback of a store without an
@@ -170,7 +170,7 @@ releases ignore a version 1 file there). A device's file follows its entry: it
 is saved version 2 while the device has no entry, written version 1 when an
 entry appears (any setting of the device) and the content fits version 1 (a
 pool of two stays version 2), and version 2 again when the entry is gone. No
-older release reads version 2 ("unsupported version"), so every target but `0.2.23` writes
+older release reads version 2 ("unsupported version"), so every target but `0.2.24` and `0.2.23` writes
 each version 2 file in version 1 again, after the snapshot `--apply` takes
 first; a state with version 1 files only has nothing of this to convert.
 Version 1 holds one v3 user for each level: the default user stays and the
@@ -202,7 +202,7 @@ rollback again.
 clone` at a bench address its scope answers already writes an entry marked
 `covered` to `state/staging` (no `/32` is added). An older release reads it as
 a plain entry, and its sweep and `scope staging remove` take that `/32` out of
-the scope, a prefix of the scope's own included. So every target but `0.2.23` drops these
+the scope, a prefix of the scope's own included. So every target but `0.2.24` and `0.2.23` drops these
 entries from the file, after the snapshot; the plan names them, and nothing
 asks (no warning, no `--yes`). A clone that still waits for its `device rename
 --replace` loses its entry, and after a re-upgrade the verb refuses it as not
@@ -218,7 +218,7 @@ rollback again. A record that locks nothing (a hand-edited, partial one) is
 removed by the rollback, because the older schemas refuse its keys.
 
 **An emergency lockdown that has enrolled hosts stops every rollback but the
-one to 0.2.23**, the ones to 0.2.19 to 0.2.22 included (the dry run too). On a host the lockdown is
+one to 0.2.24 or 0.2.23**, the ones to 0.2.19 to 0.2.22 included (the dry run too). On a host the lockdown is
 an sshd drop-in that only this release writes and removes, and the record
 keeps the hosts it has not reached (a `pending` list that older releases
 refuse), so an older release could not lift it and the hosts would stay
@@ -230,9 +230,9 @@ any more (`emergency lockdown <scope> enable <its groups>` or `disable` drops
 the name). A lockdown on a scope with no enrolled host is taken over as
 before.
 
-**A user name with a period stops every rollback but the ones to 0.2.23,
-0.2.22, 0.2.21 and 0.2.20** (the dry run too): 0.2.20 and 0.2.21 allowed periods and
-0.2.22 and 0.2.23 read a stored one (a restored snapshot of any of them can bring such a
+**A user name with a period stops every rollback but the ones to 0.2.24,
+0.2.23, 0.2.22, 0.2.21 and 0.2.20** (the dry run too): 0.2.20 and 0.2.21 allowed periods and
+0.2.22 to 0.2.24 read a stored one (a restored snapshot of any of them can bring such a
 user back); no other target reads one (it fails with `user '<name>': invalid
 name` on every store command). The refusal lists each such user of the store
 with the command that fixes it (`tacctl user rename <name> <new-name>`); do
@@ -335,22 +335,52 @@ other line; the dry run lists each file. The files are derived and never in a
 snapshot; this release, if it stays, reads the two as missing until its next
 `device config pull`.
 
+### To 0.2.24
+
+0.2.24 reads every file this release writes: this release changed no stored
+file (its changes are the shapes list, the help and the documentation, the
+spelling of the NETCONF capabilities and the reasons of a failed hello, the
+readers of a device's shell session and of a Junos virtual chassis's commit
+answers, and the cleaning of a device's text), so the rollback converts
+nothing. It removes no key (`breakglass.firewall` and the firewall stay,
+0.2.24 has them), rewrites no sudoers drop-in (0.2.24 and this release write
+the same text), takes no snapshot and does not need `--yes`; the users' email
+addresses, the SNMPv3 users, the covered staging entries, the server name, the
+timing scale, the server address, the users' login to this server, a user name
+with a period and an emergency lockdown (with or without enrolled hosts) all
+stay. It still refuses while an apply is not settled. `--hosts` is accepted
+and does nothing. The tacquito checkout in `/opt/tacquito-src` keeps pointing
+at the project's fork, which is what 0.2.24 pulls from.
+
+What this release changed outside the stored files is 0.2.24's to undo or
+keep. After the `tacctl upgrade --branch 0.2.24` that ends the rollback, a
+Junos device whose NETCONF hello names the capabilities with the XML
+namespace's prefix is recorded as `no hello` again by its next `device config
+pull`, and `device config apply` to a Junos virtual chassis whose master
+prints its own label is rolled back again, as it was before this release.
+
+```bash
+tacctl rollback 0.2.24          # the dry run: steps, writes nothing
+tacctl rollback 0.2.24 --apply
+tacctl upgrade --branch 0.2.24  # install 0.2.24
+```
+
 ### To 0.2.23
 
-0.2.23 reads every file this release writes but one key: `breakglass.firewall`
+0.2.23 reads every file 0.2.24 and this release write but one key: `breakglass.firewall`
 (0.2.24's), which the rollback removes when it is set, after a snapshot, with
 the table, the rules file and the boot unit of the break-glass firewall (above).
 It converts no other file and does not need `--yes`; with the key unset and no
 firewall file it takes no snapshot. It puts back 0.2.23's per-tier sudoers drop-in,
 without the operator's `log failures *` (0.2.23 has no log filters), when the
-file is exactly this release's text: the dry run shows the step, `--apply`
+file is exactly the text of 0.2.24 and this release: the dry run shows the step, `--apply`
 writes it after `visudo -cf`, and a file `tacctl` did not write is left. Every
 older target that rewrites the per-tier drop-in recognises this release's text
 and 0.2.23's as `tacctl`'s own and puts back its own. The users' email addresses, the SNMPv3 users, the covered staging entries, the
 server name, the timing scale, the server address, the users' login to this
 server, a user name with a period and an emergency lockdown (with or without
 enrolled hosts) all stay. It still refuses while an apply is not settled.
-What this release changed outside the stored files is 0.2.23's to undo or keep. The `tacctl upgrade --branch 0.2.23` that ends the rollback writes the console's sshd drop-in from 0.2.23's text, without the block of users held to a password change, so their new connections forward again as their tier allows. It keeps the tacquito this release built until it next rebuilds it (a new commit on the fork's `main`), so accounting records keep `"Device"` and the literal `<`, `>` and `&`; 0.2.23's `log accounting` shows them as they are written. On a device whose `single-connection` this release removed, 0.2.23's `device config diff` and `plan` show the line as missing, and applying that plan types it again.
+What 0.2.24 changed outside the stored files is 0.2.23's to undo or keep. The `tacctl upgrade --branch 0.2.23` that ends the rollback writes the console's sshd drop-in from 0.2.23's text, without the block of users held to a password change, so their new connections forward again as their tier allows. It keeps the tacquito 0.2.24 built until it next rebuilds it (a new commit on the fork's `main`), so accounting records keep `"Device"` and the literal `<`, `>` and `&`; 0.2.23's `log accounting` shows them as they are written. On a device whose `single-connection` 0.2.24 removed, 0.2.23's `device config diff` and `plan` show the line as missing, and applying that plan types it again.
 `--hosts` is accepted and does nothing. The tacquito clone in `/opt/tacquito-src`
 keeps pointing at the project's fork, which has the same history as the
 upstream clone 0.2.23 made, so 0.2.23's own
@@ -364,7 +394,7 @@ tacctl upgrade --branch 0.2.23  # install 0.2.23
 
 ### To 0.2.22
 
-0.2.22 reads every file 0.2.23 and this release write but the users' email addresses in
+0.2.22 reads every file 0.2.23, 0.2.24 and this release write but the users' email addresses in
 `store.yaml`, so the rollback removes those (above) and converts nothing else
 but the sudoers drop-in (below): the server name, the timing scale, the server
 address, the users' login to this server, a user name with a period and an

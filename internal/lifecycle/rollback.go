@@ -6,9 +6,10 @@ package lifecycle
 // one. The command (internal/cli/rollback.go) adds what needs the
 // invocation: the snapshot and the sudoers installer.
 //
-// The targets are 0.2.23 (the release before this one: RollbackTarget0223;
-// rollback0223.go: the operator's row of 'log failures *' in the per-tier
-// sudoers drop-in), 0.2.22
+// The targets are 0.2.24 (the release before this one: RollbackTarget0224;
+// rollback0224.go: nothing, this release changed no stored file), 0.2.23
+// (RollbackTarget0223; rollback0223.go: the operator's row of 'log failures *'
+// in the per-tier sudoers drop-in), 0.2.22
 // (RollbackTarget0222; rollback0222.go: the engineer's row of 'device
 // clone'), 0.2.21 (RollbackTarget0221;
 // rollback0221.go: the server name and the timing scale), 0.2.20 (RollbackTarget0220;
@@ -117,8 +118,8 @@ package lifecycle
 // (rollback_rootleaves.go).
 //
 // The users' email addresses (0.2.23, users.<name>.email in store.yaml) are a
-// key every target's schema refuses but 0.2.23's: every target older than
-// 0.2.23 removes them after the
+// key every target's schema refuses but 0.2.23's and 0.2.24's: every target
+// older than 0.2.23 removes them after the
 // snapshot, the targets that return early (0.2.22, 0.2.21, 0.2.20) included,
 // with a warning that names the users (rollback_email.go, an entry of
 // rollbackAdditions); 'tacctl backup recover' puts them back from the snapshot.
@@ -135,7 +136,7 @@ package lifecycle
 // changed reaches them), the sshd drop-ins, the tier-pin marker and the host
 // records (all as 0.2.3 has them).
 //
-// Every target but 0.2.23, 0.2.22, 0.2.21 and 0.2.20, which read such a name, is refused while
+// Every target but 0.2.24, 0.2.23, 0.2.22, 0.2.21 and 0.2.20, which read such a name, is refused while
 // the store has a user name with a period (0.2.20 and 0.2.21 allowed one;
 // DottedUsersRefusal): the targets read letters, digits, '_' and '-' only, and fail on every store command with "user '<name>': invalid name".
 // An override under such a name in console.yaml (the console switches of a
@@ -195,8 +196,9 @@ import (
 // mode and the required password change, RollbackTarget0220 the one before
 // the managed scope of the server's own login, RollbackTarget0221 the one
 // before the server name and the timing scale, RollbackTarget0222 the one
-// before the users' email addresses and RollbackTarget0223 the release
-// before this one (0.2.10 to 0.2.16 changed no format 0.2.9 reads strictly, so 0.2.9 stays a
+// before the users' email addresses, RollbackTarget0223 the one before the
+// break-glass firewall and RollbackTarget0224 the release before this one
+// (0.2.10 to 0.2.16 changed no format 0.2.9 reads strictly, so 0.2.9 stays a
 // target; 0.2.18 changed none 0.2.16 or 0.2.17 reads, so 0.2.16 stays one
 // too).
 const (
@@ -210,6 +212,7 @@ const (
 	RollbackTarget0221 = "0.2.21"
 	RollbackTarget0222 = "0.2.22"
 	RollbackTarget0223 = "0.2.23"
+	RollbackTarget0224 = "0.2.24"
 )
 
 // RollbackRefusal is a version the command does not take: Lines say why.
@@ -293,9 +296,9 @@ func pluralWord(n int, one, many string) string {
 
 var reVersion = regexp.MustCompile(`^v?([0-9]+)\.([0-9]+)\.([0-9]+)$`)
 
-const rollbackUsage = "Usage: tacctl rollback " + RollbackTarget0223 + "|" + RollbackTarget0222 + "|" + RollbackTarget0221 + "|" + RollbackTarget0220 + "|" + RollbackTarget0219 + "|" + RollbackTarget0218 + "|" + RollbackTarget0217 + "|" + RollbackTarget0216 + "|" + RollbackTarget029 + "|" + RollbackTarget + " [--apply] [--yes] [--hosts]"
+const rollbackUsage = "Usage: tacctl rollback " + RollbackTarget0224 + "|" + RollbackTarget0223 + "|" + RollbackTarget0222 + "|" + RollbackTarget0221 + "|" + RollbackTarget0220 + "|" + RollbackTarget0219 + "|" + RollbackTarget0218 + "|" + RollbackTarget0217 + "|" + RollbackTarget0216 + "|" + RollbackTarget029 + "|" + RollbackTarget + " [--apply] [--yes] [--hosts]"
 
-// CheckRollbackVersion is the version a rollback is asked for ("0.2.23", "0.2.22", "0.2.21",
+// CheckRollbackVersion is the version a rollback is asked for ("0.2.24", "0.2.23", "0.2.22", "0.2.21",
 // "0.2.20", "0.2.19", "0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3" or any with a "v"), or a *RollbackRefusal: 0.2.4
 // to 0.2.8 and older than 0.2.3 (a release's tool prepares the state for the
 // releases it knows, so the way back is one release at a time), 0.2.10 to
@@ -310,11 +313,11 @@ func CheckRollbackVersion(arg string) (string, error) {
 			rollbackUsage}}
 	}
 	v := strings.TrimPrefix(arg, "v")
-	if v == RollbackTarget || v == RollbackTarget029 || v == RollbackTarget0216 || v == RollbackTarget0217 || v == RollbackTarget0218 || v == RollbackTarget0219 || v == RollbackTarget0220 || v == RollbackTarget0221 || v == RollbackTarget0222 || v == RollbackTarget0223 {
+	if v == RollbackTarget || v == RollbackTarget029 || v == RollbackTarget0216 || v == RollbackTarget0217 || v == RollbackTarget0218 || v == RollbackTarget0219 || v == RollbackTarget0220 || v == RollbackTarget0221 || v == RollbackTarget0222 || v == RollbackTarget0223 || v == RollbackTarget0224 {
 		return v, nil
 	}
 	n := func(i int) int { x, _ := strconv.Atoi(m[i]); return x }
-	both := "'tacctl rollback' prepares the state for " + RollbackTarget0223 + " (the release before this one), " + RollbackTarget0222 + ", " + RollbackTarget0221 + ", " + RollbackTarget0220 + ", " + RollbackTarget0219 + ", " + RollbackTarget0218 + ", " + RollbackTarget0217 + ", " + RollbackTarget0216 + ", " + RollbackTarget029 + " and " + RollbackTarget + " only"
+	both := "'tacctl rollback' prepares the state for " + RollbackTarget0224 + " (the release before this one), " + RollbackTarget0223 + ", " + RollbackTarget0222 + ", " + RollbackTarget0221 + ", " + RollbackTarget0220 + ", " + RollbackTarget0219 + ", " + RollbackTarget0218 + ", " + RollbackTarget0217 + ", " + RollbackTarget0216 + ", " + RollbackTarget029 + " and " + RollbackTarget + " only"
 	fallback := "The fallback that needs no tool is 'tacctl backup restore' of a snapshot of the time (see 'tacctl backup list')."
 	switch {
 	case n(1) == 0 && n(2) == 2 && n(3) > 3 && n(3) < 9:
@@ -411,7 +414,7 @@ type RollbackInput struct {
 	HasStore bool
 	// WithHosts: the command was given --hosts.
 	WithHosts bool
-	// Target is the release rolled back to: RollbackTarget0219,
+	// Target is the release rolled back to: RollbackTarget0224, RollbackTarget0219,
 	// RollbackTarget0218, RollbackTarget0217, RollbackTarget0216, RollbackTarget029 or RollbackTarget (the zero value is 0.2.3, as
 	// before 0.2.9).
 	Target string
@@ -610,8 +613,15 @@ func planRollback(in RollbackInput) (*RollbackPlan, error) {
 	if len(pend) > 0 {
 		return nil, PendingRefusal(pend)
 	}
-	// 0.2.23 reads every file this release writes: it converts nothing
-	// (rollback0223.go), and has the managed scope of the server's own
+	// 0.2.24 reads every file this release writes: it converts nothing
+	// (rollback0224.go), and has the managed scope of the server's own
+	// login, so nothing is added to the users.
+	if in.Target == RollbackTarget0224 {
+		return planRollback0224(p)
+	}
+	// 0.2.23 reads every file this release writes but what a step of
+	// rollbackAdditions undoes, and the per-tier sudoers drop-in
+	// (rollback0223.go); it has the managed scope of the server's own
 	// login, so nothing is added to the users.
 	if in.Target == RollbackTarget0223 {
 		return planRollback0223(p)
@@ -654,7 +664,7 @@ func planRollback(in RollbackInput) (*RollbackPlan, error) {
 		return nil, LockdownRefusal(ls)
 	}
 	// A store user name with a period (0.2.20, 0.2.21) is refused for every
-	// target but 0.2.23, 0.2.22, 0.2.21 and 0.2.20 (handled above): no other release reads it (DottedUsersRefusal). An
+	// target but 0.2.24, 0.2.23, 0.2.22, 0.2.21 and 0.2.20 (handled above): no other release reads it (DottedUsersRefusal). An
 	// override of such a name in console.yaml is taken out by the plan.
 	if inStore, err := DottedUsers(pa, in.HasStore); err != nil {
 		return nil, err
