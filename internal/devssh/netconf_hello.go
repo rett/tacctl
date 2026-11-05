@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/xml"
 	"errors"
+	"io"
 	"regexp"
 	"strings"
 	"unicode"
@@ -88,23 +89,80 @@ func sentDetail(raw []byte) string {
 // helloStart is the start tag of a hello, in any prefix.
 var helloStart = regexp.MustCompile(`<(?:[A-Za-z_][\w.-]*:)?hello[\s>/]`)
 
+// helloIndex is where the first start tag of a hello is in raw outside a
+// comment (a comment may name a '<hello>' without being one), or -1.
+func helloIndex(raw []byte) int {
+	for from := 0; from < len(raw); {
+		loc := helloStart.FindIndex(raw[from:])
+		if loc == nil {
+			return -1
+		}
+		at := from + loc[0]
+		// A comment that opens before the tag and ends after it holds it.
+		open := bytes.LastIndex(raw[from:at], []byte("<!--"))
+		if open < 0 {
+			return at
+		}
+		open += from
+		end := bytes.Index(raw[open+4:], []byte("-->"))
+		if end < 0 || open+4+end+3 <= at {
+			// An unterminated comment is text, not a comment; a closed one
+			// ends before the tag.
+			return at
+		}
+		from = open + 4 + end + 3
+	}
+	return -1
+}
+
+// decodeWhole is decodeXML for a document that is the one element v reads:
+// only white space, comments and processing instructions may follow it.
+func decodeWhole(raw []byte, v any) error {
+	d := xml.NewDecoder(bytes.NewReader(raw))
+	d.CharsetReader = func(_ string, in io.Reader) (io.Reader, error) { return in, nil }
+	if err := d.Decode(v); err != nil {
+		return err
+	}
+	for {
+		tok, err := d.Token()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		switch t := tok.(type) {
+		case xml.Comment, xml.ProcInst:
+		case xml.CharData:
+			if len(bytes.TrimSpace(t)) > 0 {
+				return errors.New("text after the element")
+			}
+		default:
+			return errors.New("more than the element")
+		}
+	}
+}
+
 // parseHello reads a device's hello. RFC 6241 has the hello start the
 // document, but a device may print comments (Junos names the user and its
 // class), an XML declaration, a byte order mark, or text before it, and
 // text with an '&' or a '<' is not XML; so a message that does not decode
-// as a hello is read again from its first '<hello'. The string is why it
-// is none when it is none.
+// as a hello is read again from its first '<hello' outside a comment, and
+// then the hello must be the whole rest of the message (a '<hello>' inside
+// an <rpc-reply> is not the device's hello). The string is why it is none
+// when it is none.
 func parseHello(raw []byte) (helloDoc, string, error) {
 	var h helloDoc
 	if err := decodeXML(raw, &h); err == nil {
 		return h, "", nil
 	}
-	if loc := helloStart.FindIndex(raw); loc != nil && loc[0] > 0 {
+	if at := helloIndex(raw); at > 0 {
 		h = helloDoc{}
-		if err := decodeXML(raw[loc[0]:], &h); err == nil {
+		if err := decodeWhole(raw[at:], &h); err == nil {
 			return h, "", nil
 		}
 	}
+	h = helloDoc{}
 	var root struct{ XMLName xml.Name }
 	if decodeXML(raw, &root) == nil && root.XMLName.Local != "" && root.XMLName.Local != "hello" {
 		return h, "the device's first message is <" + sanitize(root.XMLName.Local) + ">, not a hello", ErrProtocol

@@ -264,6 +264,12 @@ func TestNetconfJunosHelloVariants(t *testing.T) {
 		{"text with an ampersand and a bracket before the hello", func(f string) *ncScript {
 			return &ncScript{pieces: whole("R&D <alice@example-sw1>\n" + helloText(f))}
 		}},
+		{"a comment that names a hello after text with an ampersand", func(f string) *ncScript {
+			return &ncScript{pieces: whole("R&D <alice@sw1>\n<!-- <hello> is next -->\n" + helloText(f))}
+		}},
+		{"a comment that holds a whole hello before the real one", func(f string) *ncScript {
+			return &ncScript{pieces: whole("R&D <alice@sw1>\n<!-- <hello><capabilities></capabilities></hello> -->\n" + helloText(f))}
+		}},
 	}
 	for _, c := range cases {
 		for _, form := range []string{"ns", "rfc"} {
@@ -304,6 +310,12 @@ func TestNetconfHelloRefusalsExplainThemselves(t *testing.T) {
 		{"long text is cut", long + "]]>]]>", "not a hello", long[:120]},
 		{"no base:1.0", `<hello><capabilities><capability>urn:ietf:params:netconf:base:1.1</capability></capabilities></hello>]]>]]>`,
 			"does not offer base:1.0", "base:1.1"},
+		{"a hello nested in a reply", `<rpc-reply><rpc-error><error-message>no service</error-message></rpc-error><hello><capabilities><capability>urn:ietf:params:netconf:base:1.0</capability></capabilities></hello></rpc-reply>]]>]]>`,
+			"not a hello", "no service"},
+		{"a hello nested in text and a reply", `R&D <rpc-reply><hello><capabilities><capability>urn:ietf:params:netconf:base:1.0</capability></capabilities></hello></rpc-reply>]]>]]>`,
+			"not a hello", "R&D"},
+		{"a hello only in a comment", `R&D <!-- <hello><capabilities><capability>urn:ietf:params:netconf:base:1.0</capability></capabilities></hello> -->]]>]]>`,
+			"not a hello", "R&D"},
 		{"no capabilities", `<hello><session-id>1</session-id></hello>]]>]]>`, "does not offer base:1.0", ""},
 	}
 	for _, c := range cases {
