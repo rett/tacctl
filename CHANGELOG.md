@@ -224,13 +224,21 @@ current behaviour; this file is where history lives.
     `http.lowSpeedTime`), through one shared implementation (`internal/gitx`).
     A `GIT_SSH_COMMAND` of the operator's is replaced, as for the tacquito
     pull; the `core.sshCommand` of the clone is honoured, with `BatchMode=yes`
-    after it. A remote that needs a password now fails where it used to ask:
+    after it (for a clone not made yet, git's global and system configuration
+    is read, not the repository the operator stands in). A remote that needs a
+    password now fails where it used to ask:
     `git fetch failed. Check network / credentials.` for the upgrade, the exit
     status of `git clone` for an install (a failed pull of an existing clone is
     still not an error, as before), and the unchanged messages of
-    `config branch`; use a key, the agent or a credential helper. The manual
+    `config branch`; use a key, the agent or a credential helper. An ssh remote
+    whose host key is not in `known_hosts` now fails too, where ssh used to ask
+    whether to trust it (`BatchMode=yes`): an ssh remote needs a key, the
+    agent or a credential helper, and its host key in `known_hosts`. The manual
     page (`upgrade`, `install`, `config branch`, `TACQUITO_SRC`),
-    `docs/install/upgrading.md` and `docs/cli/config.md` say so.
+    `docs/install/upgrading.md` and `docs/cli/config.md` say so. The clone of
+    `pam_tacplus` that `tacctl config linux build` makes (also when the
+    upgrade makes it) is guarded the same way (`docs/hosts/README.md`, manual
+    page).
 
 ## 0.2.23 (2026-10-31)
 

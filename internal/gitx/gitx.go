@@ -24,12 +24,18 @@ import (
 // is replaced), and an http transfer slower than 1000 bytes per second for
 // 60 seconds is dropped. The other fields of c (Dir, Stdout, Stderr, ...)
 // are kept. The leading '-C <dir>' of c, when it has one, is also where
-// core.sshCommand is read.
+// core.sshCommand is read; a command with neither '-C' nor a Dir (the clone
+// not made yet) reads it from "/", not from tacctl's working directory, so
+// that the repository the operator stands in does not leak its local
+// configuration into the clone: only the global and system configuration
+// apply, as for a plain 'git clone'.
 func Net(ctx context.Context, r execx.Runner, c execx.Cmd) execx.Cmd {
 	remoteShell := "ssh"
 	lookup := execx.Cmd{Name: "git", Dir: c.Dir}
 	if len(c.Args) >= 2 && c.Args[0] == "-C" {
 		lookup.Args = append(lookup.Args, c.Args[:2]...)
+	} else if c.Dir == "" {
+		lookup.Dir = "/"
 	}
 	lookup.Args = append(lookup.Args, "config", "--get", "core.sshCommand")
 	if res, err := r.Run(ctx, lookup); err == nil && res.Code == 0 {
@@ -60,5 +66,6 @@ func Unwrap(c execx.Cmd) execx.Cmd {
 	for len(rest) >= 2 && rest[0] == "-c" {
 		rest = rest[2:]
 	}
-	return execx.Cmd{Name: "git", Args: rest, Dir: c.Dir, Env: c.Env, Stdout: c.Stdout, Stderr: c.Stderr}
+	c.Name, c.Args = "git", rest
+	return c
 }

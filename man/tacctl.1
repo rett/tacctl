@@ -75,7 +75,9 @@ is kept (the latter goes through the upgrade's store gate). The clone in
 .I /opt/tacctl
 is made, or pulled when it exists, without waiting for an operator, as the
 pull of the tacquito source (see
-.BR upgrade ).
+.BR upgrade ;
+an ssh remote needs a key, the agent or a credential helper, and its host key in
+.IR known_hosts ).
 RADIUS
 is not installed: see
 .BR "backend enable" .
@@ -207,7 +209,11 @@ in the clone (for example
 run in
 .IR /opt/tacctl )
 to choose the key. The remote needs a key, the agent or a credential helper,
-since no password can be typed; a fetch that fails still ends the upgrade
+since no password can be typed, and an ssh remote needs its host key in
+.I known_hosts
+already
+.RB ( BatchMode=yes
+fails where ssh used to ask whether to trust an unknown host); a fetch that fails still ends the upgrade
 with
 .BR "git fetch failed. Check network / credentials." .
 .IP
@@ -4264,7 +4270,10 @@ Requires: \fBsuperuser\fR.
 .B "config linux build"
 Fetch the pinned
 .B pam_tacplus
-release (v1.7.0, verified by commit hash) and prepare a self-contained
+release (v1.7.0, verified by commit hash; the clone never waits for an answer, as the pull
+of the tacctl repository in
+.BR upgrade )
+and prepare a self-contained
 source tarball under
 .IR /var/lib/tacctl/linux .
 Needs autoconf, automake, libtool, gnulib and the PAM headers on the
@@ -5874,7 +5883,10 @@ a transfer under 1000 bytes a second for a minute dropped, and a
 .B GIT_SSH_COMMAND
 of your own replaced (the
 .B core.sshCommand
-of the clone is honoured).
+of the clone is honoured). An ssh remote needs a key, the agent or a credential helper,
+and its host key in
+.IR known_hosts ;
+an unknown host key fails where ssh used to ask.
 .\" BEGIN GENERATED: command config branch
 .RS
 .PP
@@ -17364,7 +17376,9 @@ or
 pulls it; an origin set by hand is left alone.
 The pull is a fetch, then a fast\-forward. The fetch never waits for an answer
 (git asks for no user name, password or key passphrase, and drops a transfer that stays under
-1000 bytes a second for a minute), and a fetch that fails ends the install or upgrade there.
+1000 bytes a second for a minute; an ssh remote needs a key, the agent or a credential helper, and its
+host key in known_hosts, since an unknown one fails where ssh used to ask), and a fetch that fails ends
+the install or upgrade there.
 A checkout that cannot fast\-forward to the fork's main (a rewritten history) or is ahead of it
 (a commit made in the clone) is reset to it with a warning that names the commit it was at
 and the one it is at now; the clone is only a build tree.
