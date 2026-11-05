@@ -35,6 +35,16 @@ change is needed" apart.
 `tacctl ssh` ends with the status of the ssh it runs, and `tacctl shell -c`
 with the status of its line.
 
+Two cases end with 1 although the change stands. `tacctl breakglass hold` or
+`release`, and `tacctl config breakglass-firewall`, exit 1 when `nft` is
+missing or fails to load the firewall table: the hold is recorded and rendered,
+and the report says in red what the server still does
+([Break Glass](break-glass.md) §2.1). Where the table would refuse nothing (the
+setting `off`, or nothing held), a missing `nft` is no failure and the status
+is 0. `emergency lockdown enable` and `disable` exit 0 when hosts are left on
+the pending list, because the lockdown on the devices is in force
+([Emergency Lockdown](emergency-lockdown.md) §3.1).
+
 ---
 
 ## 2. In scripts
