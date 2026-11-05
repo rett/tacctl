@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/gitx"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -23,7 +24,8 @@ var gnulibModules = []string{
 // BuildTarball is cmd_config_linux_build: the pinned pam_tacplus tag is
 // cloned (and checked against its commit), prepared with gnulib and
 // autotools, and its 'make dist' tarball installed as PAM_TACPLUS_TARBALL.
-// Failures are printed; the error is then ErrFailed.
+// The clone cannot prompt or stall (gitx.Net). Failures are printed; the
+// error is then ErrFailed.
 func (e *Env) BuildTarball(ctx context.Context) error {
 	for _, t := range buildTools {
 		if _, err := e.Runner.LookPath(t); err != nil {
@@ -39,8 +41,9 @@ func (e *Env) BuildTarball(ctx context.Context) error {
 	defer func() { _ = os.RemoveAll(work) }()
 	src := work + "/src"
 	e.Out.Info("Fetching pam_tacplus " + PamTacplusTag + "...")
-	res, err := e.Runner.Run(ctx, execx.Cmd{Name: "git", Args: []string{
-		"clone", "--quiet", "--depth", "1", "--branch", PamTacplusTag, PamTacplusRepo, src}})
+	// The clone cannot wait for an operator who is not there (gitx.Net).
+	res, err := e.Runner.Run(ctx, gitx.Net(ctx, e.Runner, execx.Cmd{Name: "git", Args: []string{
+		"clone", "--quiet", "--depth", "1", "--branch", PamTacplusTag, PamTacplusRepo, src}}))
 	if interrupted(ctx) {
 		return ui.ErrInterrupted
 	}

@@ -235,7 +235,10 @@ current behaviour; this file is where history lives.
     whether to trust it (`BatchMode=yes`): an ssh remote needs a key, the
     agent or a credential helper, and its host key in `known_hosts`. The manual
     page (`upgrade`, `install`, `config branch`, `TACQUITO_SRC`),
-    `docs/install/upgrading.md` and `docs/cli/config.md` say so.
+    `docs/install/upgrading.md` and `docs/cli/config.md` say so. The clone of
+    `pam_tacplus` that `tacctl config linux build` makes (also when the
+    upgrade makes it) is guarded the same way (`docs/hosts/README.md`, manual
+    page).
 
 ## 0.2.23 (2026-10-31)
 

@@ -4270,7 +4270,10 @@ Requires: \fBsuperuser\fR.
 .B "config linux build"
 Fetch the pinned
 .B pam_tacplus
-release (v1.7.0, verified by commit hash) and prepare a self-contained
+release (v1.7.0, verified by commit hash; the clone never waits for an answer, as the pull
+of the tacctl repository in
+.BR upgrade )
+and prepare a self-contained
 source tarball under
 .IR /var/lib/tacctl/linux .
 Needs autoconf, automake, libtool, gnulib and the PAM headers on the
