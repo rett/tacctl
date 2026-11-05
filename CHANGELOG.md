@@ -43,8 +43,9 @@ current behaviour; this file is where history lives.
    operator's `log failures *` (item 9), when the file is exactly this
    release's text (the dry run shows the step, `--apply` writes it after
    `visudo -cf`; a file tacctl did not write is left), and every older target
-   recognises this release's text and 0.2.23's as tacctl's own and puts back
-   its own. The users' email addresses, the SNMPv3 users and the
+   that rewrites the per-tier drop-in recognises this release's text and
+   0.2.23's as tacctl's own and puts back its own (the others leave the file
+   to their own upgrade). The users' email addresses, the SNMPv3 users and the
    covered staging entries, which every older target drops, and an emergency
    lockdown on a scope with enrolled hosts, which every older target refuses,
    stay. What this release changed outside the stored files is 0.2.23's to
@@ -185,8 +186,8 @@ current behaviour; this file is where history lives.
    appends to a `cmd=` value, in the display only (the file keeps it). A host
    rebuilds tacquito once to get the patch (`tacctl upgrade`; `tacctl
    install` applies it); until then its records have no device and keep the
-   escapes. `log tail` and `log search` read the journal and are not
-   changed.
+   escapes. `log tail` and `log search` read the journal: their display is
+   not changed by this (their filters are item 9).
 
 9. **The logs can be filtered, and written as JSON.** `tacctl log tail`,
    `search`, `failures` and `accounting` take `--since <time>` and `--until
