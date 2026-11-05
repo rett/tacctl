@@ -57,6 +57,21 @@ SH
     export STUB_CALLS="$BATS_TEST_TMPDIR/calls"
 }
 
+# The `sleep` the hanging stub go has become, among the processes below pid $1
+# (children, their children, ...): only the gate's own tree is looked at, so a
+# `sleep 30` of another test running at the same time (bats --jobs) is no match.
+sleeper_below() {
+    local p
+    for p in $(pgrep -P "$1"); do
+        if [[ "$(ps -o comm= -p "$p")" == sleep ]]; then
+            echo "$p"
+            return 0
+        fi
+        sleeper_below "$p" && return 0
+    done
+    return 1
+}
+
 @test "six jobs ok is a PASS, the last line of stdout and of the log" {
     STUB_MODE=ok run -0 "$GATE" -o "$LOG"
     [[ "${lines[-1]}" == "GATE-CI PASS rc=0 jobs=6/6 failures=0 races=0 secs="*" log=$LOG" ]]
@@ -142,12 +157,16 @@ SH
 @test "SIGTERM stops the run, reaps go and prints a FAIL verdict" {
     STUB_MODE=hang "$GATE" -o "$LOG" >"$BATS_TEST_TMPDIR/out" 2>&1 &
     pid=$!
-    for _ in $(seq 100); do pgrep -f "sleep 30" >/dev/null && break; sleep 0.1; done
+    sleeper=""
+    for _ in $(seq 100); do sleeper=$(sleeper_below "$pid") && break; sleep 0.1; done
+    [[ -n "$sleeper" ]]
     kill -TERM "$pid"
     rc=0
     wait "$pid" || rc=$?
     [ "$rc" -eq 130 ]
     grep -q '^GATE-CI FAIL rc=130 .* interrupted .*log=' "$BATS_TEST_TMPDIR/out"
+    # the go the gate started is gone (not any `sleep 30` on the machine)
+    run ! kill -0 "$sleeper"
 }
 
 @test "a usage error is status 2 and no verdict" {
