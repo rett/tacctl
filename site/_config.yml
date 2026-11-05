@@ -1,7 +1,7 @@
 title: tacctl documentation
 description: Operations documentation for tacctl - TACACS+ and RADIUS access management for network devices and Linux hosts
-url: https://rett.github.io
-baseurl: /tacctl
+url: https://tacctl.rettware.com
+baseurl: ""
 webmaster_verifications:
   google: "8DQdhimU6MALZvdyDKcIwR6BfC_0esOz3rmz-Rf4uxg"
 theme: just-the-docs
