@@ -23,6 +23,7 @@ func stripped(t *testing.T, s string) string {
 // command name, a sub-command, a fixed word and an option are teal, a live
 // name bold; the description is plain.
 func TestListingStyled(t *testing.T) {
+	t.Parallel()
 	cands := []Candidate{
 		{Word: "device", Label: "device [<name>]", Desc: "x", Fixed: true},
 		{Word: "bbb", Label: "bbb [--long]", Desc: "y", Fixed: true},
@@ -63,6 +64,7 @@ func TestListingStyled(t *testing.T) {
 // The Tab columns carry the same palette; the columns are those of the plain
 // words, whatever the colour.
 func TestColumnsStyled(t *testing.T) {
+	t.Parallel()
 	cands := []Candidate{
 		{Word: "device", Fixed: true}, {Word: "alice", Live: true}, {Word: "list", Fixed: true},
 		{Word: "bob", Live: true}, {Word: "--all", Fixed: true}, {Word: "quit", Unlisted: true, Fixed: true},
@@ -94,6 +96,7 @@ func TestColumnsStyled(t *testing.T) {
 // open at a break is closed there and opened on the next line, and nothing is
 // cut inside a sequence.
 func TestListingWidthsIgnoreSGR(t *testing.T) {
+	t.Parallel()
 	longDesc := "Show the " + ui.Bold + "live names with their vendor, address and scope" + ui.NC + " and wrap this text past the width of the column so that it goes on under it"
 	plainDesc := stripSGR(longDesc)
 	longLabel := ui.Teal + "devices" + ui.NC + " [show|max-concurrency|transport|timeout] [<value>]"
@@ -160,6 +163,7 @@ func openStyle(s string) string {
 // capLabel counts columns, not bytes: a label with colour is cut at the same
 // place as the plain one, never inside a sequence, with its style closed.
 func TestCapLabelSGR(t *testing.T) {
+	t.Parallel()
 	plain := "devices [show|max-concurrency|transport|timeout] [<value>]"
 	colour := ui.Teal + "devices" + ui.NC + " [" + ui.Bold + "show|max-concurrency|transport|timeout" + ui.NC + "] [<value>]"
 	for _, max := range []int{10, 20, 40, 60} {
@@ -182,6 +186,7 @@ func TestCapLabelSGR(t *testing.T) {
 
 // wrapWords counts columns and carries a style over the break.
 func TestWrapWordsSGR(t *testing.T) {
+	t.Parallel()
 	in := "one " + ui.Bold + "two three" + ui.NC + " four"
 	got := wrapWords(in, 10)
 	want := []string{"one " + ui.Bold + "two" + ui.NC, ui.Bold + "three" + ui.NC + " four"}
@@ -202,6 +207,7 @@ func TestWrapWordsSGR(t *testing.T) {
 // A styled row is cut by its visible runes, never inside a sequence, and
 // each row closes and reopens a style the cut left open.
 func TestWrapRowsStyled(t *testing.T) {
+	t.Parallel()
 	rows := wrapRows("  "+ui.Bold+"abcdef"+ui.NC+"  tail\nplain\n", 5)
 	want := []string{
 		"  " + ui.Bold + "abc" + ui.NC,
@@ -231,6 +237,7 @@ func TestWrapRowsStyled(t *testing.T) {
 
 // A label wider than LabelMax is shown as its first words and "...".
 func TestCapLabel(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ in, want string }{
 		{"version [--long]", "version [--long]"},
 		{strings.Repeat("x", LabelMax), strings.Repeat("x", LabelMax)},
@@ -249,6 +256,7 @@ func TestCapLabel(t *testing.T) {
 // does not fit goes on under that column, word by word, and no row is
 // wider than the terminal.
 func TestListingWidthWrapsDescriptions(t *testing.T) {
+	t.Parallel()
 	long := "How the pull reads the devices, the confirm timeout of the plan and how the apply runs, with its pause and its transport"
 	cands := []Candidate{
 		{Word: "a", Label: "a <x>", Desc: "Short"},
@@ -288,6 +296,7 @@ func TestListingWidthWrapsDescriptions(t *testing.T) {
 // A candidate with no label and a long word is capped like a label: the
 // column never grows past LabelMax, and a row stays within the terminal.
 func TestListingCapsALongWord(t *testing.T) {
+	t.Parallel()
 	long := strings.Repeat("core-router-", 6) + "1"
 	cands := []Candidate{
 		{Word: "a", Desc: "Short"},
@@ -318,6 +327,7 @@ func TestListingCapsALongWord(t *testing.T) {
 // names of a device: vendor, address, scope) keeps them when it goes on
 // under its column; only the run at the cut is dropped.
 func TestWrapWordsKeepsTheBlanks(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		in   string
 		w    int
@@ -344,6 +354,7 @@ func TestWrapWordsKeepsTheBlanks(t *testing.T) {
 // the list of '?' and in Tab's columns: the same sequence, teal; only a live
 // name differs.
 func TestCommandNameAndSubCommandSameStyle(t *testing.T) {
+	t.Parallel()
 	root := Candidate{Word: "device", Label: "device [<name>]", Desc: "x", Fixed: true}
 	sub := Candidate{Word: "list", Label: "list [<name>]", Desc: "x", Fixed: true}
 	live := Candidate{Word: "alice", Desc: "x", Live: true}

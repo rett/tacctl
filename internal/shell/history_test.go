@@ -10,6 +10,7 @@ import (
 )
 
 func TestRedact(t *testing.T) {
+	t.Parallel()
 	cases := []struct{ line, want string }{
 		{"user list", "user list"},
 		{"scope secret lab show", "scope secret lab show"},
@@ -98,6 +99,7 @@ func TestRedact(t *testing.T) {
 }
 
 func TestHistoryFile(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state", "tacctl", "history")
 	h := NewHistory(path, nil)
@@ -139,6 +141,7 @@ func TestHistoryFile(t *testing.T) {
 }
 
 func TestHistoryKeepsTheNewest(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "history")
 	var lines []string
 	for i := range HistoryMax + 5 {
@@ -163,6 +166,7 @@ func TestHistoryKeepsTheNewest(t *testing.T) {
 }
 
 func TestHistoryWarnsOnce(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	blocker := filepath.Join(dir, "file")
 	if err := os.WriteFile(blocker, nil, 0o600); err != nil {
@@ -181,6 +185,7 @@ func TestHistoryWarnsOnce(t *testing.T) {
 }
 
 func TestEscapeEntry(t *testing.T) {
+	t.Parallel()
 	if got := escapeEntry("a\nb\rc\td\x1be\x7f"); got != `a\nb\rc\td\x1be\x7f` {
 		t.Errorf("escapeEntry = %q", got)
 	}
