@@ -358,7 +358,7 @@ func normalise(s string) string {
 // shell is one shell channel with the prompt learned at login.
 type shell struct {
 	c     *Client
-	sess  *ssh.Session
+	sess  io.Closer
 	in    io.Writer
 	out   *sink
 	prof  profile
@@ -374,6 +374,9 @@ type shell struct {
 	// command completed.
 	area   []string
 	areaOK bool
+	// late: learning ended with an answer to a typed-ahead empty line
+	// possibly still on its way (see learn); the first Run allows for it.
+	late bool
 }
 
 // PromptArea is a shell session that tells what the device prints before
@@ -435,15 +438,20 @@ func (c *Client) openShell(ctx context.Context, prof profile, cfg cliConfig) (*s
 		return nil, err
 	}
 	go func() { out.close(sess.Wait()) }()
+	return c.learnShell(ctx, prof, out, sess, in)
+}
+
+// learnShell learns the prompt of a shell channel whose output goes to out.
+func (c *Client) learnShell(ctx context.Context, prof profile, out *sink, sess io.Closer, in io.Writer) (*shell, error) {
 	sh := &shell{c: c, sess: sess, in: in, out: out, prof: prof, quiet: c.quiet}
 	unhook := context.AfterFunc(ctx, func() { _ = sess.Close() })
-	prompt, err := sh.learn(ctx)
+	prompt, late, err := sh.learn(ctx)
 	unhook()
 	if err != nil {
 		_ = sess.Close()
 		return nil, err
 	}
-	sh.prompt = prompt
+	sh.prompt, sh.late = prompt, late
 	if prof.other != nil {
 		sh.alt = prof.other(prompt)
 	}
@@ -468,6 +476,7 @@ func (s *shell) Run(ctx context.Context, cmd string) (string, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	prevArea := s.area
 	s.area, s.areaOK = nil, false
 	if s.broken.Load() {
 		return "", fmt.Errorf("%w: %s", ErrClosed, s.c.addr)
@@ -488,19 +497,64 @@ func (s *shell) Run(ctx context.Context, cmd string) (string, error) {
 		return "", err
 	}
 	// Nothing is expected between commands: anything there is output that
-	// would be taken for the next command's.
-	if c := s.out.take(); len(c.data) > 0 || c.overflow {
+	// would be taken for the next command's. The one thing that may be
+	// there is the answer to an empty line typed ahead at login that was
+	// still on its way when the prompt was learned (see learn): it is
+	// part of the stream the command's answer is read from, and body
+	// drops it.
+	c := s.out.take()
+	if c.overflow || (len(c.data) > 0 && (!s.late || !s.lateShape(c.data, prevArea))) {
 		return fail(fmt.Errorf("%w: %s: output between commands", ErrProtocol, s.c.addr))
 	}
+	carry := c.data
+	s.late = false
 	s.log.add(cmd)
 	if err := s.c.write(ctx, s.in, []byte(cmd+"\n")); err != nil {
 		return fail(err)
 	}
-	body, err := s.read(ctx, cmd)
+	body, err := s.read(ctx, cmd, carry, prevArea)
 	if err != nil {
 		return fail(err)
 	}
 	return stripEcho(body, cmd), nil
+}
+
+// reJunosChassis matches the line a Junos virtual chassis or cluster prints
+// before every prompt ('{master:0}').
+var reJunosChassis = regexp.MustCompile(`^\{[a-z-]+(?::[a-z0-9]+)?\}$`)
+
+// staleLine reports whether line, one the device printed in front of its
+// prompt in a late answer, is nothing but what a device prints there: a
+// blank line, the location line, the chassis line, or a line it printed
+// before the prompt of the last command (area).
+func staleLine(line string, area []string) bool {
+	t := strings.TrimSpace(line)
+	if t == "" || LocationLine(t) || reJunosChassis.MatchString(t) {
+		return true
+	}
+	return slices.ContainsFunc(area, func(a string) bool { return strings.TrimSpace(a) == t })
+}
+
+// lateShape reports whether data, taken from the stream between commands,
+// can be a late answer to an empty line: lines that stand in front of a
+// prompt, and then the start of a prompt (or all of it) as the last line.
+// A prompt line that is complete is not one: the device prints the echo
+// after its prompt on the same line, and a prompt that ends its line is
+// counted by read.
+func (s *shell) lateShape(data []byte, area []string) bool {
+	lines := strings.Split(normalise(string(data)), "\n")
+	last := lines[len(lines)-1]
+	for _, l := range lines[:len(lines)-1] {
+		if !staleLine(l, area) {
+			return false
+		}
+	}
+	for _, p := range []string{s.prompt, s.alt} {
+		if p != "" && strings.HasPrefix(p, last) {
+			return true
+		}
+	}
+	return last == ""
 }
 
 // hit is a complete line of the output that is the prompt, n times over
@@ -524,6 +578,9 @@ type outBuf struct {
 	// that is the text of a prompt); the prompt is only taken at the
 	// start of a line after the echo.
 	echo string
+	// area is what the device printed before the prompt of the command
+	// before this one (PromptArea): body knows it for what it drops.
+	area []string
 }
 
 // isEcho reports whether line, the first line of the output, is the echo
@@ -684,21 +741,26 @@ func (s *shell) waitQuiet(ctx context.Context, q time.Duration) (quiet bool, err
 // (learnPatience quiet periods since the retry) before it counts as one
 // that does not answer an empty line (ErrHandshake): judging it after one
 // more quiet period would fail a merely slow device.
-func (s *shell) learn(ctx context.Context) (string, error) {
+//
+// late is set when two lines were typed and one answer came: the device
+// flushed the first, or it answers the second still. In the second case the
+// answer arrives, in front of the echo, while the first command is run (or
+// before it is typed); Run and body allow for it (lateShape, dropLate).
+func (s *shell) learn(ctx context.Context) (prompt string, late bool, err error) {
 	var buf []byte
 	var retriedAt time.Time
 	base, sent, quiet := 0, 0, false
 	for {
 		ch := s.out.take()
 		if ch.overflow || len(buf)+len(ch.data) > maxLoginOutput {
-			return "", fmt.Errorf("%w: %s: the login output is too long for a banner", ErrHandshake, s.c.addr)
+			return "", false, fmt.Errorf("%w: %s: the login output is too long for a banner", ErrHandshake, s.c.addr)
 		}
 		buf = append(buf, ch.data...)
 		if len(ch.data) > 0 {
 			quiet = false
 		}
 		if ch.closed {
-			return "", s.closedOrCtx(ctx)
+			return "", false, s.closedOrCtx(ctx)
 		}
 		if quiet && len(buf) > 0 {
 			quiet = false
@@ -710,20 +772,20 @@ func (s *shell) learn(ctx context.Context) (string, error) {
 				switch {
 				case sent == 0:
 					if err := s.c.write(ctx, s.in, []byte("\n")); err != nil {
-						return "", err
+						return "", false, err
 					}
 					base, sent = k, 1
 				case got > sent:
-					return "", fmt.Errorf("%w: %s: the prompt cannot be told from the banner", ErrHandshake, s.c.addr)
+					return "", false, fmt.Errorf("%w: %s: the prompt cannot be told from the banner", ErrHandshake, s.c.addr)
 				case got >= 1:
-					return tail, nil
+					return tail, sent == 2 && got == 1, nil
 				case sent == 1:
 					if err := s.c.write(ctx, s.in, []byte("\n")); err != nil {
-						return "", err
+						return "", false, err
 					}
 					sent, retriedAt = 2, time.Now()
 				case time.Since(retriedAt) >= learnPatience*s.quiet:
-					return "", fmt.Errorf("%w: %s: the device does not answer an empty line with its prompt", ErrHandshake, s.c.addr)
+					return "", false, fmt.Errorf("%w: %s: the device does not answer an empty line with its prompt", ErrHandshake, s.c.addr)
 				}
 			}
 		}
@@ -734,7 +796,7 @@ func (s *shell) learn(ctx context.Context) (string, error) {
 			err = s.out.wait(ctx)
 		}
 		if err != nil {
-			return "", callError(ctx, s.c)
+			return "", false, callError(ctx, s.c)
 		}
 	}
 }
@@ -795,8 +857,8 @@ func countPrompts(buf []byte, prompt string) int {
 // A more-prompt at the end that stays for a quiet period is answered with
 // a space, and the count starts again (the more-prompt takes the line that
 // was typed ahead).
-func (s *shell) read(ctx context.Context, cmd string) (string, error) {
-	o := outBuf{prev: -1, prompt: s.prompt, alt: s.alt, echo: strings.TrimSpace(cmd)}
+func (s *shell) read(ctx context.Context, cmd string, carry []byte, area []string) (string, error) {
+	o := outBuf{prev: -1, prompt: s.prompt, alt: s.alt, echo: strings.TrimSpace(cmd), area: area}
 	sent := 0
 	erase := 0
 	seenErased := 0 // end of the last typed-ahead-key artifact seen
@@ -804,6 +866,9 @@ func (s *shell) read(ctx context.Context, cmd string) (string, error) {
 	for {
 		ch := s.out.take()
 		data := ch.data
+		if carry != nil {
+			data, carry = append(carry, data...), nil
+		}
 		if ch.overflow || len(o.b)+len(data) > MaxOutput {
 			return "", ErrOutputTooLarge
 		}
@@ -902,6 +967,7 @@ func (s *shell) body(o *outBuf, k int) string {
 		start = hits[0].start
 	}
 	text := rePagerErased.ReplaceAllString(normalise(string(o.b[:start])), "")
+	text = o.dropLate(text)
 	// What the device printed between its first prompt and its second
 	// (the answer to the empty line, less the echo) it prints before every
 	// prompt.
@@ -944,6 +1010,64 @@ func (s *shell) body(o *outBuf, k int) string {
 		}
 	}
 	return text + keep
+}
+
+// dropLate takes the late answer to an empty line off the start of text, the
+// output up to the first prompt, and leaves the echo of the command in its
+// place. The device printed that answer (its line break, the line it
+// prints before every prompt, and its prompt) before it read the command,
+// so it stands in front of the echo, and the prompt shares its line with
+// the echo: 'u@rtr1> configure exclusive'. Only that is dropped: lines a
+// device prints in front of a prompt (staleLine), then the prompt, once or
+// more, followed by exactly the command sent. Any other line in front, or
+// any other text after the prompt, is output and stays, and so does the
+// same line later in the output.
+func (o *outBuf) dropLate(text string) string {
+	if o.echo == "" {
+		return text
+	}
+	rest, first := text, true
+	for {
+		line, more, nl := strings.Cut(rest, "\n")
+		if !nl {
+			return text
+		}
+		t := strings.TrimSpace(line)
+		if first && t == o.echo {
+			return text // the echo, as it should be
+		}
+		if cmd, ok := o.afterPrompt(line); ok {
+			if strings.TrimSpace(cmd) != o.echo {
+				return text
+			}
+			return o.echo + "\n" + more
+		}
+		if !staleLine(line, o.area) {
+			return text
+		}
+		rest, first = more, false
+	}
+}
+
+// afterPrompt is what stands on line after the prompt (or the other mode's,
+// or either of them more than once); ok is false when the line does not
+// start with one.
+func (o *outBuf) afterPrompt(line string) (string, bool) {
+	line = strings.TrimRight(line, "\r")
+	found := false
+	for line != "" {
+		cut := false
+		for _, p := range []string{o.prompt, o.alt} {
+			if p != "" && strings.HasPrefix(line, p) {
+				line, cut, found = line[len(p):], true, true
+				break
+			}
+		}
+		if !cut {
+			break
+		}
+	}
+	return line, found
 }
 
 // stripEcho drops the first line when it is the command the device echoed.

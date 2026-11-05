@@ -63,6 +63,22 @@ current behaviour; this file is where history lives.
    record still stores `hello ok`, `port closed`, `no hello` or `not probed`
    only, so `device check` shows the word without the reason.
 
+4. **A slow device no longer fails `device config apply` or a pull with
+   `open: configure exclusive` or `pre-flight ...: not recognised`.** On a
+   device that answers slowly (a satellite or WAN link, a loaded switch) the
+   ssh client types its empty line a second time to learn the prompt, and the
+   answer to that second line could still be on its way when the first command
+   was typed. It then arrived in front of the command's echo, and the answer to
+   the command began with the device's prompt and the echo on one line
+   (`alice@example-sw1> configure exclusive`) instead of the echo alone: the
+   parser refused an answer that was otherwise exact, and on a run where it
+   arrived before the command was typed the session failed with `output between
+   commands`. The same device usually worked on another run. The first command
+   now takes that late answer for what it is: the line break, the line a Junos
+   virtual chassis prints before every prompt and the prompt in front of the
+   echo are dropped and the echo stays; anything else between commands, and a
+   prompt more than the commands account for, is still refused.
+
 ## 0.2.24 (2026-11-05)
 
 1. **`tacctl man` finds each entry on groff 1.24.** groff 1.24 narrowed the
