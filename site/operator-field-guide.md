@@ -124,7 +124,13 @@ tacctl log tail                  # last 20 entries
 tacctl log tail -f               # live, until Ctrl-C
 tacctl log search alice          # entries for a user or keyword (TACACS+: last 7 days)
 tacctl log accounting 50         # who ran what, most recent 50 records
+tacctl log failures --since -1h  # failures in the last hour
+tacctl log accounting --user alice --device sw1 --json
 ```
+
+The filters `--since`, `--until`, `--user`, `--device` (and `--type` for
+accounting) combine, and `--json` prints one object per line
+([Day-to-Day Device Operations](day-to-day-device-operations.md) §1.4).
 
 ### 4.4 Unregistered devices
 
