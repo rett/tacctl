@@ -66,6 +66,7 @@ func TestUserVerbsRefuseABreakGlassName(t *testing.T) {
 // Names compare without regard to case: a duplicate, and 'remove'.
 func TestBreakGlassNamesCompareWithoutCase(t *testing.T) {
 	sb := newSandbox(t, true)
+	sb.defaultBcryptCost()
 	sb.run("", []string{"scope", "breakglass", "lab", "add", "Lab-Admin"})
 	sb.expect(0, "'Lab-Admin' (admin) recorded", "")
 	sb.run("", []string{"scope", "breakglass", "lab", "add", "lab-admin"})

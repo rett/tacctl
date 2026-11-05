@@ -289,6 +289,7 @@ func TestScopeLookupExitCodes(t *testing.T) {
 // go with a remove; a scope created later under the old name starts clean.
 func TestScopeConfKeysFollowRenameAndRemove(t *testing.T) {
 	sb := newSandbox(t, true)
+	sb.defaultBcryptCost()
 	for _, args := range [][]string{
 		{"scope", "aaa-order", "dmz", "local-first"},
 		{"scope", "exec-timeout", "dmz", "15"},

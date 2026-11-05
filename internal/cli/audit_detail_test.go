@@ -127,6 +127,7 @@ func TestDetailLineOfAPrivLvlThatMovesTheTier(t *testing.T) {
 
 func TestDetailLinesOfTheScopeVerbs(t *testing.T) {
 	sb := newSandbox(t, true)
+	sb.defaultBcryptCost()
 	const secret = "Detail-secret-9f8e7d6c5b4a3"
 	for _, c := range []struct {
 		name  string
