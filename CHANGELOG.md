@@ -80,7 +80,7 @@ current behaviour; this file is where history lives.
    answer to that second line could still be on its way when the first command
    was typed. It then arrived in front of the command's echo, and the answer to
    the command began with the device's prompt and the echo on one line
-   (`alice@example-sw1> configure exclusive`) instead of the echo alone: the
+   (`alice@sw1> configure exclusive`) instead of the echo alone: the
    parser refused an answer that was otherwise exact, and on a run where it
    arrived before the command was typed the session failed with `output between
    commands`. The same device usually worked on another run. The first command
