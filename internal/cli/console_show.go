@@ -159,7 +159,7 @@ func (inv *invocation) consoleServerSection(pol *console.Policy, consoleUsers []
 		}
 		inv.echo("  sshd for " + u + ": allowtcpforwarding " + st.TCPForwarding + ", allowagentforwarding " + st.AgentForwarding +
 			", forcecommand " + dash(st.ForceCommand) + ", pubkeyauthentication " + dash(st.PubkeyAuth) + sshdGatewayPorts(st))
-		problems = append(problems, st.Problems(pol.AgentForwarding(), inv.userForwards(pol, u), pol.GatewayPorts(), inv.app.Paths.ConsoleCommand)...)
+		problems = append(problems, st.Problems(inv.userAgent(pol, u), inv.userForwards(pol, u), pol.GatewayPorts(), inv.app.Paths.ConsoleCommand)...)
 	}
 	problems = append(problems, inv.consoleFirstValueHint(pol, probe, problems)...)
 	if len(problems) > 0 {

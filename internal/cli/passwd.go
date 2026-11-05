@@ -86,6 +86,7 @@ func (inv *invocation) passwdSelf(args []string) error {
 	a.Audit().Raw("auth.info", "passwd OK user="+username+" source=self")
 	a.Out.Info("Password changed for '" + username + "'.")
 	if required {
+		inv.refreshHeldForwarding()
 		inv.detailPwChange(username, false, "self")
 		a.Out.Info("The required password change is done.")
 		if pwchange.Subject(a.Conf(), m, m.User(username)) {

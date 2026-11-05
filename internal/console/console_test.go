@@ -618,6 +618,17 @@ func TestSSHDCheck(t *testing.T) {
 	if p := s.Problems(false, false, false, testConsole); len(p) != 0 {
 		t.Errorf("disableforwarding yes: %v", p)
 	}
+	// DisableForwarding yes closes the agent too: a user held to a password
+	// change, whose agent the engineer's file left open, is not a problem
+	// while the setting is closed for them; without it, it is.
+	s, _, _ = run(execx.Result{Stdout: []byte("allowtcpforwarding no\nallowagentforwarding yes\ndisableforwarding yes\n" + fc)})
+	if p := s.Problems(false, false, false, testConsole); len(p) != 0 {
+		t.Errorf("agent yes under disableforwarding yes: %v", p)
+	}
+	s, _, _ = run(execx.Result{Stdout: []byte("allowtcpforwarding no\nallowagentforwarding yes\ndisableforwarding no\n" + fc)})
+	if p := s.Problems(false, false, false, testConsole); !reflect.DeepEqual(p, []string{"allowagentforwarding is 'yes'"}) {
+		t.Errorf("agent yes with forwarding open: %v", p)
+	}
 	// Without the drop-in: nothing forced, key logins on.
 	s, _, _ = run(execx.Result{Stdout: []byte("allowtcpforwarding no\nallowagentforwarding no\nforcecommand none\npubkeyauthentication yes\n")})
 	if p := s.Problems(false, false, false, testConsole); !reflect.DeepEqual(p, []string{"forcecommand is 'none'", "pubkeyauthentication is 'yes'"}) {

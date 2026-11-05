@@ -76,6 +76,49 @@ current behaviour; this file is where history lives.
    (`http.lowSpeedLimit`, `http.lowSpeedTime`). `docs/install/upgrading.md` and
    the manual page (`TACQUITO_SRC`) say so.
 
+6. **A user who must change the password gets no port forwarded through the
+   server on a new connection, in any tier.** A forwarding (`ssh -N -L`, `-R`,
+   `-D`, `-J`) opens no session and never reaches the console that holds such
+   a user, so a user of a tier in `console forwarding tiers` (default:
+   superuser only, who is never held) kept forwarding ports with the old
+   password; the limitation was to take the tier out. sshd's drop-in for the
+   console (`/etc/ssh/sshd_config.d/tacctl-console.conf`) now begins, when
+   anyone is held, with `Match User <names>` setting `DisableForwarding yes`
+   and `AllowTcpForwarding`, `AllowStreamLocalForwarding`, `X11Forwarding`,
+   `AllowAgentForwarding`, `PermitTunnel` and `GatewayPorts` to the closed
+   value, ahead of the tier blocks (sshd keeps the first value of a keyword).
+   sshd applies a `Match` block when a connection authenticates, so a
+   connection the user has open already keeps the forwardings it had until it
+   closes; tacctl does not end it (the administrator can:
+   `loginctl terminate-user <name>`). The names are the users held now (`user
+   require-password-change`, `user add` and an administrator's `user passwd`
+   by default), sorted, only those of a Linux account, a superuser never, at
+   most 50 to a `Match User` line (more users make further blocks, all before
+   the tier blocks); with nobody held there is no block and the file is the
+   one of earlier releases. The sync of the server writes the list (the `user`
+   verbs, `host sync`, `console install`, `upgrade`; it stays as it was when
+   the store or `tacctl.yaml` cannot be read), and so do the verbs that change
+   who is held, each by itself, because a sync of the server reaches the
+   drop-in only when the server is enrolled, its checks pass and a user of the
+   scope gets the console: `user require-password-change` in every form,
+   `user add`, `user remove`, `user rename`, `user move`, an administrator's
+   `user passwd`, the user's own `passwd`, a group command that lowers a tier
+   (the one change of a group's tier that syncs the server; raising a tier
+   leaves the list as it was until the next rewrite, which only closes
+   forwarding), `store import`, `backup restore` (a snapshot or an old-style
+   backup) and `store rollback` (legacy mode holds nobody). The
+   rewrite checks the drop-in with `sshd -t`, undoes it when sshd refuses it
+   (one warning with `tacctl console install` then), and reads the users and
+   installs the file under the apply lock, so two commands that flag users at
+   the same time cannot leave one out. Any other write of the store leaves the
+   drop-in as it is until the next of those. `console check` counts the list
+   as part of the drop-in: a list that is not the users held now is drift,
+   shown with both lists, and a held user is probed with `sshd -T` like the
+   first user of each kind (`console show` expects forwarding closed for
+   them, the agent included, whatever `console agent-forwarding` says). An
+   earlier release reads the extra block without complaint; its `console
+   check` calls the file different.
+
 ## 0.2.23 (2026-10-31)
 
 1. **`tacctl rollback 0.2.22`, the release before this one, is a target.**

@@ -246,7 +246,7 @@ func TestEngineerSSHDDropInWithoutTheConsole(t *testing.T) {
 		}
 	}
 	// The console's own text no longer holds an engineer block.
-	if strings.Contains(console.DropIn("/usr/local/bin/tacctl-console", false, false, []tier.Tier{tier.Superuser}), tier.EngineerGroup) {
+	if strings.Contains(console.DropIn("/usr/local/bin/tacctl-console", false, false, []tier.Tier{tier.Superuser}, nil), tier.EngineerGroup) {
 		t.Error("the console's drop-in still mentions the engineer group")
 	}
 	// Again: unchanged, not reloaded, not reported.
