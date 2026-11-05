@@ -269,7 +269,7 @@ func TestConsoleRemotePolicy(t *testing.T) {
 func TestShellArgvExtraEnv(t *testing.T) {
 	env := func(k string) string {
 		if k == "SSH_AUTH_SOCK" {
-			return "/tmp/a"
+			return "/tmp/a" // shared-proc-ok: a value the code under test returns, no file is made
 		}
 		return ""
 	}

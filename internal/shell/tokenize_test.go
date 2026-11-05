@@ -59,7 +59,7 @@ func TestTokenizeEscapeAttempts(t *testing.T) {
 		{"user show $(id)", []string{"user", "show", "$(id)"}},
 		{"user show `id`", []string{"user", "show", "`id`"}},
 		{"user show $USER ${HOME}", []string{"user", "show", "$USER", "${HOME}"}},
-		{"user list > /tmp/x", []string{"user", "list", ">", "/tmp/x"}},
+		{"user list > /tmp/x", []string{"user", "list", ">", "/tmp/x"}}, // shared-proc-ok: a line the tokenizer splits, no file is made
 		{"user list >/tmp/x 2>&1", []string{"user", "list", ">/tmp/x", "2>&1"}},
 		{"user list < /etc/shadow", []string{"user", "list", "<", "/etc/shadow"}},
 		{"user list\nid", []string{"user", "list\nid"}},

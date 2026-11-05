@@ -227,7 +227,7 @@ func TestPlanAuditQuotesAPathWithSpaces(t *testing.T) {
 	if len(al) != 1 || !strings.HasSuffix(al[0], ` out="`+f+`"`) {
 		t.Errorf("audit %q", al)
 	}
-	if auditValue("/tmp/plain.txt") != "/tmp/plain.txt" || auditValue("-") != "-" || auditValue("a=b") != `"a=b"` || auditValue("a\"b") != `"a\"b"` {
+	if auditValue("/tmp/plain.txt") != "/tmp/plain.txt" || auditValue("-") != "-" || auditValue("a=b") != `"a=b"` || auditValue("a\"b") != `"a\"b"` { // shared-proc-ok: strings the audit escaping is given, no file is made
 		t.Error("auditValue")
 	}
 }

@@ -126,7 +126,7 @@ func TestRunScriptCopyFailures(t *testing.T) {
 	errb.Reset()
 	f = &fake.Runner{}
 	e.Runner = f
-	f.On([]string{"ssh"}, execx.Result{Stdout: []byte("/tmp/x; rm -rf /\n")})
+	f.On([]string{"ssh"}, execx.Result{Stdout: []byte("/tmp/x; rm -rf /\n")}) // shared-proc-ok: output of the fake ssh, no file is made
 	if code, _ := e.RunScript(context.Background(), "web1", "", "", scriptFile(t), nil); code != 1 {
 		t.Errorf("odd reply: %d", code)
 	}
