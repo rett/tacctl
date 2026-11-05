@@ -129,6 +129,39 @@ tacctl device sync --scope site-a           # preview: fill empty fields
 tacctl device sync --scope site-a --apply
 ```
 
+### 2.5 Replacing a device: a copy at a bench address
+
+When a device is swapped for new hardware, register the new one as a copy of
+the old one at the address it has on the bench, set it up there, and move it
+into place:
+
+```bash
+# 1. register sw1-new as a copy of sw1, at its bench address
+tacctl device clone sw1 sw1-new --staging 10.10.0.60
+# 2. pin the new device's host key, pull, plan and apply as for any device
+# 3. when it is in place: remove sw1 and give its name and address to sw1-new
+tacctl device rename sw1-new sw1 --replace
+```
+
+- **What `clone` copies:** the registry settings, the SNMP settings and
+  credentials, the NETCONF settings, the timing scale and the configuration
+  blocks. **What it does not:** the address, the name, the pinned host keys,
+  the acknowledged notices, a break-glass hold and the pull record, so pin its
+  host keys and pull it as for any new device.
+- `--staging` is required. The bench address is added to the scope of the
+  original as a `/32` so the device can authenticate, or, when the scope
+  answers it already, noted as staged. You can clone the devices of your own
+  scopes, SNMP credentials included.
+- **`rename --replace`** prints its plan lines, then asks one question
+  (`--yes` is the only way to skip it; with no terminal it answers no). The
+  original is removed with its files after a snapshot, the replacement takes
+  its name and address, and the bench address ends.
+- An original with a **break-glass hold** needs a superuser: the replace
+  clears the hold ([Break Glass](break-glass.md)), and an engineer is refused,
+  naming it.
+- A plain `device rename` (without `--replace`) and `host rename` carry the
+  bench address that was staged under the old name.
+
 ---
 
 ## 3. Reading and comparing
@@ -196,6 +229,33 @@ force in `tacctl device show <name>` and `tacctl scope show <scope>`. A
 `--timeout` you type on a pull or an apply is the time of every device of that
 run, as typed, and wins over the scale.
 
+### 3.1 The AAA source addresses
+
+A device may send its AAA requests from an address other than the one it is
+registered at (a Junos `source-address`, an IOS `ip tacacs source-interface`).
+Two checks look at it:
+
+- **The source must be an address of the device.** A source that no interface
+  of the device holds is a difference: `aaa` reads `differs`, and the plan
+  reports an `ACCESS` item that the paste never fixes (add the address to an
+  interface, or change the source).
+- **Does the address answer, and is it the same device?**
+
+  ```bash
+  tacctl device check sw1 --sources      # one device (or --all)
+  tacctl device scan --sources           # after the scan, for every device
+  ```
+
+  Each source address read from the last pull is connected to and its ssh host
+  key is compared with the one pinned for the device, without logging in. An
+  address that does not answer, or that presents another key, is a warning
+  (the address may belong to another device). Nothing is pinned or changed.
+  An unanswered address costs about 8 seconds, and a server often has no path
+  to a loopback, so unreachable may be by design.
+
+The settings a device keeps for its own AAA server (a source address, a
+routing instance and the like) are no longer listed as differences.
+
 ---
 
 ## 4. Planning the change
@@ -243,6 +303,18 @@ Two lines of the report are information, not irregularities:
 
 Other statements outside the standard (*extras*: an old server, a class or a
 filter tacctl does not render) are reported as items and left alone.
+
+**`single-connection` is gone (0.2.24).** tacquito closes a connection that has
+been idle for 15 seconds, and a later login over the dead socket failed, so
+the walkthroughs (`config cisco`, `config juniper`) no longer print
+`single-connection`. On a device that has it, `plan` and `apply` delete it
+from tacctl's server and `diff` and `plan` list it as an extra. The plan has a
+new shape, so `apply` sends its first device alone, and `apply --confirmed`
+takes it only after one device of it has been applied and confirmed again. A
+Junos `single-connection` that only an apply-group gives is left alone
+(`inherited from a group: remove it from the group by hand`); another
+server's line and a custom template keep theirs. The upgrade changes no
+device: run `plan` and `apply` on the devices that have the line.
 `--converge` adds the cleanup **only after** the first paste has been
 verified. That way the paste that adds the new server is never the same
 paste that removes the old one.
@@ -462,6 +534,9 @@ tacctl device config plan sw1 --converge  # optional: remove old servers and sim
 | Verify | `tacctl device config pull <n> --diff` |
 | Back-out | `tacctl device config plan <n> --backout` |
 | Walkthrough for a device | `tacctl device config show <n>` |
+| Register a copy at a bench address | `tacctl device clone <n> <new> --staging <ip>` |
+| Move the copy into place | `tacctl device rename <new> <n> --replace` |
+| Test the AAA source addresses | `tacctl device check <n> --sources` |
 | Junos filter mode of a scope | `tacctl scope mgmt-acl <s> mode` |
 | Re-pin a key | `tacctl device hostkey <n> set SHA256:<fp>` |
 

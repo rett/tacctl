@@ -73,11 +73,18 @@ key has changed. Do not work around it: see
 
 ```bash
 device check sw1        # scope, last seen, reachable, host key vs. pin, SNMP name/location/vendor
+device check sw1 --sources   # also test the addresses the device sends AAA from
 device notice list      # open issues, each with the command that fixes it
 ```
 
 `device check` connects from the tacctl server. If the server has no route
 to the device's management port, a timeout may be a false alarm.
+
+With `--sources`, `device check` also connects to each address the device
+sends its AAA requests from (other than its registered address) and compares
+its ssh host key with the pinned one, without logging in. A warning that an
+address is unreachable (it may be by design) or presents another host key goes
+to an engineer ([Engineer Guide](engineer-guide-device-changes.md) §3.1).
 
 ### 1.4 Look at authentication logs (operator)
 
