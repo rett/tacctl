@@ -34,7 +34,9 @@ current behaviour; this file is where history lives.
    `.nr BP 7n` line, which the pager search of `tacctl man` relies on, and the
    pre-push hook (`make hooks`) also runs `no-short-yes.sh` and
    `no-os-tempdir.sh`. `make lint` and the man search tests must pass on both
-   the CI tools and newer ones (`tests/README.md`).
+   the CI tools and newer ones (`tests/README.md`). The Go test jobs install
+   the tools that tests skip without (`shellcheck`, `groff`, `less`, `man-db`,
+   `openssh-server`), so those tests run in CI instead of passing as skips.
 
 4. **`tacctl rollback 0.2.23`, the release before this one, is a target.**
    This release changed no stored file, so 0.2.23 reads everything it writes:

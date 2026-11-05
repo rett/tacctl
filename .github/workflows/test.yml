@@ -10,6 +10,11 @@
 # without tags with the race detector. Every other package is one job.
 # Each runs twice, as 'make test-go' does: without tags and with the test
 # knobs.
+# Tests that drive a tool skip where it is missing, and a skip is silent in a
+# green run, so the two test jobs install the tools those tests look for:
+# shellcheck, groff, less and man-db (the completion block, the man page's
+# search and the pager under a pty; internal/cli) and openssh-server with
+# openssh-client (sshd -T on the drop-ins; internal/console).
 # The lint job runs 'make lint' itself (shellcheck, gofmt, go vet,
 # golangci-lint at the version the Makefile pins, the man page tests and
 # groff, the private-name, temp-dir, logger, short-yes and doc-width checks),
@@ -126,6 +131,10 @@ jobs:
         run: |
           sudo rm -rf /usr/local/go
           sudo ln -s "$(go env GOROOT)" /usr/local/go
+      - name: sshd and ssh-keygen, which tests of internal/console skip without
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends openssh-server openssh-client
       - name: Tests (everything but internal/cli), with the race detector
         env:
           CGO_ENABLED: "1"
@@ -164,6 +173,10 @@ jobs:
         run: |
           sudo rm -rf /usr/local/go
           sudo ln -s "$(go env GOROOT)" /usr/local/go
+      - name: shellcheck, groff, less and man-db, which tests of internal/cli skip without
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck groff less man-db
       - name: internal/cli, shard ${{ matrix.shard }} of 2
         env:
           LANG: C.UTF-8

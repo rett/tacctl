@@ -46,7 +46,12 @@ process environment, signal the process, or write a package-level registry
 round-robin; `--check <count>` fails unless every test is in exactly one
 shard), the ones without tags with the race detector, beside one job for
 every other package, a static job (gofmt, `go vet`) and a lint job (`make
-lint`, below). Both tag sets run,
+lint`, below). The test jobs install the tools that tests skip
+without (`shellcheck`, `groff`, `less` and `man-db` for the completion block
+and the man page's search and pager tests of `internal/cli`; `openssh-server`
+and `openssh-client` for the `sshd -T` tests of `internal/console`): a skip is
+silent in a green run, so a tool a test starts to need is added to the job's
+`apt-get` step. Both tag sets run,
 as `make test-go` does; `make gate-go` (`tests/tools/gate-go.sh`, which
 `tests/integration/gate_go.bats` pins) runs the packages as one tracked run
 that ends with a single `GATE-GO PASS|FAIL` line, a FAIL for a run that was
