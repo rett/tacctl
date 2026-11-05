@@ -31,13 +31,17 @@ func (r *applyRun) serviceVerifier(e devreg.Entry, target devssh.Target, st *app
 		if was == "" {
 			was = netconfNotProbed
 		}
-		got, err := devapply.ProbeNetconf(ctx, target)
+		got, why, err := devapply.ProbeNetconfWhy(ctx, target)
 		if err != nil {
 			return "", fmt.Errorf("%s (the record's NETCONF probe stays '%s')", shortReason(err), was)
 		}
 		switch {
 		case want == "enable" && got != devapply.ProbeHelloOK:
-			return "", fmt.Errorf("the device does not answer NETCONF after the change (%s; the record's NETCONF probe stays '%s')", got, was)
+			says := got
+			if why != "" {
+				says += ": " + why
+			}
+			return "", fmt.Errorf("the device does not answer NETCONF after the change (%s; the record's NETCONF probe stays '%s')", says, was)
 		case want == "disable" && got == devapply.ProbeHelloOK:
 			return "", fmt.Errorf("the device still answers NETCONF after the change (the record's NETCONF probe stays '%s')", was)
 		}

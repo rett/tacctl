@@ -38,6 +38,31 @@ current behaviour; this file is where history lives.
    changed is the apply-pause line of `tacctl config devices`, which now ends
    `0-3600, from one device's end to the next one's start`.
 
+3. **A Junos device's NETCONF hello is read as it is sent, and a failed hello
+   says why.** A Junos device names its capabilities with the XML namespace's
+   prefix (`urn:ietf:params:xml:ns:netconf:base:1.0`) where RFC 6241 has
+   `urn:ietf:params:netconf:base:1.0`; the client looked for the second only, so
+   such a device was recorded as `no hello` although it answered, a pull read
+   it over the command line, `device check` showed `NETCONF: no hello`, and an
+   apply that enabled the service was rolled back with `the device does not
+   answer NETCONF after the change`. Both spellings are now the same
+   capability (the candidate and the confirmed commit are found in either, so
+   such a device is also applied over NETCONF). The hello is also read as a
+   device prints it: comments, an XML declaration, a byte order mark or text
+   (even with a `&` or a `<`) before `<hello>`, and white space or line breaks
+   inside a capability; a device that ends the channel right after its hello
+   still gives it. A hello that is none is no longer silent: the pull's line
+   (`ok via ssh (netconf: no hello: the device's first message is <rpc-error>,
+   not a hello; the device sent "<rpc-error>...")`, and `fallback` in `--json`)
+   and the message of an apply that enabled NETCONF (`the device does not
+   answer NETCONF after the change (no hello: ...; the record's NETCONF probe
+   stays 'port closed')`) give the reason (not a hello, not a hello but another
+   message, no `base:1.0` framing with the capabilities offered, the channel
+   closed after the subsystem was accepted, no hello in time) and the first 120
+   bytes the device sent, on one line with control characters shown as `?`. The
+   record still stores `hello ok`, `port closed`, `no hello` or `not probed`
+   only, so `device check` shows the word without the reason.
+
 ## 0.2.24 (2026-11-05)
 
 1. **`tacctl man` finds each entry on groff 1.24.** groff 1.24 narrowed the

@@ -409,7 +409,8 @@ device check <name>|--all [--sources] [--json]
     match, differs, registry only, device only; writes nothing), Vendor (the vendor the device
     names by SNMP against the registered one: match, differs, or unknown with what was read),
     NETCONF (a Junos device: what the last pull's probe found, `hello ok`, `port closed`, `no
-    hello`, or `not probed`; a check logs in to nothing), notices; --all ends with the devices
+    hello`, or `not probed`; the row keeps the probe's word only, the reason for a `no hello` is in
+    the pull's line; a check logs in to nothing), notices; --all ends with the devices
     registered as other that name a vendor; --json: the rows, with sysname, syslocation,
     vendor_detected (vendor_reason, vendor_error) and netconf.
     --sources also tests the source addresses of the device's TACACS+ and RADIUS clients (read from
