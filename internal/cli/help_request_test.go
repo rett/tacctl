@@ -166,6 +166,7 @@ func TestHelpInTheShellFollowsTheView(t *testing.T) {
 // and for a verb, in a real shell on a terminal.
 func TestPtyHelpIsWhatQuestionMarkPrints(t *testing.T) {
 	s := startCLIShell(t, 120, shellPtyViewPrefix+"superuser")
+	awaitSuperuserView(t, s)
 	body := func(out string) string {
 		out = strings.ReplaceAll(out, "\r\n", "\n")
 		out = regexp.MustCompile("\x1b\\[[0-9;?]*[A-Za-z]").ReplaceAllString(out, "")
