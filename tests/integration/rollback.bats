@@ -486,7 +486,7 @@ JSON
     assert_output --partial "Nothing to convert: every file is one 0.2.21 can read."
 }
 
-@test "rollback 0.2.23: the release before this one; the dry run writes nothing and --apply converts nothing" {
+@test "rollback 0.2.23: the release before this one; the dry run writes nothing and --apply puts back 0.2.23's sudoers drop-in only" {
     _state_024
     "$TACCTL_BIN_SCRIPT" server name core-1 > /dev/null
     "$TACCTL_BIN_SCRIPT" config devices timeout-scale 3 > /dev/null
@@ -498,17 +498,28 @@ JSON
     assert_output --partial "nothing to remove (every key of tacctl.yaml is one 0.2.23 knows)"
     assert_output --partial "nothing to do for 0.2.23: this release changed nothing on the enrolled hosts"
     assert_output --partial "--apply converts no file of tacctl's own and takes no snapshot"
+    assert_output --partial "put back the per-tier sudoers drop-in 0.2.23 writes"
+    assert_output --partial "the operator's rule of 'log failures *' is taken out"
     refute_output --partial "remove device.timeout_scale"
     assert_output --partial "This was a dry run: nothing was changed."
     [[ "$(_sums)" == "$before" ]]
     [[ "$(_snapshots)" == "$n" ]]
     run "$TACCTL_BIN_SCRIPT" rollback 0.2.23 --apply
     assert_success
-    assert_output --partial "Nothing to convert: every file is one 0.2.23 can read."
+    assert_output --partial "tacctl-tiers: rewritten with the text 0.2.23 writes"
     assert_output --partial "tacctl upgrade --branch 0.2.23"
-    # Not even the sudoers drop-in changes: 0.2.23 and this release write the same text.
-    [[ "$(_sums)" == "$before" ]]
+    # Only the operator's rule of 'log failures *' goes, from the sudoers
+    # drop-in; the engineer's rule of 'device clone' stays (0.2.23 has it).
+    [[ "$(_sums | grep -v ' sudoers.d/tacctl-tiers$')" == "$(grep -v ' sudoers.d/tacctl-tiers$' <<< "$before")" ]]
+    [[ "$(_sums)" != "$before" ]]
     [[ "$(_snapshots)" == "$n" ]]
+    run grep -q 'log failures \*' "$BATS_TEST_TMPDIR/sudoers.d/tacctl-tiers"
+    assert_failure 1
+    run grep -q 'device clone' "$BATS_TEST_TMPDIR/sudoers.d/tacctl-tiers"
+    assert_success
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.23 --apply
+    assert_success
+    assert_output --partial "Nothing to convert: every file is one 0.2.23 can read."
     run "$TACCTL_BIN_SCRIPT" config get server.name unset-marker
     assert_output "core-1"
 }
