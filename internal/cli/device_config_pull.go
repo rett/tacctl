@@ -185,7 +185,7 @@ func (inv *invocation) pullArgsOf(p Parsed, verb string) (pullArgs, error) {
 		if err != nil {
 			return a, inv.argErr("--timeout takes seconds per device, 10 to 600: '"+p.Value("--timeout")+"'", usage)
 		}
-		a.timeout, a.timeoutTyped = time.Duration(n)*time.Second, true
+		a.timeout, a.timeoutTyped = inv.hooks.typedTimeout(n), true
 	}
 	if p.Has("--max-failures") {
 		n, err := atoiIn(p.Value("--max-failures"), 1, 1<<20)
