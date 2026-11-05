@@ -84,7 +84,11 @@ pull`, and an apply to a virtual chassis whose master prints its own label is
 rolled back again, as in 0.2.24.
 
 The note after a rollback that took a snapshot named 0.2.23 as the release the
-snapshot holds the state of (`Restore it with 0.2.23 only`); it names 0.2.25.
+snapshot holds the state of (`Restore it with 0.2.23 only`), and the notes after
+a rollback that dropped email addresses or SNMPv3 users said `once 0.2.23 is
+installed again, tacctl backup recover <id> --only email` (or `--only
+snmp-users`); all three name 0.2.25 now. The pages that say what every target
+does name the exceptions of 0.2.24 and 0.2.23.
 
 ## Upgrading
 
