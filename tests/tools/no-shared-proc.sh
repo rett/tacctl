@@ -14,11 +14,12 @@
 #     pgrep without -f and the -P (by parent) forms stay allowed;
 #   - a shared temporary path: /dev/shm, a "/tmp" directory given to os.* or
 #     filepath.*, a bare "/tmp" string, or a shell command (mktemp, mkdir,
-#     touch, cp, mv, rm, ln, tee, a redirection) on /tmp, in a *_test.go file,
-#     tests/integration/*.bats or tests/helpers (a test takes t.TempDir(),
-#     BATS_TEST_TMPDIR or the TMPDIR of its environment). The name
-#     /tmp/tacctl.* is the remote script path of the ssh stubs, and the
-#     scripts of tests/tools (gate-*.sh) are not looked at.
+#     touch, cp, mv, rm, ln, tee, install, cd, a redirection, a TMPDIR
+#     assignment) on /tmp, in a *_test.go file, tests/integration/*.bats,
+#     tests/e2e or tests/helpers (a test takes t.TempDir(), BATS_TEST_TMPDIR
+#     or the TMPDIR of its environment). The name /tmp/tacctl.* is the remote
+#     script path of the ssh stubs, and the scripts of tests/tools (gate-*.sh)
+#     are not looked at.
 # A line that must name a shared path (the TMPDIR fallback of a path that has
 # to stay short, a socket path limit) carries the comment
 # 'shared-proc-ok: <reason>', with a reason. The comment excuses a shared
@@ -48,7 +49,7 @@ parent_re="${pre}pkill[[:space:]\"${quote}]([^;|&#]*[[:space:]\"${quote}])?(-[[:
 
 shm_re='/dev/shm'
 go_tmp_re='(os|ioutil|filepath)\.[A-Za-z]+\([[:space:]]*"/tmp|"/tmp"'
-sh_tmp_re='(^|[^[:alnum:]_-])(mktemp|mkdir|touch|cp|mv|rm|ln|tee|install)[[:space:]][^|;&#]*[[:space:]"=]/tmp([/"[:space:]]|$)|>>?[[:space:]]*"?/tmp/'
+sh_tmp_re="${pre}(mktemp|mkdir|touch|cp|mv|rm|ln|tee|install|cd|pushd)[[:space:]]([^|;&#]*[[:space:]\"${quote}=])?/tmp([/\"${quote}[:space:]]|\$)|>>?[[:space:]]*[\"${quote}]?/tmp/|${pre}(TMPDIR|TMP|TEMP)=[\"${quote}]?/tmp([/\"${quote}[:space:]]|\$)"
 
 # excused drops the lines that say why a shared path is fine (a reason after
 # the colon) from a git grep -n result.
@@ -69,9 +70,9 @@ procs=$(
 )
 tmps=$(
     {
-        git grep -nIE "$shm_re" -- '*_test.go' 'tests/integration/*.bats' tests/helpers || true
+        git grep -nIE "$shm_re" -- '*_test.go' 'tests/integration/*.bats' tests/e2e tests/helpers || true
         git grep -nIE "$go_tmp_re" -- '*_test.go' || true
-        git grep -nIE "$sh_tmp_re" -- 'tests/integration/*.bats' tests/helpers || true
+        git grep -nIE "$sh_tmp_re" -- 'tests/integration/*.bats' tests/e2e tests/helpers || true
     } | { grep -v '/tmp/tacctl\.' || true; } | excused | sort -u
 )
 

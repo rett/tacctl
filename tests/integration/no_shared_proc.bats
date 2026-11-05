@@ -107,8 +107,8 @@ lint() {
     lint -0
 }
 
-@test "the shared memory directory fails in a Go test, a bats file and a helper" {
-    for where in internal/x/a_test.go tests/integration/a.bats tests/helpers/h.bash; do
+@test "the shared memory directory fails in a Go test, a bats file, a helper and e2e" {
+    for where in internal/x/a_test.go tests/integration/a.bats tests/helpers/h.bash tests/e2e/e.bats; do
         git -C "$REPO" rm -rq --cached . 2>/dev/null || true
         put "$where" "    x=$SHM/work"
         run -1 "$REPO/tests/tools/no-shared-proc.sh"
@@ -126,20 +126,31 @@ lint() {
     done
 }
 
-@test "a shell command or a redirection on /tmp fails in a bats file and a helper" {
-    for where in tests/integration/a.bats tests/helpers/h.bash; do
-        for line in "d=\$(mktemp -d $SHARED/x.XXXXXX)" "mkdir -p $SHARED/x" "echo y > $SHARED/x" "echo y >>\"$SHARED/x\"" "cp a \"$SHARED/x\"" "mktemp -d -p $SHARED"; do
+@test "a shell command or a redirection on /tmp fails in a bats file, a helper and e2e" {
+    for where in tests/integration/a.bats tests/helpers/h.bash tests/e2e/e.bats; do
+        for line in "d=\$(mktemp -d $SHARED/x.XXXXXX)" "mkdir -p $SHARED/x" "echo y > $SHARED/x" "echo y >>\"$SHARED/x\"" "cp a \"$SHARED/x\"" \
+            "mktemp -d -p $SHARED" "mktemp -p $SHARED" "d=\$(mktemp -p $SHARED x.XXXXXX)" "mktemp --tmpdir=$SHARED" "mktemp -p '$SHARED'" \
+            "cd $SHARED" "cd \"$SHARED\" || exit 1" "x && cd $SHARED/x" "pushd $SHARED" "TMPDIR=$SHARED mktemp -d" "export TMPDIR=$SHARED" \
+            "touch '$SHARED/x'" "install -d $SHARED/x"; do
             git -C "$REPO" rm -rq --cached . 2>/dev/null || true
             put "$where" "    $line"
             run -1 "$REPO/tests/tools/no-shared-proc.sh"
             [[ "$output" == *"$where:1:"* ]] || { echo "$line: $output"; false; }
+            [[ "$output" == *"shared temporary path"* ]]
         done
     done
+}
+
+@test "a shell command that only mentions /tmp, or a longer name, is no hit" {
+    put tests/integration/a.bats "    cd \"\$BATS_TEST_TMPDIR\"; mktemp -p \"\$BATS_TEST_TMPDIR\"; echo $SHARED/ok; cd $SHARED""dir; TMPDIR=\$BATS_TEST_TMPDIR mktemp -d"
+    put tests/e2e/e.bats "    ssh x 'rm -f $SHARED/tacctl.AbCd1234'; stub_called \"scp .* $SHARED/tacctl.AbCd1234\""
+    lint -0
 }
 
 @test "a line that says shared-proc-ok with a reason excuses a shared path" {
     put internal/x/a_test.go "	base = \"$SHARED\" // shared-proc-ok: TMPDIR is too long for a socket path"
     put tests/integration/a.bats "    mkdir -p $SHARED/x # shared-proc-ok: the test of the fallback"
+    put tests/e2e/e.bats "    cd $SHARED # shared-proc-ok: the test of the fallback"
     lint -0
 }
 
