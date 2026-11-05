@@ -38,12 +38,27 @@ current behaviour; this file is where history lives.
 
 4. **`tacctl rollback 0.2.23`, the release before this one, is a target.**
    This release changed no stored file, so 0.2.23 reads everything it writes:
-   the rollback converts nothing, removes no key, leaves the per-tier sudoers
-   drop-in (0.2.23 and this release write the same text), takes no snapshot and
-   needs no `--yes`. The users' email addresses, the SNMPv3 users and the
+   the rollback converts no file, removes no key, takes no snapshot and needs
+   no `--yes`. It puts back 0.2.23's per-tier sudoers drop-in, without the
+   operator's `log failures *` (item 9), when the file is exactly this
+   release's text (the dry run shows the step, `--apply` writes it after
+   `visudo -cf`; a file tacctl did not write is left), and every older target
+   that rewrites the per-tier drop-in recognises this release's text and
+   0.2.23's as tacctl's own and puts back its own (the others leave the file
+   to their own upgrade). The users' email addresses, the SNMPv3 users and the
    covered staging entries, which every older target drops, and an emergency
    lockdown on a scope with enrolled hosts, which every older target refuses,
-   stay. The top-level help, `docs/cli/conventions.md` and `docs/cli/user.md`
+   stay. What this release changed outside the stored files is 0.2.23's to
+   undo or keep: the `upgrade --branch 0.2.23` that ends the rollback writes
+   the console's sshd drop-in from 0.2.23's text, without the block of users
+   held to a password change (item 6), so their new connections forward again
+   as their tier allows; it keeps the tacquito this release built until it
+   next rebuilds it (a new commit on the fork's `main`), so accounting records
+   keep `"Device"` and the literal `<`, `>` and `&` (item 8), which 0.2.23's
+   `log accounting` shows as they are written; and on a device whose
+   `single-connection` this release removed (item 7), 0.2.23's `device config
+   diff` and `plan` show the line as missing, and applying that plan types it
+   again. The top-level help, `docs/cli/conventions.md` and `docs/cli/user.md`
    list 0.2.23 among the targets. The command ends with
    `tacctl upgrade --branch 0.2.23`. A host rolled back keeps its tacquito
    checkout pointed at the project's fork (item 2), which has the same history
@@ -146,7 +161,55 @@ current behaviour; this file is where history lives.
    holds `<secret>` and a note to type the key, and no longer warns. A custom
    template keeps whatever it says; a copy of `cisco.template` or
    `cisco-legacy.template` made earlier still renders the line. Another
-   server's `single-connection` is left alone.
+   server's `single-connection` is left alone. The plan of a device that has
+   the line is not the one it was, so its shape (`device config shapes`) is a
+   new one: `device config apply --confirmed` takes it once a device of that
+   shape has been applied and confirmed again.
+
+8. **An accounting record names the device that sent it, and is readable.**
+   A record in the TACACS+ accounting log carried `RemAddr`, where the person
+   connected from, and nothing that said which device sent it, so with
+   several devices the log could not answer "which device was changed". The
+   new patch `patches/0006-acct-device-address.patch` makes both accounters
+   append `"Device"`, the address of the connection as the server saw it, to
+   the record (`unknown` when there is none); the existing fields keep their
+   names and order, so a reader of the old line still parses the new one.
+   `tacctl log accounting` shows the registered name of the device or
+   enrolled host at that address (`"Device":"sw1"`), the address when none is
+   registered (or outside the scopes of an operator, engineer or read-only
+   caller), and no device for a record written before the patch. The same
+   patch writes `<`, `>` and `&` in a record as they are: Go escaped them as
+   `\u003c`, `\u003e` and `\u0026`, so a Junos command read
+   `\u003cunconfigured\u003e -> \"test\"\u003ccr\u003e`. The line is still
+   one line of valid JSON. `log accounting` shows the values decoded, those
+   of records already in the file too, and leaves out the `<cr>` Junos
+   appends to a `cmd=` value, in the display only (the file keeps it). A host
+   rebuilds tacquito once to get the patch (`tacctl upgrade`; `tacctl
+   install` applies it); until then its records have no device and keep the
+   escapes. `log tail` and `log search` read the journal: their display is
+   not changed by this (their filters are item 9).
+
+9. **The logs can be filtered, and written as JSON.** `tacctl log tail`,
+   `search`, `failures` and `accounting` take `--since <time>` and `--until
+   <time>` (`YYYY-MM-DD[ HH:MM[:SS]]`, `now`, `today`, `yesterday`, `-1h` or
+   `2 hours ago`; any other form is a usage error), `--user <name>`,
+   `--device <name|address>` (a registered device or enrolled host the caller
+   may see, or an address in canonical form), `--type login|change|command`
+   (accounting only: a record with a Junos change-log command is a `change`,
+   one with any other command a `command`, one that starts or stops a session
+   a `login`) and `--json` (one object per line, no headings; an accounting
+   record keeps its fields, decoded, with `DeviceName` and `Time` added). The
+   filters combine, `tail -f` applies them to new entries, and a count limits
+   the output after filtering. Each log matches what it names: the journal
+   the bracketed user and the address of the device that asked, the
+   accounting logs the record's `User` and `Device`, the RADIUS auth log
+   `user=` and `client=`; a log that names no device (the FreeRADIUS daemon
+   log, a record written before patch 0006) shows nothing for `--device` and
+   says so. Without a filter the commands print what they did. The operator
+   tier's sudo rule for `log failures` now takes arguments (`log failures
+   *`), so an operator can pass the filters (and `--backend`) to it through
+   sudo as to the other three; `tacctl config sudoers tiers install` and the
+   upgrade write the new rule.
 
 ## 0.2.23 (2026-10-31)
 

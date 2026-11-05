@@ -48,6 +48,13 @@ type Env struct {
 	// copy whole files themselves hold it through HoldApply; it is
 	// reentrant, so a transaction that holds it may call them.
 	ApplyLock *applylock.Lock
+	// DeviceName is the name of the registered device (or enrolled host) at an
+	// address, "" when none is (nil: no names). 'log accounting' names the
+	// device of each record with it; the CLI sets it for that command.
+	DeviceName func(address string) string
+	// LogFilter is the filters of the 'log' command running (logfilter.go);
+	// the CLI sets it, and the zero value filters nothing.
+	LogFilter LogFilter
 
 	// inWriter is set while the writer of a StoreApply or ApplyForced runs:
 	// a StoreApply, ApplyForced or ConfigRender then is a change inside a

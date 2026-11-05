@@ -177,3 +177,45 @@ minute), and every login and logout of them is an accounting record. A
 The device still logs `AUDITD_TACPLUS_MSG_SENT` for each one it sends:
 that line is the device's, and only its syslog configuration can drop it.
 
+### `0006-acct-device-address.patch`
+Names the device in every accounting record, and writes the record readably
+(`cmds/server/config/accounters/local/local.go` and `syslog/syslog.go`, with a
+test of each, in `cmds/server/test/local_acct_test.go` and
+`syslog_acct_test.go`).
+
+Both accounters write one JSON line per request, e.g. a Junos `change-log`
+record:
+
+```
+{"Flags":4,"Method":6,"PrivLvl":1,"Type":1,"Service":0,"User":"alice","Port":"ttyp0","RemAddr":"192.0.2.50","Args":["task_id=3","service=shell","cmd=set: [interfaces ge-0/0/1 description] <unconfigured> -> \"test\"<cr>"]}
+```
+
+`RemAddr` is where the *user* connected from, as the device reports it; nothing
+in the line says which *device* sent the record, so with several devices the
+log cannot answer "which device was changed". The patch appends one field,
+`"Device"`, with the address of the TACACS+ client as the server saw the
+connection: the value tacquito's server stores in the request context under
+`tq.ContextConnRemoteAddr` for every packet (the one patch `0003` puts in the
+authentication log lines), `unknown` when the context carries none.
+
+The record is the request's struct followed by the new field, so the existing
+fields keep their names, their order and their values, and a reader that does
+not know `Device` ignores it (the line stays one line of valid JSON).
+`tacctl log accounting` shows the device's registered name for it
+(`docs/cli/maintenance.md`); a record written before the patch has no
+`Device` and is shown without one.
+
+The patch also writes `<`, `>` and `&` as they are. Go's `json.Marshal`
+escapes them for HTML (`\u003c`, `\u003e`, `\u0026`), so the log read
+`\u003cunconfigured\u003e -> \"test\"\u003ccr\u003e` for the command
+above. The record is now written with a `json.Encoder` that has
+`SetEscapeHTML(false)`, and the newline `Encode` adds is cut off, so the
+accounter logs one line per record as before. Both forms are valid JSON and
+decode to the same strings; records already in the log keep their escapes, and
+`tacctl log accounting` shows them decoded (and leaves out the `<cr>` Junos
+appends to a command, in the display only).
+
+Why it is safe: the field comes after the request's own, nothing is read from
+the client for it, and the replies are unchanged. `Device` is one more key in
+an object that JSON readers already take unknown keys of.
+

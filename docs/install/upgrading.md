@@ -11,7 +11,7 @@ tacctl upgrade --branch develop
 
 The upgrade command:
 1. Moves tacctl state into `/etc/tacctl` if it is not there yet (idempotent)
-2. Pulls the latest tacquito server source and rebuilds the binary if the source or the patch overlay changed. The source comes from the project's fork, [rett/tacquito](https://github.com/rett/tacquito), whose `main` follows upstream by reviewed merges; a clone of upstream made by an earlier release is pointed at the fork first (`Tacquito source now pulls from ...`), and an origin set by hand is left alone. The pull is a fetch, then a fast-forward. The fetch never waits for an answer (git asks for no user name, password or key passphrase, and drops a transfer that stays under 1000 bytes a second for a minute), and a fetch that fails (no network) ends the install or upgrade there, since the checkout would be brought to the commit the last fetch left. A checkout that cannot fast-forward to the fork's `main` (a rewritten history) or is ahead of it (a commit made in the clone) is reset to it with a warning that names the commit it was at and the one it is at now; the checkout is only a build tree, so nothing is lost. The overlay's `0003` makes tacquito log the address a device connected from, which `tacctl log` and `device scan` read, and the address and port of the client the device reports; `0004` stops it sending a server message with a failed login; `0005` records in the accounting log the accounting of a device's local accounts and daemons, which tacquito refused (Junos: `AUDITD_TACPLUS_START_NO_RESPONSE`). A server upgraded from 0.2.0 rebuilds tacquito once for them (see [patches/README.md](../../patches/README.md))
+2. Pulls the latest tacquito server source and rebuilds the binary if the source or the patch overlay changed. The source comes from the project's fork, [rett/tacquito](https://github.com/rett/tacquito), whose `main` follows upstream by reviewed merges; a clone of upstream made by an earlier release is pointed at the fork first (`Tacquito source now pulls from ...`), and an origin set by hand is left alone. The pull is a fetch, then a fast-forward. The fetch never waits for an answer (git asks for no user name, password or key passphrase, and drops a transfer that stays under 1000 bytes a second for a minute), and a fetch that fails (no network) ends the install or upgrade there, since the checkout would be brought to the commit the last fetch left. A checkout that cannot fast-forward to the fork's `main` (a rewritten history) or is ahead of it (a commit made in the clone) is reset to it with a warning that names the commit it was at and the one it is at now; the checkout is only a build tree, so nothing is lost. The overlay's `0003` makes tacquito log the address a device connected from, which `tacctl log` and `device scan` read, and the address and port of the client the device reports; `0004` stops it sending a server message with a failed login; `0005` records in the accounting log the accounting of a device's local accounts and daemons, which tacquito refused (Junos: `AUDITD_TACPLUS_START_NO_RESPONSE`); `0006` adds the address of the device that sent a record to each accounting record (`"Device"`, which `tacctl log accounting` shows as the device's name) and writes `<`, `>` and `&` in it as they are. A server upgraded from 0.2.0, and a server upgraded to 0.2.24 from an earlier release, rebuilds tacquito once for them (see [patches/README.md](../../patches/README.md))
 3. Pulls the latest tacctl repository into `/opt/tacctl` (after switching to the `--branch` given). If the installed binary was not built from the commit now checked out, it replaces it, with the verified release binary when the clone is at a release tag (`Installing the <tag> release binary (linux/<arch>, verified)`), otherwise built from the clone (`Building /usr/local/bin/tacctl from /opt/tacctl...`), and re-executes itself once, so the binary always matches the clone
 4. Installs packages a newer tacctl needs
 5. Brings the configuration in line with this release: re-renders each enabled backend from the store (RADIUS: and restarts it when its files or its unit drop-in changed); without a store, runs the in-place migrations of `tacquito.yaml`
@@ -324,15 +324,20 @@ snapshot; this release, if it stays, reads the two as missing until its next
 ### To 0.2.23
 
 0.2.23 reads every file this release writes: this release changed no stored
-file, so the rollback converts nothing. It removes no key, rewrites no sudoers
-drop-in (0.2.23 and this release write the same text), takes no snapshot and
-does not need `--yes`; the users' email addresses, the SNMPv3 users, the
-covered staging entries, the server name, the timing scale, the server
-address, the users' login to this server, a user name with a period and an
-emergency lockdown (with or without enrolled hosts) all stay. It still refuses
-while an apply is not settled. `--hosts` is accepted and does nothing. The
-tacquito checkout in `/opt/tacctl` keeps pointing at the project's fork, which
-has the same history as the upstream clone 0.2.23 made, so 0.2.23's own
+file, so the rollback converts no file. It removes no key, takes no snapshot
+and does not need `--yes`. It puts back 0.2.23's per-tier sudoers drop-in,
+without the operator's `log failures *` (0.2.23 has no log filters), when the
+file is exactly this release's text: the dry run shows the step, `--apply`
+writes it after `visudo -cf`, and a file `tacctl` did not write is left. Every
+older target that rewrites the per-tier drop-in recognises this release's text
+and 0.2.23's as `tacctl`'s own and puts back its own. The users' email addresses, the SNMPv3 users, the covered staging entries, the
+server name, the timing scale, the server address, the users' login to this
+server, a user name with a period and an emergency lockdown (with or without
+enrolled hosts) all stay. It still refuses while an apply is not settled.
+What this release changed outside the stored files is 0.2.23's to undo or keep. The `tacctl upgrade --branch 0.2.23` that ends the rollback writes the console's sshd drop-in from 0.2.23's text, without the block of users held to a password change, so their new connections forward again as their tier allows. It keeps the tacquito this release built until it next rebuilds it (a new commit on the fork's `main`), so accounting records keep `"Device"` and the literal `<`, `>` and `&`; 0.2.23's `log accounting` shows them as they are written. On a device whose `single-connection` this release removed, 0.2.23's `device config diff` and `plan` show the line as missing, and applying that plan types it again.
+`--hosts` is accepted and does nothing. The tacquito checkout in `/opt/tacctl`
+keeps pointing at the project's fork, which has the same history as the
+upstream clone 0.2.23 made, so 0.2.23's own
 upgrade pulls from it unchanged.
 
 ```bash
@@ -355,8 +360,8 @@ converted, no snapshot is taken and `--yes` is not needed; with an address or
 a version 2 file the rollback takes a snapshot first and needs `--yes` when
 anything is dropped, and with only a covered staging entry it takes the
 snapshot and asks nothing. The per-tier sudoers drop-in, when it is exactly
-this release's text, is rewritten with 0.2.22's (after `visudo -cf`): it loses
-the engineer's row of `device clone`; an edited drop-in is left. `--hosts` is
+this release's text or 0.2.23's, is rewritten with 0.2.22's (after `visudo
+-cf`): it loses the engineer's row of `device clone`; an edited drop-in is left. `--hosts` is
 accepted and does nothing.
 
 ```bash
@@ -373,8 +378,8 @@ keys, after a snapshot, and converts nothing else: no scope is added to the user
 this server itself), a user name with a period and an emergency lockdown stay
 (0.2.21 reads both), and the new `server show`, `server listen` and `server
 metrics` write the keys that `config listen` and `config metrics` wrote. The
-per-tier sudoers drop-in, when it is exactly this release's text, is rewritten
-with 0.2.21's, which is 0.2.22's (it loses the engineer's row of `device
+per-tier sudoers drop-in, when it is exactly this release's text or 0.2.23's,
+is rewritten with 0.2.21's, which is 0.2.22's (it loses the engineer's row of `device
 clone`); an edited drop-in is left. `--hosts` is accepted and does nothing.
 
 ```bash
@@ -396,7 +401,7 @@ run there.
 0.2.20 reads every file this release writes but `server.addresses`,
 `server.name` and the timing scale, so the rollback removes those keys and adds the scope of this server's own login to the
 users' scopes (above), after a snapshot. The per-tier sudoers drop-in, when it
-is exactly this release's text, is rewritten with 0.2.20's, which is 0.2.22's
+is exactly this release's text or 0.2.23's, is rewritten with 0.2.20's, which is 0.2.22's
 (it loses the engineer's row of `device clone`); an edited drop-in is left.
 Nothing else is converted, and `--hosts` is accepted and does nothing.
 

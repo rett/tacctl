@@ -7,7 +7,8 @@ package lifecycle
 // invocation: the snapshot and the sudoers installer.
 //
 // The targets are 0.2.23 (the release before this one: RollbackTarget0223;
-// rollback0223.go: nothing, this release changed no stored file), 0.2.22
+// rollback0223.go: the operator's row of 'log failures *' in the per-tier
+// sudoers drop-in), 0.2.22
 // (RollbackTarget0222; rollback0222.go: the engineer's row of 'device
 // clone'), 0.2.21 (RollbackTarget0221;
 // rollback0221.go: the server name and the timing scale), 0.2.20 (RollbackTarget0220;
@@ -97,7 +98,7 @@ package lifecycle
 //	                       tiers file with its own text and its group
 //	                       drop-in is never refreshed: a file
 //	                       that is exactly this release's text, or the one
-//	                       0.2.4 to 0.2.22 wrote (tier.Sudoers0222,
+//	                       0.2.4 to 0.2.23 wrote (tier.Sudoers0223, Sudoers0222,
 //	                       Sudoers0219, Sudoers0218, Sudoers0217, Sudoers0216,
 //	                       Sudoers0214, Sudoers0213, Sudoers028,
 //	                       Sudoers027, GroupSudoers026, GroupSudoers027,
@@ -893,7 +894,7 @@ func (p *RollbackPlan) planSudoers() []sudoersPlan {
 	tiers := sudoersPlan{label: "the per-tier drop-in", file: pt.TierSudoersFile, state: "absent"}
 	if b, err := os.ReadFile(pt.TierSudoersFile); err == nil {
 		switch got := string(b); {
-		case got == tier.Sudoers(), got == tier.Sudoers0222(), got == tier.Sudoers0219(), got == tier.Sudoers0218(), got == tier.Sudoers0217(), got == tier.Sudoers0216(), got == tier.Sudoers0214(), got == tier.Sudoers0213(), got == tier.Sudoers028(), got == tier.Sudoers027():
+		case got == tier.Sudoers(), got == tier.Sudoers0223(), got == tier.Sudoers0222(), got == tier.Sudoers0219(), got == tier.Sudoers0218(), got == tier.Sudoers0217(), got == tier.Sudoers0216(), got == tier.Sudoers0214(), got == tier.Sudoers0213(), got == tier.Sudoers028(), got == tier.Sudoers027():
 			tiers.state, tiers.body = "rewrite", tier.Sudoers023()
 		case got == tier.Sudoers023():
 			tiers.state = "done"

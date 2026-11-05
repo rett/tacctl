@@ -921,3 +921,21 @@ func TestEngineerReadsTheMgmtACLMode(t *testing.T) {
 		}
 	}
 }
+
+// The log verbs take filters and --backend (--since, --until, --user,
+// --device, --type, --json): sudo must accept arguments for each of them, so
+// the operator alias (and so the engineer's and the superuser's) has the
+// '<verb> *' form of all four, and the read-only alias none of them.
+func TestSudoersLogVerbsTakeArguments(t *testing.T) {
+	text := Sudoers()
+	op := aliasItems(t, text, "TACCTL_OP")
+	ro := strings.Join(aliasItems(t, text, "TACCTL_RO"), "|")
+	for _, verb := range []string{"tail", "search", "failures", "accounting"} {
+		if !slices.Contains(op, "log "+verb+" *") {
+			t.Errorf("the operator alias lacks 'log %s *'", verb)
+		}
+		if strings.Contains(ro, "log "+verb) {
+			t.Errorf("the read-only alias has 'log %s'", verb)
+		}
+	}
+}

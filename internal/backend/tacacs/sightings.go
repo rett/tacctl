@@ -73,6 +73,7 @@ type journalEntry struct {
 	Cursor   string          `json:"__CURSOR"`
 	Realtime string          `json:"__REALTIME_TIMESTAMP"`
 	Message  json.RawMessage `json:"MESSAGE"`
+	Unit     string          `json:"_SYSTEMD_UNIT"`
 }
 
 func (e journalEntry) message() string {

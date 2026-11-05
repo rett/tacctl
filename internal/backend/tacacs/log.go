@@ -31,6 +31,9 @@ func (b *Backend) Log(ctx context.Context, sub string, args []string, w io.Write
 	if len(args) > 0 {
 		arg = args[0]
 	}
+	if b.filtered() && (sub == "tail" || sub == "search" || sub == "failures") {
+		return b.logFiltered(ctx, sub, arg, w)
+	}
 	switch sub {
 	case "tail":
 		count := or(arg, "20")
@@ -144,7 +147,8 @@ func (b *Backend) logClear(ctx context.Context, flag string, w io.Writer) {
 }
 
 // Accounting is backend_tacacs_accounting: 'tacctl log accounting [n]'
-// (sub "tail"), the last lines of every listener's accounting log;
+// (sub "tail"), the last lines of every listener's accounting log, each
+// record with the name of the device that sent it (Env.DeviceName; acctlog.go);
 // ErrUnsupported for another sub-command.
 func (b *Backend) Accounting(_ context.Context, sub string, args []string, w io.Writer) error {
 	if sub != "tail" {
@@ -154,6 +158,9 @@ func (b *Backend) Accounting(_ context.Context, sub string, args []string, w io.
 	if len(args) > 0 && args[0] != "" {
 		count = args[0]
 	}
+	if b.filtered() {
+		return b.accountingFiltered(w, count)
+	}
 	writeString(w, "\n")
 	echoLine(w, ui.Bold+"Recent Accounting Entries"+ui.NC)
 	writeString(w, rule+"\n")
@@ -162,7 +169,7 @@ func (b *Backend) Accounting(_ context.Context, sub string, args []string, w io.
 	} else if isEmptyFile(acct) {
 		writeString(w, "  No entries yet in "+acct+"\n")
 	} else {
-		b.tail(w, acct, count)
+		b.tailAcct(w, acct, count)
 	}
 	// The other listeners' logs, each under its name.
 	for _, log := range b.acctLogs(false) {
@@ -175,10 +182,18 @@ func (b *Backend) Accounting(_ context.Context, sub string, args []string, w io.
 			writeString(w, "  No entries yet.\n")
 			continue
 		}
-		b.tail(w, log, count)
+		b.tailAcct(w, log, count)
 	}
 	writeString(w, "\n")
 	return nil
+}
+
+// tailAcct is tail of an accounting log, each record shown with AcctDisplay
+// (acctlog.go).
+func (b *Backend) tailAcct(w io.Writer, path, count string) {
+	var buf bytes.Buffer
+	b.tail(&buf, path, count)
+	_, _ = w.Write(b.displayAcct(buf.Bytes()))
 }
 
 // isEmptyFile is a file with nothing in it.

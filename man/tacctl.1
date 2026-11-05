@@ -446,23 +446,45 @@ A clone that still waits for its
 loses its entry, and after a re-upgrade the verb refuses it as not staged: remove the clone and clone again from the original, or restore the snapshot. Every other entry stays.
 .IP
 .B "rollback 0.2.23"
-converts nothing: this release changed no stored file, so 0.2.23 reads every file it
+converts no file: this release changed no stored file, so 0.2.23 reads every file it
 writes (the email addresses, the SNMP credential files, the covered staging
 entries, the server name, the timing scale, the server address, the users' login
 to this server, a user name with a period and an emergency lockdown, with or
-without enrolled hosts, all stay), the per\-tier sudoers drop\-in is left (0.2.23 and this release write
-the same text), no snapshot is taken and
+without enrolled hosts, all stay), the per\-tier sudoers drop\-in is put back as 0.2.23 wrote it
+(without the operator's
+.BR "log failures *" ;
+when it is exactly this release's text it is rewritten, after
+.BR "visudo \-cf" ,
+and any other file is left), no snapshot is taken and
 .B \-\-yes
 is never needed. It is refused only while a device's apply is not settled.
+Every older target that rewrites that drop\-in recognises this release's text and
+0.2.23's as tacctl's own and puts back its own.
 The tacquito clone keeps pointing at the project's fork, which has the same
 history as the upstream clone 0.2.23 made.
+What this release changed outside the stored files is 0.2.23's to undo or keep:
+the upgrade that ends the rollback writes the console's sshd drop\-in from 0.2.23's
+text, without the block of users held to a password change, so their new
+connections forward again as their tier allows; it keeps the tacquito this release
+built until it next rebuilds it (a new commit on the fork's main), so accounting
+records keep
+.B "Device"
+and the literal <, > and &, which 0.2.23's
+.B log accounting
+shows as they are written; and on a device whose
+.B single\-connection
+this release removed, 0.2.23's
+.B device config diff
+and
+.B plan
+show the line as missing, and applying that plan types it again.
 .B \-\-hosts
 is accepted and does nothing. The command ends with the next step,
 .BR "tacctl upgrade \-\-branch 0.2.23" .
 .IP
 .B "rollback 0.2.22"
 converts nothing but the email addresses, the SNMP credential files, the covered staging entries and the per\-tier sudoers drop\-in
-(when it is exactly this release's text it is rewritten, after
+(when it is exactly this release's text or 0.2.23's it is rewritten, after
 .BR "visudo \-cf" ,
 with 0.2.22's: the engineer's rule of
 .B "device clone"
@@ -486,7 +508,7 @@ is accepted and does nothing. The command ends with the next step,
 .B "rollback 0.2.21"
 removes
 .B server.name
-and the timing scale, rewrites the per\-tier sudoers drop\-in when it is exactly this release's text (with 0.2.21's, which is 0.2.22's: the engineer's rule of
+and the timing scale, rewrites the per\-tier sudoers drop\-in when it is exactly this release's text or 0.2.23's (with 0.2.21's, which is 0.2.22's: the engineer's rule of
 .B "device clone"
 is taken out; an edited drop\-in is left) and converts nothing else: no scope is added to the users, and a user name with
 a period and an emergency lockdown stay, as 0.2.21 reads both. It needs no
@@ -507,7 +529,7 @@ removes
 .B server.addresses
 and
 .B server.name
-and the timing scale, adds the scope to the users (above) and rewrites the per\-tier sudoers drop\-in when it is exactly this release's text (with 0.2.20's, which is 0.2.22's: the engineer's rule of
+and the timing scale, adds the scope to the users (above) and rewrites the per\-tier sudoers drop\-in when it is exactly this release's text or 0.2.23's (with 0.2.20's, which is 0.2.22's: the engineer's rule of
 .B "device clone"
 is taken out; an edited drop\-in is left); 0.2.20 reads every other file this
 release writes, so nothing else is converted, and
@@ -6038,6 +6060,154 @@ reason),
 and
 .I tacctl\-radius.log
 in the package's log directory.
+.PP
+Filters.
+.BR "log tail" ", " "log search" ", " "log failures" " and " "log accounting"
+take
+.BI \-\-since " time"
+and
+.BI \-\-until " time"
+(both inclusive),
+.BI \-\-user " name" ,
+.BI \-\-device " name|address"
+and
+.BR \-\-json ;
+.B log accounting
+also takes
+.BI \-\-type " login|change|command" .
+They combine (a record or line must pass every one), they come in
+.BI \-\-name " value"
+or
+.BI \-\-name = value
+form anywhere on the line, and a count
+.I n
+limits what is left after filtering.
+.B tail \-f
+applies them to the new entries, which have the time they arrive.
+An operator may pass them, and
+.BR \-\-backend ,
+to all four commands through sudo
+.RB ( "log failures"
+takes arguments in the per\-tier sudoers drop\-in from this release on).
+.PP
+A time is
+.IB YYYY\-MM\-DD ,
+.IB YYYY\-MM\-DD " HH:MM"
+or
+.IB YYYY\-MM\-DD " HH:MM:SS"
+(local time; a date alone is that day's midnight),
+.BR now ,
+.B today
+or
+.B yesterday
+(midnight), or an offset from now:
+.B \-1h
+or
+.BR "2 days ago" ,
+a number and one of the units
+.BR s ,
+.BR m ,
+.BR h ,
+.B d
+and
+.B w
+(or seconds, minutes, hours, days, weeks).
+Any other form is refused.
+On TACACS+,
+.BR tail ,
+.B search
+and
+.B failures
+pass the window to
+.BR journalctl (1)
+(without one,
+.B search
+reads the last 7 days and
+.B failures
+the last 24 hours); for the RADIUS logs and for the accounting logs it is compared
+with the time of each line or record (the logger's date and time of a TACACS+
+record; a line or record whose time cannot be read is left out).
+.PP
+.B \-\-user
+matches the user a record or line names, exactly as written: the
+.B User
+of a TACACS+ accounting record, the bracketed user of a tacquito line
+.RB ( "accepting user [alice] ..." ),
+the last
+.B user=
+of a RADIUS auth line, the bracketed user of a daemon log line, the
+.B User\-Name
+of a RADIUS accounting record.
+.B \-\-device
+takes a registered device or an enrolled host (by name, among those the
+caller may see; it stands for its recorded address) or an address (compared in
+canonical form: an IPv4\-mapped IPv6 address is the IPv4 address). A name that
+is none, or whose device has no address, is refused. It matches the
+.B Device
+of a TACACS+ accounting record (a record written before patch 0006 has none and
+never matches), the address a tacquito journal line names for the device that
+asked
+.RB ( "from [A]" ,
+.BR "bad secret detected for ip [A]" ,
+.BR "remote [A] has no secret providers" ),
+the
+.B client=
+of a RADIUS auth line and the
+.BR NAS\-IP\-Address ,
+.BR NAS\-IPv6\-Address ,
+.B Packet\-Src\-IP\-Address
+or
+.B Packet\-Src\-IPv6\-Address
+of a RADIUS accounting record. A line that names no device never matches; the
+FreeRADIUS daemon log names clients and not addresses, so with
+.B \-\-device
+its section says that it cannot be matched and shows no line.
+.PP
+.B \-\-type
+classifies a TACACS+ accounting record by its fields. A record with a
+.B cmd=
+argument that is not empty is a
+.B change
+when the command has the Junos change\-log form (a verb, a colon and the
+configuration path in brackets:
+.BR "cmd=set: [interfaces ge\-0/0/1 description] ..." )
+and a
+.B command
+otherwise; a record without one is a
+.B login
+when its flags start or stop a session (START, STOP). A watchdog update is none
+of them. RADIUS accounting has
+.B login
+records only (Acct\-Status\-Type Start or Stop); with
+.B change
+or
+.B command
+it says so and shows nothing.
+.PP
+.B \-\-json
+writes one JSON object per line, with no headings, for
+.BR jq (1);
+notes (a filter a log cannot apply) go to standard error. A journal, auth log
+or daemon log entry is (the fields after
+.B message
+only when the line has them; the time is UTC;
+.B device
+is the registered name)
+.PP
+.RS
+.nf
+{"time":"2026\-11\-04T12:00:00Z","backend":"tacacs","unit":"tacquito.service",
+ "message":"...","user":"alice","address":"192.0.2.10","device":"sw1","outcome":"accept"}
+.fi
+.RE
+.PP
+A TACACS+ accounting record is the record with its fields decoded as the
+display has them (\fBDevice\fR the address as it was logged), then
+.B DeviceName
+(when the address is a device or host the caller sees) and
+.B Time
+(the logger's, UTC); a RADIUS accounting record has the time, backend, user,
+address, device and its attributes.
 .TP
 .BI "log tail " "[ \-f | \-\-follow ] [ " n " ]"
 Show the last
@@ -6059,6 +6229,21 @@ Only that backend's log (every subcommand).
 .TP
 \fB\-f\fR, \fB\-\-follow\fR
 (tail) Then print new entries as they arrive, until Ctrl\-C.
+.TP
+\fB\-\-since\fR \fI<time>\fR
+Show the entries from that time on (inclusive): YYYY\-MM\-DD[ HH:MM[:SS]], now, today, yesterday, \-1h, 2 hours ago. A date alone is that day's midnight.
+.TP
+\fB\-\-until\fR \fI<time>\fR
+Show the entries up to that time (inclusive), in the forms of \-\-since.
+.TP
+\fB\-\-user\fR \fI<name>\fR
+Show the entries of that user, as the log writes the name.
+.TP
+\fB\-\-device\fR \fI<name|address>\fR
+Show the entries of that device or host: a registered device or an enrolled host by name (those the caller may see) or an address. What each log can match is described under Log inspection.
+.TP
+\fB\-\-json\fR
+Write one JSON object per line, with no headings, for jq.
 .RE
 .\" END GENERATED: command log tail
 .TP
@@ -6073,6 +6258,21 @@ Options:
 .TP
 \fB\-\-backend\fR \fI<id>\fR
 Only that backend's log (every subcommand).
+.TP
+\fB\-\-since\fR \fI<time>\fR
+Show the entries from that time on (inclusive): YYYY\-MM\-DD[ HH:MM[:SS]], now, today, yesterday, \-1h, 2 hours ago. A date alone is that day's midnight.
+.TP
+\fB\-\-until\fR \fI<time>\fR
+Show the entries up to that time (inclusive), in the forms of \-\-since.
+.TP
+\fB\-\-user\fR \fI<name>\fR
+Show the entries of that user, as the log writes the name.
+.TP
+\fB\-\-device\fR \fI<name|address>\fR
+Show the entries of that device or host: a registered device or an enrolled host by name (those the caller may see) or an address. What each log can match is described under Log inspection.
+.TP
+\fB\-\-json\fR
+Write one JSON object per line, with no headings, for jq.
 .RE
 .\" END GENERATED: command log search
 .TP
@@ -6087,6 +6287,21 @@ Options:
 .TP
 \fB\-\-backend\fR \fI<id>\fR
 Only that backend's log (every subcommand).
+.TP
+\fB\-\-since\fR \fI<time>\fR
+Show the entries from that time on (inclusive): YYYY\-MM\-DD[ HH:MM[:SS]], now, today, yesterday, \-1h, 2 hours ago. A date alone is that day's midnight.
+.TP
+\fB\-\-until\fR \fI<time>\fR
+Show the entries up to that time (inclusive), in the forms of \-\-since.
+.TP
+\fB\-\-user\fR \fI<name>\fR
+Show the entries of that user, as the log writes the name.
+.TP
+\fB\-\-device\fR \fI<name|address>\fR
+Show the entries of that device or host: a registered device or an enrolled host by name (those the caller may see) or an address. What each log can match is described under Log inspection.
+.TP
+\fB\-\-json\fR
+Write one JSON object per line, with no headings, for jq.
 .RE
 .\" END GENERATED: command log failures
 .TP
@@ -6096,6 +6311,31 @@ Show the last
 accounting records
 .RI ( /var/log/tacquito/accounting.log ;
 the RADIUS detail file).
+Each TACACS+ record is shown with its values decoded (a record written before
+tacquito patch 0006 has
+.BR \\eu003c ,
+.B \\eu003e
+and
+.B \\eu0026
+in the file for
+.BR < ,
+.B >
+and
+.BR & )
+and names the device that sent it.
+Tacquito built with patch 0006 writes the address of the device as
+.B Device
+in every record; the record is shown with the name of the registered device or
+enrolled host at that address, with the address when none is registered (or
+when the caller's tier is limited to scopes that do not hold it), and
+with no device when the record has none.
+.B RemAddr
+is still where the person connected from.
+The
+.B <cr>
+that Junos appends to a
+.B cmd=
+value is left out of the display, not of the file.
 .\" BEGIN GENERATED: command log accounting
 .RS
 .PP
@@ -6105,6 +6345,24 @@ Options:
 .TP
 \fB\-\-backend\fR \fI<id>\fR
 Only that backend's log (every subcommand).
+.TP
+\fB\-\-since\fR \fI<time>\fR
+Show the entries from that time on (inclusive): YYYY\-MM\-DD[ HH:MM[:SS]], now, today, yesterday, \-1h, 2 hours ago. A date alone is that day's midnight.
+.TP
+\fB\-\-until\fR \fI<time>\fR
+Show the entries up to that time (inclusive), in the forms of \-\-since.
+.TP
+\fB\-\-user\fR \fI<name>\fR
+Show the entries of that user, as the log writes the name.
+.TP
+\fB\-\-device\fR \fI<name|address>\fR
+Show the entries of that device or host: a registered device or an enrolled host by name (those the caller may see) or an address. What each log can match is described under Log inspection.
+.TP
+\fB\-\-type\fR \fIlogin|change|command\fR
+Show one kind of record: command, change (a Junos change\-log entry) or login (the start or stop of a session). How a record is classified is described under Log inspection.
+.TP
+\fB\-\-json\fR
+Write one JSON object per line, with no headings, for jq.
 .RE
 .\" END GENERATED: command log accounting
 .TP

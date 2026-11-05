@@ -11,17 +11,26 @@ import (
 // with this server enrolled. The plan's own cases are internal/lifecycle's.
 
 // rollback0223State is rollback0221State with the per-tier sudoers drop-in
-// this release writes (the text 0.2.23 writes too), not the older text the
-// state of the targets 0.2.20 to 0.2.22 has: the rollback to 0.2.23 leaves it.
+// 0.2.23 wrote, not the older text the state of the targets 0.2.20 to 0.2.22
+// has: the rollback to 0.2.23 leaves it. rollback0223ThisReleaseState has this
+// release's text, which the rollback to 0.2.23 rewrites.
 func rollback0223State(t *testing.T) *hostSandbox {
+	t.Helper()
+	hs := rollback0221State(t)
+	hs.write("sudoers.d/tacctl-tiers", tier.Sudoers0223(), 0o640)
+	return hs
+}
+
+func rollback0223ThisReleaseState(t *testing.T) *hostSandbox {
 	t.Helper()
 	hs := rollback0221State(t)
 	hs.write("sudoers.d/tacctl-tiers", tier.Sudoers(), 0o640)
 	return hs
 }
 
-// This release changed no stored file, so 0.2.23 reads everything: the dry run
-// lists nothing to do and --apply converts nothing, even with an email address
+// This release changed no stored file, so 0.2.23 reads everything: on a host
+// whose per-tier drop-in is 0.2.23's the dry run lists nothing to do and
+// --apply converts nothing, even with an email address
 // in the store (0.2.23's own; the 0.2.22 target removes it), takes no snapshot
 // and asks for no --yes.
 func TestRollback0223ConvertsNothing(t *testing.T) {
@@ -112,5 +121,79 @@ func TestRollback0223IsToldApartFromTheOlderTargets(t *testing.T) {
 	}
 	if got := changedFiles(before, tree(t, hs.dir)); len(got) != 0 {
 		t.Errorf("a refused rollback changed %q", got)
+	}
+}
+
+// With this release's per-tier drop-in (the operator's 'log failures *' is a
+// row 0.2.23 lacks) the dry run shows the step and writes nothing, --apply
+// puts back 0.2.23's text after 'visudo -cf', takes no snapshot, needs no
+// --yes and touches no other file, and the second --apply has nothing left. A
+// drop-in tacctl did not write is left, and the 0.2.22 target, which also
+// recognises this release's text, puts back its own.
+func TestRollback0223PutsBackTheDropIn(t *testing.T) {
+	hs := rollback0223ThisReleaseState(t)
+	before := tree(t, hs.dir)
+	hs.run(hs.runner(), "rollback", "0.2.23")
+	hs.expect(0, "This was a dry run: nothing was changed.", "")
+	out := hs.all()
+	for _, want := range []string{"put back the per-tier sudoers drop-in 0.2.23 writes",
+		"(0.2.23's text, after 'visudo -cf': the operator's rule of 'log failures *' is taken out)", "To convert the state: tacctl rollback 0.2.23 --apply"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the dry run lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "--yes") {
+		t.Errorf("the dry run asks for --yes:\n%s", out)
+	}
+	if got := changedFiles(before, tree(t, hs.dir)); len(got) != 0 {
+		t.Errorf("the dry run changed %q", got)
+	}
+
+	snaps := hs.snapshots()
+	r := hs.runner()
+	sudoersInstall(r)
+	hs.run(r, "rollback", "0.2.23", "--apply")
+	hs.expect(0, "Applying.", "")
+	out = hs.all()
+	for _, want := range []string{"sudoers.d/tacctl-tiers: rewritten with the text 0.2.23 writes", "Next steps", "tacctl upgrade --branch 0.2.23"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("--apply output lacks %q:\n%s", want, out)
+		}
+	}
+	if !r.CalledRegexp(`^visudo -cf `) {
+		t.Errorf("no visudo check: %q", r.Argvs())
+	}
+	if got := hs.read("sudoers.d/tacctl-tiers"); got != tier.Sudoers0223() || strings.Contains(got, "log failures *") || !strings.Contains(got, "device clone") {
+		t.Errorf("the tiers drop-in is not 0.2.23's:\n%s", got)
+	}
+	if got := changedFiles(before, tree(t, hs.dir)); len(got) != 1 || !strings.HasSuffix(got[0], "sudoers.d/tacctl-tiers") {
+		t.Errorf("--apply changed %q", got)
+	}
+	if hs.snapshots() != snaps {
+		t.Error("a snapshot was taken: the drop-in is not in it")
+	}
+	hs.run(nil, "rollback", "0.2.23", "--apply")
+	hs.expect(0, "Nothing to convert: every file is one 0.2.23 can read.", "")
+
+	// a drop-in tacctl did not write is left
+	hs.write("sudoers.d/tacctl-tiers", tier.Sudoers()+"# edited\n", 0o640)
+	before = tree(t, hs.dir)
+	hs.run(hs.runner(), "rollback", "0.2.23", "--apply")
+	hs.expect(0, "", "")
+	if !strings.Contains(hs.all(), "leaves ") {
+		t.Errorf("an edited drop-in is not said to be left:\n%s", hs.all())
+	}
+	if got := changedFiles(before, tree(t, hs.dir)); len(got) != 0 {
+		t.Errorf("an edited drop-in was changed: %q", got)
+	}
+
+	// the 0.2.22 target puts back its own text over this release's
+	hs.write("sudoers.d/tacctl-tiers", tier.Sudoers(), 0o640)
+	r = hs.runner()
+	sudoersInstall(r)
+	hs.run(r, "rollback", "0.2.22", "--apply")
+	hs.expect(0, "Applying.", "")
+	if got := hs.read("sudoers.d/tacctl-tiers"); got != tier.Sudoers0222() {
+		t.Errorf("the tiers drop-in is not 0.2.22's:\n%s", got)
 	}
 }
