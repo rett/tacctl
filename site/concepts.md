@@ -9,7 +9,7 @@ doctype: explanation
 
 # Concepts
 
-*Users, groups, scopes and tiers, and the other words tacctl uses · Checked against tacctl 0.2.22*
+*Users, groups, scopes and tiers, and the other words tacctl uses · Checked against tacctl 0.2.24*
 
 [Printable PDF](../pdf/tacctl-concepts.pdf){: .pdf-link }
 
@@ -145,7 +145,10 @@ scopes `system`).
 | **Plan** | Prints the exact lines to paste, the checks and the back-out | No (uses the last pull) |
 | **Apply** | Junos only: commits under `commit confirmed`, proves it with a fresh login as you, then confirms | Yes |
 
-Cisco plans are pasted by hand; WTI plans are a menu checklist. The whole
+When an apply covers several devices, devices that need the same change share
+a **shape**; the first device of each shape goes alone (the canary), and a
+shape that an earlier apply proved is **confirmed**. Cisco plans are pasted by
+hand; WTI plans are a menu checklist. The whole
 workflow is in [Engineer Guide: Device Changes](engineer-guide-device-changes.md),
 and the vendor differences in [Vendor Notes](vendor-notes.md).
 
@@ -154,7 +157,7 @@ and the vendor differences in [Vendor Notes](vendor-notes.md).
 ## 7. Snapshots and the audit trail
 
 - Every change takes a **snapshot** of tacctl's configuration first. A
-  superuser can compare and restore them: [Backups and Undo](backups-and-undo.md).
+  superuser can compare, restore and keep them: [Backups and Undo](backups-and-undo.md).
 - Every change writes **audit lines** to syslog (tags `tacctl` and
   `tacctl-console`): who, what, the result and the snapshot taken.
   [Audit and Compliance](audit-and-compliance.md) explains how to read them.
@@ -165,8 +168,8 @@ and the vendor differences in [Vendor Notes](vendor-notes.md).
 
 | Control | What it does | Page |
 |---|---|---|
-| **Emergency lockdown** | The server **refuses** the logins of chosen groups on a scope. Devices do not fall back to local accounts. Superusers keep access. | [Emergency Lockdown](emergency-lockdown.md) |
-| **Break-glass hold** | The server **stops answering** one device or host, so its local accounts work while the server stays up for everyone else | [Break Glass](break-glass.md) |
+| **Emergency lockdown** | The server **refuses** the logins of chosen groups on a scope. Devices do not fall back to local accounts. On enrolled Linux hosts it also closes key logins, through `host sync`. Superusers keep access. | [Emergency Lockdown](emergency-lockdown.md) |
+| **Break-glass hold** | The server **stops answering** one device or host (a firewall rule refuses its TCP connections), so its local accounts work while the server stays up for everyone else | [Break Glass](break-glass.md) |
 
 Neither one expires. A superuser lifts each one by hand.
 

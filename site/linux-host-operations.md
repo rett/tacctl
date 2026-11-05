@@ -9,7 +9,7 @@ doctype: how-to
 
 # Linux Host Operations
 
-*Keeping enrolled Linux hosts in step · Checked against tacctl 0.2.22*
+*Keeping enrolled Linux hosts in step · Checked against tacctl 0.2.24*
 
 [Printable PDF](../pdf/tacctl-linux-host-operations.pdf){: .pdf-link }
 
@@ -68,7 +68,11 @@ checked. If `host list` ends with *N finding(s)*, run
 ## 2. Keep accounts in step: `host sync`
 
 User changes reach hosts only when you sync. **Sync after every user add,
-remove, disable, enable, rename, move or scope change.**
+remove, disable, enable, rename, move or scope change.** The exception is
+this server itself: from 0.2.23 those `user` commands sync the server's own
+accounts at once, and name the other enrolled hosts they reach in one warning
+with the command (on a terminal they also ask `Sync these hosts now? [y/N]`;
+the default is no and `--yes` does not answer it).
 
 ```bash
 tacctl host sync web1                  # one host
@@ -89,6 +93,7 @@ What a sync does:
 | Removed, or out of the scope | Account deleted. The home is deleted only if you agree (asked at a terminal, or `--remove-home`). Otherwise it is moved to `.tacctl-removed` under `/home`. |
 | Renamed | Account renamed by UID. The home stays where it is. |
 | Group/tier changed | Tier on the host updated |
+| The host's scope is under an emergency lockdown | sshd's lockdown drop-in is written: no key login and no forwarding for accounts that are not a superuser's. A sync after the lockdown is lifted removes it ([Emergency Lockdown](emergency-lockdown.md) §3.1). |
 
 A failing host doesn't stop the others. The exit status is 1 if any host
 failed. A held host (break-glass) is skipped by `--all` and refused when

@@ -9,7 +9,7 @@ doctype: how-to
 
 # Break Glass
 
-*Local emergency accounts, and holding a device or host back from the server · Checked against tacctl 0.2.22*
+*Local emergency accounts, and holding a device or host back from the server · Checked against tacctl 0.2.24*
 
 [Printable PDF](../pdf/tacctl-break-glass.pdf){: .pdf-link }
 
@@ -92,6 +92,8 @@ tacctl breakglass hold "sw2=console recovery,sw3" --reason "CHG-1182 failed past
 - Several devices: a comma list, each with an optional `=reason`. Each
   device is checked on its own; the ones refused are named on a
   `Not held:` line.
+- The report has a `Firewall:` line, for example
+  `Firewall: 10.10.0.1 refused on tcp/49 (reject)` (§2.1).
 - A hold is refused, with nothing changed, for a name that is neither a
   registered device nor an enrolled host (or is both), one that is already
   held, this server's own host, a name with no address, a loopback address
@@ -102,6 +104,49 @@ tacctl breakglass hold "sw2=console recovery,sw3" --reason "CHG-1182 failed past
 > **Only the registered address is carved out.** If a device sends AAA
 > from another address (a Cisco source interface, NAT, IPv6), the server
 > still answers it. The hold report warns you when this looks likely.
+
+### 2.1 The firewall: why a held device falls back at once
+
+Taking the address out of the scopes silences RADIUS (UDP): the device gets
+no answer and times out. TACACS+ is TCP, and until 0.2.23 the kernel
+completed the handshake and tacquito closed the connection afterwards. A
+device that falls back to its local accounts only when the server is
+**unreachable** (a WTI unit with *Fallback Local* `On (Transport Failure)`, a
+Junos switch with `authentication-order [ tacplus password ]`) saw a reachable
+server and never fell back. From 0.2.24 a hold also loads a firewall rule that
+refuses the connection before tacquito sees it.
+
+- tacctl owns one nftables table, `inet tacctl`, and touches nothing else of
+  the server's ruleset. The table refuses a held address connecting to a
+  tacquito port, an open session included. Devices and Linux hosts are held
+  alike.
+- A superuser sets what the table does:
+
+  ```bash
+  tacctl config breakglass-firewall            # show the setting
+  tacctl config breakglass-firewall reject     # the default: a TCP reset, an instant fallback
+  tacctl config breakglass-firewall drop       # discard the packets: a timeout, as for RADIUS
+  tacctl config breakglass-firewall off        # no table: the 0.2.23 behavior
+  ```
+
+- Every hold, release, move of a held device (`device address`), rename,
+  `backup restore`, change of a listener (`server listen`) and change of the
+  setting loads the table again, and the boot unit
+  `tacctl-breakglass-firewall.service` loads it at boot. `install` and
+  `upgrade` install the `nftables` package, and an upgrade with holds standing
+  loads the table for them.
+- The audit lines of a hold and a release end `firewall=reject|drop|off|failed`.
+- `status`, `config validate` and `tacctl breakglass list` compare the live
+  table with the holds and the setting, and name each difference with the
+  command that fixes it.
+
+> **When `nft` is missing or fails, the hold stands but the command exits 1.**
+> The report says in red that the server still completes the TCP handshake, so
+> a device that falls back only when the server is unreachable will not. Fix it
+> with `sudo apt-get install nftables`, then
+> `tacctl config breakglass-firewall <the current setting>`, which loads the
+> table even when the setting is unchanged. With the setting `off`, or with
+> nothing held, a missing `nft` is no failure.
 
 ---
 
@@ -121,7 +166,8 @@ The engineer can print the back-out for the failed change with
 
 ## 4. While a device or host is held
 
-- `tacctl breakglass list` shows what is held, since when, by whom and why.
+- `tacctl breakglass list` shows what is held, since when, by whom and why,
+  and the state of the firewall (§2.1).
 - `device remove` and `device config pull` refuse a held device.
 - `host sync`, `enroll`, `move`, `unenroll` and `forget` refuse a held host,
   and `host sync --all` skips it (and names it).
@@ -142,6 +188,11 @@ For a host: `tacctl breakglass release web1`, then `tacctl host check web1`.
 > **A hold has no timer** and never releases itself. Check
 > `tacctl breakglass list` at every shift start.
 
+Going back to an earlier tacctl release removes the firewall (the table, its
+file, the boot unit and the setting) and leaves a standing hold in place
+without it, so the older release's server completes the TCP handshake of the
+held address again ([Backups and Undo](backups-and-undo.md) §5).
+
 ---
 
 ## 6. Quick reference
@@ -153,6 +204,7 @@ For a host: `tacctl breakglass release web1`, then `tacctl host check web1`.
 | Hold | `tacctl breakglass hold <name> --reason "<ticket>"` | Superuser |
 | List holds | `tacctl breakglass list` | Engineer (own scopes) |
 | Release | `tacctl breakglass release <name>` | Superuser |
+| Set what the server does with a held address's TCP connections | `tacctl config breakglass-firewall [reject\|drop\|off]` | Superuser |
 | Back-out for the failed change | `tacctl device config plan <name> --backout` | Engineer |
 
 ---

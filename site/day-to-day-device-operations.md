@@ -9,7 +9,7 @@ doctype: how-to
 
 # Day-to-Day Device Operations
 
-*A console-first guide for operators and engineers · Checked against tacctl 0.2.22*
+*A console-first guide for operators and engineers · Checked against tacctl 0.2.24*
 
 [Printable PDF](../pdf/tacctl-day-to-day-device-operations.pdf){: .pdf-link }
 
@@ -73,11 +73,18 @@ key has changed. Do not work around it: see
 
 ```bash
 device check sw1        # scope, last seen, reachable, host key vs. pin, SNMP name/location/vendor
+device check sw1 --sources   # also test the addresses the device sends AAA from
 device notice list      # open issues, each with the command that fixes it
 ```
 
 `device check` connects from the tacctl server. If the server has no route
 to the device's management port, a timeout may be a false alarm.
+
+With `--sources`, `device check` also connects to each address the device
+sends its AAA requests from (other than its registered address) and compares
+its ssh host key with the pinned one, without logging in. A warning that an
+address is unreachable (it may be by design) or presents another host key goes
+to an engineer ([Engineer Guide](engineer-guide-device-changes.md) §3.1).
 
 ### 1.4 Look at authentication logs (operator)
 
@@ -88,6 +95,41 @@ log tail 50                # the 50 most recent entries
 log tail -f                # follow live; Ctrl-C to stop
 log accounting 50          # the 50 most recent accounting records (commands run on devices)
 ```
+
+**Narrow it down (0.2.24).** `log tail`, `log search`, `log failures` and
+`log accounting` take filters that combine (an entry must pass all of them),
+in any place on the line:
+
+```bash
+log failures --since -1h                      # failed logins in the last hour
+log search alice --since yesterday --until today
+log accounting 20 --user alice --device sw1   # alice's last 20 records on sw1
+log accounting --type change --since "2026-11-04 08:00"
+log accounting 50 --json                      # one JSON object per line, for jq
+```
+
+| Filter | Shows |
+|---|---|
+| `--since <time>`, `--until <time>` | Entries from, and up to, that time |
+| `--user <name>` | Entries of that user, as the log writes the name |
+| `--device <name or address>` | Entries of that device or enrolled host (of your scopes), or of an address |
+| `--type login\|change\|command` | Accounting only: one kind of record |
+| `--json` | One JSON object per entry, no headings |
+
+- A time is `YYYY-MM-DD`, `YYYY-MM-DD HH:MM` or `YYYY-MM-DD HH:MM:SS` (local
+  time), `now`, `today`, `yesterday`, or an offset such as `-1h`, `-30m` or
+  `2 days ago`. Any other form is a usage error, as is a `--since` later than
+  the `--until`.
+- The filters apply before a count: `log accounting 5 --user alice` is
+  alice's last five records. `log tail -f` applies them to new entries.
+- A name that is neither a device nor a host you may see is refused. A log
+  that names no device shows nothing for `--device` and says so. A filter that
+  leaves nothing prints `No matching entries.`
+- Each accounting record now names the device that sent it
+  (`"Device":"sw1"`; the address when the device is not registered), and
+  `<`, `>` and `&` show as typed. Records written before 0.2.24 have no
+  `Device`.
+- Operators pass the filters through sudo, `log failures` included.
 
 **Example:** a user reports "I can't log in to sw2".
 
@@ -149,9 +191,13 @@ How each vendor takes the fix:
 
 | Vendor | You do | Details |
 |---|---|---|
-| Cisco | Paste the region by hand, with a second session open | Engineer Guide §5.2 |
+| Cisco | Paste the region by hand, with a second session open | Engineer Guide §5.5 |
 | Junos | Let tacctl apply it under `commit confirmed` | Engineer Guide §5.1 |
-| WTI | Type the menu checklist. No paste, no rollback. | Engineer Guide §5.3 |
+| WTI | Type the menu checklist. No paste, no rollback. | Engineer Guide §5.6 |
+
+For several Junos devices, check the scope first (`device config apply --scope
+site-a --check`), apply one device to review and prove the change, then apply
+the rest (Engineer Guide §5.1; what a shape and a canary are: §5.2 and §5.3).
 
 > **`PENDING until <time>`** on a Junos apply means: **type nothing on that
 > device until the time passes.** Any `commit` would confirm the change.

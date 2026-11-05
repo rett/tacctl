@@ -9,7 +9,7 @@ doctype: how-to
 
 # Operator Field Guide
 
-*For NOC, help-desk and network support staff · Checked against tacctl 0.2.22*
+*For NOC, help-desk and network support staff · Checked against tacctl 0.2.24*
 
 [Printable PDF](../pdf/tacctl-operator-field-guide.pdf){: .pdf-link }
 
@@ -111,6 +111,7 @@ tacctl device check sw1       # scope, vendor, last seen, reachable, host key vs
 tacctl device list --probe    # adds REACH: TCP connect to each ssh port (3 s)
 tacctl device list --stale    # not seen for 30 days (by default)
 tacctl device scan            # refresh "last seen" from the server's logs
+tacctl device check sw1 --sources   # also test the addresses the device sends AAA from
 ```
 
 > `check` and `--probe` connect from the tacctl server. If it has no route
@@ -123,7 +124,13 @@ tacctl log tail                  # last 20 entries
 tacctl log tail -f               # live, until Ctrl-C
 tacctl log search alice          # entries for a user or keyword (TACACS+: last 7 days)
 tacctl log accounting 50         # who ran what, most recent 50 records
+tacctl log failures --since -1h  # failures in the last hour
+tacctl log accounting --user alice --device sw1 --json
 ```
+
+The filters `--since`, `--until`, `--user`, `--device` (and `--type` for
+accounting) combine, and `--json` prints one object per line
+([Day-to-Day Device Operations](day-to-day-device-operations.md) §1.4).
 
 ### 4.4 Unregistered devices
 
