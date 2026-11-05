@@ -331,8 +331,8 @@ device of a run, use `--timing`
 
 tacctl reads SNMP itself (v2c, or v3 at authPriv) for the name, location and
 vendor lookups of `device add`, `device check` and the like. The settings
-exist at three levels: the server (`config snmp`), a scope (`scope snmp
-<scope>`) and a device (`device snmp <name>`). Only a superuser changes them.
+exist at three levels: the server (`config snmp`), a scope (`scope snmp <scope>`) and a device (`device snmp <name>`). Only
+a superuser changes them.
 
 At each level the version, port, timeout and protocols are **one setting**.
 The v3 users are a **pool** of names, each with its passphrases, and the level
@@ -649,16 +649,16 @@ network, address, port and unit state. `--json` has the same data:
 `listeners`.
 
 `server name [<label>|unset]` sets the name the console shows in its prompt
-(`<name>> `) and its notices (the banner of a session, `tacctl console on
-<name>`, the header of `device client-config`) in place of the host name. With
+(`<name>> `) and its notices (the banner of a session, the header of
+`device client-config`) in place of the host name. With
 no word it shows the name in effect and whether it is the setting or the host
 name; `unset` removes the setting. A name is 1 to 63 lower-case letters,
 digits and hyphens, a letter first and no hyphen last. Nothing else is
 renamed: the host name, this server's registry entry and the accounts stay. A
 console session reads the name once, when it starts.
 
-`server listen [--backend <id>] [--listener <name>] [show|reset|<network>
-<address>]` shows, changes or resets where a backend listens. It asks for
+`server listen [--backend <id>] [--listener <name>] [show|reset|<network> <address>]`
+shows, changes or resets where a backend listens. It asks for
 confirmation before `tcp6` or `udp6`, restarts the unit, and puts the old
 setting back if the unit does not stay up. `server metrics
 [show|enable|disable|reset|address <host:port>]` controls the Prometheus
