@@ -3,6 +3,41 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.25 (unreleased)
+
+1. **`tacctl device config shapes` keeps its table narrow.** The list put every
+   device now at a shape into one cell, so with fifty devices at a shape the
+   table, its title rule and its header rule were thousands of characters wide
+   and the listing could not be read in a console. The table now holds the
+   shape, its state, the devices it was confirmed on, a count of the devices
+   at it now (`NOW`: `49 devices`, `1 device`, `-`), the number of lines and
+   the note. Below it, a block headed `At a shape now (last check or apply):`
+   names the devices at each shape that has any, in the table's order, one
+   entry per shape (`  <shape>  sw1, sw2, ...`) wrapped at 80 columns with the
+   continuation lines under the first name; a name is never split, and there is
+   no block when no shape has a device. `shapes list --show <hash>` wraps its
+   `at this shape now` line the same way. `--json` is unchanged: it lists every
+   device of every shape.
+
+2. **The explanation of shapes, canary and confirmed is rewritten.** A rollout
+   with `tacctl device config apply` was hard to follow: one dense paragraph
+   held what a shape is, the canary and the options. "Applying a plan" in the
+   planning page now opens with a rollout in five steps (pull, plan one device,
+   `apply --check`, apply one device or a scope, then the rest or
+   `--confirmed --yes`) and a table of what each step does to a device, then
+   says what a shape is (with a worked example of three devices, `sw1`, `sw2`
+   and `sw3`), what a canary is (the first device of each shape, applied alone;
+   the order of a run) and what the states `new`, `confirmed` and `seeded`
+   allow, and holds the options (`--check`, `--confirmed`, `--yes`,
+   `--no-canary`, `--max`, `--pause`, `--concurrency`, `--max-failures`,
+   `--hold`) in one table. The entries of `device config apply` and
+   `device config shapes` in the device reference, the help, the man page and
+   the text of `config devices apply-pause` (the wait from one device's end to
+   the next one's start, the first device not delayed) say the same in plain
+   words. No behaviour, JSON or audit line changed, and the only output that
+   changed is the apply-pause line of `tacctl config devices`, which now ends
+   `0-3600, from one device's end to the next one's start`.
+
 ## 0.2.24 (2026-11-05)
 
 1. **`tacctl man` finds each entry on groff 1.24.** groff 1.24 narrowed the

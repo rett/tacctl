@@ -72,6 +72,111 @@ commit confirmed 5 comment "tacctl plan sw-lab-1 2026-10-10T14:20Z by alice"
 
 `tacctl device config apply` is the step after `plan` for a Junos device, and the engineer's (on the devices of their own scopes): it types the same statements into the device itself, under a confirmed commit, and proves the result, where `plan` prints them for a person to paste.
 
+A rollout is several devices changed in one go. Three words come up in it. A **shape** is one change as it applies to several devices. A **canary** is the first device of a shape, applied alone before the rest of that shape. A **confirmed** shape is one that a verified apply (or a person's word) has already vouched for. The first sections below meet them in the order a rollout does; the options and the details of one run follow.
+
+### A rollout in five steps
+
+1. **Pull.** `tacctl device config pull --scope lab` reads the devices and keeps what it read. `apply` reads each device again itself, so the pull is for `plan` and for choosing devices with `--stale` and `--differs` (`apply --pull` does both in one run).
+2. **Plan one device, to read it.** `tacctl device config plan sw1` prints, in plain words, what is irregular on `sw1` and the statements `apply` would type. It contacts nothing.
+3. **Check, to file the shapes.** `tacctl device config apply --scope lab --check` reads every device, loads the change in an exclusive configure session, runs the device's own `commit check` and discards the candidate. Nothing is committed. Each device that needs a change is named with its shape, and the shape is filed as `new` unless it is already known.
+4. **Apply one device or one scope: the review and the canary.** `tacctl device config apply sw1` shows the change once per shape, asks for the device's name typed back, commits under `commit confirmed`, proves the result with a fresh login and confirms it. That is the review of the shape and its canary, and it turns the shape from `new` to `confirmed`. With `--scope lab` instead, every shape of the run is reviewed and the first device of each goes alone (see "Canary and confirmed").
+5. **The rest.** Run `tacctl device config apply --scope lab` again: a device that is done reads `no change` and the others are asked for by name. In a script use `tacctl device config apply --scope lab --confirmed --yes`, which applies only the shapes already confirmed, asks nothing and skips the rest. `tacctl device config shapes` lists the shapes and where each device is, at any step.
+
+What each step does to a device:
+
+| Step | Command | Reads the device | Changes the device |
+| --- | --- | --- | --- |
+| 1 | `pull` | yes | no |
+| 2 | `plan` | no (it uses the pull) | no: the statements are for a person to paste |
+| 3 | `apply --check` | yes | no: the candidate is discarded, nothing is committed |
+| 4, 5 | `apply` | yes | yes: a confirmed commit, kept only when the proofs pass |
+| any | `shapes`, `shapes seed` | no | no (`seed` writes tacctl's own shape file only) |
+
+Only `apply` without `--check` writes to a device. `shapes` is the superuser's; an engineer sees the same facts in the check lines and the review (`new`, or `confirmed on <device>`).
+
+### What a shape is
+
+A shape is the same change on several devices. Two devices that need the same statements have one shape; two that need different ones have two. It is a 12-hex id: a hash of the statements of the change, as `plan` would type them, with two things taken out so that devices can be compared and the shape filed safely:
+
+- every **secret** is removed (only its mark stays, so a shape never holds a value);
+- every **per-device value** is masked, because it is the device's and not the change's: the SNMP location, contact and description, the host name, the login message and announcement, and the source address of a TACACS+ or RADIUS server (`set system tacplus-server 192.0.2.10 source-address <v>`). Two devices that differ only in these have the same shape. The order of the statements does not matter.
+
+The shape comes from the plan made from the device's fresh read, so it is known at the check, before anything is loaded or committed. A device with no change has no shape. If a statement of the change would put a value into the shape, the change has `no shape`: it is reviewed device by device and `--confirmed` skips it (`no shape: the change cannot be matched to a confirmed one; review and apply it by hand first`).
+
+A shape exists for two reasons. The review shows the change once per shape and set of notes, not once per device: fifty switches that need the same change are usually one heading to read (devices of one shape whose warnings, sections left out or kept statements differ get a heading each; each device is still asked for by name). And tacctl remembers what was proved: when a device took the change and passed the proofs, its shape is filed as confirmed, and a later run can apply it to other devices without a new review.
+
+A worked example: three devices of the scope `lab`. `sw1` and `sw2` need the same AAA change; `sw3` needs a different set of SNMP values.
+
+```
+$ tacctl device config apply sw1,sw2,sw3 --check
+Password for alice (device login):
+  sw1  checked: shape 3f2a1b9c0d4e (new) (aaa: 3 set, 1 delete); check ok
+  sw2  checked: shape 3f2a1b9c0d4e (new) (aaa: 3 set, 1 delete); check ok
+  sw3  checked: shape 8d41c7e2a5b0 (new) (snmp: 2 set); check ok
+
+  3 checked
+  Nothing was committed: --check ends after the device's own commit check.
+```
+
+There are two shapes: `3f2a1b9c0d4e` (`sw1` and `sw2`) and `8d41c7e2a5b0` (`sw3`), both `new`. A review of this run has two headings, and reading `sw1`'s statements covers `sw2`'s. After `tacctl device config apply sw1` has passed its proofs, the same check reads:
+
+```
+  sw1  no change
+  sw2  checked: shape 3f2a1b9c0d4e (confirmed on sw1) (aaa: 3 set, 1 delete); check ok
+  sw3  checked: shape 8d41c7e2a5b0 (new) (snmp: 2 set); check ok
+```
+
+`sw1` is done, `sw2` needs the same change as the one that worked, and `sw3` needs a change nobody has proved yet.
+
+### Canary and confirmed
+
+These are two different things: a canary is about the order inside one run, and confirmed is about what an earlier run proved.
+
+**Canary.** In a run, the first device of every shape is applied alone, and the rest of its shape start only when it applied. If it did not (it failed, was rolled back or is pending), the rest of that shape is skipped with `skipped: canary <name> failed`. The other shapes go on only under a higher `--max-failures`; at its default of 1 that failure also stops the run, and every device not yet started, of any shape, is `not started` (failure limit reached). The canary is the first approved device of the shape in registry order, and every shape has one, `new` or `confirmed`. `--no-canary` starts the devices of a shape together. With the default of one device at a time the order of a run is: the first device of each shape, one after the other, then the remaining devices in registry order, with `--pause` seconds from one device's end to the next one's start. For `sw1`, `sw2` and `sw3` above that is `sw1`, `sw3`, `sw2`: `sw3` is the canary of its shape, so it goes before `sw2`, which waits for `sw1`.
+
+**Confirmed.** A shape is in one of three states, shown in the `STATE` column of `tacctl device config shapes`:
+
+| State | How a shape gets there | What it allows |
+| --- | --- | --- |
+| `new` | A check or an apply found the change on a device (`--check` files it). Nothing has been proved. | It can be applied after a review (the heading says `not confirmed yet`). `--confirmed` skips it: `unknown shape <hash>: review and apply it by hand first`. |
+| `confirmed` | An apply on one device went through: committed, a fresh login as you worked, what landed is the change the check showed, the planned sections read back whole, and the confirming `commit` was typed. The device is filed with the shape. | `--confirmed` applies the shape to other devices, and with `--yes` asks nothing (the heading says `confirmed on <device>`). |
+| `seeded` | A superuser ran `tacctl device config shapes seed <name>` for a device that was applied and verified by hand, and answered the question (`--yes` answers it). It is their word, logged as `device config shapes seed`. | The same as `confirmed`. |
+
+An apply that ends as applied by someone else's commit does not confirm its shape.
+
+`shapes list` has more columns than the state. `CONFIRMED` counts the devices that confirmed the shape. `NOW` counts the devices whose last check or apply is at it (from the records: no device is contacted), and their names follow the table, wrapped at 80 columns. `LINES` is the size of the shape. For a `new` shape the `NOTE` column says `nearest confirmed <hash>, N lines differ`: the confirmed (or seeded) shape whose statements differ least from this one, N being the lines that are in one of the two and not in the other, the `[section]` headings included. A small N means the change is a known one plus or minus a few statements; compare the two with `shapes list --show <hash>`. With no confirmed shape the note is `-`.
+
+```
+  SHAPE         STATE      CONFIRMED  NOW        LINES  NOTE
+  3f2a1b9c0d4e  confirmed  1 device   2 devices  5      -
+  8d41c7e2a5b0  new        -          1 device   3      nearest confirmed 3f2a1b9c0d4e,
+                                                          8 lines differ
+
+At a shape now (last check or apply):
+  3f2a1b9c0d4e  sw1, sw2
+  8d41c7e2a5b0  sw3
+```
+
+(The title of the table and the rules under it are left out here, and the note is wrapped.) `--confirmed --yes` is the form for a script: it applies the confirmed shapes and skips every other device, `sw3` here, with the row `skipped: unknown shape 8d41c7e2a5b0: review and apply it by hand first`. `--confirmed` without `--yes` selects the same devices but still asks for each by name, so it needs a terminal.
+
+### The options of a rollout
+
+| Option | What it controls | Default and range |
+| --- | --- | --- |
+| `--check` | Stop after the device's own `commit check`: nothing is committed, the device's shape and result are recorded. `--exit-code` with it exits 2 when a device needs a change. Not with `--hold`, `--pause` or `--no-canary` (exit 2). | |
+| `--confirmed` | Which shapes are applied: only the confirmed and seeded ones, the other devices are skipped. The one form that `--yes` answers the review of. | |
+| `--yes` | Answers every device's question (`mode=scripted`). Only with `--confirmed` (with `--check` it does nothing). | |
+| `--no-canary` | Starts the devices of a shape together, not the first alone. | first alone |
+| `--max <n>` | How many devices one run applies, counted after `--confirmed`, in registry order; the rest are `skipped: beyond --max <n>: run it again for the rest`. The check still covers every selected device. | 5; 1 to 1000 |
+| `--pause <seconds>` | The wait from one device's end to the next one's start. The first device is not delayed; the wait also separates a canary from the rest. | `config devices apply-pause`, 60; 0 to 3600 |
+| `--concurrency <n>` | How many devices are worked on at a time. Never above `device.config.max_concurrency`; `--hold` takes only 1. | apply 1; check the setting (8) |
+| `--max-failures <n>` | After n failed devices no new one is started (the running ones finish). One refused password stops the run at once, in either phase. | apply 1; check none |
+| `--hold` | After the fresh login, keep the change only when you log in with one account of each class and type `OK`. | |
+
+### One run, in detail
+
+The run below is a scope of three devices: two need the same change and the third needs none.
+
 ```
 $ tacctl device config apply --scope lab
 Password for alice (device login):
@@ -166,7 +271,7 @@ Apply to 2 devices (sw-lab-1, sw-lab-2), one shape's first device at a time, eac
   summary has `timings.slowest`. Nothing is stored.
 - **What an apply proves.** The device is committed under `commit confirmed N` (`config devices apply-confirm-timeout`, default 10), then a second connection logs in as you through the device's own login path, `show system commit` must show tacctl's commit and the device's banner must say a confirmed commit is pending, `show configuration | compare rollback 1` must be the change the check showed, and a read of the planned sections must lack nothing. Only then, with a minute of the window left, the confirming `commit` is typed in the session that committed (no other session ever confirms for it). A proof that fails cancels the commit (`rollback 1` and `commit` in the held session) and the device is `rolled back`; a window that ran short is left to the device's own expiry. On a device with several members (a virtual chassis, two routing engines, a cluster) the members are the blocks `show version` lists (`fpc0:`, `re0:`, `node0:`), and the answers of `commit check` and of the commits must name exactly those, each with its own success; a member that is missing, unexpected or answers otherwise fails the step, and the error names the member and its text. The local (master) member of a virtual chassis answers without a label: its success comes first, the other members follow with their header (`fpc1:`), and on a commit its `commit complete` is the last line, after theirs. It is read as the member the labelled blocks leave out (exactly one member of `show version` may lack a block), and held to rules like the others': its lines are the check (a commit leaves it out or prints it) and, on a confirmed commit only, the note, then `commit complete` last; a member's block is the check (optional on a commit), `commit complete` and, on a confirmed commit only, the note, which every member of a confirmed commit must print; each line once and in that order. A line that is none of these, a label twice and two members without a block fail the step. A chassis of one member answers like a single device: `show version` prints its header (`fpc0:`) and the answers carry no member label, which is read, as is a block labelled with that one member; a block of any other member, or a label twice, fails the step. Two routing engines that commit without `synchronize` answer as a single device does, which is read as before. Over NETCONF each member is a `routing-engine` element named by its label; a reply of a virtual chassis or a cluster of two or more members that names no member is refused, because nothing proves the other members committed (a confirmed commit rolls back by itself), and the command line transport (the default) can be used; a chassis of one member is read like a single device, with no member element or one named by that member, and another name is refused. The shape of these replies over NETCONF is inferred: no capture of it exists, nor of the commits' replies of a chassis in which every member has a label on the command line (the shape with an unlabelled master was captured from a real three-member chassis). `--hold` adds the one proof a machine cannot make: after the fresh login you log in with one account of each class in another terminal and type `OK`; anything else, or no answer while a minute of the window is left, rolls the change back. A line typed before a device's question is not its answer. `--hold` needs a terminal and is refused with `--json` (exit 2).
 - **Pending.** Over the command line and over NETCONF alike a device undoes a confirmed commit only when its window ends (10 minutes by default), not when tacctl's session closes or dies, and any `commit` or `commit check` typed on it confirms the change. A device whose state could not be read after the confirmed commit is therefore reported `PENDING until <time>` (and said in red on standard error): type nothing on it before then. The record says `pending` with the identifier and the window's end from the moment the confirmed commit is typed, so a tacctl killed during the verification leaves a record the next run settles (a record that cannot be written then is said at once in red on standard error, and the transaction goes on); `device config list` and `device show` say it, and the next `apply` or `--check` of that device first reads its commit history, records what happened (`applied`, `rolled-back`) and only then goes on; while the window stands it sends nothing. The history is read whatever words each commit was typed with (`synchronize` on a dual-routing-engine or virtual-chassis device, `and-quit`, `force`, `full`, `prepare`, `at <time>`, `confirmed, rollback in N mins`), and a newest entry that is none of these is refused with its text. Where the history alone does not say (the commit after tacctl's is `by root via other`, the device's own rollback or a commit of the system, or someone else's), the device's rollbacks do: with tacctl's commit at history entry N, `show configuration | compare rollback N` empty is `applied` and `compare rollback N+1` empty is `rolled-back`, both read in one operational session; anything else is `unknown`, never applied, whatever the rendering is now. The settled result is printed above the device's line (`the earlier apply <id> by <user> was rolled back by the device at <time>`; JSON `settled`) and logged (`device config apply settle user= device= id= result=`). If the history can no longer say, the refusal names `device config forget <name>` for after the device was looked at by hand.
-- **Shapes and the batch.** Two devices that need the same change have one shape: a hash of the statements with every secret elided and every per-device value (a location, a contact, a name) masked, so it is known before any device is dialled. The first device of each shape goes alone and the others of its shape follow only when it applied (`--no-canary`: together); `--concurrency` applies several at a time (default one), `--pause <seconds>` (default `config devices apply-pause`, 60) waits between devices, `--max <n>` (default 5) caps the devices of every apply run, and `--max-failures` defaults to 1. At the start of each device's apply the break-glass hold, the registry entry (name, address, vendor, hostname, port, host keys) and the scope that covers it are read again: a device held, changed or no longer yours since the review fails with the reason, and nothing is sent to it. `--confirmed` runs only the devices whose shape an earlier apply confirmed and skips the rest (`unknown shape <hash>: review and apply it by hand first`). `tacctl device config shapes` lists the shapes seen and which are confirmed, `--show <hash>` prints one; `shapes seed <name>` files the shape of a device's last check or apply as confirmed on your word, for a device that was applied and verified by hand (one question, `--yes` answers it). One reviewed apply per shape confirms it for the rest.
+- **Re-read at each device's start.** At the start of each device's apply the break-glass hold, the registry entry (name, address, vendor, hostname, port, host keys) and the scope that covers it are read again: a device held, changed or no longer yours since the review fails with the reason, and nothing is sent to it. The shape, the canary, `--confirmed` and the options of a rollout are described above; the shape store, `shapes list` and `shapes seed` are described in "Canary and confirmed".
 - **The transport.** A device is reached over the Junos command line or over NETCONF, as `--transport` of the run (or `config devices apply-transport`, default `cli`) says. NETCONF is opt-in: `auto` uses NETCONF for a device whose last read found the service answering and whose login may commit, and otherwise the command line; the line says why when it fell back (`[via cli: NETCONF port closed at the last read]`; a device never read says nothing, the JSON has `via` and `via_reason` always). `cli`, the default, is what 0.2.9 did. `netconf` never falls back: a device that does not answer, or cannot confirm, is `failed`. Over NETCONF the change is loaded under the candidate's lock (a Junos device refuses a confirmed commit in a private session), checked, committed under a confirmed commit and confirmed by the session that made it; a session that ends without confirming leaves the commit pending until its window ends, as over the command line (a failed verification is cancelled at once, `rollback 1` and a commit, while tacctl runs), and the same fresh login proves the device. A candidate that holds another editor's staged change is refused, never committed with the change. A change to the NETCONF service itself (`scope netconf`, `device netconf`) is always made over the command line, because its verification depends on the service; `--transport netconf` refuses it. Its proof, before the confirming commit, is a NETCONF probe on a fresh login: enabling the service must be answered by a hello as you, disabling it must find the hello no longer answered (`port closed` or `no hello`); a probe that cannot tell fails the proof and rolls the change back. The line says `[NETCONF verified: hello ok]` or `[NETCONF verified: not answering]` (the JSON's `service_proof`), and the record's NETCONF probe becomes what was proved; a rolled-back change leaves it as it was. The record's `applied.via` and the JSON's `via` say which transport.
 - **What it never writes.** `breakglass` (a walkthrough step), `system root-authentication`, `system services` (but for the exact statements of the NETCONF setting, and the delete of a service the system block requires to be absent: `delete system services telnet|ftp|finger|xnm-clear-text|web-management`), `netconf` otherwise, `interfaces`, groups and `apply-groups`, any local user's credentials, the root user, the account that is running it, the login class that account belongs to, and the deletion of a whole hierarchy tacctl renders. The statements are held against the planner's own ownership tables before the first is typed, whatever the flags: a statement outside them stops the device with nothing sent. A statement that a group supplies is never changed; the section that would have to is left out and the review says so. `--section` limits the sections (`aaa`, `roles`, `mgmt-acl`, `snmp`, `system`, `netconf`); `--converge` is not offered: the cleanup is a second reviewed run after the first is verified.
 - **Refusals before any login.** A caller below the engineer; root (the login is the invoking user's); a device held for break-glass (the server does not answer it); a device no scope covers or whose scope is not yours; a Cisco device or a WTI unit (a selector leaves them out and counts them; a named one is a failed row). A device that reports another name than the registry's name or hostname is `failed: calls itself '<x>'`, one with another editor's staged or open configuration is `failed: other editors or staged changes`, and an exclusive session someone else holds names the holder.

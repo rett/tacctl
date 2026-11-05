@@ -56,7 +56,7 @@ const (
 // The defaults and the pause's range of the two device.apply.* settings
 // (D140). The confirm window's range is devapply's (a window under three
 // minutes cannot hold the verification); the pause is the seconds between the
-// devices of a batch after the canary.
+// devices of a batch (from one device's end to the next one's start).
 const (
 	applyConfirmDefault = 10
 	applyPauseDefault   = 60
@@ -71,7 +71,7 @@ var configDevicesVerbs = [][2]string{
 	{"timeout [<seconds>]", "Show or set the time one device may take, connect included, 10-600 (default 90)"},
 	{"confirm-timeout [<minutes>]", "Show or set the minutes of the 'commit confirmed' that ends a Junos plan, 1-60 (default 5)"},
 	{"apply-confirm-timeout [<minutes>]", "Show or set the minutes of the 'commit confirmed' of 'device config apply', 3-60 (default 10)"},
-	{"apply-pause [<seconds>]", "Show or set the seconds 'device config apply' waits between the devices of a batch after the canary, 0-3600 (default 60)"},
+	{"apply-pause [<seconds>]", "Show or set the seconds 'device config apply' waits from one device's end to the next one's start, 0-3600 (default 60)"},
 	{"apply-transport [cli|auto|netconf]", "Show or set how 'device config apply' reaches a Junos device (cli: the command line, the default; auto: NETCONF where the device answers and confirms, else the command line)"},
 	{"timeout-scale [<n>]", "Show or set the timing scale of every device, 1-10 (default 1)"},
 }
@@ -107,8 +107,9 @@ switch undoes the paste by itself in N minutes unless the one word is typed.
 'commit confirmed N' of every 'tacctl device config apply': 3 to 60 minutes,
 the time the verification and the confirming commit have before the device
 undoes the change by itself. 'apply-pause' (device.apply.pause) is the
-seconds 'device config apply' waits between the devices of a batch after the
-canary, 0 to 3600 (0 is none); --pause of one run replaces it.
+seconds 'device config apply' waits from one device's end to the next one's
+start (the first device is not delayed), 0 to 3600 (0 is none); --pause of one
+run replaces it.
 'apply-transport' (device.apply.transport) is how 'device config apply'
 reaches a Junos device: 'cli' (the default) is always the command line;
 'auto' uses NETCONF where the device's last read found it answering and the
@@ -208,7 +209,7 @@ func (inv *invocation) configDevicesShow(rest []string) error {
 	confirm, pause := inv.applySettings()
 	inv.echo("  Device configuration apply ('tacctl device config apply')")
 	inv.echo("  apply-confirm-timeout: " + strconv.Itoa(confirm) + " min   (" + src("device.apply.confirm_timeout") + "; 3-60, the N of 'commit confirmed N' of every apply)")
-	inv.echo("  apply-pause:           " + strconv.Itoa(int(pause.Seconds())) + " s   (" + src("device.apply.pause") + "; 0-3600, between the devices of a batch after the canary)")
+	inv.echo("  apply-pause:           " + strconv.Itoa(int(pause.Seconds())) + " s   (" + src("device.apply.pause") + "; 0-3600, from one device's end to the next one's start)")
 	inv.echo("  apply-transport:       " + inv.applyTransport() + "   (" + src("device.apply.transport") + "; auto, cli or netconf)")
 	inv.echo("")
 	inv.echo("  Timing of every access to a device")
