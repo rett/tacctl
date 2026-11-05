@@ -329,25 +329,28 @@ devices itself, as you (the password is asked for once). Each device is
 checked first: tacctl reads it, loads the plan in an exclusive configure
 session, runs the device's own 'commit check' and discards the candidate;
 --check stops there and commits nothing. The devices that need a change are
-then shown grouped by shape (the same change under one heading, every secret
-elided), and each device is asked for in turn: its line (shape and counts),
+then shown grouped by shape (a shape is the same change on several devices:
+one heading, every secret elided, per-device values such as a location masked),
+and each device is asked for in turn: its line (shape and counts),
 then its name typed back. The name approves it; anything else, Enter or the
 end of input declines it (no second try, no answer for several devices), and
 a declined device is skipped and makes the run exit 1. All the answers come
 before the first commit. Each is committed under 'commit confirmed N'
 (config devices apply-confirm-timeout), proven by a fresh login as you, by what
 landed being the change the check showed and by a read of the planned sections,
-and then confirmed; the first device of every shape goes alone, and the rest of
-its shape only when it applied. A device that fails a proof is rolled back; one
-whose state could not be read is PENDING until the time shown, and nothing
-may be typed on it before then (a 'commit check' confirms a pending commit).
---confirmed applies only shapes an earlier apply confirmed (the rest are
-skipped) and is the only form --yes answers the questions for, so a script runs
-it without a terminal (its audit lines say mode=scripted, a typed review's
-mode=attended); --max (default 5) caps the devices of a run, --pause the
-seconds between them (config devices apply-pause), --hold asks you to log in
-with one account of each class and type OK before the change is kept,
---section limits the sections. --pull reads the devices first, as 'pull'
+and then confirmed; the first device of every shape (the canary) goes alone, and
+the rest of its shape only when it applied (--no-canary starts them
+together). A device that fails a proof is rolled back; one whose state could
+not be read is PENDING until the time shown, and nothing may be typed on it
+before then (a 'commit check' confirms a pending commit).
+--confirmed applies only shapes a verified apply confirmed, or 'shapes seed'
+filed (the rest are skipped), and is the only form --yes answers the questions
+for, so a script runs it without a terminal (its audit lines say
+mode=scripted, a typed review's mode=attended); --max (default 5) caps the
+devices of a run, --pause the seconds from one device's end to the next one's
+start (config devices apply-pause), --hold asks you to log in with one account
+of each class and type OK before the change is kept, --section limits the
+sections. --pull reads the devices first, as 'pull'
 does (over device.config.transport: --transport is how the apply writes),
 with the one password; a device whose pull fails is not checked, and --stale
 and --differs then select from the fresh records (--pull --differs: the
@@ -360,10 +363,11 @@ account, system services, interfaces, groups. Exit status: 0 every device applie
 device failed, was rolled back or is pending, 2 wrong arguments (or, with
 --check --exit-code, a device that needs a change), 130 interrupted (the first
 Ctrl-C starts no more devices, the second cancels the running ones).
-'shapes' lists the shapes seen and which were confirmed by an apply, with
---show <hash> one shape's statements; 'shapes seed <name>' files the shape of
-the device's last check or apply as confirmed on your word (one question,
---yes answers it), for a device that was applied and verified by hand.
+'shapes' lists the shapes seen: new (only a check has seen it), confirmed (an
+apply of one device was proved) or seeded (a person said so), with --show <hash>
+one shape's statements; 'shapes seed <name>' files the shape of the device's
+last check or apply as confirmed on your word (one question, --yes answers it),
+for a device that was applied and verified by hand.
 
 'list' shows each device's state: ok (every managed section agrees), differs,
 never (not pulled), failed (the last pull failed) or pull (a Cisco device whose
