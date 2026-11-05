@@ -158,6 +158,43 @@ current behaviour; this file is where history lives.
    lockdown with enrolled hosts, the email key and the required password
    change).
 
+7. **The next steps of `tacctl rollback 0.2.23` name the snapshot when the
+   break-glass firewall setting was set.** With `breakglass.firewall` set the
+   rollback to 0.2.23 removes the key and takes a snapshot first, but the next
+   steps did not say so: the note that names where the state before the
+   rollback is ("holds the 0.2.25 state. Restore it with 0.2.25 only") was
+   printed for every other target that takes one and not for this one. It is
+   now printed there too, ending "0.2.23's restore refuses a tacctl.yaml with a
+   key it does not know", since the snapshot's `tacctl.yaml` has the key. With
+   the key unset, nothing is converted but the sudoers drop-in, no snapshot is
+   taken and the note is not printed, as before. `docs/install/upgrading.md`
+   (To 0.2.23) and the manual page say so.
+
+8. **`tacctl device config shapes` says "1 line differs".** The note of a new
+   shape that is one line away from a confirmed one read `nearest confirmed
+   <shape>, 1 lines differ`; it now reads `1 line differs` and, for any other
+   number, `N lines differ` as before. `--json` is unchanged (`nearest_differs`
+   is the number). The planning page says so.
+
+9. **The `device config apply` row of the device usage no longer says a shape
+   is "shown once in the review".** The review groups devices by shape and by
+   what it shows of each (warnings, sections left out, kept statements,
+   not-found deletes), so one shape can have several headings. The row now
+   says that devices that need the same change share a shape and are reviewed
+   together, unless their warnings or notes differ, and that each kind then has
+   its own heading. The manual page and `docs/cli/device.md` already said so.
+
+10. **The rollback pages name the targets that remove the keys 0.2.20 added.**
+    `docs/install/upgrading.md` and the manual page said that every target
+    removes `scope_mgmt_acl.mode.<scope>`, the console settings `color` and
+    `list_max: -1`, `settings.password_cache_users` and
+    `settings.system_shell_users`. Only the targets before 0.2.20 (0.2.19,
+    0.2.18, 0.2.17, 0.2.16, 0.2.9 and 0.2.3) do; 0.2.24 to 0.2.20 read those
+    keys and leave them, as the entry for the required password change
+    already said. The paragraph on the `tiers` and `users` switches of
+    `console.yaml` now says that the older release that reads them is a target
+    before 0.2.20, and that 0.2.3 has no password cache. No behaviour changed.
+
 ## 0.2.24 (2026-11-05)
 
 1. **`tacctl man` finds each entry on groff 1.24.** groff 1.24 narrowed the

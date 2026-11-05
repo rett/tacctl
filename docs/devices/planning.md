@@ -157,7 +157,7 @@ At a shape now (last check or apply):
   8d41c7e2a5b0  sw3
 ```
 
-(The title of the table and the rules under it are left out here, and the note is wrapped.) `--confirmed --yes` is the form for a script: it applies the confirmed shapes and skips every other device, `sw3` here, with the row `skipped: unknown shape 8d41c7e2a5b0: review and apply it by hand first`. `--confirmed` without `--yes` selects the same devices but still asks for each by name, so it needs a terminal.
+(The title of the table and the rules under it are left out here, and the note is wrapped; a shape one line away reads `1 line differs`.) `--confirmed --yes` is the form for a script: it applies the confirmed shapes and skips every other device, `sw3` here, with the row `skipped: unknown shape 8d41c7e2a5b0: review and apply it by hand first`. `--confirmed` without `--yes` selects the same devices but still asks for each by name, so it needs a terminal.
 
 ### The options of a rollout
 
