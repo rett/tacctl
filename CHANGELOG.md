@@ -184,6 +184,17 @@ current behaviour; this file is where history lives.
    together, unless their warnings or notes differ, and that each kind then has
    its own heading. The manual page and `docs/cli/device.md` already said so.
 
+10. **The rollback pages name the targets that remove the keys 0.2.20 added.**
+    `docs/install/upgrading.md` and the manual page said that every target
+    removes `scope_mgmt_acl.mode.<scope>`, the console settings `color` and
+    `list_max: -1`, `settings.password_cache_users` and
+    `settings.system_shell_users`. Only the targets before 0.2.20 (0.2.19,
+    0.2.18, 0.2.17, 0.2.16, 0.2.9 and 0.2.3) do; 0.2.24 to 0.2.20 read those
+    keys and leave them, as the entry for the required password change
+    already said. The paragraph on the `tiers` and `users` switches of
+    `console.yaml` now says that the older release that reads them is a target
+    before 0.2.20, and that 0.2.3 has no password cache. No behaviour changed.
+
 ## 0.2.24 (2026-11-05)
 
 1. **`tacctl man` finds each entry on groff 1.24.** groff 1.24 narrowed the

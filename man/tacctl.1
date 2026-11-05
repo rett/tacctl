@@ -380,17 +380,18 @@ The
 .B tiers
 and
 .B users
-mappings of console.yaml that this release ignores stay in the file, and the
-release a rollback goes to reads them as it always did: a user or a tier
+mappings of console.yaml that this release ignores stay in the file, and a
+release before 0.2.20 (the targets 0.2.19 and older; 0.2.24 to 0.2.20 ignore
+them too, and their rollback says nothing of it) reads them as it always did: a user or a tier
 switched off there gets a plain shell again, and the password cache is on again
 for every user of a tier that is allowed it, so the plan lists each user who
 would gain a system shell or the cache, with the reason, as a warning that
 .B \-\-apply
 refuses without
 .BR \-\-yes .
-Every target also takes out of
+Every target before 0.2.20 (0.2.19 and older; 0.2.24 to 0.2.20 read them and leave them) also takes out of
 .I console.yaml
-the settings of 0.2.20 that no older release reads:
+the settings of 0.2.20 that no release before it reads:
 .BR settings.color ,
 .B settings.system_shell_users
 (the system shell of single users; the tiers' list
@@ -747,7 +748,7 @@ An older release lints such a block as an error and plans nothing for the
 devices it reaches. The block files are not rewritten; take the statements
 out before the upgrade.
 .IP
-Every target removes the management filter mode of the scopes
+Every target before 0.2.20 (0.2.19 and older; 0.2.24 to 0.2.20 read it and leave it) removes the management filter mode of the scopes
 .RB ( scope_mgmt_acl.mode.\fIscope\fR ,
 only
 .B strict

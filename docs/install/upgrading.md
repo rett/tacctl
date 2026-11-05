@@ -240,12 +240,13 @@ that, then run the rollback again. Nothing is changed while it refuses. An
 override under such a name in the ignored `users` mapping of `console.yaml`
 does not stop it: the rollback takes that entry out of the file.
 
-**The password cache is the user's choice (0.2.20).** `console password-cache tiers` is now only the permission: a tier that is listed no longer has the cache on for everyone in it. Each user turns it on for themselves with `console password-cache on` (off by default), so a console that had the cache on for a tier has it off for every user until they do; `tacctl shell --password-cache` is unchanged. The choices are stored in `settings.password_cache_users` (written only when a user turned it on). No older release reads that key: the rollback removes it for every target (the plan names the users), and the older release then has the cache on for every user of a listed tier, as it always did.
+**The password cache is the user's choice (0.2.20).** `console password-cache tiers` is now only the permission: a tier that is listed no longer has the cache on for everyone in it. Each user turns it on for themselves with `console password-cache on` (off by default), so a console that had the cache on for a tier has it off for every user until they do; `tacctl shell --password-cache` is unchanged. The choices are stored in `settings.password_cache_users` (written only when a user turned it on). No release before 0.2.20 reads that key: the rollback removes it for every target before 0.2.20 (0.2.19, 0.2.18, 0.2.17, 0.2.16, 0.2.9 and 0.2.3; the plan names the users), and the older release then has the cache on for every user of a listed tier, as it always did (0.2.3 has no cache). The targets 0.2.24 to 0.2.20 read the key and leave it.
 
-**The system shell of single users.** `settings.system_shell_users` (`console system-shell user`, written only when a user has a setting) is a key no older release reads: the rollback removes it (the plan names the users and their setting), and the older release has the tiers' list `settings.system_shell_tiers` alone. That list always holds `superuser` once this release has written it.
+**The system shell of single users.** `settings.system_shell_users` (`console system-shell user`, written only when a user has a setting) is a key no release before 0.2.20 reads: the rollback to a target before 0.2.20 removes it (the plan names the users and their setting), and the older release has the tiers' list `settings.system_shell_tiers` alone; the targets 0.2.24 to 0.2.20 read the key and leave it. That list always holds `superuser` once this release has written it.
 
 **The console switches of `console.yaml`.** The `tiers` and `users` mappings that this release
-ignores stay in the file, and the release a rollback goes to reads them as it always did: a tier or
+ignores stay in the file, and a release before 0.2.20 (the targets 0.2.19 and older; 0.2.24 to 0.2.20
+ignore them too, and their rollback says nothing of it) reads them as it always did: a tier or
 a user switched off there gets a plain shell again at the next `host sync` of that release. A file
 without the mappings is read there as the console on for every tier. The rollback lists every user
 who would gain a system shell this way, and every user who would gain the password cache back (a
@@ -270,18 +271,19 @@ before the upgrade, or expect the errors. Targets 0.2.18, 0.2.17, 0.2.16 and
 **Console settings of 0.2.20.** `console.yaml` may hold `settings.color` (the
 `console color` setting, written only when it is `on` or `off`) and a
 `settings.list_max` of `-1` (`console list-max` with a negative number: never
-ask). No older release reads either (it answers `unknown key 'color'` or
+ask). No release before 0.2.20 reads either (it answers `unknown key 'color'` or
 `settings.list_max must be 1-1000`, the console falls back to its defaults and
-its writes fail), so every target takes them out: `--apply` removes
+its writes fail), so every target before 0.2.20 (0.2.19 and older; 0.2.24 to 0.2.20 read
+both) takes them out: `--apply` removes
 `settings.color`, writes `list_max: 1000` in place of `-1`, keeps every other
 setting, and takes the snapshot first. The dry run lists the change as a step
 of its own.
 
 **A scope's strict management filter mode.** The mode of the Junos
 management filter (`tacctl scope mgmt-acl <scope> mode`, 0.2.20) is stored as
-`scope_mgmt_acl.mode.<scope>` (only `strict` is stored), a key every older
-release refuses. Every target therefore removes it from `tacctl.yaml` after a
-snapshot, and the dry run lists the scopes that were strict in a warning that
+`scope_mgmt_acl.mode.<scope>` (only `strict` is stored), a key every release
+before 0.2.20 refuses. Every target before 0.2.20 (0.2.19 and older; 0.2.24 to 0.2.20 read it
+and leave it) therefore removes it from `tacctl.yaml` after a snapshot, and the dry run lists the scopes that were strict in a warning that
 `--apply` refuses without `--yes`. The older release renders and plans the
 `ssh-only` filter for them, which ends in a `default-accept` term, so its
 `device config plan` or `device config apply` would put that filter back on a
