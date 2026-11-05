@@ -43,8 +43,15 @@ process environment, signal the process, or write a package-level registry
 (`withFakeBackend`, `withPasswd`). The whole package takes about six minutes
 (about 24 serially). CI (`.github/workflows/test.yml`) runs it in two shards,
 `tests/tools/go-test-shard.sh <index> <count>` (the top-level tests dealt
-round-robin; `--check <count>` fails unless every test is in exactly one
-shard), the ones without tags with the race detector, beside one job for
+longest first by the durations in `tests/tools/cli-durations.txt`, each to the
+shard with the least planned time, a serial test counting four times a
+parallel one so the shards take about the same time; a test the file lacks
+counts a short parallel one; `--check <count>` fails unless every test is in
+exactly one shard, `--plan <count>` prints each shard's tests and planned
+seconds, and `--regen <log>` rewrites the durations file from the log of a
+`make gate-ci` or `make gate-go` run, the file's header says how: it only
+balances the shards, never changes which tests run, and
+`tests/integration/go_test_shard.bats` pins it), the ones without tags with the race detector, beside one job for
 every other package, a static job (gofmt, `go vet`) and a lint job (`make
 lint`, below). The test jobs install the tools that tests skip
 without (`shellcheck`, `groff`, `less` and `man-db` for the completion block
