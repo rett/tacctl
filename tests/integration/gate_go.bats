@@ -19,6 +19,10 @@ test) case "$STUB_MODE" in
     skip) printf -- '--- SKIP: TestY (0.00s)\n    --- SKIP: TestZ/sub (0.00s)\nok  \tp/a\t0.1s\n?   \tp/b\t[no test files]\n' ;;
     skipmany) for i in $(seq -w 25); do printf -- '--- SKIP: TestS%s (0.00s)\n' "$i"; done
         printf 'ok  \tp/a\t0.1s\n?   \tp/b\t[no test files]\n' ;;
+    slow) printf -- '--- PASS: TestFast (0.01s)\n--- PASS: TestSlow (47.12s)\n    --- PASS: TestSlow/sub (60.00s)\n--- SKIP: TestY (0.00s)\n--- PASS: TestMid (3.50s)\n--- PASS: TestSlow (5.00s)\n'
+        printf 'ok  \tp/a\t0.1s\n?   \tp/b\t[no test files]\n' ;;
+    slowmany) for i in $(seq 12); do printf -- '--- PASS: TestT%02d (%d.00s)\n' "$i" "$i"; done
+        printf 'ok  \tp/a\t0.1s\n?   \tp/b\t[no test files]\n' ;;
     hang) exec sleep 30 ;;
     tmp) printf '%s\n' "$TMPDIR" >"$STUB_TMP_OUT"; printf 'ok  \tp/a\t0.1s\n?   \tp/b\t[no test files]\n' ;;
     esac ;;
@@ -57,6 +61,33 @@ SH
     [[ "${lines[-3]}" == "gate-go: skipped: TestS20" ]]
     [[ "$(printf '%s\n' "${lines[@]}" | grep -c '^gate-go: skipped: TestS')" -eq 20 ]]
     [[ "$output" != *"TestS21"* ]]
+}
+
+@test "the ten slowest top-level tests are listed above the verdict, below the skipped names, longest first" {
+    STUB_MODE=slow run -0 "$GATE" -o "$LOG"
+    [[ "${lines[-1]}" == "GATE-GO PASS rc=0 packages=2/2 failures=0 secs="*" skipped=1 log=$LOG" ]]
+    # a subtest is not listed, a name seen twice counts with its longest time
+    [[ "${lines[-2]}" == "gate-go: slowest: TestFast 0.0s" ]]
+    [[ "${lines[-3]}" == "gate-go: slowest: TestMid 3.5s" ]]
+    [[ "${lines[-4]}" == "gate-go: slowest: TestSlow 47.1s" ]]
+    [[ "${lines[-5]}" == "gate-go: skipped: TestY" ]]
+    [[ "$output" != *"TestSlow/sub"* ]]
+    # the log ends the same way
+    [[ "$(tail -n 1 "$LOG")" == "${lines[-1]}" ]]
+    [[ "$(tail -n 5 "$LOG" | head -n 4)" == "$(printf '%s\n' "${lines[@]: -5:4}")" ]]
+}
+
+@test "no more than ten slowest tests are listed" {
+    STUB_MODE=slowmany run -0 "$GATE" -o "$LOG"
+    [[ "$(printf '%s\n' "${lines[@]}" | grep -c '^gate-go: slowest:')" -eq 10 ]]
+    [[ "${lines[-11]}" == "gate-go: slowest: TestT12 12.0s" ]]
+    [[ "${lines[-2]}" == "gate-go: slowest: TestT03 3.0s" ]]
+    [[ "$output" != *"TestT02"* ]]
+}
+
+@test "a run without a passing test lists no slowest tests" {
+    STUB_MODE=ok run -0 "$GATE" -o "$LOG"
+    [[ "$output" != *"gate-go: slowest:"* ]]
 }
 
 @test "a package that printed nothing is a FAIL although go test exited 0" {

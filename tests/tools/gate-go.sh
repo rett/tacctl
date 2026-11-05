@@ -13,6 +13,12 @@
 # test that skips for a missing tool passes silently, so a green run whose
 # skip count is not the expected one did not test what it should.
 #
+# Below the skipped names and still above the verdict line come the ten
+# slowest top-level tests of the run, longest first, from the '--- PASS:
+# TestX (N.NNs)' lines ('gate-go: slowest: TestX 47.1s'; a name that ran in
+# several packages counts with its longest time): where the time went, and the
+# input of 'tests/tools/go-test-shard.sh --regen'.
+#
 # A run is a PASS only when go test exited 0, every listed package printed an
 # ok or no-test-files line and no FAIL or panic line is in the log. A run that
 # was killed, never finished or lost a package is a FAIL, so "no verdict line"
@@ -109,6 +115,15 @@ verdict() { # <rc> <note>
             echo "gate-go: skipped: +$((n - max)) more" | tee -a "$log"
         fi
     fi
+    # The ten slowest top-level tests, from the '--- PASS: TestX (N.NNs)' lines
+    # (a name that ran in several packages counts with its longest time).
+    awk '/^--- PASS: Test/ {
+            d = $4; gsub(/[()s]/, "", d)
+            if (d ~ /^[0-9]+(\.[0-9]+)?$/ && (!($3 in m) || d + 0 > m[$3] + 0)) m[$3] = d
+        }
+        END { for (t in m) printf "%s %s\n", m[t], t }' "$log" |
+        sort -k1,1nr -k2,2 | head -n 10 |
+        awk '{ printf "gate-go: slowest: %s %.1fs\n", $2, $1 }' | tee -a "$log"
     v=FAIL
     if [[ "$rc" -eq 0 && "$got" -eq "$want" && "$want" -gt 0 && "$bad" -eq 0 && -z "$note" ]]; then v=PASS; fi
     echo "GATE-GO $v rc=$rc packages=$got/$want failures=$bad secs=$secs skipped=$skipped${note:+ $note} log=$log" | tee -a "$log"

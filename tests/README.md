@@ -66,7 +66,9 @@ killed or lost a package, and whose `skipped=<n>` field counts the `--- SKIP`
 lines of the log (the tests run with `-v`, the only way `go test` reports a
 skip) with the names of the skipped tests, at most 20, listed above the line: a
 test that skips for a missing tool passes silently, and an unexpected skip
-count is how a green run shows it did not test what it should: start it with a tool that notices the process
+count is how a green run shows it did not test what it should; the ten
+slowest top-level tests of the run (`gate-go: slowest: TestX 47.1s`) follow
+the skipped names, still above the verdict line: start it with a tool that notices the process
 ending (an agent: Bash `run_in_background`), never with a trailing `&` and
 never wait for it with `pgrep -f`; `GATE_TMPFS=1 make gate-go` keeps the tests' sandboxes on `/dev/shm` (the fsync calls cost nothing there: the run takes about a third of the time; the log and `GOCACHE` stay on disk); the bats suite, the diff corpus and the container
 matrix stay on the maintainer's machine.
@@ -84,7 +86,8 @@ line, or `GATE-CI FAIL ...` with `failed=<job>:<test>,...` naming each
 failing test (a package when no test failed) and `races=` counting the data
 races (`skipped=` counts the skips of all the jobs, a test that runs in
 several jobs once for each, and the names are listed above the line as
-`gate-go` does); it needs cgo, takes several times as long as `gate-go`, and is
+`gate-go` does, followed by the ten slowest tests with their job,
+`gate-ci: slowest: TestX 83.0s (cli0)`); it needs cgo, takes several times as long as `gate-go`, and is
 started, read and sped up (`GATE_TMPFS=1`) like it.
 
 The `lint` job of the workflow runs `make lint` on Ubuntu 24.04, with that
