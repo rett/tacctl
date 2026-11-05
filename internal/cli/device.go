@@ -389,7 +389,7 @@ var deviceOptions = map[string][][2]string{
 		{"--max <n>", "Apply at most n devices in one run, in registry order (default 5; the rest are skipped, run it again)"},
 		{"--pause <seconds>", "Wait n seconds after a device ends before the next one starts, 0-3600 (default device.apply.pause; the first device starts at once)"},
 		{"--hold", "After the fresh login keep the change only when you log in with one account of each class and type OK (needs a terminal)"},
-		{"--no-canary", "Start the devices of a shape together, not its first device (the canary) alone with the rest only when it applied"},
+		{"--no-canary", "Start a shape's devices together, not its first one (the canary) alone"},
 		{"--transport auto|cli|netconf", "(apply) How the check and the apply reach a device: auto (NETCONF where the last read found it answering and the login may commit, else the command line), cli or netconf (default device.apply.transport)"},
 		{"--pull", "(apply) Read the devices first, as 'config pull' does (over device.config.transport), with the same password; a device whose pull fails is not checked, and --stale and --differs select from the fresh records"},
 		{"--section <list>", "Only these sections: aaa, roles, mgmt-acl, snmp, system, netconf"},
