@@ -9,7 +9,7 @@ doctype: how-to
 
 # Connecting to Devices
 
-*tacctl ssh by name, plain ssh with pinned keys, and what to do when a connection is refused · Checked against tacctl 0.2.22*
+*tacctl ssh by name, plain ssh with pinned keys, and what to do when a connection is refused · Checked against tacctl 0.2.24*
 
 [Printable PDF](../pdf/tacctl-connecting-to-devices.pdf){: .pdf-link }
 
@@ -111,6 +111,7 @@ ssh sw1
 | `No ssh host key could be read from <address> port <port>` | The device gave no key to any read, or did not answer | §6: read the key by hand (`ssh-keyscan -T 30 ...`) and pin its fingerprint | E |
 | Password refused | Wrong password, disabled account, or missing scope | [Troubleshooting](troubleshooting.md) §2 | O |
 | `device check` says unreachable | The server has no route to the management port (may be a false alarm) | Test from your workstation too | O |
+| `device check --sources` warns that a source address is unreachable, or presents another SSH host key | The address the device sends AAA from does not answer this server, or answers as another device | An unreachable address may be by design. A different key means the address may belong to another device: tell an engineer ([Engineer Guide](engineer-guide-device-changes.md) §3.1). | O |
 
 ---
 
@@ -222,6 +223,7 @@ not 1.
 | Connect, handshake and first prompt of an ssh or NETCONF session (`device config pull`, `diff --pull`, `plan --pull`, `apply`, `enroll`, `onboard`, `collect`, `support-bundle`) | 10 s | Yes |
 | The ConnectTimeout of `tacctl ssh` | 10 s | Yes |
 | The host-key scans (`device add`, `hostkey`, `scan`, `check`, `enroll`, `collect`, `onboard`, and the diagnosis after a failed `ssh`) | 5 s and 3 s for ssh-keyscan; 3 s, 10 s and 5 s for tacctl's own client | Yes |
+| The test of the AAA source addresses (`device check --sources`, `device scan --sources`) | About 8 s for each address that does not answer | Yes |
 | The SNMP timeout (`snmp.timeout`, `scope snmp timeout`, `device snmp timeout`) | 2 s | Yes, never above 10 s |
 | The time one device may take in a pull or an apply (`device.config.timeout`) | 90 s | Yes, kept between 10 s and 600 s |
 | The confirmed-commit windows (`device.config.confirm_timeout`, `device.apply.confirm_timeout`) | Minutes | No: they are timers on the device |

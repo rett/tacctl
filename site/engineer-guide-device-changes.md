@@ -9,7 +9,7 @@ doctype: how-to
 
 # Engineer Guide: Device Changes
 
-*Register, compare, plan and apply device AAA configuration · Checked against tacctl 0.2.22*
+*Register, compare, plan and apply device AAA configuration · Checked against tacctl 0.2.24*
 
 [Printable PDF](../pdf/tacctl-engineer-guide-device-changes.pdf){: .pdf-link }
 
@@ -129,6 +129,39 @@ tacctl device sync --scope site-a           # preview: fill empty fields
 tacctl device sync --scope site-a --apply
 ```
 
+### 2.5 Replacing a device: a copy at a bench address
+
+When a device is swapped for new hardware, register the new one as a copy of
+the old one at the address it has on the bench, set it up there, and move it
+into place:
+
+```bash
+# 1. register sw1-new as a copy of sw1, at its bench address
+tacctl device clone sw1 sw1-new --staging 10.10.0.60
+# 2. pin the new device's host key, pull, plan and apply as for any device
+# 3. when it is in place: remove sw1 and give its name and address to sw1-new
+tacctl device rename sw1-new sw1 --replace
+```
+
+- **What `clone` copies:** the registry settings, the SNMP settings and
+  credentials, the NETCONF settings, the timing scale and the configuration
+  blocks. **What it does not:** the address, the name, the pinned host keys,
+  the acknowledged notices, a break-glass hold and the pull record, so pin its
+  host keys and pull it as for any new device.
+- `--staging` is required. The bench address is added to the scope of the
+  original as a `/32` so the device can authenticate, or, when the scope
+  answers it already, noted as staged. You can clone the devices of your own
+  scopes, SNMP credentials included.
+- **`rename --replace`** prints its plan lines, then asks one question
+  (`--yes` is the only way to skip it; with no terminal it answers no). The
+  original is removed with its files after a snapshot, the replacement takes
+  its name and address, and the bench address ends.
+- An original with a **break-glass hold** needs a superuser: the replace
+  clears the hold ([Break Glass](break-glass.md)), and an engineer is refused,
+  naming it.
+- A plain `device rename` (without `--replace`) and `host rename` carry the
+  bench address that was staged under the old name.
+
 ---
 
 ## 3. Reading and comparing
@@ -196,6 +229,33 @@ force in `tacctl device show <name>` and `tacctl scope show <scope>`. A
 `--timeout` you type on a pull or an apply is the time of every device of that
 run, as typed, and wins over the scale.
 
+### 3.1 The AAA source addresses
+
+A device may send its AAA requests from an address other than the one it is
+registered at (a Junos `source-address`, an IOS `ip tacacs source-interface`).
+Two checks look at it:
+
+- **The source must be an address of the device.** A source that no interface
+  of the device holds is a difference: `aaa` reads `differs`, and the plan
+  reports an `ACCESS` item that the paste never fixes (add the address to an
+  interface, or change the source).
+- **Does the address answer, and is it the same device?**
+
+  ```bash
+  tacctl device check sw1 --sources      # one device (or --all)
+  tacctl device scan --sources           # after the scan, for every device
+  ```
+
+  Each source address read from the last pull is connected to and its ssh host
+  key is compared with the one pinned for the device, without logging in. An
+  address that does not answer, or that presents another key, is a warning
+  (the address may belong to another device). Nothing is pinned or changed.
+  An unanswered address costs about 8 seconds, and a server often has no path
+  to a loopback, so unreachable may be by design.
+
+The settings a device keeps for its own AAA server (a source address, a
+routing instance and the like) are no longer listed as differences.
+
 ---
 
 ## 4. Planning the change
@@ -243,6 +303,19 @@ Two lines of the report are information, not irregularities:
 
 Other statements outside the standard (*extras*: an old server, a class or a
 filter tacctl does not render) are reported as items and left alone.
+
+**`single-connection` is gone (0.2.24).** tacquito closes a connection that has
+been idle for 15 seconds, and a later login over the dead socket failed, so
+the walkthroughs (`config cisco`, `config juniper`) no longer print
+`single-connection`. On a device that has it, `plan` and `apply` delete it
+from tacctl's server and `diff` and `plan` list it as an extra. The plan has a
+new shape, so `apply` sends its first device alone, and `apply --confirmed`
+takes it only after one device of it has been applied and confirmed again
+(§5.3). A
+Junos `single-connection` that only an apply-group gives is left alone
+(`inherited from a group: remove it from the group by hand`); another
+server's line and a custom template keep theirs. The upgrade changes no
+device: run `plan` and `apply` on the devices that have the line.
 `--converge` adds the cleanup **only after** the first paste has been
 verified. That way the paste that adds the new server is never the same
 paste that removes the old one.
@@ -331,11 +404,47 @@ compares them side by side.
 
 ### 5.1 Junos: let tacctl apply it
 
+`apply` is the step after `plan` for a Junos device. It types the same
+statements into the device itself, under a confirmed commit, and proves the
+result, where `plan` prints them for a person to paste. A **rollout** is
+several devices changed in one go. Three words come up in it, each with a
+section of its own: a **shape** is one change as it applies to several
+devices (§5.2), a **canary** is the first device of a shape, applied alone
+before the rest of it (§5.3), and a **confirmed** shape is one that an earlier
+apply has already proved (§5.3).
+
+**A rollout in order.** The devices are those of the scope `site-a`.
+
 ```bash
-# the device's own commit check, nothing committed
-tacctl device config apply rtr1 --check
-# review → type name → commit confirmed → proof
+# 1. read the devices (apply reads each one again itself)
+tacctl device config pull --scope site-a
+# 2. read what is irregular on one device and what apply would type
+tacctl device config plan rtr1
+# 3. check every device, file the shapes, commit nothing
+tacctl device config apply --scope site-a --check
+# 4. one device: the review and the canary
 tacctl device config apply rtr1
+# 5. the rest, by hand with a question per device, or from a script
+tacctl device config apply --scope site-a
+tacctl device config apply --scope site-a --confirmed --yes
+```
+
+| Step | What it does | Reads the device | Changes the device | Who |
+|---|---|---|---|---|
+| 1. `pull` | Reads the devices and keeps what it read. `apply --pull` does this and the apply in one run | Yes | No | E (own scopes) |
+| 2. `plan` | Prints, in plain words, what is irregular on the device and the statements `apply` would type | No (uses the pull) | No: the statements are for a person to paste | E |
+| 3. `apply --check` | Loads the change in an exclusive configure session, runs the device's own `commit check`, discards the candidate. Each device that needs a change is named with its shape, filed as `new` unless it is already known | Yes | No: nothing is committed | E |
+| 4. `apply <name>` | Shows the change once per shape, asks for the device's name typed back, commits under `commit confirmed`, proves the result with a fresh login and confirms it. That is the review of the shape and its canary, and it turns the shape from `new` to `confirmed` | Yes | Yes: kept only when the proofs pass | E |
+| 5. `apply --scope`, or `--confirmed --yes` | Applies the rest. A device that is done reads `no change`. With `--scope` every shape of the run is reviewed and the first device of each goes alone (§5.3). `--confirmed --yes` is the form for a script: it applies the confirmed shapes only, asks nothing and skips the rest | Yes | Yes | E |
+| Any time | `tacctl device config shapes` lists the shapes and where each device is | No | No | S |
+
+Only `apply` without `--check` writes to a device. An engineer sees the facts
+of a shape in the check lines and in the review (`new`, or `confirmed on
+<device>`); the `shapes` command is the superuser's.
+
+Other forms of the command:
+
+```bash
 # read fresh, then apply only what differs now
 tacctl device config apply --scope site-a --pull --differs
 # also wait for you to test each class and type OK
@@ -345,7 +454,7 @@ tacctl device config apply rtr1 --hold
 What happens during an apply:
 
 - Every device is checked first. Then the changes are shown grouped by
-  *shape* (the same change on several devices), with secrets elided.
+  *shape* (the same change on several devices, §5.2), with secrets elided.
 - You approve **each device by typing its name**. Anything else declines
   it.
 - tacctl commits under `commit confirmed` (10 minutes by default). It then
@@ -375,9 +484,9 @@ What happens during an apply:
   member must print the note that such a commit prints, and a commit without
   it is refused. A line that is none of these, a label twice, and two members
   without a block fail the step.
-- The first device of each new shape goes alone (canary). By default at most
-  5 devices are changed per run (`--max`), with a pause between devices
-  (`--pause`).
+- The first device of each shape goes alone (the canary, §5.3). By default
+  at most 5 devices are changed per run (`--max`), with a pause between
+  devices (`--pause`). §5.4 lists the options that shape a rollout.
 - The time of the apply is not scaled where it is a timer on the device: the
   confirmed-commit window (10 minutes by default) is never multiplied by a
   timing scale. `--timing` shows where the time of each device went (§3).
@@ -388,7 +497,137 @@ What happens during an apply:
 > prints. Any `commit` would confirm the change. The next apply or
 > `--check` settles the record.
 
-### 5.2 Cisco: paste the plan
+### 5.2 What a shape is
+
+A shape is the same change on several devices. Two devices that need the same
+statements have one shape; two that need different ones have two. It is a
+12-hex id: a hash of the statements of the change, as `plan` would type them,
+with two things taken out so that devices can be compared and the shape filed
+safely:
+
+- every **secret** is removed (only its mark stays, so a shape never holds a
+  value);
+- every **per-device value** is masked, because it is the device's and not the
+  change's: the SNMP location, contact and description, the host name, the
+  login message and announcement, and the source address of a TACACS+ or
+  RADIUS server. Two devices that differ only in these have the same shape.
+  The order of the statements does not matter.
+
+The shape comes from the plan made from the device's fresh read, so it is
+known at the check, before anything is loaded or committed. A device with no
+change has no shape. A change that would put a value into the shape has
+`no shape`: it is reviewed device by device, and `--confirmed` skips it.
+
+A shape exists for two reasons. The review shows the change once per shape,
+not once per device: fifty switches that need the same change are usually one
+heading to read (devices of one shape whose warnings, sections left out or
+kept statements differ get a heading each; each device is still asked for by
+name). And tacctl remembers what was proved: when a device took the change and
+passed the proofs, its shape is filed as confirmed, and a later run can apply
+it to other devices without a new review.
+
+**A worked example.** Three devices of `site-a`: `rtr1` and `rtr2` need the
+same AAA change, and `jsw1` needs a different set of SNMP values.
+
+```text
+$ tacctl device config apply rtr1,rtr2,jsw1 --check
+Password for bob (device login):
+  rtr1  checked: shape 3f2a1b9c0d4e (new) (aaa: 3 set, 1 delete); check ok
+  rtr2  checked: shape 3f2a1b9c0d4e (new) (aaa: 3 set, 1 delete); check ok
+  jsw1  checked: shape 8d41c7e2a5b0 (new) (snmp: 2 set); check ok
+
+  3 checked
+  Nothing was committed: --check ends after the device's own commit check.
+```
+
+There are two shapes: `3f2a1b9c0d4e` (`rtr1` and `rtr2`) and `8d41c7e2a5b0`
+(`jsw1`), both `new`. A review of this run has two headings, and reading
+`rtr1`'s statements covers `rtr2`'s. After `tacctl device config apply rtr1`
+has passed its proofs, the same check reads:
+
+```text
+  rtr1  no change
+  rtr2  checked: shape 3f2a1b9c0d4e (confirmed on rtr1) (aaa: 3 set, 1 delete); check ok
+  jsw1  checked: shape 8d41c7e2a5b0 (new) (snmp: 2 set); check ok
+```
+
+`rtr1` is done, `rtr2` needs the same change as the one that worked, and
+`jsw1` needs a change nobody has proved yet.
+
+### 5.3 Canary and confirmed
+
+These are two different things. A **canary** is about the order inside one
+run; **confirmed** is about what an earlier run proved.
+
+**Canary.** In a run, the first device of every shape is applied alone, and
+the rest of its shape start only when it applied. If it did not (it failed,
+was rolled back or is pending), the rest of that shape is skipped with
+`skipped: canary <name> failed`. At the default `--max-failures` of 1 that
+failure also stops the run, and every device not yet started, of any shape, is
+`not started` (failure limit reached); the other shapes go on only under a
+higher `--max-failures`. The canary is the first approved device of the shape
+in registry order, and every shape has one, `new` or `confirmed`.
+`--no-canary` starts the devices of a shape together.
+
+With the default of one device at a time, the order of a run is the first
+device of each shape, one after the other, then the remaining devices in
+registry order, with `--pause` seconds from one device's end to the next
+one's start. For `rtr1`, `rtr2` and `jsw1` above that is `rtr1`, `jsw1`,
+`rtr2`: `jsw1` is the canary of its shape, so it goes before `rtr2`, which
+waits for `rtr1`.
+
+**Confirmed.** A shape is in one of three states, shown in the `STATE` column
+of `tacctl device config shapes`:
+
+| State | How a shape gets there | What it allows |
+|---|---|---|
+| `new` | A check or an apply found the change on a device (`--check` files it, unless the shape is already known). Nothing has been proved | It can be applied after a review (the heading says `not confirmed yet`). `--confirmed` skips it: `unknown shape <hash>: review and apply it by hand first` |
+| `confirmed` | An apply on one device went through: committed, a fresh login as you worked, what landed is the change the check showed, the planned sections read back whole, and the confirming `commit` was typed. The device is filed with the shape | `--confirmed` applies the shape to other devices, and with `--yes` asks nothing (the heading says `confirmed on <device>`) |
+| `seeded` | A superuser ran `tacctl device config shapes seed <name>` for a device that was applied and verified by hand, and answered the question (`--yes` answers it). It is their word, logged as `device config shapes seed` | The same as `confirmed` |
+
+An apply that ends as applied by someone else's commit does not confirm its
+shape.
+
+**`shapes list`** (superuser) has more columns than the state. `CONFIRMED`
+counts the devices that confirmed the shape. `DEVICES NOW` names the devices
+whose last check or apply is at it (from the records: no device is
+contacted). `LINES` is the size of the shape. For a `new` shape the `NOTE`
+column says `nearest confirmed <hash>, N lines differ`: the confirmed (or
+seeded) shape whose statements differ least from this one, N being the lines
+that are in one of the two and not in the other, the `[section]` headings
+included. A small N means the change is a known one plus or minus a few
+statements; compare the two with `shapes list --show <hash>`. With no
+confirmed shape the note is `-`.
+
+```text
+  SHAPE         STATE      CONFIRMED  DEVICES NOW  LINES  NOTE
+  3f2a1b9c0d4e  confirmed  1 device   rtr1,rtr2    5      -
+  8d41c7e2a5b0  new        -          jsw1         3      nearest confirmed 3f2a1b9c0d4e,
+                                                          8 lines differ
+```
+
+(The title of the table and the rules under it are left out here, and the
+note is wrapped.) `--confirmed --yes` is the form for a script: it applies the
+confirmed shapes and skips every other device, `jsw1` here, with the row
+`skipped: unknown shape 8d41c7e2a5b0: review and apply it by hand first`.
+`--confirmed` without `--yes` selects the same devices but still asks for each
+by name, so it needs a terminal.
+
+### 5.4 The options of a rollout
+
+| Option | What it controls | Default and range |
+|---|---|---|
+| `--check` | Stop after the device's own `commit check`: nothing is committed, the device's shape and result are recorded. `--exit-code` with it exits 2 when a device needs a change. Not with `--hold`, `--pause` or `--no-canary` (exit 2) | |
+| `--confirmed` | Which shapes are applied: only the confirmed and seeded ones, the other devices are skipped. The one form that `--yes` answers the review of | |
+| `--yes` | Answers every device's question (logged as `mode=scripted`). Only with `--confirmed` (with `--check` it does nothing) | |
+| `--no-canary` | Starts the devices of a shape together, not the first alone | The first alone |
+| `--max <n>` | How many devices one run applies, counted after `--confirmed`, in registry order; the rest are `skipped: beyond --max <n>: run it again for the rest`. The check still covers every selected device | 5; 1 to 1000 |
+| `--pause <seconds>` | The wait from one device's end to the next one's start. The first device is not delayed; the wait also separates a canary from the rest | The `apply-pause` setting, 60; 0 to 3600 |
+| `--concurrency <n>` | How many devices are worked on at a time. Never above `device.config.max_concurrency`; `--hold` takes only 1 | Apply 1; check: the setting (8) |
+| `--max-failures <n>` | After n failed devices no new one is started (the running ones finish). A failed canary counts. One refused password stops the run at once, in either phase | Apply 1; check none |
+| `--hold` | After the fresh login, keep the change only when you log in with one account of each class and type `OK` | |
+
+### 5.5 Cisco: paste the plan
 
 1. If you asked for a restore point, paste that block first, on its own, at
    the privileged prompt. Then check that `dir flash:` lists the file.
@@ -406,7 +645,7 @@ command. Pull again after the first paste, and the next plan adds them.
 `enable` always uses the **local** enable secret. Users land at their level
 directly (superuser 15, operator 7), so nobody needs `enable` day to day.
 
-### 5.3 WTI: type the checklist
+### 5.6 WTI: type the checklist
 
 A WTI unit has no configuration to paste. Its plan is a numbered checklist of
 menu keystrokes (`/N …`) plus one IP-tables block. Before you start:
@@ -459,9 +698,14 @@ tacctl device config plan sw1 --converge  # optional: remove old servers and sim
 | Paste plan | `tacctl device config plan <n>` |
 | Junos dry check | `tacctl device config apply <n> --check` |
 | Junos apply | `tacctl device config apply <n>` |
+| Junos rollout of a scope, in order | `apply --scope <s> --check`, then `apply <n>`, then `apply --scope <s>` (§5.1) |
+| Junos rollout from a script | `tacctl device config apply --scope <s> --confirmed --yes` |
 | Verify | `tacctl device config pull <n> --diff` |
 | Back-out | `tacctl device config plan <n> --backout` |
 | Walkthrough for a device | `tacctl device config show <n>` |
+| Register a copy at a bench address | `tacctl device clone <n> <new> --staging <ip>` |
+| Move the copy into place | `tacctl device rename <new> <n> --replace` |
+| Test the AAA source addresses | `tacctl device check <n> --sources` |
 | Junos filter mode of a scope | `tacctl scope mgmt-acl <s> mode` |
 | Re-pin a key | `tacctl device hostkey <n> set SHA256:<fp>` |
 
