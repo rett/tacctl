@@ -294,8 +294,8 @@ older release's plans.
 password before logging in to anything but tacctl (`password_change_required`
 in `store.yaml`, written only for a flagged user, 0.2.20). Every older
 release refuses the key (`user '<name>': unknown field
-'password_change_required'`), so every target removes it from the store after
-a snapshot, and the dry run lists the flagged users. Those who are not
+'password_change_required'`), so every target but `0.2.24` to `0.2.20` (which read
+it) removes it from the store after a snapshot, and the dry run lists the flagged users. Those who are not
 superusers (the flag never binds a superuser) are named in a warning that
 `--apply` refuses without `--yes`: the older release renders them into every
 scope of theirs again, so they can log in to the devices with the password an

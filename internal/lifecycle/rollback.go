@@ -125,9 +125,9 @@ package lifecycle
 // rollbackAdditions); 'tacctl backup recover' puts them back from the snapshot.
 //
 // The SNMP credential files (0.2.23, version 2: a pool of v3 users and a
-// default) are a format every older release refuses, so every target writes
-// them as version 1 again, keeping each level's default user and dropping the
-// rest, with a warning that names the levels and counts the users, and refuses
+// default) are a format every older release refuses, so every target but
+// 0.2.24 and 0.2.23 writes them as version 1 again, keeping each level's
+// default user and dropping the rest, with a warning that names the levels and counts the users, and refuses
 // a level with several users and no default (rollback_snmp_pool.go, an entry
 // of rollbackAdditions); 'tacctl backup recover --only snmp-users' puts the
 // users back from the snapshot.
@@ -464,14 +464,15 @@ type RollbackPlan struct {
 	pwStore []pwFlag
 	// emailUsers are the users of the store that have an email address
 	// (0.2.23), which every older release refuses (rollback_email.go): every
-	// target.
+	// target older than 0.2.23.
 	emailUsers []string
 	// snmpPool are the SNMP credential files in version 2 (the pool of v3
 	// users, 0.2.23), which every older release refuses
-	// (rollback_snmp_pool.go): every target.
+	// (rollback_snmp_pool.go): every target older than 0.2.23.
 	snmpPool []snmpPoolFile
 	// stagingCovered are the staging entries marked covered (0.2.23), which
-	// every older release mishandles (rollback_staging.go): every target.
+	// every older release mishandles (rollback_staging.go): every target older
+	// than 0.2.23.
 	stagingCovered []string
 	// rootLeaf are the stored pulls whose breakglass section holds the root
 	// statements of 0.2.20's pull (rollback_rootleaves.go): taken out for
@@ -672,7 +673,8 @@ func planRollback(in RollbackInput) (*RollbackPlan, error) {
 		return nil, DottedUsersRefusal(inStore)
 	}
 	// The required password change (0.2.20) is a key every older release
-	// refuses in the store: it is removed for every target, after the
+	// refuses in the store: it is removed for every target older than 0.2.20
+	// (the 0.2.20 target and the newer ones return above), after the
 	// snapshot, with a warning that names the users who get their device
 	// access back (rollback_pwchange.go).
 	if err := p.planPasswordChange(); err != nil {

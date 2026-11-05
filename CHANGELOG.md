@@ -149,8 +149,14 @@ current behaviour; this file is where history lives.
    the completion list the new target, and `tacctl rollback` now takes eleven
    targets. The note that follows a rollback that took a snapshot (every
    older target that converts a file) named 0.2.23 as the release whose state
-   the snapshot holds, "Restore it with 0.2.23 only"; it was not moved on in
-   0.2.24, and now names this release, 0.2.25.
+   the snapshot holds, "Restore it with 0.2.23 only", and the notes after a
+   rollback that dropped email addresses or SNMPv3 users said "once 0.2.23 is
+   installed again, `tacctl backup recover <id> --only email`" (or `--only
+   snmp-users`); none was moved on in 0.2.24, and all three now name this
+   release, 0.2.25. The pages that say what "every target" does name the
+   exceptions of 0.2.24 and 0.2.23 (the break-glass firewall, an emergency
+   lockdown with enrolled hosts, the email key and the required password
+   change).
 
 ## 0.2.24 (2026-11-05)
 
