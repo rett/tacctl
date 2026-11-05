@@ -546,12 +546,40 @@ func staleLine(line string, area []string) bool {
 	return slices.ContainsFunc(area, func(a string) bool { return strings.TrimSpace(a) == t })
 }
 
+// The partial forms of the lines staleLine knows: the start of a chassis or
+// location line, and what can follow the text of the banner.
+var (
+	reChassisStart  = regexp.MustCompile(`^\{[a-z-]*(?::[a-z0-9]*)?\}?$`)
+	reLocationStart = regexp.MustCompile(`^(?:\{[a-z-]+(?::[a-z0-9]+)?\})?\[[^\]]*\]?$`)
+	reBannerEnd     = regexp.MustCompile(`^(?:[1-9][0-9]{0,4}(?: (?:m(?:i(?:n(?:u(?:t(?:e(?:s)?)?)?)?)?)?)?)?)?$`)
+)
+
+// bannerStart is the text of the banner up to its minutes.
+const bannerStart = "# commit confirmed will be rolled back in "
+
+// staleStart reports whether part, a last line cut short (no line end after
+// it yet), is the start of a line staleLine accepts, or all of it.
+func staleStart(part string, area []string) bool {
+	t := strings.TrimSpace(part)
+	if staleLine(part, area) || reChassisStart.MatchString(t) || reLocationStart.MatchString(t) {
+		return true
+	}
+	if rest, ok := strings.CutPrefix(t, bannerStart); ok {
+		return reBannerEnd.MatchString(rest)
+	}
+	if strings.HasPrefix(bannerStart, part) { // part has no white space to trim off
+		return true
+	}
+	return slices.ContainsFunc(area, func(a string) bool { return strings.HasPrefix(strings.TrimSpace(a), t) })
+}
+
 // lateShape reports whether data, taken from the stream between commands,
 // can be a late answer to an empty line: lines that stand in front of a
-// prompt, and then the start of a prompt (or all of it) as the last line.
-// A prompt line that is complete is not one: the device prints the echo
-// after its prompt on the same line, and a prompt that ends its line is
-// counted by read.
+// prompt, and then the start of a prompt (or all of it) as the last line;
+// that last line can also be the start of a line in front of the prompt
+// (the data is cut inside it, with no line end yet). A prompt line that is
+// complete is not one: the device prints the echo after its prompt on the
+// same line, and a prompt that ends its line is counted by read.
 func (s *shell) lateShape(data []byte, area []string) bool {
 	lines := strings.Split(normalise(string(data)), "\n")
 	last := lines[len(lines)-1]
@@ -565,7 +593,7 @@ func (s *shell) lateShape(data []byte, area []string) bool {
 			return true
 		}
 	}
-	return last == ""
+	return last == "" || staleStart(last, area)
 }
 
 // hit is a complete line of the output that is the prompt, n times over

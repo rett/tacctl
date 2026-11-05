@@ -3,6 +3,7 @@ package devssh
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -227,10 +228,12 @@ func TestLateAnswerArrivesBeforeTheCommandIsTyped(t *testing.T) {
 func TestLateAnswerInPieces(t *testing.T) {
 	t.Parallel()
 	for name, pieces := range map[string][2]string{
-		"the line break first":        {"\r\n", "{master:0}\r\nalice@rtr1> "},
-		"the area line first":         {"\r\n{master:0}\r\n", "alice@rtr1> "},
-		"the area line and the start": {"\r\n{master:0}\r\nalice@r", "tr1> "},
-		"all but the last blank":      {"\r\n{master:0}\r\nalice@rtr1>", " "},
+		"the line break first":               {"\r\n", "{master:0}\r\nalice@rtr1> "},
+		"the area line first":                {"\r\n{master:0}\r\n", "alice@rtr1> "},
+		"the area line and the start":        {"\r\n{master:0}\r\nalice@r", "tr1> "},
+		"all but the last blank":             {"\r\n{master:0}\r\nalice@rtr1>", " "},
+		"the area line without its line end": {"\r\n{master:0}", "\r\nalice@rtr1> "},
+		"the area line cut inside":           {"\r\n{mas", "ter:0}\r\nalice@rtr1> "},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -272,10 +275,14 @@ func TestLateAnswerWithAPendingConfirmedCommit(t *testing.T) {
 		area := "\r\n" + banner + "\r\n{master:0}\r\n"
 		ans := area + "alice@rtr1> "
 		for name, pieces := range map[string][2]string{
-			"before the command is typed": {ans, ""},
-			"after the command is typed":  {"", ans},
-			"cut after the banner line":   {"\r\n" + banner + "\r\n", "{master:0}\r\nalice@rtr1> "},
-			"cut after the line break":    {"\r\n", banner + "\r\n{master:0}\r\nalice@rtr1> "},
+			"before the command is typed":     {ans, ""},
+			"after the command is typed":      {"", ans},
+			"cut inside the banner":           {"\r\n# commit confirmed will be roll", "ed back in " + mins + "\r\n{master:0}\r\nalice@rtr1> "},
+			"cut inside the banner's start":   {"\r\n# comm", "it confirmed will be rolled back in " + mins + "\r\n{master:0}\r\nalice@rtr1> "},
+			"cut inside the minutes":          {"\r\n# commit confirmed will be rolled back in 1", strings.TrimPrefix(mins, "1") + "\r\n{master:0}\r\nalice@rtr1> "},
+			"the banner without its line end": {"\r\n" + banner, "\r\n{master:0}\r\nalice@rtr1> "},
+			"cut after the banner line":       {"\r\n" + banner + "\r\n", "{master:0}\r\nalice@rtr1> "},
+			"cut after the line break":        {"\r\n", banner + "\r\n{master:0}\r\nalice@rtr1> "},
 		} {
 			t.Run(mins+", "+name, func(t *testing.T) {
 				t.Parallel()
@@ -591,5 +598,38 @@ func TestOutOfStepStreamOnTheFifthCommandIsKept(t *testing.T) {
 	got := runCmd(t, sh, "show system commit")
 	if want := "\n{master:0}\nalice@rtr1> show system commit\nout\n\n"; got != want {
 		t.Errorf("command 5: got %q, want %q", got, want)
+	}
+}
+
+// lateShape takes a last line that is cut short when it can become one of the
+// lines in front of the prompt or the prompt, and nothing else.
+func TestLateShapeOfALineCutShort(t *testing.T) {
+	t.Parallel()
+	sh := &shell{prompt: "alice@rtr1> ", alt: "alice@rtr1# "}
+	area := []string{"Last login from 192.0.2.10"}
+	for in, want := range map[string]bool{
+		"\r\n{master:0}":      true,
+		"\r\n{mas":            true,
+		"\r\n{master:0}[ed":   true,
+		"\r\n{master:0}[edit": true,
+		"\r\n# commit confirmed will be rolled back in 12 minute":   true,
+		"\r\n# commit confirmed will be rolled back in 12 minutes":  true,
+		"\r\n# commit confirmed will be rolled back in ":            true,
+		"\r\n# commit confirmed will be rolled back in 12 mins":     false,
+		"\r\n# commit confirmed will be rolled back in 0":           false,
+		"\r\n# commit confirmed will be rolled back in 12 minutes!": false,
+		"\r\n# commit confirmed will be ro":                         true,
+		"\r\n# commit confirmed will be ro, but not":                false,
+		"\r\nLast login":                     true,
+		"\r\nLast login from 192.0.2.10":     true,
+		"\r\nsomething else":                 false,
+		"\r\n{master:0}x":                    false,
+		"\r\n{master:0}\r\nsomething":        false,
+		"\r\n{master:0}\r\nalice@rtr1> show": false,
+		"\r\n{master:0}\r\nalice@rt":         true,
+	} {
+		if got := sh.lateShape([]byte(in), area); got != want {
+			t.Errorf("lateShape(%q) = %v, want %v", in, got, want)
+		}
 	}
 }
