@@ -36,6 +36,13 @@ import (
 //	                             to is dialled at this loopback address
 //	                             instead of its own (the fake device of
 //	                             'tacctl _fake-device')
+//	TACCTL_TEST_DEVICE_QUIET=<duration>
+//	                             the quiet period of every device session
+//	                             (the wait for a device's output to stop
+//	                             after each prompt) instead of the 150 ms
+//	                             default: a Go duration up to 1s (25ms),
+//	                             for the fake device, which has nothing
+//	                             more to say
 //	TACCTL_TEST_DEVICE_PASSWORD=<text>
 //	                             the password a pull logs in with, in place
 //	                             of the terminal prompt (a test has none)
@@ -76,8 +83,9 @@ type Knobs struct {
 	// dial and devPass are the device knobs of the configuration pull
 	// (their variables are named in knobs_testknobs.go only, so a
 	// production binary does not even contain the names).
-	dial    string // "": every device at its own address
-	devPass string // "": the password comes from the terminal or the cache
+	dial    string        // "": every device at its own address
+	devPass string        // "": the password comes from the terminal or the cache
+	quiet   time.Duration // 0: devssh's own quiet period
 	// localPass is the local account's password ('--login', 'device
 	// onboard'): "" asks on the terminal.
 	localPass string
@@ -110,6 +118,10 @@ func (k Knobs) Resolver() func(context.Context, string) ([]string, error) {
 // DeviceDial is the host:port a test build dials for every device ("" in a
 // production build, and when the knob is unset).
 func (k Knobs) DeviceDial() string { return k.dial }
+
+// DeviceQuiet is the quiet period a test build gives every device session
+// (0 in a production build, and when the knob is unset: devssh's default).
+func (k Knobs) DeviceQuiet() time.Duration { return k.quiet }
 
 // DevicePassword is the password a test build logs in to devices with ("":
 // ask).

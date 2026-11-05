@@ -87,9 +87,16 @@ func newPullBoxIn(t *testing.T, dir string, opts ...fakedev.Option) *pullBox {
 	b.sb.hooks.deviceDial = func(ctx context.Context, network, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, network, addr)
 	}
+	b.sb.hooks.deviceQuiet = fakeQuiet
 	b.sb.hooks.devicePasswords = func(*invocation) devicePasswords { return b.pw }
 	return b
 }
+
+// fakeQuiet is the quiet period the boxes give every device session: the
+// in-process fake device has nothing more to say after a prompt, so devssh's
+// 150 ms default is dead time (internal/devapply's harness uses the same
+// 25 ms against the same fake).
+const fakeQuiet = 25 * time.Millisecond
 
 // devices writes the registry: name, address and vendor of each, pinned to
 // the fake device's key.

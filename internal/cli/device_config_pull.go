@@ -452,12 +452,26 @@ func (inv *invocation) deviceDialer() devssh.Dialer {
 	return inv.hooks.dialer()
 }
 
+// deviceQuiet is the quiet period of this invocation's device sessions: the
+// TACCTL_TEST_DEVICE_QUIET knob (test builds) or the tests' override
+// (hooks.deviceQuiet), else 0 (devssh's default; nothing in the product
+// sets it).
+func (inv *invocation) deviceQuiet() time.Duration {
+	if q := inv.app.Knobs.DeviceQuiet(); q > 0 {
+		return q
+	}
+	if inv.hooks != nil {
+		return inv.hooks.deviceQuiet
+	}
+	return 0
+}
+
 // deviceTarget is where and how to log in to a registered device.
 func (inv *invocation) deviceTarget(e devreg.Entry, user string, pw devssh.PasswordSource) devssh.Target {
 	host, _ := devreg.SSHTarget(e)
 	return devssh.Target{
 		Host: host, Port: e.SSHPort(), User: user, HostKeys: e.HostKeys, Legacy: e.LegacySSH,
-		Password: pw, ConnectTimeout: devssh.ConnectTimeoutFor(inv.scaleOfEntry(e)), Dialer: inv.deviceDialer(),
+		Password: pw, ConnectTimeout: devssh.ConnectTimeoutFor(inv.scaleOfEntry(e)), Dialer: inv.deviceDialer(), Quiet: inv.deviceQuiet(),
 	}
 }
 

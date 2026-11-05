@@ -37,6 +37,11 @@ type hooks struct {
 	// deviceDial replaces the TCP dial of every device (the in-process fake
 	// device); nil dials the device's own address.
 	deviceDial devssh.Dialer
+	// deviceQuiet replaces devssh's quiet period (the wait for a device's
+	// output to stop after each prompt) in every device session (0: the
+	// devssh default, which tacctl itself always uses): the in-process fake
+	// device has nothing more to say, so the default is dead time.
+	deviceQuiet time.Duration
 	// devicePasswords is the source of the invocation's device password.
 	devicePasswords func(inv *invocation) devicePasswords
 	// localPasswords is the source of a local account's password.
