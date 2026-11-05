@@ -308,13 +308,14 @@ func TestSudoers0219(t *testing.T) {
 		t.Error("the 0.2.19 operator alias has console system-shell")
 	}
 	got := strings.Replace(strings.Replace(cur, Binary+" "+row+", ", "", 1), Binary+" device clone *, ", "", 1)
+	got = strings.Replace(got, Binary+" log failures *, ", "", 1)
 	for _, pat := range []string{"console system-shell", "console system-shell readonly", "console system-shell operator", "console system-shell engineer",
 		"console system-shell superuser", "console system-shell path", "console system-shell user *",
 		"console password-cache", "console password-cache on", "console password-cache off"} {
 		got = strings.Replace(got, Binary+" "+pat+", ", "", 1)
 	}
 	if got != old {
-		t.Errorf("the 0.2.19 text is not this release's less the rows of 0.2.20 and 0.2.23:\n%s", got)
+		t.Errorf("the 0.2.19 text is not this release's less the rows of 0.2.20 and 0.2.23 and the log filters' row:\n%s", got)
 	}
 	if strings.Contains(Sudoers0218(), row) || strings.Contains(Sudoers0217(), row) || strings.Contains(Sudoers0216(), row) {
 		t.Error("an older frozen text has the row of 0.2.20")
@@ -335,6 +336,48 @@ func TestSudoers0219(t *testing.T) {
 	}
 }
 
+// The 0.2.23 text lacks the operator's 'log failures *' (the log filters of
+// this release) and has every other rule, the engineer's 'device clone'
+// included; every older frozen text lacks it too; where the 0.2.23 tag is in
+// the repository, it is that tag's own golden file.
+func TestSudoers0223(t *testing.T) {
+	old, cur := Sudoers0223(), Sudoers()
+	if old == cur {
+		t.Fatal("the 0.2.23 text is this release's")
+	}
+	const row = "log failures *"
+	op, now := strings.Join(aliasItems(t, old, "TACCTL_OP"), "|"), strings.Join(aliasItems(t, cur, "TACCTL_OP"), "|")
+	if strings.Contains(op, row) || !strings.Contains(now, row) || !strings.Contains(op, "log failures|") {
+		t.Errorf("%q: in the 0.2.23 operator alias %v, in this release's %v", row, strings.Contains(op, row), strings.Contains(now, row))
+	}
+	if got := strings.Replace(cur, Binary+" "+row+", ", "", 1); got != old {
+		t.Errorf("the 0.2.23 text is not this release's less the row:\n%s", got)
+	}
+	if !strings.Contains(old, Binary+" device clone *") {
+		t.Error("the 0.2.23 text lost the engineer's row of 'device clone'")
+	}
+	for name, text := range map[string]string{"0.2.22": Sudoers0222(), "0.2.19": Sudoers0219(), "0.2.18": Sudoers0218(), "0.2.17": Sudoers0217(),
+		"0.2.16": Sudoers0216(), "0.2.14": Sudoers0214(), "0.2.13": Sudoers0213(), "0.2.8": Sudoers028(), "0.2.7": Sudoers027(), "0.2.3": Sudoers023()} {
+		if strings.Contains(text, Binary+" "+row) {
+			t.Errorf("the %s text has the row of the log filters", name)
+		}
+	}
+	r := execx.Real{}
+	if _, err := r.LookPath("git"); err != nil {
+		t.Skip("git is not installed, so the 0.2.23 tag cannot be read")
+	}
+	if res, err := r.Run(context.Background(), execx.Cmd{Name: "git", Args: []string{"rev-parse", "-q", "--verify", "0.2.23^{commit}"}}); err != nil || res.Code != 0 {
+		t.Skip("the 0.2.23 tag is not in this repository (CI must fetch tags: git fetch --tags)")
+	}
+	res, err := r.Run(context.Background(), execx.Cmd{Name: "git", Args: []string{"show", "0.2.23:internal/tier/testdata/sudoers.tiers"}})
+	if err != nil || res.Code != 0 {
+		t.Fatalf("cannot read the 0.2.23 tag's golden file: %v %s", err, res.Stderr)
+	}
+	if string(res.Stdout) != old {
+		t.Error("Sudoers0223 differs from the golden file of the 0.2.23 tag")
+	}
+}
+
 // The 0.2.22 text lacks the engineer's row of 0.2.23 (device clone) and has
 // every other rule; every older frozen text lacks it too; where the 0.2.22
 // tag is in the repository, it is that tag's own golden file.
@@ -348,8 +391,8 @@ func TestSudoers0222(t *testing.T) {
 	if strings.Contains(en, row) || !strings.Contains(now, row) {
 		t.Errorf("%q: in the 0.2.22 engineer alias %v, in this release's %v", row, strings.Contains(en, row), strings.Contains(now, row))
 	}
-	if got := strings.Replace(cur, Binary+" "+row+", ", "", 1); got != old {
-		t.Errorf("the 0.2.22 text is not this release's less the row of 0.2.23:\n%s", got)
+	if got := strings.Replace(strings.Replace(cur, Binary+" "+row+", ", "", 1), Binary+" log failures *, ", "", 1); got != old {
+		t.Errorf("the 0.2.22 text is not this release's less the row of 0.2.23 and the log filters' row:\n%s", got)
 	}
 	for name, text := range map[string]string{"0.2.19": Sudoers0219(), "0.2.18": Sudoers0218(), "0.2.17": Sudoers0217(), "0.2.16": Sudoers0216(),
 		"0.2.14": Sudoers0214(), "0.2.13": Sudoers0213(), "0.2.8": Sudoers028(), "0.2.7": Sudoers027(), "0.2.3": Sudoers023()} {

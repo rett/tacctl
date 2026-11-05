@@ -365,7 +365,8 @@ func (inv *invocation) rollbackTimeoutScaleNote(version string) {
 
 // rollbackNextSteps0223 is the next steps of the rollback to 0.2.23: the
 // upgrade of the tag. 0.2.23 reads every file this release writes, so the
-// rollback converted nothing, took no snapshot and leaves no command to avoid.
+// rollback converted no file (it put back 0.2.23's per-tier sudoers drop-in,
+// without 'log failures *'), took no snapshot and leaves no command to avoid.
 func (inv *invocation) rollbackNextSteps0223(version string) {
 	inv.echo("")
 	inv.echo(ui.Bold + "Next steps" + ui.NC)

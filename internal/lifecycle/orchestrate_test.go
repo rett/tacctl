@@ -1044,6 +1044,26 @@ func TestUpgradeRefreshesTheTiersSudoersOnlyWhenInstalledAndDifferent(t *testing
 		!strings.Contains(o2.text(), "[INFO]   Updated: tiers sudoers") {
 		t.Errorf("0.2.7 text not rewritten: %q\n%s", got, o2.text())
 	}
+
+	// What 0.2.23 wrote (without the operator's 'log failures *') is an older
+	// text too: an operator gets the log filters through sudo after the upgrade.
+	o3 := newOhost(t)
+	o3.cloned()
+	o3.run.Func(func(c execx.Cmd) bool { return c.Name == "install" }, func(c execx.Cmd) (execx.Result, error) {
+		data, err := os.ReadFile(c.Args[len(c.Args)-2])
+		if err != nil {
+			return execx.Result{Code: 1}, nil
+		}
+		return execx.Result{}, os.WriteFile(c.Args[len(c.Args)-1], data, 0o440)
+	})
+	o3.write(o3.p.TierSudoersFile, tier.Sudoers0223())
+	if code := upgrade(o3); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, o3.stdout, o3.stderr)
+	}
+	if got := readFile(t, o3.p.TierSudoersFile); got != tier.Sudoers() || !strings.Contains(got, "log failures *") ||
+		!strings.Contains(o3.text(), "[INFO]   Updated: tiers sudoers") {
+		t.Errorf("0.2.23 text not rewritten: %q\n%s", got, o3.text())
+	}
 	if readFile(t, file) != "# an older release's rules\n" || installs() != 0 {
 		t.Errorf("replaced although visudo refused: %q", readFile(t, file))
 	}

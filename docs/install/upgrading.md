@@ -324,15 +324,19 @@ snapshot; this release, if it stays, reads the two as missing until its next
 ### To 0.2.23
 
 0.2.23 reads every file this release writes: this release changed no stored
-file, so the rollback converts nothing. It removes no key, rewrites no sudoers
-drop-in (0.2.23 and this release write the same text), takes no snapshot and
-does not need `--yes`; the users' email addresses, the SNMPv3 users, the
-covered staging entries, the server name, the timing scale, the server
-address, the users' login to this server, a user name with a period and an
-emergency lockdown (with or without enrolled hosts) all stay. It still refuses
-while an apply is not settled. `--hosts` is accepted and does nothing. The
-tacquito checkout in `/opt/tacctl` keeps pointing at the project's fork, which
-has the same history as the upstream clone 0.2.23 made, so 0.2.23's own
+file, so the rollback converts no file. It removes no key, takes no snapshot
+and does not need `--yes`. It puts back 0.2.23's per-tier sudoers drop-in,
+without the operator's `log failures *` (0.2.23 has no log filters), when the
+file is exactly this release's text: the dry run shows the step, `--apply`
+writes it after `visudo -cf`, and a file `tacctl` did not write is left. Every
+older target that rewrites the per-tier drop-in recognises this release's text
+and 0.2.23's as `tacctl`'s own and puts back its own. The users' email addresses, the SNMPv3 users, the covered staging entries, the
+server name, the timing scale, the server address, the users' login to this
+server, a user name with a period and an emergency lockdown (with or without
+enrolled hosts) all stay. It still refuses while an apply is not settled.
+`--hosts` is accepted and does nothing. The tacquito checkout in `/opt/tacctl`
+keeps pointing at the project's fork, which has the same history as the
+upstream clone 0.2.23 made, so 0.2.23's own
 upgrade pulls from it unchanged.
 
 ```bash
@@ -355,8 +359,8 @@ converted, no snapshot is taken and `--yes` is not needed; with an address or
 a version 2 file the rollback takes a snapshot first and needs `--yes` when
 anything is dropped, and with only a covered staging entry it takes the
 snapshot and asks nothing. The per-tier sudoers drop-in, when it is exactly
-this release's text, is rewritten with 0.2.22's (after `visudo -cf`): it loses
-the engineer's row of `device clone`; an edited drop-in is left. `--hosts` is
+this release's text or 0.2.23's, is rewritten with 0.2.22's (after `visudo
+-cf`): it loses the engineer's row of `device clone`; an edited drop-in is left. `--hosts` is
 accepted and does nothing.
 
 ```bash
@@ -373,8 +377,8 @@ keys, after a snapshot, and converts nothing else: no scope is added to the user
 this server itself), a user name with a period and an emergency lockdown stay
 (0.2.21 reads both), and the new `server show`, `server listen` and `server
 metrics` write the keys that `config listen` and `config metrics` wrote. The
-per-tier sudoers drop-in, when it is exactly this release's text, is rewritten
-with 0.2.21's, which is 0.2.22's (it loses the engineer's row of `device
+per-tier sudoers drop-in, when it is exactly this release's text or 0.2.23's,
+is rewritten with 0.2.21's, which is 0.2.22's (it loses the engineer's row of `device
 clone`); an edited drop-in is left. `--hosts` is accepted and does nothing.
 
 ```bash
@@ -396,7 +400,7 @@ run there.
 0.2.20 reads every file this release writes but `server.addresses`,
 `server.name` and the timing scale, so the rollback removes those keys and adds the scope of this server's own login to the
 users' scopes (above), after a snapshot. The per-tier sudoers drop-in, when it
-is exactly this release's text, is rewritten with 0.2.20's, which is 0.2.22's
+is exactly this release's text or 0.2.23's, is rewritten with 0.2.20's, which is 0.2.22's
 (it loses the engineer's row of `device clone`); an edited drop-in is left.
 Nothing else is converted, and `--hosts` is accepted and does nothing.
 

@@ -38,9 +38,13 @@ current behaviour; this file is where history lives.
 
 4. **`tacctl rollback 0.2.23`, the release before this one, is a target.**
    This release changed no stored file, so 0.2.23 reads everything it writes:
-   the rollback converts nothing, removes no key, leaves the per-tier sudoers
-   drop-in (0.2.23 and this release write the same text), takes no snapshot and
-   needs no `--yes`. The users' email addresses, the SNMPv3 users and the
+   the rollback converts no file, removes no key, takes no snapshot and needs
+   no `--yes`. It puts back 0.2.23's per-tier sudoers drop-in, without the
+   operator's `log failures *` (item 7), when the file is exactly this
+   release's text (the dry run shows the step, `--apply` writes it after
+   `visudo -cf`; a file tacctl did not write is left), and every older target
+   recognises this release's text and 0.2.23's as tacctl's own and puts back
+   its own. The users' email addresses, the SNMPv3 users and the
    covered staging entries, which every older target drops, and an emergency
    lockdown on a scope with enrolled hosts, which every older target refuses,
    stay. The top-level help, `docs/cli/conventions.md` and `docs/cli/user.md`
@@ -115,7 +119,11 @@ current behaviour; this file is where history lives.
    accounting logs the record's `User` and `Device`, the RADIUS auth log
    `user=` and `client=`; a log that names no device (the FreeRADIUS daemon
    log, a record written before patch 0006) shows nothing for `--device` and
-   says so. Without a filter the commands print what they did.
+   says so. Without a filter the commands print what they did. The operator
+   tier's sudo rule for `log failures` now takes arguments (`log failures
+   *`), so an operator can pass the filters (and `--backend`) to it through
+   sudo as to the other three; `tacctl config sudoers tiers install` and the
+   upgrade write the new rule.
 
 ## 0.2.23 (2026-10-31)
 

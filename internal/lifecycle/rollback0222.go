@@ -4,9 +4,9 @@ package lifecycle
 // 0.2.22 reads every file 0.2.23 and this release write but what a step of
 // rollbackAdditions (rollback_additions.go) undoes, so the plan of the target converts nothing
 // of its own: it leaves every file alone but the per-tier sudoers drop-in
-// when it is exactly this release's text (it loses the engineer's row of
-// 'device clone', tier.Sudoers0222, and the same goes for 0.2.21 and 0.2.20,
-// which wrote the same text), and a change of this release that
+// when it is exactly this release's text or 0.2.23's (it loses the engineer's
+// row of 'device clone', tier.Sudoers0222, and the same goes for 0.2.21 and
+// 0.2.20, which wrote the same text), and a change of this release that
 // 0.2.22 refuses (the users' email addresses, rollback_email.go) is a step of
 // that list, which reaches this target and every older one. When a step has
 // something to do the target converts a file, takes the snapshot and needs
@@ -40,11 +40,12 @@ func planRollback0222(p *RollbackPlan) (*RollbackPlan, error) {
 
 // tiers0222Step plans the per-tier sudoers drop-in for a target that
 // reads this release's files and wrote the text of 0.2.20 to 0.2.22
-// (tier.Sudoers0222): exactly this release's text is rewritten with it, which
-// takes out the engineer's row of 'device clone'. A file that is already that
+// (tier.Sudoers0222): exactly this release's text, or 0.2.23's
+// (tier.Sudoers0223), is rewritten with it, which takes out the engineer's row
+// of 'device clone'. A file that is already that
 // text, or absent, needs no step; any other text is left and said so.
 func (p *RollbackPlan) tiers0222Step(target string) []RollbackStep {
-	tiers := p.tiersPlan(tier.Sudoers0222(), tier.Sudoers())
+	tiers := p.tiersPlan(tier.Sudoers0222(), tier.Sudoers(), tier.Sudoers0223())
 	p.sudoers = []sudoersPlan{tiers}
 	if tiers.state != "rewrite" && tiers.state != "left" {
 		return nil

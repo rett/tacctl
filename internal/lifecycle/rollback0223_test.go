@@ -9,8 +9,9 @@ import (
 )
 
 // The rollback to 0.2.23 on the sandbox of rollback_test.go: this release
-// changed no stored file, so the plan converts nothing, whatever 0.2.23 itself
-// added to the state.
+// changed no stored file, so the plan converts nothing but the per-tier
+// drop-in (TestPlanRollback0223DropIn), whatever 0.2.23 itself added to the
+// state.
 
 func plan0223(t *testing.T, s *rbSandbox) *RollbackPlan {
 	t.Helper()
@@ -24,10 +25,11 @@ func plan0223(t *testing.T, s *rbSandbox) *RollbackPlan {
 
 // The plan leaves every file, asks for no --yes, takes no snapshot, and keeps
 // what 0.2.23 has and the older targets drop: the users' email addresses, a
-// pool of SNMPv3 users, a staging entry marked covered, the per-tier drop-in
-// of this release. It writes nothing.
+// pool of SNMPv3 users, a staging entry marked covered. The per-tier drop-in is
+// the one 0.2.23 wrote, so it is left too. It writes nothing.
 func TestPlanRollback0223ConvertsNothing(t *testing.T) {
 	s := poolState(t)
+	s.write(s.p.TierSudoersFile, tier.Sudoers0223(), 0o640)
 	rbStoreEmail(t, s)
 	s.write(s.p.StateDir+"/staging", stagingKept+stagingCovered, 0o600)
 	before := s.snapshotOf()
@@ -65,7 +67,7 @@ func TestPlanRollback0223ConvertsNothing(t *testing.T) {
 	if after := s.snapshotOf(); !reflect.DeepEqual(after, before) {
 		t.Error("the apply wrote a file")
 	}
-	if got := string(mustRead(t, s.p.TierSudoersFile)); got != tier.Sudoers() {
+	if got := string(mustRead(t, s.p.TierSudoersFile)); got != tier.Sudoers0223() {
 		t.Error("the per-tier drop-in was rewritten")
 	}
 }
