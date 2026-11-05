@@ -76,8 +76,10 @@ console forwarding tiers [<csv>|none]
     sshd's drop-in lists the users who must change the password in a block that closes every
     forwarding for them before the tier blocks: their new connections forward nothing through the
     server in any tier until the password is changed (a connection already open keeps what it had
-    until it closes; the server's sync, console install, user passwd, their own passwd, store
-    import, backup restore and store rollback rewrite the list)
+    until it closes; the server's sync, console install, and every verb that changes who is held
+    rewrite the list: user require-password-change, user add, remove, rename and move, user
+    passwd, their own passwd, a group command that lowers a tier, store import, backup restore
+    and store rollback; see Login and Console Security)
 
 console forwarding gateway-ports [enable|disable]
 

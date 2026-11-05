@@ -86,9 +86,11 @@ func (inv *invocation) consoleProvision(pol *console.Policy) error {
 }
 
 // refreshHeldForwarding rewrites the console's sshd drop-in after a change
-// that no sync of this server follows (an administrator's 'user passwd', a
-// user's own 'passwd', a store import, a backup restore, a store rollback)
-// but that flags or unflags a user, so the list of users held to a password
+// that flags or unflags a user, whether or not a sync of this server follows
+// and gets as far as the drop-in ('user require-password-change', 'user add',
+// 'user remove|rename|move', an administrator's 'user passwd', a user's own
+// 'passwd', a lowered tier, a store import, a backup restore, a store
+// rollback), so the list of users held to a password
 // change (heldUsers) is current at once: for a flagged user sshd refuses
 // every forwarding on the connections that follow, and for an unflagged one
 // it allows what the tier allows. A connection that is open already keeps
