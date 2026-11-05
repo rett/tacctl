@@ -14,6 +14,8 @@ import (
 
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
+	"github.com/rett/tacctl/internal/gitx"
+	"github.com/rett/tacctl/internal/gitx/gitxtest"
 )
 
 func TestImageForOS(t *testing.T) {
@@ -237,14 +239,14 @@ func TestHelpers(t *testing.T) {
 
 func TestBuildTarball(t *testing.T) {
 	e, out, errb := testEnv(t)
-	f := &fake.Runner{}
+	f := &fake.Runner{Rewrite: gitx.Unwrap}
 	e.Runner = f
 	f.Missing("gnulib-tool")
 	if err := e.BuildTarball(context.Background()); !errors.Is(err, ErrFailed) || !strings.Contains(errb.String(), "'gnulib-tool' not found") {
 		t.Fatalf("missing tool: %v %q", err, errb.String())
 	}
 
-	f = &fake.Runner{}
+	f = &fake.Runner{Rewrite: gitx.Unwrap}
 	e.Runner = f
 	f.Fail([]string{"git", "clone"}, 128, "fatal")
 	errb.Reset()
@@ -252,7 +254,7 @@ func TestBuildTarball(t *testing.T) {
 		t.Fatalf("clone: %v %q", err, errb.String())
 	}
 
-	f = &fake.Runner{}
+	f = &fake.Runner{Rewrite: gitx.Unwrap}
 	e.Runner = f
 	f.On([]string{"git", "-C"}, execx.Result{Stdout: []byte("deadbeef\n")})
 	errb.Reset()
@@ -262,7 +264,7 @@ func TestBuildTarball(t *testing.T) {
 	}
 
 	// Success: every step runs in the clone; make dist leaves the tarball.
-	f = &fake.Runner{}
+	f = &fake.Runner{Rewrite: gitx.Unwrap}
 	e.Runner = f
 	f.On([]string{"git", "-C"}, execx.Result{Stdout: []byte(PamTacplusCommit + "\n")})
 	f.OnFunc([]string{"git", "clone"}, func(c execx.Cmd) (execx.Result, error) {
@@ -309,6 +311,26 @@ func TestBuildTarball(t *testing.T) {
 	errb.Reset()
 	if err := e.BuildTarball(context.Background()); !errors.Is(err, ErrFailed) || errb.String() != "boom\n\033[0;31m[ERROR]\033[0m Preparing the pam_tacplus tarball failed.\n" {
 		t.Errorf("make dist: %v %q", err, errb.String())
+	}
+}
+
+// The clone of pam_tacplus cannot wait for an operator who is not there: it
+// is made through gitx.Net (no prompt on the terminal, ssh in BatchMode, a
+// stalled transfer dropped), and the lookup of the remote shell is not made
+// in tacctl's working directory.
+func TestBuildTarballCloneCannotPrompt(t *testing.T) {
+	e, _, _ := testEnv(t)
+	f := &fake.Runner{Rewrite: gitx.Unwrap}
+	e.Runner = f
+	f.Fail([]string{"git", "clone"}, 128, "fatal")
+	if err := e.BuildTarball(context.Background()); !errors.Is(err, ErrFailed) {
+		t.Fatalf("clone: %v", err)
+	}
+	gitxtest.Check(t, f.Raw(), "ssh -o BatchMode=yes", "clone")
+	for _, c := range f.Raw() {
+		if c.Name == "git" && c.Dir != "/" && gitxtest.Verb(c) == "config" {
+			t.Errorf("lookup %q in %q, want \"/\"", c.Argv(), c.Dir)
+		}
 	}
 }
 

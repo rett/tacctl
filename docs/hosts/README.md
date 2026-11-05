@@ -17,6 +17,8 @@ tacctl config linux script --scope prod --method radius -o enroll.sh
 tacctl config linux remove-script -o unenroll.sh           # removal script (no secrets; removes
                                                            # either method)
 ```
+`config linux build` clones the pinned `pam_tacplus` tag with git asking for nothing (no user name, password or key passphrase on the terminal, `BatchMode=yes` for an ssh remote, a transfer under 1000 bytes a second for a minute dropped), as `tacctl upgrade` pulls its own clone; a clone that fails stops the build with the message `Could not clone` and the repository.
+
 The server's port in the script is the configured listener's (`tacctl server listen`; the default listener's, 49, for `tacplus`, and the `auth` listener's, 1812, for `radius`, whose accounting port is the `acct` listener's, 1813): the `server=<address>:<port>` of `pam_tacplus` and the port of `pam_radius_auth`'s server file are written from it, and `config linux script` prints it (`Server: <address> port <n>`). `host enroll` (`--local` for this server) writes the same value. A host keeps the port it was enrolled with until its install script is run again in full: `--accounts-only` and `host sync` sync accounts and leave the PAM configuration alone.
 
 Copy the install script to the host and run it as root from a session you keep open. It:

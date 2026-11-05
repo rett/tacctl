@@ -662,6 +662,10 @@ branch_setup() {
     cat > "${STUB_BIN}/git" <<'STUB'
 #!/usr/bin/env bash
 echo "git $*" >> "${CALLS_LOG}"
+# What the network commands were given: the guard against a prompt.
+case "$*" in
+    *" fetch "*|*" pull "*) echo "guard ${GIT_TERMINAL_PROMPT-unset}|${GIT_ASKPASS-unset}|${GIT_SSH_COMMAND-unset}|${SSH_ASKPASS-unset}" >> "${CALLS_LOG}" ;;
+esac
 case "$*" in
     *"branch --show-current"*) echo "${STUB_GIT_BRANCH:-develop}" ;;
     *"branch -r"*) printf '  origin/HEAD -> origin/develop\n  origin/develop\n  origin/master\n  origin/feature/x\n' ;;
@@ -707,8 +711,9 @@ config_branch() {
     assert_equal "$output" "${want%$'\n'}"
     run stub_calls
     assert_line "git -C ${DEPLOY} branch --show-current"
-    assert_line "git -C ${DEPLOY} fetch --quiet"
+    assert_line "git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=60 -C ${DEPLOY} fetch --quiet"
     assert_line "git -C ${DEPLOY} branch -r"
+    refute_called "^git -C ${DEPLOY} fetch"
 }
 
 # bats test_tags=cutover:wp2-4c
@@ -738,9 +743,25 @@ config_branch() {
     assert_success
     assert_equal "$output" "${ESC}[0;32m[INFO]${ESC}[0m Switched to branch 'feature/x'.
 ${ESC}[0;32m[INFO]${ESC}[0m Run 'tacctl upgrade' to apply any changes."
+    # fetch and pull are the guarded ones (the lookup of core.sshCommand
+    # before each).
+    local lp="-c http.lowSpeedLimit=1000 -c http.lowSpeedTime=60"
     assert_equal "$(grep '^git ' "$CALLS_LOG" | tr '\n' '|')" \
-        "git -C ${DEPLOY} branch --show-current|git -C ${DEPLOY} fetch --quiet|git -C ${DEPLOY} rev-parse --verify origin/feature/x|git -C ${DEPLOY} checkout -- .|git -C ${DEPLOY} checkout feature/x|git -C ${DEPLOY} pull --quiet|"
+        "git -C ${DEPLOY} branch --show-current|git -C ${DEPLOY} config --get core.sshCommand|git ${lp} -C ${DEPLOY} fetch --quiet|git -C ${DEPLOY} rev-parse --verify origin/feature/x|git -C ${DEPLOY} checkout -- .|git -C ${DEPLOY} checkout feature/x|git -C ${DEPLOY} config --get core.sshCommand|git ${lp} -C ${DEPLOY} pull --quiet|"
     assert_equal "$(stat -c %a "${DEPLOY}/bin/tacctl.sh")" 755
+}
+
+# The fetch and the pull of the clone ask for nothing, whatever the operator's
+# environment says: no prompt on the terminal, a failing askpass, the ssh
+# askpass unset, ssh in BatchMode in place of the operator's own command.
+# bats test_tags=cutover:wp2-4c
+@test "config branch: the fetch and the pull cannot prompt, and replace GIT_SSH_COMMAND" {
+    branch_setup
+    SSH_ASKPASS=/home/user/askpass GIT_SSH_COMMAND="ssh -i /home/user/.ssh/key" GIT_TERMINAL_PROMPT=1 GIT_ASKPASS=/home/user/askpass \
+        runs config_branch feature/x
+    assert_success
+    assert_equal "$(grep '^guard ' "$CALLS_LOG" | tr '\n' ';')" \
+        "guard 0|false|ssh -o BatchMode=yes|unset;guard 0|false|ssh -o BatchMode=yes|unset;"
 }
 
 # bats test_tags=cutover:wp2-4c

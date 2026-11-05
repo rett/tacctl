@@ -235,3 +235,26 @@ func TestInstallAndSignals(t *testing.T) {
 		t.Errorf("Signals = %v", got)
 	}
 }
+
+// A Rewrite is what the rules and the assertions see; Raw is the command as
+// it was made, and Reset forgets both.
+func TestRewriteAndRaw(t *testing.T) {
+	f := Runner{Rewrite: func(c execx.Cmd) execx.Cmd {
+		if c.Name == "env" {
+			return execx.Cmd{Name: c.Args[len(c.Args)-1]}
+		}
+		return c
+	}}
+	f.On([]string{"git"}, execx.Result{Stdout: []byte("seen\n")})
+	res, _ := f.Run(context.Background(), execx.Cmd{Name: "env", Args: []string{"A=1", "git"}})
+	if string(res.Stdout) != "seen\n" || !f.Called("git") || f.Called("env") {
+		t.Errorf("rewritten: %+v %q", res, f.Argvs())
+	}
+	if raw := f.Raw(); len(raw) != 1 || !reflect.DeepEqual(raw[0].Argv(), []string{"env", "A=1", "git"}) {
+		t.Errorf("Raw = %v", raw)
+	}
+	f.Reset()
+	if len(f.Raw()) != 0 || len(f.Calls()) != 0 {
+		t.Error("Reset keeps calls")
+	}
+}

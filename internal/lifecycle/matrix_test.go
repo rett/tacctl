@@ -85,6 +85,7 @@ import (
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
+	"github.com/rett/tacctl/internal/gitx"
 	"github.com/rett/tacctl/internal/lifecycle"
 	"github.com/rett/tacctl/internal/paths"
 	"github.com/rett/tacctl/internal/ui"
@@ -161,7 +162,7 @@ func newMatrixHost(t *testing.T) *matrixHost {
 	h := &matrixHost{
 		t: t, Deploy: filepath.Join(w, "opt", "tacctl"), Binary: filepath.Join(w, "usr", "local", "bin", "tacctl"),
 		BinaryCommit: commitOld, TacquitoSrc: filepath.Join(w, "opt", "tacquito-src"),
-		Run: &fake.Runner{}, stdout: &bytes.Buffer{}, stderr: &bytes.Buffer{},
+		Run: &fake.Runner{Rewrite: gitx.Unwrap}, stdout: &bytes.Buffer{}, stderr: &bytes.Buffer{},
 		head: commitOld, branch: "develop",
 		local:  map[string]string{"develop": commitOld},
 		remote: map[string]string{"develop": commitOld, "master": commitBash, "feature/x": commitNew},
