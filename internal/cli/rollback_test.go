@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"sort"
@@ -305,7 +306,7 @@ func TestRollbackRoundTrip(t *testing.T) {
 	for _, want := range []string{"Config snapshot saved to", "state/tacctl.yaml: removed 3 keys", "state/console.yaml: removed settings.password_cache",
 		"state/devices.yaml: removed the SNMP settings of 2 devices",
 		"sudoers.d/tacctl-tiers: rewritten with the text 0.2.3 writes", "sudoers.d/tacctl: rewritten with the text 0.2.3 writes",
-		"Next steps", "tacctl upgrade --branch 0.2.3", "holds the 0.2.23 state. Restore it with 0.2.23 only"} {
+		"Next steps", "tacctl upgrade --branch 0.2.3", "holds the 0.2.25 state. Restore it with 0.2.25 only"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("--apply output lacks %q:\n%s", want, out)
 		}
@@ -716,7 +717,7 @@ func TestRollbackCompletion(t *testing.T) {
 		words []string
 		want  []string
 	}{
-		{[]string{"rollback", ""}, []string{"0.2.23", "0.2.22", "0.2.21", "0.2.20", "0.2.19", "0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3"}},
+		{[]string{"rollback", ""}, []string{"0.2.24", "0.2.23", "0.2.22", "0.2.21", "0.2.20", "0.2.19", "0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3"}},
 		{[]string{"rollback", "0.2.3", ""}, []string{"--apply", "--yes", "--hosts"}},
 		{[]string{"rollback", "0.2.3", "--apply", ""}, []string{"--yes", "--hosts"}},
 		{[]string{"rollback", "0.2.3", "--apply", "--yes", "--hosts", ""}, nil},
@@ -773,5 +774,32 @@ func TestRollbackWarnsOfWhoGainsASystemShellOrTheCache(t *testing.T) {
 	hs.expect(0, "This was a dry run", "")
 	if strings.Contains(hs.all(), "gain a system shell") {
 		t.Errorf("a warning without a reason:\n%s", hs.all())
+	}
+}
+
+// rollbackFrom is hand-edited at each release (0.2.24 shipped with 0.2.23 in
+// the notes after a rollback). It is the release this build is, which is the
+// version of the first release heading of CHANGELOG.md ("## 0.2.25
+// (unreleased)", dated once the release starts); docs/releasing.md lists the
+// edit in "The rollback target".
+func TestRollbackFromIsTheReleaseOfTheChangelog(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "..", "CHANGELOG.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	heading := ""
+	for _, l := range strings.Split(string(src), "\n") {
+		if strings.HasPrefix(l, "## ") {
+			heading = l
+			break
+		}
+	}
+	f := strings.Fields(heading)
+	if len(f) < 2 || !regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`).MatchString(f[1]) {
+		t.Fatalf("the first '## ' heading of CHANGELOG.md is not '## X.Y.Z (...)': %q", heading)
+	}
+	if f[1] != rollbackFrom {
+		t.Errorf("rollbackFrom is %q (internal/cli/rollback.go), the first release heading of CHANGELOG.md is %q: "+
+			"move the constant with the release (docs/releasing.md, The rollback target)", rollbackFrom, heading)
 	}
 }
