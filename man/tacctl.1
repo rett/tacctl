@@ -13069,10 +13069,11 @@ did not list, a member without lines or missing, a line twice or none of these,
 a confirmed commit whose note a member does not print, and a note on the
 confirming commit fail the step, and the error names the member and the line.
 Only a chassis of two is read so: in a chassis of three or more in which every
-member has a label, a label that appears twice is refused (no capture of a
+member has a label, the answer is read one line per label as before, and an
+answer refused in that layout says when a label appears twice (no capture of a
 larger one shows how the blocks fall). The error of a refused answer shows its
-lines, up to 40, each cut at 120 bytes, so that a layout not seen before shows
-itself. A chassis of one member answers like a single
+lines, up to 40, each cut at 120 bytes (200 over NETCONF, and for the reason
+that names a member), so that a layout not seen before shows itself. A chassis of one member answers like a single
 device:
 .B "show version"
 prints its header

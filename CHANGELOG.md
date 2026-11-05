@@ -111,12 +111,14 @@ current behaviour; this file is where history lives.
    print and a note on the confirming commit are refused, and the error names
    the member and the line. Only a chassis of two is read so (the capture is of
    two members): in a chassis of three or more members that all print a label,
-   a label that appears twice is refused with that said, and every other
-   layout (an unlabelled master, a single member, two routing engines, a
-   cluster) is read as before. A refused answer was shown cut to its first six
-   lines of 200 bytes, which hid the layout that mattered; the error now shows
-   the answer's lines, up to 40, each cut at 120 bytes (the reasons that name a
-   member is cut at 200 bytes).
+   the answer is read one line per label as before, and an answer refused in
+   that layout says when a label appears twice (no capture of a larger chassis
+   exists); every other layout (an unlabelled master, a single member, two
+   routing engines, a cluster) is read as before. A refused answer was shown
+   cut to its first six lines of 200 bytes, which hid the layout that mattered;
+   the error now shows the answer's lines, up to 40, each cut at 120 bytes (the
+   reasons that name a member are cut at 200 bytes, and so is every line of an
+   answer over NETCONF).
 
 ## 0.2.24 (2026-11-05)
 
