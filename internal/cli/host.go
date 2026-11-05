@@ -2192,7 +2192,7 @@ func (inv *invocation) hostDefaultMethod(args []string) error {
 	if err != nil {
 		return nil
 	}
-	if !contains(ids, id) {
+	if !slices.Contains(ids, id) {
 		a.Out.Warn("The " + hosts.MethodLabel(method) + " backend is not enabled yet: tacctl backend enable " + id)
 	}
 	return nil

@@ -15,6 +15,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -348,7 +349,7 @@ func (inv *invocation) stagingEnd(e stagingEntry, event, what string) error {
 		return err
 	}
 	base := event + " cidr=" + e.CIDR + " scope=" + e.Scope + " " + what
-	if !e.Covered && m.Exists("scopes", e.Scope) && contains(m.ScopePrefixes(e.Scope), e.CIDR) {
+	if !e.Covered && m.Exists("scopes", e.Scope) && slices.Contains(m.ScopePrefixes(e.Scope), e.CIDR) {
 		rest := without(m.ScopePrefixes(e.Scope), e.CIDR)
 		if joinNonEmpty(rest, "") == "" {
 			return errors.New("staging address " + e.CIDR + " is the only prefix of scope '" + e.Scope + "'; add its real prefixes first")
@@ -441,7 +442,7 @@ func (inv *invocation) stagingSweep() {
 			kept = append(kept, e)
 			continue
 		}
-		if !m.Exists("scopes", e.Scope) || (!e.Covered && !contains(m.ScopePrefixes(e.Scope), e.CIDR)) {
+		if !m.Exists("scopes", e.Scope) || (!e.Covered && !slices.Contains(m.ScopePrefixes(e.Scope), e.CIDR)) {
 			changed = true
 			continue
 		}
@@ -564,7 +565,7 @@ func (inv *invocation) scopeStaging(args []string) error {
 			return err
 		}
 		removeBase := "scope staging remove cidr=" + cidr + " scope=" + hit.Scope + " by=" + inv.sudoUser()
-		if !hit.Covered && m.Exists("scopes", hit.Scope) && contains(m.ScopePrefixes(hit.Scope), cidr) {
+		if !hit.Covered && m.Exists("scopes", hit.Scope) && slices.Contains(m.ScopePrefixes(hit.Scope), cidr) {
 			rest := without(m.ScopePrefixes(hit.Scope), cidr)
 			if joinNonEmpty(rest, "") == "" {
 				return inv.usageErr("Staging address " + cidr + " is the only prefix of scope '" + hit.Scope + "'; add its real prefixes first.")

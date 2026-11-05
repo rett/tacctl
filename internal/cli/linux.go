@@ -511,7 +511,7 @@ func (inv *invocation) linuxMethodRequire(method string) error {
 	if err != nil {
 		return inv.usageErr(err.Error())
 	}
-	if !contains(ids, id) {
+	if !slices.Contains(ids, id) {
 		return inv.usageErr("Method '"+method+"' needs the "+hosts.MethodLabel(method)+" backend, which is not enabled on this server.",
 			"Enable it first: tacctl backend enable "+id)
 	}

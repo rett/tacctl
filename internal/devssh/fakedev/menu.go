@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -215,7 +216,7 @@ func loadMenu(t transcript, override string) (*menuConfig, error) {
 			}
 			c.version = val
 		case "level":
-			if !contains(menuLevels, val) {
+			if !slices.Contains(menuLevels, val) {
 				return nil, bad("one of " + strings.Join(menuLevels, ", ") + " is needed")
 			}
 			c.level = val
@@ -258,15 +259,6 @@ func relTo(dir, p string) string {
 		return p
 	}
 	return filepath.Join(dir, p)
-}
-
-func contains(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
 }
 
 // promptOr is the prompt of a shell session, def when the transcript has
