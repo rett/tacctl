@@ -118,7 +118,10 @@ current behaviour; this file is where history lives.
    cut to its first six lines of 200 bytes, which hid the layout that mattered;
    the error now shows the answer's lines, up to 40, each cut at 120 bytes (the
    reasons that name a member are cut at 200 bytes, and so is every line of an
-   answer over NETCONF).
+   answer over NETCONF). The device's text in these lines is shown with every
+   control character (C0, DEL and C1, as U+009B), formatting character (the
+   bidirectional overrides) and line separator replaced by `?`, in the
+   terminal line and in `--json`; only C0 controls and DEL were before.
 
 ## 0.2.24 (2026-11-05)
 

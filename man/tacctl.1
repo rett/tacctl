@@ -13073,7 +13073,10 @@ member has a label, the answer is read one line per label as before, and an
 answer refused in that layout says when a label appears twice (no capture of a
 larger one shows how the blocks fall). The error of a refused answer shows its
 lines, up to 40, each cut at 120 bytes (200 over NETCONF, and for the reason
-that names a member), so that a layout not seen before shows itself. A chassis of one member answers like a single
+that names a member), with control characters (C0, DEL and C1), formatting
+characters (such as the bidirectional overrides) and line separators shown as
+.BR ? ,
+so that a layout not seen before shows itself. A chassis of one member answers like a single
 device:
 .B "show version"
 prints its header

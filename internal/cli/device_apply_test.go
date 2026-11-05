@@ -764,3 +764,27 @@ func TestApplyReviewInterrupted(t *testing.T) {
 		t.Errorf("lines %q", auditLines(b.r))
 	}
 }
+
+// A device's text in the reason of an outcome reaches neither the terminal
+// line nor the JSON object with a C1 control (U+009B starts an escape
+// sequence) or a bidirectional override.
+func TestApplyOutcomeCleansDeviceText(t *testing.T) {
+	t.Parallel()
+	const bad = "the answer was \u009b[31mred ‮evil next"
+	const clean = "the answer was ?[31mred ?evil?next"
+	o := &applyOutcome{Name: "sw1", Out: &devapply.Outcome{Exit: devapply.ExitRolledBack, Reason: bad}}
+	if got := cleanLine(o.line()); got != "rolled back: "+clean {
+		t.Errorf("line = %q", got)
+	}
+	j := o.json(applyJSON{})
+	if j.Reason != clean {
+		t.Errorf("json reason = %q", j.Reason)
+	}
+	b, err := json.Marshal(j)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.ContainsAny(string(b), "\u009b‮ ") {
+		t.Errorf("json = %s", b)
+	}
+}

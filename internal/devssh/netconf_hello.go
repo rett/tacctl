@@ -66,7 +66,7 @@ func shown(raw []byte) string {
 	}
 	var b strings.Builder
 	for _, r := range string(raw) {
-		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == ' ' || r == ' ' || r == unicode.ReplacementChar {
+		if UnsafeRune(r) || r == unicode.ReplacementChar {
 			r = '?'
 		}
 		b.WriteRune(r)

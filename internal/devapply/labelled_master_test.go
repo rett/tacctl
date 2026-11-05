@@ -237,3 +237,27 @@ func TestCommittedAnswerOfThreeReadsARepeatedLabel(t *testing.T) {
 		t.Errorf("why %q", why)
 	}
 }
+
+// Device text in an error is cleaned of every character that can move or
+// hide what a terminal shows: C0 and C1 controls (U+009B starts an escape
+// sequence), the bidirectional overrides and the line separators.
+func TestAnswerErrorCleansDeviceText(t *testing.T) {
+	t.Parallel()
+	const bad = "error\u009b[31m ‮evil next \x1b\x7f‍end"
+	const want = "error?[31m ?evil?next????end" // 2029, ESC, DEL, ZWJ
+	for name, e := range map[string]*AnswerError{
+		"answerError":     answerError("commit", []string{bad}, nil),
+		"answerErrorWide": answerErrorWide("commit", []string{bad}, nil),
+		"answerErrorWhy":  answerErrorWhy("commit", nil, nil, bad),
+	} {
+		if len(e.Lines) != 1 || e.Lines[0] != want {
+			t.Errorf("%s: lines %q, want %q", name, e.Lines, want)
+		}
+		if got := e.Error(); strings.ContainsAny(got, "\u009b‮  \x1b\x7f‍") {
+			t.Errorf("%s: %q", name, got)
+		}
+	}
+	if got := cut(bad); got != want {
+		t.Errorf("cut = %q", got)
+	}
+}
