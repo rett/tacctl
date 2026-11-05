@@ -44,8 +44,15 @@ process environment, signal the process, or write a package-level registry
 (`withFakeBackend`, `withPasswd`). The whole package takes about six minutes
 (about 24 serially). CI (`.github/workflows/test.yml`) runs it in two shards,
 `tests/tools/go-test-shard.sh <index> <count>` (the top-level tests dealt
-round-robin; `--check <count>` fails unless every test is in exactly one
-shard), the ones without tags with the race detector, beside one job for
+longest first by the durations in `tests/tools/cli-durations.txt`, each to the
+shard with the least planned time, a serial test counting four times a
+parallel one so the shards take about the same time; a test the file lacks
+counts a short parallel one; `--check <count>` fails unless every test is in
+exactly one shard, `--plan <count>` prints each shard's tests and planned
+seconds, and `--regen <log>` rewrites the durations file from the log of a
+`make gate-ci` or `make gate-go` run, the file's header says how: it only
+balances the shards, never changes which tests run, and
+`tests/integration/go_test_shard.bats` pins it), the ones without tags with the race detector, beside one job for
 every other package, a static job (gofmt, `go vet`) and a lint job (`make
 lint`, below). The test jobs install the tools that tests skip
 without (`shellcheck`, `groff`, `less` and `man-db` for the completion block
@@ -60,7 +67,9 @@ killed or lost a package, and whose `skipped=<n>` field counts the `--- SKIP`
 lines of the log (the tests run with `-v`, the only way `go test` reports a
 skip) with the names of the skipped tests, at most 20, listed above the line: a
 test that skips for a missing tool passes silently, and an unexpected skip
-count is how a green run shows it did not test what it should: start it with a tool that notices the process
+count is how a green run shows it did not test what it should; the ten
+slowest top-level tests of the run (`gate-go: slowest: TestX 47.1s`) follow
+the skipped names, still above the verdict line: start it with a tool that notices the process
 ending (an agent: Bash `run_in_background`), never with a trailing `&` and
 never wait for it with `pgrep -f`; `GATE_TMPFS=1 make gate-go` keeps the tests' sandboxes on `/dev/shm` (the fsync calls cost nothing there: the run takes about a third of the time; the log and `GOCACHE` stay on disk); the bats suite, the diff corpus and the container
 matrix stay on the maintainer's machine.
@@ -78,7 +87,8 @@ line, or `GATE-CI FAIL ...` with `failed=<job>:<test>,...` naming each
 failing test (a package when no test failed) and `races=` counting the data
 races (`skipped=` counts the skips of all the jobs, a test that runs in
 several jobs once for each, and the names are listed above the line as
-`gate-go` does); it needs cgo, takes several times as long as `gate-go`, and is
+`gate-go` does, followed by the ten slowest tests with their job,
+`gate-ci: slowest: TestX 83.0s (cli0)`); it needs cgo, takes several times as long as `gate-go`, and is
 started, read and sped up (`GATE_TMPFS=1`) like it.
 
 The `lint` job of the workflow runs `make lint` on Ubuntu 24.04, with that
