@@ -243,7 +243,7 @@ func TestCommittedAnswerOfThreeReadsARepeatedLabel(t *testing.T) {
 // sequence), the bidirectional overrides and the line separators.
 func TestAnswerErrorCleansDeviceText(t *testing.T) {
 	t.Parallel()
-	const bad = "error\u009b[31m ‮evil next \x1b\x7f‍end"
+	const bad = "error\u009b[31m \u202eevil\u2028next\u2029\x1b\x7f\u200dend"
 	const want = "error?[31m ?evil?next????end" // 2029, ESC, DEL, ZWJ
 	for name, e := range map[string]*AnswerError{
 		"answerError":     answerError("commit", []string{bad}, nil),
@@ -253,7 +253,7 @@ func TestAnswerErrorCleansDeviceText(t *testing.T) {
 		if len(e.Lines) != 1 || e.Lines[0] != want {
 			t.Errorf("%s: lines %q, want %q", name, e.Lines, want)
 		}
-		if got := e.Error(); strings.ContainsAny(got, "\u009b‮  \x1b\x7f‍") {
+		if got := e.Error(); strings.ContainsAny(got, "\u009b\u202e\u2028\u2029\x1b\x7f\u200d") {
 			t.Errorf("%s: %q", name, got)
 		}
 	}

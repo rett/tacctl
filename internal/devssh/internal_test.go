@@ -480,7 +480,7 @@ func TestUnsafeRune(t *testing.T) {
 			t.Errorf("U+%04X is unsafe", r)
 		}
 	}
-	if got := sanitize("a\u009bb‮c"); got != "a?b?c" {
+	if got := sanitize("a\u009bb\u202ec"); got != "a?b?c" {
 		t.Errorf("sanitize = %q", got)
 	}
 }

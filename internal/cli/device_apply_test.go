@@ -770,7 +770,7 @@ func TestApplyReviewInterrupted(t *testing.T) {
 // sequence) or a bidirectional override.
 func TestApplyOutcomeCleansDeviceText(t *testing.T) {
 	t.Parallel()
-	const bad = "the answer was \u009b[31mred ‮evil next"
+	const bad = "the answer was \u009b[31mred \u202eevil\u2028next"
 	const clean = "the answer was ?[31mred ?evil?next"
 	o := &applyOutcome{Name: "sw1", Out: &devapply.Outcome{Exit: devapply.ExitRolledBack, Reason: bad}}
 	if got := cleanLine(o.line()); got != "rolled back: "+clean {
@@ -784,7 +784,7 @@ func TestApplyOutcomeCleansDeviceText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.ContainsAny(string(b), "\u009b‮ ") {
+	if strings.ContainsAny(string(b), "\u009b\u202e\u2028") {
 		t.Errorf("json = %s", b)
 	}
 }
