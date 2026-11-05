@@ -94,7 +94,7 @@ func (d *device) target(user, pw string) devssh.Target {
 	return devssh.Target{
 		Host: host, Port: p, User: user, HostKeys: []string{fakedev.HostKey()},
 		Password:       func() (string, error) { return pw, nil },
-		Quiet:          25 * time.Millisecond,
+		Quiet:          fakeQuiet,
 		ConnectTimeout: 3 * time.Second,
 	}
 }
