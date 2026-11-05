@@ -107,15 +107,14 @@ lint() {
     lint -0
 }
 
-@test "the files the script excuses whole are allowed, another file is not" {
+@test "no file is excused whole: the files once excused are checked like any other" {
     put tests/integration/gate_go.bats "    run ! $PG -f 'sleep 30'; x=$SHM/y"
     put tests/integration/gate_ci.bats "    $PG -f 'sleep 30'"
     put internal/cli/password_cache_test.go "	dir, err := os.MkdirTemp(\"$SHARED\", \"pc\")"
-    lint -0
-    put tests/integration/other.bats "    $PG -f 'sleep 30'"
     lint -1
-    [[ "$output" == *"tests/integration/other.bats:1:"* ]]
-    [[ "$output" != *"gate_go.bats"* ]]
+    [[ "$output" == *"tests/integration/gate_go.bats:1:"* ]]
+    [[ "$output" == *"tests/integration/gate_ci.bats:1:"* ]]
+    [[ "$output" == *"internal/cli/password_cache_test.go:1:"* ]]
 }
 
 @test "both kinds of hit are reported in one run, with a hint each" {

@@ -135,12 +135,12 @@ sleeper_below() {
     [[ "$output" != *GATE-GO* ]]
 }
 
-@test "GATE_TMPFS=1 runs the tests with TMPDIR on /dev/shm and removes it, the log stays where it was" {
-    [[ -d /dev/shm && -w /dev/shm ]] || skip "no writable /dev/shm"
+@test "GATE_TMPFS=1 runs the tests with TMPDIR on the shared-memory tmpfs and removes it, the log stays where it was" {
+    [[ -d /dev/shm && -w /dev/shm ]] || skip "no writable /dev/shm" # shared-proc-ok: GATE_TMPFS is about /dev/shm
     export STUB_TMP_OUT="$BATS_TEST_TMPDIR/tmpdir"
     STUB_MODE=tmp GATE_TMPFS=1 run -0 "$GATE" -o "$LOG"
     [[ "${lines[-1]}" == "GATE-GO PASS "*" log=$LOG" ]]
-    [[ "$(cat "$STUB_TMP_OUT")" == /dev/shm/tacctl-gate-go.* ]]
+    [[ "$(cat "$STUB_TMP_OUT")" == /dev/shm/tacctl-gate-go.* ]] # shared-proc-ok: GATE_TMPFS is about /dev/shm
     [[ ! -e "$(cat "$STUB_TMP_OUT")" ]]
 }
 

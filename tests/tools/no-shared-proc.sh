@@ -21,12 +21,6 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 allowed=(
-    # Fixed by the shards task.
-    tests/integration/gate_go.bats
-    tests/integration/gate_ci.bats
-    # os.MkdirTemp("/tmp", ...) for a short socket directory; to be moved to
-    # a short path under TMPDIR like internal/askpass/agent_test.go.
-    internal/cli/password_cache_test.go
 )
 
 proc_re='(pgrep|pkill)([[:space:]]+-[[:alnum:]]+)*[[:space:]]+(-[[:alpha:]]*f|--full)|(^|[^[:alnum:]_-])killall([^[:alnum:]_-]|$)'
