@@ -317,7 +317,9 @@ func TestLogAccountingWithFilters(t *testing.T) {
 		{[]string{"--since", "2026-11-04 09:01", "--user", "alice", "2"}, "4 5"},
 		{[]string{"--since", "2026-11-05"}, ""},
 		{[]string{"--until", "2026-11-04 08:00"}, ""},
-		{[]string{"--user", "alice", "--device", "sw1", "--type", "command", "--since", "today"}, "2"},
+		// A fixed date, not "today": the records are dated 2026-11-04, and the
+		// words relative to now are ParseLogTime's tests (internal/backend).
+		{[]string{"--user", "alice", "--device", "sw1", "--type", "command", "--since", "2026-11-04"}, "2"},
 	} {
 		out := sb.logRun("", append([]string{"accounting", "--backend=tacacs"}, c.args...)...)
 		if sb.code != 0 {
