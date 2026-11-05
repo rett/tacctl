@@ -24,9 +24,89 @@ first.
 
 ---
 
-## 1. tacctl 0.2.22
+## 1. tacctl 0.2.24
 
-Not released yet. The release notes follow with the release.
+Released 2026-11-05 ·
+[Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.24.md)
+
+| Change | What it means on shift | Page |
+|---|---|---|
+| **Break-glass firewall** | A held address can no longer complete a TCP handshake with the server, so a device that falls back to its local accounts only when the server is unreachable (WTI *Fallback Local* `On (Transport Failure)`, Junos `authentication-order [ tacplus password ]`) does fall back. `tacctl config breakglass-firewall reject\|drop\|off` sets it (`reject` is the default; `off` is the 0.2.23 behavior). The report of a hold and a release has a `Firewall:` line | [Break Glass](break-glass.md) §2.1 |
+| A missing `nft` | The hold stands but the command exits 1 and the report says in red what the server still does, with the fix (`sudo apt-get install nftables`, then `tacctl config breakglass-firewall <setting>`). With the setting `off`, or nothing held, it is no failure | [Break Glass](break-glass.md) §2.1, [Exit Codes](exit-codes.md) §1 |
+| **Log filters and `--json`** | `log tail`, `search`, `failures` and `accounting` take `--since`, `--until`, `--user`, `--device`, `--type login\|change\|command` (accounting) and `--json` (one object per line). They combine and apply before a count | [Day-to-Day Device Operations](day-to-day-device-operations.md) §1.4, [Audit and Compliance](audit-and-compliance.md) §1 |
+| **Accounting names the device** | Each record carries `"Device"`, the address it came from; `log accounting` shows the registered name (`"Device":"sw1"`). `<`, `>` and `&` show as typed | [Day-to-Day Device Operations](day-to-day-device-operations.md) §1.4 |
+| **No forwarding while a password change is due** | While anyone is held to a password change, the console's sshd drop-in closes every kind of forwarding for them, in every tier. A connection already open keeps its forwardings until it closes (`loginctl terminate-user <name>`) | [Access Lifecycle](access-lifecycle.md) §5.1 |
+| **No `single-connection`** | The walkthroughs no longer set it (tacquito closes a connection idle for 15 seconds). `device config plan` and `apply` delete it from tacctl's server on a device that has it; `diff` and `plan` list it as an extra | [Engineer Guide](engineer-guide-device-changes.md) §4 |
+| tacquito from the project's fork | `install` and `upgrade` build tacquito from `rett/tacquito`. git asks for no password, user name or key passphrase and drops a stalled transfer | — |
+| `tacctl rollback 0.2.23` | The release before this one is a target; it converts nothing and removes the firewall | [Backups and Undo](backups-and-undo.md) §5 |
+
+> **Before upgrading from 0.2.23:**
+>
+> - Expect one brief interruption of TACACS+. The upgrade rebuilds tacquito
+>   once for the patch that adds `"Device"` to accounting records, and restarts
+>   it.
+> - The upgrade installs the `nftables` package and, with holds standing,
+>   loads the firewall table for them: from then on the server refuses the TCP
+>   connections of every held address. That is the fix. To keep the 0.2.23
+>   behavior, run `tacctl config breakglass-firewall off`. `nftables.service`
+>   is never enabled or touched.
+> - git asks for nothing. A remote that needs a password fails: use a key, the
+>   agent or a credential helper. An ssh remote's host key must be in
+>   `known_hosts` already. Your own `GIT_SSH_COMMAND` or `GIT_SSH` is replaced:
+>   choose a key with `core.sshCommand` in the clone.
+> - No stored file is rewritten. An installed per-tier sudoers drop-in gains
+>   the operator's `log failures *`, so an operator can pass the log filters
+>   to `log failures` through sudo.
+> - The upgrade changes no device. On a device whose configuration still sets
+>   `single-connection`, run `tacctl device config plan` and `apply`.
+> - The way back is `tacctl rollback 0.2.23`. It removes the setting, the
+>   table, the rules file and the boot unit of the firewall (the `nftables`
+>   package stays) and converts nothing else; it needs no `--yes`. A hold that
+>   stands stays, without the firewall. Until the older release is installed,
+>   run no verb that changes the holds, the listeners or the setting. On a
+>   device whose `single-connection` was removed, 0.2.23's `diff` and `plan`
+>   show the line as missing, and applying that plan types it again.
+
+## 2. tacctl 0.2.23
+
+Released 2026-10-31 ·
+[Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.23.md)
+
+| Change | What it means on shift | Page |
+|---|---|---|
+| **`device clone`** | Registers a copy of a device (registry, SNMP, NETCONF, timing scale, configuration blocks) at a bench address with `--staging`. Engineers may clone within their own scopes | [Engineer Guide](engineer-guide-device-changes.md) §2.5 |
+| **`device rename --replace`** | Removes the original with its files after a snapshot and one confirmation (`--yes` skips it), moves the replacement to its address and ends the bench address. An original with a break-glass hold needs a superuser | [Engineer Guide](engineer-guide-device-changes.md) §2.5 |
+| **Emergency lockdown reaches the hosts** | `enable` and `disable` also close SSH key logins and forwarding on the scope's enrolled hosts, through `host sync`, and ask `Sync these hosts now? [y/N]` (`--yes` answers it). A host that is unreachable stays on a pending list that `status` shows | [Emergency Lockdown](emergency-lockdown.md) §3.1 |
+| **SNMPv3 user pools** | At each level (server, scope, device) the v3 users are a pool with one default: `v3-user add\|remove\|default\|list`, `--default`, `--none`. A device uses its own default, else its scope's, else the server's. `config snmp version` sets the version | [Superuser Daily Operations](superuser-daily-operations.md) §4.10 |
+| **`device check --sources`, `device scan --sources`** | Connect to the source addresses a device sends AAA from and warn when one is unreachable or presents another host key | [Engineer Guide](engineer-guide-device-changes.md) §3.1 |
+| AAA source address | A source that no interface of the device holds is a difference and a plan item. The settings a device keeps for its own AAA server (a source address, a routing instance) are no longer listed as differences | [Engineer Guide](engineer-guide-device-changes.md) §3.1 |
+| **Email address of a user** | `user add --email`, `user email <name> [<address>\|clear]`: optional, one per user, set by a superuser, shown by `user show`, never logged. No mail is sent | [Access Lifecycle](access-lifecycle.md) §2 |
+| Users and this server's accounts | A `user` change that touches an account on this server syncs the server's own accounts at once, so a new user can log in to change the password. Other enrolled hosts get one warning and, on a terminal, the question | [Access Lifecycle](access-lifecycle.md) §2 |
+| **`backup keep`, `unkeep`, `recover`** | `keep` copies a snapshot beyond the retention; `recover <snapshot> [--only email,snmp-users]` puts back only what a rollback dropped | [Backups and Undo](backups-and-undo.md) §4.2, §4.3 |
+| `device rename`, `host rename` | Carry the bench address that was staged under the old name | [Engineer Guide](engineer-guide-device-changes.md) §2.5 |
+| `tacctl rollback 0.2.22` | The release before this one is a target; it removes the email addresses and writes the SNMP credential files in version 1 again | [Backups and Undo](backups-and-undo.md) §5 |
+
+> **Before upgrading from 0.2.22:**
+>
+> - No file is rewritten at the upgrade. The per-tier sudoers drop-in gains the
+>   engineers' rule for `device clone`.
+> - Scripts that call `emergency lockdown` and expect no question: with a
+>   terminal, `enable` and `disable` now ask whether to sync the hosts. Answer
+>   with `--yes`, or run `tacctl host sync <hosts>` yourself; without a
+>   terminal nothing runs and a notice names the hosts.
+> - The way back is `tacctl rollback 0.2.22`. It removes the users' email
+>   addresses and writes the SNMP credential files in version 1 again (one v3
+>   user per level, the default), after a snapshot it keeps, and needs `--yes`
+>   when it drops anything. Afterwards the older release reports the rendered
+>   config as out of date until its first render. `tacctl backup recover
+>   <snapshot>` returns what was dropped once 0.2.23 or later is installed
+>   again. The rollback is refused while an emergency lockdown has enrolled
+>   hosts: lift it and sync the hosts first.
+
+## 3. tacctl 0.2.22
+
+Released 2026-10-29 ·
+[Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.22.md)
 
 **Renamed commands, no aliases.** The old forms are now unknown
 sub-commands, and the one-letter form of `--yes` is refused:
@@ -84,7 +164,7 @@ sub-commands, and the one-letter form of `--yes` is refused:
 >   date until its first render writes its own comment, which restarts
 >   tacquito once; the rollback itself restarts nothing.
 
-## 2. tacctl 0.2.21
+## 4. tacctl 0.2.21
 
 Released 2026-10-28 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.21.md)
@@ -105,7 +185,7 @@ Released 2026-10-28 ·
 > `config validate` stop with one line. **After it,** check the line about
 > the machine's own login, and run `tacctl host sync <server>` as before.
 
-## 3. tacctl 0.2.20
+## 5. tacctl 0.2.20
 
 Released 2026-10-28 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.20.md)
@@ -138,7 +218,7 @@ sub-commands:
 > and not before. No existing user must change their password until a
 > superuser says so.
 
-## 4. tacctl 0.2.19
+## 6. tacctl 0.2.19
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.19.md)
 
@@ -151,7 +231,7 @@ sub-commands:
 | Host names may contain dots | `tacctl host rename web1 web1.example.net` works | [Linux Host Operations](linux-host-operations.md) |
 | Unknown commands answered first | A mistyped command is answered before `sudo` asks for a password | — |
 
-## 5. tacctl 0.2.18
+## 7. tacctl 0.2.18
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.18.md)
 
@@ -170,7 +250,7 @@ you may have meant (`tacctl enroll` suggests `device enroll` and
 `host enroll`). Every tier can run `device notice list` and
 `device client-config`.
 
-## 6. tacctl 0.2.17
+## 8. tacctl 0.2.17
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.17.md)
 
@@ -186,7 +266,7 @@ you may have meant (`tacctl enroll` suggests `device enroll` and
 
 ---
 
-## 7. Older releases
+## 9. Older releases
 
 Releases 0.2.0 to 0.2.16 are listed on the
 [releases page](https://github.com/rett/tacctl/releases), and every change is
