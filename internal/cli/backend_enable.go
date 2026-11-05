@@ -57,6 +57,8 @@ type switcher struct {
 	tree string
 	// wait sleeps for d, or until the command is cancelled.
 	wait func(d time.Duration)
+	// startWait is how long wait is given after a start (0: startWait).
+	startWait time.Duration
 	// done, when set, is told that the backend id was enabled or disabled
 	// (op), for the audit line.
 	done func(op, id string)
@@ -66,7 +68,7 @@ type switcher struct {
 
 func (inv *invocation) switcher() *switcher {
 	a := inv.app
-	return &switcher{ctx: inv.ctx, set: a.Backends(), out: a.Out, prompt: a.Prompter(), tree: a.Paths.Tree, wait: inv.pause,
+	return &switcher{ctx: inv.ctx, set: a.Backends(), out: a.Out, prompt: a.Prompter(), tree: a.Paths.Tree, wait: inv.pause, startWait: inv.hooks.startWait(),
 		done: func(op, id string) { inv.detail("backend "+op, kvp("id", id)) }, guard: inv.pwWriteGuard}
 }
 
@@ -303,7 +305,11 @@ func (s *switcher) enable(args []string) error {
 		}
 	}
 	if up {
-		s.wait(startWait)
+		d := s.startWait
+		if d <= 0 {
+			d = startWait
+		}
+		s.wait(d)
 		state, _ = b.Service(s.ctx, backend.ServiceIsActive, "")
 		up = state == "active"
 	}

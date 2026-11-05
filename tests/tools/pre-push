@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # git pre-push hook (install with 'make hooks'): refuse a push whose tree or
-# new commit messages name private infrastructure (tests/tools/no-private.sh).
+# new commit messages name private infrastructure (tests/tools/no-private.sh),
+# then run the cheap lints of 'make lint' that need no tool and take well
+# under a second (no-short-yes.sh, no-os-tempdir.sh, no-shared-proc.sh) on the working tree.
 set -euo pipefail
 
 top=$(git rev-parse --show-toplevel)
@@ -15,5 +17,10 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
         range=("$remote_sha..$local_sha")
     fi
     "$top/tests/tools/no-private.sh" --rev "$local_sha" --messages "${range[@]}" || status=1
+done
+# The working tree is what is checked, as 'make lint' does; a push of another
+# branch is covered by the CI lint job.
+for lint in no-short-yes.sh no-os-tempdir.sh no-shared-proc.sh; do
+    "$top/tests/tools/$lint" || status=1
 done
 exit "$status"

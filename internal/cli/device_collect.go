@@ -575,7 +575,7 @@ func (c *collect) target(r *collectRow, legacy bool) devssh.Target {
 		user, pw = c.local.account, c.local.eachConnection()
 	}
 	return devssh.Target{Host: r.Address, Port: devssh.DefaultPort, User: user, HostKeys: devreg.KeyStrings(r.keys), Legacy: legacy,
-		Password: pw, ConnectTimeout: devssh.ConnectTimeoutFor(c.inv.scaleAt(r.Address)), Dialer: c.inv.deviceDialer()}
+		Password: pw, ConnectTimeout: devssh.ConnectTimeoutFor(c.inv.scaleAt(r.Address)), Dialer: c.inv.deviceDialer(), Quiet: c.inv.deviceQuiet()}
 }
 
 // one is one address: the login, 'show version', the read, nothing else.

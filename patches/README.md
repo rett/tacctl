@@ -1,9 +1,14 @@
 # tacquito source patches
 
-`tacctl` builds the tacquito server from an upstream checkout of
+`tacctl` builds the tacquito server from a checkout of the project's fork,
+[`rett/tacquito`](https://github.com/rett/tacquito), at `/opt/tacquito-src`.
+The fork's `main` is upstream
 [`facebookincubator/tacquito`](https://github.com/facebookincubator/tacquito)
-at `/opt/tacquito-src`. A few behaviors we depend on are not upstream, so we
-carry them here as a **patch overlay** rather than forking.
+and nothing else: it moves only when upstream changes are merged into it
+(below), so a host builds only the upstream changes that were reviewed. A few
+behaviors we depend on are not upstream; we carry them here as a **patch
+overlay**, not as commits on the fork, so merging upstream stays
+conflict-free.
 
 Every `*.patch` in this directory is a `git apply`-able unified diff rooted at
 the tacquito source tree. On `tacctl install` and `tacctl upgrade`, after the
@@ -22,6 +27,32 @@ already-applied patch is detected (reverse-check) and skipped.
 
 Keep patches to **modifications of existing files only** (no new files), so the
 revert-before-pull step (`git checkout -- .`) fully cleans the tree.
+
+## Following upstream
+
+The fork is updated by hand, periodically and whenever upstream moves; it is
+never synced automatically. From a clone of the fork:
+
+```
+git remote add upstream https://github.com/facebookincubator/tacquito.git  # once
+git fetch upstream
+git log --oneline main..upstream/main      # what upstream changed
+git diff main...upstream/main              # review it
+git checkout main
+git merge --ff-only upstream/main          # main carries no commits of its own
+git push origin main
+```
+
+Before the push, check that every patch here still applies and the server
+builds (`git apply --check patches/*.patch` in a scratch copy of the merged
+tree, then `go build ./cmds/server`); refresh a patch that no longer applies
+in the same tacctl change that documents it. The next `tacctl upgrade` on a
+host pulls the merged commit and rebuilds.
+
+A checkout cloned from upstream by a release before 0.2.24 is pointed at the
+fork the next time `tacctl install` or `tacctl upgrade` pulls it (`git remote
+set-url origin`: both have the same history). An origin set to any other URL
+is left alone.
 
 ## Current patches
 
@@ -145,4 +176,46 @@ minute), and every login and logout of them is an accounting record. A
 `0` over ssh) and is recorded, its commands included.
 The device still logs `AUDITD_TACPLUS_MSG_SENT` for each one it sends:
 that line is the device's, and only its syslog configuration can drop it.
+
+### `0006-acct-device-address.patch`
+Names the device in every accounting record, and writes the record readably
+(`cmds/server/config/accounters/local/local.go` and `syslog/syslog.go`, with a
+test of each, in `cmds/server/test/local_acct_test.go` and
+`syslog_acct_test.go`).
+
+Both accounters write one JSON line per request, e.g. a Junos `change-log`
+record:
+
+```
+{"Flags":4,"Method":6,"PrivLvl":1,"Type":1,"Service":0,"User":"alice","Port":"ttyp0","RemAddr":"192.0.2.50","Args":["task_id=3","service=shell","cmd=set: [interfaces ge-0/0/1 description] <unconfigured> -> \"test\"<cr>"]}
+```
+
+`RemAddr` is where the *user* connected from, as the device reports it; nothing
+in the line says which *device* sent the record, so with several devices the
+log cannot answer "which device was changed". The patch appends one field,
+`"Device"`, with the address of the TACACS+ client as the server saw the
+connection: the value tacquito's server stores in the request context under
+`tq.ContextConnRemoteAddr` for every packet (the one patch `0003` puts in the
+authentication log lines), `unknown` when the context carries none.
+
+The record is the request's struct followed by the new field, so the existing
+fields keep their names, their order and their values, and a reader that does
+not know `Device` ignores it (the line stays one line of valid JSON).
+`tacctl log accounting` shows the device's registered name for it
+(`docs/cli/maintenance.md`); a record written before the patch has no
+`Device` and is shown without one.
+
+The patch also writes `<`, `>` and `&` as they are. Go's `json.Marshal`
+escapes them for HTML (`\u003c`, `\u003e`, `\u0026`), so the log read
+`\u003cunconfigured\u003e -> \"test\"\u003ccr\u003e` for the command
+above. The record is now written with a `json.Encoder` that has
+`SetEscapeHTML(false)`, and the newline `Encode` adds is cut off, so the
+accounter logs one line per record as before. Both forms are valid JSON and
+decode to the same strings; records already in the log keep their escapes, and
+`tacctl log accounting` shows them decoded (and leaves out the `<cr>` Junos
+appends to a command, in the display only).
+
+Why it is safe: the field comes after the request's own, nothing is read from
+the client for it, and the replies are unchanged. `Device` is one more key in
+an object that JSON readers already take unknown keys of.
 

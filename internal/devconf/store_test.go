@@ -599,10 +599,9 @@ func TestStaleness(t *testing.T) {
 	only := []devices.Section{{Name: SectionAAA, Lines: []string{
 		"set system authentication-order [ password tacplus ]",
 		"set system tacplus-server 192.0.2.10 secret lab-secret",
-		"set system tacplus-server 192.0.2.10 single-connection",
 		"set system tacplus-server 192.0.2.99 secret other-secret",
 		"set system accounting events [ login change-log ]",
-		"set system accounting destination tacplus"}, Secret: []bool{false, true, false, true, false, false}}}
+		"set system accounting destination tacplus"}, Secret: []bool{false, true, true, false, false}}}
 	jrec := &Record{Vendor: "juniper", Result: ResultOK, SecretsVisible: false}
 	if got, _ := Stale(jrec, jx.Sections, only); got != StaleOK {
 		t.Errorf("not visible: %q", got)

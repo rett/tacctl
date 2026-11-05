@@ -73,8 +73,13 @@ console forwarding tiers [<csv>|none]
 
     Tiers that may forward X11 and TCP ports: sshd, and ssh -X/-Y/-L/-R/-D to a device in the
     console (default superuser). A forwarding opens no session and never reaches the console, so
-    a user of such a tier who must change the password still forwards through the server with
-    the old one: list a tier other than superuser only while none of its users is flagged
+    sshd's drop-in lists the users who must change the password in a block that closes every
+    forwarding for them before the tier blocks: their new connections forward nothing through the
+    server in any tier until the password is changed (a connection already open keeps what it had
+    until it closes; the server's sync, console install, and every verb that changes who is held
+    rewrite the list: user require-password-change, user add, remove, rename and move, user
+    passwd, their own passwd, a group command that lowers a tier, store import, backup restore
+    and store rollback; see Login and Console Security)
 
 console forwarding gateway-ports [enable|disable]
 
@@ -154,7 +159,9 @@ console check
 
     Whether sshd applies the console's and the engineers' settings to their users, and whether a
     tacctl account that is not a superuser is still in tac-superuser; exit 1 and a red warning when
-    not (a local administrator in the group is only listed) (operator tier and up)
+    not (a local administrator in the group is only listed). The drop-in's list of users held to a
+    password change is part of it: a list that is not the users held now is drift, shown with
+    both lists (operator tier and up)
 ```
 
 `console show` lists the users of the scope of the host enrolled with `--local` with their effective shell (the console) and why, then the server's pieces: the `/usr/local/bin/tacctl-console` symlink, the `/etc/shells` line, sshd's drop-in and what `sshd -T -C user=<user>` reports for a console user (`allowtcpforwarding`, `allowagentforwarding`, `forcecommand`, `pubkeyauthentication`). It warns in red when the drop-in is missing, sshd does not force the console, still allows forwarding, or allows key logins, because a console user could then forward ports past the device registry, run programs or sftp, or log in without TACACS+. A server that is not enrolled with `--local` says so.

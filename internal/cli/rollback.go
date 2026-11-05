@@ -3,7 +3,7 @@ package cli
 // 'tacctl rollback <version> [--apply] [--yes] [--hosts]' (docs/plans/
 // 0.2.3-plan.md D50, docs/plans/0.2.4-plan.md D73, docs/plans/
 // 0.2.9-rollout-plan.md D143, docs/plans/0.2.10-plan.md): prepare tacctl's
-// state for the release before this one (0.2.22), for 0.2.21, 0.2.20, 0.2.19, 0.2.18, 0.2.17, 0.2.16, for 0.2.9 or for 0.2.3. The plan and the conversions of
+// state for the release before this one (0.2.23), for 0.2.22, 0.2.21, 0.2.20, 0.2.19, 0.2.18, 0.2.17, 0.2.16, for 0.2.9 or for 0.2.3. The plan and the conversions of
 // the files are internal/lifecycle's (rollback.go); this is the command
 // around them: the arguments, what is printed, the snapshot and the
 // sudoers installer.
@@ -33,7 +33,7 @@ const rollbackUsage = "Usage: tacctl rollback <version> [--apply] [--yes] [--hos
 var rollbackSpec = Spec{
 	Flags:   []Flag{{Names: []string{"--apply"}}, {Names: []string{"--yes"}}, {Names: []string{"--hosts"}}},
 	MinArgs: 1, MaxArgs: 1,
-	Args: []string{lifecycle.RollbackTarget0222 + "|" + lifecycle.RollbackTarget0221 + "|" + lifecycle.RollbackTarget0220 + "|" + lifecycle.RollbackTarget0219 + "|" + lifecycle.RollbackTarget0218 + "|" + lifecycle.RollbackTarget0217 + "|" + lifecycle.RollbackTarget0216 + "|" + lifecycle.RollbackTarget029 + "|" + lifecycle.RollbackTarget},
+	Args: []string{lifecycle.RollbackTarget0223 + "|" + lifecycle.RollbackTarget0222 + "|" + lifecycle.RollbackTarget0221 + "|" + lifecycle.RollbackTarget0220 + "|" + lifecycle.RollbackTarget0219 + "|" + lifecycle.RollbackTarget0218 + "|" + lifecycle.RollbackTarget0217 + "|" + lifecycle.RollbackTarget0216 + "|" + lifecycle.RollbackTarget029 + "|" + lifecycle.RollbackTarget},
 }
 
 func rollbackCmd(inv *invocation) *cobra.Command {
@@ -69,7 +69,8 @@ func (inv *invocation) rollback(args []string) error {
 	in := lifecycle.RollbackInput{Paths: a.Paths, Conf: a.Conf(), HasStore: isRegularFile(a.Paths.StoreFile), WithHosts: withHosts, Target: version,
 		InstallSudoers: func(body, dst string) error {
 			return tier.InstallSudoers(inv.ctx, a.Runner, a.Out.Stdout, a.Out.Stderr, a.Paths.TempDir, body, dst)
-		}}
+		},
+		RemoveFirewall: func() ([]string, error) { return inv.firewallEngine().Remove(inv.ctx) }}
 	plan, err := lifecycle.PlanRollback(in)
 	if err != nil {
 		// A break-glass hold, a management ACL entry with services or an
@@ -184,6 +185,9 @@ func (inv *invocation) rollback(args []string) error {
 	a.Conf().Reload()
 
 	inv.rollbackNextSteps(version, plan.PendingFiles())
+	if plan.FirewallTodo() {
+		inv.rollbackFirewallNote(version, plan)
+	}
 	if len(emailUsers) > 0 {
 		inv.rollbackEmailNote(version, snapID, emailUsers)
 	}
@@ -247,6 +251,9 @@ func (inv *invocation) rollbackNextSteps(version string, snapshot bool) {
 		defer inv.rollbackTimeoutScaleNote(version)
 	}
 	switch version {
+	case lifecycle.RollbackTarget0223:
+		inv.rollbackNextSteps0223(version)
+		return
 	case lifecycle.RollbackTarget0222:
 		inv.rollbackNextSteps0222(version, snapshot)
 		return
@@ -297,6 +304,20 @@ func (inv *invocation) rollbackSnapshotNote(snapshot bool, tail string) {
 	inv.echo("")
 	inv.echo("The snapshot the rollback took first (the newest entry of 'tacctl backup list') holds the " + rollbackFrom + " state. Restore it with " + rollbackFrom + " only: 'tacctl backup restore <id>' of this release brings that")
 	inv.echo("state back and loses what changed since" + tail)
+}
+
+// rollbackFirewallNote says, after a rollback that removed the break-glass
+// firewall (every target): what went and what stays, what a hold that stands
+// gets from the older release, and that the setting command writes the key it
+// refuses.
+func (inv *invocation) rollbackFirewallNote(version string, plan *lifecycle.RollbackPlan) {
+	p := inv.app.Paths
+	inv.echo("")
+	inv.echo("The break-glass firewall is removed: the nftables table inet tacctl, " + p.FirewallRules + " and the boot unit " + p.FirewallUnit + ". The nftables package stays installed; no other table of the ruleset was touched.")
+	if holds := plan.FirewallHolds(); len(holds) > 0 {
+		inv.echo("The hold of " + strings.Join(holds, ", ") + " stands, and " + version + " takes it as it is: its server completes the TCP handshake of the held address (it answers nothing), as before 0.2.24.")
+	}
+	inv.echo("Until the older release is installed, run no verb that changes the holds, their device or host names, the listeners or the setting ('tacctl breakglass hold|release', 'device address', 'device|host rename', 'device rename --replace', 'backup restore', 'server listen', 'config breakglass-firewall'): each writes the table, its rules file and the boot unit again, and the setting " + version + " refuses. If one was run, run 'tacctl rollback " + version + " --apply' again (it removes all of it).")
 }
 
 // rollbackEmailNote says, after a rollback that removed the users' email
@@ -358,6 +379,18 @@ func (inv *invocation) rollbackTimeoutScaleNote(version string) {
 	inv.echo("")
 	inv.echo("Until the upgrade, do not run 'tacctl device timeout-scale', 'tacctl scope timeout-scale' or 'tacctl config devices timeout-scale': they write the timing scale again, which " + version + " refuses.")
 	inv.echo("If one did, run 'tacctl rollback " + version + " --apply' again (it removes it).")
+}
+
+// rollbackNextSteps0223 is the next steps of the rollback to 0.2.23: the
+// upgrade of the tag. 0.2.23 reads every file this release writes, so the
+// rollback converted no file (it put back 0.2.23's per-tier sudoers drop-in,
+// without 'log failures *'), took no snapshot and leaves no command to avoid.
+func (inv *invocation) rollbackNextSteps0223(version string) {
+	inv.echo("")
+	inv.echo(ui.Bold + "Next steps" + ui.NC)
+	inv.echo("  1. Install " + version + " with the upgrade (see Upgrading in the README), which switches the clone in " + inv.app.Paths.Deploy + " to the tag, builds it and re-executes it:")
+	inv.echo("       tacctl upgrade --branch " + version)
+	inv.echo("  2. Check it: tacctl status; tacctl config validate")
 }
 
 // rollbackNextSteps0222 is the next steps of the rollback to 0.2.22: the

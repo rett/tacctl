@@ -43,6 +43,9 @@ fakedev_start() {
     FAKEDEV_KEY=$(sed -n 2p "$FAKEDEV_INFO")
     export FAKEDEV_ADDR FAKEDEV_KEY FAKEDEV_PID
     export TACCTL_TEST_DEVICE_DIAL="$FAKEDEV_ADDR"
+    # the fake device has nothing more to say after a prompt: do not wait
+    # devssh's 150 ms for it
+    export TACCTL_TEST_DEVICE_QUIET=25ms
     export TACCTL_TEST_DEVICE_PASSWORD="$FAKEDEV_PASSWORD"
 }
 

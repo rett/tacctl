@@ -1,0 +1,1621 @@
+# Durations of the top-level tests of internal/cli, in seconds: the weights
+# tests/tools/go-test-shard.sh deals the shards by (longest first, each to the
+# least loaded shard). One 'TestName seconds [serial]' line per test, the
+# longest first; 'serial' marks a test that never calls t.Parallel (it counts
+# four times a parallel one). A test not listed counts as a parallel one of
+# 0.1 s. The dealing never changes which tests run.
+#
+# Regenerate (a quiet machine; GATE_TMPFS=1 is fine):
+#   make gate-ci        # or make gate-go; keep the log it names
+#   tests/tools/go-test-shard.sh --regen <log>
+# From a gate-ci log: the larger '--- PASS: TestX (N.NNs)' value over the
+# cli<i> jobs (-race, and the testknobs runs); serial when no job paused it.
+# From a gate-go log: the tests 'go test -list' finds in internal/cli.
+TestOnboardNeverProbes 36.05
+TestHashFamily 30.61
+TestRollbackEveryTargetRemovesTheTimeoutScale 29.27
+TestApplyPhaseBInterruptsAndPendingRecord 27.23
+TestNoSecretReachesTheAuditLog 22.69
+TestApplyTimingCheckAndApply 20.91
+TestRollbackedAddressesSurviveTheRetention 20.79
+TestApplyDisableProvesTheServiceIsGone 19.65
+TestRollbackRealOldBinary0219 19.24
+TestUserAddPromptsAndGenerates 19.24
+TestApplyDisableStillAnsweringIsRolledBack 19.14
+TestApplyEnableNotAnsweringIsRolledBack 18.91
+TestOnboardProofNeedsTheTemplateUser 18.66
+TestApplySettlePrintedAndAudited 16.26
+TestApplyHoldOneReaderAcrossDevices 15.29
+TestApplyEnableProvesTheServiceWithAHello 14.54
+TestHelpOnlyRunsNoVerb 14.53
+TestUserVerifyAndPasswdSelf 14.08
+TestRollbackRealOldBinary 13.96
+TestApplyHoldLateAnswerIsDropped 13.94
+TestApplyReviewCheckAndScripted 13.92
+TestResetFamilyRestartsEachBackendOnce 13.79
+TestRollbackRealOldBinary0221 13.32
+TestDetailLinesOfTheIdentityAndGroupVerbs 13.26
+TestApplyEnableWithAFailedFreshLoginIsRolledBack 12.59
+TestDeviceCheckSourcesNothingToTest 12.48
+TestDeviceCheckLocationRow 12.41
+TestDeviceCheckSourcesWarnsAndChangesNothing 12.35
+TestRollbackRealOldBinary029 12.07
+TestHostMoveAllTakesOneSnapshot 12.04
+TestPasswdSelfLiftsTheRequiredChange 11.81
+TestFlagCarriesItsOwnText 11.16 serial
+TestApplyPendingRecordWriteFailure 11.15
+TestEnrollOfferRunsTheReview 10.64
+TestRollbackEveryTargetRemovesTheServerName 10.61
+TestRollbackRealOldBinary0220 10.34
+TestApplyCheckOverTheCommandLine 10.33
+TestOnboardKeyAnswers 10.15
+TestKeptSnapshotOutlivesTheRetention 10.03
+TestSurfacesAgreeOnTheTree 9.96
+TestApplyPullFailureExcludesTheDevice 9.87
+TestRollbackWithAStrictMgmtACLModeWarnsAndRemovesTheKey 9.66
+TestRollbackSnapshotIsSpokenOfOnlyWhenTaken 9.62
+TestDeviceCheckSNMPRow 9.61
+TestRollbackRealOldBinary0216 9.40
+TestPtyConsoleMan 9.35
+TestDeviceCheckVendorRow 9.32
+TestRollbackWithARequiredPasswordChangeWarnsAndRemovesTheKey 9.27
+TestApplyAutoFallsBackWithTheReason 9.01
+TestRollbackWarnsOfWhoGainsASystemShellOrTheCache 8.98
+TestPtyShellMan 8.51
+TestSNMPLookupUsesTheDevicesOwnSettings 8.49
+TestSNMPUserNameIsTheEngineersToRead 8.27
+TestPtyHelpIsWhatQuestionMarkPrints 7.90
+TestNoEmailReachesTheAuditLog 7.71
+TestRollbackRealOldBinary0222 7.43
+TestOnboardRefusedFreshLoginRollsBack 7.41
+TestRollbackOlderTargetsAddTheManagedScope 7.40
+TestApplyOverNetconfConverges 7.37
+TestRealKeyFallbackQuickBoundsTheConnect 7.01
+TestPasswordChangeCommandsRunAndUnlock 6.99
+TestBashScriptAsksForNoDescriptions 6.96
+TestOnboardEndToEnd 6.68
+TestReexecUnderSudo 6.66 serial
+TestDeviceCheckSourcesIOSInterfaces 6.64
+TestApplyWithoutTimingIsUnchanged 6.53
+TestApplyCheckOverNetconf 6.48
+TestApplyHoldAnswerTypedAheadIsTaken 6.46
+TestDeviceCheckSourcesProgress 6.35
+TestPullTransports 6.32
+TestOnboardCheckWithHostKey 6.24
+TestApplyPullSelectsOnTheFreshRecords 6.06
+TestApplyConfirmedAllSkippedExits1 5.98
+TestRollbackDropsTheCoveredStagingEntries 5.91
+TestBackupRecoverEmail 5.19
+TestPullWithoutTimingIsUnchanged 5.16
+TestBackupRecoverRefusals 4.82
+TestCompletionNamesAreRefusedQuietlyWhileAPasswordChangeIsRequired 4.81
+TestSNMPLookupUsesTheDevicesScope 4.64
+TestRecoverSNMPUsersSkipsAndNeverOverwritesADefault 4.60
+TestOnboardAsRootUsesTheWrapper 4.59
+TestRollbackThenRecoverSNMPUsers 4.56
+TestUserPasswdResetRequiresAPasswordChange 4.45
+TestApplyServiceChangeIsMadeOverTheCommandLine 4.42
+TestNoSecretInTheDetailLines 4.40
+TestMixedCommandWritesTheLinesOnlyWhenItWrites 4.39
+TestApplyNetconfRunsUnderTheLock 4.38
+TestUserVerbsSayAFactOnce 4.25
+TestApplyNetconfOnlyFailsWhenTheDeviceHasNone 4.20
+TestHostRenameScopeOfferDeclined 4.15
+TestEnrollOfferDeclined 4.13
+TestHostEnrollLocalRefusedWhileAUserMustChange 4.10
+TestChooseDevicesByNameIPAndDiffers 4.07
+TestRollback0216WithoutTheKeyOrWithItFalse 3.93
+TestManPageDocumentsEveryEnvironmentVariable 3.89
+TestRollbackThenRecoverRoundTrip 3.84
+TestUserPasswdResetKeepsAFlagItCannotRenew 3.82
+TestRollback0221WithNoServerName 3.72
+TestGroupResetLoweredTierSyncsTheServer 3.70
+TestManPageDocumentsEveryFlag 3.67
+TestStrictRefusesAnApplyBeforeAnyLogin 3.67
+TestShellExplainIsClean 3.66
+TestDiffAndPlanTiming 3.62
+TestRollbackThenRecoverAfterOtherChanges 3.60
+TestConsoleDropInListsTheHeldUsers 3.56
+TestPullSettingAndMissingVersionLine 3.56
+TestEveryFlagHasADescription 3.55
+TestBackupRecoverFromAKeptCopy 3.54
+TestConfigSNMP 3.54
+TestRollback0222SnapshotFollowsTheAddress 3.52
+TestCentralLinesRedactSecrets 3.51
+TestRollback029ApplyRoundTrip 3.49
+TestRollback0222ConvertsNothing 3.48
+TestRollbackSudoersFailures 3.46
+TestFixNamesRenamesEveryKindWithYes 3.45
+TestOnboardEscapesDeviceText 3.38
+TestSettingContradictingThePullIsShown 3.37
+TestServerNameThatIsAYAMLWordRoundTrips 3.36
+TestCompleteDescribesFlags 3.35
+TestApplyPullDiffersAfterThePull 3.34
+TestDeviceCheckSourcesFallbackAndScale 3.34
+TestDetailLinesOfTheScopeVerbs 3.25
+TestDeviceCheckSourcesWarningsInDetail 3.24
+TestRollbackHostsIsAccepted 3.22
+TestDeviceCheckSourcesLimit 3.19
+TestGroupResetYesAppliesAndLogs 3.19
+TestPlanCiscoModernAndIOS12DialectsComeFromTheImage 3.19
+TestPullJunosOverNetconfThenListShowDiff 3.19
+TestRequiredChangeRestartsOnlyWhatChanged 3.19
+TestNoNewKeysUnlessSet 3.18
+TestDeviceCheckSourcesAllPresentTheKey 3.11
+TestRollbackRoundTrip 3.10
+TestRollback0220NextStepNamesYes 3.09
+TestRollbackRefusesDottedUsersCLI 3.09
+TestFixNamesHostScopeRefusedCountsAsRenamed 3.04
+TestLocalLoginTakesAnyLocalAccount 3.01
+TestSystemShellEnableIsForTheTierItWasSetFor 3.00
+TestBreakglassHoldListSkipsTheOneMadeMeanwhile 2.99
+TestRollback0217PutsBackTheTiersDropIn 2.96
+TestApplyReviewCtrlC 2.95
+TestExplainPalette 2.94
+TestManPageNamesNoMissingCommand 2.87
+TestManPageDocumentsEveryPath 2.84
+TestGroupCommandsPositionAndSelector 2.83
+TestRollback0221RemovesTheServerNameOnly 2.82
+TestSyncInputsSeeEveryInput 2.81
+TestApplyTimingWithPull 2.79
+TestBackupRecoverKinds 2.79
+TestRollbackSNMPPoolRealOldBinaries 2.77 serial
+TestSNMPFileBecomesVersionOneWithAnEntryRealOldBinaries 2.76 serial
+TestSNMPVersionOneWhenItFitsRealOldBinaries 2.76 serial
+TestHostCheckConcurrent 2.75
+TestPlanKeptBackoutFollowsTheRecord 2.73
+TestStrictRefusesARevealWhoseLineCannotBeWritten 2.72
+TestApplyPullRefusalsAndForms 2.69
+TestHeldListIsInstalledUnderTheApplyLock 2.69
+TestPwHostGuardRefusesChangesOfTheServersRegistration 2.69
+TestLocalLoginRefusesAnUnreadableRecordFile 2.68
+TestManagedEnrolmentAdoptsAnUnfinishedScope 2.68
+TestBackupRestoreRefusesWhileAHostIsLocked 2.67
+TestConsolePtySystemShell 2.66
+TestApplyPullCancelledAfterThePullAppliesNothing 2.64
+TestShellUsageAndFlagsFollowTheStyle 2.64
+TestRollback0223ConvertsNothing 2.63
+TestRollback0218PutsBackTheTiersDropIn 2.62
+TestBlockCiscoCheckAgainstADevice 2.61
+TestPlanKeptBackoutCoversWhatWasPasted 2.61
+TestRollback029DryRunListsEveryStepAndWritesNothing 2.61
+TestPtyShellHidesWhatTheTierCannotRun 2.60
+TestPullWTISuperUserAndSelectors 2.60
+TestPwGuardNamesTheWayOutForManyUsers 2.60
+TestUserVerbsRefuseABreakGlassName 2.60
+TestApplyReviewCtrlCAfterTheLastAnswer 2.58
+TestGroupEditPrivLvlKeepsTheTierSetting 2.58
+TestApplyReviewEndOfInput 2.57
+TestUserChangeOffersToSyncTheOtherHostsOnATerminal 2.57
+TestPullRecordsCiscoFacts 2.56
+TestBlockCiscoSystemCheckAgainstADevice 2.52
+TestRollback0220AddsTheManagedScopeToTheUsers 2.50
+TestRollback0216ApplyRoundTrip 2.49
+TestRollback029ApplyNeedsYes 2.47
+TestListNameAndIP 2.46
+TestRollback0223IsToldApartFromTheOlderTargets 2.46
+TestBreakglassHostHoldRefusals 2.45
+TestManGeneratedBlocksAreCurrent 2.44
+TestRollback0222IsNotStoppedByADottedNameOrALockdown 2.43
+TestFixNamesSharedScopeIsOfferedOnItsOwn 2.42
+TestConsolePtyCommandLineIsHeldToThePasswordChange 2.41
+TestGroupResetPrompt 2.39
+TestConsolePtyCommandRefusedOnATerminal 2.38
+TestConsolePtyUnreadPolicyHoldsTheSession 2.38
+TestRollbackLeavesAnOperatorsScopeCalledTacctl 2.38
+TestPwGuardWarnsWhenAScopeBecomesSharedUnderAFlaggedUser 2.34
+TestGroupTierOfAFlaggedMemberKeepsTheServerLogin 2.32
+TestPwGuardRefusesWhatWouldStrandAFlaggedUser 2.32
+TestConsolePtySpaceCompletion 2.30
+TestConsolePtyIdle 2.26
+TestHostSyncExpiresAFlaggedUserOnTheOtherHostsOnly 2.26
+TestBreakglassHostHoldRoundTrip 2.25
+TestHostFactsFallbackAndLoginDefs 2.24
+TestRollbackTo0220IgnoresADottedUser 2.24
+TestHostEnrollOfANameADeviceTookMeanwhileIsRefused 2.22
+TestRollback0222IsToldApartFromTheOlderTargets 2.22
+TestRequiredChangeKnowsTheServersLoginAddresses 2.21
+TestRollback029RefusesFurtherBack 2.19
+TestUserRequirePasswordChange 2.18
+TestConsolePtyTheOpeningDialogIsHeldToTheIdleTime 2.15
+TestStrictRefusesEveryMixedWriteAndRunsTheReads 2.14
+TestOwnLoginFailureInTheMiddle 2.12
+TestHostRenameScopeStays 2.10
+TestRollback0217WritesTheSyntaxKeyBack 2.08
+TestStandingOfAFlaggedUserIsShownEverywhere 2.04
+TestUserAddDoesNotRequireWhatCannotBeMet 2.04
+TestLockdownDisableSyncsAndKeepsWhatFails 2.03
+TestRollback0221IsNotStoppedByADottedName 2.02
+TestUserAddRequiresAPasswordChangeByDefault 2.02
+TestRollbackRefusesOtherVersions 2.00
+TestCommandsAreRefusedWhileAPasswordChangeIsRequired 1.98
+TestDottedUserIsStillRead 1.96
+TestGroupResetDryRunWritesNothing 1.95
+TestCentralLinesActorAndConsole 1.93
+TestPasswordCacheSettingFollowsTheUser 1.93
+TestDeviceCloneRefusals 1.92
+TestRollback0223PutsBackTheDropIn 1.92
+TestBackendOfTheServerLoginsCountsForTheStanding 1.91
+TestPlanBackoutSurvivesTheCheckPull 1.86
+TestGroupTierLoweredSyncsTheServer 1.85
+TestBackupRestoreWordsAHoldByTheRestoredRegistry 1.84
+TestRollback0216DryRunListsTheKeyAndWritesNothing 1.83
+TestRollback0219PutsBackTheTiersDropIn 1.81
+TestFixNamesHostAsksItsOwnQuestions 1.80
+TestCompleteScenarios 1.77
+TestHostListFiltersLeaveTheServersOwnLoginsScopeAlone 1.77
+TestFixNamesRefusedRenameCountsAndGoesOn 1.76
+TestManagedScopeClashRegisteredInIt 1.76
+TestStaleGroupSettingsAreWarnedOf 1.76
+TestUserWithUpperCaseKeepsWorkingAndIsRenamedToLowerCase 1.76
+TestConsolePtyPasswordCache 1.75
+TestUserChangeNeverTakesTheAnswerFromYes 1.75
+TestStoreImportWaitsForTheApplyLockAndCheckDoesNot 1.72
+TestFixNamesTypedAnswers 1.70
+TestStoreImportRefusesAFileWithCarvedUsers 1.69
+TestBreakglassHoldListUsageErrors 1.68
+TestSectionResetDryRunWritesNothing 1.67
+TestHostCheckConcurrentInterrupt 1.65
+TestNewUserNamesHaveNoPeriods 1.65
+TestManagedScopeAdoptsADedicatedScope 1.64
+TestPlanNamesTheBlockOfAnIOSStatement 1.64
+TestRecordWithoutVersionLineNeedsPull 1.64
+TestRollback023FromThisRelease 1.64
+TestRollbackApplyNeedsYes 1.62
+TestStoreImportDoesNotRepinAGroupTheStoreHad 1.62
+TestManPageNamesEveryCommand 1.60
+TestManagedScopeIsHidden 1.60
+TestUserHashFromStdin 1.60
+TestUserPasswdSyncsOnlyAnEnabledAccount 1.60
+TestHostFindingsHostNamedLikeADevice 1.59
+TestStoreImportOfAManagedServersFile 1.59
+TestBackupRestoreKeepUIDsLeavesTheLedger 1.58
+TestStoreImportKeepsTheRequirementOfAUserOfTheServerScopeOnly 1.57
+TestRollbackDryRunWritesNothing 1.56
+TestRollbackRefusesWhileAnApplyIsPending 1.56
+TestEnrollNameStep 1.55
+TestHostSyncConcurrent 1.55
+TestRollback0221IsNotStoppedByALockdown 1.55
+TestSecretsNeverOnArgv 1.55
+TestRollback0216RefusesTheReleasesBetween 1.54
+TestGroupFamily 1.53
+TestScopeRenameKeepsAFlaggedUserInTheServersScope 1.53
+TestSelectorsMakeNoLogin 1.53
+TestStyleRatchets 1.52
+TestBreakglassReleaseListWithOneNotHeld 1.51
+TestHostForgetRefusedForAHeldHost 1.51
+TestCiscoSystemNTPVersion3InTheIOS12Syntax 1.50
+TestHostEnrollLocalWithAnotherServerAddressMovesTheScope 1.49
+TestScopeBreakGlassValidateRootOnly 1.49
+TestBreakglassHoldRoundTrip 1.48
+TestHostLocalConsoleEngineerShell 1.48
+TestConsolePtyBannerPromptAndExit 1.47
+TestManagedScopeLockdownIsLiftedWithAllScopes 1.47
+TestRollback0219RemovesThe0220Keys 1.46
+TestHostEnrollScopeMustCoverTheHost 1.45
+TestHostLocalWithoutTheLinkGivesBashToTheSystemShellOnly 1.45
+TestBreakglassReleaseOfAnUncoveredDeviceChangesNothing 1.44
+TestHostEnrollLateConflictsWarnOfTheStagingAddress 1.44
+TestManagedScopeReservedName 1.44
+TestEmergencyLockdownFollowsNamesAndIsReported 1.43
+TestManagedServerAddressChangeRendersTheLoginAgain 1.43
+TestTimeoutScaleVerbs 1.43
+TestBreakglassHeldHostRefusesWhatLogsIn 1.42
+TestRequiredChangeBarrierFollowsTheMethod 1.42
+TestScopeSNMPEngineer 1.42
+TestConsoleInstallListsAUserFlaggedWhileItWaits 1.41
+TestCommandsResetLockoutGuard 1.40
+TestBackupRestoreWaitsForTheApplyLock 1.38
+TestPlanCiscoNeedsAPullForItsSyntax 1.38
+TestRequiredChangeWarnsOfAScopeSharedWithDevices 1.37
+TestSectionsValidateCleanAfterTheFlip 1.36
+TestUserListShowAndStatusOfARequiredChange 1.36
+TestScopeBreakGlassValidateWarns 1.34
+TestConsolePtyASecondSessionUnlocksWhenThePasswordWasChangedElsewhere 1.33
+TestConsolePtyPasswordCacheChoice 1.33
+TestBuiltinGroupRaisedTo15RecordsAndLowersItsTier 1.31
+TestDispatcherWordsAreChildren 1.31 serial
+TestHostLocalConsole 1.31
+TestUserRenameOfAFlaggedUserSyncsAtOnce 1.31
+TestManagedScopeServerAddress 1.30
+TestPasswordChangeRefusalSparesSuperusersAndOthers 1.30
+TestPtyShellQuestionMarkCapsTheLabelColumn 1.30
+TestRotateRefusals 1.30
+TestHostEnrollLocalFixesTheSharedScopeWarning 1.29
+TestRollbackUsage 1.29
+TestPlanCiscoRadiusScope 1.28
+TestUserAddOfANameWithNoLinuxAccountNamesNoHost 1.26
+TestPlanWTIBackoutAndFiles 1.25
+TestBackupRestoreWithTheSameHostsSaysNothingOfThem 1.24
+TestConsolePtyAFailedChangeLeavesALockedPrompt 1.24
+TestHostTarget 1.24
+TestConsolePtyRefusesEntryPoints 1.23
+TestConsolePtyRequiredPasswordChangeOpensWithTheDialog 1.23
+TestHostEnrollDefaultsToTheRecordedServerAddress 1.23
+TestPlanRestorePointRefusals 1.23
+TestViewDiffersByTier 1.23
+TestConsolePtyAnUnreadRequirementIsAskedAgain 1.22
+TestStoreRollbackWaitsForTheApplyLock 1.22
+TestConsolePtyNoPasswordCache 1.21
+TestPlanSecretsRules 1.21
+TestConfigValidateListsNamesWithUpperCase 1.20
+TestConfigValidateWarnsOfASharedSNMPUserName 1.20
+TestManagedScopeFreshEnrol 1.19
+TestPlanKeptBackoutIsOfOneAddress 1.19
+TestUserHashFromStdinLineEnds 1.19
+TestConsolePtyDecliningThePasswordChangeEndsTheSession 1.18
+TestUserChangeDoesNotNameAHostWithoutTheUser 1.18
+TestBreakglassSingleDeviceOutputIsUnchanged 1.17
+TestPlanRestorePointBareTakesTheArchivePath 1.17
+TestDiffersLeavesOutAnUnreadableRecord 1.16
+TestGroupResetLockoutGuard 1.16
+TestConsolePtyNoPasswordChangeNoLock 1.15
+TestDeviceSetters 1.15
+TestEmptyScopeIsRefused 1.15
+TestHostVerbsSnapshotBeforeTheRegistryChanges 1.15
+TestManagedScopeNameClash 1.14
+TestPlanBackoutPrintsTheKeptOneWhenThePlanCannotBeMade 1.14
+TestConsolePtyServerNameIsThePromptAndBanner 1.13
+TestGroupAddClearsALeftoverTierSetting 1.13
+TestScopeConfKeysFollowRenameAndRemove 1.13
+TestManagedScopeLeavesASharedScope 1.12
+TestServerAddressesAudit 1.12
+TestHostEnrollSyncUnenroll 1.11
+TestPlanRestorePointNamedCopyAndItsBackout 1.11
+TestPullIgnoresBootLoaderLines 1.11
+TestScopeAddThatTakesTheServerAddressIsRefused 1.11
+TestOwnLoginUpgradeNoEntry 1.10
+TestPlanRestorePointOutDirKeepsTheBlockAndTheBackout 1.10
+TestBackupRestoreKeepUIDsOfASnapshotWithoutLinuxHosts 1.09
+TestDeviceConfigShow 1.09
+TestOwnLoginRepairsADriftingScope 1.09
+TestPlanRestorePointBareNeedsAFileSystem 1.09
+TestTypedTimeoutWinsOverTheScale 1.09
+TestManagedScopeGoesWithTheRegistration 1.08
+TestSystemShellSettingFollowsTheUser 1.08
+TestBreakglassHostHoldsTheRecordedAddress 1.07
+TestConsolePolicyLineCarriesThePasswordChange 1.07
+TestDeviceConfigServerSourceAndName 1.07
+TestEmergencyLockdownRoundTrip 1.07
+TestScopeBlocksFollowRenameRemoveAndRestore 1.07
+TestScopeNamedDevicesBesideDeviceBlocks 1.07
+TestPullTimingJSON 1.06
+TestAdoptCiscoSystemDraftFlow 1.04
+TestHostFindingsOrphans 1.04
+TestHostUnenrollDropsTheStagingEntries 1.04
+TestBreakglassHoldMadeMeanwhileIsNotOverwritten 1.03
+TestManagedScopeClashDoesNotStopTheSyncOfTheOtherHosts 1.03
+TestPullTimeout 1.03
+TestConfigValidateJSONEverySection 1.02
+TestDeviceCloneIsAllOrNothing 1.02
+TestPullWTIRadiusScope 1.02
+TestAdoptCiscoDraftFlow 1.01
+TestBreakglassHoldCommentNamesAHostAsAHost 1.01
+TestPlanWTIPullsAndPlansAUnit 1.01
+TestDeviceReplaceTakesTheOriginalsPlace 1.00
+TestFakeDeviceVerbAndDialKnob 1.00
+TestLockdownEnableOffersTheHostSync 1.00
+TestManagedScopePrefixesFollowTheRecordedAddress 1.00
+TestManagedScopeRefusesToEmptyAScope 1.00
+TestDeviceCloneIsAllOrNothingAtACoveredAddress 0.99
+TestRequirePasswordChangeForAllSyncsOnce 0.99
+TestStrictRefusesARestoreDiffWhoseLineCannotBeWritten 0.99
+TestDeviceCloneCopiesTheIntent 0.98
+TestPlanWTIFromTheLastPull 0.98
+TestUserVerbsThatChangeNoAccountDoNotSync 0.98
+TestHostCheckAllStates 0.97
+TestStrictRevealRefusalHoldsNoSecret 0.97
+TestHostEnrollLocalTakesTheServerOutOfASharedScope 0.95
+TestHostRenameCarriesEverythingTheHostHas 0.95
+TestManagedScopeIsNamedNowhereElse 0.95
+TestOwnLoginRebuiltServer 0.95
+TestScopeBreakGlassRefusals 0.95
+TestUserRenameSyncsTheServer 0.95
+TestBreakglassPullSkipsAndPlanNamesTheHold 0.94
+TestHostListJSONEngineer 0.94
+TestHostRenameRefusals 0.94
+TestWholesaleVerbsNameTheServerSync 0.94
+TestConsoleSystemShellIsTheSuperusersToSet 0.93
+TestDeviceCloneSnapshotIsTheStateBefore 0.93
+TestHostRenameYesAnswersBothQuestions 0.93
+TestPullTimingText 0.93
+TestBackupRestoreLegacyRunsTheImportCheckFirst 0.92
+TestDeviceAddRefusals 0.92
+TestHostEnrollSyncPinHostKeys 0.92
+TestLegacyInstallHasNoAmbiguousGroups 0.92
+TestServerAddressesTheOneAddressLimit 0.92
+TestVerbsRunOnTheSelectedSet 0.92
+TestBreakglassOrphanRecords 0.91
+TestDeviceReplaceFailsWhenAFileCannotBeCarried 0.91
+TestOwnLoginHealthyPrintsNothing 0.91
+TestSSHAuditNamesWhereTheCallerLoggedInFrom 0.91
+TestScopeBlockCiscoSystemRefusals 0.91
+TestBreakglassHoldListIsBestEffort 0.90
+TestDeviceVendorFromDevice 0.90
+TestHostSyncConcurrentSameUIDs 0.90
+TestLoweringSyncRunsWhileAGroupIsAmbiguous 0.90
+TestPullSNMPSectionUsesTheDevicesOwnSettings 0.90
+TestDeviceCloneWritesTheFileThatTheCopysEntryAllows 0.89
+TestHostFindingsSameAddressOtherPortIsNoFinding 0.89
+TestPolicyLineWithAnUnreadableStoreIsNoAnswer 0.89
+TestUserRenameNamesTheOtherHostsThatRenameTheAccount 0.89
+TestBreakglassHostEngineerTier 0.88
+TestConfigFiltersAndMgmtACL 0.88
+TestConfigValidateNamesLeftovers 0.88
+TestDiffPullExitStatusFollowsThePull 0.88
+TestHostEnrollLateDeviceConflictWarnsOfAnOpenedScope 0.88
+TestServerAddressesAddAfterTheSettingIsGone 0.88
+TestBreakglassDeviceAddressMovesTheHold 0.87
+TestDeviceReplaceClearsTheHold 0.87
+TestDiffersLeavesOutThePullState 0.87
+TestGroupPresetShowsDetail 0.87
+TestHostRenameSpellingOnlyOfAHeldHost 0.87
+TestManagedServerSyncsAfterALoweredTier 0.87
+TestScopeSecretStdinTakesTheLineAsItIs 0.87
+TestShellFamilyListsFollowTheStyle 0.87
+TestUserRenameToANameWithItsOwnUIDNamesTheHosts 0.87
+TestBackendDisableLegacyWaitsForTheApplyLock 0.86
+TestNewUserAndScopeNamesAreLowerCase 0.86
+TestScopeSecretStdinNudges 0.86
+TestUserEmailShowSetClear 0.86
+TestDottedUserVerifyAndReservedNames 0.85
+TestFixNamesConflictIsNotOffered 0.85
+TestManPageDocumentsEveryConfigKey 0.85
+TestUserVerbShowsTheWarningsOfTheSync 0.85
+TestBreakglassSyncAllSkipsOnlyTheHeldHost 0.84
+TestConfigLinuxScriptAndUID 0.84
+TestHostRenameSpellingOnly 0.84
+TestLoweredWithNoTiersFromBeforeSaysWhatRemains 0.84
+TestManagedAdoptionClearsTheDefaultScope 0.84
+TestOwnLoginEntryInAnotherScope 0.84
+TestScopeSecretSetFromStdin 0.84
+TestScopeVendorAttrsAndDevices 0.84
+TestApplyPhaseAInterrupts 0.83
+TestManShowsTheBuiltInPage 0.83
+TestServerAddressesAddWithNoLogin 0.83
+TestPullFollowsAnUpgradedDevice 0.82
+TestBackupRestoreOfASnapshotWithLinuxHostsPutsTheHostFilesBack 0.81
+TestBreakglassHandWrittenDottedKeyIsReleased 0.81
+TestBreakglassHoldGoesWithARestoredSnapshotThatLacksIt 0.81
+TestSNMPPoolAcrossTheLevels 0.81
+TestStrictOffByDefault 0.81
+TestBreakglassDeviceAddressSaysWhenTheRestartFailed 0.80
+TestConfigShowAndValidate 0.80
+TestConfigValidateNamesDottedUsers 0.80
+TestDeviceBlockCisco 0.80
+TestHostListJSONUsers 0.80
+TestPlanFollowsTheMgmtACLMode 0.80
+TestPlanWTIRefusals 0.80
+TestResolveV4IsKeptForTheInvocation 0.80
+TestUserAddEmail 0.80
+TestBlockCheckAgainstADevice 0.79
+TestBreakglassEngineerTier 0.79
+TestDeviceRemove 0.79
+TestManagedServerPAMConnectsToLoopback 0.79
+TestUserRenameNamesTheHostsThatRenameTheAccount 0.79
+TestHostEnrollScopeChoice 0.78
+TestUserVerbWithoutAnEnrolledServerSaysNothingOfASync 0.78
+TestBackupKeepAndList 0.77
+TestBreakglassUnusableEntriesAreNamedAndRemoved 0.77
+TestConfigValidateJSONEngineerView 0.77
+TestHostEnrollPrebuiltAndPlatform 0.77
+TestPullJSONLines 0.77
+TestConfigLoglevelMetricsListen 0.76
+TestDeviceSNMPResolutionAndLabels 0.76
+TestHostSyncReportsTheHostsSummary 0.76
+TestStrictRefusesAPullBeforeAnyLogin 0.76
+TestUserAddRemoveThroughStoreApply 0.76
+TestBackupRestoreReleasesTheHostLocks 0.75
+TestHostShow 0.75
+TestScopeSecretAtATerminal 0.75
+TestNetconfVerbs 0.74
+TestOwnLoginFreshInstall 0.74
+TestBackupRestoreSnapshotsFirstOnAnyChangeOfTheRecords 0.73
+TestHostCheckConcurrencyArgument 0.73
+TestUserScopeVerbs 0.73
+TestDetailLineOfAPrivLvlThatMovesTheTier 0.72
+TestOrphanFilesAreWarnedOf 0.72
+TestPullLoginRefusalsAndRoot 0.72
+TestDeviceCloneThatFailsTakesBackTheStaleEntrysAddress 0.71
+TestDeviceSNMPUnreadableFileIsRepairable 0.71
+TestEmergencyLockdownRefusesAGroupMadeASuperuser 0.71
+TestEngineerReadsOwnScopeSecret 0.71
+TestHostListAddressColumn 0.71
+TestLockdownRestoreListsTheHosts 0.71
+TestOwnLoginInstallServerFlag 0.71
+TestSSHRefusals 0.71
+TestStrictEndLineFailureIsTheWarning 0.71
+TestUserVerbWarnsWhenTheSyncFails 0.71
+TestHostRenameLeftovers 0.70
+TestApplyStaleFiltersOnItsOwn 0.69
+TestConfigValidateReportsBlocks 0.69
+TestRotateProofTrustsOnlyThePinnedKeys 0.69
+TestCorruptSectionsFileIsRecoveredByTheNextPull 0.68
+TestHostCheckAllUsage 0.68
+TestHostListJSONLocalHost 0.68
+TestLockdownDisableListsEveryHost 0.68
+TestServerAddressesList 0.68
+TestStrictPlanRevealsUnlessNoSecrets 0.68
+TestHostListStateHoldAndNotices 0.67
+TestHostRenameDeviceRegistryFailureRestoresTheRegistry 0.67
+TestPlanCannotPlanWhatIsNotCurrent 0.67
+TestRotateFailedProofRemovesTheAccount 0.67
+TestAdoptReadFailures 0.66
+TestEngineerReplaceInOwnScopes 0.66
+TestHostListFilters 0.66
+TestManSearchLandsOnEachEntry 0.66
+TestStrictLetsTheManagedRendersRun 0.66
+TestDeviceRenameStagingLineOfAnotherSpelling 0.65
+TestDeviceReplaceKeepsTheOriginalsStagingLines 0.65
+TestEmptyPrivilegesOverrideIsReported 0.65
+TestHeldForwardingWithoutTheDropIn 0.65
+TestOwnLoginRecordsTheAddress 0.65
+TestRestoreSNMPCredentialsAgainstASnapshotWithoutThem 0.65
+TestScopeWithUpperCaseIsRenamedToLowerCase 0.65
+TestBreakglassHostOrphanRecords 0.64
+TestCompleteThisReleasesWords 0.64
+TestConfigValidateNamesNoLeftoverWhileTheLockIsHeld 0.64
+TestDeviceReplaceRefusals 0.64
+TestDeviceSNMPFilesAreInSnapshots 0.64
+TestEngineerEnrollRefusesAnotherScopesAddress 0.64
+TestPullWTIUnitThenListShowDiff 0.64
+TestSnapshotsHoldTheSNMPCredentials 0.64
+TestBreakglassHostAndDeviceInOneList 0.63
+TestDeviceImportExport 0.63
+TestDeviceRenameCarriesTheStagingLine 0.63
+TestGroupAddAtPriv15RecordsItsTierWithoutLockout 0.63
+TestBackupRestoreOfAnEmptyRegistrySnapshot 0.62
+TestDeviceReplaceInAnotherScope 0.62
+TestDeviceScanDiscoverListAndStatus 0.62
+TestHostSyncConcurrentSameTarget 0.62
+TestScopeBlockSetRefusals 0.62
+TestViewDeviceConfigVerbsHaveTheirOwnTier 0.62
+TestBackupRestoreArguments 0.61
+TestBackupRestoreWithoutHostsIgnoresALockedHost 0.61
+TestBreakglassDeviceAddressAsksBeforeMoving 0.61
+TestDeviceLocation 0.61
+TestHostForgetLocalHost 0.61
+TestHostRenameScopeStaysLineFollowsTheLock 0.61
+TestPtyShellNamesListing 0.61
+TestPullCiscoOverSSH 0.61
+TestBreakglassHostHoldUnreadableRegistry 0.60
+TestConsoleCheckExpectsNoAgentForAHeldUser 0.60
+TestHostRenameFindsADeviceRegisteredMeanwhile 0.60
+TestStrictNeedsARealBoolean 0.60
+TestUserRenameWithoutALedgerLineSaysNothingOfTheUID 0.60
+TestADropInThatDiffersOnlyInItsCommentIsRewrittenAndRestartsTheDaemon 0.59
+TestDeviceSNMPFileFollowsTheDevice 0.59
+TestDeviceScanHostKeyNotices 0.59
+TestEngineerHostRowsOfOwnScopes 0.59
+TestHostListFiltersEngineerOwnScopes 0.59
+TestHostSyncConcurrentOneFails 0.59
+TestSSHForwarding 0.59
+TestStoreRollbackTakesTheNewestRegularPreStoreFile 0.59
+TestBackupRestoreWithoutKeepUIDsPutsTheLedgerBack 0.58
+TestBreakglassDeviceAddressRenderFailureKeepsRegistryAndRecordTogether 0.58
+TestDetailLinesOfTheDeviceVerbs 0.58
+TestDeviceSNMPEngineer 0.58
+TestGroupResetWarnings 0.58
+TestHostCheckComparesTheLockdownDropIn 0.58
+TestHostFindingsDuplicateNames 0.58
+TestPlanSeveralDevicesCoverAndOutDir 0.58
+TestBackupDiffOfASnapshotThatPredatesTheHostFiles 0.57
+TestBackupKeepRefusals 0.57
+TestHostAddressRecordedAndChanged 0.57
+TestPlanForceRemovesTheFilesOfAnEarlierPlan 0.57
+TestPullRecordsJunosFactsFromShowVersion 0.57
+TestServerNameRefusals 0.57
+TestShellCompletion 0.57
+TestStrictRevealRefusalLines 0.57
+TestUserEmailRestartsNothing 0.57
+TestDeviceRename 0.56
+TestHostFindingsSameRecordedAddress 0.56
+TestPullWTIHoldGateAndPassword 0.56
+TestScopeBreakGlassFollowsRenameAndRemove 0.56
+TestScopeSNMPV3 0.56
+TestUserRenameMovesTheLedgerLineUnderTheApply 0.56
+TestDeviceAddPullWithHostKey 0.55
+TestDeviceBlocksFollowRenameRemoveAndRestore 0.55
+TestDeviceConfigTiers 0.55
+TestHostCheckAllJSON 0.55
+TestLockdownHostMove 0.55
+TestBreakglassHoldListRoundTrip 0.54
+TestDeviceListDiffersIsConfigListDiffers 0.54
+TestDeviceReplaceRefusesAHeldReplacement 0.54
+TestDeviceReplaceYesIsTheOnlyBypass 0.54
+TestEmergencyLockdownGoesWithARestoredSnapshotThatLacksIt 0.54
+TestUserChangeNamesAllWhenManyHostsAreReached 0.54
+TestUserRenameCountsHostsOfADisabledUser 0.54
+TestDeviceConfigRadius 0.53
+TestGroupResetRefusals 0.53
+TestHostForgetUsageAndUnknown 0.53
+TestHostListJSONFindings 0.53
+TestShellFlagHelpIsTheVerbs 0.53
+TestDeviceBlockRefusals 0.52
+TestDeviceRenameStagingStrayAndSpelling 0.52
+TestHostForgetConfirms 0.52
+TestHostForgetSpelling 0.52
+TestHostIDMapRefusal 0.52
+TestHostSyncConcurrentInterrupt 0.52
+TestLogAccountingWithFilters 0.52
+TestPullRecordsIOSInterfacesAndSources 0.52
+TestUserVerbsRefuseWhenConsoleYAMLCannotBeRead 0.52
+TestConsolePasswordCacheVerbs 0.51
+TestHostListColumnsAndSummaryLikeDeviceList 0.51
+TestHostRenameStagingLineOfAnotherSpelling 0.51
+TestHostSyncConcurrencyArgument 0.51
+TestPlanAbsentServicesFromTheBlock 0.51
+TestSNMPRevealOfOneUserIsLimitedForAnEngineer 0.51
+TestScopeBreakGlassValidateRootOnlyRegistryNote 0.51
+TestScopeKnobsAndAuthMethod 0.51
+TestBlockCheckAgainstSystemNeedsAPullWithTheBlock 0.50
+TestBreakglassHoldAndReleaseSayWhenTheRestartFailed 0.50
+TestFixNamesUsage 0.50
+TestHostEnrollNamesAreLowerCase 0.50
+TestHostEnrollRefusals 0.50
+TestLockdownStateInAHandWrittenScript 0.50
+TestScopeMgmtACLEngineer 0.50
+TestScopeSNMPFollowsRenameAndRemove 0.50
+TestStoreRollbackRefusals 0.50
+TestAuditLinesOfARunShareTheSessionID 0.49
+TestConfigValidateJSONValid 0.49
+TestHostRenameScopeStepFails 0.49
+TestRotateCreationFails 0.49
+TestRotateDryRun 0.49
+TestSectionResetRefusals 0.49
+TestStoreRollbackWarnsWhenTheStoreChangedSinceTheImport 0.49
+TestBackupRestoreSaysWhenTheHostFilesCannotBeCompared 0.48
+TestConfigAuditStrictIsTheWayOut 0.48
+TestHostListJSON 0.48
+TestBreakglassDeviceAddressOtherRefusals 0.47
+TestBuiltinOperatorAt15WithALostTierIsAmbiguous 0.47
+TestDottedUserRenameFrom 0.47
+TestEngineerDevicesOfOwnScopes 0.47
+TestHostForgetOrphan 0.47
+TestHostKeyScanUsesTheScale 0.47
+TestHostShowCheck 0.47
+TestOnboardRefusesAProofThatCouldBeLocal 0.47
+TestPtyShellQuestionMark 0.47
+TestRotateRemoveOld 0.47
+TestUsageErrorLinesFollowTheStyle 0.47
+TestDeviceCloneNamesAnEntryWithNoName 0.46
+TestHostRenameOffersTheHostsOwnScope 0.46
+TestSSHConnectTimeoutUsesTheScale 0.46
+TestConfigValidateJSONError 0.45
+TestConsolePolicyLinePerTier 0.45
+TestDeviceAddOfferedNameAndVendor 0.45
+TestDeviceLocationFromDevice 0.45
+TestEnrollWithoutATerminal 0.45
+TestStoreImportCheckOperatorCommandOverridesArePartOfTheProof 0.45
+TestStoreRollbackAnythingButYChangesNothing 0.45
+TestUserEmailRefusals 0.45
+TestConfigValidateJSONKitchenSink 0.44
+TestDeviceTierFilteringAndGate 0.44
+TestEngineerSSHDDropInWithoutTheConsole 0.44
+TestEveryNodeAnswersAnUnknownWord 0.44
+TestHostListNamesFinding 0.44
+TestMgmtACLEntriesWithServices 0.44
+TestPtyShellLongListAsks 0.44
+TestSSHArgvTable 0.44
+TestScopeBlockCiscoRefusals 0.44
+TestSectionsValidateDisabledBackendsLeftovers 0.44 serial
+TestUnknownSubcommandIsShort 0.44
+TestBreakglassSyncNamesRefusesAHeldHost 0.43
+TestCentralLinesWithoutLogger 0.43
+TestConsoleSystemShellPerUser 0.43
+TestEngineerCloneInOwnScopes 0.43
+TestGroupListEngineerHint 0.43
+TestHostForgetWarnsForWhatStayed 0.43
+TestHostSyncSeveralNames 0.43
+TestLockdownListFollowsHosts 0.43
+TestOnboardRefusesADeviceWithAServer 0.43
+TestPullInterruptStagesExit130 0.43
+TestSectionsBackupRestoreBackendsFollowTheSnapshot 0.43 serial
+TestTempDirIsTheInvocationsNotTheProcess 0.43 serial
+TestVendorChangeNeedsPull 0.43
+TestConfigStatesRendered 0.42
+TestEngineerIsToldNothingOfNamesWithUpperCase 0.42
+TestHostFindingsAreReadOnlyAndShownWithNoHosts 0.42
+TestHostForgetRetryHintNamesThePinsSpelling 0.42
+TestHostListJSONDrift 0.42
+TestHostRenameAnotherHostsHoldIsNotReplaced 0.42
+TestSNMPPoolFileOfADeviceNeedsNoMap 0.42
+TestScopeBlockEngineer 0.42
+TestServerNameSetAndUnset 0.42
+TestConfigLinuxUIDRange 0.41
+TestDeviceBlockCiscoSystem 0.41
+TestDeviceListRemindsToScanWhenTheDataIsOld 0.41
+TestEngineerScriptUsers 0.41
+TestHostEnrollNewNameRules 0.41
+TestHostRenameToAFullyQualifiedName 0.41
+TestHostRenameUndoWording 0.41
+TestHostSyncConcurrentPanic 0.41
+TestManPageDocumentsEveryExitStatus 0.41
+TestPullWTIUserDirectoryNotRead 0.41
+TestServerNameKeyIsValidated 0.41
+TestDeviceBlockSetShowListRemove 0.40
+TestEmergencyLockdownEngineerSeesTheNoticeOfOwnScopes 0.40
+TestAdoptSNMPOverTheCommandLineWhenTheSettingSaysSo 0.39
+TestBreakglassImportStillRefusesToMoveAHeldDevice 0.39
+TestHostForgetShortYesAndPromptShape 0.39
+TestHostRenameScopeQuestionPremiseHolds 0.39
+TestHostSyncConcurrentAsksNothing 0.39
+TestPtyShellTabListing 0.39
+TestSSHEndIsWrittenAfterAHangup 0.39
+TestScopeAddFlags 0.39
+TestStrictRefusesAnEngineersReveal 0.39
+TestAdoptMergesBeneathTheExistingBlock 0.38
+TestBreakglassHoldListsRootForJunosOnly 0.38
+TestConfigRenderDryRun 0.38
+TestConsolePolicyLinePasswordCache 0.38
+TestDeviceScanIfStale 0.38
+TestForgetAndCarry 0.38
+TestPasswordCacheNeedsThePermissionAndTheChoice 0.38
+TestPlanWTIRadiusScope 0.38
+TestScopeMgmtACLModeShowsAndSets 0.38
+TestStoreImportNamesLockdownCarvedUsers 0.38
+TestAdoptSNMPDraftFlow 0.37
+TestBackupRestoreSnapshotWithAnOlderManifest 0.37
+TestConsoleColorAndListMax 0.37
+TestConsolePolicyCarriesTheServerName 0.37
+TestEnrollKeyAnswers 0.37
+TestHostFamilyUsage 0.37
+TestHostFindingsNoneInAHealthyLab 0.37
+TestHostFindingsNotShownToAnEngineer 0.37
+TestHostRenameThatCannotBeUndoneNamesBothStates 0.37
+TestLedgerLockBackupRestore 0.37 serial
+TestOrphanKeysAreWarnedOf 0.37
+TestPullConcurrencyIsHeldToTheCap 0.37
+TestSSHExitStatusAndHostKeyDiagnosis 0.37
+TestWalkthroughCarriesTheDevicesOwnBlock 0.37
+TestBackupRestoreOfASnapshotWithoutLinuxHostsLeavesTheHostsAlone 0.36
+TestEngineerHostsAreReadOnly 0.36
+TestEnrollTwoAddressesOneRefused 0.36
+TestHostRenameToUpperCaseIsRefused 0.36
+TestPlanWTIPull 0.36
+TestScopeBreakGlassRoot 0.36
+TestServerShowSettingsAndListeners 0.36
+TestSetterApplyRefusesBeforeChanging 0.36
+TestDeviceAddListShow 0.35
+TestPlanFormatsAndFiles 0.35
+TestRadiusWalkthroughsFollowTheListeners 0.35
+TestRotateOneAtATimePerHost 0.35
+TestScopeSNMPClientsAndContact 0.35
+TestSectionsValidateABlockPerBackendDrift 0.35 serial
+TestSupportBundleJunosIsScrubbedAndTheMapStaysApart 0.35
+TestBashHelpKeyUnderSetU 0.34
+TestDetailLinesOfTheHostVerbs 0.34
+TestEngineerImportCannotCopyAMapOntoADevice 0.34
+TestHostRenameWarnsForWhatStayed 0.34
+TestListsFollowTheParsedSudoAnswer 0.34
+TestManPatternHasNoQuoteOrDollar 0.34 serial
+TestPtyShellLeadingBinary 0.34
+TestPullOfAScaledDevice 0.34
+TestPullRecordsJunosFacts 0.34
+TestSecretReadIsLoggedForEveryCaller 0.34
+TestWalkthroughSyntaxResolution 0.34
+TestBreakglassHoldRefusals 0.33
+TestDeviceNotices 0.33
+TestDeviceWriteFindsAHostEnrolledMeanwhile 0.33
+TestHostEnrollOptionNeedsAValue 0.33
+TestHostShowEngineer 0.33
+TestInVerbDenialWritesTheDenyLine 0.33
+TestNoSecretInTheDenyLine 0.33
+TestPasswordCacheSuperuserAdministersTheUsers 0.33
+TestSectionsValidateEachBackendsRenderState 0.33 serial
+TestSectionsValidateUnknownRenderStateIsOutOfDate 0.33 serial
+TestStoreRollbackThenImportAgainAndRollBackAgain 0.33
+TestStrictGenerateRefusesBeforeTheValue 0.33
+TestUserRenameOntoANameWithAUIDWarns 0.33
+TestBackupRestoreKeepUIDsUsageErrors 0.32
+TestDeviceDiscoverSNMP 0.32
+TestEngineerWalkthroughLogsTheSystemBlockRead 0.32
+TestHostDefaultMethod 0.32
+TestLedgerLockRefusesARenumberingAndNothingChanges 0.32 serial
+TestPasswordCacheCannotSetAnotherUsersValue 0.32
+TestRotateWithKey 0.32
+TestShellSpaceCompletionFlag 0.32
+TestStoreRollbackRestoresThePreStoreFileAndRestarts 0.32
+TestUIDFileRenumberCollision 0.32
+TestConfigValidateRefusesArgument 0.31
+TestConsoleSettings 0.31
+TestConsoleYAMLRestore 0.31
+TestDeviceConfigShowRefusals 0.31
+TestDeviceHostkeyVerb 0.31
+TestDeviceSNMPSnapshotHoldsTheOldCredential 0.31
+TestHostRenameRefusedWhileARotationRuns 0.31
+TestLeftoverBlocksAreNotTakenOver 0.31
+TestLinuxScriptDefaultsToTheRecordedServerAddress 0.31
+TestScopeRemoveGuards 0.31
+TestShellArgv 0.31
+TestStagingEntryOfACoveredAddressLeavesThePrefix 0.31
+TestBackupDiffAndRestoreHandleDevicesYAML 0.30
+TestBackupRestoreWithAFailingHostStepStillRestarts 0.30
+TestConfigCiscoSourceInterface 0.30
+TestConfigValidateChecksTheTimeoutScale 0.30
+TestConfigWriteSnapshotHoldsDeviceBlocks 0.30
+TestDeviceAddVendorDetection 0.30
+TestDeviceConfigApplyIsTheEngineersAndShapesTheSuperusers 0.30
+TestHostListAddressColumnEngineer 0.30
+TestHostListArgumentsOfTheFilters 0.30
+TestImportReplaceForgetsTheConfigurationRecord 0.30
+TestManPageListsEveryTierRow 0.30
+TestOrphanCredentialsFileIsIgnoredByEveryReader 0.30
+TestPlanConvergeCleanupAndFrom 0.30
+TestSNMPTimeoutUsesTheScale 0.30
+TestScopeBlockCiscoVerbs 0.30
+TestScopeSNMPSettingsAndSecrets 0.30
+TestSyncPreviewApplyOverwrite 0.30
+TestTimeoutScaleFollowsTheScope 0.30
+TestUserRenameOnAServerThatIsNotEnrolledSaysNothingOfTiers 0.30
+TestDeviceBlockEngineer 0.29
+TestDeviceRenameStagingWarnsWithTheAddresses 0.29
+TestDeviceReplaceOfACloneAtACoveredAddress 0.29
+TestFixNamesDoesNotProposeAPeriod 0.29
+TestSSHNoTerminalKeepsSSHsOwnPrompt 0.29 serial
+TestScopeMgmtACLModeRefusals 0.29
+TestSectionResetClearIsGone 0.29
+TestStoreShowAndImportArguments 0.29
+TestUserRenameLedgerFailureNamesTheSnapshot 0.29
+TestValidateAndStatusWithMovedListeners 0.29 serial
+TestWalkthroughFollowsTheMgmtACLMode 0.29
+TestBackupRestoreAWriterThatFailsPutsEveryFileBack 0.28
+TestBreakglassHostIsHeldByName 0.28
+TestConfigDevicesSettings 0.28
+TestDeviceCloneOfAPlainDevice 0.28
+TestHostListArguments 0.28
+TestHostReEnrollSkipsTheLateDeviceCheck 0.28
+TestLeftoverSNMPCredentialsAreNotTakenOver 0.28
+TestPrivilegeResetStoredEmptyList 0.28
+TestPullWTIUnknownPageIsParseFailed 0.28
+TestRollbackThenUpgradeKeepsTheFileIgnoredUntilSettingsReturn 0.28
+TestScopeBreakGlassInWalkthroughs 0.28
+TestSettersNudgeFromTheStoredPull 0.28
+TestTrapSourceThroughTheVerbs 0.28
+TestUsageErrorRepeatsTheRows 0.28
+TestAdoptRefusals 0.27
+TestBackupRestoreSnapshotRoundTripAndKeepsWhatItReads 0.27
+TestConfigLinuxScriptUIDRangeFull 0.27
+TestIOSSyntaxVerbAndRows 0.27
+TestLoweredWithoutAModelSaysWhatRemains 0.27
+TestRotateGeneratesTheKey 0.27
+TestSSHNoSecretOnArgv 0.27
+TestScopeBreakGlassAddListRemove 0.27
+TestShellExplain 0.27
+TestStrictRefusesABlockEditBeforeTheEditor 0.27
+TestConfigAuditStrict 0.26
+TestConsoleSystemShellPerTier 0.26
+TestDeviceAddNameHint 0.26
+TestDeviceAddOfferedName 0.26
+TestDeviceImportOfAFileWithUpperCaseLoadsItAsItIs 0.26
+TestDeviceNoticeForms 0.26
+TestDeviceSSHConfig 0.26
+TestEnrollVendorAsked 0.26
+TestHelpPrintsTheList 0.26
+TestHostForgetDropsEverythingTheHostHas 0.26
+TestHostRenameOfTheLocalHost 0.26
+TestHostShowNotRecordedAndLocal 0.26
+TestLedgerLockRefusesConfigLinuxUIDAndNotTheListing 0.26 serial
+TestManagedScopeClashSurvivesForget 0.26
+TestManagedScopeServerLiterals 0.26
+TestOwnLoginNoAddress 0.26
+TestPtyShellListingWrapped 0.26
+TestPullDifferencesAndNoSecretValues 0.26
+TestSectionsStatusEachBackendInItsSection 0.26 serial
+TestServerNameInClientConfig 0.26
+TestShellFixedCompleterSkipsLookups 0.26
+TestTouchWritesTheStartOnce 0.26
+TestDeviceAddReadsTheLocation 0.25
+TestDeviceScanSources 0.25
+TestDeviceWritesTakeASnapshotFirst 0.25
+TestEngineerTierFromGroupSetting 0.25
+TestLogTailWithFilters 0.25
+TestPasswordCacheEachUserSetsTheirOwn 0.25
+TestSSHAuditKnownHostsAndNotices 0.25
+TestSSHConsoleSession 0.25
+TestSSHPromptCancelledOrUnusableStartsNothing 0.25 serial
+TestScopeSecretLengthInRunes 0.25
+TestSecretReadOnlyWhereASecretIsShown 0.25
+TestServerShowJSON 0.25
+TestBackupDiffShowsTheHostFiles 0.24
+TestConsoleRefusals 0.24
+TestConsoleRefusesEntryPointWords 0.24
+TestHostCheckAllOK 0.24
+TestHostEnrollRefusesTheNameOfAnOrphanHold 0.24
+TestListIsComputedAgainstTodaysRendering 0.24
+TestPullJunosRootBreakGlass 0.24
+TestSectionsLogEveryEnabledBackend 0.24 serial
+TestServerShowRegistryCopy 0.24
+TestBackupUnkeep 0.23
+TestCompletionNamesVendorDevices 0.23
+TestEditDeviceBlockSeedHasTheScopesObjectsAsComments 0.23
+TestFixNamesIsTheSuperusers 0.23
+TestLogFilterFlagErrors 0.23
+TestLogFilterWithSeveralBackends 0.23 serial
+TestPlanEngineerSeesOnlyTheirScopesAndTheirClass 0.23
+TestPtyShellHelp 0.23
+TestPullPromptsOnTheTerminalOnce 0.23
+TestPullWTIFailedKeepsTheLastGoodPull 0.23
+TestRotateFailedProofNeverDeletesAnAdoptedAccount 0.23
+TestSectionsBackendListStatusReadOnlyWithTwo 0.23 serial
+TestSectionsLogClearEveryBackend 0.23 serial
+TestSectionsStatusDriftInItsBackendsSectionOnce 0.23 serial
+TestSectionsValidateOneBackendNoBlock 0.23 serial
+TestServerShowRefusals 0.23
+TestBackupRestoreWithABusyRegistryChangesNothing 0.22 serial
+TestBreakGlassValidateRefusesCaseDuplicates 0.22
+TestCompletionNamesTellALowerTierOnlyWhatItsVerbsList 0.22
+TestConfigLinuxBuildBuildsAndOwner 0.22
+TestLedgerLockRefusesHostSyncBeforeAnySSH 0.22 serial
+TestNativePrelude 0.22
+TestPhaseUsage 0.22
+TestSSHDoesNotAskWhenTheCachedPathIsNotUsed 0.22 serial
+TestSectionsBackendStatusTCPAndUDPListeners 0.22 serial
+TestSectionsLogClearRefusesTheOldShorthand 0.22 serial
+TestSectionsShowABlockPerBackend 0.22 serial
+TestSectionsStoreRollbackRefusedWithAnotherBackend 0.22 serial
+TestServerNameShows 0.22
+TestSettersSayNothingWhenThePullAgrees 0.22
+TestStoreRollbackKeepsAHandEditedRenderedConfigFirst 0.22
+TestBackupRecoverFromASnapshotWithoutAddresses 0.21
+TestConfigCiscoSourceInterfaceFollowsTheScope 0.21
+TestDeviceAddLegacyScansTheFakeOldDevice 0.21
+TestDeviceAddPinsHostKeys 0.21
+TestDeviceListShowsDevicesOnly 0.21
+TestDeviceSNMPClients 0.21
+TestEmergencyLockdownDisableNamesAGroupTheRecordHoldsAlone 0.21
+TestHostForgetRefusedWhileARotationRuns 0.21
+TestLedgerLockRestoreHostsUnderTheLock 0.21 serial
+TestManagedRenderIsPureAndSharedPerScope 0.21
+TestPullKeepsThePlainViewAndForgetsIt 0.21
+TestPullLoginSelectionIsAUsageError 0.21
+TestPullRecordsTheRunningJunosRelease 0.21
+TestScopeBreakGlassEngineerTier 0.21
+TestServerShowNothingInstalled 0.21
+TestShellCompleterFixedWords 0.21
+TestShellHelpIsTheCLIUsage 0.21
+TestUserListShowAndUsage 0.21
+TestWalkthroughsFollowTheTACACSListener 0.21
+TestAdoptNothingToAdoptOpensNoEditor 0.20
+TestAdoptSystemDraft 0.20
+TestConfigValidateJSONIsTheOperators 0.20
+TestEmergencyLockdownRefusals 0.20
+TestGroupResetIsTheSuperusersAlone 0.20
+TestNoShortYes 0.20
+TestPlanWithNothingToTypeRemovesTheKeptBackout 0.20
+TestRotateHostWithoutPins 0.20
+TestRotateReadsTheEntryAgain 0.20
+TestRotateWithPasswordNeverSeesIt 0.20
+TestScriptsDescribeFixedWords 0.20
+TestSetterApplyRefusesNonJunosAndLowerTiers 0.20
+TestUsageRangeAndChoiceStyle 0.20
+TestAdoptDeviceLevelIsTheDevicesExceptions 0.19
+TestApplyArgumentsAreCheckedFirst 0.19
+TestApplyRefusesNonJunosAndLowerTiers 0.19
+TestBackupRestoreRefusesBeforeTouchingAnything 0.19
+TestBackupRestoreWithoutHostsIgnoresABusyRegistry 0.19 serial
+TestBashHelpKeyOtherKeys 0.19
+TestCentralPairOfAnAction 0.19
+TestDeviceAddOffersALocationAtATerminal 0.19
+TestGroupShowInvalidTierWording 0.19
+TestHelpOnlyRunsNoVerbThroughRun 0.19
+TestSNMPDeviceUserSurvivesTheEntryBeingEmptied 0.19
+TestSSHAskedPasswordIsForgottenOn255 0.19 serial
+TestScopePrefixesMembershipVerbs 0.19
+TestShellLeadingBinaryIsNoWord 0.19
+TestUIDFileRenumberedOnce 0.19
+TestWalkthroughUsesTheDevicesOwnSNMP 0.19
+TestCollectRefusalsSendNothing 0.18
+TestCompleteOffersNoHiddenOrRemovedWords 0.18
+TestDeviceCloneRecordsACoveredAddressAudited 0.18
+TestDeviceConfigShowTiers 0.18
+TestEnrollJSON 0.18
+TestManSearchPattern 0.18 serial
+TestPlanIgnoresAPlainViewOfAnotherPull 0.18
+TestPlanReadsTheDevicesOwnStatementsAsTheListDoes 0.18
+TestPrivilegeResetDeviceLines 0.18
+TestPullRefusals 0.18
+TestRollbackNoWarningsNoYes 0.18
+TestSSHUsesTheCachedPassword 0.18 serial
+TestScopeBlockSetShowCheckListRemove 0.18
+TestScopeChangeNudgesWhenAStoredPullWouldChange 0.18
+TestSpoofedSudoUserRefused 0.18
+TestBatchRenderCarriesTheSNMPBlock 0.17
+TestCollectDiscovered 0.17
+TestConfigGetAndTunables 0.17
+TestDeviceAddHostKeyRefusals 0.17
+TestDeviceBlockEffective 0.17
+TestDeviceConfigUsage 0.17
+TestDeviceLocationFromDeviceEngineer 0.17
+TestEditInterruptedRemovesTheDirectory 0.17 serial
+TestHostCheckAllLocal 0.17
+TestLedgerLockRestoreWarningComesFromThePreRestoreCopy 0.17
+TestNoAmbiguityWithoutCustomGroupsAt15 0.17
+TestPlanNamesTheBlockEachStatementComesFrom 0.17
+TestPlanPlainConvergeSaysWhyThereIsNoCleanupFile 0.17
+TestSNMPFileBecomesVersionOneWhenTheDeviceGetsAnEntry 0.17
+TestSNMPReconcileFailureNamesTheCommandAndFailsWhenTheFileIsIgnored 0.17
+TestSSHCachedPathRequiresTheSudoAccount 0.17 serial
+TestShapesListAndSeed 0.17
+TestWalkthroughCarriesTheSNMPBlock 0.17
+TestDeviceAddVendorQuestion 0.16
+TestDeviceBlocksRenameThatCannotMoveFilesPutsTheKeysBack 0.16
+TestDeviceSNMPRevealIsLoggedPerLevel 0.16
+TestEditChoosesTheEditor 0.16
+TestEditRunsAsTheInvokingUser 0.16
+TestFailedEnableKeepsAConcurrentStoreChange 0.16
+TestHostEnrollOfAFoldEqualNameFinishedMeanwhileIsRefused 0.16
+TestIOSSyntaxVerbWarnsOnConflict 0.16
+TestLeftoverDeviceBlocksAreNotTakenOver 0.16
+TestLogRADIUSWithFilters 0.16
+TestOnboardRefusalsSendNothing 0.16
+TestOrphanCredentialsFileIsNotUsedByTheLookup 0.16
+TestPlanCleanupFileNameIsReserved 0.16
+TestPlanRefusesWhatAGroupOwns 0.16
+TestPullRecordsInterfaceAddresses 0.16
+TestSSHHostKeyDiagnosisDoesNotReadASilentDevice 0.16
+TestStrictWarnsOnceAboutALostDenyLine 0.16
+TestViewSpaceCompletionSkipsHiddenVerbs 0.16
+TestBackupListOrderSizesAndCompletionNames 0.15
+TestConfigCiscoNameAutoWithIOS12Record 0.15
+TestDeviceAddReadsAKeyOneTypeAtATime 0.15
+TestDeviceConfigArguments 0.15
+TestDeviceSSHAsksFirstToo 0.15 serial
+TestEngineerWalkthroughShowsSNMP 0.15
+TestLogSearchAndFailuresWithFilters 0.15
+TestManLookup 0.15 serial
+TestNewDeviceNamesAreLowerCase 0.15
+TestPlanPullReadsFirst 0.15
+TestPlanSyslogAndLoginPolicyFromTheBlock 0.15
+TestPullNetconfIsRefusedForCiscoBeforeAnyLogin 0.15
+TestSSHFirstAsksThenStoresAndTheSecondDoesNot 0.15 serial
+TestScopeBlockCiscoVRFForms 0.15
+TestWalkthroughCarriesTheSystemBlock 0.15
+TestApplyPullRefusedPasswordEndsTheRun 0.14
+TestApplySettingsOutOfRangeReadAsDefaults 0.14
+TestConfigGetCompletesFamiliesFromTheStore 0.14
+TestConfigPreflight 0.14
+TestEditInTheConsoleFollowsTheSystemShellRule 0.14
+TestEditReadBackIgnoresLinksAndHugeFiles 0.14
+TestGroupResetCompletion 0.14
+TestSSHAskedPasswordTheCacheCannotTakeFallsBack 0.14 serial
+TestSSHForgetsOn255 0.14 serial
+TestSectionResetIsTheSuperusersAlone 0.14
+TestSectionsShowProbesTheListenersOwnPort 0.14 serial
+TestSyncOverwriteHostnameMustResolve 0.14
+TestWalkthroughIdleTimeoutFollowsTheRecordedRelease 0.14
+TestBackendDisableYes 0.13
+TestCappedEngineerKeepsTheConsoleLockdown 0.13
+TestCollectNotJunos 0.13
+TestDeviceNoticeCompletion 0.13
+TestHostListJSONEmpty 0.13
+TestIOSSyntaxOldNamesAreGone 0.13
+TestPullTimingOfAFailedDevice 0.13
+TestReadCommandsWriteNoCentralLine 0.13
+TestSectionsStatusOneBackendIPv6ParityWording 0.13 serial
+TestStatusOneBackendNoHeadings 0.13
+TestViewExplainHiddenFamily 0.13
+TestViewExplainNamesTheTier 0.13
+TestApplyPullNotComparedIsNotAMatch 0.12
+TestBrokenConfCapsTheTierAndRefusesSync 0.12
+TestConfigLinuxUIDRecordOnly 0.12
+TestConsoleWithoutAPolicyAnswerHoldsTheCaller 0.12 serial
+TestDeviceCloneAtACoveredAddressWithAnEntry 0.12
+TestDeviceVendorChangeDropsTheSyntax 0.12
+TestEnrollJunosChain 0.12
+TestFactsFollowTheConfigurationRow 0.12
+TestLedgerLockIsNotHeldAcrossTheRunOnTheHost 0.12 serial
+TestLedgerLockRefusesUserRenameBeforeAnythingChanges 0.12 serial
+TestManPath 0.12
+TestPlanCoverNameIsReservedOnlyForACover 0.12
+TestPlanFindingsNameTheLayerOfEachBlockObject 0.12
+TestSSHCachedPathNeedsTheLocalAccount 0.12 serial
+TestScopeRefusalIsADenialOnlyForAScopeThatExists 0.12
+TestSectionsShowOneBackend 0.12 serial
+TestSubcommandCheckLeavesTheRestToSudo 0.12
+TestUsageRowsIgnoreMarkup 0.12 serial
+TestWalkthroughNamesTheBlockOfEachStatementWhenLayersMix 0.12
+TestDeviceAddIOSSyntax 0.11
+TestDeviceAddNameHintFallbacks 0.11
+TestDeviceListEngineerHasNoHosts 0.11
+TestEditUnchangedWritesNothing 0.11
+TestEngineerStagingNameFailsClosed 0.11
+TestOrphanCredentialsFileIsNotInThePullExpectation 0.11
+TestRollbackIsTheSuperusersAlone 0.11
+TestScopeBlockUnlistedAndMissing 0.11
+TestScopeShowMasksTheSecret 0.11
+TestSectionsBackendListNeedsNoStore 0.11 serial
+TestSectionsLogOneBackendNoHeading 0.11 serial
+TestShellTierDenial 0.11
+TestTopLevelUsage 0.11
+TestUsagePlaceholderSyntax 0.11
+TestBackendEnableUnchangedIsStarted 0.10
+TestBashHelpKeyBlockIsShellcheckClean 0.10 serial
+TestCollectKeyAnswers 0.10
+TestConfigSudoers 0.10
+TestConfigVerbsAllNative 0.10
+TestDeviceCloneReplacesAStaleLineOfTheSameDevice 0.10
+TestDeviceScanSourcesSaysWhyADeviceIsNotTested 0.10
+TestEnrollInterrupted 0.10
+TestHostEnrollRefusesRegistryAndGenericNames 0.10
+TestLedgerLockMoveUIDReportsABusyLedger 0.10 serial
+TestPlanRestorePointIsRefusedForJunos 0.10
+TestSNMPChosenUserErrorIsNotNamedBelowTheEngineer 0.10
+TestScopeBlockCiscoSystemVerbs 0.10
+TestSectionResetCompletion 0.10
+TestShellUsageErrors 0.10
+TestSyncWriteSkipsWhatChanged 0.10
+TestUnknownSubcommandBeforeSudo 0.10
+TestUnknownSubcommandInTheShell 0.10
+TestViewTopHelp 0.10
+TestBackendDisableGatesTheRest 0.09
+TestBackendListStatusAndUsage 0.09
+TestCollectTable 0.09
+TestCompleteBreakglass 0.09
+TestConfigSNMPVersionVerb 0.09
+TestConsoleCheckEngineerSudo 0.09
+TestConsoleGuardRefusals 0.09 serial
+TestConsoleHasNoSwitch 0.09
+TestConsoleInstallRenamesTheEngineerDropIn 0.09
+TestDeviceConfigRenders 0.09
+TestDeviceListProbe 0.09
+TestDeviceScanFlagsAndTier 0.09
+TestEditCheckErrorsThenAbandoned 0.09
+TestEditIsTheSuperusersOnly 0.09
+TestEnrollErrorAfterARegistration 0.09
+TestEnrollStrictAcceptanceLine 0.09
+TestExplainNoAlternativePlaceholder 0.09
+TestHostCheckAllEngineerRefused 0.09
+TestLogAccountingNamesOnlyTheDevicesTheCallerSees 0.09
+TestLogAccountingNamesTheDevices 0.09
+TestPlanJunosFromTheLastPull 0.09
+TestPullStoresTheTypedPasswordAfterTheDeviceAccepted 0.09 serial
+TestScopeMgmtACLModeSaysWhichListIsUsed 0.09
+TestUnknownTopLevelCommand 0.09
+TestViewFamilyHelp 0.09
+TestWalkthroughsWriteNoPortForTheDefaultListener 0.09
+TestBackendDisableTacacsWhenAnotherStays 0.08
+TestBackendDisabledIsNotRendered 0.08
+TestBackendEnableNotActiveIsUndone 0.08
+TestCollectSanitisesDeviceText 0.08
+TestConsoleCheckEngineerDropIn 0.08
+TestConsoleCheckEngineerLogin 0.08
+TestConsoleIgnoresStoredSwitches 0.08
+TestConsoleInstallRemoveCheck 0.08
+TestConsoleLineArgv 0.08 serial
+TestDeviceAddLegacyFallsBackToBuiltinScan 0.08
+TestDeviceAddPullFailureKeepsTheDevice 0.08
+TestDeviceCheck 0.08
+TestEditAnswerNoLeavesEverythingAsItWas 0.08
+TestEditCheckErrorsThenFixedOnTheSecondRound 0.08
+TestEnrollPinsOneKey 0.08
+TestHelpIsPlainWhenPiped 0.08
+TestHostRenameScopeStepFaulted 0.08
+TestLinuxScriptFollowsTheListeners 0.08
+TestLogJSONOfTheJournal 0.08
+TestPlanAuditQuotesAPathWithSpaces 0.08
+TestPlanPlainOutWritesNothingForADeviceThatCannotBePlanned 0.08
+TestRollbackCompletion 0.08
+TestRotateGate 0.08
+TestSNMPFileFollowsTheEntryWhenItIsEmptied 0.08
+TestSNMPShowsAtScaleOneAreUnchanged 0.08
+TestScopeUsageAndUnknown 0.08
+TestSyncRefusesHostileText 0.08
+TestTimeoutScaleOfReadsTheThreeLevels 0.08
+TestVersion 0.08
+TestBackendDisablePromptNo 0.07
+TestBackendDisableThenEnable 0.07
+TestBatchRenderCarriesTheSystemBlock 0.07
+TestCollectRegister 0.07
+TestCompleteVendorDevices 0.07
+TestCompletionNames 0.07
+TestConfigLinuxEngineerSudo 0.07
+TestConsoleCheckLeavesLocalAdministratorsAlone 0.07
+TestConsoleTierGate 0.07
+TestDeviceAddPullWaitsForTheVendor 0.07
+TestDeviceUsageAndUnknown 0.07
+TestEditExistingBlockSeedsTheFileAndShowsTheDiff 0.07
+TestLocalLoginRefusedWhileHeld 0.07
+TestLogDeviceNamesRespectTheCallersScopes 0.07
+TestManIsInTheTreeAndTheLists 0.07
+TestPullHostKeyMismatchRaisesTheNotice 0.07
+TestPullUsesTheCachedPassword 0.07 serial
+TestShellListKinds 0.07
+TestSupportBundleRefusals 0.07
+TestSyncSelectionAndJSON 0.07
+TestUnknownSubcommandKeepsHelp 0.07
+TestApplyPullStoppedOrInterruptedChecksNothing 0.06
+TestBackendDisableTacacsWithoutStore 0.06
+TestBatchRenderCarriesTheDevicesOwnBlock 0.06
+TestCollectLocalLogin 0.06
+TestCompletionIsOfferedInBothSurfaces 0.06
+TestConsoleCheckFlagsRemovedSuperusers 0.06
+TestConsoleShowSSHDWarning 0.06
+TestConsoleSystemShellCompletion 0.06
+TestDeviceAddPullRegistersThenPulls 0.06
+TestDeviceAddSuggestionsKeepFlags 0.06
+TestDeviceBlockEffectiveSystem 0.06
+TestDeviceJSON 0.06
+TestEditRefusals 0.06
+TestEnrollDiscovered 0.06
+TestLifecycleVerbsThroughTheCLI 0.06
+TestLogArgumentsAndHeadings 0.06
+TestLogFollowWithFilters 0.06
+TestManKeyDocsAreComplete 0.06 serial
+TestPasswordVerbsRefuseAPeriod 0.06
+TestPullWTIOtherVersionIsUnsupported 0.06
+TestScopeBlockRefusesTheScopesOwnCommunity 0.06
+TestScopeBlockSystemIsElidedAndRevealed 0.06
+TestScopeLookupExitCodes 0.06
+TestShellDescribesFixedWords 0.06
+TestSyntaxResolutionOfARegisteredDevice 0.06
+TestViewTwoWordVerbs 0.06
+TestWalkthroughNoteForAPulledDeviceWithoutImage 0.06
+TestBackendDisableConfirms 0.05
+TestBackendEnableDisableCLI 0.05
+TestBackendEnablePromptYes 0.05
+TestBackendEnableStageFails 0.05
+TestBackendEnableUndoPutsTacctlYamlBack 0.05
+TestBreakGlassNamesCompareWithoutCase 0.05
+TestCentralEndOfAFailedAction 0.05
+TestCentralEndOfAnApplyThatFailsAfterItsSnapshot 0.05
+TestCollectStrictAcceptanceLine 0.05
+TestConsoleUsageAndUnknown 0.05
+TestDeviceAddSilentDeviceFallsBackToBuiltinScan 0.05
+TestDeviceImportOfACSVWithUpperCaseLoadsItAsItIs 0.05
+TestEditNewBlockFromTheTemplate 0.05
+TestHelpColours 0.05
+TestManRefusesUnsafeToolPaths 0.05
+TestManWithoutLess 0.05
+TestManWithoutMan 0.05
+TestManWordsReachTheSearchOnly 0.05
+TestNoDetailLineWithoutAChange 0.05
+TestPullLoginNeverTouchesTheCache 0.05 serial
+TestSNMPCommunityLeavesTheFileWhenTheRegistryWriteFails 0.05
+TestShellBlockWordsHaveDescriptions 0.05
+TestShellHelp 0.05
+TestTimingNeedsAPullForDiffAndPlan 0.05
+TestAcceptedNeverStoresAfterRejected 0.04 serial
+TestApplyTimingOfAFailedDevice 0.04
+TestAskpassHelperNeverStores 0.04 serial
+TestAskpassHelperVerb 0.04 serial
+TestBackendDisableStopFails 0.04
+TestBackendEnableAlreadyEnabled 0.04
+TestBackendEnableInstalledIsRestarted 0.04
+TestBackupRestoreLegacyARenderThatFailsPutsEveryFileBack 0.04
+TestBreakGlassAddDoesNotClaimToSeeTheCredential 0.04
+TestCollectJSON 0.04
+TestCollectRefusedPassword 0.04
+TestCompletionCommand 0.04
+TestConfigBranch 0.04
+TestConfigValidateJSONLegacy 0.04
+TestConsoleEngineerHasTheConsole 0.04
+TestDeviceAddNoKeyAfterTheRetryNamesIt 0.04
+TestDeviceCloneOfADeviceNoScopeAnswers 0.04
+TestDeviceRemoveWithoutBlocksSaysNothingOfThem 0.04
+TestEditOpensABrokenBlockWithItsErrors 0.04
+TestEngineerRowsWriteNoGlobalSetting 0.04 serial
+TestEngineerSudoWarnsForRootShells 0.04
+TestEnrollHostKeyAtATerminalAsksTheNameFirst 0.04
+TestEveryCommandHasAHandler 0.04
+TestGroupShowJunosPatterns 0.04
+TestHostForgetThatCannotSnapshotChangesNothing 0.04
+TestHostRenameThatCannotSnapshotChangesNothing 0.04
+TestKeyTargetsCarryTheScale 0.04
+TestLogAccountingWithoutARegistry 0.04
+TestNoSecretInTheConsoleDenyLine 0.04 serial
+TestPullForgetsAWrongCachedPassword 0.04 serial
+TestPullInterruptBySignal 0.04 serial
+TestPullLoginIsTheEngineers 0.04
+TestPullNeedsAPassword 0.04
+TestPullWrongPasswordStopsTheBatch 0.04
+TestSectionsValidateDeadRegexOverride 0.04
+TestSetViewBatchWaitsForTheAnswer 0.04
+TestShellHistory 0.04
+TestShellStatusAndBatch 0.04
+TestStoreApplyWriterErrorIsReported 0.04
+TestStrictRefusesALinuxScriptWhoseLineCannotBeWritten 0.04
+TestUnknownWordIsAnsweredBeforeSudo 0.04
+TestBackendDisableLegacyMode 0.03
+TestBackendDisableNotEnabledOrUnknown 0.03
+TestBackendEnableGateAdopts 0.03
+TestBackendEnableOrder 0.03
+TestBackendEnableStartStepFails 0.03
+TestBackupRestoreWithoutAStoreCopiesTheOldFileBack 0.03
+TestCandidateClasses 0.03
+TestComplete 0.03
+TestCompleteAsksForTheListenersOfTheBackendOnTheLine 0.03
+TestCompletionNamesHostsAndDevices 0.03 serial
+TestConfigValidateJSONBackendsUnreadable 0.03
+TestConsoleCheckStaleSuperuserMembers 0.03
+TestConsoleHelpNamesSystemShell 0.03 serial
+TestConsoleInstallRefusals 0.03
+TestDeviceAddPullRefusalIsADenial 0.03
+TestDeviceAddPullRefusalsRegisterNothing 0.03
+TestDeviceAddPullRefusedRegistrationDoesNotPull 0.03
+TestDeviceSessionsUseTheScale 0.03
+TestEditEditorFailureAbandons 0.03
+TestEnrollEndOfInputEndsTheRun 0.03
+TestEnrollRefusedBeforeAnyQuestion 0.03
+TestHeldListFollowsEveryVerbWhateverTheSyncDoes 0.03 serial
+TestHelpRequest 0.03
+TestHoldToTimeout 0.03 serial
+TestHostEnrollThatCannotSnapshotLeavesTheRegistry 0.03
+TestLinuxUIDForADottedUser 0.03
+TestLogDeviceWithoutAnAddress 0.03
+TestOnboardStrictAcceptanceLine 0.03
+TestPhaseRadiusUpgradeFilesGolden 0.03
+TestPolicyViewTimesOutAndRetries 0.03 serial
+TestPullWithoutTerminalRefuses 0.03
+TestRegistryWithBothSyntaxKeysSaysSo 0.03
+TestRotateDocsSayWhatIsTrue 0.03 serial
+TestShellCompletionVendorDevices 0.03
+TestStatusPasswordAge 0.03
+TestStrictLetsAReadRun 0.03
+TestUnknownSubHintFollowsTheTier 0.03
+TestUserChangeNamesNoHostWhoseAccountStaysAsItWas 0.03 serial
+TestUserChangeNamesTheOtherHostsAndAsksNothingWithoutATerminal 0.03 serial
+TestUserListUIDColumn 0.03
+TestUserVerbsSyncThisServer 0.03 serial
+TestVersionTierCaller 0.03
+TestViewNoneListsNoVerb 0.03
+TestAAAFindingsStayDifferencesBesideTheDevicesOwn 0.02 serial
+TestApplyReviewInterrupted 0.02
+TestApplyTransportFlagIsChecked 0.02
+TestBackendEnableCommitFails 0.02
+TestBackendEnableInstallStepFails 0.02
+TestBackendEnablePromptNo 0.02
+TestBackendEnableUndoRestartsTheOthers 0.02
+TestBackupRestoreACommitThatFailsPutsEveryFileBack 0.02
+TestBashScriptEndsWithTheHelpKey 0.02 serial
+TestCentralEndAfterACancelledContext 0.02
+TestCentralEndOfAPanic 0.02
+TestCentralLinesAreExactWithTheKnobs 0.02
+TestCentralLinesCapTheArguments 0.02
+TestCompleteFilesAreTheShells 0.02
+TestConfigBranchNetworkGitCannotPrompt 0.02
+TestConfigValidateJSONUnreadableModel 0.02
+TestConsoleMainScrubsAndExecutes 0.02 serial
+TestDeviceAddFallsBackToBuiltinScanWithoutLegacy 0.02
+TestDeviceAddLegacyBothScansFail 0.02
+TestDeviceAddPullSkipsADeviceInNoScope 0.02
+TestDeviceAddWithoutPullDoesNotPull 0.02
+TestDeviceSourcesNeedTheOperatorTier 0.02
+TestHelpInTheShellFollowsTheView 0.02
+TestHostUnenrollThatCannotSnapshotLeavesTheHost 0.02
+TestLogAccountingKeepsHostNamesWithABrokenRegistry 0.02
+TestManUnknownWordSaysSo 0.02
+TestManagedRenderOfAWTIUnit 0.02
+TestSNMPPoolReadsVersionOneFiles 0.02
+TestScaleJobTimeouts 0.02
+TestScanLearningLegacy 0.02
+TestScopeBlockRefusesWhenTacctlYAMLCannotBeWritten 0.02
+TestScriptsDescribeDeviceNames 0.02
+TestShellVerbDescriptionsFromUsage 0.02
+TestStatusAStoreThatCannotBeReadIsReportedOnce 0.02
+TestStatusTwoBackendsASectionEachAndTheV6Parity 0.02
+TestUninstallThroughTheCLI 0.02
+TestUserMoveUsageNamesUser 0.02
+TestWalkthroughSurvivesBrokenSNMPFile 0.02
+TestAAAOwnSettingsReadTheSameEverywhere 0.01 serial
+TestAAASourceNotCheckedWithoutInterfaceAddresses 0.01 serial
+TestAAASourceOnAnInterfaceIsTheDevicesOwn 0.01 serial
+TestAAASourceOnNoInterfaceIsADifference 0.01 serial
+TestApplyReviewMaxAndJSON 0.01
+TestBackendDisableLastIsRefused 0.01
+TestBackendEnableBadArguments 0.01
+TestBackendEnableEnabledBackendEdited 0.01
+TestBackendEnableGateRefuses 0.01
+TestBackendEnableWithoutStore 0.01
+TestBackupDiffReadsTheOldSyntaxKey 0.01
+TestBashHelpKeyQuestionMark 0.01
+TestBreakglassHoldCompletionSkipsDevicesWithReasons 0.01
+TestCentralEndIsWrittenOnce 0.01
+TestCommandSuggestions 0.01 serial
+TestCompleteWithoutTheBridge 0.01
+TestConfigBranchIgnoresTheDevCheckout 0.01
+TestConfigValidateJSONUsage 0.01
+TestConsoleBatch 0.01 serial
+TestConsolePolicyRoot 0.01
+TestConsoleRemotePolicy 0.01 serial
+TestConsoleShowDefaults 0.01
+TestConsoleShowNotEnrolled 0.01
+TestConsoleSpecsCoverEveryVerb 0.01 serial
+TestConsoleWriteNotEnrolled 0.01
+TestDeviceConfigPreflight 0.01
+TestEndLineNamesSeveralSnapshots 0.01
+TestEveryCommandIsClassified 0.01
+TestFlagHelpPartialText 0.01
+TestGateDenialWritesNoCentralLine 0.01
+TestHelpOnlyEntryPoint 0.01
+TestHostRenameNeedsAnEnrolledHost 0.01
+TestInvalidGroupTierIsReadonly 0.01
+TestLifecycleTestsAreSandboxed 0.01
+TestMain 0.01 serial
+TestManExitStatus 0.01
+TestManWithNeitherManNorGroff 0.01
+TestNoVerbHasAHelpFlag 0.01
+TestParseSelectionTextFiltersAndDiffers 0.01
+TestPhaseFailure 0.01
+TestPhaseRadiusUninstallKeepLogs 0.01
+TestPolicyViewDoesNotBlock 0.01 serial
+TestPullAndPlanFollowTheTACACSListener 0.01 serial
+TestPullRefusesAnUnmappedImage 0.01 serial
+TestReadCommandReachingAWritePanics 0.01
+TestRegisterConfigVerb 0.01 serial
+TestRegisterFamilyVerbReplacesTheStub 0.01 serial
+TestSetViewAsksThePolicy 0.01
+TestSetViewInteractiveAsksInTheBackground 0.01
+TestShellPassesTheLineTokenInTheEnvironment 0.01
+TestStrictRefusalEndLine 0.01
+TestStrictRefusesAnApplyPullBeforeAnyLogin 0.01
+TestSubSuggestions 0.01 serial
+TestSyncHostnameMustResolveToAddress 0.01 serial
+TestTierNotesCoverTheNarrowRows 0.01
+TestTopShortsAreTheUsage 0.01
+TestUnknownBelowNeverRefusesACommand 0.01 serial
+TestUsageMatchesBash 0.01 serial
+TestUsageResolvesMarkup 0.01 serial
+TestViewScopeStagingNote 0.01
+TestAlignRowsContract 0.00 serial
+TestAmbiguousGroupHoldsItsMembersOnly 0.00 serial
+TestAppliedRecordViews 0.00 serial
+TestApplyRechecksBetweenThePhases 0.00 serial
+TestApplyReviewAsksEachDeviceByName 0.00 serial
+TestApplyReviewCanaryIsTheFirstApproved 0.00
+TestApplyReviewGroupsByWhatItShows 0.00
+TestApplyReviewOneDeclinedOfTwo 0.00 serial
+TestApplyReviewScripted 0.00
+TestApplySelectionGatesOnConfirmedShapes 0.00 serial
+TestAskpassWords 0.00 serial
+TestAuditLookup 0.00
+TestAuditRedactionRules 0.00 serial
+TestBackendEnableWaitsForTheApplyLock 0.00 serial
+TestBackendStartWaitDefault 0.00 serial
+TestBackupRecoverKindsAreOneList 0.00 serial
+TestBreakglassDeviceAddressRefusesWhatAHoldRefuses 0.00 serial
+TestBreakglassHoldSaysOnlyTheRegisteredAddressIsCarved 0.00 serial
+TestBuildInfoResolved 0.00 serial
+TestCaptureAskpassKeepsChildrenFromInheritingIt 0.00 serial
+TestCaptureEditorTakesTheVariablesOffTheRootSide 0.00 serial
+TestCentralEndResults 0.00 serial
+TestCfgHelpers 0.00 serial
+TestCompleteReachesValidArgsWithFlagParsingOff 0.00 serial
+TestConfigFamiliesCoverSchema 0.00 serial
+TestConfigPathsCoverSchema 0.00 serial
+TestConfigPolicyRegistered 0.00 serial
+TestConfigSpecs 0.00
+TestConsoleMainForcedCommand 0.00 serial
+TestConsoleOptionsRefused 0.00 serial
+TestConsolePtyColor 0.00
+TestConsolePtyHelper 0.00 serial
+TestConsoleSystemShell 0.00 serial
+TestDeviceListFilterMatch 0.00 serial
+TestDeviceNoticeAuditClass 0.00 serial
+TestDeviceOwnName 0.00
+TestDeviceQuietIsZeroWithoutTestKnobs 0.00
+TestDeviceQuietKnobReachesTheTarget 0.00
+TestDeviceSpecsCoverEveryVerb 0.00 serial
+TestDeviceVerbsAreNative 0.00
+TestDevicesBlockLayerWords 0.00 serial
+TestDiffSequences 0.00 serial
+TestDuHumanIsDuDashH 0.00 serial
+TestEnvironWith 0.00 serial
+TestEveryLoweringVerbSyncsTheServer 0.00 serial
+TestExitCode 0.00 serial
+TestFailedRunReasonWords 0.00 serial
+TestFakeDeviceAndDeviceKnobsAreAbsentWithoutTestKnobs 0.00
+TestFamilyAndSpecRegistries 0.00 serial
+TestFixedKind 0.00 serial
+TestForwardBind 0.00 serial
+TestGroupResetCanonicalAndIdempotent 0.00 serial
+TestGroupResetEngineerEqualsPresetForce 0.00 serial
+TestGroupResetGoldenDiffs 0.00 serial
+TestGroupResetOnlySections 0.00 serial
+TestHangingFactCommandDoesNotHoldThePull 0.00 serial
+TestHasAAAServerForms 0.00 serial
+TestHeldListFollowsALoweredTier 0.00 serial
+TestHelpRequestCallsOnlyRenderers 0.00 serial
+TestHelperCommandsAreReads 0.00
+TestHostAndLinuxSpecs 0.00
+TestHostHelpers 0.00 serial
+TestHostSpecsCompleteEnrolledNames 0.00 serial
+TestInvalidTierSettingsNeverLeaveTheBand 0.00 serial
+TestLocalPasswordsZeroedAtDone 0.00 serial
+TestLockdownImpliedState 0.00 serial
+TestLockdownReadForm 0.00 serial
+TestLockedByThreeStates 0.00 serial
+TestLoggerFailureIsToldOnceAndChangesNothing 0.00 serial
+TestManEnvKeepsOnlyTheTerminalAndLocale 0.00 serial
+TestManIsOpenToEveryTierAndRunsWithoutSudo 0.00 serial
+TestManPageSetsTheBodyMargin 0.00 serial
+TestManPtyHelper 0.00 serial
+TestManSearchArgsStartNearTheTopic 0.00 serial
+TestManToolsAreLookedForOnTheConsolePath 0.00
+TestManTopicsReadHeadingsAndTags 0.00 serial
+TestManagedEnrolmentThatEndsInAnErrorLeavesNothing 0.00 serial
+TestManagedScopeKeysGoWithTheRegistration 0.00 serial
+TestMoreLoweringVerbsSyncTheServer 0.00 serial
+TestNamesCacheExpires 0.00 serial
+TestNetconfRunnerSendsTheBareCommand 0.00 serial
+TestNewDevicePasswordsHardensAndTakesTheVariable 0.00 serial
+TestOnlyConfigAuditStrictIsExempt 0.00
+TestOnlySections 0.00 serial
+TestOpenPasswordCache 0.00 serial
+TestOwnLoginInstallAsks 0.00 serial
+TestParse 0.00 serial
+TestParseErrors 0.00 serial
+TestParseNetconfLimit 0.00 serial
+TestParseOptionalValue 0.00 serial
+TestPasswordChangeGateWithAnUnreadableModel 0.00
+TestPinnedKeyTypeOrder 0.00
+TestPlainShellCachePolicy 0.00 serial
+TestPrintDeviceDiffEveryOp 0.00
+TestPullRecordsImageAndSyntaxPerDialect 0.00 serial
+TestPullWTIDeniedByLevel 0.00 serial
+TestReexecTablesForSSHDeviceAndShell 0.00 serial
+TestRemoveOldRefusal 0.00 serial
+TestRenameKeptIsSafe 0.00
+TestResolveNetconf 0.00 serial
+TestResolveTimeoutScale 0.00 serial
+TestResolvesToOnly 0.00 serial
+TestRestoreLedgerNoteReportsAnUnreadableLedger 0.00 serial
+TestRestoreMakesDeviceFilesMatchTheSnapshot 0.00 serial
+TestRollbackStopsWhenTheSnapshotCannotBeKept 0.00 serial
+TestRollbackWithAnEmailWarnsSnapshotsAndRemovesTheKey 0.00 serial
+TestRotateUnpinnedKeysNotConfirmed 0.00
+TestSNMPPoolNoteWordsEachKindOfDrop 0.00 serial
+TestSSHUserEnviron 0.00 serial
+TestSSHWithoutTerminal 0.00 serial
+TestScaledDeviceTimeoutIsClamped 0.00 serial
+TestScaledSNMPTimeoutStopsAtItsMaximum 0.00 serial
+TestScopeGroupConfigSpecs 0.00
+TestScopeGroupConfigUsageFunctions 0.00 serial
+TestScopeWrites 0.00 serial
+TestSecretScopeSecretWords 0.00 serial
+TestSectionResetEqualsGroupResetOnly 0.00 serial
+TestSectionResetGoldenDiffs 0.00 serial
+TestSectionResetPrompt 0.00 serial
+TestSectionResetYesAppliesAndLogs 0.00 serial
+TestSectionValue 0.00 serial
+TestSelectorsAreInEveryVerbsSpecAndUsage 0.00 serial
+TestServerAddressesReplaceFailureLeavesEverything 0.00 serial
+TestServerAddressesReplaceMovesEverything 0.00 serial
+TestServerIsTheSuperusersAlone 0.00 serial
+TestSessionStartsTheSeenRefresh 0.00 serial
+TestShellArgvExtraEnv 0.00 serial
+TestShellPtyHelper 0.00 serial
+TestShellTopHelp 0.00 serial
+TestSortEntriesByName 0.00 serial
+TestStoreRollbackIsSuperuserOnly 0.00 serial
+TestStoreWritersRewriteTheHeldList 0.00 serial
+TestStrictRefusesAnActionWhenTheStartLineCannotBeWritten 0.00 serial
+TestStyleFault 0.00 serial
+TestStyleRatchetKeysHaveTheirShape 0.00 serial
+TestSudoArgv 0.00 serial
+TestSudoLineFilter 0.00 serial
+TestTakeAskpass 0.00 serial
+TestTerminalPasswordsDropTheirCopy 0.00 serial
+TestTestSourcesNoKeyTypeInCommon 0.00 serial
+TestTestSourcesNothingToCompare 0.00 serial
+TestTestSourcesReadErrorAndCancel 0.00 serial
+TestTestSourcesResults 0.00 serial
+TestTestSourcesSkipsAndLimits 0.00 serial
+TestTimingLines 0.00 serial
+TestTimingText 0.00 serial
+TestTimingsByNameMarksTheSlowest 0.00 serial
+TestTypedTimeoutSecondDefault 0.00 serial
+TestUnknownBelowWalk 0.00 serial
+TestUsageIDs 0.00 serial
+TestUsageMarkupBalanced 0.00 serial
+TestUsagePanics 0.00 serial
+TestUserSettingsMoveThatCannotRead 0.00
+TestUserSpecs 0.00
+TestValidHostName 0.00 serial
+TestValidateReportCounts 0.00
+TestViewHidesExactlyWhatTheTierDenies 0.00 serial
+TestWP24dSpecs 0.00
+TestWalkthroughsDefaultToTheRecordedServerAddress 0.00 serial
+TestWeightyCommands 0.00
+TestWithFSIdentity 0.00 serial
+TestWritePrivateIsExclusiveAndNeverFollowsALink 0.00 serial

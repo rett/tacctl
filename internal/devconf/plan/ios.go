@@ -686,7 +686,7 @@ func (p *planner) iosSection(name string, r devconf.SectionResult) secOut {
 				o.inherited = append(o.inherited, x.stem)
 			}
 		case len(path) >= 2 && st.kinds[strings.Join(path[:len(path)-1], pathSep)] != nil &&
-			st.kinds[strings.Join(path[:len(path)-1], pathSep)][leaf[0]] && (strings.HasPrefix(path[0], "tacacs server ") ||
+			(st.kinds[strings.Join(path[:len(path)-1], pathSep)][leaf[0]] || isRetiredServerLeaf(path, leaf[0])) && (strings.HasPrefix(path[0], "tacacs server ") ||
 			strings.HasPrefix(path[0], "radius server ") || strings.HasPrefix(path[0], "aaa group server ")):
 			nos = append(nos, Line{Op: OpNo, Context: path[:len(path)-1], Text: path[len(path)-1], Section: name, For: []string{x.stem},
 				Undo: []Line{{Op: OpLine, Context: path[:len(path)-1], Text: path[len(path)-1]}}})
@@ -1882,4 +1882,11 @@ func (p *planner) serverProven() bool {
 		return true
 	}
 	return p.serverInUse()
+}
+
+// isRetiredServerLeaf reports whether the statement is a leaf tacctl no longer
+// renders under its 'tacacs server' block and still removes (retiredLeaves).
+func isRetiredServerLeaf(path []string, leaf string) bool {
+	return len(path) == 2 && strings.HasPrefix(path[0], "tacacs server ") &&
+		slices.Contains(retiredLeaves["ios.aaa.server-block"], leaf)
 }

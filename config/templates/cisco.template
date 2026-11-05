@@ -22,7 +22,6 @@ tacacs server TACACS
   address ipv4 ${SERVER_IP}
 ${TACACS_PORT_LINE}
   key ${SECRET}
-  single-connection
   timeout 5
 !
 aaa group server tacacs+ ${TACACS_GROUP}

@@ -200,10 +200,10 @@ run_plain() {
     assert_output --partial "Unknown backend 'nope' (known: tacacs radius)."
     run "$TACCTL_BIN_SCRIPT" log failures --backend
     assert_failure 1
-    assert_output --partial "--backend needs a backend id. Usage: tacctl log failures [--backend <id>] ..."
+    assert_output --partial $'--backend needs a backend id.\n[ERROR] Usage: tacctl log failures [--backend <id>] ...'
     run_plain log --backend=tacacs tail
     assert_failure 1
-    assert_output --partial "Usage: tacctl log <subcommand> [--backend <id>] [arguments]"
+    assert_output --partial "Usage: tacctl log <subcommand> [--backend <id>] [filters] [arguments]"
     run_plain log tail 3 --backend=tacacs
     assert_success
     stub_called '^journalctl -u tacquito --no-pager -n 3'

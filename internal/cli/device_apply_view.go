@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -752,7 +753,7 @@ func (c *applyCtl) reviewStatements(pf func(string, ...any), g *shapeGroup) {
 	var sections []string
 	for _, o := range g.devices {
 		for _, l := range o.Delta.Lines {
-			if !contains(sections, l.Section) {
+			if !slices.Contains(sections, l.Section) {
 				sections = append(sections, l.Section)
 			}
 		}
@@ -785,7 +786,7 @@ func (c *applyCtl) reviewStatements(pf func(string, ...any), g *shapeGroup) {
 func (c *applyCtl) audit(apply []*applyOutcome) {
 	var shapes, canaries []string
 	for _, o := range apply {
-		if o.Out != nil && o.Out.Shape != "" && !contains(shapes, o.Out.Shape) {
+		if o.Out != nil && o.Out.Shape != "" && !slices.Contains(shapes, o.Out.Shape) {
 			shapes = append(shapes, o.Out.Shape)
 			canaries = append(canaries, o.Name)
 		}

@@ -111,7 +111,10 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"scope", "add", "edge", ""}, []string{"--prefixes", "--secret", "--protocols", "--vendor-attrs", "--default"}},
 		{[]string{"scope", "add", "edge", "--prefixes", "10.0.0.0/8", "--vendor-attrs", "cisco,"}, []string{"cisco,juniper", "cisco,wti"}},
 		{[]string{"scope", "add", "edge", "--prefixes", "10.0.0.0/8", "--vendor-attrs", "cisco", ""}, []string{"--secret", "--protocols", "--default"}},
-		{[]string{"log", "tail", "--"}, []string{"--backend", "--follow"}},
+		{[]string{"log", "tail", "--"}, []string{"--backend", "--follow", "--since", "--until", "--user", "--device", "--json"}},
+		{[]string{"log", "accounting", "--"}, []string{"--backend", "--since", "--until", "--user", "--device", "--type", "--json"}},
+		{[]string{"log", "accounting", "--type", ""}, []string{"login", "change", "command"}},
+		{[]string{"log", "accounting", "--device", ""}, []string{"jsw1", "sw1"}},
 		{[]string{"log", "tail", "--backend", ""}, []string{"tacacs", "radius"}},
 		{[]string{"log", "clear", ""}, []string{"--backend", "--force", "--yes"}},
 		{[]string{"log", "clear", "--backend", "tacacs", ""}, []string{"--force", "--yes"}},
@@ -538,7 +541,7 @@ func TestCompleteThisReleasesWords(t *testing.T) {
 		{[]string{"scope", "secret", "lab", "set", "--"}, []string{"--stdin"}, false},
 		{[]string{"user", "add", "x", "--"}, []string{"--hash"}, false},
 		{[]string{"user", "passwd", "x", "--"}, []string{"--hash"}, false},
-		{[]string{"rollback", ""}, []string{"0.2.22", "0.2.21", "0.2.20", "0.2.19", "0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3"}, true},
+		{[]string{"rollback", ""}, []string{"0.2.23", "0.2.22", "0.2.21", "0.2.20", "0.2.19", "0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3"}, true},
 	}
 	for _, c := range cases {
 		got, _ := completeWords(t, liveNames, c.words...)

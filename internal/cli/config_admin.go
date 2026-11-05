@@ -14,6 +14,7 @@ import (
 
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/gitx"
 	"github.com/rett/tacctl/internal/lifecycle"
 	"github.com/rett/tacctl/internal/paths"
 	rtacacs "github.com/rett/tacctl/internal/render/tacacs"
@@ -255,14 +256,21 @@ func (inv *invocation) configBranch(args []string) error {
 	}
 	// git -C <dir> ...: stdout is captured or passed on (pass), stderr
 	// dropped (2>/dev/null) unless noted.
-	git := func(pass bool, args ...string) execx.Result {
+	// The commands that talk to the remote (fetch, pull) cannot wait for an
+	// operator who is not there (gitx.Net).
+	run := func(net, pass bool, args ...string) execx.Result {
 		c := execx.Cmd{Name: "git", Args: append([]string{"-C", dir}, args...)}
 		if pass {
 			c.Stdout = a.Out.Stdout
 		}
+		if net {
+			c = gitx.Net(inv.ctx, a.Runner, c)
+		}
 		res, _ := a.Runner.Run(inv.ctx, c)
 		return res
 	}
+	git := func(pass bool, args ...string) execx.Result { return run(false, pass, args...) }
+	gitNet := func(args ...string) execx.Result { return run(true, true, args...) }
 	current := strings.TrimRight(string(git(false, "branch", "--show-current").Stdout), "\n")
 
 	if want == "" {
@@ -270,7 +278,7 @@ func (inv *invocation) configBranch(args []string) error {
 		inv.echoE("  " + ui.Bold + "Current branch:" + ui.NC + " " + current)
 		inv.echo("")
 		inv.echo("  Available remote branches:")
-		git(true, "fetch", "--quiet")
+		gitNet("fetch", "--quiet")
 		// branch -r | grep -v HEAD | sed 's|origin/||' | while IFS= read -r b
 		out := string(git(false, "branch", "-r").Stdout)
 		// grep ends every line it prints with a newline, so a last line
@@ -303,7 +311,7 @@ func (inv *invocation) configBranch(args []string) error {
 		return nil
 	}
 	a.Audit().Touch()
-	git(true, "fetch", "--quiet")
+	gitNet("fetch", "--quiet")
 	if git(false, "rev-parse", "--verify", "origin/"+want).Code != 0 {
 		a.Out.ErrorE("Branch '" + want + "' does not exist on remote.")
 		return exit(1)
@@ -316,7 +324,7 @@ func (inv *invocation) configBranch(args []string) error {
 			return exit(res.Code)
 		}
 	}
-	git(true, "pull", "--quiet")
+	gitNet("pull", "--quiet")
 	lifecycle.NormalizeDeployPerms(dir)
 	script := filepath.Join(dir, "bin", "tacctl.sh")
 	if err := os.Chmod(script, 0o755); err != nil {

@@ -20,15 +20,35 @@ import (
 // Sudoers023 is the per-tier drop-in 0.2.3 wrote.
 func Sudoers023() string { return sudoers023 }
 
-// rules0222 are the rules 0.2.20 to 0.2.22 had: this release's without the
+// rules0223 are the rules 0.2.23 had: this release's without the operator's
+// 'log failures *' (the log filters, which sudo had to accept for
+// 'log failures').
+func rules0223() []Rule {
+	rules := slices.Clone(Rules)
+	for i, r := range rules {
+		if r.Tier == Operator && r.Cmd == "log" && r.Sub == "failures" {
+			rules[i].Sudoers = slices.DeleteFunc(slices.Clone(r.Sudoers), func(p string) bool { return p == "log failures *" })
+		}
+	}
+	return rules
+}
+
+// Sudoers0223 is the per-tier drop-in 0.2.23 wrote: this release's rules
+// without the operator's 'log failures *'. It is an older text of this tool's:
+// every target that rewrites the drop-in recognises it, as it does this
+// release's, and 'tacctl rollback 0.2.23' puts it back. It is derived (a rule
+// that moves on again makes its own frozen copy).
+func Sudoers0223() string { return sudoersFrom(rules0223()) }
+
+// rules0222 are the rules 0.2.20 to 0.2.22 had: 0.2.23's without the
 // engineer's row of 'device clone' (0.2.23).
 func rules0222() []Rule {
-	return slices.DeleteFunc(slices.Clone(Rules), func(r Rule) bool {
+	return slices.DeleteFunc(rules0223(), func(r Rule) bool {
 		return r.Tier == Engineer && r.Cmd == "device" && r.Sub == "clone"
 	})
 }
 
-// Sudoers0222 is the per-tier drop-in 0.2.20 to 0.2.22 wrote: this release's
+// Sudoers0222 is the per-tier drop-in 0.2.20 to 0.2.22 wrote: 0.2.23's
 // rules without the engineer's row of 'device clone' (0.2.23). It is an older
 // text of this tool's: every target that rewrites the drop-in recognises it,
 // as it does this release's, and puts back its own. It is derived (a rule that
@@ -55,9 +75,10 @@ func Sudoers0219() string { return sudoersFrom(rules0219()) }
 // Sudoers0218 is the per-tier drop-in 0.2.18 wrote: 0.2.19's rules
 // without the engineer's rows of 'device config apply', 'device enroll',
 // 'device collect', 'device onboard' and 'device sync' (0.2.19). 'tacctl
-// rollback 0.2.18' puts it back, and the upgrade's refresh knows it as an
-// older text. It is derived (a rule that moves on again makes its own frozen
-// copy).
+// rollback 0.2.18' puts it back, and the rollbacks to older releases recognise
+// it as an older text of this tool's (the upgrade's refresh does not look at
+// older texts: it rewrites a file that differs from the current one). It is
+// derived (a rule that moves on again makes its own frozen copy).
 func Sudoers0218() string {
 	added := map[string]bool{"enroll": true, "collect": true, "onboard": true, "sync": true, "support-bundle": true}
 	var rules []Rule
@@ -119,7 +140,8 @@ func Sudoers0213() string {
 // 'device config apply', 'device onboard' and 'device collect', D141/D143)
 // and the
 // env_keep line as 0.2.8 had it. The rollback to 0.2.3 recognises it as an
-// older text, and the upgrade's refresh knows it as one. The rows of the table are
+// older text (the upgrade's refresh does not look at older texts: it rewrites
+// any file that differs from the current one). The rows of the table are
 // the same in the two releases, so it is derived from them (a rule that
 // moves on again makes its own frozen copy); the two lines that did move are
 // frozen below, and a test reads the 0.2.8 tag's golden file where the tag
@@ -170,8 +192,9 @@ func askpassKeep028(alias string) string {
 
 // Sudoers027 is the per-tier drop-in 0.2.4 to 0.2.7 wrote: 0.2.8's text
 // without the 'version --long' item and with the env_keep line that has not
-// the colour variables. It is the text 'tacctl rollback' and the upgrade's
-// refresh know as an older one; it is derived (a rule that moves on again
+// the colour variables. It is the text 'tacctl rollback' knows as an
+// older one (the upgrade's refresh rewrites any file that differs from the
+// current text, whatever it was); it is derived (a rule that moves on again
 // makes its own frozen copy).
 func Sudoers027() string {
 	t := strings.Replace(Sudoers028(), envKeep028, envKeep027, 1)

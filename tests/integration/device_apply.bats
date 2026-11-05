@@ -118,7 +118,7 @@ nothing_secret() {
     before=$(committed)
     apply example-sw1 --check
     assert_success
-    assert_line --regexp '^  example-sw1  checked: shape [0-9a-f]{12} \(new\) \(roles, aaa: 17 set, 1 delete\); kept 2; check ok$'
+    assert_line --regexp '^  example-sw1  checked: shape [0-9a-f]{12} \(new\) \(roles, aaa: 16 set, 1 delete\); kept 2; check ok$'
     assert_line "  1 checked"
     assert_output --partial "Nothing was committed"
     # no review, no question
@@ -161,7 +161,7 @@ import json, sys
 docs = [json.loads(l) for l in sys.stdin.read().splitlines()]
 d, s = docs
 assert d["name"] == "example-sw1" and d["phase"] == "check" and d["status"] == "checked", d
-assert d["set"] == 17 and d["delete"] == 1 and d["sections"] == ["roles", "aaa"], d
+assert d["set"] == 16 and d["delete"] == 1 and d["sections"] == ["roles", "aaa"], d
 assert any(l.startswith("set system tacplus-server 10.0.0.42 secret") for l in d["lines"]), d
 assert not any("lab-secret" in l for l in d["lines"]), d
 assert s["summary"]["checked"] == 1 and s["summary"]["exit"] == 2, s
@@ -179,14 +179,14 @@ print("fine")' <<< "$output"
     refute_output --partial "$SECRET"
     assert_output --partial "kept: 2 statements of the managed sections that the plan leaves alone"
     assert_output --partial "Apply to example-sw1 under commit confirmed 10 and kept only after a fresh login as alice works and what landed is what the check showed?"
-    assert_output --regexp "  example-sw1  shape [0-9a-f]{12} \(new\), 17 set, 1 delete"
+    assert_output --regexp "  example-sw1  shape [0-9a-f]{12} \(new\), 16 set, 1 delete"
     assert_output --partial "Type the device name to apply to example-sw1:"
     assert_output --regexp "example-sw1  committed, verifying \.\.\."
-    assert_output --regexp "example-sw1  applied \(roles,aaa: 17 set, 1 delete\) \[tacctl-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{4}\]"
+    assert_output --regexp "example-sw1  applied \(roles,aaa: 16 set, 1 delete\) \[tacctl-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{4}\]"
     assert_output --partial "1 applied"
     # what the device runs now: the plan, and nothing it was not given
     run committed
-    assert_output --partial "set system tacplus-server 10.0.0.42 single-connection"
+    assert_output --partial "set system accounting destination tacplus"
     assert_output --partial "set system authentication-order tacplus"
     assert_output --partial "set system accounting events change-log"
     assert_output --partial "set system login class RW-CLASS permissions all"
@@ -337,7 +337,7 @@ EOF
     assert_success
     assert_output --partial "--yes: every shape is one another device confirmed; going on."
     refute_output --partial "Type "
-    assert_line --regexp '^  example-sw1  applied \(roles,aaa: 17 set, 1 delete\) \[tacctl-'
+    assert_line --regexp '^  example-sw1  applied \(roles,aaa: 16 set, 1 delete\) \[tacctl-'
     run grep -E "device config apply review user=alice device=example-sw1 shape=[0-9a-f]{12} answer=approved mode=scripted sid=" "$CALLS_LOG"
     assert_success
     run grep -E "approved=1 shapes=[0-9a-f]{12} canary=example-sw1 mode=scripted sid=" "$CALLS_LOG"
@@ -346,7 +346,7 @@ EOF
     assert_success
     nothing_secret
     run committed
-    assert_output --partial "set system tacplus-server 10.0.0.42 single-connection"
+    assert_output --partial "set system accounting destination tacplus"
 }
 
 @test "apply: a refused fresh login rolls the change back, and is not a wrong password" {
@@ -377,8 +377,10 @@ print(all(not e["confirmed"] for e in m.values()))' "${TACCTL_VAR_LIB}/device-ap
 
 @test "apply: a dropped session leaves the change pending, and the next run settles it" {
     start
-    # a minute of the window is a second of the fake's clock
-    printf '1\n' > "${JDIR}/timer.minute"
+    before=$(committed)
+    # a minute of the window is a fifth of a second of the fake's clock (the
+    # ten minutes of the apply last two seconds)
+    printf '0.2\n' > "${JDIR}/timer.minute"
     : > "${JDIR}/commit.drop"
     tapply 'example-sw1\n' example-sw1
     [[ "$status" -eq 1 ]]
@@ -398,8 +400,14 @@ print(all(not e["confirmed"] for e in m.values()))' "${TACCTL_VAR_LIB}/device-ap
     assert_failure 1
     assert_output --partial "is pending until"
     assert_output --partial "do not type commit or commit check on the device before then"
-    # the device undoes it by itself; the next run reads the history first
-    sleep 14
+    # the device undoes it by itself (a bounded wait for its rollback); the
+    # next run reads the history first
+    local _
+    for _ in $(seq 1 100); do
+        [[ "$(committed)" == "$before" ]] && break
+        sleep 0.1
+    done
+    [[ "$(committed)" == "$before" ]]
     apply example-sw1 --check
     assert_success
     assert_line --regexp '^  example-sw1  the earlier apply tacctl-[0-9TZ]+-[0-9a-f]+ by alice was rolled back by the device at '
@@ -459,7 +467,7 @@ print(all(not e["confirmed"] for e in m.values()))' "${TACCTL_VAR_LIB}/device-ap
     [[ "$status" -eq 0 ]]
     assert_output --regexp "example-sw1  applied "
     run committed
-    assert_output --partial "set system tacplus-server 10.0.0.42 single-connection"
+    assert_output --partial "set system accounting destination tacplus"
 }
 
 @test "apply: --hold needs a terminal, --max caps the run, --section limits it" {

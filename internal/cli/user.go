@@ -7,6 +7,7 @@ package cli
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -166,15 +167,6 @@ func (inv *invocation) userInfo(name string) (ui userInfo, ok bool, err error) {
 	return ui, true, nil
 }
 
-func contains(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
-}
-
 // userExists is model_user_exists, a model read error returned.
 func (inv *invocation) userExists(name string) (bool, error) {
 	m, err := inv.model()
@@ -283,14 +275,14 @@ func (inv *invocation) scopeList(csv string) ([]string, error) {
 		if err := inv.reservedScope(s); err != nil {
 			return nil, err
 		}
-		if !contains(all, s) {
+		if !slices.Contains(all, s) {
 			if strings.Contains(s, "@") {
 				// an email address typed in the place of a scope is not repeated
 				return nil, inv.usageErr("Scope does not exist. Available: " + strings.Join(all, " "))
 			}
 			return nil, inv.usageErr("Scope '" + s + "' does not exist. Available: " + strings.Join(all, " "))
 		}
-		if !contains(out, s) {
+		if !slices.Contains(out, s) {
 			out = append(out, s)
 		}
 	}
@@ -426,7 +418,7 @@ func (inv *invocation) userShow(args []string) error {
 				continue
 			}
 			label := s
-			if contains(u.orphans, s) {
+			if slices.Contains(u.orphans, s) {
 				label = ui.Red + s + " (ORPHAN)" + nc
 			}
 			if first {
@@ -591,6 +583,10 @@ func (inv *invocation) userAdd(args []string) error {
 	if email != "" {
 		a.Out.InfoE("Email address recorded for '" + username + "'.")
 	}
+	if require {
+		// the sync below may not reach the console's drop-in
+		inv.refreshHeldForwarding()
+	}
 	shellErr := inv.userSettingsMoved(stale, username, "")
 	switch {
 	case require:
@@ -708,7 +704,7 @@ func (inv *invocation) defaultScope() (string, error) {
 		return "", err
 	}
 	all := m.ScopeNames()
-	if v != "" && contains(all, v) {
+	if v != "" && slices.Contains(all, v) {
 		return v, nil
 	}
 	if len(all) == 1 {
@@ -751,6 +747,8 @@ func (inv *invocation) userRemove(args []string) error {
 	}
 	inv.detail("user remove", kvp("name", username))
 	inv.app.Out.Info("User '" + username + "' removed.")
+	// a user held to a password change leaves the list of the drop-in
+	inv.refreshHeldForwarding()
 	shellErr := inv.userSettingsMoved(shell, username, "")
 	if err := inv.afterUserChange(before, []string{username}, func(h string) string {
 		return "'" + username + "' keeps its account on " + h + " until each host's next sync, which removes it"
@@ -872,6 +870,9 @@ func (inv *invocation) userPasswd(args []string) error {
 	out := inv.app.Out
 	out.Info("Password changed for '" + username + "'.")
 	var hostsNote func() error
+	if require || lifted {
+		inv.refreshHeldForwarding()
+	}
 	switch {
 	case require:
 		inv.detailPwChange(username, true, "passwd")
@@ -1111,6 +1112,8 @@ func (inv *invocation) userRename(args []string) error {
 	inv.detail("user rename", kvp("from", oldname), kvp("to", newname), kvp("uid", uidWord))
 	out := inv.app.Out
 	out.Info("User renamed: " + oldname + " -> " + newname)
+	// a user held to a password change is listed under the new name
+	inv.refreshHeldForwarding()
 	shellErr := inv.userSettingsMoved(shell, oldname, newname)
 	switch {
 	case mv.err != nil:
@@ -1235,6 +1238,8 @@ func (inv *invocation) userMove(args []string) error {
 	}
 	inv.detail("user move", kvp("name", username), kvp("from", oldgroup), kvp("to", newgroup))
 	inv.app.Out.Info("User '" + username + "' moved: " + oldgroup + " -> " + newgroup)
+	// the new group's tier decides whether the user is held (a superuser never is)
+	inv.refreshHeldForwarding()
 	return inv.afterUserChange(m, []string{username}, func(h string) string {
 		return "The group of '" + username + "' changes on " + h + " at each host's next sync"
 	})
@@ -1271,7 +1276,7 @@ func (inv *invocation) userScope(args []string) error {
 	// 'remove --all' empties the list; it takes no scope names.
 	removeAll := false
 	if sub == "remove" {
-		removeAll = contains(args[2:], "--all")
+		removeAll = slices.Contains(args[2:], "--all")
 		if removeAll && len(args) != 3 {
 			return inv.usageErr("Usage: tacctl user scope " + username + " remove --all   ('--all' takes no scope names)")
 		}
@@ -1305,7 +1310,7 @@ func (inv *invocation) userScope(args []string) error {
 				if s == "" {
 					continue
 				}
-				if contains(u.orphans, s) {
+				if slices.Contains(u.orphans, s) {
 					inv.echoE("  " + ui.Red + "- " + s + "  (ORPHAN: scope does not exist)" + ui.NC)
 				} else {
 					inv.echo("  - " + s)
@@ -1348,7 +1353,7 @@ func (inv *invocation) userScope(args []string) error {
 	case "add":
 		newList = append([]string(nil), current...)
 		for _, s := range requested {
-			if contains(current, s) {
+			if slices.Contains(current, s) {
 				noop = append(noop, s)
 			} else {
 				changed = append(changed, s)
@@ -1362,7 +1367,7 @@ func (inv *invocation) userScope(args []string) error {
 		}
 	case "remove":
 		for _, s := range requested {
-			if contains(current, s) {
+			if slices.Contains(current, s) {
 				changed = append(changed, s)
 			} else {
 				noop = append(noop, s)
@@ -1373,7 +1378,7 @@ func (inv *invocation) userScope(args []string) error {
 			return nil
 		}
 		for _, s := range current {
-			if !contains(changed, s) {
+			if !slices.Contains(changed, s) {
 				newList = append(newList, s)
 			}
 		}

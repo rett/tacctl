@@ -7,7 +7,7 @@
 #
 #   GATE-CI PASS|FAIL rc=<first failing go test status> jobs=<passed>/<all>
 #           failures=<failing tests> races=<data races> secs=<n>
-#           [failed=<job>:<test>,...] log=<path>
+#           skipped=<n> [failed=<job>:<test>,...] log=<path>
 #
 # 'make gate-go' runs ./internal/... once, without the race detector and
 # without the test knobs; this runs what CI runs, so a data race or a test
@@ -20,6 +20,17 @@
 #                           (tests/tools/go-test-shard.sh <i> 2), as CI has
 #                           them: the run without tags with -race, the one
 #                           with the test knobs without it
+#
+# skipped counts the '--- SKIP' lines of all the jobs (go test runs with -v,
+# the only way it reports a skip; a subtest counts as well as its parent, and
+# a test that runs in several jobs once for each). The names of the skipped
+# tests (at most 20, each once) are listed above the verdict line: a test that
+# skips for a missing tool passes silently, so a green run whose skip count is
+# not the expected one did not test what it should. Below them and still above
+# the verdict line come the ten slowest top-level tests of the run, longest
+# first, each with the job it was slowest in, from the '--- PASS: TestX
+# (N.NNs)' lines ('gate-ci: slowest: TestX 83.0s (cli0)'): where the time went,
+# and the input of 'tests/tools/go-test-shard.sh --regen'.
 #
 # The shard check ('go-test-shard.sh --check 2', the static job of CI) runs
 # first: a test that no shard holds fails the run before any test runs.
@@ -57,7 +68,18 @@ if [[ -z "${GO:-}" ]]; then
 fi
 export GO
 export LANG=C.UTF-8
-export GOCACHE="${GOCACHE:-${TMPDIR:-/tmp}/tacctl-gate-go-cache-$(id -u)}"
+if [[ -z "${GOCACHE:-}" ]]; then
+    # On disk, the caller's own; the old place under TMPDIR when there is no
+    # HOME, or the directory cannot be written (a root-owned one a 'sudo' run
+    # with the caller's HOME left behind).
+    base="${XDG_CACHE_HOME:-}"
+    [[ $base == /* ]] || base="${HOME:+$HOME/.cache}"
+    GOCACHE="$base/tacctl/gate-go-build"
+    if [[ -z $base ]] || ! mkdir -p "$GOCACHE" 2>/dev/null || [[ ! -w $GOCACHE ]]; then
+        GOCACHE="${TMPDIR:-/tmp}/tacctl-gate-go-cache-$(id -u)"
+    fi
+fi
+export GOCACHE
 logdir="${TMPDIR:-/tmp}"
 if [[ "${GATE_TMPFS:-}" = 1 ]]; then
     if [[ -d /dev/shm && -w /dev/shm && "$(df -Pk /dev/shm | awk 'NR==2 {print $4}')" -ge 2097152 ]] \
@@ -95,7 +117,8 @@ fi
 start=$(date +%s)
 child=""
 total=$((${#tagsets[@]} * (1 + shards)))
-passed=0 failures=0 races=0 firstrc=0 ran=0
+passed=0 failures=0 races=0 firstrc=0 ran=0 skipped=0
+skipnames=""
 failed=()
 
 say() { echo "$*" | tee -a "$log"; }
@@ -120,6 +143,8 @@ job() {
     bad=$(grep -cE '^(FAIL|--- FAIL|panic:)' <<<"$out")
     race=$(grep -c 'WARNING: DATA RACE' <<<"$out")
     races=$((races + race))
+    skipped=$((skipped + $(grep -cE '^[[:space:]]*--- SKIP: ' <<<"$out")))
+    skipnames+=$(sed -n 's/^[[:space:]]*--- SKIP: \([^ ]*\).*/\1/p' <<<"$out")$'\n'
     if [[ "$rc" -eq 0 && "$got" -eq "$want" && "$want" -gt 0 && "$bad" -eq 0 && "$race" -eq 0 ]]; then
         passed=$((passed + 1))
         say "gate-ci: $label ok ($(($(date +%s) - jstart)) s)"
@@ -143,19 +168,37 @@ job() {
 }
 
 verdict() { # <note>
-    local note=${1:-} v=FAIL secs list max=20
+    local note=${1:-} v=FAIL secs list max=20 names n
     secs=$(($(date +%s) - start))
     if [[ "$passed" -eq "$total" && "$failures" -eq 0 && "$races" -eq 0 && -z "$note" ]]; then v=PASS; fi
+    if [[ "$skipped" -gt 0 ]]; then
+        names=$(grep . <<<"$skipnames" | sort -u)
+        n=$(grep -c . <<<"$names")
+        head -n "$max" <<<"$names" | sed 's/^/gate-ci: skipped: /' | tee -a "$log"
+        if [[ "$n" -gt "$max" ]]; then
+            echo "gate-ci: skipped: +$((n - max)) more" | tee -a "$log"
+        fi
+    fi
+    # The ten slowest top-level tests, from the '--- PASS: TestX (N.NNs)' lines,
+    # each with the job it was slowest in.
+    awk '/^=== (other|cli[0-9]+)(\/[A-Za-z0-9_]+)?: / { job = $2; sub(/:$/, "", job); next }
+        /^--- PASS: Test/ {
+            d = $4; gsub(/[()s]/, "", d)
+            if (d ~ /^[0-9]+(\.[0-9]+)?$/ && (!($3 in m) || d + 0 > m[$3] + 0)) { m[$3] = d; j[$3] = job }
+        }
+        END { for (t in m) printf "%s %s %s\n", m[t], t, j[t] }' "$log" |
+        sort -k1,1nr -k2,2 | head -n 10 |
+        awk '{ printf "gate-ci: slowest: %s %.1fs%s\n", $2, $1, ($3 != "" ? " (" $3 ")" : "") }' | tee -a "$log"
     list=""
     if [[ ${#failed[@]} -gt 0 ]]; then
         list=$(IFS=,; echo "${failed[*]:0:max}")
         [[ ${#failed[@]} -le $max ]] || list+=",+$((${#failed[@]} - max)) more"
     fi
-    echo "GATE-CI $v rc=$firstrc jobs=$passed/$total failures=$failures races=$races secs=$secs${note:+ $note}${list:+ failed=$list} log=$log" | tee -a "$log"
+    echo "GATE-CI $v rc=$firstrc jobs=$passed/$total failures=$failures races=$races secs=$secs skipped=$skipped${note:+ $note}${list:+ failed=$list} log=$log" | tee -a "$log"
     [[ "$v" = PASS ]]
 }
 
-# shellcheck disable=SC2317  # called through the trap
+# shellcheck disable=SC2317,SC2329  # called through the trap
 interrupted() {
     if [[ -n "$child" ]]; then
         kill -TERM -- "-$child" 2>/dev/null || kill -TERM "$child" 2>/dev/null
@@ -187,13 +230,13 @@ for tags in "${tagsets[@]}"; do
     pkgs=$(GOFLAGS="" "$GO" list -tags "$tags" ./... 2>/dev/null | grep -v '/internal/cli$')
     want=$(grep -c . <<<"$pkgs")
     # shellcheck disable=SC2086  # one word per package
-    job "other$suffix" "$want" "${cgo[@]}" GOFLAGS="" setsid "$GO" test -timeout "$timeout" -race -tags "$tags" $pkgs
+    job "other$suffix" "$want" "${cgo[@]}" GOFLAGS="" setsid "$GO" test -timeout "$timeout" -v -race -tags "$tags" $pkgs
 
     # internal/cli, in shards: -race without tags, the test knobs without it.
     flags=-race
     [[ -z "$tags" ]] || flags="-tags=$tags"
     for ((i = 0; i < shards; i++)); do
-        job "cli$i$suffix" 1 "${cgo[@]}" GOFLAGS="$flags" tests/tools/go-test-shard.sh "$i" "$shards" -timeout "$timeout"
+        job "cli$i$suffix" 1 "${cgo[@]}" GOFLAGS="$flags" tests/tools/go-test-shard.sh "$i" "$shards" -timeout "$timeout" -v
     done
 done
 

@@ -1,6 +1,9 @@
 .\" Manual page for tacctl, the management CLI for pluggable network-device AAA.
 .\" Render locally with: groff -man -Tascii man/tacctl.1 | less
-.TH TACCTL 1 "2026-10-31" "tacctl 0.2.23" "tacctl Manual"
+.TH TACCTL 1 "2026-11-05" "tacctl 0.2.24" "tacctl Manual"
+.\" The body margin is 7n on every groff: 1.24 narrowed its default (BP) to 5n, which moves the
+.\" columns that `tacctl man` searches for.
+.nr BP 7n
 .SH NAME
 tacctl \- manage pluggable network-device AAA: users, groups, scopes and devices
 .SH SYNOPSIS
@@ -68,7 +71,25 @@ renders
 from it, installs the systemd units, and enables the service. An existing
 store, or an existing
 .IR tacquito.yaml ,
-is kept (the latter goes through the upgrade's store gate). RADIUS
+is kept (the latter goes through the upgrade's store gate). It also installs the
+.B nftables
+package and writes and enables the boot unit
+.I tacctl\-breakglass\-firewall.service
+(a oneshot that loads the rules file
+.IR /etc/tacctl/breakglass\-firewall.nft ),
+loading the table of the break-glass firewall (see
+.BR "config breakglass\-firewall" )
+for the holds and the setting that stand; a package that cannot be installed is a
+warning that names the fix, and
+.B nftables.service
+is never enabled or touched. The clone in
+.I /opt/tacctl
+is made, or pulled when it exists, without waiting for an operator, as the
+pull of the tacquito source (see
+.BR upgrade ;
+an ssh remote needs a key, the agent or a credential helper, and its host key in
+.IR known_hosts ).
+RADIUS
 is not installed: see
 .BR "backend enable" .
 The plan is shown and confirmed
@@ -152,7 +173,7 @@ Answer yes to the confirmations.
 .BI "upgrade [--branch " name "]"
 Move tacctl state into
 .I /etc/tacctl
-(idempotent), pull and rebuild tacquito when upstream or the patch overlay
+(idempotent), pull and rebuild tacquito when its source or the patch overlay
 changed, pull the tacctl repository in
 .I /opt/tacctl
 (after switching to
@@ -176,6 +197,37 @@ Listener, log-level and metrics settings in
 .I tacctl.yaml
 survive.
 .IP
+The clone, the fetch and the pull of the tacctl repository in
+.I /opt/tacctl
+never wait for an answer, as the pull of the tacquito source
+.RB ( TACQUITO_SRC ):
+git asks for no user name, password or key passphrase
+.RB ( GIT_TERMINAL_PROMPT=0 ,
+a failing
+.BR GIT_ASKPASS ,
+.B SSH_ASKPASS
+unset, and
+.B BatchMode=yes
+for an ssh remote, after the
+.B core.sshCommand
+of the clone when it has one), and drops a transfer that stays under 1000 bytes
+a second for a minute. A
+.B GIT_SSH_COMMAND
+of your own is replaced, not honoured: set
+.B core.sshCommand
+in the clone (for example
+.B git config core.sshCommand "ssh \-i /home/user/.ssh/deploy\-key"
+run in
+.IR /opt/tacctl )
+to choose the key. The remote needs a key, the agent or a credential helper,
+since no password can be typed, and an ssh remote needs its host key in
+.I known_hosts
+already
+.RB ( BatchMode=yes
+fails where ssh used to ask whether to trust an unknown host); a fetch that fails still ends the upgrade
+with
+.BR "git fetch failed. Check network / credentials." .
+.IP
 The upgrade is refused while the store has a user whose name has a period
 (0.2.20 and 0.2.21 allowed one; a user name is letters, digits, \&'_' and \&'\-'):
 the refusal lists each, with
@@ -187,6 +239,19 @@ configuration and the services are not changed); run
 .B "tacctl upgrade"
 again after the rename to finish. Run on 0.2.22 itself, the refusal comes before
 anything is changed. A store that cannot be read does not hold it up.
+.IP
+The upgrade installs the
+.B nftables
+package (as
+.B install
+does, trying again after
+.B "apt\-get update"
+when the first try fails), writes and enables the boot unit
+.IR tacctl\-breakglass\-firewall.service ,
+and loads the table of the break-glass firewall for the holds and the setting
+that stand: an upgrade from 0.2.23 with holds standing renders and loads the
+table, so those holds get the fix. A table that cannot be loaded while an address
+is held is a warning with the fix, not a failure of the upgrade.
 .IP
 The shell completion is rewritten only when its content changed (the output
 says
@@ -269,8 +334,9 @@ The tacctl repo branch to install or upgrade from (default: the current one).
 Prepare tacctl's state for the release before this one; run on the newer
 release, before the older one is installed. A dry run by default: it lists
 every step and every warning and changes nothing. The versions it takes are
-.B 0.2.22
+.B 0.2.23
 (the release before this one),
+.BR 0.2.22 ,
 .BR 0.2.21 ,
 .BR 0.2.20 ,
 .BR 0.2.19 ,
@@ -287,12 +353,12 @@ and older are refused, with the way there (one release at a time: this
 rollback,
 .BR "tacctl upgrade \-\-branch 0.2.9" ,
 then the rollback of that release), and so is any other word (0.2.10 to
-0.2.15 included: the refusal names the targets). Every target but 0.2.22, 0.2.21, 0.2.20
+0.2.15 included: the refusal names the targets). Every target but 0.2.23, 0.2.22, 0.2.21, 0.2.20
 and 0.2.19 is refused while an emergency lockdown locks a group (the refusal lists each
 one and
 .B "emergency lockdown <scope> disable"
 lifts it; a release before 0.2.19 would render the locked users back into the
-scope; 0.2.19 has the record and keeps it), every target is refused while an emergency lockdown stands on a scope that has enrolled hosts, or a lifted one still waits for a host to drop sshd's lockdown drop\-in (older releases cannot lift it on a host; lift it and sync the hosts first), and every target is refused while a device's record says a confirmed commit of
+scope; 0.2.19 has the record and keeps it), every target but 0.2.23 is refused while an emergency lockdown stands on a scope that has enrolled hosts, or a lifted one still waits for a host to drop sshd's lockdown drop\-in (older releases cannot lift it on a host; lift it and sync the hosts first), and every target is refused while a device's record says a confirmed commit of
 .B "device config apply"
 is
 .B pending
@@ -302,7 +368,7 @@ or
 .B "device config apply <name> \-\-check"
 or
 .B "device config forget <name>"
-settles it), and every target but 0.2.22, 0.2.21 and 0.2.20 while the store has a user whose
+settles it), and every target but 0.2.23, 0.2.22, 0.2.21 and 0.2.20 while the store has a user whose
 name has a period (no other target reads such a name: the refusal lists each, with
 .B "user rename <name> <new\-name>"
 as the way out, and changes nothing; an override under such a name in the
@@ -337,7 +403,7 @@ stay, for the releases that have them) are removed and a
 of \-1 (never ask) is written as 1000, with every other setting kept and a
 snapshot first.
 .IP
-Every target but 0.2.22 and 0.2.21, which have it themselves, keeps every user's
+Every target but 0.2.23, 0.2.22 and 0.2.21, which have it themselves, keeps every user's
 login to this server: an older release answers
 it only for the users that have the server's scope
 .RB ( tacctl )
@@ -346,16 +412,16 @@ to the server and lacks it (it counts and names them; a warning, so
 .B \-\-apply
 needs
 .BR \-\-yes ),
-after a snapshot. Every target but 0.2.22 removes
+after a snapshot. Every target but 0.2.23 and 0.2.22 removes
 .B server.name
 (the name of
 .BR "server name" ),
-and every target but 0.2.22 and 0.2.21
+and every target but 0.2.23, 0.2.22 and 0.2.21
 .B server.addresses
 as well, from
 .IR tacctl.yaml ,
 which no older release knows; the host registry keeps the address in this
-server's entry. Every target but 0.2.22 also removes the timing scale:
+server's entry. Every target but 0.2.23 and 0.2.22 also removes the timing scale:
 .B device.timeout_scale
 and
 .B timeout_scale_scope.\fIscope\fR
@@ -370,7 +436,7 @@ key it does not know). It is a note in the plan, not a warning: the older
 release connects to every device with its fixed timings again, which a slow or
 distant device may not meet, and the values stay in the snapshot.
 .IP
-Every target removes the users' email addresses
+Every target but 0.2.23 removes the users' email addresses
 .RB ( "user email" ,
 .BR "user add \-\-email" )
 from
@@ -398,7 +464,7 @@ snapshot and the users. A store that cannot be read
 refuses every target. Until the older release is installed, the two verbs that
 set an address write the key again, and the command says so.
 .IP
-Every target writes the SNMP credential files
+Every target but 0.2.23 writes the SNMP credential files
 .RI ( snmp.yaml ,
 .IR snmp/ scope .yaml ,
 .IR snmp/devices/ name .yaml )
@@ -427,7 +493,7 @@ the audit line adds
 and the apply names
 .BR "tacctl backup recover <snapshot> \-\-only snmp\-users" .
 .IP
-Every target drops from
+Every target but 0.2.23 drops from
 .I state/staging
 the entries marked
 .B covered
@@ -441,14 +507,99 @@ A clone that still waits for its
 .B "device rename \-\-replace"
 loses its entry, and after a re-upgrade the verb refuses it as not staged: remove the clone and clone again from the original, or restore the snapshot. Every other entry stays.
 .IP
+Every target removes the break\-glass firewall: the key
+.B breakglass.firewall
+(when set; every older release refuses it, so it is removed after the snapshot
+like the other keys they do not know), the nftables table
+.B "inet tacctl"
+(with nft; the rest of the ruleset is not touched),
+.I /etc/tacctl/breakglass\-firewall.nft
+and the boot unit
+.I tacctl\-breakglass\-firewall.service
+(disabled first), and says so; the
+.B nftables
+package stays. A hold that stands stays (0.2.23 and every older release that has
+holds take the record as it is), without the firewall: the server completes the
+TCP handshake of the held address again, as before 0.2.24, and the plan says so in a
+note. Until the older release is installed, run no verb that changes the holds, their
+device or host names, the listeners or the setting
+.RB ( "breakglass hold" ,
+.BR "breakglass release" ,
+.BR "device address" ,
+.B "device rename"
+and
+.BR "host rename" ,
+.BR "device rename \-\-replace" ,
+.BR "backup restore" ,
+.BR "server listen" ,
+.BR "config breakglass\-firewall" ):
+each writes the table, its rules file and the boot unit again, and the setting writes the
+key the older release refuses; run the rollback again if one was run.
+.B "upgrade \-\-branch"
+onto an older release without the rollback is not refused and does not touch the
+table, which those releases never update: an address held and released since stays
+refused on TCP, live and at boot. Remove the key
+.B breakglass.firewall
+from
+.I tacctl.yaml
+and the firewall by hand, as root:
+.BR "nft delete table inet tacctl" ,
+then
+.BR "systemctl disable \-\-now tacctl\-breakglass\-firewall.service" ,
+remove
+.I /etc/systemd/system/tacctl\-breakglass\-firewall.service
+and
+.IR /etc/tacctl/breakglass\-firewall.nft ,
+then
+.BR "systemctl daemon\-reload" .
+.IP
+.B "rollback 0.2.23"
+converts no file but the key
+.B breakglass.firewall
+(0.2.24's; when it is set the snapshot is taken): this release changed no other stored file, so 0.2.23 reads every file it
+writes (the email addresses, the SNMP credential files, the covered staging
+entries, the server name, the timing scale, the server address, the users' login
+to this server, a user name with a period and an emergency lockdown, with or
+without enrolled hosts, all stay), the per\-tier sudoers drop\-in is put back as 0.2.23 wrote it
+(without the operator's
+.BR "log failures *" ;
+when it is exactly this release's text it is rewritten, after
+.BR "visudo \-cf" ,
+and any other file is left), no snapshot is taken for them and
+.B \-\-yes
+is never needed. It is refused only while a device's apply is not settled.
+Every older target that rewrites that drop\-in recognises this release's text and
+0.2.23's as tacctl's own and puts back its own.
+The tacquito clone keeps pointing at the project's fork, which has the same
+history as the upstream clone 0.2.23 made.
+What this release changed outside the stored files is 0.2.23's to undo or keep:
+the upgrade that ends the rollback writes the console's sshd drop\-in from 0.2.23's
+text, without the block of users held to a password change, so their new
+connections forward again as their tier allows; it keeps the tacquito this release
+built until it next rebuilds it (a new commit on the fork's main), so accounting
+records keep
+.B "Device"
+and the literal <, > and &, which 0.2.23's
+.B log accounting
+shows as they are written; and on a device whose
+.B single\-connection
+this release removed, 0.2.23's
+.B device config diff
+and
+.B plan
+show the line as missing, and applying that plan types it again.
+.B \-\-hosts
+is accepted and does nothing. The command ends with the next step,
+.BR "tacctl upgrade \-\-branch 0.2.23" .
+.IP
 .B "rollback 0.2.22"
 converts nothing but the email addresses, the SNMP credential files, the covered staging entries and the per\-tier sudoers drop\-in
-(when it is exactly this release's text it is rewritten, after
+(when it is exactly this release's text or 0.2.23's it is rewritten, after
 .BR "visudo \-cf" ,
 with 0.2.22's: the engineer's rule of
 .B "device clone"
 is taken out; an edited drop\-in is left): 0.2.22
-reads every other file this release writes, so the server name, the timing
+reads every other file 0.2.23 and this release write, so the server name, the timing
 scale, the server address, the users' login to this server, a user name with a
 period and an emergency lockdown (of scopes with no enrolled host) stay. With no
 address in the store, no SNMP
@@ -467,7 +618,7 @@ is accepted and does nothing. The command ends with the next step,
 .B "rollback 0.2.21"
 removes
 .B server.name
-and the timing scale, rewrites the per\-tier sudoers drop\-in when it is exactly this release's text (with 0.2.21's, which is 0.2.22's: the engineer's rule of
+and the timing scale, rewrites the per\-tier sudoers drop\-in when it is exactly this release's text or 0.2.23's (with 0.2.21's, which is 0.2.22's: the engineer's rule of
 .B "device clone"
 is taken out; an edited drop\-in is left) and converts nothing else: no scope is added to the users, and a user name with
 a period and an emergency lockdown stay, as 0.2.21 reads both. It needs no
@@ -488,7 +639,7 @@ removes
 .B server.addresses
 and
 .B server.name
-and the timing scale, adds the scope to the users (above) and rewrites the per\-tier sudoers drop\-in when it is exactly this release's text (with 0.2.20's, which is 0.2.22's: the engineer's rule of
+and the timing scale, adds the scope to the users (above) and rewrites the per\-tier sudoers drop\-in when it is exactly this release's text or 0.2.23's (with 0.2.20's, which is 0.2.22's: the engineer's rule of
 .B "device clone"
 is taken out; an edited drop\-in is left); 0.2.20 reads every other file this
 release writes, so nothing else is converted, and
@@ -875,7 +1026,9 @@ Accepted; the hosts need nothing for this target (no host is synced).
 Remove tacctl and every backend that is enabled or installed: the tacquito
 service, units, binaries, configuration and logs; tacctl's FreeRADIUS
 configuration, unit drop-in and logs (the FreeRADIUS package stays, with its
-own configuration as shipped); the state directory, sudoers rules,
+own configuration as shipped); the break\-glass firewall (the nftables table
+.BR "inet tacctl" ,
+its rules file and its boot unit; the nftables package stays); the state directory, sudoers rules,
 completion, man page and management repository. Offers to preserve backups
 and each backend's logs by archiving them to
 .IR /root/ .
@@ -1535,10 +1688,9 @@ A user who must change the password can log in to this server only:
 every device refuses the user, as it refuses an unknown user, and every other
 enrolled Linux host has the account expired from its next
 .BR "host sync" ,
-until the password is changed (a device in a scope shared with the server, and
-port forwarding by a tier of
-.BR "console forwarding tiers" ,
-excepted; see below and
+until the password is changed (a device in a scope shared with the server
+excepted; see below; sshd's drop-in also closes every port forwarding through
+this server for the user's new connections, in any tier, see
 .BR "console forwarding" ). The user stays in the scope this server is enrolled in
 (\fBhost enroll \-\-local\fR), in the protocol of the method it is enrolled
 with, and is left out of every other scope; in the other protocol the user is
@@ -2704,7 +2856,7 @@ has a
 .B section
 (a fixed token for each label of the text report:
 .BR store ", " yaml ", " overrides ", " command_rules ", " structure ", "
-.BR scope_default ", " linux_hosts ", " names ", " breakglass ", " snmp_users ", " breakglass_hold ", "
+.BR scope_default ", " linux_hosts ", " names ", " breakglass ", " snmp_users ", " breakglass_hold ", " breakglass_firewall ", "
 .BR emergency_lockdown ", " config_blocks ", " operator_policy ", " group_settings ", " orphan_settings ", "
 .BR orphan_files ", " leftovers ", " devices ", " backends ", " rendered ", " drift " and "
 .BR vendor_attrs ),
@@ -4192,7 +4344,10 @@ Requires: \fBsuperuser\fR.
 .B "config linux build"
 Fetch the pinned
 .B pam_tacplus
-release (v1.7.0, verified by commit hash) and prepare a self-contained
+release (v1.7.0, verified by commit hash; the clone never waits for an answer, as the pull
+of the tacctl repository in
+.BR upgrade )
+and prepare a self-contained
 source tarball under
 .IR /var/lib/tacctl/linux .
 Needs autoconf, automake, libtool, gnulib and the PAM headers on the
@@ -4899,7 +5054,9 @@ and
 .B adopt
 are the superuser's).
 Each read of a secret, the superuser's too, is logged to syslog as
+.na
 \fBsecret\-read kind=scope|snmp|snmp\-device|snmp\-default|block|block\-adopt|store|config|snapshot|backup name=\fR\fIname\fR\fB by=\fR\fIuser\fR
+.ad
 (never the value). Engineers change no global setting: users, groups,
 scopes, a secret's change, backends, backups, upgrades, the default host
 method and the console's settings stay the superuser's, and so does the
@@ -5078,6 +5235,133 @@ the detail line is
 Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config audit-strict
+.TP
+.BI "config breakglass\-firewall " [ "reject|drop|off" ]
+Show or set
+.BR breakglass.firewall ,
+what the server does with the TCP connections of an address that is held
+.RB ( "breakglass hold" ).
+A hold takes the address out of every scope's prefixes, so FreeRADIUS (UDP)
+ignores the device and it times out; tacquito listens on TCP, where the kernel
+completes the handshake and tacquito accepts, finds no secret for the address
+and closes the connection. A device whose fallback to its local accounts needs
+the server to be unreachable (a WTI unit with
+.BR "Fallback Local: On (Transport Failure)" ,
+a Junos switch with
+.BR "authentication\-order [ tacplus password ]" )
+sees a reachable server and never falls back. The setting makes tacctl load an
+nftables table of its own,
+.BR "inet tacctl" ,
+that refuses the connection first.
+.B reject
+(the default) answers a TCP connection from a held address to a port of a
+tacquito listener with a TCP reset,
+.B drop
+discards its packets (the device times out), and
+.B off
+has no table: the server completes the handshake, as 0.2.23 did. With no
+argument the command shows the setting and where it comes from
+.RI ( default
+or
+.IR tacctl.yaml ),
+the addresses held and the ports, and whether the live table is as the holds
+and the setting ask for.
+.B reject
+removes the key, the other two write it. Whatever the value, the table is
+loaded again at once and the command says what it did, so
+.B "config breakglass\-firewall reject"
+is also the repair of a table that was not loaded (nft installed late, a table
+flushed by hand): it loads the table even when the setting is unchanged.
+.PP
+The table is the only part of the host's ruleset tacctl touches: two sets (the
+held IPv4 and IPv6 addresses) and one chain on the input hook at priority \-10
+(policy accept) whose rules match a source address in a set and a TCP
+destination port of a tacquito listener
+.RB ( "server listen" ;
+every listener counts, and a change of a listener loads the table again), with
+no connection\-state match, so a session that is open from the address is cut
+too. RADIUS ports are not matched (UDP already times out). Devices and Linux
+hosts are held alike. tacctl writes the whole table to
+.I /etc/tacctl/breakglass\-firewall.nft
+and loads it with
+.BR "nft \-f" ,
+which replaces it in one step; the file is rewritten and loaded by every hold,
+release, move of a held device
+.RB ( "device address" ),
+rename of a held device or host, every restore of a snapshot (it loads the holds and
+the setting the snapshot brought back, changed or not), change of a listener and
+change of the setting, and by the boot unit
+.I tacctl\-breakglass\-firewall.service
+(a oneshot installed and enabled by
+.B install
+and
+.BR upgrade ;
+tacctl never enables or touches
+.BR nftables.service ;
+a unit that cannot be written or enabled is a yellow line, not a failure: the
+table is loaded, and a reboot loses it until this command is run again).
+.B install
+and
+.B upgrade
+install the
+.B nftables
+package, and an upgrade from 0.2.23 with holds standing loads the table, so
+those holds get the fix.
+.PP
+When nft is missing or fails, the hold (or release) stands: the record, the
+rendering and the restarts are as before. The report then says in red that the
+server still completes the TCP handshake on the port(s) for the address, so a
+device that falls back only when the server is unreachable will not, names the
+fix
+.RB ( "sudo apt\-get install nftables" ,
+then this command with the current setting), and the command exits 1. A release
+that cannot load the table says that the address may still be refused, and
+.B "config breakglass\-firewall"
+itself exits 1, with the real reason (nft not installed, or what
+.B "nft \-f"
+said), whenever the table could not be loaded, also with nothing held. Where the
+table would refuse nothing (the setting
+.BR off ,
+nothing held, no TACACS+ listener on a TCP port) a missing nft is no failure: no
+table is loaded, nothing is red and the exit status is 0, whatever the command
+(a release of the last hold,
+.BR "backup restore" ,
+.BR "device rename \-\-replace" ,
+.B "server listen"
+and a second
+.BR upgrade
+are as quiet). The exception is a host where a table was loaded before and nftables
+was removed since: the boot unit is the sign (only a successful load writes it, and
+the setting
+.B off
+removes it), the table may still refuse addresses that were released, and every
+command that loads the table says so in red and exits 1 until nft is back.
+.B status
+and
+.B "config validate"
+compare the live table
+.RB ( "nft \-j list table inet tacctl" )
+with the holds and the setting and name each difference (a missing table, an
+address missing or extra, a wrong verdict, wrong ports) with this command; when
+nft cannot be read (not root, not installed with nothing held) they say so and do
+not fail; with an address held, a setting that is not
+.B off
+and nft not installed,
+.B "config validate"
+reports an error and exits 1.
+.B "breakglass list"
+shows the firewall state. Superuser only. The detail line is
+.BR "config breakglass\-firewall from=reject to=drop firewall=drop" ;
+the
+.B auth.info
+lines of hold and release carry
+.BR firewall=reject|drop|off|failed .
+.\" BEGIN GENERATED: command config breakglass-firewall
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config breakglass-firewall
 .TP
 .B "config allow " "{ list | add | remove | clear } " [ cidr[,cidr...] ]
 Manage the connection allow list (IP ACL).
@@ -5368,7 +5652,7 @@ one line on standard error that says so);
 .B --legacy
 is the explicit override. It differs from the modern output only in the server
 block (the global
-.B "tacacs-server host ... single-connection timeout 5 key ..."
+.B "tacacs-server host ... timeout 5 key ..."
 line and
 .B "server <ip>"
 under the group, in place of
@@ -5790,6 +6074,20 @@ Options:
 .BI "config branch " [ name ]
 Show or change the tacctl repository branch used by
 .BR "tacctl upgrade" .
+Its fetch and pull of the clone in
+.I /opt/tacctl
+never wait for an answer, as those of
+.BR "tacctl upgrade" :
+no prompt for a user name, password or key passphrase, ssh in
+.BR BatchMode ,
+a transfer under 1000 bytes a second for a minute dropped, and a
+.B GIT_SSH_COMMAND
+of your own replaced (the
+.B core.sshCommand
+of the clone is honoured). An ssh remote needs a key, the agent or a credential helper,
+and its host key in
+.IR known_hosts ;
+an unknown host key fails where ssh used to ask.
 .\" BEGIN GENERATED: command config branch
 .RS
 .PP
@@ -5955,7 +6253,10 @@ as the password dates are: an import never lifts it. The scope
 .B tacctl
 of a rendered file (the login of the server it came from, which every user is
 in) is not imported and is taken out of the users' scopes, in one line; a
-server registered in its own keeps it.
+server registered in its own keeps it. An import that holds users to a
+password change rewrites the list of them in the console's sshd drop-in at
+once (see
+.BR "console forwarding" ).
 .\" BEGIN GENERATED: command store import
 .RS
 .PP
@@ -5981,6 +6282,8 @@ remove the store, restart. The install is back in legacy read-only mode.
 When this server is enrolled a red line says that users whose tier fell
 keep their old groups until
 .BR "host sync" .
+Legacy mode holds nobody to a password change, so the list of them in the
+console's sshd drop-in is rewritten, empty, at once.
 .\" BEGIN GENERATED: command store rollback
 .RS
 .PP
@@ -6013,6 +6316,154 @@ reason),
 and
 .I tacctl\-radius.log
 in the package's log directory.
+.PP
+Filters.
+.BR "log tail" ", " "log search" ", " "log failures" " and " "log accounting"
+take
+.BI \-\-since " time"
+and
+.BI \-\-until " time"
+(both inclusive),
+.BI \-\-user " name" ,
+.BI \-\-device " name|address"
+and
+.BR \-\-json ;
+.B log accounting
+also takes
+.BI \-\-type " login|change|command" .
+They combine (a record or line must pass every one), they come in
+.BI \-\-name " value"
+or
+.BI \-\-name = value
+form anywhere on the line, and a count
+.I n
+limits what is left after filtering.
+.B tail \-f
+applies them to the new entries, which have the time they arrive.
+An operator may pass them, and
+.BR \-\-backend ,
+to all four commands through sudo
+.RB ( "log failures"
+takes arguments in the per\-tier sudoers drop\-in from this release on).
+.PP
+A time is
+.IB YYYY\-MM\-DD ,
+.IB YYYY\-MM\-DD " HH:MM"
+or
+.IB YYYY\-MM\-DD " HH:MM:SS"
+(local time; a date alone is that day's midnight),
+.BR now ,
+.B today
+or
+.B yesterday
+(midnight), or an offset from now:
+.B \-1h
+or
+.BR "2 days ago" ,
+a number and one of the units
+.BR s ,
+.BR m ,
+.BR h ,
+.B d
+and
+.B w
+(or seconds, minutes, hours, days, weeks).
+Any other form is refused.
+On TACACS+,
+.BR tail ,
+.B search
+and
+.B failures
+pass the window to
+.BR journalctl (1)
+(without one,
+.B search
+reads the last 7 days and
+.B failures
+the last 24 hours); for the RADIUS logs and for the accounting logs it is compared
+with the time of each line or record (the logger's date and time of a TACACS+
+record; a line or record whose time cannot be read is left out).
+.PP
+.B \-\-user
+matches the user a record or line names, exactly as written: the
+.B User
+of a TACACS+ accounting record, the bracketed user of a tacquito line
+.RB ( "accepting user [alice] ..." ),
+the last
+.B user=
+of a RADIUS auth line, the bracketed user of a daemon log line, the
+.B User\-Name
+of a RADIUS accounting record.
+.B \-\-device
+takes a registered device or an enrolled host (by name, among those the
+caller may see; it stands for its recorded address) or an address (compared in
+canonical form: an IPv4\-mapped IPv6 address is the IPv4 address). A name that
+is none, or whose device has no address, is refused. It matches the
+.B Device
+of a TACACS+ accounting record (a record written before patch 0006 has none and
+never matches), the address a tacquito journal line names for the device that
+asked
+.RB ( "from [A]" ,
+.BR "bad secret detected for ip [A]" ,
+.BR "remote [A] has no secret providers" ),
+the
+.B client=
+of a RADIUS auth line and the
+.BR NAS\-IP\-Address ,
+.BR NAS\-IPv6\-Address ,
+.B Packet\-Src\-IP\-Address
+or
+.B Packet\-Src\-IPv6\-Address
+of a RADIUS accounting record. A line that names no device never matches; the
+FreeRADIUS daemon log names clients and not addresses, so with
+.B \-\-device
+its section says that it cannot be matched and shows no line.
+.PP
+.B \-\-type
+classifies a TACACS+ accounting record by its fields. A record with a
+.B cmd=
+argument that is not empty is a
+.B change
+when the command has the Junos change\-log form (a verb, a colon and the
+configuration path in brackets:
+.BR "cmd=set: [interfaces ge\-0/0/1 description] ..." )
+and a
+.B command
+otherwise; a record without one is a
+.B login
+when its flags start or stop a session (START, STOP). A watchdog update is none
+of them. RADIUS accounting has
+.B login
+records only (Acct\-Status\-Type Start or Stop); with
+.B change
+or
+.B command
+it says so and shows nothing.
+.PP
+.B \-\-json
+writes one JSON object per line, with no headings, for
+.BR jq (1);
+notes (a filter a log cannot apply) go to standard error. A journal, auth log
+or daemon log entry is (the fields after
+.B message
+only when the line has them; the time is UTC;
+.B device
+is the registered name)
+.PP
+.RS
+.nf
+{"time":"2026\-11\-04T12:00:00Z","backend":"tacacs","unit":"tacquito.service",
+ "message":"...","user":"alice","address":"192.0.2.10","device":"sw1","outcome":"accept"}
+.fi
+.RE
+.PP
+A TACACS+ accounting record is the record with its fields decoded as the
+display has them (\fBDevice\fR the address as it was logged), then
+.B DeviceName
+(when the address is a device or host the caller sees) and
+.B Time
+(the logger's, UTC); a RADIUS accounting record has the time, backend, user,
+address, device and its attributes.
 .TP
 .BI "log tail " "[ \-f | \-\-follow ] [ " n " ]"
 Show the last
@@ -6034,6 +6485,21 @@ Only that backend's log (every subcommand).
 .TP
 \fB\-f\fR, \fB\-\-follow\fR
 (tail) Then print new entries as they arrive, until Ctrl\-C.
+.TP
+\fB\-\-since\fR \fI<time>\fR
+Show the entries from that time on (inclusive): YYYY\-MM\-DD[ HH:MM[:SS]], now, today, yesterday, \-1h, 2 hours ago. A date alone is that day's midnight.
+.TP
+\fB\-\-until\fR \fI<time>\fR
+Show the entries up to that time (inclusive), in the forms of \-\-since.
+.TP
+\fB\-\-user\fR \fI<name>\fR
+Show the entries of that user, as the log writes the name.
+.TP
+\fB\-\-device\fR \fI<name|address>\fR
+Show the entries of that device or host: a registered device or an enrolled host by name (those the caller may see) or an address. What each log can match is described under Log inspection.
+.TP
+\fB\-\-json\fR
+Write one JSON object per line, with no headings, for jq.
 .RE
 .\" END GENERATED: command log tail
 .TP
@@ -6048,6 +6514,21 @@ Options:
 .TP
 \fB\-\-backend\fR \fI<id>\fR
 Only that backend's log (every subcommand).
+.TP
+\fB\-\-since\fR \fI<time>\fR
+Show the entries from that time on (inclusive): YYYY\-MM\-DD[ HH:MM[:SS]], now, today, yesterday, \-1h, 2 hours ago. A date alone is that day's midnight.
+.TP
+\fB\-\-until\fR \fI<time>\fR
+Show the entries up to that time (inclusive), in the forms of \-\-since.
+.TP
+\fB\-\-user\fR \fI<name>\fR
+Show the entries of that user, as the log writes the name.
+.TP
+\fB\-\-device\fR \fI<name|address>\fR
+Show the entries of that device or host: a registered device or an enrolled host by name (those the caller may see) or an address. What each log can match is described under Log inspection.
+.TP
+\fB\-\-json\fR
+Write one JSON object per line, with no headings, for jq.
 .RE
 .\" END GENERATED: command log search
 .TP
@@ -6062,6 +6543,21 @@ Options:
 .TP
 \fB\-\-backend\fR \fI<id>\fR
 Only that backend's log (every subcommand).
+.TP
+\fB\-\-since\fR \fI<time>\fR
+Show the entries from that time on (inclusive): YYYY\-MM\-DD[ HH:MM[:SS]], now, today, yesterday, \-1h, 2 hours ago. A date alone is that day's midnight.
+.TP
+\fB\-\-until\fR \fI<time>\fR
+Show the entries up to that time (inclusive), in the forms of \-\-since.
+.TP
+\fB\-\-user\fR \fI<name>\fR
+Show the entries of that user, as the log writes the name.
+.TP
+\fB\-\-device\fR \fI<name|address>\fR
+Show the entries of that device or host: a registered device or an enrolled host by name (those the caller may see) or an address. What each log can match is described under Log inspection.
+.TP
+\fB\-\-json\fR
+Write one JSON object per line, with no headings, for jq.
 .RE
 .\" END GENERATED: command log failures
 .TP
@@ -6071,6 +6567,31 @@ Show the last
 accounting records
 .RI ( /var/log/tacquito/accounting.log ;
 the RADIUS detail file).
+Each TACACS+ record is shown with its values decoded (a record written before
+tacquito patch 0006 has
+.BR \\eu003c ,
+.B \\eu003e
+and
+.B \\eu0026
+in the file for
+.BR < ,
+.B >
+and
+.BR & )
+and names the device that sent it.
+Tacquito built with patch 0006 writes the address of the device as
+.B Device
+in every record; the record is shown with the name of the registered device or
+enrolled host at that address, with the address when none is registered (or
+when the caller's tier is limited to scopes that do not hold it), and
+with no device when the record has none.
+.B RemAddr
+is still where the person connected from.
+The
+.B <cr>
+that Junos appends to a
+.B cmd=
+value is left out of the display, not of the file.
 .\" BEGIN GENERATED: command log accounting
 .RS
 .PP
@@ -6080,6 +6601,24 @@ Options:
 .TP
 \fB\-\-backend\fR \fI<id>\fR
 Only that backend's log (every subcommand).
+.TP
+\fB\-\-since\fR \fI<time>\fR
+Show the entries from that time on (inclusive): YYYY\-MM\-DD[ HH:MM[:SS]], now, today, yesterday, \-1h, 2 hours ago. A date alone is that day's midnight.
+.TP
+\fB\-\-until\fR \fI<time>\fR
+Show the entries up to that time (inclusive), in the forms of \-\-since.
+.TP
+\fB\-\-user\fR \fI<name>\fR
+Show the entries of that user, as the log writes the name.
+.TP
+\fB\-\-device\fR \fI<name|address>\fR
+Show the entries of that device or host: a registered device or an enrolled host by name (those the caller may see) or an address. What each log can match is described under Log inspection.
+.TP
+\fB\-\-type\fR \fIlogin|change|command\fR
+Show one kind of record: command, change (a Junos change\-log entry) or login (the start or stop of a session). How a record is classified is described under Log inspection.
+.TP
+\fB\-\-json\fR
+Write one JSON object per line, with no headings, for jq.
 .RE
 .\" END GENERATED: command log accounting
 .TP
@@ -6293,7 +6832,10 @@ provisioner entry only, so a sync alone does not make the next command take
 a snapshot; the snapshot that
 .B backup restore
 takes first compares everything. The newest 30 are retained. Without a store,
-list, diff and restore work on old-style backups only.
+list, diff and restore work on old-style backups only. A restore (of a
+snapshot or an old\-style backup) rewrites the list of users held to a password
+change in the console's sshd drop-in from the store it put back (see
+.BR "console forwarding" ).
 .\" BEGIN GENERATED: command backup restore
 .RS
 .PP
@@ -7540,9 +8082,11 @@ comes from the default
 then the built-in; every
 .B show
 says which one a value is. The non-secret settings are
+.na
 .B snmp_scope.\fIscope\fR.{version,port,timeout,v3.auth,v3.priv,contact,clients}
 in
 .IR tacctl.yaml ,
+.ad
 written only when set; the community and the pool of v3 users with their
 passphrases and the default user are the file
 .IR /etc/tacctl/snmp/\fIscope\fR.yaml
@@ -11431,7 +11975,27 @@ replaces in place. A TACACS+
 .B port
 is a difference: the standard states one only for a server off the default
 port, so a port on the device against a server on the default is the wrong
-one. So are the options that change the service asked for or how a password is
+one. So is
+.BR single\-connection :
+the standard no longer renders it (the server closes a connection that has been
+idle for 15 seconds, and a device that keeps one open is left with a dead
+socket), so the plan removes it from tacctl's server
+.RB ( "delete system tacplus\-server <address> single\-connection"
+on Junos,
+.B "no single\-connection"
+under
+.B "tacacs server TACACS"
+on IOS; the
+.B "tacacs\-server host"
+line of IOS 12.x is typed again without it). A Junos
+.B single\-connection
+that only an apply-group gives cannot be deleted at the top level: it does not
+refuse the section as another inherited statement does, the plan keeps it and
+lists it as left alone (inherited from a group: remove it from the group by
+hand), and plans the other fixes. The report names the leaf (single\-connection
+on the TACACS+ server <address>, no longer rendered), and the retyped
+.B "tacacs\-server host"
+line has a comment of its own in the paste region. So are the options that change the service asked for or how a password is
 checked
 .RB ( "tacplus\-options service\-name" ,
 other than
@@ -13072,11 +13636,13 @@ is given, and always
 A device with
 .B legacy\-ssh
 gets
+.na
 \fB\-o KexAlgorithms=\:+diffie\-hellman\-group14\-sha1,\:diffie\-hellman\-group1\-sha1
 \-o Ciphers=\:+aes128\-cbc,\:aes192\-cbc,\:aes256\-cbc,\:3des\-cbc
 \-o HostKeyAlgorithms=\:+ssh\-rsa \-o PubkeyAcceptedAlgorithms=\:+ssh\-rsa\fR
 (old IOS; OpenSSH 8.5 or later; the CBC ciphers are appended after the strong
 ones). A device with pinned host keys adds
+.ad
 \fB\-o UserKnownHostsFile=\:/var/lib/tacctl/\:ssh/known_hosts
 \-o GlobalKnownHostsFile=none \-o StrictHostKeyChecking=yes
 \-o HostKeyAlias=\fR\fIname\fR\fB \-o UpdateHostKeys=no\fR,
@@ -13390,13 +13956,59 @@ and
 say so for as long as it stands. Both verbs write an
 .B auth.info
 line per device (the reason is in the hold's:
-.BI "breakglass hold device=" name " addr=" ip " reason=\(dq" text "\(dq by=" user
+.BI "breakglass hold device=" name " addr=" ip " reason=\(dq" text "\(dq by=" user " firewall=" state
 and
-.BI "breakglass release device=" name " addr=" ip " held=" duration " by=" user )
-and take the snapshot every change takes. A hold that
+.BI "breakglass release device=" name " addr=" ip " held=" duration " by=" user " firewall=" state )
+and take the snapshot every change takes;
+.I state
+is what the nftables table did (reject, drop, off or failed: see below). A hold that
 .B "device address"
 moves writes
-.BI "breakglass hold\-move device=" name " from=" ip " to=" ip " by=" user .
+.BI "breakglass hold\-move device=" name " from=" ip " to=" ip " by=" user " firewall=" state .
+.PP
+A hold also refuses the TCP connections of the held address, so a device that
+falls back to its local accounts only when the server is unreachable does:
+FreeRADIUS (UDP) ignores an address its scopes do not cover and the device times
+out, but tacquito listens on TCP, where the kernel completes the handshake and
+tacquito closes the connection afterwards. tacctl owns one nftables table,
+.BR "inet tacctl" ,
+whose sets hold the held addresses and whose rule on the input hook (priority
+\-10) rejects with a TCP reset, or drops, a source address in a set that connects
+to a TCP port of a tacquito listener. It is written to
+.I /etc/tacctl/breakglass\-firewall.nft
+and loaded with
+.B "nft \-f"
+at the point the backends restart, by every hold, release, move
+.RB ( "device address" ),
+rename, every restore, change of a listener and change of the setting, and at boot by
+.IR tacctl\-breakglass\-firewall.service .
+Its setting is
+.B "config breakglass\-firewall"
+.RB ( reject ,
+the default,
+.B drop
+or
+.BR off ,
+which is the behaviour before 0.2.24). The report of a hold has a
+.B "Firewall:"
+line
+.RB ( "Firewall: " address " refused on tcp/49 (reject)" ),
+the report of a release the reverse
+.RB ( "Firewall: " address " accepted again on tcp/49" ).
+When nft is missing or fails the hold stands (the record, the rendering and the
+restarts are as above) and the report says in red that the server still completes
+the TCP handshake on the port(s) for the address, so a device that falls back only
+when the server is unreachable (a WTI unit with Fallback Local
+.BR "On (Transport Failure)" ,
+a Junos switch with
+.BR "authentication\-order [ tacplus password ]" )
+will not, names the fix
+.RB ( "sudo apt\-get install nftables" ,
+then
+.B "tacctl config breakglass\-firewall"
+with the current setting, which loads the table even when the setting is
+unchanged) and exits 1; a release that cannot load the table says the address may
+still be refused and exits 1 the same way.
 .TP
 .BI "breakglass hold " "name[=reason][,name[=reason]...]" " [\-\-reason " text ]
 Hold break\-glass on registered devices and enrolled Linux hosts, given as one comma
@@ -13434,6 +14046,10 @@ does not answer it,
 (every hold that stands) and
 .B "When done:"
 (the release of the devices held).
+A
+.B "Firewall:"
+line says what the nftables table does with the TCP connections of the address
+(or, in red, that it could not be loaded, with the fix; the verb then exits 1).
 A
 .B "Carved:"
 line says that only the registered address is carved and that a device that
@@ -13473,7 +14089,10 @@ that is not an address) is removed by name.
 A restart that failed is reported as
 .B "NOT restarted"
 and the verb exits 1. The report names how long it was held, by whom and why,
-what was rendered, the check
+what was rendered, the
+.B "Firewall:"
+line (the address accepted again, or in red that the table could not be
+loaded and the address may still be refused, which exits 1), the check
 .RB ( "tacctl device config pull " device " \-\-diff" ,
 then a new ssh login as yourself) and the holds that remain. Superuser only.
 Given a comma list, the devices that are held (or whose entry carved nothing)
@@ -13501,8 +14120,17 @@ and
 has
 .BR orphan:true ,
 and
-.BR kind ).
-An engineer sees the devices and hosts of their own scopes only.
+.BR kind ;
+it also has
+.B firewall
+for each row, the setting
+.BR breakglass.firewall ).
+A last line
+.RB ( Firewall: )
+says what the nftables table does for the held addresses and whether the live table
+is as the holds and the setting ask for (red, with the command that fixes it, when
+it is not; yellow when the setting is off or nft could not be read). An engineer sees
+the devices and hosts of their own scopes only, and no firewall line.
 .\" BEGIN GENERATED: command breakglass list
 .RS
 .PP
@@ -14027,12 +14655,57 @@ to a device accepts
 and
 .BR \-D .
 Agent, stream-local and tunnel forwarding stay as for every console user.
-A forwarding opens no session and never reaches the console, so a user of such
-a tier who must change the password
+A forwarding opens no session and never reaches the console, so sshd's drop-in
+lists the users who must change the password
 .RB ( "user require\-password\-change" )
-still forwards ports through this server with the old password until it is
-changed; the default tier, superuser, is never held, so list another tier only
-while none of its users must change the password.
+in a block of its own before the tier blocks,
+.BR "Match User" " \fInames\fR,"
+with
+.BR "DisableForwarding yes"
+and every single switch (TCP, stream-local, X11, agent, tunnel) at
+.BR no :
+their new connections forward nothing through this server in any tier until
+the password is changed. sshd applies the drop-in when a connection
+authenticates: a connection the user has open already keeps the forwardings it
+had until it closes, and tacctl does not end it (the administrator can:
+.BR "loginctl terminate\-user" " \fIname\fR)."
+The names are sorted and only those of a Linux account, at most 50 to a block
+(more users make further
+.B "Match User"
+blocks, all before the tier blocks); no user held, no block; a superuser is
+never held. The list is rewritten by every sync of this server (the
+.B user
+verbs that change an account run one), by
+.B "console install"
+and
+.BR upgrade ,
+and by the verbs that change who is held, each at once and by itself, so that
+it is current whether or not a sync of this server follows and gets as far as
+the drop-in (a server that is not enrolled, a sync that stops at its checks, a
+scope in which no user gets the console):
+.B "user require\-password\-change"
+in every form,
+.BR "user add" ,
+.BR "user remove" ,
+.BR "user rename" ,
+.BR "user move" ,
+an administrator's
+.BR "user passwd" ,
+the user's own
+.BR passwd ,
+a group command that lowers a tier,
+.BR "store import" ,
+.B "backup restore"
+(a snapshot or an old\-style backup) and
+.B "store rollback"
+(legacy mode holds nobody), under the apply lock; any other write of the
+store leaves it as it is until the next of those. Only a change that lowers a
+group's tier syncs this server (and so lists a flagged user whose group stops
+being a superuser's); raising a tier leaves the list as it was until the next
+rewrite, which can only close forwarding: a user who has become a superuser
+stays listed, and his new connections stay closed, until then. A failure to
+write it is one warning and the old list stays until the next sync or
+.BR "console install" .
 .\" BEGIN GENERATED: command console forwarding
 .RS
 .PP
@@ -14377,7 +15050,15 @@ a block before it sets
 .BR "DisableForwarding no" ,
 .B "AllowTcpForwarding yes"
 and
-.BR "X11Forwarding yes" ),
+.BR "X11Forwarding yes" ;
+for the users who must change the password a
+.B "Match User"
+block before those sets
+.B "DisableForwarding yes"
+and every single switch to
+.BR no ,
+see
+.BR "console forwarding" ),
 .BR "AllowTcpForwarding no" ,
 .BR "AllowStreamLocalForwarding no" ,
 .BR "X11Forwarding no" ,
@@ -14447,7 +15128,10 @@ in
 .IR /etc/ssh/sshd_config ,
 and
 .B "sshd \-T"
-for the first account whose shell is the console. It also checks the
+for the first account whose shell is the console, for the first user held to a
+password change (whose forwarding the drop-in closes in any tier) and for the
+first that is not. A drop-in whose list of users held to a password change is
+not the list held now differs: the check shows both lists. It also checks the
 engineers (the drop-in of the engineer tier and that its name sorts before
 the console's, a leftover
 .IR tacctl\-engineer.conf ,
@@ -14956,8 +15640,8 @@ scope vendor\-attrs, server listen, server metrics, server name,
 user email, user scope
 .TP
 .B "mixed, auth.notice"
-config audit\-strict, config sudoers, console system\-shell, rollback,
-store import
+config audit\-strict, config breakglass\-firewall, config sudoers,
+console system\-shell, rollback, store import
 .\" END GENERATED: audit-classes
 .PP
 The fields, in the order written:
@@ -16294,6 +16978,10 @@ Where tacquito's Prometheus exporter listens. Set with \fBtacctl server metrics 
 integer, 10 to 14. Default: 12.
 Cost of the bcrypt hashes tacctl makes from now on. Set with \fBtacctl config bcrypt\-cost\fR.
 .TP
+.B breakglass.firewall
+one of reject, drop, off. Default: reject.
+What the server does with the TCP connections of an address that is held (breakglass hold): reject refuses them with a TCP reset, drop discards their packets, off leaves them to tacquito, which accepts and closes the connection (the 0.2.23 behaviour). Any value but off makes tacctl load the nftables table inet tacctl for the held addresses and the ports of the tacquito listeners; the table is the only part of the host's ruleset it touches. Set with \fBtacctl config breakglass\-firewall\fR.
+.TP
 .B device.apply.confirm_timeout
 integer, 3 to 60. Default: 10.
 Minutes of the commit confirmed of every device config apply: the device undoes the change by itself after that long unless the confirming commit is typed. Set with \fBtacctl config devices apply\-confirm\-timeout\fR.
@@ -16943,7 +17631,33 @@ The clone of the tacquito source that
 and
 .B upgrade
 build the server from (default
-.IR /opt/tacquito\-src ).
+.IR /opt/tacquito\-src ),
+cloned from the project's fork of tacquito,
+.IR https://github.com/rett/tacquito ,
+whose main follows upstream by reviewed merges.
+A clone of upstream tacquito made by an earlier release is pointed at the fork
+the next time
+.B install
+or
+.B upgrade
+pulls it; an origin set by hand is left alone.
+The pull is a fetch, then a fast\-forward. The fetch never waits for an answer
+(git asks for no user name, password or key passphrase, and drops a transfer that stays under
+1000 bytes a second for a minute; an ssh remote needs a key, the agent or a credential helper, and its
+host key in
+.IR known_hosts ,
+since an unknown one fails where ssh used to ask), and a fetch that fails ends
+the install or upgrade there.
+A checkout that cannot fast\-forward to the fork's main (a rewritten history) or is ahead of it
+(a commit made in the clone) is reset to it with a warning that names the commit it was at
+and the one it is at now; the clone is only a build tree.
+The clone of tacctl itself in
+.I /opt/tacctl
+is pulled the same way, by
+.BR install ,
+.B upgrade
+and
+.BR "config branch" .
 .TP
 .B TMPDIR
 The directory where tacctl stages private copies while it works (rendered
@@ -16981,6 +17695,30 @@ setter refuses with
 .RI "\(lqtacctl.yaml: could not parse " path ": " reason \(rq
 and exits 1, and commands that only read use the defaults and warn once on
 stderr.
+.TP
+.I /etc/tacctl/breakglass\-firewall.nft
+The nftables table
+.B "inet tacctl"
+that refuses the TCP connections of the held addresses
+.RB ( "tacctl config breakglass\-firewall" ):
+the whole table, which
+.B "nft \-f"
+replaces in one step. Mode 0600, root only; rewritten and loaded by every
+change of a hold, a listener or the setting; with the setting
+.B off
+it only removes the table. Not written on a host without nft that has nothing to
+refuse. Not part of a snapshot (it is derived). Do not edit it.
+.TP
+.I /etc/systemd/system/tacctl\-breakglass\-firewall.service
+The oneshot unit that loads the file above at boot, before the network and
+tacquito. Written and enabled by
+.B install
+and
+.BR upgrade ,
+removed by
+.BR uninstall
+and by a rollback. tacctl never enables or touches
+.BR nftables.service .
 .TP
 .I /etc/tacctl/devices.yaml
 The device registry (see

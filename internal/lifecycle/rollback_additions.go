@@ -5,7 +5,7 @@ package lifecycle
 //
 // A target's own plan (rollback0222.go, rollback0221.go, ...) says what that
 // target converts, and several of them return before the generic steps run
-// (0.2.22, 0.2.21 and 0.2.20 read most of what this release writes). A change
+// (0.2.23, 0.2.22, 0.2.21 and 0.2.20 read most of what this release writes). A change
 // that every older release refuses, such as the timing scale, does not belong
 // in each of those plans: it is one entry of rollbackAdditions, and
 // PlanRollback adds its steps, warnings and notes after the target's plan, for
@@ -45,13 +45,14 @@ type rollbackAddition struct {
 // the users' email addresses are rollback_email.go and the SNMPv3 user pool
 // is rollback_snmp_pool.go, the lockdown on hosts is
 // rollback_lockdown_hosts.go and the covered staging entries are
-// rollback_staging.go.
+// rollback_staging.go, and the break-glass firewall is rollback_firewall.go.
 var rollbackAdditions = []rollbackAddition{
 	{Release: "0.2.22", Read: (*RollbackPlan).planTimeoutScale, Add: (*RollbackPlan).addTimeoutScale},
 	{Release: "0.2.23", Read: (*RollbackPlan).planEmail, Add: (*RollbackPlan).addEmail},
 	{Release: "0.2.23", Read: (*RollbackPlan).planSNMPPool, Add: (*RollbackPlan).addSNMPPool},
 	{Release: "0.2.23", Read: (*RollbackPlan).planLockdownHosts},
 	{Release: "0.2.23", Read: (*RollbackPlan).planStagingCovered, Add: (*RollbackPlan).addStagingCovered},
+	{Release: "0.2.24", Read: (*RollbackPlan).planFirewall, Add: (*RollbackPlan).addFirewall},
 }
 
 // addReleaseChanges runs the entries of additions that apply to p's target.

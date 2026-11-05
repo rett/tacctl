@@ -48,6 +48,7 @@ import (
 
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/gitx"
 	"github.com/rett/tacctl/internal/lifecycle"
 	"github.com/rett/tacctl/internal/paths"
 )
@@ -56,8 +57,13 @@ import (
 const (
 	// GoVersion is GO_VERSION, the toolchain tacctl installs for tacquito.
 	GoVersion = paths.GoVersion
-	// TacquitoRepo is TACQUITO_REPO.
-	TacquitoRepo = "https://github.com/facebookincubator/tacquito.git"
+	// TacquitoRepo is TACQUITO_REPO: the project's fork of tacquito, whose
+	// main follows upstream by reviewed merges (patches/README.md), so a
+	// host builds only the upstream changes merged there.
+	TacquitoRepo = "https://github.com/rett/tacquito.git"
+	// TacquitoUpstreamRepo is the upstream tacquito that releases before
+	// 0.2.24 cloned; repointOrigin moves such a checkout to TacquitoRepo.
+	TacquitoUpstreamRepo = "https://github.com/facebookincubator/tacquito.git"
 	// Share is TACACS_SHARE: where a tacctl tree keeps this backend's
 	// shipped files (units, logrotate), relative to its root.
 	Share = "config/backends/tacacs"
@@ -271,6 +277,16 @@ func (b *Backend) sh(ctx context.Context, dir, name string, args ...string) int 
 	return code
 }
 
+// gitNet runs a git command that talks to the remote (fetch, clone) so that
+// it cannot wait for an operator who is not there: no prompt on the
+// terminal, no passphrase prompt, a transfer that stalls is dropped
+// (gitx.Net, which tacctl's own clone shares). Output is passed through, as
+// sh does.
+func (b *Backend) gitNet(ctx context.Context, dir string, args ...string) int {
+	c := gitx.Net(ctx, b.env.Runner, execx.Cmd{Name: "git", Args: args, Dir: dir})
+	return b.sh(ctx, dir, c.Name, c.Args...)
+}
+
 // shQuiet is '<cmd> 2>/dev/null'.
 func (b *Backend) shQuiet(ctx context.Context, dir, name string, args ...string) int {
 	code, _ := b.command(ctx, dir, b.env.Out.Stdout, nil, name, args...)
@@ -329,6 +345,27 @@ func (b *Backend) ensureSafeDirectory(ctx context.Context, dirs ...string) {
 			b.shQuiet(ctx, "", "git", "config", "--system", "--add", "safe.directory", d)
 		}
 	}
+}
+
+// repointOrigin moves a checkout cloned from TacquitoUpstreamRepo (by a
+// release before 0.2.24) to the fork, TacquitoRepo: both have the same
+// history, so the next fetch or pull carries on from the commit that is
+// checked out. An origin of any other URL was set by hand and stays. A
+// failure is only a warning: the checkout still pulls from upstream.
+func (b *Backend) repointOrigin(ctx context.Context, src string) {
+	url, code := b.shOut(ctx, src, "git", "remote", "get-url", "origin")
+	if code != 0 {
+		return
+	}
+	url = strings.TrimSuffix(strings.TrimSpace(url), "/")
+	if url != TacquitoUpstreamRepo && url+".git" != TacquitoUpstreamRepo {
+		return
+	}
+	if b.sh(ctx, src, "git", "remote", "set-url", "origin", TacquitoRepo) != 0 {
+		b.out().Warn("Could not point " + src + " at " + TacquitoRepo + "; it still pulls from " + url + ".")
+		return
+	}
+	b.out().InfoE("Tacquito source now pulls from " + TacquitoRepo + " (was " + url + ").")
 }
 
 // listenCheck is _tacacs_listen_check: is the default listener's port

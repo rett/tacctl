@@ -178,6 +178,9 @@ func Install(ctx context.Context, h *Host, args []string) error {
 	if err := h.install(ctx, ids, backend.PhaseStart, tree); err != nil {
 		return err
 	}
+	// The table that refuses the TCP connections of the held addresses (an
+	// existing configuration may have holds), and the unit that loads it.
+	h.firewallStep(ctx)
 	// This machine's own login: every user can log in to this server.
 	h.ownLogin(ctx, OwnLoginOptions{Install: true, Yes: yes, Server: server})
 	h.auditLine("install", audit.Pair("branch", branch))
@@ -198,7 +201,7 @@ func (h *Host) installDeploy(ctx context.Context, branch string) error {
 		if branch != "" {
 			h.gitQuiet(ctx, deploy, "checkout", branch)
 		}
-		h.gitQuietErr(ctx, deploy, "pull", "--quiet")
+		h.gitNetQuietErr(ctx, deploy, "pull", "--quiet")
 	} else {
 		if lexists(deploy) {
 			if err := h.rmRF(deploy); err != nil {
@@ -209,7 +212,7 @@ func (h *Host) installDeploy(ctx context.Context, branch string) error {
 		if branch != "" {
 			args = append(args, "--branch", branch)
 		}
-		if code := h.git(ctx, "", append(args, paths.ManageRepo, deploy)...); code != 0 {
+		if code := h.gitNet(ctx, "", append(args, paths.ManageRepo, deploy)...); code != 0 {
 			return &backend.Error{Code: code, Reason: "git clone"}
 		}
 		out.Info("Management repo cloned to " + deploy)

@@ -77,6 +77,7 @@ func withCache(f *fakeShell, c *fakeCache) {
 // token of its own; every other line, and the shell's own words, leave it
 // shut and carry no value.
 func TestCacheOpenOnlyForTheLinesThatUseIt(t *testing.T) {
+	t.Parallel()
 	f := newFakeShell(nil)
 	c := &fakeCache{}
 	withCache(f, c)
@@ -104,6 +105,7 @@ func TestCacheOpenOnlyForTheLinesThatUseIt(t *testing.T) {
 // 'console forget' is the shell's: it never reaches Exec, empties the
 // cache and says so; with nothing held it says that.
 func TestConsoleForget(t *testing.T) {
+	t.Parallel()
 	f := newFakeShell(nil)
 	c := &fakeCache{held: true}
 	withCache(f, c)
@@ -148,6 +150,7 @@ func TestConsoleForget(t *testing.T) {
 // The password cache is forgotten after 'passwd' and 'user passwd', whether
 // or not they succeeded, and only then.
 func TestPasswdForgets(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		line   string
 		forget bool
@@ -174,6 +177,7 @@ func TestPasswdForgets(t *testing.T) {
 // password (off) or says whether a password is held (the state). Other
 // forms are ordinary commands.
 func TestPasswordCacheWord(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	// on: after the save the cache starts in the running session.
 	f := newFakeShell(nil)

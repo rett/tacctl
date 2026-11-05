@@ -107,6 +107,11 @@ echo "$out" | tail -25
 if [[ $rc == 0 ]]; then ok "tacctl upgrade exits 0"; else bad "tacctl upgrade exits 0 (exit ${rc})"; fi
 expect "the binary is built from the working tree's commit" "commit: *${NEW}" "$(q 'tacctl version --long')"
 check "tacquito is active" 'systemctl is-active --quiet tacquito'
+# The clone the old release made from upstream tacquito is pointed at the
+# fork by the run the self-update re-executed (the old binary's build ran
+# first and pulled upstream).
+expect "the upgrade points the tacquito clone at the fork" 'Tacquito source now pulls from https://github\.com/rett/tacquito\.git' "$out"
+expect "the tacquito clone's origin is the fork" '^https://github\.com/rett/tacquito\.git$' "$(q 'git -C /opt/tacquito-src remote get-url origin')"
 check "tacctl status" 'tacctl status'
 out=$(q 'tacctl config validate'); rc=$?; echo "$out" | tail -4
 if [[ $rc == 0 ]]; then ok "config validate"; else bad "config validate (exit ${rc})"; fi

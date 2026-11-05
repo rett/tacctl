@@ -130,6 +130,7 @@ func menuProgram(d *scripted) func(ch ssh.Channel) {
 }
 
 func TestTerminalMenuSession(t *testing.T) {
+	t.Parallel()
 	d := &scripted{}
 	d.raw = menuProgram(d)
 	s, _ := openTerm(t, d, 100*time.Millisecond)
@@ -215,6 +216,7 @@ func TestTerminalMenuSession(t *testing.T) {
 
 // What the scanner makes of a device's bytes, as the text since the Send.
 func TestTerminalScreenText(t *testing.T) {
+	t.Parallel()
 	type chunks []string
 	cases := []struct {
 		name string
@@ -273,6 +275,7 @@ func TestTerminalScreenText(t *testing.T) {
 // An Expect that returned on its predicate leaves the rest of the paint
 // behind: the next Send starts a clean screen.
 func TestTerminalSendStartsANewScreen(t *testing.T) {
+	t.Parallel()
 	d := &scripted{}
 	d.raw = func(ch ssh.Channel) {
 		for _, answer := range []string{"SCREEN1" + esc + "[24;1HTRAILER", "SCREEN2"} {
@@ -305,6 +308,7 @@ func TestTerminalSendStartsANewScreen(t *testing.T) {
 }
 
 func TestTerminalSendRefusals(t *testing.T) {
+	t.Parallel()
 	d := &scripted{}
 	d.raw = func(ch ssh.Channel) {
 		for {
@@ -347,6 +351,8 @@ func TestTerminalSendRefusals(t *testing.T) {
 // A quiet device: the contract of waiting. Output that stops is a screen
 // (the caller checks it); no output at all is the deadline.
 func TestTerminalQuietAndHang(t *testing.T) {
+	// Serial on purpose: it measures the quiet period (50 to 300 ms) against the
+	// device's pauses and a deadline of 400 ms: load would break the margins.
 	t.Run("output then silence returns after the quiet period", func(t *testing.T) {
 		d := &scripted{}
 		d.raw = func(ch ssh.Channel) { _, _ = io.WriteString(ch, "partial") }
@@ -407,6 +413,7 @@ func TestTerminalQuietAndHang(t *testing.T) {
 }
 
 func TestTerminalEOFMidScreen(t *testing.T) {
+	t.Parallel()
 	d := &scripted{}
 	d.raw = func(ch ssh.Channel) {
 		_, _ = io.WriteString(ch, "SNMP Read-Only Community:  hunter2-community")
@@ -428,6 +435,7 @@ func TestTerminalEOFMidScreen(t *testing.T) {
 // The predicate wins over the channel ending in the same read: a screen
 // that was complete is not lost to the close behind it.
 func TestTerminalLastScreenBeforeClose(t *testing.T) {
+	t.Parallel()
 	d := &scripted{}
 	d.raw = func(ch ssh.Channel) {
 		_, _ = io.WriteString(ch, "Goodbye\r\n")
@@ -444,6 +452,7 @@ func TestTerminalLastScreenBeforeClose(t *testing.T) {
 }
 
 func TestTerminalHugeSingleLine(t *testing.T) {
+	t.Parallel()
 	line := strings.Repeat("y", 3<<20)
 	d := &scripted{}
 	d.raw = func(ch ssh.Channel) {
@@ -470,6 +479,7 @@ func TestTerminalHugeSingleLine(t *testing.T) {
 // A device cannot make the client hold more than MaxOutput since the last
 // Send; the session is closed and the error names no output.
 func TestTerminalOutputOverflow(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("writes more than MaxOutput")
 	}
@@ -478,6 +488,7 @@ func TestTerminalOutputOverflow(t *testing.T) {
 		"many lines":       strings.Repeat(strings.Repeat("z", 99)+"\r\n", 2600),
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			d := &scripted{}
 			d.raw = func(ch ssh.Channel) {
 				for sent := 0; sent <= devssh.MaxOutput+len(chunk); sent += len(chunk) {
@@ -504,6 +515,7 @@ func TestTerminalOutputOverflow(t *testing.T) {
 }
 
 func TestTerminalContextCancel(t *testing.T) {
+	t.Parallel()
 	d := &scripted{}
 	d.raw = func(ch ssh.Channel) {
 		_, _ = io.WriteString(ch, "Enter: SPACE for page")
@@ -535,6 +547,7 @@ func TestTerminalContextCancel(t *testing.T) {
 
 // A context that is done touches nothing: no key is typed.
 func TestTerminalDoneContextSendsNothing(t *testing.T) {
+	t.Parallel()
 	d := &scripted{}
 	d.raw = func(ch ssh.Channel) {
 		for {
@@ -557,6 +570,7 @@ func TestTerminalDoneContextSendsNothing(t *testing.T) {
 
 // Close may come at any time, from another goroutine, and sends nothing.
 func TestTerminalCloseAnytime(t *testing.T) {
+	t.Parallel()
 	d := &scripted{}
 	d.raw = func(ch ssh.Channel) {
 		_, _ = io.WriteString(ch, "MENU")
@@ -603,6 +617,7 @@ func TestTerminalCloseAnytime(t *testing.T) {
 
 // The client's context ending ends the session.
 func TestTerminalClientContext(t *testing.T) {
+	t.Parallel()
 	d := &scripted{}
 	d.raw = func(ch ssh.Channel) {
 		for {

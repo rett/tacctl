@@ -139,17 +139,15 @@
     },
     {
       "n": 9,
-      "kind": "missing",
-      "severity": "MONITORING",
-      "section": "snmp",
-      "what": "SNMP client list TACCTL-SNMP: 3 statements",
-      "statement": "e.g. set snmp client-list TACCTL-SNMP 192.0.2.10/32",
-      "action": "Fixed by region lines 33-35.",
+      "kind": "extra",
+      "severity": "ACCESS",
+      "section": "aaa",
+      "what": "single-connection on the TACACS+ server 192.0.2.10, no longer rendered",
+      "statement": "set system tacplus-server 192.0.2.10 single-connection",
+      "action": "Fixed by region line 33.",
       "fixed": true,
       "region_lines": [
-        33,
-        34,
-        35
+        33
       ]
     },
     {
@@ -157,11 +155,12 @@
       "kind": "missing",
       "severity": "MONITORING",
       "section": "snmp",
-      "what": "an SNMP community: 2 statements",
-      "statement": "e.g. set snmp community \u003csecret:1\u003e authorization read-only",
-      "action": "Fixed by region lines 36-37.",
+      "what": "SNMP client list TACCTL-SNMP: 3 statements",
+      "statement": "e.g. set snmp client-list TACCTL-SNMP 192.0.2.10/32",
+      "action": "Fixed by region lines 35-37.",
       "fixed": true,
       "region_lines": [
+        35,
         36,
         37
       ]
@@ -169,14 +168,15 @@
     {
       "n": 11,
       "kind": "missing",
-      "severity": "COSMETIC",
+      "severity": "MONITORING",
       "section": "snmp",
-      "what": "the SNMP location is Rack 4, DC1",
-      "statement": "set snmp location \"Rack 4, DC1\"",
-      "action": "Fixed by region line 38.",
+      "what": "an SNMP community: 2 statements",
+      "statement": "e.g. set snmp community \u003csecret:1\u003e authorization read-only",
+      "action": "Fixed by region lines 38-39.",
       "fixed": true,
       "region_lines": [
-        38
+        38,
+        39
       ]
     },
     {
@@ -184,21 +184,8 @@
       "kind": "missing",
       "severity": "COSMETIC",
       "section": "snmp",
-      "what": "the SNMP contact is NOC \u003cnoc@example.net\u003e",
-      "statement": "set snmp contact \"NOC \u003cnoc@example.net\u003e\"",
-      "action": "Fixed by region line 39.",
-      "fixed": true,
-      "region_lines": [
-        39
-      ]
-    },
-    {
-      "n": 13,
-      "kind": "missing",
-      "severity": "COSMETIC",
-      "section": "snmp",
-      "what": "the SNMP description is Core switch",
-      "statement": "set snmp description \"Core switch\"",
+      "what": "the SNMP location is Rack 4, DC1",
+      "statement": "set snmp location \"Rack 4, DC1\"",
       "action": "Fixed by region line 40.",
       "fixed": true,
       "region_lines": [
@@ -206,17 +193,41 @@
       ]
     },
     {
+      "n": 13,
+      "kind": "missing",
+      "severity": "COSMETIC",
+      "section": "snmp",
+      "what": "the SNMP contact is NOC \u003cnoc@example.net\u003e",
+      "statement": "set snmp contact \"NOC \u003cnoc@example.net\u003e\"",
+      "action": "Fixed by region line 41.",
+      "fixed": true,
+      "region_lines": [
+        41
+      ]
+    },
+    {
       "n": 14,
+      "kind": "missing",
+      "severity": "COSMETIC",
+      "section": "snmp",
+      "what": "the SNMP description is Core switch",
+      "statement": "set snmp description \"Core switch\"",
+      "action": "Fixed by region line 42.",
+      "fixed": true,
+      "region_lines": [
+        42
+      ]
+    },
+    {
+      "n": 15,
       "kind": "missing",
       "severity": "ACCESS",
       "section": "mgmt-acl",
       "what": "the management filter MGMT-ACL: 22 statements",
       "statement": "e.g. set firewall family inet filter MGMT-ACL term permit-mgmt from source-address 192.0.2.10/32",
-      "action": "Fixed by region lines 42-63.",
+      "action": "Fixed by region lines 44-65.",
       "fixed": true,
       "region_lines": [
-        42,
-        43,
         44,
         45,
         46,
@@ -236,7 +247,9 @@
         60,
         61,
         62,
-        63
+        63,
+        64,
+        65
       ]
     }
   ],
@@ -272,6 +285,8 @@
     "set system login class EN-CLASS permissions system-control",
     "set system login class EN-CLASS permissions snmp",
     "set system login user EN-CLASS class EN-CLASS",
+    "# aaa: tacctl's TACACS+ server",
+    "delete system tacplus-server 192.0.2.10 single-connection",
     "# snmp: the client list tacctl renders",
     "set snmp client-list TACCTL-SNMP 192.0.2.10/32",
     "set snmp client-list TACCTL-SNMP 198.51.100.0/24",
@@ -316,9 +331,10 @@
     "# minutes.",
     "#",
     "# Check now. In 5 minutes the switch undoes this by itself unless you type one word.",
-    "#   From the tacctl server:   tacctl device config pull dev-juniper-synthetic-inherit --diff     (roles, snmp and mgmt-acl: ok)",
+    "#   From the tacctl server:   tacctl device config pull dev-juniper-synthetic-inherit --diff     (roles, aaa, snmp and mgmt-acl: ok)",
     "#   In a second terminal:     ssh dev-juniper-synthetic-inherit, then: show cli authorization | no-more",
     "#                             show configuration system login | no-more",
+    "#                             show configuration system tacplus-server | no-more",
     "#                             show configuration snmp | no-more",
     "#                             show configuration firewall family inet filter MGMT-ACL | no-more",
     "# When both checks are fine, type this one word yourself:  commit     (before the 5 minutes end)",
@@ -347,6 +363,7 @@
     "delete snmp location",
     "delete snmp community \u003csecret:1\u003e",
     "delete snmp client-list TACCTL-SNMP",
+    "set system tacplus-server 192.0.2.10 single-connection",
     "delete system login user EN-CLASS",
     "delete system login class EN-CLASS",
     "delete system login user RW-CLASS",

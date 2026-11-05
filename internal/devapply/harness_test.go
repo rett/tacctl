@@ -94,7 +94,7 @@ func (d *device) target(user, pw string) devssh.Target {
 	return devssh.Target{
 		Host: host, Port: p, User: user, HostKeys: []string{fakedev.HostKey()},
 		Password:       func() (string, error) { return pw, nil },
-		Quiet:          25 * time.Millisecond,
+		Quiet:          fakeQuiet,
 		ConnectTimeout: 3 * time.Second,
 	}
 }
@@ -284,8 +284,10 @@ func assertLog(t *testing.T, o Outcome, delta []plan.Line) {
 	}
 }
 
-// assertNoSecret scans everything the outcome and the state directory hold.
-func assertNoSecret(t *testing.T, o Outcome, state string) {
+// assertNoSecret scans everything the outcome and the state directory hold
+// for the test secrets and the extra ones a test brings (they are the test's
+// own, so that tests run in parallel).
+func assertNoSecret(t *testing.T, o Outcome, state string, extra ...string) {
 	t.Helper()
 	b, _ := json.Marshal(o)
 	texts := []string{fmt.Sprintf("%+v", o), string(b), o.Line(), strings.Join(o.Log, "\n"), strings.Join(o.VerifyLog, "\n")}
@@ -298,7 +300,7 @@ func assertNoSecret(t *testing.T, o Outcome, state string) {
 			return nil
 		})
 	}
-	for _, s := range allSecrets {
+	for _, s := range append(append([]string{}, allSecrets...), extra...) {
 		for _, tx := range texts {
 			if strings.Contains(tx, s) {
 				t.Fatalf("a secret %q is in the outcome or the state:\n%s", s, tx)

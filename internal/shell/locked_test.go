@@ -57,6 +57,7 @@ func lockOptions(locked *bool, ran *[]string, refused *[]string) Options {
 // other line is refused with the notice, status 1 and a word for the log; the
 // lock lifts the moment the answer does.
 func TestLockedSessionRunsOnlyTheLockWords(t *testing.T) {
+	t.Parallel()
 	locked := true
 	var ran, refused []string
 	var out, errb strings.Builder
@@ -111,6 +112,7 @@ func TestLockedSessionRunsOnlyTheLockWords(t *testing.T) {
 
 // A batch of lines in a locked session stops at the first refusal.
 func TestLockedBatchStopsAtTheFirstRefusal(t *testing.T) {
+	t.Parallel()
 	locked := true
 	var ran, refused []string
 	o := lockOptions(&locked, &ran, &refused)
@@ -137,6 +139,7 @@ func TestLockedBatchStopsAtTheFirstRefusal(t *testing.T) {
 // completer offers, not help, history or system-shell, and a typed 'help'
 // is refused; once the lock lifts the lists are whole again.
 func TestInProcessLockedLists(t *testing.T) {
+	t.Parallel()
 	locked := true
 	var ran, refused []string
 	o := lockOptions(&locked, &ran, &refused)
@@ -176,6 +179,7 @@ func TestInProcessLockedLists(t *testing.T) {
 // Opening runs before the first prompt: ended, the session has no prompt and
 // ends with its status (EndLocked); not ended, the prompt follows.
 func TestOpeningEndsOrOpensTheSession(t *testing.T) {
+	t.Parallel()
 	for _, end := range []bool{true, false} {
 		opened := make(chan struct{}, 1)
 		o := Options{Prompt: "host> ", Exec: func(context.Context, []string, io.Reader) int { return 0 },
@@ -196,8 +200,8 @@ func TestOpeningEndsOrOpensTheSession(t *testing.T) {
 			if r, _ := p.sh.End(); r != EndLocked {
 				t.Errorf("reason %q", r)
 			}
-			if strings.Contains(string(p.buf), "host> ") {
-				t.Errorf("a prompt after an ended opening: %q", p.buf)
+			if out := p.output(); strings.Contains(out, "host> ") {
+				t.Errorf("a prompt after an ended opening: %q", out)
 			}
 			continue
 		}
@@ -213,6 +217,7 @@ func TestOpeningEndsOrOpensTheSession(t *testing.T) {
 // after the dialog failed, say) is not recorded in the history file; the
 // lines of the unlocked session are. -c is held to it too.
 func TestLockedSessionRecordsNothingInTheHistory(t *testing.T) {
+	t.Parallel()
 	path := t.TempDir() + "/history"
 	locked := true
 	var ran, refused []string
@@ -257,6 +262,7 @@ func TestLockedSessionRecordsNothingInTheHistory(t *testing.T) {
 // the session as an idle one, with the context of the opening cancelled; an
 // opening that finishes in time is unaffected.
 func TestOpeningIsHeldToTheIdleTime(t *testing.T) {
+	t.Parallel()
 	cancelled := make(chan struct{}, 1)
 	o := Options{Prompt: "host> ", Idle: 300 * time.Millisecond, Exec: func(context.Context, []string, io.Reader) int { return 0 },
 		Opening: func(ctx context.Context) (bool, int) {
@@ -280,8 +286,8 @@ func TestOpeningIsHeldToTheIdleTime(t *testing.T) {
 	if r, _ := p.sh.End(); r != EndIdle {
 		t.Errorf("reason %q", r)
 	}
-	if strings.Contains(string(p.buf), "host> ") {
-		t.Errorf("a prompt after the idle opening: %q", p.buf)
+	if out := p.output(); strings.Contains(out, "host> ") {
+		t.Errorf("a prompt after the idle opening: %q", out)
 	}
 	// finished in time: the prompt follows
 	o.Opening = func(context.Context) (bool, int) { return false, 0 }
@@ -296,6 +302,7 @@ func TestOpeningIsHeldToTheIdleTime(t *testing.T) {
 // Relock is asked for each line the lock would refuse, not for the lines it
 // allows, and lifts the lock for the line that finds the requirement gone.
 func TestRelockLiftsTheLockForTheLineThatFindsItGone(t *testing.T) {
+	t.Parallel()
 	locked := true
 	asked := 0
 	var ran, refused []string
@@ -339,6 +346,7 @@ func TestRelockLiftsTheLockForTheLineThatFindsItGone(t *testing.T) {
 // Ctrl-R search find no earlier line (they are the account's, and 'history'
 // is refused as well); once the lock lifts, they recall again.
 func TestLockedSessionRecallsNothingFromTheHistory(t *testing.T) {
+	t.Parallel()
 	path := t.TempDir() + "/history"
 	if err := os.WriteFile(path, []byte("user show alice\n"), 0o600); err != nil {
 		t.Fatal(err)

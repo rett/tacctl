@@ -3,6 +3,332 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.24 (2026-11-05)
+
+1. **`tacctl man` finds each entry on groff 1.24.** groff 1.24 narrowed the
+   default body margin of the man macros from 7 to 5 columns and sets the text
+   of a six-character tag on the line below it, so the search that puts the
+   pager on an entry (`tacctl man device add`) found no line and the pager
+   stayed at the top of the page. The page now sets its own margin
+   (`.nr BP 7n`, the one every earlier groff drew), and the search for a tag
+   of six characters (`status`) no longer includes the first word of its text.
+   Three runs of unbreakable words (the `secret-read` line, the SNMP setting
+   names and the options `device ssh` adds for a `legacy-ssh` device) are set
+   unjustified, so the page is silent under `groff -k -ww` on 1.24.
+
+2. **tacquito is built from the project's fork, `rett/tacquito`.** `tacctl
+   install` clones `https://github.com/rett/tacquito.git` instead of
+   upstream; the fork's `main` follows upstream only by reviewed merges
+   (`patches/README.md`, Following upstream), so a host no longer builds
+   whatever upstream pushed last. The patch overlay stays in `patches/`. A
+   checkout cloned from upstream by an earlier release is pointed at the fork
+   the next time `install` or `upgrade` pulls it (`Tacquito source now pulls
+   from ...`); an origin set by hand is left alone, and a failure to repoint
+   is a warning, the checkout still pulling from upstream.
+
+3. **CI runs `make lint`, and the man page margin is pinned by a test.** For
+   developers: a `lint` job of the `test` workflow runs `make lint` on Ubuntu
+   24.04 (its shellcheck and groff 1.23, golangci-lint at the version the
+   Makefile pins), so a lint failure no longer waits for a maintainer's
+   machine; `TestManPageSetsTheBodyMargin` fails when `man/tacctl.1` loses its
+   `.nr BP 7n` line, which the pager search of `tacctl man` relies on, and the
+   pre-push hook (`make hooks`) also runs `no-short-yes.sh` and
+   `no-os-tempdir.sh`. `make lint` and the man search tests must pass on both
+   the CI tools and newer ones (`tests/README.md`). The Go test jobs install
+   the tools that tests skip without (`shellcheck`, `groff`, `less`, `man-db`,
+   `openssh-server`), so those tests can run in CI instead of skipping, and
+   the last line of `make gate-go` and `make gate-ci` carries `skipped=<n>`
+   (the `--- SKIP` lines of the run) with the first 20 names of the skipped
+   tests listed above it, so a skip no longer passes unseen. Their Go build
+   cache moved from `$TMPDIR` (often a tmpfs, which a day of runs could fill)
+   to `~/.cache/tacctl/gate-go-build`; the old
+   `/tmp/tacctl-gate-go-cache-<uid>` can be deleted.
+
+4. **`tacctl rollback 0.2.23`, the release before this one, is a target.**
+   This release changed no stored file, so 0.2.23 reads everything it writes:
+   the rollback converts no file, removes no key but `breakglass.firewall`
+   (item 11; a snapshot is taken when it is set), and needs no `--yes`. It puts back 0.2.23's per-tier sudoers drop-in, without the
+   operator's `log failures *` (item 9), when the file is exactly this
+   release's text (the dry run shows the step, `--apply` writes it after
+   `visudo -cf`; a file tacctl did not write is left), and every older target
+   that rewrites the per-tier drop-in recognises this release's text and
+   0.2.23's as tacctl's own and puts back its own (the others leave the file
+   to their own upgrade). The users' email addresses, the SNMPv3 users and the
+   covered staging entries, which every older target drops, and an emergency
+   lockdown on a scope with enrolled hosts, which every older target refuses,
+   stay. What this release changed outside the stored files is 0.2.23's to
+   undo or keep: the `upgrade --branch 0.2.23` that ends the rollback writes
+   the console's sshd drop-in from 0.2.23's text, without the block of users
+   held to a password change (item 6), so their new connections forward again
+   as their tier allows; it keeps the tacquito this release built until it
+   next rebuilds it (a new commit on the fork's `main`), so accounting records
+   keep `"Device"` and the literal `<`, `>` and `&` (item 8), which 0.2.23's
+   `log accounting` shows as they are written; and on a device whose
+   `single-connection` this release removed (item 7), 0.2.23's `device config
+   diff` and `plan` show the line as missing, and applying that plan types it
+   again. The top-level help, `docs/cli/conventions.md` and `docs/cli/user.md`
+   list 0.2.23 among the targets. The command ends with
+   `tacctl upgrade --branch 0.2.23`. A host rolled back keeps its tacquito
+   checkout pointed at the project's fork (item 2), which has the same history
+   as the upstream clone 0.2.23 made. `tacctl rollback` now takes ten targets;
+   `docs/install/upgrading.md` (Rolling back, To 0.2.23), the manual page and
+   the completion list them.
+
+5. **The tacquito pull cannot stall or build old source.** `install` (on an
+   existing checkout) and `upgrade` pulled the tacquito source with a plain
+   `git pull`, which stops when the checkout cannot be merged with the fork's
+   `main` (a rewritten history, a commit made in the clone by hand), and every
+   later `install` and `upgrade` stopped at the same place. The pull is now a
+   `git fetch` and a `git merge --ff-only`. A fetch that fails (no network) ends
+   the phase with git's exit status, as the pull did, and builds nothing from
+   the stale tracking ref. When the checkout cannot fast-forward, or is ahead of
+   the fork's `main` (a commit made in the clone, which a fast-forward leaves,
+   so that every later `upgrade` would rebuild and restart on it), it is reset
+   to the branch it tracks (`git reset --hard @{u}`) with a warning that names
+   the commit it was at and the one it is at now (`Tacquito source at ... could
+   not fast-forward; reset it to its upstream branch (was 1111111, now
+   2222222).`, or `... is ahead of its upstream branch; reset ...`). The clone
+   is only a build tree (the patches applied last time are dropped before the
+   pull and applied again after), so nothing is lost. When the reset fails, the
+   phase ends with the exit status of the step that sent it there; `upgrade`
+   then puts the previous binary back instead of leaving the `tacquito.bak`
+   copy it had made. The clone and the fetch no longer wait for an operator: git
+   asks for no user name, password or key passphrase (`GIT_TERMINAL_PROMPT=0`, a
+   failing `GIT_ASKPASS`, `SSH_ASKPASS` unset, `BatchMode=yes` for an ssh
+   remote) and drops a transfer slower than 1000 bytes a second for a minute
+   (`http.lowSpeedLimit`, `http.lowSpeedTime`). `docs/install/upgrading.md` and
+   the manual page (`TACQUITO_SRC`) say so.
+
+6. **A user who must change the password gets no port forwarded through the
+   server on a new connection, in any tier.** A forwarding (`ssh -N -L`, `-R`,
+   `-D`, `-J`) opens no session and never reaches the console that holds such
+   a user, so a user of a tier in `console forwarding tiers` (default:
+   superuser only, who is never held) kept forwarding ports with the old
+   password; the limitation was to take the tier out. sshd's drop-in for the
+   console (`/etc/ssh/sshd_config.d/tacctl-console.conf`) now begins, when
+   anyone is held, with `Match User <names>` setting `DisableForwarding yes`
+   and `AllowTcpForwarding`, `AllowStreamLocalForwarding`, `X11Forwarding`,
+   `AllowAgentForwarding`, `PermitTunnel` and `GatewayPorts` to the closed
+   value, ahead of the tier blocks (sshd keeps the first value of a keyword).
+   sshd applies a `Match` block when a connection authenticates, so a
+   connection the user has open already keeps the forwardings it had until it
+   closes; tacctl does not end it (the administrator can:
+   `loginctl terminate-user <name>`). The names are the users held now (`user
+   require-password-change`, `user add` and an administrator's `user passwd`
+   by default), sorted, only those of a Linux account, a superuser never, at
+   most 50 to a `Match User` line (more users make further blocks, all before
+   the tier blocks); with nobody held there is no block and the file is the
+   one of earlier releases. The sync of the server writes the list (the `user`
+   verbs, `host sync`, `console install`, `upgrade`; it stays as it was when
+   the store or `tacctl.yaml` cannot be read), and so do the verbs that change
+   who is held, each by itself, because a sync of the server reaches the
+   drop-in only when the server is enrolled, its checks pass and a user of the
+   scope gets the console: `user require-password-change` in every form,
+   `user add`, `user remove`, `user rename`, `user move`, an administrator's
+   `user passwd`, the user's own `passwd`, a group command that lowers a tier
+   (the one change of a group's tier that syncs the server; raising a tier
+   leaves the list as it was until the next rewrite, which only closes
+   forwarding), `store import`, `backup restore` (a snapshot or an old-style
+   backup) and `store rollback` (legacy mode holds nobody). The
+   rewrite checks the drop-in with `sshd -t`, undoes it when sshd refuses it
+   (one warning with `tacctl console install` then), and reads the users and
+   installs the file under the apply lock, so two commands that flag users at
+   the same time cannot leave one out. Any other write of the store leaves the
+   drop-in as it is until the next of those. `console check` counts the list
+   as part of the drop-in: a list that is not the users held now is drift,
+   shown with both lists, and a held user is probed with `sshd -T` like the
+   first user of each kind (`console show` expects forwarding closed for
+   them, the agent included, whatever `console agent-forwarding` says). An
+   earlier release reads the extra block without complaint; its `console
+   check` calls the file different.
+
+7. **The walkthroughs no longer set `single-connection`.** tacquito closes a
+   connection that has been idle for 15 seconds. A device with
+   `single-connection` keeps one connection open for many sessions, so after
+   the close it held a dead socket (`CLOSE_WAIT` on Junos) and a later login
+   over it failed (`Network read timed out`), and the server logged each idle
+   close as an error. `config juniper` no longer prints `set system
+   tacplus-server <address> single-connection`; `config cisco` prints no
+   `single-connection` line under `tacacs server TACACS`, and with `--legacy`
+   the host line is `tacacs-server host <address> [port <n>] timeout 5 key
+   ...` (the port, when the listener is not on 49, now follows the address).
+   A device that already has it is converged: `device config plan` and
+   `apply` delete it from tacctl's server (`delete system tacplus-server
+   <address> single-connection` on Junos, `no single-connection` under
+   `tacacs server TACACS` on IOS; the IOS 12.x host line is typed again
+   without it), and `diff` and `plan` list it as an extra on the `aaa`
+   section, no longer as the device's own setting. A Junos `single-connection`
+   that only an apply-group gives cannot be deleted at the top level: it
+   does not refuse the `aaa` section (as another inherited statement does),
+   the plan keeps it, lists it as left alone (`inherited from a group: remove
+   it from the group by hand`) and plans the other fixes. The report names
+   the leaf (`single-connection on the TACACS+ server <address>, no longer
+   rendered`), and the IOS 12.x host line has a comment of its own in the
+   paste region. The back-out of a plan says `THIS OUTPUT HOLDS THE ...` only
+   when a line of it holds a value; the back-out of a retyped server line
+   holds `<secret>` and a note to type the key, and no longer warns. A custom
+   template keeps whatever it says; a copy of `cisco.template` or
+   `cisco-legacy.template` made earlier still renders the line. Another
+   server's `single-connection` is left alone. The plan of a device that has
+   the line is not the one it was, so its shape (`device config shapes`) is a
+   new one: `device config apply --confirmed` takes it once a device of that
+   shape has been applied and confirmed again.
+
+8. **An accounting record names the device that sent it, and is readable.**
+   A record in the TACACS+ accounting log carried `RemAddr`, where the person
+   connected from, and nothing that said which device sent it, so with
+   several devices the log could not answer "which device was changed". The
+   new patch `patches/0006-acct-device-address.patch` makes both accounters
+   append `"Device"`, the address of the connection as the server saw it, to
+   the record (`unknown` when there is none); the existing fields keep their
+   names and order, so a reader of the old line still parses the new one.
+   `tacctl log accounting` shows the registered name of the device or
+   enrolled host at that address (`"Device":"sw1"`), the address when none is
+   registered (or outside the scopes of an operator, engineer or read-only
+   caller), and no device for a record written before the patch. The same
+   patch writes `<`, `>` and `&` in a record as they are: Go escaped them as
+   `\u003c`, `\u003e` and `\u0026`, so a Junos command read
+   `\u003cunconfigured\u003e -> \"test\"\u003ccr\u003e`. The line is still
+   one line of valid JSON. `log accounting` shows the values decoded, those
+   of records already in the file too, and leaves out the `<cr>` Junos
+   appends to a `cmd=` value, in the display only (the file keeps it). A host
+   rebuilds tacquito once to get the patch (`tacctl upgrade`; `tacctl
+   install` applies it); until then its records have no device and keep the
+   escapes. `log tail` and `log search` read the journal: their display is
+   not changed by this (their filters are item 9).
+
+9. **The logs can be filtered, and written as JSON.** `tacctl log tail`,
+   `search`, `failures` and `accounting` take `--since <time>` and `--until
+   <time>` (`YYYY-MM-DD[ HH:MM[:SS]]`, `now`, `today`, `yesterday`, `-1h` or
+   `2 hours ago`; any other form is a usage error), `--user <name>`,
+   `--device <name|address>` (a registered device or enrolled host the caller
+   may see, or an address in canonical form), `--type login|change|command`
+   (accounting only: a record with a Junos change-log command is a `change`,
+   one with any other command a `command`, one that starts or stops a session
+   a `login`) and `--json` (one object per line, no headings; an accounting
+   record keeps its fields, decoded, with `DeviceName` and `Time` added). The
+   filters combine, `tail -f` applies them to new entries, and a count limits
+   the output after filtering. Each log matches what it names: the journal
+   the bracketed user and the address of the device that asked, the
+   accounting logs the record's `User` and `Device`, the RADIUS auth log
+   `user=` and `client=`; a log that names no device (the FreeRADIUS daemon
+   log, a record written before patch 0006) shows nothing for `--device` and
+   says so. Without a filter the commands print what they did. The operator
+   tier's sudo rule for `log failures` now takes arguments (`log failures
+   *`), so an operator can pass the filters (and `--backend`) to it through
+   sudo as to the other three; `tacctl config sudoers tiers install` and the
+   upgrade write the new rule. `tacctl help` lists the log viewer as taking
+   filters, and a filter option typed wrongly (or `--backend` without an id)
+   is refused with the problem on one line and the usage on the next.
+
+10. **The pulls of tacctl's own clone no longer wait for an operator.**
+    Item 5 gave the clone and the fetch of the tacquito source a guard; the
+    clone in `/opt/tacctl` ran plain git, so `tacctl upgrade`, `tacctl install`
+    and `tacctl config branch` could stop at a user name, password or key
+    passphrase asked on `/dev/tty`, or wait for ever on a stalled transfer.
+    Their `git clone`, `git fetch` and `git pull` (not the local `checkout`,
+    `rev-parse` and the like) now run with git asking for nothing
+    (`GIT_TERMINAL_PROMPT=0`, a failing `GIT_ASKPASS`, `SSH_ASKPASS` unset,
+    `BatchMode=yes` for an ssh remote) and dropping a transfer slower than
+    1000 bytes a second for a minute (`http.lowSpeedLimit`,
+    `http.lowSpeedTime`), through one shared implementation (`internal/gitx`).
+    A `GIT_SSH_COMMAND` of the operator's is replaced, as for the tacquito
+    pull; the `core.sshCommand` of the clone is honoured, with `BatchMode=yes`
+    after it (for a clone not made yet, git's global and system configuration
+    is read, not the repository the operator stands in). A remote that needs a
+    password now fails where it used to ask:
+    `git fetch failed. Check network / credentials.` for the upgrade (or, when
+    the upgrade has to make the clone, the warning
+    `Failed to clone management repo.`, and it goes on), the exit
+    status of `git clone` for an install (a failed pull of an existing clone is
+    still not an error, as before), and the unchanged messages of
+    `config branch`; use a key, the agent or a credential helper. An ssh remote
+    whose host key is not in `known_hosts` now fails too, where ssh used to ask
+    whether to trust it (`BatchMode=yes`): an ssh remote needs a key, the
+    agent or a credential helper, and its host key in `known_hosts` (unless
+    ssh's own configuration sets `StrictHostKeyChecking accept-new`). An
+    operator's `GIT_SSH` is replaced as well, and a `core.sshCommand` that is
+    not OpenSSH's `ssh` (one that refuses `-o`) fails. The manual
+    page (`upgrade`, `install`, `config branch`, `TACQUITO_SRC`),
+    `docs/install/upgrading.md` and `docs/cli/config.md` say so. The clone of
+    `pam_tacplus` that `tacctl config linux build` makes (also when the
+    upgrade makes it) is guarded the same way (`docs/hosts/README.md`, manual
+    page).
+
+11. **A held address no longer sees a server that answers.** `tacctl
+    breakglass hold` took the address out of every scope's prefixes, which
+    silences RADIUS (UDP): FreeRADIUS ignores the device and it times out. But
+    tacquito listens on TCP: the kernel completed the handshake, tacquito
+    accepted, found no secret for the address and closed the connection. A
+    device whose fallback to its local accounts needs the server to be
+    unreachable (a WTI unit with `Fallback Local: On (Transport Failure)`, a
+    Junos switch with `authentication-order [ tacplus password ]`) saw a
+    reachable server and never fell back. tacctl now owns one nftables table,
+    `inet tacctl` (nothing else of the host's ruleset is read, flushed or
+    touched): two sets of held addresses (IPv4, IPv6) and one input-hook chain
+    at priority -10, policy accept, whose rules match a source address in a set
+    and a TCP destination port of a tacquito listener (every listener) and
+    either `reject with tcp reset` or `drop`. There is no connection-state
+    match, so a session that is open from the address is cut too. Devices and
+    Linux hosts are held alike; the RADIUS ports are not matched.
+    `tacctl config breakglass-firewall reject|drop|off` (superuser; the new key
+    `breakglass.firewall` of `tacctl.yaml`, `reject` by default) chooses the
+    verdict, and `off` loads no table (the 0.2.23 behaviour); a change is
+    applied at once and the command says what it did. tacctl writes the whole
+    table to `/etc/tacctl/breakglass-firewall.nft` (it starts with `table inet
+    tacctl` and `delete table inet tacctl`, so `nft -f` replaces it in one
+    step; empty sets when nothing is held) and loads it at the point the
+    backends restart, on every hold, release, `device address` move of a held
+    device, rename of a held device or host, every `backup restore` (it loads
+    the holds and the setting the snapshot brought back, changed or not),
+    `server listen` change and change of the setting. The report of a
+    hold has a line `Firewall: <address> refused on tcp/49 (reject)` (or
+    `drop`, or `off: the server still completes the TCP handshake ...`), the
+    report of a release the reverse, and the `auth.info` lines of hold,
+    release and hold-move end `firewall=reject|drop|off|failed`. When `nft` is
+    missing or fails the hold still stands (the record, the rendering and the
+    restarts are as before), the report says in red that the server still
+    completes the TCP handshake on the port(s) for the address, so a device
+    that falls back only when the server is unreachable will not, it names the
+    fix (`sudo apt-get install nftables`, then `tacctl config
+    breakglass-firewall <the current setting>`, which loads the table even when
+    the setting is unchanged) and the command exits 1; a release that cannot
+    load the table says the address may still be refused and exits 1 the same
+    way, and so does `config breakglass-firewall` (with the real reason, also
+    with nothing held). Where the table would refuse nothing (the setting
+    `off`, nothing held, no TACACS+ listener on a TCP port) a missing `nft` is
+    no failure: no table is loaded, nothing is red and the exit status is 0
+    (the setting command, a release of the last hold, `backup restore`,
+    `device rename --replace`, `server listen` and a second `upgrade` are as
+    quiet, and no rules file is written); only a host where a table was
+    loaded before (the boot unit is the sign, and `off` removes it) and
+    nftables was removed since is red, because the table may still refuse
+    released addresses. A boot unit that cannot be enabled is a yellow line,
+    not a failure. `status`, `config validate` and `breakglass list` (the superuser's)
+    compare the live table (`nft -j list table inet tacctl`) with the holds and
+    the setting and name each difference with the command that fixes it (a
+    table that differs is a `config validate` error, section
+    `breakglass_firewall`; a table that cannot be read, or the setting `off`,
+    is said and is no finding); `breakglass list --json` rows have `firewall`.
+    `install` and `upgrade` install the `nftables` package like FreeRADIUS's
+    (a failed install retries after `apt-get update`; a package that cannot be
+    had is a warning), write and enable the oneshot unit
+    `tacctl-breakglass-firewall.service` that loads the file at boot before the
+    network and tacquito, and load the table: an upgrade from 0.2.23 with holds
+    standing gives those holds the fix. `nftables.service` is never enabled or
+    touched. Every `tacctl rollback` target removes the setting (older
+    releases refuse the key), the table, the rules file and the boot unit,
+    leaves the package, and says so; a hold that stands stays, without the
+    firewall, as in 0.2.23; until the older release is installed no verb that
+    changes the holds, their names, the listeners or the setting may be run
+    (each writes the table again), and a downgrade with `upgrade --branch`
+    without the rollback leaves a table the older release never updates: the
+    manual page and `docs/install/upgrading.md` give the four commands that
+    remove it by hand. `uninstall` removes the same three. The manual
+    page, `docs/devices/break-glass.md` (The firewall), `docs/cli/config.md`,
+    `docs/cli/tunables.md`, `docs/install/installing.md`,
+    `docs/install/upgrading.md` and `docs/security/audit.md` describe it.
+
 ## 0.2.23 (2026-10-31)
 
 1. **`tacctl rollback 0.2.22`, the release before this one, is a target.**

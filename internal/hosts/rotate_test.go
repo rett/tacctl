@@ -211,7 +211,7 @@ func TestProveLoginChecksThePinnedKeys(t *testing.T) {
 	f := &fake.Runner{}
 	e.Runner = f
 	f.On([]string{"ssh"}, execx.Result{Stdout: []byte(proofMarker + "0\n" + proofKeys)})
-	l := Login{Target: "deploy2@web1.example.net", Identity: "/k", Auth: AuthKey, KnownHosts: "/tmp/x/known_hosts", HostKeyAlias: "web1"}
+	l := Login{Target: "deploy2@web1.example.net", Identity: "/k", Auth: AuthKey, KnownHosts: "/tmp/x/known_hosts", HostKeyAlias: "web1"} // shared-proc-ok: a path the fake ssh is told, no file is made
 	if p := e.ProveLogin(context.Background(), l); !p.Connected {
 		t.Fatalf("proof %+v", p)
 	}

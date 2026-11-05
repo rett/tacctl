@@ -5,11 +5,32 @@
 # machines (tests/README.md).
 # The tag 0.2.2 is fetched (fetch-tags): two tests build or read it and skip
 # without it. The tests of internal/cli run in parallel inside a process
-# (about six minutes on eight cores); two shards
+# (about six minutes on eight cores; -parallel 16, which go-test-shard.sh
+# passes, because they mostly wait on timers and pseudo-terminals); two shards
 # (tests/tools/go-test-shard.sh) keep a four-core runner short, the ones
 # without tags with the race detector. Every other package is one job.
 # Each runs twice, as 'make test-go' does: without tags and with the test
 # knobs.
+# The Go build and module caches (~/.cache/go-build, ~/go/pkg/mod) are kept
+# between runs with actions/cache, not with setup-go's own cache: that one has
+# one key per go.sum, so the race, testknobs and plain builds of the matrix
+# would save one cache between them and the others would find it without their
+# objects. Here each job (static, lint, the other packages and the cli shards,
+# each with its race or tags mode) has a key of its own, with the Go version
+# and the hash of go.sum, so no build evicts another's. A change of go.sum
+# starts a new cache, restored from the last one of the mode (restore-keys);
+# the packages of this repository are rebuilt each run, what is kept is the
+# standard library (with -race it is the long part) and the modules.
+# Tests that drive a tool skip where it is missing, and a skip is silent in a
+# green run, so the two test jobs install the tools those tests look for:
+# shellcheck, groff, less and man-db (the completion block, the man page's
+# search and the pager under a pty; internal/cli) and openssh-server with
+# openssh-client (sshd -T on the drop-ins; internal/console).
+# The lint job runs 'make lint' itself (shellcheck, gofmt, go vet,
+# golangci-lint at the version the Makefile pins, the man page tests and
+# groff, the private-name, temp-dir, logger, short-yes and doc-width checks),
+# with the shellcheck and groff of Ubuntu 24.04 (groff 1.23); a development
+# machine may have newer ones, and both must pass (tests/README.md).
 name: test
 
 on:
@@ -46,6 +67,15 @@ jobs:
           go-version: ${{ steps.go.outputs.version }}
           check-latest: false
           cache: false
+      - name: Go build and module caches
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ steps.go.outputs.version }}-static-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ steps.go.outputs.version }}-static-
       - name: gofmt
         run: test -z "$(gofmt -l cmd internal)"
       - name: go vet
@@ -54,6 +84,53 @@ jobs:
           go vet -tags testknobs ./...
       - name: The shards hold every test of internal/cli once
         run: tests/tools/go-test-shard.sh --check 2
+
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Go
+        id: go
+        run: |
+          v=$(sed -n 's/^GO_VERSION="\([0-9.]*\)"$/\1/p' bin/tacctl.sh)
+          [ -n "$v" ] || { echo "no GO_VERSION in bin/tacctl.sh" >&2; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ steps.go.outputs.version }}
+          check-latest: false
+          cache: false
+      - name: Go build and module caches
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ steps.go.outputs.version }}-lint-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ steps.go.outputs.version }}-lint-
+      - name: Link it as /usr/local/go
+        run: |
+          sudo rm -rf /usr/local/go
+          sudo ln -s "$(go env GOROOT)" /usr/local/go
+      - name: shellcheck, groff, less and man-db
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck groff less man-db
+      - name: golangci-lint, at the version the Makefile pins
+        run: |
+          v=$(sed -n 's/^GOLANGCI_LINT_VERSION := \(v[0-9.]*\)$/\1/p' Makefile)
+          [ -n "$v" ] || { echo "no GOLANGCI_LINT_VERSION in Makefile" >&2; exit 1; }
+          GOBIN="$HOME/.local/bin" go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$v"
+      - name: make lint
+        env:
+          LANG: C.UTF-8
+        run: make lint GOLANGCI_LINT="$HOME/.local/bin/golangci-lint"
 
   other-packages:
     runs-on: ubuntu-24.04
@@ -79,10 +156,23 @@ jobs:
           go-version: ${{ steps.go.outputs.version }}
           check-latest: false
           cache: false
+      - name: Go build and module caches
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ steps.go.outputs.version }}-other-${{ matrix.tags == '' && 'race' || format('race-{0}', matrix.tags) }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ steps.go.outputs.version }}-other-${{ matrix.tags == '' && 'race' || format('race-{0}', matrix.tags) }}-
       - name: Link it as /usr/local/go
         run: |
           sudo rm -rf /usr/local/go
           sudo ln -s "$(go env GOROOT)" /usr/local/go
+      - name: sshd and ssh-keygen, which tests of internal/console skip without
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends openssh-server openssh-client
       - name: Tests (everything but internal/cli), with the race detector
         env:
           CGO_ENABLED: "1"
@@ -117,10 +207,23 @@ jobs:
           go-version: ${{ steps.go.outputs.version }}
           check-latest: false
           cache: false
+      - name: Go build and module caches
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ steps.go.outputs.version }}-cli-${{ matrix.tags == '' && 'race' || matrix.tags }}-${{ matrix.shard }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ steps.go.outputs.version }}-cli-${{ matrix.tags == '' && 'race' || matrix.tags }}-${{ matrix.shard }}-
       - name: Link it as /usr/local/go
         run: |
           sudo rm -rf /usr/local/go
           sudo ln -s "$(go env GOROOT)" /usr/local/go
+      - name: shellcheck, groff, less and man-db, which tests of internal/cli skip without
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck groff less man-db
       - name: internal/cli, shard ${{ matrix.shard }} of 2
         env:
           LANG: C.UTF-8

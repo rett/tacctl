@@ -37,6 +37,11 @@ type hooks struct {
 	// deviceDial replaces the TCP dial of every device (the in-process fake
 	// device); nil dials the device's own address.
 	deviceDial devssh.Dialer
+	// deviceQuiet replaces devssh's quiet period (the wait for a device's
+	// output to stop after each prompt) in every device session (0: the
+	// devssh default, which tacctl itself always uses): the in-process fake
+	// device has nothing more to say, so the default is dead time.
+	deviceQuiet time.Duration
 	// devicePasswords is the source of the invocation's device password.
 	devicePasswords func(inv *invocation) devicePasswords
 	// localPasswords is the source of a local account's password.
@@ -45,6 +50,15 @@ type hooks struct {
 	passwordTTY func() (*os.File, func())
 	// passwordPrompt reads a line from a terminal without echo.
 	passwordPrompt func(tty *os.File, prompt string) ([]byte, error)
+	// backendStartWait replaces the wait between a backend's start and the
+	// question whether it is active (0: startWait, 2 seconds), which a
+	// fake backend has no use for.
+	backendStartWait time.Duration
+	// timeoutSecond is the length of the second a typed --timeout of a pull
+	// counts in (0: time.Second): --timeout 10 stays the lowest value the
+	// verb accepts, and a test that waits it out sets 100 ms to wait one
+	// real second instead of ten.
+	timeoutSecond time.Duration
 	// factsTimeout bounds the fact commands of a pull (0: 15 seconds).
 	factsTimeout time.Duration
 	// keyFallback is the host-key read with the built-in client, for a
@@ -197,6 +211,23 @@ func (h *hooks) prompt(tty *os.File, prompt string) ([]byte, error) {
 		return h.passwordPrompt(tty, prompt)
 	}
 	return askpass.Prompt(tty, prompt)
+}
+
+// startWait is the wait between a backend's start and the question whether
+// it came up.
+func (h *hooks) startWait() time.Duration {
+	if h != nil && h.backendStartWait > 0 {
+		return h.backendStartWait
+	}
+	return startWait
+}
+
+// typedTimeout is a --timeout of n seconds.
+func (h *hooks) typedTimeout(n int) time.Duration {
+	if h != nil && h.timeoutSecond > 0 {
+		return time.Duration(n) * h.timeoutSecond
+	}
+	return time.Duration(n) * time.Second
 }
 
 // factsLimit bounds the fact commands of a pull (all of them together): a

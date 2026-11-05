@@ -25,6 +25,7 @@ privilege exec all level 7 ping
 privilege exec all level 7 traceroute
 privilege exec level 7 monitor
 no aaa authentication login CONSOLE local
+! (type again with its original secret: tacacs-server host 192.0.2.10 single-connection timeout 5 key <secret>)
 end
 !!!!! BACK-OUT TO HERE: dev-cisco-real-12-4-7200 !!!!!
 !

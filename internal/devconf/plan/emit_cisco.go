@@ -168,17 +168,24 @@ func iosRegion(d Delta) []RegionLine {
 	var c iosCursor
 	for i, l := range d.Lines {
 		sec := l.Section
+		retired := retypedHostLine(l)
 		switch {
 		case l.Late:
 			sec = "late"
 		case l.Leaf:
 			sec = "leaf"
+		case retired:
+			// its own comment: the line is not what the section's first
+			// reason says
+			sec = "retired-host"
 		}
 		if sec != cur {
 			cur = sec
 			c = iosCursor{}
 			label := ""
 			switch {
+			case retired:
+				label = "! " + l.Section + ": the TACACS+ server line, typed again without single-connection (the standard no longer renders it)"
 			case l.Late:
 				label = "! aaa: command authorization, last on purpose"
 			case l.Leaf:
@@ -201,6 +208,19 @@ func iosRegion(d Delta) []RegionLine {
 	}
 	out = append(out, RegionLine{Text: "end", Wrapper: true, Line: -1})
 	return out
+}
+
+// retypedHostLine reports a 'tacacs-server host' line that answers a device's
+// line with 'single-connection': the line is typed again without it.
+func retypedHostLine(l Line) bool {
+	if l.Op != OpLine || len(l.Context) > 0 || !strings.HasPrefix(l.Text, "tacacs-server host ") ||
+		slices.Contains(strings.Fields(l.Text), "single-connection") {
+		return false
+	}
+	return slices.ContainsFunc(l.For, func(s string) bool {
+		f := strings.Fields(s)
+		return len(f) >= 3 && f[0] == "tacacs-server" && f[1] == "host" && slices.Contains(f, "single-connection")
+	})
 }
 
 // iosBackoutRegion is the back-out as a region: 'configure terminal', the

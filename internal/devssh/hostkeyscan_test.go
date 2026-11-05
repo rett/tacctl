@@ -37,6 +37,7 @@ func scanArgs(t *testing.T, srv *fakedev.Server) (string, int) {
 // An old device (SHA-1 rsa host key, group1 key exchange, CBC ciphers only)
 // is read, and no password is sent.
 func TestScanHostKeysLegacyDevice(t *testing.T) {
+	t.Parallel()
 	srv := serve(t, transcript(t, nil), fakedev.WithLegacy())
 	host, port := scanArgs(t, srv)
 	keys, err := devssh.ScanHostKeys(bg(), host, port, 5*time.Second, nil)
@@ -53,6 +54,7 @@ func TestScanHostKeysLegacyDevice(t *testing.T) {
 
 // A device that needs none of the legacy algorithms is read as well.
 func TestScanHostKeysModernDevice(t *testing.T) {
+	t.Parallel()
 	srv := serve(t, transcript(t, nil))
 	host, port := scanArgs(t, srv)
 	keys, err := devssh.ScanHostKeys(bg(), host, port, 0, nil)
@@ -70,6 +72,7 @@ func TestScanHostKeysModernDevice(t *testing.T) {
 // A device that holds several key types shows them all, in the order
 // ed25519, ecdsa, rsa.
 func TestScanHostKeysSeveralTypes(t *testing.T) {
+	t.Parallel()
 	ec, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -104,6 +107,7 @@ func TestScanHostKeysSeveralTypes(t *testing.T) {
 }
 
 func TestScanHostKeysUnreachable(t *testing.T) {
+	t.Parallel()
 	var dials int
 	refuse := func(context.Context, string, string) (net.Conn, error) {
 		dials++
@@ -120,6 +124,7 @@ func TestScanHostKeysUnreachable(t *testing.T) {
 
 // A device that accepts and says nothing is a timeout, not a hang.
 func TestScanHostKeysTimeout(t *testing.T) {
+	t.Parallel()
 	srv := serve(t, transcript(t, nil), fakedev.WithHang(fakedev.HangAccept))
 	host, port := scanArgs(t, srv)
 	start := time.Now()
@@ -134,6 +139,7 @@ func TestScanHostKeysTimeout(t *testing.T) {
 
 // A device that is not an ssh server at all is a handshake failure.
 func TestScanHostKeysNotSSH(t *testing.T) {
+	t.Parallel()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -158,6 +164,7 @@ func TestScanHostKeysNotSSH(t *testing.T) {
 }
 
 func TestScanHostKeysContextCancel(t *testing.T) {
+	t.Parallel()
 	srv := serve(t, transcript(t, nil), fakedev.WithHang(fakedev.HangAccept))
 	host, port := scanArgs(t, srv)
 	ctx, cancel := context.WithCancel(bg())
@@ -231,6 +238,7 @@ func (p *pickyDial) offers() []int {
 // lists of Dial plus every host key algorithm) is read with short offers: ed25519
 // alone first, with the library's default algorithms.
 func TestScanHostKeysShortOfferFirst(t *testing.T) {
+	t.Parallel()
 	scan := func(srv *fakedev.Server, limit int) ([]string, []int, error) {
 		p := &pickyDial{srv: srv, limit: limit}
 		host, port := scanArgs(t, srv)
@@ -305,6 +313,8 @@ func blockingDial(dials *int) devssh.Dialer {
 // A connect budget gives up on an address nobody answers at after the budget,
 // not after the whole timeout; ScanHostKeys without it waits the timeout.
 func TestScanHostKeysConnectBudget(t *testing.T) {
+	// Serial on purpose: it measures the connect budget (200 ms) and the whole
+	// timeout (600 ms) against the clock: load would break the margins.
 	var dials int
 	start := time.Now()
 	_, err := devssh.ScanHostKeysTiming(bg(), "192.0.2.1", 0, devssh.ScanTiming{Connect: 200 * time.Millisecond, Handshake: 5 * time.Second}, true, blockingDial(&dials))
@@ -358,6 +368,9 @@ func TestScanHostKeysConnectBudget(t *testing.T) {
 // to the dialer that never connects, which is given up on within the connect
 // budget.
 func TestScanHostKeysConnectBudgetSlowGreeter(t *testing.T) {
+	// Serial on purpose: a connect must finish in the budget of 200 ms and the
+	// greeting after 600 ms be read within the handshake budget: load would
+	// break the margins.
 	srv := serve(t, transcript(t, nil))
 	host, port := scanArgs(t, srv)
 	slow := func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -394,6 +407,7 @@ func (c *lateConn) Read(p []byte) (int, error) {
 // floor) and is shorter than the handshake budget; the other timings are the
 // values the scans have always had; zero fields of a ScanTiming are those.
 func TestDefaultScanTiming(t *testing.T) {
+	t.Parallel()
 	d := devssh.DefaultScanTiming()
 	if d.Connect < 3*time.Second || d.Connect >= d.Handshake {
 		t.Errorf("Connect %v, Handshake %v", d.Connect, d.Handshake)

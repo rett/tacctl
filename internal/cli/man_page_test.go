@@ -29,6 +29,34 @@ func shippedTopics(t *testing.T) []manTopic {
 	return topics
 }
 
+// TestManPageSetsTheBodyMargin pins the `.nr BP 7n` line of man/tacctl.1
+// between .TH and the first .SH. groff 1.24 narrowed the default body margin
+// of the man macros from 7n to 5n, and the pager search of `tacctl man`
+// assumes 7 (manTagColumn, manTagSameLine): without the line a tag of six
+// characters is set on a different line and the search misses its entry. The
+// page is the same under groff 1.23 (the CI runner's) and 1.24.
+func TestManPageSetsTheBodyMargin(t *testing.T) {
+	th, sh, bp := -1, -1, -1
+	for i, line := range strings.Split(string(assets.ManPage()), "\n") {
+		switch {
+		case th < 0 && strings.HasPrefix(line, ".TH "):
+			th = i
+		case sh < 0 && strings.HasPrefix(line, ".SH "):
+			sh = i
+		case bp < 0 && strings.TrimSpace(line) == ".nr BP 7n":
+			bp = i
+		}
+	}
+	switch {
+	case th < 0 || sh < 0:
+		t.Fatalf("the page has no .TH (line %d) or no .SH (line %d)", th+1, sh+1)
+	case bp < 0:
+		t.Fatalf("man/tacctl.1 does not set the body margin: add `.nr BP 7n` after .TH (groff 1.24 defaults to 5n, the search of `tacctl man` assumes %d)", manTagColumn)
+	case bp < th || bp > sh:
+		t.Errorf("`.nr BP 7n` is on line %d, it must follow .TH (line %d) and precede the first .SH (line %d)", bp+1, th+1, sh+1)
+	}
+}
+
 func TestManTopicsReadHeadingsAndTags(t *testing.T) {
 	src := []byte(`.TH TACCTL 1
 .SH TIERS
@@ -135,9 +163,14 @@ func TestManSearchPattern(t *testing.T) {
 		{manTopic{text: "a.b*c^d$e\\f[g]h(i)j+k?l{m}n'o\"p;q"}, `^ *a\.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p.q`},
 		{manTopic{text: "scope.default"}, `^ *scope\.default`},
 		{manTopic{text: "scope.default", indent: 7}, `^       scope\.default`},
-		{manTopic{text: "status", indent: 7, lead: "Show"}, `^       status  *Show`},
+		// A tag of manTagSameLine-1 characters or fewer has its text on its line
+		// on every groff; one of manTagSameLine has it on the next line on groff
+		// 1.24 and on the same line before, so it is searched for alone.
+		{manTopic{text: "stat", indent: 7, lead: "Show"}, `^       stat  *Show`},
+		{manTopic{text: "state", indent: 7, lead: "Show"}, `^       state  *Show`},
+		{manTopic{text: "status", indent: 7, lead: "Show"}, `^       status`},
 		{manTopic{text: "mode", indent: 14}, `^              mode`},
-		{manTopic{text: "tacacs", indent: 7, lead: "TACACS+,"}, `^       tacacs  *TACACS.,`},
+		{manTopic{text: "tacacs", indent: 7, lead: "TACACS+,"}, `^       tacacs`},
 	} {
 		if got := c.topic.searchPattern(); got != c.want {
 			t.Errorf("%q: %q, want %q", c.topic.text, got, c.want)
@@ -258,7 +291,7 @@ func renderPage(t *testing.T, groff, dir string, src []byte, width int) string {
 		t.Fatal(err)
 	}
 	res, err := execx.Real{}.Run(context.Background(), execx.Cmd{Name: groff,
-		Args: []string{"-man", "-Tutf8", "-rLL=" + strconv.Itoa(width) + "n", page},
+		Args: []string{"-man", "-Tutf8", "-rHY=0", "-rLL=" + strconv.Itoa(width) + "n", page},
 		Env:  []string{"PATH=/usr/bin:/bin", "LC_ALL=C.UTF-8"}})
 	if err != nil || res.Code != 0 {
 		t.Fatalf("groff: %v: %s", err, res.Stderr)
@@ -347,51 +380,71 @@ func TestManSearchLandsOnEachEntry(t *testing.T) {
 	if err != nil {
 		t.Skip("less is not installed: the search of the page cannot be checked in a pager")
 	}
+	// The test sets nothing in this process (no environment, no working
+	// directory, no registry): it runs side by side with the others, and its
+	// widths side by side with one another (each has files of its own in dir,
+	// named after the width).
+	parallel(t)
 	dir := t.TempDir()
 	topics := shippedTopics(t)
 	reach := reachableTopics(topics)
 	if len(reach) < 250 {
 		t.Fatalf("%d topics are reachable", len(reach))
 	}
+	// At most eight pagers at a time, whatever the number of widths: they
+	// are CPU-bound, and the other tests of the process run beside them.
+	pagers := make(chan struct{}, 8)
 	for _, width := range []int{80, 100, 140, 200} {
-		rendering := renderPage(t, groff, dir, assets.ManPage(), width)
-		plain, marked := unstyled(rendering), unstyled(renderPage(t, groff, dir, markedPage(assets.ManPage()), width))
-		if len(plain) != len(marked) {
-			t.Fatalf("width %d: the marked page has %d lines, the page %d: groff lays it out differently, so the entries cannot be told apart", width, len(marked), len(plain))
-		}
-		at, same := entryLines(plain, marked)
-		if !same || len(at) != len(topics) {
-			t.Fatalf("width %d: the marked page is laid out differently (%d entries marked for %d topics)", width, len(at), len(topics))
-		}
-		file := filepath.Join(dir, "rendered."+strconv.Itoa(width))
-		if err := os.WriteFile(file, []byte(rendering), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		work := make(chan int)
-		var wg sync.WaitGroup
-		for range 8 {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for i := range work {
-					e := topics[i]
-					got, err := firstLineShown(less, file, width, e.searchArgs())
-					switch {
-					case err != nil:
-						t.Errorf("width %d: %q (man %s): searches %q: %v", width, e.text, strings.Join(reach[i], " "), e.searchArgs(), err)
-					case got != at[i]+1:
-						t.Errorf("width %d: %q (man %s): searches %q show line %d (%q) first, the entry is on line %d (%q)", width, e.text,
-							strings.Join(reach[i], " "), e.searchArgs(), got, strings.TrimSpace(plain[got-1]), at[i]+1, strings.TrimSpace(plain[at[i]]))
-					}
-				}
-			}()
-		}
-		for i := range topics {
-			if _, ok := reach[i]; ok {
-				work <- i
-			}
-		}
-		close(work)
-		wg.Wait()
+		t.Run("width "+strconv.Itoa(width), func(t *testing.T) {
+			t.Parallel()
+			manSearchLandsAtWidth(t, groff, less, dir, topics, reach, width, pagers)
+		})
 	}
+}
+
+// manSearchLandsAtWidth is TestManSearchLandsOnEachEntry at one width; a
+// pager runs only while it holds a place in pagers.
+func manSearchLandsAtWidth(t *testing.T, groff, less, dir string, topics []manTopic, reach map[int][]string, width int, pagers chan struct{}) {
+	t.Helper()
+	rendering := renderPage(t, groff, dir, assets.ManPage(), width)
+	plain, marked := unstyled(rendering), unstyled(renderPage(t, groff, dir, markedPage(assets.ManPage()), width))
+	if len(plain) != len(marked) {
+		t.Fatalf("width %d: the marked page has %d lines, the page %d: groff lays it out differently, so the entries cannot be told apart", width, len(marked), len(plain))
+	}
+	at, same := entryLines(plain, marked)
+	if !same || len(at) != len(topics) {
+		t.Fatalf("width %d: the marked page is laid out differently (%d entries marked for %d topics)", width, len(at), len(topics))
+	}
+	file := filepath.Join(dir, "rendered."+strconv.Itoa(width))
+	if err := os.WriteFile(file, []byte(rendering), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	work := make(chan int)
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range work {
+				e := topics[i]
+				pagers <- struct{}{}
+				got, err := firstLineShown(less, file, width, e.searchArgs())
+				<-pagers
+				switch {
+				case err != nil:
+					t.Errorf("width %d: %q (man %s): searches %q: %v", width, e.text, strings.Join(reach[i], " "), e.searchArgs(), err)
+				case got != at[i]+1:
+					t.Errorf("width %d: %q (man %s): searches %q show line %d (%q) first, the entry is on line %d (%q)", width, e.text,
+						strings.Join(reach[i], " "), e.searchArgs(), got, strings.TrimSpace(plain[got-1]), at[i]+1, strings.TrimSpace(plain[at[i]]))
+				}
+			}
+		}()
+	}
+	for i := range topics {
+		if _, ok := reach[i]; ok {
+			work <- i
+		}
+	}
+	close(work)
+	wg.Wait()
 }

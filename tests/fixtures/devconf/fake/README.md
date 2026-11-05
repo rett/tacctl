@@ -6,7 +6,9 @@ layout `internal/devssh/fakedev/transcript.go` describes. The bats files
 (`tests/integration/device_config_*.bats`) copy one, add the read command's
 output (`<command>.out`: the configuration tacctl renders for the device,
 taken from `tacctl config <vendor>`, so the pull agrees with it, or edited to
-differ) and, with `TACCTL_TEST_DEVICE_DIAL`, point `device config pull` at it.
+differ) and, with `TACCTL_TEST_DEVICE_DIAL`, point `device config pull` at it
+(`TACCTL_TEST_DEVICE_QUIET=25ms` shortens the quiet period every device
+session waits after a prompt, dead time against this fake).
 
 - `junos/`: the prompt of a Junos CLI. Its read command is
   `show configuration | display inheritance no-comments | display set`; the

@@ -148,7 +148,7 @@ func Upgrade(ctx context.Context, h *Host, args []string) error {
 		}
 	} else if !lexists(deploy) {
 		out.Info("Cloning management repo...")
-		if h.git(ctx, "", "clone", "--quiet", paths.ManageRepo, deploy) != 0 {
+		if h.gitNet(ctx, "", "clone", "--quiet", paths.ManageRepo, deploy) != 0 {
 			out.Warn("Failed to clone management repo.")
 		}
 	}
@@ -246,6 +246,10 @@ func Upgrade(ctx context.Context, h *Host, args []string) error {
 	if err := h.upgrade(ctx, ids, backend.PhaseFinish, ""); err != nil {
 		return err
 	}
+	// The table that refuses the TCP connections of the held addresses, and
+	// the unit that loads it: an upgrade from 0.2.23 with holds standing
+	// loads it, so those holds get the fix.
+	h.firewallStep(ctx)
 	// This machine's own login: set up when this server has one already
 	// (repaired when it drifted) or the operator agrees; else one line.
 	h.ownLogin(ctx, OwnLoginOptions{})
@@ -393,7 +397,7 @@ func (h *Host) updateDeploy(ctx context.Context, ids []string, branch string) (d
 	}
 	if branch != "" {
 		// --tags --force so force-pushed tags update locally.
-		if h.git(ctx, deploy, "fetch", "--tags", "--force") != 0 {
+		if h.gitNet(ctx, deploy, "fetch", "--tags", "--force") != 0 {
 			return fetchFailed()
 		}
 		if h.gitQuiet(ctx, deploy, "checkout", branch) != 0 &&
@@ -403,7 +407,7 @@ func (h *Host) updateDeploy(ctx context.Context, ids []string, branch string) (d
 		}
 		out.Info("Switched to branch '" + branch + "'.")
 	}
-	if h.git(ctx, deploy, "fetch", "--tags", "--force") != 0 {
+	if h.gitNet(ctx, deploy, "fetch", "--tags", "--force") != 0 {
 		return fetchFailed()
 	}
 	local, _ := h.gitOut(ctx, deploy, "rev-parse", "HEAD")
@@ -415,7 +419,7 @@ func (h *Host) updateDeploy(ctx context.Context, ids []string, branch string) (d
 	switch {
 	case remote != "" && local != remote:
 		// --ff-only refuses any merge; its complaints are shown.
-		if h.git(ctx, deploy, "pull", "--ff-only") != 0 {
+		if h.gitNet(ctx, deploy, "pull", "--ff-only") != 0 {
 			out.Error("git pull failed. Common causes:")
 			out.Error("  - local commits on " + deploy + " diverging from origin")
 			out.Error("  - untracked files that would be overwritten")

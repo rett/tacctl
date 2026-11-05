@@ -27,9 +27,11 @@ import (
 	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
+	"github.com/rett/tacctl/internal/gitx"
 	"github.com/rett/tacctl/internal/lifecycle"
 	"github.com/rett/tacctl/internal/paths"
 	"github.com/rett/tacctl/internal/snapshot"
+	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -126,7 +128,7 @@ type ohost struct {
 func newOhost(t *testing.T) *ohost {
 	t.Helper()
 	w := t.TempDir()
-	o := &ohost{t: t, w: w, run: &fake.Runner{}, stdout: &bytes.Buffer{}, stderr: &bytes.Buffer{},
+	o := &ohost{t: t, w: w, run: &fake.Runner{Rewrite: gitx.Unwrap}, stdout: &bytes.Buffer{}, stderr: &bytes.Buffer{},
 		storeAt: map[string]bool{}, heldAt: map[string]int{}, commit: "c0ffee", head: "c0ffee"}
 	o.out = ui.Output{Stdout: o.stdout, Stderr: o.stderr}
 	j := func(p ...string) string { return filepath.Join(append([]string{w}, p...)...) }
@@ -296,13 +298,18 @@ func (o *ohost) dpkg(have ...string) {
 	})
 }
 
+// allDeps are every package EnsureDependencies looks for.
+func allDeps() []string {
+	return slices.Concat(lifecycle.DepsCore, lifecycle.DepsLinuxHosts, lifecycle.DepsFirewall)
+}
+
 func deps(o *ohost) int {
 	return o.do(func(ctx context.Context, h *lifecycle.Host, _ []string) error { return h.EnsureDependencies(ctx) })
 }
 
 func TestDepsNothingMissingInstallsNothing(t *testing.T) {
 	o := newOhost(t)
-	o.dpkg(append(slices.Clone(lifecycle.DepsCore), lifecycle.DepsLinuxHosts...)...)
+	o.dpkg(allDeps()...)
 	if deps(o) != 0 || !strings.Contains(o.text(), "Required packages: all present.") || o.run.Called("apt-get") {
 		t.Errorf("out %q calls %v", o.text(), o.run.Argvs())
 	}
@@ -314,7 +321,7 @@ func TestDepsNothingMissingInstallsNothing(t *testing.T) {
 
 func TestDepsInstallsOnlyWhatIsMissing(t *testing.T) {
 	o := newOhost(t)
-	have := append(slices.Clone(lifecycle.DepsCore), lifecycle.DepsLinuxHosts...)
+	have := allDeps()
 	o.dpkg(slices.DeleteFunc(have, func(p string) bool { return p == "podman" || p == "uidmap" })...)
 	if deps(o) != 0 {
 		t.Fatalf("exit: %s", o.stderr)
@@ -335,9 +342,36 @@ func TestDepsInstallsOnlyWhatIsMissing(t *testing.T) {
 	}
 }
 
+// The package of nft (0.2.24): installed with apt-get like the others, and the
+// install is tried again after 'apt-get update'; failing to get it only warns,
+// with the fix.
+func TestDepsInstallsNftables(t *testing.T) {
+	o := newOhost(t)
+	o.dpkg(slices.Concat(lifecycle.DepsCore, lifecycle.DepsLinuxHosts)...)
+	if deps(o) != 0 || !o.run.Called("apt-get", "install", "-y", "-qq", "nftables") || o.run.Count("apt-get", "install") != 1 ||
+		!strings.Contains(o.text(), "Installing the package of the break-glass firewall: nftables") {
+		t.Errorf("out %q calls %v", o.text(), o.run.Argvs())
+	}
+	// a stale index: update, then once more
+	o = newOhost(t)
+	o.dpkg(slices.Concat(lifecycle.DepsCore, lifecycle.DepsLinuxHosts)...)
+	o.run.Seq([]string{"apt-get", "install"}, execx.Result{Code: 100}, execx.Result{})
+	if deps(o) != 0 || !o.run.Called("apt-get", "update", "-qq") || o.run.Count("apt-get", "install") != 2 || strings.Contains(o.text(), "Could not install") {
+		t.Errorf("out %q calls %v", o.text(), o.run.Argvs())
+	}
+	// cannot be had: a warning that says what a hold then lacks, and the command goes on
+	o = newOhost(t)
+	o.dpkg(slices.Concat(lifecycle.DepsCore, lifecycle.DepsLinuxHosts)...)
+	o.run.On([]string{"apt-get", "install"}, execx.Result{Code: 100})
+	if code := deps(o); code != 0 || !strings.Contains(o.text(), "[WARN] Could not install: nftables. Without nft a break-glass hold cannot refuse the TCP connections") ||
+		!strings.Contains(o.text(), "sudo apt-get install nftables") {
+		t.Errorf("exit %d out %q", code, o.text())
+	}
+}
+
 func TestDepsMissingCorePackageThatCannotBeInstalledIsFatal(t *testing.T) {
 	o := newOhost(t)
-	o.dpkg(append([]string{"git"}, lifecycle.DepsLinuxHosts...)...)
+	o.dpkg(append(append([]string{"git"}, lifecycle.DepsLinuxHosts...), lifecycle.DepsFirewall...)...)
 	o.run.On([]string{"apt-get", "install"}, execx.Result{Code: 100})
 	if code := deps(o); code != 1 {
 		t.Errorf("exit %d", code)
@@ -350,7 +384,7 @@ func TestDepsMissingCorePackageThatCannotBeInstalledIsFatal(t *testing.T) {
 
 func TestDepsMissingLinuxHostPackagesOnlyWarn(t *testing.T) {
 	o := newOhost(t)
-	o.dpkg(lifecycle.DepsCore...)
+	o.dpkg(append(slices.Clone(lifecycle.DepsCore), lifecycle.DepsFirewall...)...)
 	o.run.On([]string{"apt-get", "install"}, execx.Result{Code: 100})
 	if code := deps(o); code != 0 || !strings.Contains(o.text(), "everything else works") {
 		t.Errorf("exit %d out %q", code, o.text())
@@ -361,14 +395,14 @@ func TestDepsMissingLinuxHostPackagesOnlyWarn(t *testing.T) {
 // the install goes on.
 func TestDepsWarnsWhenLoggerIsMissing(t *testing.T) {
 	o := newOhost(t)
-	o.dpkg(append(slices.Clone(lifecycle.DepsCore), lifecycle.DepsLinuxHosts...)...)
+	o.dpkg(allDeps()...)
 	o.run.Missing("logger")
 	if code := deps(o); code != 0 || strings.Count(o.text(), "[WARN] logger (package util-linux) is not installed") != 1 ||
 		!strings.Contains(o.text(), "Required packages: all present.") {
 		t.Errorf("exit %d out %q", code, o.text())
 	}
 	o = newOhost(t)
-	o.dpkg(append(slices.Clone(lifecycle.DepsCore), lifecycle.DepsLinuxHosts...)...)
+	o.dpkg(allDeps()...)
 	if deps(o) != 0 || strings.Contains(o.text(), "util-linux") {
 		t.Errorf("logger present, out %q", o.text())
 	}
@@ -408,7 +442,8 @@ func templatesSync(o *ohost) (lifecycle.TemplateSync, int) {
 // item 59: wti.template and wti-radius.template; 0.2.3 item 77: all seven,
 // for the break-glass step; 0.2.6 item 1: the three Cisco ones, for the
 // enable list; 0.2.22 item 1: cisco.template, cisco-legacy.template and
-// wti.template, for the TACACS+ port; 'sha256sum' of each). The
+// wti.template, for the TACACS+ port; 0.2.24 item 7: cisco.template and
+// cisco-legacy.template, for single-connection; 'sha256sum' of each). The
 // format is still 0.1.16's. A second sync writes nothing.
 func TestTemplatesSyncFreshAndManifestGolden(t *testing.T) {
 	o := newOhost(t)
@@ -1044,6 +1079,26 @@ func TestUpgradeRefreshesTheTiersSudoersOnlyWhenInstalledAndDifferent(t *testing
 		!strings.Contains(o2.text(), "[INFO]   Updated: tiers sudoers") {
 		t.Errorf("0.2.7 text not rewritten: %q\n%s", got, o2.text())
 	}
+
+	// What 0.2.23 wrote (without the operator's 'log failures *') is an older
+	// text too: an operator gets the log filters through sudo after the upgrade.
+	o3 := newOhost(t)
+	o3.cloned()
+	o3.run.Func(func(c execx.Cmd) bool { return c.Name == "install" }, func(c execx.Cmd) (execx.Result, error) {
+		data, err := os.ReadFile(c.Args[len(c.Args)-2])
+		if err != nil {
+			return execx.Result{Code: 1}, nil
+		}
+		return execx.Result{}, os.WriteFile(c.Args[len(c.Args)-1], data, 0o440)
+	})
+	o3.write(o3.p.TierSudoersFile, tier.Sudoers0223())
+	if code := upgrade(o3); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, o3.stdout, o3.stderr)
+	}
+	if got := readFile(t, o3.p.TierSudoersFile); got != tier.Sudoers() || !strings.Contains(got, "log failures *") ||
+		!strings.Contains(o3.text(), "[INFO]   Updated: tiers sudoers") {
+		t.Errorf("0.2.23 text not rewritten: %q\n%s", got, o3.text())
+	}
 	if readFile(t, file) != "# an older release's rules\n" || installs() != 0 {
 		t.Errorf("replaced although visudo refused: %q", readFile(t, file))
 	}
@@ -1448,7 +1503,7 @@ func TestUpgradeRefreshesConsoleDropIn(t *testing.T) {
 	if code := upgrade(o); code != 0 {
 		t.Fatalf("exit %d\n%s", code, o.stderr)
 	}
-	if readFile(t, o.p.SSHDDropIn) != console.DropIn(o.p.ConsoleCommand, false, false, []tier.Tier{tier.Superuser}) || !strings.Contains(o.text(), "[INFO]   Updated: sshd drop-in") ||
+	if readFile(t, o.p.SSHDDropIn) != console.DropIn(o.p.ConsoleCommand, false, false, []tier.Tier{tier.Superuser}, nil) || !strings.Contains(o.text(), "[INFO]   Updated: sshd drop-in") ||
 		!o.run.Called("sshd", "-t") || !o.run.Called("systemctl", "reload", "ssh.service") {
 		t.Errorf("not refreshed:\n%s\n%q", o.text(), o.run.Argvs())
 	}
@@ -1475,13 +1530,70 @@ func TestUpgradeRefreshesConsoleDropIn(t *testing.T) {
 	}
 }
 
+// The upgrade writes the list of the users held to a password change into the
+// drop-in it refreshes: from the store when it reads it, else the names the
+// drop-in on disk has stay (an unreadable store never opens a forwarding).
+func TestUpgradeRefreshesHeldUsersOfTheDropIn(t *testing.T) {
+	o := newOhost(t)
+	o.cloned()
+	o.run.On([]string{"sshd", "-t"}, execx.Result{})
+	want := func(held ...string) string {
+		return console.DropIn(o.p.ConsoleCommand, false, false, []tier.Tier{tier.Superuser}, held)
+	}
+	// no store: the names of the file stay, and the file is rewritten as it was
+	o.write(o.p.SSHDDropIn, want("alice", "bob"))
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s", code, o.stderr)
+	}
+	if got := readFile(t, o.p.SSHDDropIn); got != want("alice", "bob") || !strings.Contains(o.text(), "Unchanged: sshd drop-in\n") {
+		t.Errorf("without a store:\n%s\n%s", got, o.text())
+	}
+	// a store that cannot be read: the same
+	o.write(o.p.StoreFile, "not: [a store\n")
+	o.write(o.p.SSHDDropIn, "Match User bob\n    AllowTcpForwarding no\n")
+	o.stdout.Reset()
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s", code, o.stderr)
+	}
+	if got := readFile(t, o.p.SSHDDropIn); got != want("bob") {
+		t.Errorf("with a store that cannot be read:\n%s", got)
+	}
+	// a store: alice (operator) and carol (readonly) are held, bob is not, and
+	// dave, a superuser, is never held
+	hash := hex.EncodeToString([]byte("$2b$12$" + strings.Repeat("A", 53)))
+	st := store.Empty()
+	if err := st.ScopeSet("lab", "prefixes=192.0.2.0/24", "secret=example-secret-example-secret"); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range [][]string{
+		{"alice", "group=operator", "scopes=lab", "hash=" + hash, "disabled=false", "password_change_required=true"},
+		{"bob", "group=operator", "scopes=lab", "hash=" + hash, "disabled=false"},
+		{"carol", "group=readonly", "scopes=lab", "hash=" + hash, "disabled=false", "password_change_required=true"},
+		{"dave", "group=superuser", "scopes=lab", "hash=" + hash, "disabled=false", "password_change_required=true"},
+	} {
+		if err := st.UserSet(f[0], f[1:]...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.Write(o.p.StoreFile, st); err != nil {
+		t.Fatal(err)
+	}
+	o.stdout.Reset()
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s", code, o.stderr)
+	}
+	if got := readFile(t, o.p.SSHDDropIn); got != want("alice", "carol") || !strings.Contains(o.text(), "Updated: sshd drop-in\n") {
+		t.Errorf("with a store:\n%s\n%s", got, o.text())
+	}
+}
+
 // Uninstall leaves no account with the console as its shell: each gets
 // /bin/bash back (named), then sshd's drop-in, the /etc/shells line and the
 // symlink go.
 func TestUninstallRestoresConsoleShells(t *testing.T) {
 	o := newOhost(t)
 	o.installed()
-	o.write(o.p.SSHDDropIn, console.DropIn(o.p.ConsoleCommand, false, false, []tier.Tier{tier.Superuser}))
+	o.write(o.p.SSHDDropIn, console.DropIn(o.p.ConsoleCommand, false, false, []tier.Tier{tier.Superuser}, nil))
 	o.write(o.p.SSHDEngineerDropIn, console.EngineerDropIn(false))
 	o.write(o.p.ShellsFile, "/bin/sh\n/bin/bash\n"+o.p.ConsoleCommand+"\n")
 	if err := os.Symlink(o.p.Command, o.p.ConsoleCommand); err != nil {

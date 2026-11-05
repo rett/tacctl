@@ -178,6 +178,8 @@ func (inv *invocation) storeImport(args []string) error {
 		// band. A group the store had keeps what tacctl.yaml says of it.
 		inv.pinGroupTiers(before)
 		inv.warnStaleGroupSettings()
+		// the imported users may be held to a password change
+		inv.refreshHeldForwarding()
 		inv.warnServerSync("Users whose tier is lower now keep their old groups")
 	}
 	return nil

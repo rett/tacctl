@@ -25,7 +25,7 @@ Commands:
       <o>--yes</o>                             Answer yes to the confirmations
   <b>upgrade</b> [<o>--branch <name></o>]             Pull latest source, rebuild, update scripts and every enabled backend
   <b>uninstall</b> [<o>--yes</o>]                     Remove tacctl, its backends' services and all associated files
-  <b>rollback</b> <o><version></o> [options]          Prepare the state for the release before this one (0.2.22), for 0.2.21, 0.2.20, 0.2.19, 0.2.18, 0.2.17, 0.2.16, 0.2.9 or 0.2.3: a dry run unless <o>--apply</o>
+  <b>rollback</b> <o><version></o> [options]          Prepare the state for the release before this one (0.2.23), for 0.2.22, 0.2.21, 0.2.20, 0.2.19, 0.2.18, 0.2.17, 0.2.16, 0.2.9 or 0.2.3: a dry run unless <o>--apply</o>
       <o>--apply</o>                           Take a snapshot, then convert the files the target cannot read (tacctl.yaml, sudoers; for 0.2.3 also console.yaml, devices.yaml)
       <o>--yes</o>                             Acknowledge the warnings that <o>--apply</o> refuses to go on without
       <o>--hosts</o>                           Accepted; the hosts need nothing for this target (no host is synced)
@@ -51,7 +51,7 @@ Commands:
   <b>backend</b> <o><subcommand></o>                  Auth backends: list, status, enable <o><id></o>, disable <o><id></o>
   <b>store</b> <o><subcommand></o>                    The canonical store: show, import, rollback
   <b>config</b> <o><subcommand></o>                   Configuration (show, render, cisco, juniper, wti, validate, ...)
-  <b>log</b> <o><subcommand></o>                      Log viewer (tail, search, failures, accounting; <o>--backend <id></o>)
+  <b>log</b> <o><subcommand></o>                      Log viewer (tail, search, failures, accounting; filters; <o>--backend <id></o>)
   <b>backup</b> <o><subcommand></o>                   Backup management (list, diff, restore, keep, unkeep, recover)
   <b>hash</b> <o><subcommand></o>                     Bcrypt helper (generate, commands — runs as invoking user, no sudo)
   <b>completion</b> bash|zsh|fish              Print the shell completion script
@@ -439,6 +439,7 @@ Subcommands:
   <b>password-min-length</b> [<o><8-64></o>]         Show or set minimum interactive password length (default 12)
   <b>secret-min-length</b> [<o><16-128></o>]         Show or set minimum shared-secret length (default 16)
   <b>audit-strict</b> [on|off]                Show or set whether a change or a reveal is refused when its audit line cannot be written (default off)
+  <b>breakglass-firewall</b> [reject|drop|off]  Show or set the TCP firewall of held addresses (default reject)
   <b>allow</b> list|add|remove|clear          Manage connection allow list (IP ACL; add/remove accept comma-lists)
   <b>deny</b> list|add|remove|clear           Manage connection deny list (IP ACL; add/remove accept comma-lists)
   <b>mgmt-acl</b> list|add|remove|clear       Manage Cisco VTY-ACL + Juniper lo0-filter + WTI IP Tables permits
@@ -654,17 +655,27 @@ Backends: {{backends}}
 	"log": `
 <b>Log Commands</b>
 
-Usage: tacctl log <subcommand> [--backend <id>] [arguments]
+Usage: tacctl log <subcommand> [--backend <id>] [filters] [arguments]
 
 Subcommands:
   <b>tail</b> [<o>-f</o>] [<o><n></o>]       Show the last <n> log entries (default 20; TACACS+: journal, RADIUS: auth and daemon log)
       <o>-f</o>, <o>--follow</o>      (tail) Then print new entries as they arrive, until Ctrl-C
   <b>search</b> <o><term></o>         Search the logs for a username or keyword
-  <b>failures</b>              Show auth failures from the last 24 hours
+  <b>failures</b>              Show auth failures from the last 24 hours (or in the --since/--until window)
   <b>accounting</b> [<o><n></o>]      Show the last <n> accounting log entries
   <b>clear</b> [<o>--force</o>|<o>--yes</o>]  Purge each backend's logs: journal or auth log, accounting log (confirms)
       <o>--backend <id></o>    Only that backend's log (every subcommand)
       <o>--force</o>, <o>--yes</o>    (clear) Purge without asking
+
+Filters (tail, search, failures, accounting; they combine, <n> counts the entries left):
+      <o>--since <time></o>    Show entries from that time on
+      <o>--until <time></o>    Show entries up to that time
+      <o>--user <name></o>     Show the entries of that user
+      <o>--device <name|address></o>  Show the entries of that device or host
+      <o>--type login|change|command</o>  (accounting) Show one kind of record
+      <o>--json</o>            Write one JSON object per entry, no headings (for jq)
+  <time> is YYYY-MM-DD[ HH:MM[:SS]], now, today, yesterday, -1h or 2 hours ago
+  (units s, m, h, d, w). tail -f applies the filters to the new entries.
 
 With more than one backend enabled each subcommand shows every backend's log in a
 section of its own; --backend <id> shows only that backend's.

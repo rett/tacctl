@@ -24,6 +24,7 @@ func chassisKnobs() map[string]string {
 // confirm; and the next run starts from a history that ends in 'commit
 // synchronize'.
 func TestApplyOnAVirtualChassis(t *testing.T) {
+	t.Parallel()
 	both(t, chassisKnobs(), func(t *testing.T, d *device) {
 		p := &planner{desired: desiredLines()}
 		o := apply(t, d, p, nil)
@@ -42,6 +43,7 @@ func TestApplyOnAVirtualChassis(t *testing.T) {
 // A member whose check is anything but the success stops the apply before
 // anything is committed, and the reason names the member and its text.
 func TestApplyOnAVirtualChassisMemberRefuses(t *testing.T) {
+	t.Parallel()
 	knobs := chassisKnobs()
 	knobs["chassis.check"] = "fpc2 => warning: member is out of sync\n"
 	both(t, knobs, func(t *testing.T, d *device) {
@@ -67,6 +69,7 @@ func TestApplyOnAVirtualChassisMemberRefuses(t *testing.T) {
 // applied change: the apply cancels it, names the member, and the device is
 // rolled back.
 func TestApplyOnAVirtualChassisMemberOddCommit(t *testing.T) {
+	t.Parallel()
 	knobs := chassisKnobs()
 	knobs["chassis.commit"] = "fpc1 => warning: the member is behind\n"
 	both(t, knobs, func(t *testing.T, d *device) {
@@ -83,6 +86,7 @@ func TestApplyOnAVirtualChassisMemberOddCommit(t *testing.T) {
 // plain lines; over NETCONF one element, re0). It is taken as it was before
 // the members were read.
 func TestApplyOnTwoRoutingEngines(t *testing.T) {
+	t.Parallel()
 	knobs := map[string]string{
 		"chassis":       "re0 mx480\nre1 mx480\n",
 		"device":        "hostname example-sw1\nmodel mx480\njunos 21.4R3-S2.4\n",
@@ -103,6 +107,7 @@ func TestApplyOnTwoRoutingEngines(t *testing.T) {
 // The same two routing engines that answer with a block for each (they
 // commit with synchronize) are taken too.
 func TestApplyOnTwoRoutingEnginesSynchronized(t *testing.T) {
+	t.Parallel()
 	knobs := map[string]string{
 		"chassis":            "re0 mx480\nre1 mx480\n",
 		"device":             "hostname example-sw1\nmodel mx480\njunos 21.4R3-S2.4\n",
@@ -131,8 +136,10 @@ func oneMemberKnobs(plain bool) map[string]string {
 // runs through, on both transports, whether the commits carry no label (the
 // device of the capture) or a block of the member's.
 func TestApplyOnAVirtualChassisOfOneMember(t *testing.T) {
+	t.Parallel()
 	for name, plain := range map[string]bool{"plain": true, "labelled": false} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			both(t, oneMemberKnobs(plain), func(t *testing.T, d *device) {
 				p := &planner{desired: desiredLines()}
 				o := apply(t, d, p, nil)
@@ -153,6 +160,7 @@ func TestApplyOnAVirtualChassisOfOneMember(t *testing.T) {
 // Two members that answer a commit without labels are not a single device:
 // the check is refused, and nothing is committed.
 func TestApplyOnAVirtualChassisOfTwoMembersPlainAnswers(t *testing.T) {
+	t.Parallel()
 	knobs := chassisKnobs()
 	knobs["chassis"] = "fpc0 ex4600-40f 18.1R3-S6.1\nfpc1 ex4600-40f 18.1R3-S6.1\n"
 	knobs["chassis.plain"] = ""
@@ -189,6 +197,7 @@ func threeMemberKnobs() map[string]string {
 // a label is applied to on the command line: the plain lines are the member
 // the labelled blocks leave out (NETCONF names every member as before).
 func TestApplyOnAVirtualChassisMasterUnlabelled(t *testing.T) {
+	t.Parallel()
 	both(t, threeMemberKnobs(), func(t *testing.T, d *device) {
 		p := &planner{desired: desiredLines()}
 		o := apply(t, d, p, nil)
@@ -205,8 +214,10 @@ func TestApplyOnAVirtualChassisMasterUnlabelled(t *testing.T) {
 // anything is committed, and the reason names the member: the master when
 // its unlabelled text is the failing one, another member by its label.
 func TestApplyOnAVirtualChassisMasterUnlabelledMemberRefuses(t *testing.T) {
+	t.Parallel()
 	for _, member := range []string{"fpc0", "fpc1", "fpc2"} {
 		t.Run(member, func(t *testing.T) {
+			t.Parallel()
 			knobs := threeMemberKnobs()
 			knobs["chassis.check"] = member + " => warning: member is out of sync\n"
 			both(t, knobs, func(t *testing.T, d *device) {
@@ -231,8 +242,10 @@ func TestApplyOnAVirtualChassisMasterUnlabelledMemberRefuses(t *testing.T) {
 // is: the master (its last line) or one with a header. The apply cancels it,
 // names the member, and the device is rolled back.
 func TestApplyOnAVirtualChassisMasterUnlabelledOddCommit(t *testing.T) {
+	t.Parallel()
 	for _, member := range []string{"fpc0", "fpc1", "fpc2"} {
 		t.Run(member, func(t *testing.T) {
+			t.Parallel()
 			knobs := threeMemberKnobs()
 			knobs["chassis.commit"] = member + " => warning: the member is behind\n"
 			both(t, knobs, func(t *testing.T, d *device) {

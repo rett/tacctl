@@ -67,6 +67,7 @@ var configSpecs = map[string]Spec{
 	"password-min-length": {MaxArgs: 1},
 	"secret-min-length":   {MaxArgs: 1},
 	"audit-strict":        {MaxArgs: 1, Args: []string{"on|off"}},
+	"breakglass-firewall": {MaxArgs: 1, Args: []string{"reject|drop|off"}},
 	"branch":              {MaxArgs: 1},
 }
 
@@ -133,6 +134,8 @@ func configCmd(inv *invocation) *cobra.Command {
 			n(inv.configSecretMinLength)),
 		withRun(verb("audit-strict [on|off]", "Show or set whether a change or a reveal is refused when its audit line cannot be written (default off)"),
 			n(inv.configAuditStrict)),
+		withRun(verb(breakglassFirewallUse, "Show or set the TCP firewall of held addresses (default reject)"),
+			n(inv.configBreakglassFirewall)),
 		filter("allow", "Manage connection allow list"),
 		filter("deny", "Manage connection deny list"),
 		verb("mgmt-acl", "Manage Cisco VTY-ACL + Juniper lo0-filter + WTI IP Tables permits",

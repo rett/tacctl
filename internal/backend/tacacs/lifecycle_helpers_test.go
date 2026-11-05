@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -194,18 +195,74 @@ func (e *tenv) serviceCalls() []string {
 
 // --- the tacquito checkout and go --------------------------------------------
 
+// unwrapNet is the git command behind a gitNet call: the 'env ... git -c
+// ... <verb>' it runs becomes 'git <verb>'; any other command is as it is.
+func unwrapNet(c execx.Cmd) execx.Cmd {
+	if c.Name != "env" {
+		return c
+	}
+	i := slices.Index(c.Args, "git")
+	if i < 0 {
+		return c
+	}
+	rest := c.Args[i+1:]
+	for len(rest) >= 2 && rest[0] == "-c" {
+		rest = rest[2:]
+	}
+	return execx.Cmd{Name: "git", Args: rest, Dir: c.Dir, Env: c.Env}
+}
+
+// gitArgvs are the argvs of the run with the network git commands unwrapped
+// (unwrapNet).
+func (e *ltenv) gitArgvs() []string {
+	var out []string
+	for _, c := range e.run.Calls() {
+		out = append(out, strings.Join(unwrapNet(c).Argv(), " "))
+	}
+	return out
+}
+
+// gitCalled is called over gitArgvs.
+func (e *ltenv) gitCalled(re string) bool {
+	rx := regexp.MustCompile(re)
+	for _, a := range e.gitArgvs() {
+		if rx.MatchString(a) {
+			return true
+		}
+	}
+	return false
+}
+
 // fakeTacquito is the git and go stubs of upgrade_restart.bats: the
 // checkout's HEAD is local, its upstream remote; a build writes "built at
-// <local>" as the binary.
+// <local>" as the binary. A fetch changes nothing (the upstream is already
+// what 'git fetch' would bring: setRemote moves it), a merge brings local to
+// remote unless the checkout is ahead of it or diverged from it.
 type fakeTacquito struct {
 	mu            sync.Mutex
 	local, remote string
+	// origin is the URL of the checkout's origin; setURLFails makes
+	// 'git remote set-url' fail.
+	origin      string
+	setURLFails bool
+	getURLFails bool
+	// fetchFails makes 'git fetch' fail (exit 128, as git does without a
+	// network); the upstream ref is then the stale one.
+	fetchFails bool
+	// diverged makes 'merge --ff-only' fail (exit 128, as git does when the
+	// local history is not an ancestor of the upstream's); ahead makes it
+	// succeed and leave the checkout where it is (a commit on top of the
+	// upstream's); resetFails makes 'reset --hard @{u}' fail.
+	diverged   bool
+	ahead      bool
+	resetFails bool
 }
 
 func (e *tenv) tacquitoRepo(commit string) *fakeTacquito {
-	f := &fakeTacquito{local: commit, remote: commit}
+	f := &fakeTacquito{local: commit, remote: commit, origin: TacquitoRepo}
 	src := e.src()
 	inSrc := func(c execx.Cmd) bool {
+		c = unwrapNet(c)
 		if c.Name != "git" {
 			return false
 		}
@@ -215,6 +272,7 @@ func (e *tenv) tacquitoRepo(commit string) *fakeTacquito {
 		return strings.HasPrefix(c.Dir+"/", src+"/")
 	}
 	e.run.Func(inSrc, func(c execx.Cmd) (execx.Result, error) {
+		c = unwrapNet(c)
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		res := func(s string) (execx.Result, error) { return execx.Result{Stdout: []byte(s)}, nil }
@@ -225,8 +283,33 @@ func (e *tenv) tacquitoRepo(commit string) *fakeTacquito {
 			return res(f.local + "\n")
 		case a == "rev-parse @{u}":
 			return res(f.remote + "\n")
-		case a == "pull --quiet":
+		case a == "fetch --quiet":
+			if f.fetchFails {
+				return execx.Result{Code: 128, Stderr: []byte("fatal: unable to access '" + TacquitoRepo + "': Could not resolve host\n")}, nil
+			}
+		case a == "merge --ff-only --quiet @{u}":
+			if f.diverged {
+				return execx.Result{Code: 128, Stderr: []byte("fatal: Not possible to fast-forward, aborting.\n")}, nil
+			}
+			if !f.ahead {
+				f.local = f.remote
+			}
+		case a == "reset --hard @{u}":
+			if f.resetFails {
+				return execx.Result{Code: 128, Stderr: []byte("fatal: Could not reset index file to revision '@{u}'.\n")}, nil
+			}
 			f.local = f.remote
+			return res("HEAD is now at " + f.local[:7] + " upstream change\n")
+		case a == "remote get-url origin":
+			if f.getURLFails {
+				return execx.Result{Code: 2, Stderr: []byte("error: No such remote 'origin'\n")}, nil
+			}
+			return res(f.origin + "\n")
+		case strings.HasPrefix(a, "remote set-url origin "):
+			if f.setURLFails {
+				return execx.Result{Code: 2}, nil
+			}
+			f.origin = c.Args[3]
 		case strings.HasPrefix(a, "log --oneline "):
 			return res(f.remote[:7] + " upstream change\n")
 		}
@@ -244,6 +327,40 @@ func (e *tenv) tacquitoRepo(commit string) *fakeTacquito {
 	return f
 }
 
+func (f *fakeTacquito) setOrigin(url string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.origin = url
+}
+
+func (f *fakeTacquito) originURL() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.origin
+}
+
+// setDiverged makes the checkout's history unable to fast-forward to the
+// upstream's; resetFails also makes the reset to the upstream fail.
+func (f *fakeTacquito) setDiverged(diverged, resetFails bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.diverged, f.resetFails = diverged, resetFails
+}
+
+// setAhead puts the checkout on a commit of its own on top of the
+// upstream's: the fast-forward succeeds and leaves it there.
+func (f *fakeTacquito) setAhead(commit string, resetFails bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.local, f.ahead, f.resetFails = commit, true, resetFails
+}
+
+func (f *fakeTacquito) setFetchFails(fails bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.fetchFails = fails
+}
+
 func (f *fakeTacquito) setRemote(commit string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -253,6 +370,7 @@ func (f *fakeTacquito) setRemote(commit string) {
 const (
 	commit1 = "1111111111111111111111111111111111111111"
 	commit2 = "2222222222222222222222222222222222222222"
+	commit3 = "3333333333333333333333333333333333333333"
 )
 
 // --- trees -------------------------------------------------------------------

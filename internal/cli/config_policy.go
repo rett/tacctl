@@ -10,6 +10,7 @@ package cli
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -154,7 +155,7 @@ func (inv *invocation) configFilter(label string, args []string) error {
 		}
 		var changed, skipped []string
 		for _, c := range requested {
-			has := contains(current, c)
+			has := slices.Contains(current, c)
 			switch {
 			case sub == "add" && !has:
 				changed = append(changed, c)

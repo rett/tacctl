@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -12,6 +13,8 @@ import (
 	"github.com/rett/tacctl/internal/app"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
+	"github.com/rett/tacctl/internal/gitx"
+	"github.com/rett/tacctl/internal/gitx/gitxtest"
 	"github.com/rett/tacctl/internal/paths"
 	"github.com/rett/tacctl/internal/tier"
 )
@@ -191,12 +194,14 @@ func TestConfigPreflight(t *testing.T) {
 		t.Errorf("render: %d %q", sb.code, sb.err.String())
 	}
 	sb = newSandbox(t, true)
+	sb.defaultBcryptCost()
 	sb.run("", []string{"config", "get", "bcrypt.cost"})
 	sb.expect(0, "12", "is missing; 'tacctl config render' writes it again.")
 }
 
 func TestConfigGetAndTunables(t *testing.T) {
 	sb := newSandbox(t, true)
+	sb.defaultBcryptCost()
 	cases := []struct {
 		args      []string
 		code      int
@@ -375,6 +380,10 @@ func TestConfigBranch(t *testing.T) {
 		}
 	}
 	git := func(r *fake.Runner) {
+		// fetch and pull are guarded against a prompt (gitx.Net): they are
+		// looked at here as the git they run, and in
+		// TestConfigBranchNetworkGitCannotPrompt as they are made.
+		r.Rewrite = gitx.Unwrap
 		r.On([]string{"git", "-C", tree, "branch", "--show-current"}, execx.Result{Stdout: []byte("develop\n")})
 		r.On([]string{"git", "-C", tree, "branch", "-r"}, execx.Result{Stdout: []byte(
 			"  origin/HEAD -> origin/develop\n  origin/develop\n  origin/master\n  origin/'odd\n")})
@@ -392,7 +401,8 @@ func TestConfigBranch(t *testing.T) {
 	sb.expect(1, "", "Branch 'nope' does not exist on remote.")
 	sb.cfgRun("", []string{"config", "branch", "master"}, git, env)
 	sb.expect(0, "Switched to branch 'master'.", "")
-	want := []string{"branch --show-current", "fetch --quiet", "rev-parse --verify origin/master", "checkout -- .", "checkout master", "pull --quiet"}
+	const sshCommand = "config --get core.sshCommand"
+	want := []string{"branch --show-current", sshCommand, "fetch --quiet", "rev-parse --verify origin/master", "checkout -- .", "checkout master", sshCommand, "pull --quiet"}
 	var got []string
 	for _, a := range sb.runner.Argvs() {
 		if strings.HasPrefix(a, "git -C "+tree+" ") {
@@ -415,6 +425,55 @@ func TestConfigBranch(t *testing.T) {
 	}, env)
 	if sb.code != 128 || sb.out.Len() != 0 {
 		t.Errorf("failed checkout: %d %q", sb.code, sb.out.String())
+	}
+}
+
+// The fetch of the list, and the fetch and pull of a switch, cannot wait for
+// an operator who is not there (gitx.Net), as those of 'tacctl upgrade': the
+// commands are looked at as they were made, and none is a bare 'git fetch'
+// or 'git pull'.
+func TestConfigBranchNetworkGitCannotPrompt(t *testing.T) {
+	sb := newSandbox(t, true)
+	tree := sb.path("deploy")
+	env := "TACCTL_TREE=" + tree
+	for _, d := range []string{".git", "bin"} {
+		if err := os.MkdirAll(filepath.Join(tree, d), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(tree, "bin", "tacctl.sh"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	git := func(r *fake.Runner) {
+		r.On([]string{"git", "-C", tree, "branch", "--show-current"}, execx.Result{Stdout: []byte("develop\n")})
+		r.On([]string{"git", "-C", tree, "branch", "-r"}, execx.Result{Stdout: []byte("  origin/develop\n  origin/master\n")})
+		r.On([]string{"git", "-C", tree, "rev-parse"}, execx.Result{})
+	}
+	for _, tc := range []struct {
+		name, ssh string
+		args      []string
+		script    func(*fake.Runner)
+		verbs     []string
+	}{
+		{"list", "ssh -o BatchMode=yes", []string{"config", "branch"}, git, []string{"fetch"}},
+		{"switch", "ssh -o BatchMode=yes", []string{"config", "branch", "master"}, git, []string{"fetch", "pull"}},
+		{"configured remote shell", "ssh -i /etc/tacctl/deploy-key -o BatchMode=yes", []string{"config", "branch", "master"}, func(r *fake.Runner) {
+			git(r)
+			r.On([]string{"git", "-C", tree, "config", "--get", "core.sshCommand"}, execx.Result{Stdout: []byte("ssh -i /etc/tacctl/deploy-key\n")})
+		}, []string{"fetch", "pull"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sb.cfgRun("", tc.args, tc.script, env)
+			if sb.code != 0 {
+				t.Fatalf("exit %d: %q", sb.code, sb.err.String())
+			}
+			gitxtest.Check(t, sb.runner.Raw(), tc.ssh, tc.verbs...)
+			for _, c := range sb.runner.Raw() {
+				if gitxtest.Verb(c) == "fetch" && c.Name == "env" && !slices.Contains(c.Args, tree) {
+					t.Errorf("%q is not run in the clone", c.Argv())
+				}
+			}
+		})
 	}
 }
 

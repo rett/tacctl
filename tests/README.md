@@ -25,30 +25,71 @@ make coverage        # go test -coverprofile; coverage/go.out, coverage/index.ht
 make lint            # shellcheck (bin/tacctl.sh, config/linux, tests/helpers, tests/tools, tests/diff and its stubs,
                      #   tests/containers/{crossover,fresh}), gofmt, go vet, golangci-lint (pinned; prints how
                      #   to install it when missing), the manual page (make lint-man: the Man tests of
-                     #   internal/cli and groff -k -ww), tests/tools/no-private.sh, and
-                     #   tests/tools/no-os-tempdir.sh (no read of the process's temporary directory)
+                     #   internal/cli and groff -k -ww), tests/tools/no-private.sh,
+                     #   tests/tools/no-os-tempdir.sh (no read of the process's temporary directory),
+                     #   tests/tools/no-shared-proc.sh (no pgrep -f, pkill -f or killall, and no /tmp
+                     #   or /dev/shm path, in a test), no-logger.sh, no-short-yes.sh and doc-width.sh
 make man             # rewrite the generated blocks of man/tacctl.1 from the code (below)
 make test-pyyaml     # the yamlpy and conf PyYAML corpora regenerated with PyYAML and compared
 make test-diff CORPUS=users   # the differential runner on one corpus
 ```
 
+`newSandbox` starts every sandbox with a `state/tacctl.yaml` that holds
+`bcrypt.cost: 10`, the lowest cost the configuration allows (the default is 12,
+about four times the work, and bcrypt is most of the CPU of the tests that
+add a user or change a password). A test that asserts the default cost, or that
+`tacctl.yaml` is absent or holds only what it wrote, calls
+`sb.defaultBcryptCost()` first, which removes the file and fails if it holds
+anything else; `TestHashFamily` and `TestConfigGetAndTunables` keep the
+default under test that way. A fixture that builds its own configuration
+(`newSwEnv`, `newHarness`) does not hash a password and is not changed.
+
 The tests of `internal/cli` run in parallel inside one process: the
-sandbox helpers (`newSandbox`, `newHarness`, `newSwEnv`) call `parallel(t)`,
-and everything a test replaces (a dial, a prompt, a terminal check) is a
+sandbox helpers (`newSandbox`, `newHarness`, `newSwEnv`) and the helpers that
+start a process on a pseudo-terminal (`startConsole`, `startCLIShell`,
+`bashKeySession`: each is a process of its own, in a directory of its own) call
+`parallel(t)`, and everything a test replaces (a dial, a prompt, a terminal check) is a
 field of the `hooks` value of its invocation, not a package variable. A test
 that cannot share the process calls `serial(t)` as its first statement
 (Go runs every serial test before the first parallel one): those that set the
 process environment, signal the process, or write a package-level registry
-(`withFakeBackend`, `withPasswd`). The whole package takes about six minutes
+(`withFakeBackend`, `withPasswd`). The package runs with `-parallel 16`
+(`go-test-shard.sh`, so `make gate-ci` and CI; `gate-go.sh` for the whole run):
+its parallel tests mostly wait on timers and pseudo-terminals, so more of them
+than the cores shorten the run. The whole package takes about six minutes
 (about 24 serially). CI (`.github/workflows/test.yml`) runs it in two shards,
 `tests/tools/go-test-shard.sh <index> <count>` (the top-level tests dealt
-round-robin; `--check <count>` fails unless every test is in exactly one
-shard), the ones without tags with the race detector, beside one job for
-every other package and a static job (gofmt, `go vet`). Both tag sets run,
+longest first by the durations in `tests/tools/cli-durations.txt`, each to the
+shard with the least planned time, a serial test counting four times a
+parallel one so the shards take about the same time; a test the file lacks
+counts a short parallel one; `--check <count>` fails unless every test is in
+exactly one shard, `--plan <count>` prints each shard's tests and planned
+seconds, and `--regen <log>` rewrites the durations file from the log of a
+`make gate-ci` or `make gate-go` run, the file's header says how: it only
+balances the shards, never changes which tests run, and
+`tests/integration/go_test_shard.bats` pins it), the ones without tags with the race detector, beside one job for
+every other package, a static job (gofmt, `go vet`) and a lint job (`make
+lint`, below). Every job keeps the Go build and module caches between runs
+(`actions/cache`, one key per job and mode, with the Go version and the hash
+of `go.sum`). `TestPropertyFuzz` (`internal/devconf/plan`, pure CPU on one
+goroutine) runs 10 mutated devices per fixture under `-race` and 45 without
+it (`race_on_test.go`, `race_off_test.go`): every fixture is covered either
+way, and `make gate-go`, which has no `-race`, runs the 45. The test jobs install the tools that tests skip
+without (`shellcheck`, `groff`, `less` and `man-db` for the completion block
+and the man page's search and pager tests of `internal/cli`; `openssh-server`
+and `openssh-client` for the `sshd -T` tests of `internal/console`): a skip is
+silent in a green run, so a tool a test starts to need is added to the job's
+`apt-get` step. Both tag sets run,
 as `make test-go` does; `make gate-go` (`tests/tools/gate-go.sh`, which
 `tests/integration/gate_go.bats` pins) runs the packages as one tracked run
 that ends with a single `GATE-GO PASS|FAIL` line, a FAIL for a run that was
-killed or lost a package: start it with a tool that notices the process
+killed or lost a package, and whose `skipped=<n>` field counts the `--- SKIP`
+lines of the log (the tests run with `-v`, the only way `go test` reports a
+skip) with the names of the skipped tests, at most 20, listed above the line: a
+test that skips for a missing tool passes silently, and an unexpected skip
+count is how a green run shows it did not test what it should; the ten
+slowest top-level tests of the run (`gate-go: slowest: TestX 47.1s`) follow
+the skipped names, still above the verdict line: start it with a tool that notices the process
 ending (an agent: Bash `run_in_background`), never with a trailing `&` and
 never wait for it with `pgrep -f`; `GATE_TMPFS=1 make gate-go` keeps the tests' sandboxes on `/dev/shm` (the fsync calls cost nothing there: the run takes about a third of the time; the log and `GOCACHE` stay on disk); the bats suite, the diff corpus and the container
 matrix stay on the maintainer's machine.
@@ -64,8 +105,38 @@ stops with status 2 when the workflow's shard or tag matrix changes). Every
 job runs, and the run ends with a single `GATE-CI PASS rc=0 jobs=6/6 ...`
 line, or `GATE-CI FAIL ...` with `failed=<job>:<test>,...` naming each
 failing test (a package when no test failed) and `races=` counting the data
-races; it needs cgo, takes several times as long as `gate-go`, and is
+races (`skipped=` counts the skips of all the jobs, a test that runs in
+several jobs once for each, and the names are listed above the line as
+`gate-go` does, followed by the ten slowest tests with their job,
+`gate-ci: slowest: TestX 83.0s (cli0)`); it needs cgo, takes several times as long as `gate-go`, and is
 started, read and sped up (`GATE_TMPFS=1`) like it.
+
+The `lint` job of the workflow runs `make lint` on Ubuntu 24.04, with that
+release's shellcheck and groff 1.23 and the golangci-lint the Makefile pins.
+A development machine may have newer tools (groff 1.24 and shellcheck 0.11
+have been seen), and `make lint` and the man search tests (`make lint-man`,
+which runs `go test ./internal/cli` with `-run` set to `MAN_TESTS` in the
+Makefile: the `TestMan<Word>` and `TestPty*Man` tests, not the `TestManaged*`
+ones) must pass on both: a fix for a newer tool must keep the older one
+passing. The page sets its own body margin (`.nr BP 7n`)
+because groff 1.24 narrowed the default from 7n to 5n, and the pager search
+of `tacctl man` assumes 7 (`TestManPageSetsTheBodyMargin`). `make hooks`
+installs a pre-push hook that runs `no-private.sh`, `no-short-yes.sh`,
+`no-os-tempdir.sh` and `no-shared-proc.sh` before a push, the lints that
+need no tool and take well under a second.
+
+A test stays inside its own sandbox so that runs can share a machine:
+`t.TempDir()`, `BATS_TEST_TMPDIR` or the `TMPDIR` of its environment, never
+`/tmp` or `/dev/shm` itself, and no `pgrep -f`, `pkill` or `killall` (they
+match the processes of every other run; keep the pid; looking for or signalling
+the children of a pid, `pgrep -P` and `pkill -P`, is fine). The lint
+`tests/tools/no-shared-proc.sh` (`make lint-shared-proc`, part of `make lint`)
+holds this: `-f` or `--full` after any options, `pkill` by name, the same
+commands run through Go's `os/exec`, and a `/tmp` named by `mktemp`, `cd`, a
+redirection, a `TMPDIR` assignment or a Go string literal. A line that must
+name a shared path, such as the fallback for a `TMPDIR` too long for a socket
+path, says `shared-proc-ok: <reason>` in a comment (a reason is required; the
+comment never excuses a process-wide command), and no file is excused whole.
 
 The temporary directory is
 `Paths.TempDir`, the `TMPDIR` of the environment a test gives the
@@ -76,6 +147,16 @@ The bats files run in parallel (`bats --jobs`, one file per job, the tests of
 a file in order) when GNU `parallel` is installed: `BATS_JOBS` sets the number
 of jobs (default: the CPU count), `BATS_JOBS=1` runs serially. `BATS_FLAGS`
 is passed to bats (default `--print-output-on-failure`).
+
+The bats suite runs as an ordinary user: any account that is not root and is
+not inside a `sudo` session, and no particular account name is needed. The
+helper (`tests/helpers/tmpenv.bash`) sets `TACCTL_SKIP_SUDO=1`, so tacctl does
+not re-execute itself through `sudo`, and unsets `SUDO_UID`; a test that
+needs a calling user sets `SUDO_USER` itself (`as_user` in
+`tests/integration/tiers.bats`) and one that needs none runs the binary with
+`env -u SUDO_USER`, so start the suite from a normal login shell, not from
+`sudo`. The callers the tests name (`tester` in the stubbed `id` of
+`tests/integration/shell.bats`) are made up, not accounts of the machine.
 
 Run a single file or test (after `make build`):
 
@@ -113,7 +194,7 @@ tests/
 ├── integration/         # the command line against real files in the test's tmpdir
 ├── e2e/                 # whole command flows with stubbed system commands
 ├── diff/                # the differential runner, its corpora, stubs and state roots
-├── tools/               # no-private.sh, no-os-tempdir.sh and no-short-yes.sh (lint), gate-go.sh and gate-ci.sh (the Go tests as one run with a verdict line, the second as CI runs them), pyyaml-corpus.py, usage-goldens.sh, permcheck.py and permcheck-baseline.txt (the lab permission check, below), pre-push, release-preflight.sh, release-stamps.sh and release-reproduce.sh (the release checks, docs/releasing.md)
+├── tools/               # no-private.sh, no-os-tempdir.sh, no-shared-proc.sh and no-short-yes.sh (lint), gate-go.sh and gate-ci.sh (the Go tests as one run with a verdict line, the second as CI runs them), pyyaml-corpus.py, usage-goldens.sh, permcheck.py and permcheck-baseline.txt (the lab permission check, below), pre-push, release-preflight.sh, release-stamps.sh and release-reproduce.sh (the release checks, docs/releasing.md)
 ├── containers/radius/   # real FreeRADIUS in podman
 ├── containers/hosts/    # 'host enroll|sync|unenroll' for real, server and client containers
 ├── containers/crossover/ # the upgrade from the bash release to the Go binary, and back
@@ -822,6 +903,7 @@ not a knob: it stays an ordinary environment check.
 | `TACCTL_TEST_CONSOLE_ENV=1` | the console (`tacctl-console`) keeps `TACCTL_*` and `PATH` from its environment, so the sandbox's paths and stubs reach it |
 | `TACCTL_TEST_PROC=<dir>` | stands for `/proc/self` where `host enroll --local` reads this machine's user namespace maps (`uid_map`, `gid_map`) |
 | `TACCTL_TEST_DEVICE_DIAL=<host:port>` | every device `device config pull` logs in to is dialled at this loopback address instead of its own (the fake device below); a non-loopback value is an error |
+| `TACCTL_TEST_DEVICE_QUIET=<duration>` | the quiet period of every device session (the wait for a device's output to stop after each prompt) instead of the 150 ms default: a Go duration up to `1s`, `25ms` for the fake device, which has nothing more to say; a malformed, negative or larger value is an error; tacctl itself never sets it |
 | `TACCTL_TEST_DEVICE_PASSWORD=<text>` | the password a pull logs in with, in place of the terminal prompt (a bats test has no terminal) |
 | `TACCTL_TEST_LOCAL_PASSWORD=<text>` | the password of the device's local account that `--login` and `device onboard` log in with, in place of the terminal prompt |
 | `TACCTL_TEST_APPLY_PAUSE=gate:<seconds>` | `device config apply` waits that long (at most 600) between the gate and the open of its session, so a second session can commit in that window (`docs/plans/0.2.11-lab.md`, N4); read only in a `-tags testknobs` build; a malformed value is an error |

@@ -373,7 +373,7 @@ func managedCisco(req Request, d Data) []Section {
 			"  server name "+ciscoRadiusServer)
 	case req.Legacy:
 		aaa = append(aaa,
-			"tacacs-server host "+v["SERVER_IP"]+" single-connection"+v["TACACS_HOST_PORT"]+" timeout 5 key "+v["SECRET"],
+			"tacacs-server host "+v["SERVER_IP"]+v["TACACS_HOST_PORT"]+" timeout 5 key "+v["SECRET"],
 			"aaa group server tacacs+ "+group,
 			"  server "+v["SERVER_IP"])
 	default:
@@ -387,7 +387,6 @@ func managedCisco(req Request, d Data) []Section {
 		}
 		aaa = append(aaa,
 			"  key "+v["SECRET"],
-			"  single-connection",
 			"  timeout 5",
 			"aaa group server tacacs+ "+group,
 			"  server name "+ciscoTacacsServer)

@@ -21,6 +21,8 @@ import (
 	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/hosts"
+	"github.com/rett/tacctl/internal/model"
+	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -49,8 +51,17 @@ func (inv *invocation) consoleProvision(pol *console.Policy) error {
 		return exit(1)
 	}
 	a.Out.InfoE("  " + shells.String() + ": " + p.ShellsFile + " lists " + p.ConsoleCommand)
+	// The list of the users held to a password change is read and installed
+	// under the apply lock, so that a writer that flags a user meanwhile
+	// either comes before it (and is listed) or after it (and rewrites it).
+	unlock, err := inv.holdApply()
+	if err != nil {
+		failed(strings.ToLower(shells.String()), "-", "lock")
+		return err
+	}
+	defer unlock()
 	d := console.DropInFile{Runner: a.Runner, Path: p.SSHDDropIn}
-	ch, err := d.Install(inv.ctx, console.DropIn(p.ConsoleCommand, pol.AgentForwarding(), pol.GatewayPorts(), pol.ForwardingTiers()))
+	ch, err := d.Install(inv.ctx, console.DropIn(p.ConsoleCommand, pol.AgentForwarding(), pol.GatewayPorts(), pol.ForwardingTiers(), inv.heldUsersNow()))
 	switch {
 	case errors.Is(err, console.ErrSSHD):
 		failed(strings.ToLower(shells.String()), "-", "sshd")
@@ -72,6 +83,53 @@ func (inv *invocation) consoleProvision(pol *console.Policy) error {
 	a.Out.InfoE("  " + ch.String() + ": sshd drop-in " + p.SSHDDropIn)
 	inv.verbResult(audit.Info, fmt.Sprintf(provisionBase, strings.ToLower(shells.String()), strings.ToLower(ch.String())), "")
 	return nil
+}
+
+// refreshHeldForwarding rewrites the console's sshd drop-in after a change
+// that flags or unflags a user, whether or not a sync of this server follows
+// and gets as far as the drop-in ('user require-password-change', 'user add',
+// 'user remove|rename|move', an administrator's 'user passwd', a user's own
+// 'passwd', a lowered tier, a store import, a backup restore, a store
+// rollback), so the list of users held to a password
+// change (heldUsers) is current at once: for a flagged user sshd refuses
+// every forwarding on the connections that follow, and for an unflagged one
+// it allows what the tier allows. A connection that is open already keeps
+// the forwardings it had until it closes: sshd applies the drop-in when a
+// connection authenticates. A server without the drop-in has nothing to
+// rewrite; a failure is one warning with the command that retries it (the
+// drop-in then keeps its old list: a user flagged since may still forward).
+//
+// The list is read from the store and installed under the apply lock (the
+// store write that flagged the user is done and its lock given back by now,
+// or this is held by the caller): another writer cannot flag a user between
+// the read and the install and leave the file without him.
+func (inv *invocation) refreshHeldForwarding() {
+	a := inv.app
+	p := a.Paths
+	if st, err := os.Stat(p.SSHDDropIn); err != nil || !st.Mode().IsRegular() {
+		return
+	}
+	retry := "tacctl console install"
+	pol, err := inv.consolePolicy()
+	if err != nil {
+		a.Out.WarnE("sshd's drop-in " + p.SSHDDropIn + " was not updated for the users held to a password change (" + msgsJoin(err) + "); the change reaches it at the next sync of this server, or: " + retry)
+		return
+	}
+	unlock, err := inv.holdApply()
+	if err != nil {
+		a.Out.WarnE("sshd's drop-in " + p.SSHDDropIn + " was not updated for the users held to a password change; fix it, then: " + retry)
+		return
+	}
+	defer unlock()
+	d := console.DropInFile{Runner: a.Runner, Path: p.SSHDDropIn}
+	ch, err := d.Install(inv.ctx, console.DropIn(p.ConsoleCommand, pol.AgentForwarding(), pol.GatewayPorts(), pol.ForwardingTiers(), inv.heldUsersNow()))
+	if err != nil {
+		a.Out.WarnE("sshd's drop-in " + p.SSHDDropIn + " was not updated for the users held to a password change (" + msgsJoin(err) + "); fix it, then: " + retry)
+		return
+	}
+	if ch != console.Unchanged {
+		a.Out.InfoE("  " + ch.String() + ": sshd drop-in " + p.SSHDDropIn + " (users held to a password change)")
+	}
 }
 
 // engineerSSHDProvision puts sshd's drop-in for the engineer tier in place
@@ -215,7 +273,8 @@ func (inv *invocation) consoleDeprovision() error {
 func (inv *invocation) consoleCheckFiles(pol *console.Policy) []string {
 	p := inv.app.Paths
 	var problems []string
-	want := console.DropIn(p.ConsoleCommand, pol.AgentForwarding(), pol.GatewayPorts(), pol.ForwardingTiers())
+	held := inv.heldUsers()
+	want := console.DropIn(p.ConsoleCommand, pol.AgentForwarding(), pol.GatewayPorts(), pol.ForwardingTiers(), held)
 	switch data, err := os.ReadFile(p.SSHDDropIn); {
 	case err != nil:
 		inv.echo("  sshd drop-in " + p.SSHDDropIn + ": missing")
@@ -223,6 +282,10 @@ func (inv *invocation) consoleCheckFiles(pol *console.Policy) []string {
 	case string(data) != want:
 		inv.echo("  sshd drop-in " + p.SSHDDropIn + ": present, differs from this release's")
 		problems = append(problems, "sshd's drop-in "+p.SSHDDropIn+" differs from this release's")
+		if got := console.HeldInDropIn(string(data)); !slices.Equal(got, held) {
+			inv.echo("  users held to a password change, forwarding closed: drop-in " + dashList(got) + ", now " + dashList(held))
+			problems = append(problems, "the users held to a password change in the drop-in ("+dashList(got)+") are not the ones held now ("+dashList(held)+"); tacctl host sync of this server rewrites it")
+		}
 	default:
 		inv.echo("  sshd drop-in " + p.SSHDDropIn + ": present, current")
 	}
@@ -255,7 +318,7 @@ func (inv *invocation) consoleCheckUser(pol *console.Policy, user string) []stri
 	}
 	inv.echo("  sshd for " + user + ": allowtcpforwarding " + st.TCPForwarding + ", allowagentforwarding " + st.AgentForwarding +
 		", forcecommand " + dash(st.ForceCommand) + ", pubkeyauthentication " + dash(st.PubkeyAuth) + sshdGatewayPorts(st))
-	return append(problems, st.Problems(pol.AgentForwarding(), inv.userForwards(pol, user), pol.GatewayPorts(), p.ConsoleCommand)...)
+	return append(problems, st.Problems(inv.userAgent(pol, user), inv.userForwards(pol, user), pol.GatewayPorts(), p.ConsoleCommand)...)
 }
 
 // sshdGatewayPorts is ', gatewayports <value>' when sshd printed it.
@@ -267,22 +330,29 @@ func sshdGatewayPorts(st console.SSHD) string {
 }
 
 // consoleProbeUsers are the console accounts sshd is asked about: the
-// first whose tier may not forward and the first whose tier may, so that a
-// setting read before the drop-in (which sshd keeps over the tier blocks)
-// shows whichever way it opens or closes.
+// first whose tier may not forward, the first whose tier may and the first
+// held to a password change (whose forwarding the drop-in closes whatever
+// the tier), so that a setting read before the drop-in (which sshd keeps over
+// the tier blocks) shows whichever way it opens or closes.
 func (inv *invocation) consoleProbeUsers(pol *console.Policy, users []string) []string {
-	var closed, open string
+	var closed, open, held string
+	heldAll := inv.heldUsers()
 	for _, u := range users {
-		if inv.userForwards(pol, u) {
+		switch {
+		case slices.Contains(heldAll, u):
+			if held == "" {
+				held = u
+			}
+		case inv.userForwards(pol, u):
 			if open == "" {
 				open = u
 			}
-		} else if closed == "" {
+		case closed == "":
 			closed = u
 		}
 	}
 	var out []string
-	for _, u := range []string{closed, open} {
+	for _, u := range []string{closed, open, held} {
 		if u != "" {
 			out = append(out, u)
 		}
@@ -304,15 +374,58 @@ func (inv *invocation) consoleFirstValueHint(pol *console.Policy, probe, problem
 	return nil
 }
 
+// heldUsers are the users the console's drop-in closes every forwarding
+// for: those held to a password change (pwchange.Pending), whatever tier they
+// are in. A forwarding opens no session, so the console that holds them
+// never sees it. When the users cannot be told (the store or tacctl.yaml
+// cannot be read) the names the drop-in on disk lists stay, so a read error
+// never opens a forwarding.
+func (inv *invocation) heldUsers() []string {
+	m, err := inv.model()
+	return inv.heldUsersOf(m, err)
+}
+
+// heldUsersNow is heldUsers from the store as it is now, for the caller that
+// holds the apply lock and writes the list: the model this invocation read
+// before it wrote (or before it waited for the lock) is not the one to list
+// from. The model is read afresh and left out of the invocation's cache.
+func (inv *invocation) heldUsersNow() []string {
+	m, err := inv.app.LoadModel()
+	return inv.heldUsersOf(m, err)
+}
+
+func (inv *invocation) heldUsersOf(m *model.Model, err error) []string {
+	if err == nil && inv.confProblem() == "" {
+		var out []string
+		for _, u := range pwchange.Pending(inv.app.Conf(), m) {
+			out = append(out, u.Name)
+		}
+		return console.HeldNames(out)
+	}
+	data, _ := os.ReadFile(inv.app.Paths.SSHDDropIn)
+	return console.HeldInDropIn(string(data))
+}
+
 // userForwards reports whether user's tier (from the account's local
 // groups) may forward X11 and TCP ports through sshd (console forwarding
-// tiers); an account whose groups cannot be read may not.
+// tiers); an account whose groups cannot be read may not, nor may a user
+// held to a password change (heldUsers).
 func (inv *invocation) userForwards(pol *console.Policy, user string) bool {
+	if slices.Contains(inv.heldUsers(), user) {
+		return false
+	}
 	res, err := inv.app.Runner.Run(inv.ctx, execx.Cmd{Name: "id", Args: []string{"-nG", "--", user}})
 	if err != nil || res.Code != 0 {
 		return false
 	}
 	return pol.Forwarding(sudoTier(strings.Fields(string(res.Stdout))))
+}
+
+// userAgent reports whether user may forward the ssh agent through sshd:
+// the console's setting (console agent-forwarding), and never a user held to
+// a password change (heldUsers), whose drop-in block closes it.
+func (inv *invocation) userAgent(pol *console.Policy, user string) bool {
+	return pol.AgentForwarding() && !slices.Contains(inv.heldUsers(), user)
 }
 
 // consoleInstall is 'console install': consoleProvision, then the check.
@@ -718,4 +831,12 @@ func (inv *invocation) consoleAfterLocal() {
 		return
 	}
 	_ = inv.consoleCheckReport(pol)
+}
+
+// dashList is names joined with commas, "-" for none.
+func dashList(names []string) string {
+	if len(names) == 0 {
+		return "-"
+	}
+	return strings.Join(names, ",")
 }

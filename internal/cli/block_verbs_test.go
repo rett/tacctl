@@ -245,6 +245,7 @@ func TestScopeBlockSystemIsElidedAndRevealed(t *testing.T) {
 
 func TestScopeBlockSetRefusals(t *testing.T) {
 	sb := newSandbox(t, true)
+	sb.defaultBcryptCost()
 	good := sb.blockFile("snmp.txt", verbSNMPFile)
 	nothing := func() {
 		t.Helper()

@@ -38,6 +38,7 @@ import (
 	"github.com/rett/tacctl/internal/conf"
 	"github.com/rett/tacctl/internal/devices"
 	"github.com/rett/tacctl/internal/devreg"
+	"github.com/rett/tacctl/internal/firewall"
 	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/policy"
@@ -950,8 +951,9 @@ func (inv *invocation) breakglassHold(args []string) error {
 	var (
 		written []conf.Hold
 		skipped []conf.HoldSkip
+		fw      firewall.Result
 	)
-	res2, err := inv.app.Backends().StoreApply(inv.ctx, backend.ApplyOptions{}, func() error {
+	res2, err := inv.app.Backends().StoreApply(inv.ctx, backend.ApplyOptions{After: inv.firewallAfter(&fw)}, func() error {
 		var err error
 		written, skipped, err = inv.app.Conf().SetHoldsIf(holds, func(existing []conf.Hold, h conf.Hold) error {
 			for _, x := range existing {
@@ -1015,12 +1017,13 @@ func (inv *invocation) breakglassHold(args []string) error {
 	for i, c := range done {
 		h := written[slices.IndexFunc(written, func(h conf.Hold) bool { return h.Device == c.e.Name })]
 		addrs[i], doneNames[i] = c.e.Address, c.e.Name
-		inv.app.Audit().Raw("auth.info", "breakglass hold "+c.logKey()+"="+c.e.Name+" addr="+c.e.Address+" reason="+strconv.Quote(c.req.Reason)+" by="+h.By+" result=ok")
+		inv.app.Audit().Raw("auth.info", "breakglass hold "+c.logKey()+"="+c.e.Name+" addr="+c.e.Address+" reason="+strconv.Quote(c.req.Reason)+" by="+h.By+" firewall="+firewallWord(fw)+" result=ok")
 	}
 	releaseCmd := "tacctl breakglass release " + strings.Join(doneNames, ",")
 
 	inv.echo("")
 	rendered := inv.renderedSentenceOf(m, addrs, res2, true)
+	fwLines, fwFailed := firewallHoldLines(fw, addrs)
 	for i, c := range done {
 		h := written[slices.IndexFunc(written, func(h conf.Hold) bool { return h.Device == c.e.Name })]
 		e := c.e
@@ -1028,6 +1031,7 @@ func (inv *invocation) breakglassHold(args []string) error {
 		inv.echo("  Reason:   " + c.req.Reason)
 		if !multi {
 			inv.echo("  Rendered: " + rendered)
+			inv.echoFirewall(fwLines)
 		}
 		inv.echo("  Carved:   " + holdCarvedText(e))
 		if w := holdSourceWarning(e, res); w != "" {
@@ -1040,6 +1044,7 @@ func (inv *invocation) breakglassHold(args []string) error {
 	if multi {
 		inv.echo("")
 		inv.echo("  Rendered: " + rendered)
+		inv.echoFirewall(fwLines)
 	}
 	inv.echo("")
 	if !multi {
@@ -1087,13 +1092,16 @@ func (inv *invocation) breakglassHold(args []string) error {
 	if len(notHeld) > 0 {
 		inv.app.Out.Error(strconv.Itoa(len(notHeld)) + " of " + strconv.Itoa(len(reqs)) + " " + reqNouns + " " + plural(len(notHeld), "was", "were") + " not held (see Not held).")
 	}
+	if fwFailed {
+		inv.firewallFailedError(fw)
+	}
 	if len(res2.RestartFailed) > 0 {
 		// The record and the rendered files stay: they are what the next
 		// restart, or the next boot, serves.
 		inv.app.Out.Error("The hold is recorded and the rendered files are kept, but it is not in force until the backend named under Rendered is restarted; '" + releaseCmd + "' removes the record.")
 		return exit(1)
 	}
-	if len(notHeld) > 0 {
+	if len(notHeld) > 0 || fwFailed {
 		return exit(1)
 	}
 	return nil
@@ -1291,7 +1299,8 @@ func (inv *invocation) breakglassRelease(args []string) error {
 	for _, d := range unusable {
 		remove = append(remove, d.Device)
 	}
-	res, err := inv.app.Backends().StoreApply(inv.ctx, backend.ApplyOptions{}, func() error {
+	var fw firewall.Result
+	res, err := inv.app.Backends().StoreApply(inv.ctx, backend.ApplyOptions{After: inv.firewallAfter(&fw)}, func() error {
 		return inv.app.Conf().UnsetHolds(remove)
 	})
 	inv.loaded = false
@@ -1316,7 +1325,7 @@ func (inv *invocation) breakglassRelease(args []string) error {
 			key = "host"
 			heldHosts = append(heldHosts, h.Device)
 		}
-		inv.app.Audit().Raw("auth.info", "breakglass release "+key+"="+h.Device+" addr="+h.Address+" held="+held+" by="+inv.sudoUser()+" result=ok")
+		inv.app.Audit().Raw("auth.info", "breakglass release "+key+"="+h.Device+" addr="+h.Address+" held="+held+" by="+inv.sudoUser()+" firewall="+firewallWord(fw)+" result=ok")
 		inv.echo(ui.Green + "Break-glass RELEASED" + ui.NC + " on " + h.Device + " (" + h.Address + "): held " + ages[i] + " by " + h.By + " (" + h.Reason + ").")
 		if v := inv.registeredVendor(h.Device, h.Address); v == "cisco" || v == "juniper" || v == "wti" {
 			known = append(known, h.Device)
@@ -1333,8 +1342,12 @@ func (inv *invocation) breakglassRelease(args []string) error {
 			relNouns = "hosts"
 		}
 	}
+	fwFailed := false
 	if len(holds) > 0 {
 		inv.echo("  Rendered: " + inv.renderedSentenceOf(m, addrs, res, false))
+		var fwLines []string
+		fwLines, fwFailed = firewallReleaseLines(fw, addrs)
+		inv.echoFirewall(fwLines)
 		switch {
 		case len(known) > 0:
 			inv.echo("  Check:    tacctl device config pull " + strings.Join(known, ",") + " --diff (aaa: ok), then a new ssh login as yourself.")
@@ -1355,11 +1368,14 @@ func (inv *invocation) breakglassRelease(args []string) error {
 	if len(notHeld) > 0 {
 		inv.app.Out.Error(strconv.Itoa(len(notHeld)) + " of " + strconv.Itoa(len(reqs)) + " " + relNouns + " " + plural(len(notHeld), "was", "were") + " not held, so not released.")
 	}
+	if fwFailed {
+		inv.firewallFailedError(fw)
+	}
 	if len(res.RestartFailed) > 0 {
 		inv.app.Out.Error("The records are removed and the rendered files are kept, but the release is not in force until the backend named under Rendered is restarted.")
 		return exit(1)
 	}
-	if len(notHeld) > 0 {
+	if len(notHeld) > 0 || fwFailed {
 		return exit(1)
 	}
 	return nil
@@ -1410,7 +1426,8 @@ func (inv *invocation) breakglassReleaseOne(name string) error {
 	isHost := inv.holdIsHost(h, res0)
 	// What the hold stood for, before the record goes.
 	age := holdAge(h, inv.app.Knobs.Now())
-	res, err := inv.app.Backends().StoreApply(inv.ctx, backend.ApplyOptions{}, func() error {
+	var fw firewall.Result
+	res, err := inv.app.Backends().StoreApply(inv.ctx, backend.ApplyOptions{After: inv.firewallAfter(&fw)}, func() error {
 		return inv.app.Conf().UnsetHold(h.Device)
 	})
 	inv.loaded = false
@@ -1426,13 +1443,15 @@ func (inv *invocation) breakglassReleaseOne(name string) error {
 	if isHost {
 		key = "host"
 	}
-	inv.app.Audit().Raw("auth.info", "breakglass release "+key+"="+h.Device+" addr="+h.Address+" held="+held+" by="+inv.sudoUser()+" result=ok")
+	inv.app.Audit().Raw("auth.info", "breakglass release "+key+"="+h.Device+" addr="+h.Address+" held="+held+" by="+inv.sudoUser()+" firewall="+firewallWord(fw)+" result=ok")
 
 	inv.echo("")
 	// echo, not echoE: the reason is free text and a backslash in it is a
 	// backslash.
 	inv.echo(ui.Green + "Break-glass RELEASED" + ui.NC + " on " + h.Device + " (" + h.Address + "): held " + age + " by " + h.By + " (" + h.Reason + ").")
 	inv.echo("  Rendered: " + inv.renderedSentence(m, h.Address, res, false))
+	fwLines, fwFailed := firewallReleaseLines(fw, []string{h.Address})
+	inv.echoFirewall(fwLines)
 	if e := inv.registeredVendor(h.Device, h.Address); e == "cisco" || e == "juniper" || e == "wti" {
 		inv.echo("  Check:    tacctl device config pull " + h.Device + " --diff (aaa: ok), then a new ssh login as yourself.")
 	} else if isHost {
@@ -1442,8 +1461,14 @@ func (inv *invocation) breakglassReleaseOne(name string) error {
 	}
 	inv.echo("  " + inv.heldNow("Still held: "))
 	inv.echo("")
+	if fwFailed {
+		inv.firewallFailedError(fw)
+	}
 	if len(res.RestartFailed) > 0 {
 		inv.app.Out.Error("The record is removed and the rendered files are kept, but the release is not in force until the backend named under Rendered is restarted.")
+		return exit(1)
+	}
+	if fwFailed {
 		return exit(1)
 	}
 	return nil
@@ -1524,10 +1549,13 @@ type holdJSON struct {
 	// at another address. The address it carves is still not answered.
 	Orphan  bool `json:"orphan"`
 	Covered bool `json:"covered"`
+	// Firewall is the setting that decides what the server does with the TCP
+	// connections of the address: reject, drop or off (breakglass.firewall).
+	Firewall string `json:"firewall"`
 }
 
 func (inv *invocation) holdJSONOf(h conf.Hold, m *model.Model, res *devreg.Resolver) holdJSON {
-	j := holdJSON{Device: h.Device, Address: h.Address, Since: h.Since, By: h.By, Reason: h.Reason}
+	j := holdJSON{Device: h.Device, Address: h.Address, Since: h.Since, By: h.By, Reason: h.Reason, Firewall: firewall.Mode(inv.app.Conf())}
 	if t := h.SinceTime(); !t.IsZero() {
 		j.HeldSecs = int64(inv.app.Knobs.Now().Sub(t) / time.Second)
 	}
@@ -1588,6 +1616,7 @@ func (inv *invocation) breakglassList(args []string) error {
 		inv.echoE(ui.Bold + title + ui.NC)
 		inv.echo(ui.Rule(title))
 		inv.echo("  None held: the server answers every device and host its scopes cover.")
+		inv.listFirewall()
 		inv.echo("")
 		return nil
 	}
@@ -1620,6 +1649,7 @@ func (inv *invocation) breakglassList(args []string) error {
 		}
 	}
 	inv.echo("  A held device or host is not answered by this server: its logins fall to its local accounts until it is released.")
+	inv.listFirewall()
 	if !inv.callerScopes().restricted {
 		inv.echo("  Release: tacctl breakglass release <name>")
 	}
@@ -1638,6 +1668,7 @@ func (inv *invocation) statusHolds() {
 			return
 		}
 		inv.echoE("    " + ui.Green + "Break-glass:        none held" + ui.NC)
+		inv.statusFirewall()
 		return
 	}
 	now := inv.app.Knobs.Now()
@@ -1651,6 +1682,7 @@ func (inv *invocation) statusHolds() {
 		inv.echoE("    " + ui.Red + "Break-glass:        HELD on " + h.Device + " (" + h.Address + ") since " + holdTime(h) + " by " + h.By +
 			" (" + holdAge(h, now) + "): the server does not answer it (tacctl breakglass list)" + ui.NC)
 	}
+	inv.statusFirewall()
 }
 
 // holdCarry moves a device's record to its new name ('device rename'): the
@@ -1668,7 +1700,8 @@ func (inv *invocation) holdCarry(oldName, newName, addr string) {
 	a := inv.app
 	moved := h
 	moved.Device = newName
-	_, err := a.Backends().StoreApply(inv.ctx, backend.ApplyOptions{DeferRestart: a.Backends().IDs()}, func() error {
+	var fw firewall.Result
+	_, err := a.Backends().StoreApply(inv.ctx, backend.ApplyOptions{DeferRestart: a.Backends().IDs(), After: inv.firewallAfter(&fw)}, func() error {
 		if err := a.Conf().SetHold(moved); err != nil {
 			return err
 		}
@@ -1677,6 +1710,14 @@ func (inv *invocation) holdCarry(oldName, newName, addr string) {
 	inv.loaded = false
 	if err != nil {
 		a.Out.Warn("The break-glass hold of '" + oldName + "' was not moved to '" + newName + "'; it is still recorded under the old name (tacctl breakglass list).")
+		return
+	}
+	// Only the name changed: the table says the same, and is loaded again all
+	// the same, so one that was lost meanwhile comes back.
+	if !fw.OK() {
+		a.Out.Warn("The firewall table was not loaded (" + fw.Why + "): " + firewallFixText(fw) + ".")
+	} else if line := fw.UnitLine(); line != "" {
+		a.Out.Warn("Break-glass firewall: " + line)
 	}
 }
 
@@ -1751,7 +1792,8 @@ func (inv *invocation) holdMove(f *devreg.File, res *devreg.Resolver, d *devreg.
 	registry := func(fn func(live *devreg.File) error) (bool, error) {
 		return devreg.Mutate(a.Paths.DevicesFile, a.Paths.KnownHosts, nil, fn)
 	}
-	res2, err := a.Backends().StoreApply(inv.ctx, backend.ApplyOptions{}, func() error {
+	var fw firewall.Result
+	res2, err := a.Backends().StoreApply(inv.ctx, backend.ApplyOptions{After: inv.firewallAfter(&fw)}, func() error {
 		// The record first: its check runs under tacctl.yaml's lock, and a
 		// refusal leaves the registry as it is.
 		if err := a.Conf().SetHoldIf(moved, func(existing []conf.Hold) error {
@@ -1805,7 +1847,7 @@ func (inv *invocation) holdMove(f *devreg.File, res *devreg.Resolver, d *devreg.
 		inv.verbResult(audit.Info, "breakglass hold-move device="+name+" from="+oldAddr+" to="+newAddr+" by="+inv.sudoUser(), failReason(err, "store"))
 		return err
 	}
-	inv.verbResult(audit.Info, "breakglass hold-move device="+name+" from="+oldAddr+" to="+newAddr+" by="+inv.sudoUser(), "")
+	inv.verbResult(audit.Info, "breakglass hold-move device="+name+" from="+oldAddr+" to="+newAddr+" by="+inv.sudoUser()+" firewall="+firewallWord(fw), "")
 
 	a.Out.Info("Device '" + name + "' address set to " + newAddr + ".")
 	if len(oldKeys) > 0 {
@@ -1817,6 +1859,11 @@ func (inv *invocation) holdMove(f *devreg.File, res *devreg.Resolver, d *devreg.
 	inv.echoE(ui.Red + "Break-glass hold MOVED" + ui.NC + " on " + name + " from " + oldAddr + " to " + newAddr + " (held since " + holdTime(cur) + " by " + cur.By + ").")
 	inv.echo("  Reason:   " + cur.Reason)
 	inv.echo("  Rendered: " + rendered)
+	fwLines, fwFailed := firewallHoldLines(fw, []string{newAddr})
+	if !fwFailed && fw.State == firewall.Applied && fw.Mode != firewall.Off && len(fw.Ports) > 0 {
+		fwLines[0] += "; " + oldAddr + " accepted again"
+	}
+	inv.echoFirewall(fwLines)
 	if info, ok := m.LookupAddr(oldAddr); ok && len(res2.RestartFailed) == 0 {
 		inv.echo("  Old address: " + oldAddr + " is answered again (scope '" + info.Scope + "').")
 	}
@@ -1826,8 +1873,14 @@ func (inv *invocation) holdMove(f *devreg.File, res *devreg.Resolver, d *devreg.
 	inv.echo("  When done: tacctl breakglass release " + name)
 	inv.echo("")
 	inv.stagingSweep()
+	if fwFailed {
+		inv.firewallFailedError(fw)
+	}
 	if len(res2.RestartFailed) > 0 {
 		a.Out.Error("The hold and the registry are on " + newAddr + " and the rendered files are kept, but the move is not in force until the backend named under Rendered is restarted; 'tacctl breakglass release " + name + "' removes the hold.")
+		return exit(1)
+	}
+	if fwFailed {
 		return exit(1)
 	}
 	return nil
