@@ -72,7 +72,7 @@ tacctl shell
 
 Task-oriented guides for operators and engineers (day-to-day operations,
 access lifecycle, incident runbooks, troubleshooting) are on the
-[documentation site](https://rett.github.io/tacctl/).
+[documentation site](https://tacctl.rettware.com/).
 
 The manual page (`man tacctl`, or `tacctl man [<command or topic>]` where there is no `man`, such as the login console) covers every command and setting in one place.
 
