@@ -11314,7 +11314,9 @@ A juniper device also has a NETCONF row: what the probe of its last pull found
 .BR "no hello" ),
 with the time, or
 .B "not probed"
-and the command that probes it; the check itself logs in to nothing. It is
+and the command that probes it; the check itself logs in to nothing. The row
+keeps the probe's word only: why a device gave no hello is shown by the pull
+that found it and by an apply that needed it. It is
 .B netconf
 in the JSON.
 .\" BEGIN GENERATED: command device check
@@ -11497,7 +11499,18 @@ RPC) where the device answers and over an ssh exec channel otherwise;
 .B \-\-transport netconf
 and
 .B ssh
-never fall back. IOS and IOS\-XE are read over the ssh command line, with
+never fall back. A device that accepts the subsystem and gives no usable hello
+is recorded as
+.BR "no hello" ;
+the record keeps only that word, and the line of the pull says why and what the
+device sent, in the first 120 bytes with control characters shown as
+.BR ? ,
+as in
+.BR "ok via ssh (netconf: no hello: the device's first message is <rpc\-error>, not a hello; the device sent \(dq<rpc\-error>...\(dq)" .
+A hello that names its capabilities with the XML namespace's prefix
+.RB ( urn:ietf:params:xml:ns:netconf:... ,
+as a Junos device does) is read as the same capabilities. IOS and IOS\-XE are
+read over the ssh command line, with
 paging off, after
 .BR "show version | include Version" ,
 whose line is kept on the record with the configuration syntax it says (see
@@ -13141,8 +13154,12 @@ disabling it must find the hello no longer answered
 .RB ( "port closed"
 or
 .BR "no hello" );
-a probe that cannot tell fails the proof and the change is rolled back. The
-line says
+a probe that cannot tell fails the proof and the change is rolled back. When
+enabling finds
+.B "no hello"
+the message says why and what the device sent
+.RB ( "no hello: the device's hello is not a hello; the device sent \(dq...\(dq" ).
+The line says
 .B "[NETCONF verified: hello ok]"
 or
 .BR "[NETCONF verified: not answering]" ,
