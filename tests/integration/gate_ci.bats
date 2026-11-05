@@ -12,7 +12,8 @@ setup() {
 #!/bin/bash
 # STUB_MODE: ok | race (a data race in the other packages, with -race only) |
 # knobs (a test that fails only with -tags testknobs, in shard 1) | lost |
-# build (a package that does not build) | hang
+# build (a package that does not build) | skip (two skipped tests in the
+# other packages, in both tag runs) | hang
 tagged=0
 case " $* $GOFLAGS " in *" -tags testknobs "* | *" -tags=testknobs "*) tagged=1 ;; esac
 raced=0
@@ -33,6 +34,7 @@ test)
                 printf 'WARNING: DATA RACE\n--- FAIL: TestRacy (0.00s)\nFAIL\tp/a\t0.1s\nok  \tp/b\t0.1s\n'; exit 1; fi ;;
         build) printf 'FAIL\tp/a [build failed]\nok  \tp/b\t0.1s\n'; exit 1 ;;
         lost) printf 'ok  \tp/a\t0.1s\n'; exit 0 ;;
+        skip) printf -- '--- SKIP: TestY (0.00s)\n    --- SKIP: TestZ/sub (0.00s)\n' ;;
         esac
         printf 'ok  \tp/a\t0.1s\nok  \tp/b\t0.1s\n' ;;
     *)
@@ -51,6 +53,22 @@ SH
 @test "six jobs ok is a PASS, the last line of stdout and of the log" {
     STUB_MODE=ok run -0 "$GATE" -o "$LOG"
     [[ "${lines[-1]}" == "GATE-CI PASS rc=0 jobs=6/6 failures=0 races=0 secs="*" log=$LOG" ]]
+    [[ "$(tail -n 1 "$LOG")" == "${lines[-1]}" ]]
+}
+
+@test "a run without a skipped test says skipped=0 and lists no names" {
+    STUB_MODE=ok run -0 "$GATE" -o "$LOG"
+    [[ "${lines[-1]}" == *" skipped=0 log=$LOG" ]]
+    [[ "$output" != *"gate-ci: skipped:"* ]]
+}
+
+@test "a test skipped in two jobs is counted once per job and listed once, above the PASS verdict" {
+    # TestY and TestZ/sub skip in other and in other/testknobs: four SKIP lines, two names
+    STUB_MODE=skip run -0 "$GATE" -o "$LOG"
+    [[ "${lines[-1]}" == "GATE-CI PASS rc=0 jobs=6/6 failures=0 races=0 secs="*" skipped=4 log=$LOG" ]]
+    [[ "${lines[-2]}" == "gate-ci: skipped: TestZ/sub" ]]
+    [[ "${lines[-3]}" == "gate-ci: skipped: TestY" ]]
+    [[ "$(printf '%s\n' "${lines[@]}" | grep -c '^gate-ci: skipped:')" -eq 2 ]]
     [[ "$(tail -n 1 "$LOG")" == "${lines[-1]}" ]]
 }
 

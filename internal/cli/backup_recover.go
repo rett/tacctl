@@ -27,6 +27,7 @@ package cli
 
 import (
 	"errors"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -643,21 +644,12 @@ func (pl *snmpPlan) Lines() []string {
 		if g.has > 0 {
 			parts = append(parts, strconv.Itoa(g.has)+" "+plural(g.has, "has", "have")+" it already")
 		}
-		for _, why := range sortedKeys(g.skipped) {
+		for _, why := range slices.Sorted(maps.Keys(g.skipped)) {
 			n := g.skipped[why]
 			parts = append(parts, "skip "+strconv.Itoa(n)+", "+why)
 		}
 		out = append(out, levelLabel(l)+": "+strings.Join(parts, "; "))
 	}
-	return out
-}
-
-func sortedKeys(m map[string]int) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	slices.Sort(out)
 	return out
 }
 

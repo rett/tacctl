@@ -2,6 +2,7 @@ package wti
 
 import (
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -73,20 +74,11 @@ func TailCommands() []string {
 }
 
 // IsPolicy reports an iptables value that sets a chain's policy.
-func IsPolicy(value string) bool { return contains(tailPolicies, value) }
+func IsPolicy(value string) bool { return slices.Contains(tailPolicies, value) }
 
 // IsTailRule reports an iptables value that is the final DROP or the
 // unit's own OUTPUT ACCEPT.
-func IsTailRule(value string) bool { return contains(tailRules, value) }
-
-func contains(l []string, s string) bool {
-	for _, x := range l {
-		if x == s {
-			return true
-		}
-	}
-	return false
-}
+func IsTailRule(value string) bool { return slices.Contains(tailRules, value) }
 
 // keyForms are the keys of the table (a user's are handled by name) and
 // their forms; keyWords the same keys as words, longest first.

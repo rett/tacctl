@@ -39,7 +39,7 @@ func logCmd(inv *invocation) *cobra.Command {
 			return inv.logRun(name, args)
 		}))
 	}
-	c := verb("log <subcommand> [--backend <id>]", "Log viewer (tail, search, failures, accounting; --backend <id>)",
+	c := verb("log <subcommand> [--backend <id>]", "Log viewer (tail, search, failures, accounting; filters; --backend <id>)",
 		sub("tail", "Show the last log entries (-f: then follow new ones until Ctrl-C)"),
 		sub("search", "Search the logs for a username or keyword"),
 		sub("failures", "Show auth failures from the last 24 hours"),
@@ -80,7 +80,7 @@ func (inv *invocation) logRun(sub string, args []string) error {
 			follow = true
 		case a == "--backend":
 			if arg(args, i+1) == "" {
-				return inv.usageErr("--backend needs a backend id. Usage: tacctl log " + sub + " [--backend <id>] ...")
+				return inv.usageErr("--backend needs a backend id.", "Usage: tacctl log "+sub+" [--backend <id>] ...")
 			}
 			only, hasOnly = args[i+1], true
 			i++

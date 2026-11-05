@@ -7,6 +7,7 @@ package cli
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -166,15 +167,6 @@ func (inv *invocation) userInfo(name string) (ui userInfo, ok bool, err error) {
 	return ui, true, nil
 }
 
-func contains(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
-}
-
 // userExists is model_user_exists, a model read error returned.
 func (inv *invocation) userExists(name string) (bool, error) {
 	m, err := inv.model()
@@ -283,14 +275,14 @@ func (inv *invocation) scopeList(csv string) ([]string, error) {
 		if err := inv.reservedScope(s); err != nil {
 			return nil, err
 		}
-		if !contains(all, s) {
+		if !slices.Contains(all, s) {
 			if strings.Contains(s, "@") {
 				// an email address typed in the place of a scope is not repeated
 				return nil, inv.usageErr("Scope does not exist. Available: " + strings.Join(all, " "))
 			}
 			return nil, inv.usageErr("Scope '" + s + "' does not exist. Available: " + strings.Join(all, " "))
 		}
-		if !contains(out, s) {
+		if !slices.Contains(out, s) {
 			out = append(out, s)
 		}
 	}
@@ -426,7 +418,7 @@ func (inv *invocation) userShow(args []string) error {
 				continue
 			}
 			label := s
-			if contains(u.orphans, s) {
+			if slices.Contains(u.orphans, s) {
 				label = ui.Red + s + " (ORPHAN)" + nc
 			}
 			if first {
@@ -712,7 +704,7 @@ func (inv *invocation) defaultScope() (string, error) {
 		return "", err
 	}
 	all := m.ScopeNames()
-	if v != "" && contains(all, v) {
+	if v != "" && slices.Contains(all, v) {
 		return v, nil
 	}
 	if len(all) == 1 {
@@ -1284,7 +1276,7 @@ func (inv *invocation) userScope(args []string) error {
 	// 'remove --all' empties the list; it takes no scope names.
 	removeAll := false
 	if sub == "remove" {
-		removeAll = contains(args[2:], "--all")
+		removeAll = slices.Contains(args[2:], "--all")
 		if removeAll && len(args) != 3 {
 			return inv.usageErr("Usage: tacctl user scope " + username + " remove --all   ('--all' takes no scope names)")
 		}
@@ -1318,7 +1310,7 @@ func (inv *invocation) userScope(args []string) error {
 				if s == "" {
 					continue
 				}
-				if contains(u.orphans, s) {
+				if slices.Contains(u.orphans, s) {
 					inv.echoE("  " + ui.Red + "- " + s + "  (ORPHAN: scope does not exist)" + ui.NC)
 				} else {
 					inv.echo("  - " + s)
@@ -1361,7 +1353,7 @@ func (inv *invocation) userScope(args []string) error {
 	case "add":
 		newList = append([]string(nil), current...)
 		for _, s := range requested {
-			if contains(current, s) {
+			if slices.Contains(current, s) {
 				noop = append(noop, s)
 			} else {
 				changed = append(changed, s)
@@ -1375,7 +1367,7 @@ func (inv *invocation) userScope(args []string) error {
 		}
 	case "remove":
 		for _, s := range requested {
-			if contains(current, s) {
+			if slices.Contains(current, s) {
 				changed = append(changed, s)
 			} else {
 				noop = append(noop, s)
@@ -1386,7 +1378,7 @@ func (inv *invocation) userScope(args []string) error {
 			return nil
 		}
 		for _, s := range current {
-			if !contains(changed, s) {
+			if !slices.Contains(changed, s) {
 				newList = append(newList, s)
 			}
 		}

@@ -37,6 +37,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -176,14 +177,14 @@ func (ob *onboard) args(p Parsed) error {
 	if p.Has("--section") {
 		for _, s := range strings.Split(p.Value("--section"), ",") {
 			s = strings.TrimSpace(s)
-			if !contains(planSections, s) {
+			if !slices.Contains(planSections, s) {
 				return inv.argErr("--section takes sections of "+strings.Join(planSections, ", ")+": '"+s+"'", onboardUse)
 			}
-			if !contains(ob.sections, s) {
+			if !slices.Contains(ob.sections, s) {
 				ob.sections = append(ob.sections, s)
 			}
 		}
-		if !contains(ob.sections, "aaa") {
+		if !slices.Contains(ob.sections, "aaa") {
 			return inv.argErr("--section must include aaa: onboard proves the change by a TACACS+ login, which only the aaa section sets up. Nothing was sent.", onboardUse)
 		}
 	}

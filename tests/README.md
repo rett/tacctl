@@ -46,11 +46,20 @@ process environment, signal the process, or write a package-level registry
 round-robin; `--check <count>` fails unless every test is in exactly one
 shard), the ones without tags with the race detector, beside one job for
 every other package, a static job (gofmt, `go vet`) and a lint job (`make
-lint`, below). Both tag sets run,
+lint`, below). The test jobs install the tools that tests skip
+without (`shellcheck`, `groff`, `less` and `man-db` for the completion block
+and the man page's search and pager tests of `internal/cli`; `openssh-server`
+and `openssh-client` for the `sshd -T` tests of `internal/console`): a skip is
+silent in a green run, so a tool a test starts to need is added to the job's
+`apt-get` step. Both tag sets run,
 as `make test-go` does; `make gate-go` (`tests/tools/gate-go.sh`, which
 `tests/integration/gate_go.bats` pins) runs the packages as one tracked run
 that ends with a single `GATE-GO PASS|FAIL` line, a FAIL for a run that was
-killed or lost a package: start it with a tool that notices the process
+killed or lost a package, and whose `skipped=<n>` field counts the `--- SKIP`
+lines of the log (the tests run with `-v`, the only way `go test` reports a
+skip) with the names of the skipped tests, at most 20, listed above the line: a
+test that skips for a missing tool passes silently, and an unexpected skip
+count is how a green run shows it did not test what it should: start it with a tool that notices the process
 ending (an agent: Bash `run_in_background`), never with a trailing `&` and
 never wait for it with `pgrep -f`; `GATE_TMPFS=1 make gate-go` keeps the tests' sandboxes on `/dev/shm` (the fsync calls cost nothing there: the run takes about a third of the time; the log and `GOCACHE` stay on disk); the bats suite, the diff corpus and the container
 matrix stay on the maintainer's machine.
@@ -66,7 +75,9 @@ stops with status 2 when the workflow's shard or tag matrix changes). Every
 job runs, and the run ends with a single `GATE-CI PASS rc=0 jobs=6/6 ...`
 line, or `GATE-CI FAIL ...` with `failed=<job>:<test>,...` naming each
 failing test (a package when no test failed) and `races=` counting the data
-races; it needs cgo, takes several times as long as `gate-go`, and is
+races (`skipped=` counts the skips of all the jobs, a test that runs in
+several jobs once for each, and the names are listed above the line as
+`gate-go` does); it needs cgo, takes several times as long as `gate-go`, and is
 started, read and sped up (`GATE_TMPFS=1`) like it.
 
 The `lint` job of the workflow runs `make lint` on Ubuntu 24.04, with that

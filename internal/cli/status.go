@@ -9,6 +9,7 @@ package cli
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -313,7 +314,7 @@ func (inv *invocation) status([]string) error {
 // names a scope, else the only scope, else "".
 func statusDefaultScope(get func(path, fallback string) (string, bool), names []string) string {
 	v, _ := get("scope.default", "")
-	if v != "" && contains(names, v) {
+	if v != "" && slices.Contains(names, v) {
 		return v
 	}
 	if len(names) == 1 {
