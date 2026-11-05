@@ -93,6 +93,15 @@ type Paths struct {
 	OperatorNoticeMarker  string // VarLib/operator-policy-noted: the upgrade told once about the devices configured before the operator lost the commands that can interrupt service (0.2.5)
 	WTIPlainNoticeMarker  string // VarLib/wti-plain-acl-noted: the upgrade told once which scopes have plain management ACL entries that now permit every protocol and port on WTI units (0.2.7)
 
+	// FirewallRules is the nftables rules file tacctl owns (0.2.24): the
+	// whole table 'inet tacctl' that refuses the TCP connections of the held
+	// addresses (StateDir/breakglass-firewall.nft, 0600); the boot unit
+	// loads it, and so does every change of a hold.
+	FirewallRules string
+	// FirewallUnit is the systemd unit that loads FirewallRules at boot
+	// (SystemdDir/tacctl-breakglass-firewall.service).
+	FirewallUnit string
+
 	SudoersFile     string // TACCTL_SUDOERS_FILE (SUDOERS_FILE)
 	TierSudoersFile string // TACCTL_TIER_SUDOERS_FILE (TIER_SUDOERS_FILE)
 
@@ -191,6 +200,8 @@ func Resolve(env Env, exe string, exists func(string) bool) Paths {
 	p.OverrideDir = env.Or("TACCTL_OVERRIDE_DIR", "/etc/systemd/system/tacquito.service.d")
 	p.TacacsUnitDir = env.Or("TACCTL_SYSTEMD_DIR", filepath.Dir(p.OverrideDir))
 	p.SystemdDir = env.Or("TACCTL_SYSTEMD_DIR", "/etc/systemd/system")
+	p.FirewallRules = p.StateDir + "/breakglass-firewall.nft"
+	p.FirewallUnit = p.SystemdDir + "/tacctl-breakglass-firewall.service"
 	p.LogrotateDir = env.Or("TACCTL_LOGROTATE_DIR", "/etc/logrotate.d")
 	p.SettleSeconds = env.Or("TACCTL_SETTLE_SECONDS", DefaultSettleSeconds)
 
