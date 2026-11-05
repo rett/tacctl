@@ -75,9 +75,12 @@ current behaviour; this file is where history lives.
    arrived before the command was typed the session failed with `output between
    commands`. The same device usually worked on another run. The first command
    now takes that late answer for what it is: the line break, the line a Junos
-   virtual chassis prints before every prompt and the prompt in front of the
-   echo are dropped and the echo stays; anything else between commands, and a
-   prompt more than the commands account for, is still refused.
+   virtual chassis prints before every prompt, the `# commit confirmed will be
+   rolled back in N minutes` line it prints before every prompt while a
+   confirmed commit is pending (as it is on the verification login of every
+   apply) and the prompt in front of the echo are dropped and the echo stays;
+   anything else between commands, and a prompt more than the commands account
+   for, is still refused.
 
 ## 0.2.24 (2026-11-05)
 

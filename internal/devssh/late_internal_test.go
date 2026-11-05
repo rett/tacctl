@@ -261,6 +261,62 @@ func TestLateAnswerInPieces(t *testing.T) {
 	}
 }
 
+// While a confirmed commit is pending a Junos device prints a banner line
+// before every prompt, the minutes left in it (singular for one). The login
+// that verifies a change runs in that state, so the late answer holds it:
+// before the command is typed, after, and in pieces cut at the banner.
+func TestLateAnswerWithAPendingConfirmedCommit(t *testing.T) {
+	t.Parallel()
+	for _, mins := range []string{"1 minute", "5 minutes", "12 minutes"} {
+		banner := "# commit confirmed will be rolled back in " + mins
+		area := "\r\n" + banner + "\r\n{master:0}\r\n"
+		ans := area + "alice@rtr1> "
+		for name, pieces := range map[string][2]string{
+			"before the command is typed": {ans, ""},
+			"after the command is typed":  {"", ans},
+			"cut after the banner line":   {"\r\n" + banner + "\r\n", "{master:0}\r\nalice@rtr1> "},
+			"cut after the line break":    {"\r\n", banner + "\r\n{master:0}\r\nalice@rtr1> "},
+		} {
+			t.Run(mins+", "+name, func(t *testing.T) {
+				t.Parallel()
+				release := make(chan struct{})
+				sh, d := openScripted(t, 30*time.Millisecond, func(d *lineDev) {
+					d.say(ans[2:]) // the login's own prompt has the banner too
+					if _, ok := d.next(); !ok {
+						return
+					}
+					if _, ok := d.next(); !ok { // and the retry
+						return
+					}
+					d.say(ans) // the answer to the first
+					select {
+					case <-release:
+					case <-d.done:
+						return
+					}
+					d.say(pieces[0])
+					cmd, ok := d.next()
+					if !ok {
+						return
+					}
+					d.say(pieces[1])
+					d.say(cmd + "\r\nout\r\n")
+					d.say(ans)
+					if _, ok := d.next(); !ok {
+						return
+					}
+					d.say(ans)
+				})
+				close(release)
+				d.arrived(t, len(pieces[0]))
+				if got := runCmd(t, sh, "show system commit"); got != wantOut {
+					t.Errorf("got %q, want %q", got, wantOut)
+				}
+			})
+		}
+	}
+}
+
 // A session that has the late answer in front of the echo of the command that
 // leads to the other mode (the 'configure exclusive' of the report) is in
 // that mode afterwards.

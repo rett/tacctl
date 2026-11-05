@@ -523,13 +523,23 @@ func (s *shell) Run(ctx context.Context, cmd string) (string, error) {
 // before every prompt ('{master:0}').
 var reJunosChassis = regexp.MustCompile(`^\{[a-z-]+(?::[a-z0-9]+)?\}$`)
 
+// PendingBanner matches the line a Junos device prints before the prompt of
+// every session while a confirmed commit is pending, the minutes left in it
+// [C: '# commit confirmed will be rolled back in 2 minutes'; '1 minute' for
+// one]. The first group is the minutes. internal/devapply reads the state
+// from it.
+var PendingBanner = regexp.MustCompile(`^# commit confirmed will be rolled back in ([1-9][0-9]{0,4}) minutes?$`)
+
 // staleLine reports whether line, one the device printed in front of its
 // prompt in a late answer, is nothing but what a device prints there: a
-// blank line, the location line, the chassis line, or a line it printed
-// before the prompt of the last command (area).
+// blank line, the location line, the chassis line, the banner of a pending
+// confirmed commit, or a line it printed before the prompt of the last
+// command (area). The first command after a login has no area, and a
+// session in the state of a pending confirmed commit (the verification
+// login of an apply) has the banner in every answer.
 func staleLine(line string, area []string) bool {
 	t := strings.TrimSpace(line)
-	if t == "" || LocationLine(t) || reJunosChassis.MatchString(t) {
+	if t == "" || LocationLine(t) || reJunosChassis.MatchString(t) || PendingBanner.MatchString(t) {
 		return true
 	}
 	return slices.ContainsFunc(area, func(a string) bool { return strings.TrimSpace(a) == t })

@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/rett/tacctl/internal/devconf/plan"
+	"github.com/rett/tacctl/internal/devssh"
 )
 
 // The answers the transport requires or recognises.
@@ -59,7 +60,8 @@ const (
 // reBanner is the line a Junos device prints before the prompt of every
 // session while a confirmed commit is pending, the minutes left in it [C:
 // '# commit confirmed will be rolled back in 2 minutes'; '1 minute' for one].
-var reBanner = regexp.MustCompile(`^# commit confirmed will be rolled back in ([1-9][0-9]{0,4}) minutes?$`)
+// The pattern is devssh's, which needs it to read a late answer.
+var reBanner = devssh.PendingBanner
 
 // reSwitchLine is the '{master:0}' line a switch prints before its
 // operational prompt [C].
