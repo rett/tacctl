@@ -15,6 +15,7 @@ import (
 	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/gitx"
 	"github.com/rett/tacctl/internal/paths"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -188,14 +189,23 @@ func (h *Host) git(ctx context.Context, dir string, args ...string) int {
 	return h.cmd(ctx, execx.Cmd{Name: "git", Args: args, Dir: dir, Stdout: h.Out.Stdout, Stderr: h.Out.Stderr}).Code
 }
 
+// gitNet is git for a command that talks to the remote (clone, fetch, pull):
+// it cannot wait for an operator who is not there (gitx.Net), as the pull of
+// the tacquito source. Output passed through, as git does.
+func (h *Host) gitNet(ctx context.Context, dir string, args ...string) int {
+	c := execx.Cmd{Name: "git", Args: args, Dir: dir, Stdout: h.Out.Stdout, Stderr: h.Out.Stderr}
+	return h.cmd(ctx, gitx.Net(ctx, h.Runner, c)).Code
+}
+
+// gitNetQuietErr is gitNet with stderr dropped ('git <args> 2>/dev/null').
+func (h *Host) gitNetQuietErr(ctx context.Context, dir string, args ...string) int {
+	c := execx.Cmd{Name: "git", Args: args, Dir: dir, Stdout: h.Out.Stdout, Stderr: io.Discard}
+	return h.cmd(ctx, gitx.Net(ctx, h.Runner, c)).Code
+}
+
 // gitQuiet is 'git <args> &>/dev/null'.
 func (h *Host) gitQuiet(ctx context.Context, dir string, args ...string) int {
 	return h.cmd(ctx, execx.Cmd{Name: "git", Args: args, Dir: dir, Stdout: io.Discard, Stderr: io.Discard}).Code
-}
-
-// gitQuietErr is 'git <args> 2>/dev/null'.
-func (h *Host) gitQuietErr(ctx context.Context, dir string, args ...string) int {
-	return h.cmd(ctx, execx.Cmd{Name: "git", Args: args, Dir: dir, Stdout: h.Out.Stdout, Stderr: io.Discard}).Code
 }
 
 // gitOut is '$(git <args> 2>/dev/null)': stdout without its trailing

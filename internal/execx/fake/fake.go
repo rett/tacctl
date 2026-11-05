@@ -8,7 +8,7 @@
 // Scripting: On (by argv prefix), When and Func (by predicate), Seq (a
 // different answer per call), Fail, Missing and Install (what LookPath
 // finds), ExecErr (what a failed execve returns), Strict (an unscripted call
-// is an error instead of a silent success). Asserting: Calls, Records,
+// is an error instead of a silent success), Rewrite. Asserting: Calls, Raw, Records,
 // Argvs, Called, CalledRegexp, Count, ArgvContains, Signals, Execs.
 package fake
 
@@ -64,6 +64,7 @@ type Runner struct {
 	missing map[string]bool
 	paths   map[string]string
 	records []Record
+	raw     []execx.Cmd
 	execs   []ExecCall
 	signals []os.Signal
 	// ExecErr, when set, is returned by Exec (as a failed execve would be).
@@ -77,6 +78,13 @@ type Runner struct {
 	// succeeding silently. Use it where a test must account for every
 	// program the code under test runs.
 	Strict bool
+	// Rewrite, when set, is applied to every Run and Start before the call
+	// is recorded and matched against the rules: the rules and the
+	// assertions see Rewrite(c), Raw the command as it was made. It is for
+	// a wrapper the code under test puts around a program (gitx.Net around
+	// git), so that a test of what the program does is not rewritten by
+	// every wrapper, and one test looks at the wrapper itself.
+	Rewrite func(execx.Cmd) execx.Cmd
 }
 
 var _ execx.Runner = (*Runner)(nil)
@@ -174,6 +182,14 @@ func (f *Runner) Calls() []execx.Cmd {
 	return out
 }
 
+// Raw returns every Run and Start so far as it was made, before Rewrite.
+// Without a Rewrite it is Calls.
+func (f *Runner) Raw() []execx.Cmd {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]execx.Cmd(nil), f.raw...)
+}
+
 // Records returns every Run and Start so far with the input each was given.
 func (f *Runner) Records() []Record {
 	f.mu.Lock()
@@ -233,7 +249,7 @@ func (f *Runner) Signals() []os.Signal {
 func (f *Runner) Reset() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.records, f.execs, f.signals = nil, nil, nil
+	f.records, f.raw, f.execs, f.signals = nil, nil, nil, nil
 }
 
 // Argvs returns the argv of every Run and Start so far, each joined by
@@ -285,6 +301,10 @@ func (f *Runner) Run(ctx context.Context, c execx.Cmd) (execx.Result, error) {
 		c.Stdin = bytes.NewReader(stdin)
 	}
 	f.mu.Lock()
+	f.raw = append(f.raw, c)
+	if f.Rewrite != nil {
+		c = f.Rewrite(c)
+	}
 	f.records = append(f.records, Record{Cmd: c, Stdin: stdin})
 	if f.missing[c.Argv()[0]] {
 		f.mu.Unlock()

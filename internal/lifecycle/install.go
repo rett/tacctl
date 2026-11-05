@@ -198,7 +198,7 @@ func (h *Host) installDeploy(ctx context.Context, branch string) error {
 		if branch != "" {
 			h.gitQuiet(ctx, deploy, "checkout", branch)
 		}
-		h.gitQuietErr(ctx, deploy, "pull", "--quiet")
+		h.gitNetQuietErr(ctx, deploy, "pull", "--quiet")
 	} else {
 		if lexists(deploy) {
 			if err := h.rmRF(deploy); err != nil {
@@ -209,7 +209,7 @@ func (h *Host) installDeploy(ctx context.Context, branch string) error {
 		if branch != "" {
 			args = append(args, "--branch", branch)
 		}
-		if code := h.git(ctx, "", append(args, paths.ManageRepo, deploy)...); code != 0 {
+		if code := h.gitNet(ctx, "", append(args, paths.ManageRepo, deploy)...); code != 0 {
 			return &backend.Error{Code: code, Reason: "git clone"}
 		}
 		out.Info("Management repo cloned to " + deploy)
