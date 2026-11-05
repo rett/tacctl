@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"io"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -581,7 +582,7 @@ func equivNormalize(doc any, fp func(string) string) (*yamlpy.Map, []string) {
 	secrets.Set("routes_if_every_scope_had_users", latentRoutes)
 	notes = append(notes, shadow...)
 	for _, n := range latent {
-		if !contains(shadow, n) {
+		if !slices.Contains(shadow, n) {
 			notes = append(notes, n+" once every scope has a user")
 		}
 	}
