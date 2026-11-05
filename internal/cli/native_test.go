@@ -273,6 +273,7 @@ func TestUserAddRemoveThroughStoreApply(t *testing.T) {
 
 func TestUserAddPromptsAndGenerates(t *testing.T) {
 	sb := newSandbox(t, true)
+	sb.defaultBcryptCost() // the expected hash below is made at the default cost 12
 	sb.run("CorrectHorse99\nCorrectHorse99\n", []string{"user", "add", "dave", "operator", "--scopes", "lab"},
 		"TACCTL_TEST_RANDOM=a1b2c3d4e5f60718293a4b5c6d7e8f90")
 	sb.expect(0, "added (operator)", "  Confirm password: **************")
