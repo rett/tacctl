@@ -55,6 +55,7 @@ func answerOf(t *testing.T, raw string) []string {
 // The body is cut before the blank line and the prompt, so neither reaches
 // checkAnswer.
 func TestCheckAnswerUnlabelledMasterAsDelivered(t *testing.T) {
+	t.Parallel()
 	for name, raw := range map[string]string{
 		"lf":             chassisCheck + "\n{master:0}[edit]\n",
 		"crlf":           strings.ReplaceAll(chassisCheck+"\n{master:0}[edit]\n", "\n", "\r\n"),
@@ -82,6 +83,7 @@ func TestCheckAnswerUnlabelledMasterAsDelivered(t *testing.T) {
 // 'commit check' on the chassis: the master's line is the head, each other
 // member has a group of its own.
 func TestCheckAnswerUnlabelledMemberFailing(t *testing.T) {
+	t.Parallel()
 	const bad = "warning: member is out of sync\n"
 	const good = "configuration check succeeds\n"
 	for name, c := range map[string]struct{ in, why string }{
@@ -109,6 +111,7 @@ func TestCheckAnswerUnlabelledMemberFailing(t *testing.T) {
 // Members that lack a block: only one can be the one that answers without a
 // label.
 func TestCheckAnswerUnlabelledTwoMembersMissing(t *testing.T) {
+	t.Parallel()
 	const good = "configuration check succeeds\n"
 	const two = `a line "configuration check succeeds" outside the members' answers: members fpc0, fpc2 all lack a block, so it cannot be the answer of one`
 	if ok, why := checkAnswer(split(good+"fpc1: \n"+good), chassisSet); ok || why != two {
@@ -138,6 +141,7 @@ func TestCheckAnswerUnlabelledTwoMembersMissing(t *testing.T) {
 // routing engines, a cluster, and no set. Nothing else reads a plain block
 // as a member's.
 func TestCheckAnswerUnlabelledLeavesTheOtherShapes(t *testing.T) {
+	t.Parallel()
 	const good = "configuration check succeeds\n"
 	for name, c := range map[string]struct {
 		in  string
@@ -170,6 +174,7 @@ func TestCheckAnswerUnlabelledLeavesTheOtherShapes(t *testing.T) {
 // the prompt, are read for the commit of each kind (the confirming commit's
 // reply is also that of the commit that undoes a confirmed one).
 func TestReadCommittedUnlabelledMaster(t *testing.T) {
+	t.Parallel()
 	for name, c := range map[string]struct {
 		in   string
 		want []string
@@ -207,6 +212,7 @@ func TestReadCommittedUnlabelledMaster(t *testing.T) {
 // The strict rules of the unlabelled member's commit: its head, each
 // member's group, its last line and the sets.
 func TestReadCommittedUnlabelledMasterRefused(t *testing.T) {
+	t.Parallel()
 	n := chassisNote + "\n"
 	type c struct {
 		in   string
@@ -263,6 +269,7 @@ func TestReadCommittedUnlabelledMasterRefused(t *testing.T) {
 // chassis, the stand-alone note between the blocks, a single member, two
 // routing engines and a cluster.
 func TestReadCommittedUnlabelledLeavesTheOtherShapes(t *testing.T) {
+	t.Parallel()
 	note := plan.ApplyConfirmedNote(5)
 	label := func(l, t string) string { return l + ": \n" + t + "\n" }
 	all := func(set []string, t string) string {
@@ -301,6 +308,7 @@ func TestReadCommittedUnlabelledLeavesTheOtherShapes(t *testing.T) {
 // owner's head and the old path do; the note stays required of every member
 // of a confirmed commit.
 func TestReadCommittedUnlabelledMemberGroupWithCheck(t *testing.T) {
+	t.Parallel()
 	const chk = "configuration check succeeds\n"
 	n := chassisNote + "\n"
 	if ok, why := readCommitted(split(chk+"fpc1: \n"+chk+"commit complete\nfpc2: \ncommit complete\ncommit complete\n"), chassisSet, textCommitComplete); !ok {
@@ -332,6 +340,7 @@ func TestReadCommittedUnlabelledMemberGroupWithCheck(t *testing.T) {
 // The master need not be fpc0 and the chassis need not have three members:
 // the owner is the one member of the set that has no block.
 func TestReadCommittedUnlabelledOtherChassis(t *testing.T) {
+	t.Parallel()
 	const chk = "configuration check succeeds\n"
 	n := chassisNote + "\n"
 	pair := []string{"fpc0", "fpc1"}

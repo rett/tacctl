@@ -380,51 +380,71 @@ func TestManSearchLandsOnEachEntry(t *testing.T) {
 	if err != nil {
 		t.Skip("less is not installed: the search of the page cannot be checked in a pager")
 	}
+	// The test sets nothing in this process (no environment, no working
+	// directory, no registry): it runs side by side with the others, and its
+	// widths side by side with one another (each has files of its own in dir,
+	// named after the width).
+	parallel(t)
 	dir := t.TempDir()
 	topics := shippedTopics(t)
 	reach := reachableTopics(topics)
 	if len(reach) < 250 {
 		t.Fatalf("%d topics are reachable", len(reach))
 	}
+	// At most eight pagers at a time, whatever the number of widths: they
+	// are CPU-bound, and the other tests of the process run beside them.
+	pagers := make(chan struct{}, 8)
 	for _, width := range []int{80, 100, 140, 200} {
-		rendering := renderPage(t, groff, dir, assets.ManPage(), width)
-		plain, marked := unstyled(rendering), unstyled(renderPage(t, groff, dir, markedPage(assets.ManPage()), width))
-		if len(plain) != len(marked) {
-			t.Fatalf("width %d: the marked page has %d lines, the page %d: groff lays it out differently, so the entries cannot be told apart", width, len(marked), len(plain))
-		}
-		at, same := entryLines(plain, marked)
-		if !same || len(at) != len(topics) {
-			t.Fatalf("width %d: the marked page is laid out differently (%d entries marked for %d topics)", width, len(at), len(topics))
-		}
-		file := filepath.Join(dir, "rendered."+strconv.Itoa(width))
-		if err := os.WriteFile(file, []byte(rendering), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		work := make(chan int)
-		var wg sync.WaitGroup
-		for range 8 {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for i := range work {
-					e := topics[i]
-					got, err := firstLineShown(less, file, width, e.searchArgs())
-					switch {
-					case err != nil:
-						t.Errorf("width %d: %q (man %s): searches %q: %v", width, e.text, strings.Join(reach[i], " "), e.searchArgs(), err)
-					case got != at[i]+1:
-						t.Errorf("width %d: %q (man %s): searches %q show line %d (%q) first, the entry is on line %d (%q)", width, e.text,
-							strings.Join(reach[i], " "), e.searchArgs(), got, strings.TrimSpace(plain[got-1]), at[i]+1, strings.TrimSpace(plain[at[i]]))
-					}
-				}
-			}()
-		}
-		for i := range topics {
-			if _, ok := reach[i]; ok {
-				work <- i
-			}
-		}
-		close(work)
-		wg.Wait()
+		t.Run("width "+strconv.Itoa(width), func(t *testing.T) {
+			t.Parallel()
+			manSearchLandsAtWidth(t, groff, less, dir, topics, reach, width, pagers)
+		})
 	}
+}
+
+// manSearchLandsAtWidth is TestManSearchLandsOnEachEntry at one width; a
+// pager runs only while it holds a place in pagers.
+func manSearchLandsAtWidth(t *testing.T, groff, less, dir string, topics []manTopic, reach map[int][]string, width int, pagers chan struct{}) {
+	t.Helper()
+	rendering := renderPage(t, groff, dir, assets.ManPage(), width)
+	plain, marked := unstyled(rendering), unstyled(renderPage(t, groff, dir, markedPage(assets.ManPage()), width))
+	if len(plain) != len(marked) {
+		t.Fatalf("width %d: the marked page has %d lines, the page %d: groff lays it out differently, so the entries cannot be told apart", width, len(marked), len(plain))
+	}
+	at, same := entryLines(plain, marked)
+	if !same || len(at) != len(topics) {
+		t.Fatalf("width %d: the marked page is laid out differently (%d entries marked for %d topics)", width, len(at), len(topics))
+	}
+	file := filepath.Join(dir, "rendered."+strconv.Itoa(width))
+	if err := os.WriteFile(file, []byte(rendering), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	work := make(chan int)
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range work {
+				e := topics[i]
+				pagers <- struct{}{}
+				got, err := firstLineShown(less, file, width, e.searchArgs())
+				<-pagers
+				switch {
+				case err != nil:
+					t.Errorf("width %d: %q (man %s): searches %q: %v", width, e.text, strings.Join(reach[i], " "), e.searchArgs(), err)
+				case got != at[i]+1:
+					t.Errorf("width %d: %q (man %s): searches %q show line %d (%q) first, the entry is on line %d (%q)", width, e.text,
+						strings.Join(reach[i], " "), e.searchArgs(), got, strings.TrimSpace(plain[got-1]), at[i]+1, strings.TrimSpace(plain[at[i]]))
+				}
+			}
+		}()
+	}
+	for i := range topics {
+		if _, ok := reach[i]; ok {
+			work <- i
+		}
+	}
+	close(work)
+	wg.Wait()
 }

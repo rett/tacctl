@@ -21,7 +21,7 @@ import (
 // exit status and the host-key diagnosis. ssh (through 'sudo -u <caller>') and
 // ssh-keyscan are scripted; nothing reaches a host.
 
-const sshTestSock = "/tmp/agent.sock"
+const sshTestSock = "/tmp/agent.sock" // shared-proc-ok: a socket path the fake ssh is told, no file is made
 
 // sshSandbox registers the devices of the table: core-sw1 (cisco, legacy,
 // pinned, prod), lab-rtr2 (juniper, pinned, lab), oob-con1 (wti, unpinned,
@@ -587,7 +587,7 @@ func TestForwardBind(t *testing.T) {
 		{"-L", "[2001:db8::1]:8443:[2001:db8::2]:443", "2001:db8::1", true},
 		{"-L", "127.0.0.1:8443:/run/s.sock", "127.0.0.1", true},
 		{"-L", "8443:/run/s.sock", "", false},
-		{"-L", "/tmp/l.sock:h:443", "", false},
+		{"-L", "/tmp/l.sock:h:443", "", false}, // shared-proc-ok: a forward the option parser rejects, no file is made
 		{"-D", "1080", "", false},
 		{"-D", "192.0.2.1:1080", "192.0.2.1", true},
 	} {

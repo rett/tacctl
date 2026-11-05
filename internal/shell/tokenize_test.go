@@ -8,6 +8,7 @@ import (
 )
 
 func TestTokenize(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		line string
 		want []string
@@ -46,6 +47,7 @@ func TestTokenize(t *testing.T) {
 // command, and what would be an escape elsewhere reaches tacctl as a
 // literal word (an unknown command or an invalid argument).
 func TestTokenizeEscapeAttempts(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		line string
 		want []string
@@ -59,7 +61,7 @@ func TestTokenizeEscapeAttempts(t *testing.T) {
 		{"user show $(id)", []string{"user", "show", "$(id)"}},
 		{"user show `id`", []string{"user", "show", "`id`"}},
 		{"user show $USER ${HOME}", []string{"user", "show", "$USER", "${HOME}"}},
-		{"user list > /tmp/x", []string{"user", "list", ">", "/tmp/x"}},
+		{"user list > /tmp/x", []string{"user", "list", ">", "/tmp/x"}}, // shared-proc-ok: a line the tokenizer splits, no file is made
 		{"user list >/tmp/x 2>&1", []string{"user", "list", ">/tmp/x", "2>&1"}},
 		{"user list < /etc/shadow", []string{"user", "list", "<", "/etc/shadow"}},
 		{"user list\nid", []string{"user", "list\nid"}},
@@ -91,6 +93,7 @@ func TestTokenizeEscapeAttempts(t *testing.T) {
 }
 
 func TestQuoteRoundTrip(t *testing.T) {
+	t.Parallel()
 	for _, w := range []string{"", "a", "a b", "it's", `a"b`, `a\b`, "\t", "list;", "$(id)", "é ü"} {
 		got, err := Tokenize(Quote(w))
 		if err != nil || len(got) != 1 || got[0] != w {
@@ -134,6 +137,7 @@ func FuzzTokenize(f *testing.F) {
 }
 
 func TestStripBinary(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		line string
 		want []string

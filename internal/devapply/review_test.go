@@ -33,11 +33,13 @@ func (s strangerT) Open(ctx context.Context, allow func(string) error) error {
 // never confirmed by tacctl's 'commit check': the state (the banner) is read
 // before the check, the candidate discarded and the transaction failed.
 func TestStrangerPendingBeforeCheck(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name  string
 		apply bool
 	}{{"check", false}, {"apply", true}} {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			d := newDevice(t, nil)
 			before := d.srv.Committed()
 			p := &planner{desired: desiredLines()}
@@ -83,6 +85,7 @@ func (e expireT) Cancel(ctx context.Context, id string) error {
 // own rollback, 'rollback 1' loads the change itself, and committing it would
 // make it permanent.
 func TestCancelAfterExpiryCommitsNothing(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	before := d.srv.Committed()
 	o := apply(t, d, &planner{desired: desiredLines()}, func(in *Input) {
@@ -134,6 +137,7 @@ func (bannerSession) PromptArea() ([]string, bool) {
 }
 
 func TestCancelNotInverseCommitsNothing(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	before := d.srv.Committed()
 	o := apply(t, d, &planner{desired: desiredLines()}, func(in *Input) {
@@ -176,6 +180,7 @@ func otherVia(h History) History {
 // taken for someone else's confirm: the state is settled from the
 // configuration (the delta), or unknown.
 func TestUnrecognisedEntryAfterCommit(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	before := d.srv.Committed()
 	p := &planner{desired: desiredLines()}
@@ -228,6 +233,7 @@ func factsOf(p *planner) func(context.Context, string) (plan.Delta, error) {
 // A device named 'shapes' has its lock apart from the shape store's: the
 // applied apply files its shape and returns.
 func TestLockDeviceNamedShapes(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	done := make(chan Outcome, 1)
 	p := &planner{desired: desiredLines()}
@@ -263,6 +269,7 @@ func TestLockDeviceNamedShapes(t *testing.T) {
 // The held login dialled with the job's own context still types the discard
 // after the second interrupt.
 func TestInterruptDialledWithJobContext(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	before := d.srv.Committed()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -308,6 +315,7 @@ func (s strangeCompare) PromptArea() ([]string, bool) {
 // The gate never quotes a line of a stranger's staged compare: its number
 // only.
 func TestGateCompareNotQuoted(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	o := check(t, d, &planner{desired: desiredLines()}, func(in *Input) {
 		j := in.Transport.(*JunosCLI)
@@ -353,6 +361,7 @@ func (p panicT) Confirm(ctx context.Context, id, user string) error {
 // commit the candidate is discarded, after it the record says unknown with
 // the window's end.
 func TestPanicNamedExit(t *testing.T) {
+	t.Parallel()
 	run := func(t *testing.T, d *device, at string) (o Outcome) {
 		t.Helper()
 		defer func() {
@@ -365,6 +374,7 @@ func TestPanicNamedExit(t *testing.T) {
 		})
 	}
 	t.Run("before", func(t *testing.T) {
+		t.Parallel()
 		d := newDevice(t, nil)
 		before := d.srv.Committed()
 		o := run(t, d, "load")
@@ -377,6 +387,7 @@ func TestPanicNamedExit(t *testing.T) {
 		}
 	})
 	t.Run("after", func(t *testing.T) {
+		t.Parallel()
 		d := newDevice(t, nil)
 		o := run(t, d, "confirm")
 		wantExit(t, o, ExitUnknown, ResultUnknown)
@@ -392,6 +403,7 @@ func TestPanicNamedExit(t *testing.T) {
 // A secret of two characters does not mask every word that holds them: only
 // a whole field, and the statement where it stands.
 func TestShortSecretMasking(t *testing.T) {
+	t.Parallel()
 	line := plan.Line{Section: "snmp", Op: plan.OpSet, Text: "set snmp community ro authorization read-only",
 		Secret: true, HasValue: true, Elided: "set snmp community <secret> authorization read-only"}
 	d := newDevice(t, map[string]string{"load.errors": "set snmp community ro => error: invalid community ro for this release\n"})

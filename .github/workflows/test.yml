@@ -5,7 +5,8 @@
 # machines (tests/README.md).
 # The tag 0.2.2 is fetched (fetch-tags): two tests build or read it and skip
 # without it. The tests of internal/cli run in parallel inside a process
-# (about six minutes on eight cores); two shards
+# (about six minutes on eight cores; -parallel 16, which go-test-shard.sh
+# passes, because they mostly wait on timers and pseudo-terminals); two shards
 # (tests/tools/go-test-shard.sh) keep a four-core runner short, the ones
 # without tags with the race detector. Every other package is one job.
 # Each runs twice, as 'make test-go' does: without tags and with the test

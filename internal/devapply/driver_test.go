@@ -48,6 +48,7 @@ func wantExit(t *testing.T, o Outcome, e Exit, r Result) {
 // --- APPLIED ---------------------------------------------------------------------------------
 
 func TestApplyApplied(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	before := d.srv.Committed()
 	p := &planner{desired: desiredLines()}
@@ -112,6 +113,7 @@ func TestApplyApplied(t *testing.T) {
 // --- CHECKED, NO-CHANGE -------------------------------------------------------------------------
 
 func TestCheckChecked(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	before := d.srv.Committed()
 	o := check(t, d, &planner{desired: desiredLines()}, nil)
@@ -134,6 +136,7 @@ func TestCheckChecked(t *testing.T) {
 }
 
 func TestNoChangeAtCompare(t *testing.T) {
+	t.Parallel()
 	// a delete of an absent statement: the device answers 'statement not
 	// found', the compare is empty
 	d := newDevice(t, nil)
@@ -154,6 +157,7 @@ func TestNoChangeAtCompare(t *testing.T) {
 // --- FAILED before OPEN --------------------------------------------------------------------------
 
 func TestFailedBeforeOpen(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		knobs map[string]string
@@ -179,6 +183,7 @@ func TestFailedBeforeOpen(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			d := newDevice(t, c.knobs)
 			before := d.srv.Committed()
 			o := check(t, d, &planner{desired: desiredLines()}, c.mod)
@@ -202,6 +207,7 @@ func TestFailedBeforeOpen(t *testing.T) {
 }
 
 func TestFailedPendingAtPreflight(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, map[string]string{"commit.drop": ""})
 	o := apply(t, d, &planner{desired: desiredLines()}, nil)
 	wantExit(t, o, ExitPending, ResultPending)
@@ -217,6 +223,7 @@ func TestFailedPendingAtPreflight(t *testing.T) {
 }
 
 func TestFailedChangedSinceReview(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	p := &planner{desired: desiredLines()}
 	rev := d.reviewed(p)
@@ -231,6 +238,7 @@ func TestFailedChangedSinceReview(t *testing.T) {
 // --- FAILED at LOAD / CHECK ------------------------------------------------------------------------
 
 func TestFailedLoad(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, map[string]string{"load.errors": "set system tacplus-server 192.0.2.11 secret => error: could not set " + secretKey + "\n"})
 	before := d.srv.Committed()
 	o := apply(t, d, &planner{desired: desiredLines()}, nil)
@@ -247,6 +255,7 @@ func TestFailedLoad(t *testing.T) {
 }
 
 func TestFailedCheck(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, map[string]string{"check.errors": "set system accounting events => error: accounting needs a destination\n"})
 	before := d.srv.Committed()
 	o := check(t, d, &planner{desired: desiredLines()}, nil)
@@ -263,6 +272,7 @@ func TestFailedCheck(t *testing.T) {
 }
 
 func TestFailedOutsideTheDelta(t *testing.T) {
+	t.Parallel()
 	// the device turns one statement into more than it says: the compare
 	// holds a change no line explains, and nothing is committed
 	d := newDevice(t, nil)
@@ -287,6 +297,7 @@ const showCommitShell = plan.ApplyShowCommit + " | no-more"
 // the spike this exit was reached through the private session's refusal; a
 // private session is no longer opened, lab L5.)
 func TestNothingCommittedSessionDropped(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, map[string]string{"drop": "commit confirmed\n"})
 	before := d.srv.Committed()
 	o := apply(t, d, &planner{desired: desiredLines()}, nil)
@@ -306,6 +317,7 @@ func TestNothingCommittedSessionDropped(t *testing.T) {
 // configuration | compare rollback 1' (L3) and 'configure exclusive' only
 // (L5).
 func TestNoPrivateSessionAndLandedCompare(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	o := apply(t, d, &planner{desired: desiredLines()}, nil)
 	wantExit(t, o, ExitApplied, ResultApplied)
@@ -322,6 +334,7 @@ func TestNoPrivateSessionAndLandedCompare(t *testing.T) {
 // --- ROLLED-BACK ------------------------------------------------------------------------------
 
 func TestRolledBackFreshLoginRefused(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, map[string]string{"verify.fail": "deny"})
 	before := d.srv.Committed()
 	o := apply(t, d, &planner{desired: desiredLines()}, nil)
@@ -354,6 +367,7 @@ func TestRolledBackFreshLoginRefused(t *testing.T) {
 // the person's name, not the rendered template user) fails the
 // verification: the change is rolled back.
 func TestRolledBackVerifyLoginRefused(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	before := d.srv.Committed()
 	var seen Login
@@ -379,6 +393,7 @@ func TestRolledBackVerifyLoginRefused(t *testing.T) {
 }
 
 func TestRolledBackStillLacks(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	before := d.srv.Committed()
 	p := &planner{desired: desiredLines()}
@@ -397,6 +412,7 @@ func TestRolledBackStillLacks(t *testing.T) {
 }
 
 func TestRolledBackLandedMismatch(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	o := apply(t, d, &planner{desired: desiredLines()}, func(in *Input) {
 		in.Verify = func(ctx context.Context) (Reader, error) {
@@ -414,6 +430,7 @@ func TestRolledBackLandedMismatch(t *testing.T) {
 }
 
 func TestRolledBackHoldRefused(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	before := d.srv.Committed()
 	var until time.Time
@@ -432,6 +449,7 @@ func TestRolledBackHoldRefused(t *testing.T) {
 // --- PENDING-UNTIL, UNKNOWN, window short --------------------------------------------------------
 
 func TestPendingSessionDropped(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, map[string]string{"commit.drop": ""})
 	o := apply(t, d, &planner{desired: desiredLines()}, nil)
 	wantExit(t, o, ExitPending, ResultPending)
@@ -473,6 +491,7 @@ func TestPendingSessionDropped(t *testing.T) {
 }
 
 func TestUnknownStateUnreadable(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, map[string]string{"commit.drop": "", "verify.fail": "deny"})
 	o := apply(t, d, &planner{desired: desiredLines()}, nil)
 	wantExit(t, o, ExitUnknown, ResultUnknown)
@@ -485,6 +504,7 @@ func TestUnknownStateUnreadable(t *testing.T) {
 }
 
 func TestWindowShort(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	o := apply(t, d, &planner{desired: desiredLines()}, func(in *Input) {
 		in.Hold = func(context.Context, time.Time) (bool, error) {
@@ -506,6 +526,7 @@ func TestWindowShort(t *testing.T) {
 }
 
 func TestAppliedBySomeoneElse(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, map[string]string{"commit.drop": ""})
 	o := apply(t, d, &planner{desired: desiredLines()}, nil)
 	wantExit(t, o, ExitPending, ResultPending)
@@ -557,6 +578,7 @@ func TestAppliedBySomeoneElse(t *testing.T) {
 // 'commit confirmed, rollback in Nmins', and an apply proceeds (before the
 // spike the pre-flight refused it).
 func TestPreflightLabelIsNoPendingMarker(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	runShell(t, d, "configure", "set snmp contact noc", "commit confirmed 5", "commit check")
 	if _, p := d.srv.PendingUntil(); p {
@@ -572,6 +594,7 @@ func TestPreflightLabelIsNoPendingMarker(t *testing.T) {
 // --- interrupts ----------------------------------------------------------------------------------
 
 func TestInterruptBeforeCommit(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	before := d.srv.Committed()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -591,6 +614,7 @@ func TestInterruptBeforeCommit(t *testing.T) {
 }
 
 func TestInterruptAfterCommit(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	before := d.srv.Committed()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -617,6 +641,7 @@ func TestInterruptAfterCommit(t *testing.T) {
 // --- the transport's guards ---------------------------------------------------------------------
 
 func TestTransportGuards(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	j := d.dial()
 	defer func() { _ = j.Close() }()
@@ -665,6 +690,7 @@ func TestTransportGuards(t *testing.T) {
 // before the verification, with the change's id, the window's end and the
 // shape: what the caller writes as a pending record. A check never calls it.
 func TestApplyCommittedHook(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	p := &planner{desired: desiredLines()}
 	var got []Outcome
@@ -695,6 +721,7 @@ func TestApplyCommittedHook(t *testing.T) {
 // a rescue line, which is no entry: the apply and the check go through, and
 // a pending commit still shows through the banner.
 func TestRescueLineOnTheDevice(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, map[string]string{"rescue": ""})
 	o := check(t, d, &planner{desired: desiredLines()}, nil)
 	wantExit(t, o, ExitChecked, ResultChecked)

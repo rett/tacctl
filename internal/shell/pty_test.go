@@ -229,6 +229,7 @@ func (p *ptySession) endsWith(status int, reason string) {
 }
 
 func TestPtyPromptRunAndExit(t *testing.T) {
+	t.Parallel()
 	p := startShell(t)
 	p.line("echo hello")
 	p.output("hello")
@@ -250,6 +251,7 @@ func TestPtyPromptRunAndExit(t *testing.T) {
 }
 
 func TestPtyCompletion(t *testing.T) {
+	t.Parallel()
 	p := startShell(t)
 	p.send("us\t")
 	p.expect(`user `)
@@ -273,6 +275,7 @@ func TestPtyCompletion(t *testing.T) {
 // refused where it would be a second one, and lists the choices of an
 // ambiguous word; a paste is unchanged.
 func TestPtySpaceCompletion(t *testing.T) {
+	t.Parallel()
 	p := startShell(t, "-spaces")
 	p.send("de ")
 	p.expect(`device `)
@@ -306,6 +309,7 @@ func TestPtySpaceCompletion(t *testing.T) {
 
 // With the setting off the same keys type blanks.
 func TestPtySpaceCompletionOff(t *testing.T) {
+	t.Parallel()
 	p := startShell(t)
 	p.send("de  x\r")
 	p.expect(`\[exit 127\]`)
@@ -324,6 +328,7 @@ func TestPtySpaceCompletionOff(t *testing.T) {
 // A Ctrl-C inside a paste whose end arrives in a later write is dropped:
 // the lines pasted after it do not run, with the setting on or off.
 func TestPtyCtrlCInASplitPaste(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{{"-spaces"}, nil} {
 		p := startShell(t, args...)
 		p.send("\x1b[200~echo a\x03b")
@@ -346,6 +351,7 @@ func TestPtyCtrlCInASplitPaste(t *testing.T) {
 // line: with '?' and a paste in one write the question is declined, the
 // paste reaches the line, and nothing runs.
 func TestPtyPasteAfterQuestion(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{{"-spaces", "-listmax", "10"}, {"-listmax", "10"}} {
 		p := startShell(t, args...)
 		p.send("many ?\x1b[200~" + strings.Repeat("b", 300) + "\x1b[201~")
@@ -370,6 +376,7 @@ func TestPtyPasteAfterQuestion(t *testing.T) {
 // '?' lists the choices with their descriptions at once and inserts
 // nothing; inside quotes and after a backslash it is a character.
 func TestPtyQuestionMark(t *testing.T) {
+	t.Parallel()
 	p := startShell(t)
 	p.send("user ?")
 	p.expect(`tacctl> user \r\nPossible completions:\r\n  list  List all users\r\n  show  Show a user\r\n`)
@@ -390,6 +397,7 @@ func TestPtyQuestionMark(t *testing.T) {
 // palette; the padding, the descriptions and everything around the lists are
 // the plain bytes.
 func TestPtyQuestionMarkStyled(t *testing.T) {
+	t.Parallel()
 	p := startShell(t, "-styled")
 	p.send("user ?")
 	p.expect(`tacctl> user \r\nPossible completions:\r\n  \x1b\[36mlist\x1b\[0m  List all users\r\n  \x1b\[36mshow\x1b\[0m  Show a user\r\n`)
@@ -410,6 +418,7 @@ func TestPtyQuestionMarkStyled(t *testing.T) {
 // A styled list that pages: the rows carry the palette and the more prompt
 // row is plain.
 func TestPtyPagerStyled(t *testing.T) {
+	t.Parallel()
 	p := startShell(t, "-listmax", "-1", "-styled")
 	p.send("many ?")
 	p.expect(`Possible completions:\r\n  \x1b\[36mn01\x1b\[0m  device\r\n(?s:.*)  \x1b\[36mn22\x1b\[0m  device\r\n` + regexp.QuoteMeta(morePrompt))
@@ -426,6 +435,7 @@ func TestPtyPagerStyled(t *testing.T) {
 // more prompt; Space the next screenful, Enter one row, q stops; the
 // prompt and the line come back. -listmax -1: no question first.
 func TestPtyPager(t *testing.T) {
+	t.Parallel()
 	p := startShell(t, "-listmax", "-1")
 	p.send("many ?")
 	p.expect(`Possible completions:\r\n  n01  device\r\n(?s:.*)  n22  device\r\n` + regexp.QuoteMeta(morePrompt))
@@ -455,6 +465,7 @@ func TestPtyPager(t *testing.T) {
 
 // Above ListMax (40 by default) Tab asks first; below it, no question.
 func TestPtyLongListAsks(t *testing.T) {
+	t.Parallel()
 	p := startShell(t)
 	p.send("many \t")
 	p.expect(`many n`)
@@ -472,6 +483,7 @@ func TestPtyLongListAsks(t *testing.T) {
 }
 
 func TestPtyCtrlCAtThePrompt(t *testing.T) {
+	t.Parallel()
 	p := startShell(t)
 	p.send("abc")
 	p.expect(`abc`)
@@ -501,6 +513,7 @@ func TestPtyCtrlCAtThePrompt(t *testing.T) {
 // neither ignored nor blocked; the test checks the terminal again on its
 // side before it sends Ctrl-C.
 func TestPtyCtrlCDuringACommand(t *testing.T) {
+	t.Parallel()
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -557,6 +570,7 @@ func TestPtyCtrlCDuringACommand(t *testing.T) {
 // SIGQUIT as ignored (and SIGINT not ignored): Ctrl-Z during a command
 // stops nothing, so the session cannot hang on a stopped child.
 func TestPtyCtrlZIgnored(t *testing.T) {
+	t.Parallel()
 	p := startShell(t)
 	p.send("\x1a\x1c")
 	p.line("echo after")
@@ -586,12 +600,14 @@ func TestPtyCtrlZIgnored(t *testing.T) {
 }
 
 func TestPtyCtrlD(t *testing.T) {
+	t.Parallel()
 	p := startShell(t)
 	p.send("\x04")
 	p.exits(0)
 }
 
 func TestPtyIdleTimeout(t *testing.T) {
+	t.Parallel()
 	p := startShell(t, "-idle", "400ms")
 	// A command that runs longer than the idle time does not trip it.
 	p.line("sh -c 'sleep 0.8; echo done'")
@@ -606,6 +622,7 @@ func TestPtyIdleTimeout(t *testing.T) {
 }
 
 func TestPtyReverseSearch(t *testing.T) {
+	t.Parallel()
 	p := startShell(t)
 	p.line("echo alpha")
 	p.output("alpha")
@@ -636,6 +653,7 @@ func TestPtyReverseSearch(t *testing.T) {
 }
 
 func TestPtyWordMoves(t *testing.T) {
+	t.Parallel()
 	p := startShell(t)
 	p.send("echo one two")
 	p.expect(`two`)
@@ -652,6 +670,7 @@ func TestPtyWordMoves(t *testing.T) {
 }
 
 func TestPtyPaste(t *testing.T) {
+	t.Parallel()
 	p := startShell(t)
 	p.send("\x1b[200~echo pasted\nline\r\tend\x1b[201~")
 	if out := p.Settle(300 * time.Millisecond); strings.Contains(out, "\npasted") {
@@ -674,6 +693,7 @@ func TestPtyPaste(t *testing.T) {
 }
 
 func TestPtyTerminate(t *testing.T) {
+	t.Parallel()
 	p := startShell(t)
 	if err := syscall.Kill(p.Pid(), syscall.SIGTERM); err != nil {
 		t.Fatal(err)
@@ -684,6 +704,7 @@ func TestPtyTerminate(t *testing.T) {
 // A resize (SIGWINCH) while a line is being typed repaints it for the new
 // width; the line still runs whole.
 func TestPtyResize(t *testing.T) {
+	t.Parallel()
 	p := startShell(t)
 	p.send("echo " + strings.Repeat("w", 30))
 	p.expect(`w{30}`)
@@ -707,6 +728,7 @@ func TestPtyResize(t *testing.T) {
 // the editor's default width: the prompt and the line are not wrapped
 // after every character.
 func TestPtyZeroSize(t *testing.T) {
+	t.Parallel()
 	p := startShell(t)
 	if err := p.Resize(0, 0); err != nil {
 		t.Fatal(err)
@@ -725,6 +747,7 @@ func TestPtyZeroSize(t *testing.T) {
 
 // The session's end says why: exit, Ctrl-D, the idle time, SIGHUP.
 func TestPtyEndReasons(t *testing.T) {
+	t.Parallel()
 	p := startShell(t)
 	p.line("true")
 	p.expect(`tacctl> `)
@@ -749,6 +772,7 @@ func TestPtyEndReasons(t *testing.T) {
 // gets the terminal back even when the system shell was killed without
 // handing it back (an interactive bash takes it for job control).
 func TestPtySystemShell(t *testing.T) {
+	t.Parallel()
 	bash, err := execx.Real{}.LookPath("bash")
 	if err != nil {
 		t.Fatalf("bash is required for this test: %v", err)
@@ -784,6 +808,7 @@ func TestPtySystemShell(t *testing.T) {
 
 // Tab offers system-shell only in a shell that has it.
 func TestPtySystemShellCompletes(t *testing.T) {
+	t.Parallel()
 	p := startShell(t, "-syssh", "/bin/true")
 	p.send("syst\t")
 	p.expect(`system-shell `)

@@ -3,6 +3,7 @@ package devssh
 import "testing"
 
 func TestJunosOtherPrompt(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{
 		"u@h> ": "u@h# ",
 		"u@h# ": "u@h> ",
@@ -20,6 +21,7 @@ func TestJunosOtherPrompt(t *testing.T) {
 }
 
 func TestLocationLineIsNeverAPrompt(t *testing.T) {
+	t.Parallel()
 	for line, want := range map[string]bool{
 		"[edit]":                      true,
 		"[edit system login]":         true,
@@ -47,6 +49,7 @@ func TestLocationLineIsNeverAPrompt(t *testing.T) {
 // The first line of the output, when it is the echoed command, is never a
 // prompt; the same text on a later line is.
 func TestOutBufEchoIsNoPrompt(t *testing.T) {
+	t.Parallel()
 	o := outBuf{prev: -1, prompt: "u@h> ", alt: "u@h# ", echo: "u@h#"}
 	o.add([]byte("u@h# \r\n"))
 	if len(o.altHits) != 0 || o.count(1) != 0 {
@@ -72,6 +75,7 @@ func TestOutBufEchoIsNoPrompt(t *testing.T) {
 // The two prompts are counted apart, so a line of the other one in the
 // middle of the output does not add to the one that stands at the end.
 func TestOutBufCountsPromptsApart(t *testing.T) {
+	t.Parallel()
 	o := outBuf{prev: -1, prompt: "u@h> ", alt: "u@h# "}
 	o.add([]byte("show motd\r\nWelcome\r\nu@h# \r\nmore\r\nu@h> "))
 	if k := o.at("u@h> "); k != 0 {
@@ -83,6 +87,7 @@ func TestOutBufCountsPromptsApart(t *testing.T) {
 }
 
 func TestLocationLineForms(t *testing.T) {
+	t.Parallel()
 	for _, l := range []string{"[edit]", "[edit system login]", "{master:0}[edit]", "{master}[edit]", "{primary:node0}[edit protocols]", "{secondary:node1}[edit]"} {
 		if !LocationLine(l) {
 			t.Errorf("LocationLine(%q) = false", l)

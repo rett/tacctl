@@ -36,6 +36,7 @@ func marksOf(t *testing.T, do func(ctx context.Context) Outcome) []string {
 // confirmed commit, the verification on a fresh login (whose own connect and
 // login are part of it, not phases of the device's) and the confirm.
 func TestApplyMarksItsPhases(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	p := &planner{desired: desiredLines()}
 	rev := d.reviewed(p)
@@ -54,6 +55,7 @@ func TestApplyMarksItsPhases(t *testing.T) {
 
 // A check stops after the commit check: it marks no commit or confirm.
 func TestCheckMarksUpToTheCheck(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	in := d.input(&planner{desired: desiredLines()})
 	var o Outcome
@@ -71,6 +73,7 @@ func TestCheckMarksUpToTheCheck(t *testing.T) {
 // A device with nothing to change has only read: the phases it did not reach
 // are absent.
 func TestNoChangeMarksOnlyTheRead(t *testing.T) {
+	t.Parallel()
 	d := newDevice(t, nil)
 	p := &planner{desired: desiredLines()}
 	apply(t, d, p, nil)

@@ -120,7 +120,7 @@ func TestEngineerHostsAreReadOnly(t *testing.T) {
 	for _, args := range [][]string{{"host", "sync", "web1"}, {"host", "sync", "--all"}, {"host", "target", "web1"}, {"host", "move", "web1", "lab"},
 		{"host", "enroll", "--local"}, {"host", "enroll", "root@192.0.2.50", "--name", "h1", "--scope", "lab"},
 		{"host", "unenroll", "web1", "--force"}, {"host", "rename", "web1", "web9"}, {"host", "rename", "web1", "web9", "--yes"}, {"host", "forget", "web1"}, {"host", "forget", "web1", "--yes"}, {"host", "default-method"}, {"host", "default-method", "radius"},
-		{"host", "provisioner", "web1", "rotate", "deploy2", "--key", "/tmp/k", "--yes"}} {
+		{"host", "provisioner", "web1", "rotate", "deploy2", "--key", "/tmp/k", "--yes"}} { // shared-proc-ok: an argument the refused verb never reads, no file is made
 		sb.asEngineer("", args...)
 		if sb.code != 1 || !strings.Contains(sb.stderr(), "'tacctl host "+args[1]+"' is not permitted for the engineer tier.") {
 			t.Errorf("%v: %d %q", args, sb.code, sb.stderr())

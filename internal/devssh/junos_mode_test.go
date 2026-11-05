@@ -244,6 +244,7 @@ func defaultJunos(f *junosFake, cmd string, w io.Writer) {
 }
 
 func TestJunosConfigureModeSession(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name      string
 		editEvery bool
@@ -252,6 +253,7 @@ func TestJunosConfigureModeSession(t *testing.T) {
 		{"location line before every prompt", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			f := newJunosFake(t)
 			f.editEvery = tc.editEvery
 			f.banner = "Last login from 192.0.2.7\r\n"
@@ -309,6 +311,7 @@ func TestJunosConfigureModeSession(t *testing.T) {
 // A message that looks like a prompt of the other mode is output, in the
 // middle of it and at the end of a pause, and the session stays in its mode.
 func TestJunosPromptLookalikeIsOutput(t *testing.T) {
+	t.Parallel()
 	f := newJunosFake(t)
 	s := f.open()
 
@@ -334,6 +337,7 @@ func TestJunosPromptLookalikeIsOutput(t *testing.T) {
 // A login message that is the configure prompt does not make the session
 // take it for its prompt.
 func TestJunosLoginBannerLookalike(t *testing.T) {
+	t.Parallel()
 	f := newJunosFake(t)
 	f.banner = jConf + "\r\nWelcome\r\n"
 	s := f.open()
@@ -346,6 +350,7 @@ func TestJunosLoginBannerLookalike(t *testing.T) {
 }
 
 func TestWithCommand(t *testing.T) {
+	t.Parallel()
 	f := newJunosFake(t)
 	s := f.open(devssh.WithCommand("cli"))
 	if got, err := s.Run(bg(), "show version"); err != nil || !strings.HasPrefix(got, "Hostname: sw1\n") {
@@ -380,6 +385,7 @@ func TestWithCommand(t *testing.T) {
 }
 
 func TestShellRefusesQuestionMarkInConfigure(t *testing.T) {
+	t.Parallel()
 	f := newJunosFake(t)
 	s := f.open()
 	if _, err := s.Run(bg(), "configure"); err != nil {
@@ -394,6 +400,7 @@ func TestShellRefusesQuestionMarkInConfigure(t *testing.T) {
 }
 
 func TestClientLocalAddr(t *testing.T) {
+	t.Parallel()
 	f := newJunosFake(t)
 	c := dial(t, f.target())
 	if ip := c.LocalAddr(); !ip.Equal(net.IPv4(127, 0, 0, 1)) {
@@ -402,6 +409,7 @@ func TestClientLocalAddr(t *testing.T) {
 }
 
 func TestAlgorithmMismatchIsItsOwnError(t *testing.T) {
+	t.Parallel()
 	dir := transcript(t, map[string]string{"prompt": "rtr1#"})
 	srv := serve(t, dir, fakedev.WithKeyExchanges(ssh.InsecureKeyExchangeDH1SHA1))
 	_, err := devssh.Dial(bg(), target(t, srv, nil))
@@ -461,6 +469,7 @@ func equalStrings(a, b []string) bool {
 // confirmed commit is pending a Junos device prints its banner there in
 // every session (0.2.9 lab L2), and the banner is not in Run's output.
 func TestPromptAreaHoldsThePendingBanner(t *testing.T) {
+	t.Parallel()
 	dir := transcript(t, map[string]string{"config.set": "set system host-name sw1\nset snmp contact a\n"})
 	clk := fakedev.NewFakeClock(time.Date(2026, 10, 13, 14, 0, 0, 0, time.UTC))
 	srv := serve(t, dir, fakedev.WithClock(clk))

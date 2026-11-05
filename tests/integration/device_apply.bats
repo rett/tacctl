@@ -377,8 +377,10 @@ print(all(not e["confirmed"] for e in m.values()))' "${TACCTL_VAR_LIB}/device-ap
 
 @test "apply: a dropped session leaves the change pending, and the next run settles it" {
     start
-    # a minute of the window is a second of the fake's clock
-    printf '1\n' > "${JDIR}/timer.minute"
+    before=$(committed)
+    # a minute of the window is a fifth of a second of the fake's clock (the
+    # ten minutes of the apply last two seconds)
+    printf '0.2\n' > "${JDIR}/timer.minute"
     : > "${JDIR}/commit.drop"
     tapply 'example-sw1\n' example-sw1
     [[ "$status" -eq 1 ]]
@@ -398,8 +400,14 @@ print(all(not e["confirmed"] for e in m.values()))' "${TACCTL_VAR_LIB}/device-ap
     assert_failure 1
     assert_output --partial "is pending until"
     assert_output --partial "do not type commit or commit check on the device before then"
-    # the device undoes it by itself; the next run reads the history first
-    sleep 14
+    # the device undoes it by itself (a bounded wait for its rollback); the
+    # next run reads the history first
+    local _
+    for _ in $(seq 1 100); do
+        [[ "$(committed)" == "$before" ]] && break
+        sleep 0.1
+    done
+    [[ "$(committed)" == "$before" ]]
     apply example-sw1 --check
     assert_success
     assert_line --regexp '^  example-sw1  the earlier apply tacctl-[0-9TZ]+-[0-9a-f]+ by alice was rolled back by the device at '

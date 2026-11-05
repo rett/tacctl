@@ -43,6 +43,9 @@ func TestApplyTransportFlagIsChecked(t *testing.T) {
 // record names the command line.
 func TestApplyCheckOverTheCommandLine(t *testing.T) {
 	b := newApplyBox(t)
+	// the canary: this one apply runs the product's own quiet period (devssh's
+	// default) against the fake, so every gate still exercises it
+	b.sb.hooks.deviceQuiet = 0
 	b.register("example-sw1")
 	code, out, errs := b.apply("example-sw1", "--check", "--transport", "cli")
 	if code != 0 || strings.Contains(out, "[via") {

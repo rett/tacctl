@@ -45,13 +45,18 @@ default under test that way. A fixture that builds its own configuration
 (`newSwEnv`, `newHarness`) does not hash a password and is not changed.
 
 The tests of `internal/cli` run in parallel inside one process: the
-sandbox helpers (`newSandbox`, `newHarness`, `newSwEnv`) call `parallel(t)`,
-and everything a test replaces (a dial, a prompt, a terminal check) is a
+sandbox helpers (`newSandbox`, `newHarness`, `newSwEnv`) and the helpers that
+start a process on a pseudo-terminal (`startConsole`, `startCLIShell`,
+`bashKeySession`: each is a process of its own, in a directory of its own) call
+`parallel(t)`, and everything a test replaces (a dial, a prompt, a terminal check) is a
 field of the `hooks` value of its invocation, not a package variable. A test
 that cannot share the process calls `serial(t)` as its first statement
 (Go runs every serial test before the first parallel one): those that set the
 process environment, signal the process, or write a package-level registry
-(`withFakeBackend`, `withPasswd`). The whole package takes about six minutes
+(`withFakeBackend`, `withPasswd`). The package runs with `-parallel 16`
+(`go-test-shard.sh`, so `make gate-ci` and CI; `gate-go.sh` for the whole run):
+its parallel tests mostly wait on timers and pseudo-terminals, so more of them
+than the cores shorten the run. The whole package takes about six minutes
 (about 24 serially). CI (`.github/workflows/test.yml`) runs it in two shards,
 `tests/tools/go-test-shard.sh <index> <count>` (the top-level tests dealt
 longest first by the durations in `tests/tools/cli-durations.txt`, each to the
@@ -122,12 +127,16 @@ need no tool and take well under a second.
 
 A test stays inside its own sandbox so that runs can share a machine:
 `t.TempDir()`, `BATS_TEST_TMPDIR` or the `TMPDIR` of its environment, never
-`/tmp` or `/dev/shm` itself, and no `pgrep -f`, `pkill -f` or `killall`
-(they match the processes of every other run; keep the pid). The lint
+`/tmp` or `/dev/shm` itself, and no `pgrep -f`, `pkill` or `killall` (they
+match the processes of every other run; keep the pid; looking for or signalling
+the children of a pid, `pgrep -P` and `pkill -P`, is fine). The lint
 `tests/tools/no-shared-proc.sh` (`make lint-shared-proc`, part of `make lint`)
-holds this. A line that must name one, such as the fallback for a `TMPDIR`
-too long for a socket path, says `shared-proc-ok: <reason>` in a comment; the
-script itself names the few files it excuses whole.
+holds this: `-f` or `--full` after any options, `pkill` by name, the same
+commands run through Go's `os/exec`, and a `/tmp` named by `mktemp`, `cd`, a
+redirection, a `TMPDIR` assignment or a Go string literal. A line that must
+name a shared path, such as the fallback for a `TMPDIR` too long for a socket
+path, says `shared-proc-ok: <reason>` in a comment (a reason is required; the
+comment never excuses a process-wide command), and no file is excused whole.
 
 The temporary directory is
 `Paths.TempDir`, the `TMPDIR` of the environment a test gives the
@@ -894,6 +903,7 @@ not a knob: it stays an ordinary environment check.
 | `TACCTL_TEST_CONSOLE_ENV=1` | the console (`tacctl-console`) keeps `TACCTL_*` and `PATH` from its environment, so the sandbox's paths and stubs reach it |
 | `TACCTL_TEST_PROC=<dir>` | stands for `/proc/self` where `host enroll --local` reads this machine's user namespace maps (`uid_map`, `gid_map`) |
 | `TACCTL_TEST_DEVICE_DIAL=<host:port>` | every device `device config pull` logs in to is dialled at this loopback address instead of its own (the fake device below); a non-loopback value is an error |
+| `TACCTL_TEST_DEVICE_QUIET=<duration>` | the quiet period of every device session (the wait for a device's output to stop after each prompt) instead of the 150 ms default: a Go duration up to `1s`, `25ms` for the fake device, which has nothing more to say; a malformed, negative or larger value is an error; tacctl itself never sets it |
 | `TACCTL_TEST_DEVICE_PASSWORD=<text>` | the password a pull logs in with, in place of the terminal prompt (a bats test has no terminal) |
 | `TACCTL_TEST_LOCAL_PASSWORD=<text>` | the password of the device's local account that `--login` and `device onboard` log in with, in place of the terminal prompt |
 | `TACCTL_TEST_APPLY_PAUSE=gate:<seconds>` | `device config apply` waits that long (at most 600) between the gate and the open of its session, so a second session can commit in that window (`docs/plans/0.2.11-lab.md`, N4); read only in a `-tags testknobs` build; a malformed value is an error |
