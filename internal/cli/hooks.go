@@ -50,6 +50,10 @@ type hooks struct {
 	passwordTTY func() (*os.File, func())
 	// passwordPrompt reads a line from a terminal without echo.
 	passwordPrompt func(tty *os.File, prompt string) ([]byte, error)
+	// backendStartWait replaces the wait between a backend's start and the
+	// question whether it is active (0: startWait, 2 seconds), which a
+	// fake backend has no use for.
+	backendStartWait time.Duration
 	// factsTimeout bounds the fact commands of a pull (0: 15 seconds).
 	factsTimeout time.Duration
 	// keyFallback is the host-key read with the built-in client, for a
@@ -202,6 +206,15 @@ func (h *hooks) prompt(tty *os.File, prompt string) ([]byte, error) {
 		return h.passwordPrompt(tty, prompt)
 	}
 	return askpass.Prompt(tty, prompt)
+}
+
+// startWait is the wait between a backend's start and the question whether
+// it came up.
+func (h *hooks) startWait() time.Duration {
+	if h != nil && h.backendStartWait > 0 {
+		return h.backendStartWait
+	}
+	return startWait
 }
 
 // factsLimit bounds the fact commands of a pull (all of them together): a
