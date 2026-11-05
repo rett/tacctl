@@ -32,6 +32,12 @@
 # trailing '&' inside another command, and never wait for it with pgrep -f
 # (the pattern matches the waiting command itself).
 #
+# go test runs with -parallel 16 (the flag is one for the whole run, not for a
+# package): the long parallel tests of internal/cli wait on timers and
+# pseudo-terminals more than they use CPU, so more of them than the cores (go
+# test's default) shorten the run; the other packages' parallel tests are
+# short.
+#
 # GO names the go command (default: go on the PATH, else
 # /usr/local/go/bin/go); GOCACHE defaults to a cache of the gates' own under
 # ${XDG_CACHE_HOME:-~/.cache}/tacctl, on disk: /tmp may be a tmpfs, and a day of
@@ -141,7 +147,7 @@ interrupted() {
 }
 trap interrupted TERM INT HUP
 
-setsid "$GO" test -v -timeout "$timeout" "${tagflag[@]}" "${pkgs[@]}" </dev/null >"$log" 2>&1 &
+setsid "$GO" test -v -parallel 16 -timeout "$timeout" "${tagflag[@]}" "${pkgs[@]}" </dev/null >"$log" 2>&1 &
 child=$!
 wait "$child"
 rc=$?

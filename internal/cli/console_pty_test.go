@@ -177,9 +177,20 @@ type consolePty struct {
 }
 
 // startConsole runs the console helper on a pty with the policy (fields
-// separated by commas), the groups and the extra key=value arguments.
+// separated by commas), the groups and the extra key=value arguments. The
+// console is a process of its own on a pty of its own, with a directory of its
+// own: it sets nothing in this process (no environment, no working directory,
+// no registry), so the test that starts it runs side by side with the others.
 func startConsole(t *testing.T, policy, groups string, extra ...string) *consolePty {
 	t.Helper()
+	return startConsoleFor(t, 0, policy, groups, extra...)
+}
+
+// startConsoleFor is startConsole with the hard limit of the session
+// (testpty's own when zero).
+func startConsoleFor(t *testing.T, deadline time.Duration, policy, groups string, extra ...string) *consolePty {
+	t.Helper()
+	parallel(t)
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -189,7 +200,7 @@ func startConsole(t *testing.T, policy, groups string, extra ...string) *console
 	argv := append([]string{exe, consolePtyHelperRun, "-test.count=1", "log=" + log, "home=" + dir,
 		"policy=" + policy, "groups=" + groups}, extra...)
 	s, err := testpty.Start(testpty.Options{Path: exe, Argv: argv,
-		Env: []string{"PATH=/usr/bin:/bin", "TERM=xterm", "LC_ALL=C.UTF-8", "HOME=" + dir}, Rows: 40, Cols: 120})
+		Env: []string{"PATH=/usr/bin:/bin", "TERM=xterm", "LC_ALL=C.UTF-8", "HOME=" + dir}, Rows: 40, Cols: 120, Deadline: deadline})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -482,33 +493,36 @@ func TestConsolePtyNoPasswordCache(t *testing.T) {
 // environment the console runs in holds neither NO_COLOR nor TACCTL_COLOR.
 // '?', a second Tab and --help follow it.
 func TestConsolePtyColor(t *testing.T) {
+	parallel(t)
 	for _, c := range []struct {
 		color  string
 		colour bool
 	}{{"", true}, {"auto", true}, {"on", true}, {"off", false}} {
-		policy := ptyPolicyRO
-		if c.color != "" {
-			policy += ",color=" + c.color
-		}
-		p := startConsole(t, policy, "carol,tac-users,tac-readonly")
-		host := regexp.QuoteMeta(shortHostname())
-		p.expect(host + `> `)
-		p.send("user ?")
-		list := p.Settle(500 * time.Millisecond)
-		p.send("\x15user \t\t")
-		tab := p.Settle(500 * time.Millisecond)
-		p.send("\x15user --help\r")
-		help := p.Settle(500 * time.Millisecond)
-		for name, out := range map[string]string{"?": list, "Tab Tab": tab, "--help": help} {
-			if !strings.Contains(out, "list") {
-				t.Errorf("color=%q %s: no list:\n%q", c.color, name, out)
+		t.Run("color="+c.color, func(t *testing.T) {
+			policy := ptyPolicyRO
+			if c.color != "" {
+				policy += ",color=" + c.color
 			}
-			if got := strings.Contains(out, "\x1b[36m"); got != c.colour {
-				t.Errorf("color=%q %s: colour %v, want %v:\n%q", c.color, name, got, c.colour, out)
+			p := startConsole(t, policy, "carol,tac-users,tac-readonly")
+			host := regexp.QuoteMeta(shortHostname())
+			p.expect(host + `> `)
+			p.send("user ?")
+			list := p.Settle(500 * time.Millisecond)
+			p.send("\x15user \t\t")
+			tab := p.Settle(500 * time.Millisecond)
+			p.send("\x15user --help\r")
+			help := p.Settle(500 * time.Millisecond)
+			for name, out := range map[string]string{"?": list, "Tab Tab": tab, "--help": help} {
+				if !strings.Contains(out, "list") {
+					t.Errorf("color=%q %s: no list:\n%q", c.color, name, out)
+				}
+				if got := strings.Contains(out, "\x1b[36m"); got != c.colour {
+					t.Errorf("color=%q %s: colour %v, want %v:\n%q", c.color, name, got, c.colour, out)
+				}
 			}
-		}
-		p.send("exit\r")
-		p.ends(0)
+			p.send("exit\r")
+			p.ends(0)
+		})
 	}
 }
 

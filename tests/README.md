@@ -45,13 +45,18 @@ default under test that way. A fixture that builds its own configuration
 (`newSwEnv`, `newHarness`) does not hash a password and is not changed.
 
 The tests of `internal/cli` run in parallel inside one process: the
-sandbox helpers (`newSandbox`, `newHarness`, `newSwEnv`) call `parallel(t)`,
-and everything a test replaces (a dial, a prompt, a terminal check) is a
+sandbox helpers (`newSandbox`, `newHarness`, `newSwEnv`) and the helpers that
+start a process on a pseudo-terminal (`startConsole`, `startCLIShell`,
+`bashKeySession`: each is a process of its own, in a directory of its own) call
+`parallel(t)`, and everything a test replaces (a dial, a prompt, a terminal check) is a
 field of the `hooks` value of its invocation, not a package variable. A test
 that cannot share the process calls `serial(t)` as its first statement
 (Go runs every serial test before the first parallel one): those that set the
 process environment, signal the process, or write a package-level registry
-(`withFakeBackend`, `withPasswd`). The whole package takes about six minutes
+(`withFakeBackend`, `withPasswd`). The package runs with `-parallel 16`
+(`go-test-shard.sh`, so `make gate-ci` and CI; `gate-go.sh` for the whole run):
+its parallel tests mostly wait on timers and pseudo-terminals, so more of them
+than the cores shorten the run. The whole package takes about six minutes
 (about 24 serially). CI (`.github/workflows/test.yml`) runs it in two shards,
 `tests/tools/go-test-shard.sh <index> <count>` (the top-level tests dealt
 longest first by the durations in `tests/tools/cli-durations.txt`, each to the
@@ -122,12 +127,16 @@ need no tool and take well under a second.
 
 A test stays inside its own sandbox so that runs can share a machine:
 `t.TempDir()`, `BATS_TEST_TMPDIR` or the `TMPDIR` of its environment, never
-`/tmp` or `/dev/shm` itself, and no `pgrep -f`, `pkill -f` or `killall`
-(they match the processes of every other run; keep the pid). The lint
+`/tmp` or `/dev/shm` itself, and no `pgrep -f`, `pkill` or `killall` (they
+match the processes of every other run; keep the pid; looking for or signalling
+the children of a pid, `pgrep -P` and `pkill -P`, is fine). The lint
 `tests/tools/no-shared-proc.sh` (`make lint-shared-proc`, part of `make lint`)
-holds this. A line that must name one, such as the fallback for a `TMPDIR`
-too long for a socket path, says `shared-proc-ok: <reason>` in a comment; the
-script itself names the few files it excuses whole.
+holds this: `-f` or `--full` after any options, `pkill` by name, the same
+commands run through Go's `os/exec`, and a `/tmp` named by `mktemp`, `cd`, a
+redirection, a `TMPDIR` assignment or a Go string literal. A line that must
+name a shared path, such as the fallback for a `TMPDIR` too long for a socket
+path, says `shared-proc-ok: <reason>` in a comment (a reason is required; the
+comment never excuses a process-wide command), and no file is excused whole.
 
 The temporary directory is
 `Paths.TempDir`, the `TMPDIR` of the environment a test gives the
