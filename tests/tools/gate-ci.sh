@@ -64,7 +64,18 @@ if [[ -z "${GO:-}" ]]; then
 fi
 export GO
 export LANG=C.UTF-8
-export GOCACHE="${GOCACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/tacctl/gate-go-build}"
+if [[ -z "${GOCACHE:-}" ]]; then
+    # On disk, the caller's own; the old place under TMPDIR when there is no
+    # HOME, or the directory cannot be written (a root-owned one a 'sudo' run
+    # with the caller's HOME left behind).
+    base="${XDG_CACHE_HOME:-}"
+    [[ $base == /* ]] || base="${HOME:+$HOME/.cache}"
+    GOCACHE="$base/tacctl/gate-go-build"
+    if [[ -z $base ]] || ! mkdir -p "$GOCACHE" 2>/dev/null || [[ ! -w $GOCACHE ]]; then
+        GOCACHE="${TMPDIR:-/tmp}/tacctl-gate-go-cache-$(id -u)"
+    fi
+fi
+export GOCACHE
 logdir="${TMPDIR:-/tmp}"
 if [[ "${GATE_TMPFS:-}" = 1 ]]; then
     if [[ -d /dev/shm && -w /dev/shm && "$(df -Pk /dev/shm | awk 'NR==2 {print $4}')" -ge 2097152 ]] \

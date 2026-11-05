@@ -30,7 +30,10 @@
 # /usr/local/go/bin/go); GOCACHE defaults to a cache of the gates' own under
 # ${XDG_CACHE_HOME:-~/.cache}/tacctl, on disk: /tmp may be a tmpfs, and a day of
 # runs (the race and testknobs builds of gate-ci among them) grows the cache
-# past 10 GiB. LANG is C.UTF-8. The default log is a new file under $TMPDIR.
+# past 10 GiB (Go drops entries unused for five days; `rm -rf` the directory
+# to clear it). Without a HOME, or when that directory cannot be written, it is
+# ${TMPDIR:-/tmp}/tacctl-gate-go-cache-<uid>; 'make gate-go' may pass the
+# Makefile's own. LANG is C.UTF-8. The default log is a new file under $TMPDIR.
 #
 # GATE_TMPFS=1 puts $TMPDIR (the tests' sandboxes, not the log) on /dev/shm for
 # the run and removes it afterwards: the tests' fsync calls cost nothing there
@@ -45,7 +48,18 @@ if [[ -z "${GO:-}" ]]; then
     GO="$(command -v go || echo /usr/local/go/bin/go)"
 fi
 export LANG=C.UTF-8
-export GOCACHE="${GOCACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/tacctl/gate-go-build}"
+if [[ -z "${GOCACHE:-}" ]]; then
+    # On disk, the caller's own; the old place under TMPDIR when there is no
+    # HOME, or the directory cannot be written (a root-owned one a 'sudo' run
+    # with the caller's HOME left behind).
+    base="${XDG_CACHE_HOME:-}"
+    [[ $base == /* ]] || base="${HOME:+$HOME/.cache}"
+    GOCACHE="$base/tacctl/gate-go-build"
+    if [[ -z $base ]] || ! mkdir -p "$GOCACHE" 2>/dev/null || [[ ! -w $GOCACHE ]]; then
+        GOCACHE="${TMPDIR:-/tmp}/tacctl-gate-go-cache-$(id -u)"
+    fi
+fi
+export GOCACHE
 logdir="${TMPDIR:-/tmp}"
 if [[ "${GATE_TMPFS:-}" = 1 ]]; then
     if [[ -d /dev/shm && -w /dev/shm && "$(df -Pk /dev/shm | awk 'NR==2 {print $4}')" -ge 2097152 ]] \

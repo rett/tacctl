@@ -39,7 +39,10 @@ current behaviour; this file is where history lives.
    `openssh-server`), so those tests can run in CI instead of skipping, and
    the last line of `make gate-go` and `make gate-ci` carries `skipped=<n>`
    (the `--- SKIP` lines of the run) with the first 20 names of the skipped
-   tests listed above it, so a skip no longer passes unseen.
+   tests listed above it, so a skip no longer passes unseen. Their Go build
+   cache moved from `$TMPDIR` (often a tmpfs, which a day of runs could fill)
+   to `~/.cache/tacctl/gate-go-build`; the old
+   `/tmp/tacctl-gate-go-cache-<uid>` can be deleted.
 
 4. **`tacctl rollback 0.2.23`, the release before this one, is a target.**
    This release changed no stored file, so 0.2.23 reads everything it writes:
