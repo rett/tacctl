@@ -46,7 +46,10 @@ process environment, signal the process, or write a package-level registry
 round-robin; `--check <count>` fails unless every test is in exactly one
 shard), the ones without tags with the race detector, beside one job for
 every other package, a static job (gofmt, `go vet`) and a lint job (`make
-lint`, below). The test jobs install the tools that tests skip
+lint`, below). `TestPropertyFuzz` (`internal/devconf/plan`, pure CPU on one
+goroutine) runs 10 mutated devices per fixture under `-race` and 45 without
+it (`race_on_test.go`, `race_off_test.go`): every fixture is covered either
+way, and `make gate-go`, which has no `-race`, runs the 45. The test jobs install the tools that tests skip
 without (`shellcheck`, `groff`, `less` and `man-db` for the completion block
 and the man page's search and pager tests of `internal/cli`; `openssh-server`
 and `openssh-client` for the `sshd -T` tests of `internal/console`): a skip is
