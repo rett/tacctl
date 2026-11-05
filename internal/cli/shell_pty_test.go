@@ -305,7 +305,8 @@ func TestPtyShellQuestionMarkCapsTheLabelColumn(t *testing.T) {
 		// A superuser of the fake runner: the shell would otherwise run the
 		// real 'id -nG' and 'sudo -n' of the machine the test is on, and a
 		// tac-users member there sees only the commands of their tier.
-		s := startCLIShell(t, cols, shellPtyViewPrefix+"superuser")
+		s := startCLIShellFor(t, 30*time.Second, cols, shellPtyViewPrefix+"superuser")
+		awaitSuperuserView(t, s)
 		if err := s.Send(family + " ?"); err != nil {
 			t.Fatal(err)
 		}
@@ -314,8 +315,9 @@ func TestPtyShellQuestionMarkCapsTheLabelColumn(t *testing.T) {
 			regexp.QuoteMeta("\r\ntacctl> "+family+" ")+`|-- more)`, 5*time.Second); err != nil {
 			t.Fatal(err)
 		}
+		// the probe of awaitSuperuserView printed a list before this one
 		out := strings.ReplaceAll(s.Output(), "\r\n", "\n")
-		_, list, _ := strings.Cut(out, "Possible completions:\n")
+		list := out[strings.LastIndex(out, "Possible completions:\n")+len("Possible completions:\n"):]
 		list, _, _ = strings.Cut(list, "-- more")
 		list, _, _ = strings.Cut(list, "tacctl> ")
 		descCol, labels := 0, 0
