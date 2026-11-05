@@ -229,15 +229,30 @@ func (e *LockedError) Error() string {
 // Unwrap is ErrRefused.
 func (e *LockedError) Unwrap() error { return ErrRefused }
 
-// maxAnswerLines is how many lines of an answer an error carries; maxLine
-// the longest line.
+// maxAnswerLines is how many lines of an answer an error carries, maxAnswerLine
+// the longest of them; maxLine the longest line of any other text. An answer
+// is shown whole, to a bound, so that a layout never seen shows itself.
 const (
-	maxAnswerLines = 6
+	maxAnswerLines = 40
+	maxAnswerLine  = 120
 	maxLine        = 200
 )
 
 // answerError builds the error of an answer; m elides the secrets of cmd.
+// A line is cut at maxAnswerLine bytes.
 func answerError(cmd string, lines []string, m *masker) *AnswerError {
+	return answerErrorCut(cmd, lines, m, maxAnswerLine)
+}
+
+// answerErrorWide is answerError for the NETCONF transport, whose lines are
+// the texts of its reply's errors and the reasons that name a member, cut at
+// maxLine bytes.
+func answerErrorWide(cmd string, lines []string, m *masker) *AnswerError {
+	return answerErrorCut(cmd, lines, m, maxLine)
+}
+
+// answerErrorCut is answerError with the longest line given.
+func answerErrorCut(cmd string, lines []string, m *masker, longest int) *AnswerError {
 	row := classify(lines)
 	base := ErrUnrecognised
 	if row != "" {
@@ -252,7 +267,7 @@ func answerError(cmd string, lines []string, m *masker) *AnswerError {
 			kept = append(kept, "...")
 			break
 		}
-		kept = append(kept, cut(m.text(strings.TrimSpace(l))))
+		kept = append(kept, cutTo(m.text(strings.TrimSpace(l)), longest))
 	}
 	return &AnswerError{Cmd: m.text(cmd), Lines: kept, Row: row, base: base}
 }
@@ -268,10 +283,13 @@ func answerErrorWhy(cmd string, lines []string, m *masker, why string) *AnswerEr
 }
 
 // cut shortens a line and replaces its control characters.
-func cut(s string) string {
+func cut(s string) string { return cutTo(s, maxLine) }
+
+// cutTo is cut at n bytes.
+func cutTo(s string, n int) string {
 	var b strings.Builder
 	for _, r := range s {
-		if b.Len() >= maxLine {
+		if b.Len() >= n {
 			b.WriteString("...")
 			break
 		}

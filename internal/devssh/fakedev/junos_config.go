@@ -82,6 +82,15 @@ package fakedev
 //	                    group's last line. Without the knob every member is
 //	                    labelled (the shape of the first capture, a chassis
 //	                    of four). A NETCONF reply is unchanged
+//	                    'chassis.master' with the word 'labelled' and exactly
+//	                    two members: the master prints its own label, in two
+//	                    blocks [C: a chassis of two]. 'commit check': 'fpc0:'
+//	                    and its success line, 'fpc1:' and its line. A
+//	                    commit: 'fpc0:', its check and (confirmed) the note,
+//	                    'fpc1:', its 'commit complete' and the note, 'fpc0:'
+//	                    and its 'commit complete'. The labels carry no space
+//	                    after the colon. Any other count of members answers
+//	                    all labelled, as without the knob
 //	chassis.check       '<label> => <text>' lines: that member fails its check
 //	                    with the text (a NETCONF reply holds an <rpc-error>
 //	                    in its element): 'commit check' and 'commit' report it
@@ -780,7 +789,46 @@ func (d *junosDevice) memberText(knob, label string) (string, bool) {
 // the virtual chassis of the capture does: the first member without a label
 // (the knob 'chassis.master', two or more members, answering with blocks).
 func (d *junosDevice) masterAnswers() bool {
-	return d.s.t.exists("chassis.master") && len(d.answerMembers()) > 1
+	w, ok := d.knobWord("chassis.master")
+	return ok && w != "labelled" && len(d.answerMembers()) > 1
+}
+
+// labelledMaster reports whether the device answers as the virtual chassis
+// of two members of the capture does, the master with its own label in two
+// blocks (the knob 'chassis.master' with the word 'labelled').
+func (d *junosDevice) labelledMaster() bool {
+	w, ok := d.knobWord("chassis.master")
+	return ok && w == "labelled" && len(d.answerMembers()) == 2
+}
+
+// labelledReply is the answer of 'commit check' (check), of a commit or of a
+// confirmed commit (confirmed, for minutes) on a chassis of two members
+// whose master prints its label [C]: the master's check and the note, the
+// backup's block ('commit complete' and the note), and the master's 'commit
+// complete'. The knobs 'chassis.check' and 'chassis.commit' give a member
+// another text.
+func (d *junosDevice) labelledReply(check, confirmed bool, minutes int) string {
+	ms := d.answerMembers()
+	text := func(m jmember, knob, def string) string {
+		if o, ok := d.memberText(knob, m.label); ok {
+			return o
+		}
+		return def
+	}
+	note := ""
+	if confirmed {
+		note = fmt.Sprintf(jtConfirmedFmt, minutes) + "\n"
+	}
+	var b strings.Builder
+	b.WriteString(ms[0].label + ":\n" + text(ms[0], "chassis.check", jtCheckOK) + "\n")
+	if check {
+		b.WriteString(ms[1].label + ":\n" + text(ms[1], "chassis.check", jtCheckOK) + "\n")
+		return b.String()
+	}
+	b.WriteString(note)
+	b.WriteString(ms[1].label + ":\n" + text(ms[1], "chassis.commit", jtCommitComplete) + "\n" + note)
+	b.WriteString(ms[0].label + ":\n" + text(ms[0], "chassis.commit", jtCommitComplete) + "\n")
+	return b.String()
 }
 
 // masterReply is the answer of 'commit check' (check), of a commit or of a
