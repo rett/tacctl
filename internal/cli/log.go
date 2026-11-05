@@ -80,7 +80,7 @@ func (inv *invocation) logRun(sub string, args []string) error {
 			follow = true
 		case a == "--backend":
 			if arg(args, i+1) == "" {
-				return inv.usageErr("--backend needs a backend id. Usage: tacctl log " + sub + " [--backend <id>] ...")
+				return inv.usageErr("--backend needs a backend id.", "Usage: tacctl log "+sub+" [--backend <id>] ...")
 			}
 			only, hasOnly = args[i+1], true
 			i++
