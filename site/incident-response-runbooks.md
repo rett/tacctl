@@ -96,11 +96,14 @@ tacctl emergency lockdown site-b enable --tier engineer --reason "INC-4821"
 tacctl emergency lockdown --all-scopes enable --reason "INC-4821"
 ```
 
-To confirm, type the scope name (or `all` for `--all-scopes`).
+To confirm, type the scope name (or `all` for `--all-scopes`). Then answer
+the question about syncing the scope's enrolled Linux hosts, which closes key
+logins on them and ends the live sessions of the locked accounts
+([Emergency Lockdown](emergency-lockdown.md) §3.1).
 
 3. **Close the gaps a lockdown cannot close:** open sessions, device local
-   accounts, `local-first` scopes, local ssh keys, unreachable devices and
-   held devices. The checklist is [Emergency Lockdown](emergency-lockdown.md) §4.
+   accounts, `local-first` scopes, local ssh keys, unreachable devices, held
+   devices and hosts still on the pending list. The checklist is [Emergency Lockdown](emergency-lockdown.md) §4.
 4. Monitor: `tacctl emergency lockdown status site-b`.
 5. Fix the root cause. Typically that means R1 for the affected accounts and
    R3 if a secret was exposed.
