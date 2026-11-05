@@ -702,10 +702,14 @@ device config apply <name>[,<name>...] | --all | --scope <scope> | --vendor <ven
 device config shapes [list [--show <hash>] [--json] | seed <name>[,<name>...] [--yes]]
 
     Superusers: the shapes of the changes `apply` has seen (the same change on two devices is one
-    shape), which a verified apply confirmed, the devices at each now and, for a new one, the
-    nearest confirmed shape; `--show` prints one shape's statements. `seed` files the shape of a
-    device's last check or apply as confirmed on your word, for a device applied and verified by
-    hand (one question; `--yes` answers it). Contacts no device
+    shape), which a verified apply confirmed, how many devices are at each now (`NOW`:
+    `49 devices`, `1 device`, `-`) and, for a new one, the nearest confirmed shape. The names of
+    the devices at each shape follow the table under `At a shape now (last check or apply):`, one
+    entry per shape wrapped at 80 columns (no block when no shape has a device). `--show` prints
+    one shape's statements and wraps its `at this shape now` line the same way; `--json` lists
+    every device of every shape. `seed` files the shape of a device's last check or apply as
+    confirmed on your word, for a device applied and verified by hand (one question; `--yes`
+    answers it). Contacts no device
 
 device config list [--stale] [--never] [--failed] [--differs] [--name <text>]
                    [--ip <addr|cidr|text>] [--transport netconf|ssh|none]

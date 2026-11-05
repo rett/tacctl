@@ -3,6 +3,22 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.25 (unreleased)
+
+1. **`tacctl device config shapes` keeps its table narrow.** The list put every
+   device now at a shape into one cell, so with fifty devices at a shape the
+   table, its title rule and its header rule were thousands of characters wide
+   and the listing could not be read in a console. The table now holds the
+   shape, its state, the devices it was confirmed on, a count of the devices
+   at it now (`NOW`: `49 devices`, `1 device`, `-`), the number of lines and
+   the note. Below it, a block headed `At a shape now (last check or apply):`
+   names the devices at each shape that has any, in the table's order, one
+   entry per shape (`  <shape>  sw1, sw2, ...`) wrapped at 80 columns with the
+   continuation lines under the first name; a name is never split, and there is
+   no block when no shape has a device. `shapes list --show <hash>` wraps its
+   `at this shape now` line the same way. `--json` is unchanged: it lists every
+   device of every shape.
+
 ## 0.2.24 (2026-11-05)
 
 1. **`tacctl man` finds each entry on groff 1.24.** groff 1.24 narrowed the

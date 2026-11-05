@@ -13399,10 +13399,24 @@ by a verified apply,
 .B seeded
 on someone's word, or
 .BR new ),
-the devices it was confirmed on, the devices at it now by their records and,
-for a new one, the nearest confirmed shape;
+the devices it was confirmed on (a count), how many devices are at it now by
+their records
+.RB ( NOW :
+.BR "49 devices" ,
+.BR "1 device" ,
+or
+.BR \- )
+and, for a new one, the nearest confirmed shape. The names of the devices at
+each shape follow the table under
+.BR "At a shape now (last check or apply):" ,
+one entry per shape wrapped at 80 columns with the continuation lines under the
+first name (no block when no shape has a device);
 .B \-\-show
-prints one shape's statements. It contacts no device; the store is
+prints one shape's statements and wraps its
+.B at this shape now
+line the same way, and
+.B \-\-json
+lists every device of every shape. It contacts no device; the store is
 .I /var/lib/tacctl/device\-apply/shapes.json
 (0600).
 .B seed
