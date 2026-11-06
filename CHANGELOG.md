@@ -3,7 +3,7 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
-## 0.2.25 (unreleased)
+## 0.2.25 (2026-11-05)
 
 1. **`tacctl device config shapes` keeps its table narrow.** The list put every
    device now at a shape into one cell, so with fifty devices at a shape the
