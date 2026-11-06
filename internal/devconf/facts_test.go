@@ -159,7 +159,7 @@ func TestReadFacts(t *testing.T) {
 		got := ReadFacts(ctx, f, "juniper", Facts{Release: "25.4R1-S2.3"})
 		// show version is asked all the same: it names the running release
 		if !factsEqual(got, Facts{Release: "25.4R1-S2.3", Model: "EX4300-48MP", Serial: "FXYZ00000001"}) ||
-			!slices.Equal(f.ran, []string{JunosChassisCommand, JunosVersionCommand}) {
+			!slices.Equal(f.ran, []string{JunosChassisCommand, JunosVersionCommand, JunosVirtualChassisCommand}) {
 			t.Errorf("%+v %v", got, f.ran)
 		}
 	})
@@ -168,7 +168,7 @@ func TestReadFacts(t *testing.T) {
 		got := ReadFacts(ctx, f, "junos", Facts{})
 		// the chassis description stays the model
 		if !factsEqual(got, Facts{Release: "25.4R1-S2.3", Model: "EX4300-48MP", Serial: "FXYZ00000001"}) ||
-			!slices.Equal(f.ran, []string{JunosChassisCommand, JunosVersionCommand}) {
+			!slices.Equal(f.ran, []string{JunosChassisCommand, JunosVersionCommand, JunosVirtualChassisCommand}) {
 			t.Errorf("%+v %v", got, f.ran)
 		}
 	})
@@ -207,7 +207,7 @@ func TestReadFacts(t *testing.T) {
 	t.Run("ios", func(t *testing.T) {
 		f := &fakeRunner{out: map[string]string{IOSInventoryCommand: capture(t, "ios/facts-iosv/show-inventory.txt")}}
 		got := ReadFacts(ctx, f, "cisco", Facts{Release: "15.6(2)T"})
-		if !factsEqual(got, Facts{Release: "15.6(2)T", Model: "IOSv", Serial: "FXYZ0000001"}) || !slices.Equal(f.ran, []string{IOSInventoryCommand}) {
+		if !factsEqual(got, Facts{Release: "15.6(2)T", Model: "IOSv", Serial: "FXYZ0000001"}) || !slices.Equal(f.ran, []string{IOSInventoryCommand, IOSSwitchCommand}) {
 			t.Errorf("%+v %v", got, f.ran)
 		}
 	})

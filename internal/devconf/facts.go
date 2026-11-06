@@ -304,8 +304,10 @@ func ReadFacts(ctx context.Context, r Runner, vendor string, f Facts) Facts {
 	}
 	switch fam {
 	case FamilyJunos:
+		hw, ver := "", ""
 		if out, err := r.Run(ctx, JunosChassisCommand); err == nil {
-			f.Model, f.Serial = JunosChassis(cleanText(out))
+			hw = cleanText(out)
+			f.Model, f.Serial = JunosChassis(hw)
 		}
 		// The running release is 'show version''s; the configuration's
 		// 'set version' (f.Release) is the release it was last committed
@@ -314,7 +316,8 @@ func ReadFacts(ctx context.Context, r Runner, vendor string, f Facts) Facts {
 		// used when the chassis row gave none.
 		if ctx.Err() == nil {
 			if out, err := r.Run(ctx, JunosVersionCommand); err == nil {
-				rel, model := JunosVersion(cleanText(out))
+				ver = cleanText(out)
+				rel, model := JunosVersion(ver)
 				if rel != "" {
 					f.Release = rel
 				}
@@ -323,11 +326,32 @@ func ReadFacts(ctx context.Context, r Runner, vendor string, f Facts) Facts {
 				}
 			}
 		}
+		// The members of a virtual chassis, from the two outputs above and
+		// the member table; none when the device has no virtual chassis.
+		if ctx.Err() == nil {
+			if out, err := r.Run(ctx, JunosVirtualChassisCommand); err == nil {
+				f.Members = JunosMembers(cleanText(out), hw, ver)
+			}
+		}
 	case FamilyIOS:
+		inv := ""
 		if out, err := r.Run(ctx, IOSInventoryCommand); err == nil {
 			out = cleanText(out)
 			if !iosRefused(out) {
+				inv = out
 				f.Model, f.Serial = IOSInventory(out)
+			}
+		}
+		if ctx.Err() == nil {
+			if out, err := r.Run(ctx, IOSSwitchCommand); err == nil {
+				sw := cleanText(out)
+				if f.Members = IOSMembers(sw, inv, ""); f.Members != nil && ctx.Err() == nil {
+					// A stack: its switches' releases are in the table of
+					// 'show version'.
+					if out, err := r.Run(ctx, IOSVersionCommand); err == nil {
+						f.Members = IOSMembers(sw, inv, cleanText(out))
+					}
+				}
 			}
 		}
 	}
