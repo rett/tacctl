@@ -1,0 +1,72 @@
+{
+  "schema": 1,
+  "type": "software",
+  "generated": "2026-11-06T09:30:15Z",
+  "oldest_data": "2026-11-03T22:10:00Z",
+  "columns": [
+    "name",
+    "vendor",
+    "model",
+    "release",
+    "gate",
+    "pulled"
+  ],
+  "rows": [
+    {
+      "name": "core1",
+      "vendor": "wti",
+      "model": "",
+      "release": "",
+      "gate": "",
+      "pulled": "2026-11-06T06:00:00Z"
+    },
+    {
+      "name": "fw1",
+      "vendor": "cisco",
+      "model": "",
+      "release": "",
+      "gate": "",
+      "pulled": null
+    },
+    {
+      "name": "jsw1",
+      "vendor": "junos",
+      "model": "EX4300-48T",
+      "release": "21.4R3-S5.4",
+      "gate": "held",
+      "pulled": "2026-11-06T07:30:00Z"
+    },
+    {
+      "name": "rtr1",
+      "vendor": "junos",
+      "model": "MX204",
+      "release": "22.2R1.9",
+      "gate": "",
+      "pulled": "2026-11-03T22:10:00Z"
+    },
+    {
+      "name": "sw1",
+      "vendor": "cisco",
+      "model": "WS-C3850-24T",
+      "release": "16.12.4",
+      "gate": "ok",
+      "pulled": "2026-11-06T07:45:00Z"
+    },
+    {
+      "name": "web1",
+      "vendor": "linux",
+      "model": "=SUM(A1)",
+      "release": "-1.0",
+      "gate": "-held",
+      "pulled": "2026-11-05T08:00:00Z"
+    },
+    {
+      "name": "ünï1",
+      "vendor": "linux",
+      "model": "Model Ü",
+      "release": "1.2",
+      "gate": "ok",
+      "pulled": "2026-11-04T10:00:00Z"
+    }
+  ]
+}
