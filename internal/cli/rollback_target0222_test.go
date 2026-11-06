@@ -122,7 +122,7 @@ func TestRollbackSnapshotIsSpokenOfOnlyWhenTaken(t *testing.T) {
 	if hs.snapshots() == snaps {
 		t.Error("no snapshot was taken")
 	}
-	for _, want := range []string{"--apply takes a snapshot of the state first", "holds the 0.2.25 state. Restore it with 0.2.25 only"} {
+	for _, want := range []string{"--apply takes a snapshot of the state first", "holds the 0.2.26 state. Restore it with 0.2.26 only"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("0.2.21 with a file to convert lacks %q:\n%s", want, out)
 		}

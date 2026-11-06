@@ -297,7 +297,7 @@ func (inv *invocation) rollbackNextSteps(version string, snapshot bool) {
 // its snapshot. It moves with each release (docs/releasing.md, The rollback
 // target); TestRollbackFromIsTheReleaseOfTheChangelog compares it with the
 // first release heading of CHANGELOG.md.
-const rollbackFrom = "0.2.25"
+const rollbackFrom = "0.2.26"
 
 // rollbackSnapshotNote says where the state before the rollback is, when the
 // apply took a snapshot (it takes none when no file of tacctl's own is
