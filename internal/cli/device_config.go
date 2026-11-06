@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/rett/tacctl/internal/devconf"
@@ -525,5 +526,32 @@ func (inv *invocation) printDeviceData(e devreg.Entry) {
 		}
 		row(k, v)
 	})
+	inv.echo("")
+	inv.printMembers(e)
+}
+
+// printMembers is the chassis members of the device's last good pull (D319),
+// a table under the data block; nothing when the record has none. The pull
+// record is what 'device config' shows to those who may see it at all
+// (configVisible).
+func (inv *invocation) printMembers(e devreg.Entry) {
+	if e.Source != devreg.SourceDevice || !inv.configVisible() {
+		return
+	}
+	rec, _ := inv.configRecords().Of(e.Name)
+	if rec == nil || len(rec.Members) == 0 {
+		return
+	}
+	tb := ui.NewTable("Chassis members:", ui.Left("ID"), ui.Left("ROLE"), ui.Left("MODEL"), ui.Left("SERIAL"),
+		ui.Left("RELEASE"), ui.Left("STATUS"), ui.Left("PRIORITY"))
+	for _, m := range rec.Members {
+		prio := "-"
+		if m.Priority > 0 {
+			prio = strconv.Itoa(m.Priority)
+		}
+		tb.Add(dash(cleanLine(m.ID)), dash(cleanLine(m.Role)), dash(cleanLine(m.Model)), dash(cleanLine(m.Serial)),
+			dash(cleanLine(m.Release)), dash(cleanLine(m.Status)), prio)
+	}
+	inv.write(tb.String())
 	inv.echo("")
 }
