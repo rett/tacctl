@@ -215,8 +215,8 @@ config devices apply-confirm-timeout [<minutes>]
 
 config devices apply-pause [<seconds>]
 
-    Show or set the seconds `device config apply` waits between the devices of a batch after the
-    canary, 0-3600 (default 60; 0 none)
+    Show or set the seconds `device config apply` waits from one device's end to the next one's
+    start (the first device is not delayed), 0-3600 (default 60; 0 none)
 
 config devices apply-transport [cli|auto|netconf]
 

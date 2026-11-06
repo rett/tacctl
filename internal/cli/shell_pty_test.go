@@ -305,7 +305,8 @@ func TestPtyShellQuestionMarkCapsTheLabelColumn(t *testing.T) {
 		// A superuser of the fake runner: the shell would otherwise run the
 		// real 'id -nG' and 'sudo -n' of the machine the test is on, and a
 		// tac-users member there sees only the commands of their tier.
-		s := startCLIShell(t, cols, shellPtyViewPrefix+"superuser")
+		s := startCLIShellFor(t, 30*time.Second, cols, shellPtyViewPrefix+"superuser")
+		awaitSuperuserView(t, s)
 		if err := s.Send(family + " ?"); err != nil {
 			t.Fatal(err)
 		}
@@ -314,8 +315,9 @@ func TestPtyShellQuestionMarkCapsTheLabelColumn(t *testing.T) {
 			regexp.QuoteMeta("\r\ntacctl> "+family+" ")+`|-- more)`, 5*time.Second); err != nil {
 			t.Fatal(err)
 		}
+		// the probe of awaitSuperuserView printed a list before this one
 		out := strings.ReplaceAll(s.Output(), "\r\n", "\n")
-		_, list, _ := strings.Cut(out, "Possible completions:\n")
+		list := out[strings.LastIndex(out, "Possible completions:\n")+len("Possible completions:\n"):]
 		list, _, _ = strings.Cut(list, "-- more")
 		list, _, _ = strings.Cut(list, "tacctl> ")
 		descCol, labels := 0, 0
@@ -494,6 +496,30 @@ func TestPtyShellLongListAsks(t *testing.T) {
 	}
 }
 
+// awaitSuperuserView waits until the shell of a superuser (shellPtyViewPrefix)
+// knows its tier. The shell asks the root side for the tier in the
+// background and lists the read-only verbs until the answer is in
+// (setView, viewUnread), and the prompt does not say when that is: a key
+// typed at the prompt before then is handled with the read-only view, and a
+// typed space that completed nothing is not retried. So ask with '?' until
+// the list is the superuser's (it holds 'store', a verb of that tier only),
+// then let the rest of the list and the prompt arrive.
+func awaitSuperuserView(t *testing.T, s *testpty.Session) {
+	t.Helper()
+	for end := time.Now().Add(15 * time.Second); time.Now().Before(end); {
+		if err := s.Send("\x15?"); err != nil {
+			t.Fatal(err)
+		}
+		if s.Expect(`\r\n  store `, 500*time.Millisecond) == nil {
+			if err := s.Expect(`tacctl> $`, 5*time.Second); err != nil {
+				t.Fatal(err)
+			}
+			return
+		}
+	}
+	t.Fatalf("the shell never listed the verbs of a superuser: %q", s.Output())
+}
+
 // Tab, '?' and a typed space offer only what the caller's tier can run
 // (D56); a verb typed by hand is not completed, and a superuser sees all.
 func TestPtyShellHidesWhatTheTierCannotRun(t *testing.T) {
@@ -540,7 +566,8 @@ func TestPtyShellHidesWhatTheTierCannotRun(t *testing.T) {
 		t.Errorf("user <Tab><Tab> for a readonly caller: %q", got)
 	}
 
-	s = startCLIShell(t, 140, shellPtyViewPrefix+"superuser")
+	s = startCLIShellFor(t, 30*time.Second, 140, shellPtyViewPrefix+"superuser")
+	awaitSuperuserView(t, s)
 	if err := s.Send("group ju "); err != nil {
 		t.Fatal(err)
 	}

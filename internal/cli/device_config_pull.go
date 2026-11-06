@@ -611,6 +611,9 @@ func readDeviceConfig(ctx context.Context, c *devssh.Client, vendor, mode string
 				return out, nerr
 			}
 			out.Fallback = "netconf: " + out.Netconf
+			if out.Netconf == netconfNoHello {
+				out.Fallback += ": " + devssh.NetconfWhy(nerr)
+			}
 		}
 	}
 	s, err := c.CLI(vendor, opts...)

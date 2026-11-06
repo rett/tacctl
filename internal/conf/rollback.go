@@ -195,8 +195,8 @@ func Added0222Key(path string) bool { return inFamilies(Added0222, path) }
 // TCP connections of a held address (breakglass.firewall). A 0.2.23 or older
 // binary does not know it (its schema refuses the key, so its 'config
 // validate' reports it and its 'backup restore' refuses a snapshot that has
-// it), so every rollback removes it, with the nftables table, the rules file
-// and the boot unit it belongs to (lifecycle).
+// it), so every rollback but the one to 0.2.24 removes it, with the nftables
+// table, the rules file and the boot unit it belongs to (lifecycle).
 var Added0224 = []Family{
 	{BreakglassFirewallKey, false},
 }

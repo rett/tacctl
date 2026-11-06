@@ -7,8 +7,8 @@ import (
 	"github.com/rett/tacctl/internal/tier"
 )
 
-// 'tacctl rollback 0.2.23', the release before this one, on the host sandbox
-// with this server enrolled. The plan's own cases are internal/lifecycle's.
+// 'tacctl rollback 0.2.23', two releases before this one (0.2.24 is the release
+// before it), on the host sandbox with this server enrolled. The plan's own cases are internal/lifecycle's.
 
 // rollback0223State is rollback0221State with the per-tier sudoers drop-in
 // 0.2.23 wrote, not the older text the state of the targets 0.2.20 to 0.2.22
@@ -28,9 +28,10 @@ func rollback0223ThisReleaseState(t *testing.T) *hostSandbox {
 	return hs
 }
 
-// This release changed no stored file, so 0.2.23 reads everything: on a host
-// whose per-tier drop-in is 0.2.23's the dry run lists nothing to do and
-// --apply converts nothing, even with an email address
+// 0.2.24 and this release changed no stored file 0.2.23 reads strictly but
+// breakglass.firewall (rollback_firewall.go; this state has it unset), so
+// 0.2.23 reads the rest: on a host whose per-tier drop-in is 0.2.23's the dry
+// run lists nothing to do and --apply converts nothing, even with an email address
 // in the store (0.2.23's own; the 0.2.22 target removes it), takes no snapshot
 // and asks for no --yes.
 func TestRollback0223ConvertsNothing(t *testing.T) {
@@ -169,8 +170,8 @@ func TestRollback0223PutsBackTheDropIn(t *testing.T) {
 	if got := changedFiles(before, tree(t, hs.dir)); len(got) != 1 || !strings.HasSuffix(got[0], "sudoers.d/tacctl-tiers") {
 		t.Errorf("--apply changed %q", got)
 	}
-	if hs.snapshots() != snaps {
-		t.Error("a snapshot was taken: the drop-in is not in it")
+	if hs.snapshots() != snaps || strings.Contains(out, "took first") {
+		t.Error("a snapshot was taken or named: the drop-in is not in it")
 	}
 	hs.run(nil, "rollback", "0.2.23", "--apply")
 	hs.expect(0, "Nothing to convert: every file is one 0.2.23 can read.", "")

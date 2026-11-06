@@ -132,8 +132,9 @@ takes the group out of every lockdown, and `group edit <group> tier superuser`
 (or a priv-lvl edit that makes the group a superuser's) is refused while the
 group is locked, since a superuser group is never locked. A rollback to a
 release before 0.2.19 is refused while a lockdown stands, and every rollback
-is while a lockdown has enrolled hosts or a lifted one waits for a host
-(`tacctl rollback`; older releases cannot lift the drop-in). `config validate` warns while a
+but the ones to 0.2.24 and 0.2.23 is while a lockdown has enrolled hosts or a
+lifted one waits for a host (`tacctl rollback`; older releases cannot lift the
+drop-in). `config validate` warns while a
 lockdown stands and reports a record that names a scope or group that no
 longer exists, a group that is a superuser's now, or no group, and while a
 host waits for the drop-in. The log has `emergency lockdown enable|disable

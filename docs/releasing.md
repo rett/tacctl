@@ -85,11 +85,15 @@ the fork catches up.
 Also before step 1, on `develop`:
 
 - **The rollback target.** Every release ships `tacctl rollback <previous
-  release>` (0.2.17 to 0.2.23 each did). Check that the release before this
-  one is a constant in `internal/lifecycle/rollback.go` (`RollbackTarget0222`
-  for 0.2.23) and is the one the refusal names "(the release before this
+  release>` (0.2.17 to 0.2.24 each did). Check that the release before this
+  one is a constant in `internal/lifecycle/rollback.go` (`RollbackTarget0224`
+  for 0.2.25) and is the one the refusal names "(the release before this
   one)" (`internal/lifecycle/rollback_test.go`), that the `rollback` entry of
-  `man/tacctl.1` lists it the same way, and that the CHANGELOG has its item.
+  `man/tacctl.1` lists it the same way, that the CHANGELOG has its item, and
+  that `const rollbackFrom` in `internal/cli/rollback.go` is this release (the
+  snapshot note and the two recovery hints of a rollback name it;
+  `TestRollbackFromIsTheReleaseOfTheChangelog` compares it with the first
+  `## X.Y.Z` heading of `CHANGELOG.md`).
 - **The plans.** A plan, handoff, lab sheet or spike of this release is
   deleted in this release (`docs/development/README.md`, Working rules) and
   recorded under "Removed plans" in `docs/plans/README.md` with the commit

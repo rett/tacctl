@@ -3,6 +3,198 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.25 (2026-11-05)
+
+1. **`tacctl device config shapes` keeps its table narrow.** The list put every
+   device now at a shape into one cell, so with fifty devices at a shape the
+   table, its title rule and its header rule were thousands of characters wide
+   and the listing could not be read in a console. The table now holds the
+   shape, its state, the devices it was confirmed on, a count of the devices
+   at it now (`NOW`: `49 devices`, `1 device`, `-`), the number of lines and
+   the note. Below it, a block headed `At a shape now (last check or apply):`
+   names the devices at each shape that has any, in the table's order, one
+   entry per shape (`  <shape>  sw1, sw2, ...`) wrapped at 80 columns with the
+   continuation lines under the first name; a name is never split, and there is
+   no block when no shape has a device. `shapes list --show <hash>` wraps its
+   `at this shape now` line the same way. `--json` is unchanged: it lists every
+   device of every shape.
+
+2. **The explanation of shapes, canary and confirmed is rewritten.** A rollout
+   with `tacctl device config apply` was hard to follow: one dense paragraph
+   held what a shape is, the canary and the options. "Applying a plan" in the
+   planning page now opens with a rollout in five steps (pull, plan one device,
+   `apply --check`, apply one device or a scope, then the rest or
+   `--confirmed --yes`) and a table of what each step does to a device, then
+   says what a shape is (with a worked example of three devices, `sw1`, `sw2`
+   and `sw3`), what a canary is (the first device of each shape, applied alone;
+   the order of a run) and what the states `new`, `confirmed` and `seeded`
+   allow, and holds the options (`--check`, `--confirmed`, `--yes`,
+   `--no-canary`, `--max`, `--pause`, `--concurrency`, `--max-failures`,
+   `--hold`) in one table. The entries of `device config apply` and
+   `device config shapes` in the device reference, the help, the man page and
+   the text of `config devices apply-pause` (the wait from one device's end to
+   the next one's start, the first device not delayed) say the same in plain
+   words. No behaviour, JSON or audit line changed, and the only output that
+   changed is the apply-pause line of `tacctl config devices`, which now ends
+   `0-3600, from one device's end to the next one's start`.
+
+3. **A Junos device's NETCONF hello is read as it is sent, and a failed hello
+   says why.** A Junos device names its capabilities with the XML namespace's
+   prefix (`urn:ietf:params:xml:ns:netconf:base:1.0`) where RFC 6241 has
+   `urn:ietf:params:netconf:base:1.0`; the client looked for the second only, so
+   such a device was recorded as `no hello` although it answered, a pull read
+   it over the command line, `device check` showed `NETCONF: no hello`, and an
+   apply that enabled the service was rolled back with `the device does not
+   answer NETCONF after the change`. Both spellings are now the same
+   capability (the candidate and the confirmed commit are found in either, so
+   such a device is also applied over NETCONF). The hello is also read as a
+   device prints it: comments, an XML declaration, a byte order mark or text
+   (even with a `&` or a `<`) before `<hello>`, and white space or line breaks
+   inside a capability; a device that ends the channel right after its hello
+   still gives it. A hello that is none is no longer silent. The pull records
+   `no hello` for every failure to open the session but a refused subsystem
+   (`port closed`), and its line (`ok via ssh (netconf: no hello: the device's
+   first message is <rpc-error>, not a hello; the device sent
+   "<rpc-error>...")`, and `fallback` in `--json`) gives the reason (not a
+   hello, not a hello but another message, no `base:1.0` framing with the
+   capabilities offered, the channel closed after the subsystem was accepted,
+   no hello in time) and the first 120 bytes the device sent, on one line with
+   control characters shown as `?`. The message of an apply that enabled
+   NETCONF gives the reason in the same form (`the device does not answer
+   NETCONF after the change (no hello: ...; the record's NETCONF probe stays
+   'port closed')`) only when the device answered with something that is not a
+   usable hello (not a hello, another message, no `base:1.0` framing). A device
+   that closed the channel after the subsystem was accepted, or sent no hello
+   in time, is one the probe cannot tell about, as before, for a change that
+   disables the service too: the message is `the NETCONF probe could not tell:
+   session closed: the channel closed after the subsystem was accepted` (or
+   `timed out: no hello from the device in time`), cut to 120 bytes with what
+   the device sent, and the proof fails. The record still stores `hello ok`,
+   `port closed`, `no hello` or `not probed` only, so `device check` shows the
+   word without the reason.
+
+4. **A slow device no longer fails `device config apply` or a pull with
+   `open: configure exclusive` or `pre-flight ...: not recognised`.** On a
+   device that answers slowly (a satellite or WAN link, a loaded switch) the
+   ssh client types its empty line a second time to learn the prompt, and the
+   answer to that second line could still be on its way when the first command
+   was typed. It then arrived in front of the command's echo, and the answer to
+   the command began with the device's prompt and the echo on one line
+   (`alice@sw1> configure exclusive`) instead of the echo alone: the
+   parser refused an answer that was otherwise exact, and on a run where it
+   arrived before the command was typed the session failed with `output between
+   commands`. The same device usually worked on another run. The first command
+   now takes that late answer for what it is: the line break, the `[edit]`
+   location line, the line a Junos virtual chassis prints before every prompt
+   (`{master:0}`), the `# commit confirmed will be rolled back in N minutes`
+   line it prints before every prompt while a confirmed commit is pending (as
+   it is on the verification login of every apply), a line the device printed
+   in front of the prompt of the command before, and the prompt in front of
+   the echo are dropped and the echo stays;
+   anything else between commands, and a prompt more than the commands account
+   for, is still refused.
+
+5. **A Junos virtual chassis whose master prints its own label is applied to.**
+   `device config apply` rolled back every apply on a virtual chassis of two
+   members (FPC 0 the master, FPC 1 the backup) with `the confirmed commit's
+   answer: ... a line "commit confirmed will be automatically rolled back in 10
+   minutes unless confirmed" outside the members' answers`: this chassis prints
+   a label for every member, the master too, and a label opens several lines,
+   not one (`fpc0:`, its check and the note; `fpc1:`, `commit complete` and the
+   note; `fpc0:`, `commit complete`). The reader of a commit's answer now takes
+   a label and the lines up to the next label as a block, joins a member's
+   blocks in the order they appear, and holds each member's lines to rules:
+   the check (optional, first), then `commit complete` and, on a confirmed
+   commit only, the note, once each and in either order, and nothing else.
+   Every member of `show version` must be in the answer and finish with
+   `commit complete`. A line before the first label, a member `show version` did
+   not list or one missing, a label with no line, labels of two kinds, a line
+   twice or none of these, a confirmed commit whose note a member does not
+   print and a note on the confirming commit are refused, and the error names
+   the member and the line. Only a chassis of two is read so (the capture is of
+   two members): in a chassis of three or more members that all print a label,
+   the answer is read one line per label as before, and an answer refused in
+   that layout says when a label appears twice (no capture of a larger chassis
+   exists); every other layout (an unlabelled master, a single member, two
+   routing engines, a cluster) is read as before. A refused answer was shown
+   cut to its first six lines of 200 bytes, which hid the layout that mattered;
+   the error now shows the answer's lines, up to 40, each cut at 120 bytes (the
+   reasons that name a member are cut at 200 bytes, and so is every line of an
+   answer over NETCONF). The device's text in these lines is shown with every
+   control character (C0, DEL and C1, as U+009B), formatting character (the
+   bidirectional overrides) and line separator replaced by `?`, in the
+   terminal line and in `--json`; only C0 controls and DEL were before.
+
+6. **`tacctl rollback 0.2.24`, the release before this one, is a target.**
+   This release changed no stored file 0.2.24 reads strictly (the shapes list,
+   the help and the documentation, the spelling of the NETCONF capabilities
+   and the reasons of a failed hello, the readers of a device's shell session
+   and of a Junos virtual chassis's commit answers, and the cleaning of a
+   device's text are code only; a NETCONF probe is still stored as `hello ok`,
+   `port closed`, `no hello` or `not probed`), so 0.2.24 reads everything it
+   writes: the rollback converts no file, removes no key (the break-glass
+   firewall, `breakglass.firewall` and the nftables table stay, 0.2.24 has
+   them), leaves the per-tier sudoers drop-in (0.2.24 and this release write
+   the same text), takes no snapshot and needs no `--yes`. The users' email
+   addresses, the SNMPv3 users, the covered staging entries, a user name with
+   a period and an emergency lockdown with enrolled hosts, which the older
+   targets drop or refuse, stay. It is refused only while a device's apply is
+   not settled. The command ends with `tacctl upgrade --branch 0.2.24`. What
+   this release changed outside the stored files is 0.2.24's to undo or keep:
+   after that upgrade a Junos device whose hello names its capabilities with
+   the XML namespace's prefix is recorded as `no hello` again by its next
+   `device config pull`, and an apply to a Junos virtual chassis whose master
+   prints its own label is rolled back again. The top-level help, `docs/cli/conventions.md`, `docs/cli/user.md`,
+   `docs/install/upgrading.md` (Rolling back, To 0.2.24), the manual page and
+   the completion list the new target, and `tacctl rollback` now takes eleven
+   targets. The note that follows a rollback that took a snapshot (every
+   older target that converts a file) named 0.2.23 as the release whose state
+   the snapshot holds, "Restore it with 0.2.23 only", and the notes after a
+   rollback that dropped email addresses or SNMPv3 users said "once 0.2.23 is
+   installed again, `tacctl backup recover <id> --only email`" (or `--only
+   snmp-users`); none was moved on in 0.2.24, and all three now name this
+   release, 0.2.25. The pages that say what "every target" does name the
+   exceptions of 0.2.24 and 0.2.23 (the break-glass firewall, an emergency
+   lockdown with enrolled hosts, the email key and the required password
+   change).
+
+7. **The next steps of `tacctl rollback 0.2.23` name the snapshot when the
+   break-glass firewall setting was set.** With `breakglass.firewall` set the
+   rollback to 0.2.23 removes the key and takes a snapshot first, but the next
+   steps did not say so: the note that names where the state before the
+   rollback is ("holds the 0.2.25 state. Restore it with 0.2.25 only") was
+   printed for every other target that takes one and not for this one. It is
+   now printed there too, ending "0.2.23's restore refuses a tacctl.yaml with a
+   key it does not know", since the snapshot's `tacctl.yaml` has the key. With
+   the key unset, nothing is converted but the sudoers drop-in, no snapshot is
+   taken and the note is not printed, as before. `docs/install/upgrading.md`
+   (To 0.2.23) and the manual page say so.
+
+8. **`tacctl device config shapes` says "1 line differs".** The note of a new
+   shape that is one line away from a confirmed one read `nearest confirmed
+   <shape>, 1 lines differ`; it now reads `1 line differs` and, for any other
+   number, `N lines differ` as before. `--json` is unchanged (`nearest_differs`
+   is the number). The planning page says so.
+
+9. **The `device config apply` row of the device usage no longer says a shape
+   is "shown once in the review".** The review groups devices by shape and by
+   what it shows of each (warnings, sections left out, kept statements,
+   not-found deletes), so one shape can have several headings. The row now
+   says that devices that need the same change share a shape and are reviewed
+   together, unless their warnings or notes differ, and that each kind then has
+   its own heading. The manual page and `docs/cli/device.md` already said so.
+
+10. **The rollback pages name the targets that remove the keys 0.2.20 added.**
+    `docs/install/upgrading.md` and the manual page said that every target
+    removes `scope_mgmt_acl.mode.<scope>`, the console settings `color` and
+    `list_max: -1`, `settings.password_cache_users` and
+    `settings.system_shell_users`. Only the targets before 0.2.20 (0.2.19,
+    0.2.18, 0.2.17, 0.2.16, 0.2.9 and 0.2.3) do; 0.2.24 to 0.2.20 read those
+    keys and leave them, as the entry for the required password change
+    already said. The paragraph on the `tiers` and `users` switches of
+    `console.yaml` now says that the older release that reads them is a target
+    before 0.2.20, and that 0.2.3 has no password cache. No behaviour changed.
+
 ## 0.2.24 (2026-11-05)
 
 1. **`tacctl man` finds each entry on groff 1.24.** groff 1.24 narrowed the

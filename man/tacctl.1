@@ -1,6 +1,6 @@
 .\" Manual page for tacctl, the management CLI for pluggable network-device AAA.
 .\" Render locally with: groff -man -Tascii man/tacctl.1 | less
-.TH TACCTL 1 "2026-11-05" "tacctl 0.2.24" "tacctl Manual"
+.TH TACCTL 1 "2026-11-05" "tacctl 0.2.25" "tacctl Manual"
 .\" The body margin is 7n on every groff: 1.24 narrowed its default (BP) to 5n, which moves the
 .\" columns that `tacctl man` searches for.
 .nr BP 7n
@@ -334,8 +334,9 @@ The tacctl repo branch to install or upgrade from (default: the current one).
 Prepare tacctl's state for the release before this one; run on the newer
 release, before the older one is installed. A dry run by default: it lists
 every step and every warning and changes nothing. The versions it takes are
-.B 0.2.23
+.B 0.2.24
 (the release before this one),
+.BR 0.2.23 ,
 .BR 0.2.22 ,
 .BR 0.2.21 ,
 .BR 0.2.20 ,
@@ -353,12 +354,12 @@ and older are refused, with the way there (one release at a time: this
 rollback,
 .BR "tacctl upgrade \-\-branch 0.2.9" ,
 then the rollback of that release), and so is any other word (0.2.10 to
-0.2.15 included: the refusal names the targets). Every target but 0.2.23, 0.2.22, 0.2.21, 0.2.20
+0.2.15 included: the refusal names the targets). Every target but 0.2.24, 0.2.23, 0.2.22, 0.2.21, 0.2.20
 and 0.2.19 is refused while an emergency lockdown locks a group (the refusal lists each
 one and
 .B "emergency lockdown <scope> disable"
 lifts it; a release before 0.2.19 would render the locked users back into the
-scope; 0.2.19 has the record and keeps it), every target but 0.2.23 is refused while an emergency lockdown stands on a scope that has enrolled hosts, or a lifted one still waits for a host to drop sshd's lockdown drop\-in (older releases cannot lift it on a host; lift it and sync the hosts first), and every target is refused while a device's record says a confirmed commit of
+scope; 0.2.19 has the record and keeps it), every target but 0.2.24 and 0.2.23 is refused while an emergency lockdown stands on a scope that has enrolled hosts, or a lifted one still waits for a host to drop sshd's lockdown drop\-in (older releases cannot lift it on a host; lift it and sync the hosts first), and every target is refused while a device's record says a confirmed commit of
 .B "device config apply"
 is
 .B pending
@@ -368,7 +369,7 @@ or
 .B "device config apply <name> \-\-check"
 or
 .B "device config forget <name>"
-settles it), and every target but 0.2.23, 0.2.22, 0.2.21 and 0.2.20 while the store has a user whose
+settles it), and every target but 0.2.24, 0.2.23, 0.2.22, 0.2.21 and 0.2.20 while the store has a user whose
 name has a period (no other target reads such a name: the refusal lists each, with
 .B "user rename <name> <new\-name>"
 as the way out, and changes nothing; an override under such a name in the
@@ -379,17 +380,18 @@ The
 .B tiers
 and
 .B users
-mappings of console.yaml that this release ignores stay in the file, and the
-release a rollback goes to reads them as it always did: a user or a tier
+mappings of console.yaml that this release ignores stay in the file, and a
+release before 0.2.20 (the targets 0.2.19 and older; 0.2.24 to 0.2.20 ignore
+them too, and their rollback says nothing of it) reads them as it always did: a user or a tier
 switched off there gets a plain shell again, and the password cache is on again
 for every user of a tier that is allowed it, so the plan lists each user who
 would gain a system shell or the cache, with the reason, as a warning that
 .B \-\-apply
 refuses without
 .BR \-\-yes .
-Every target also takes out of
+Every target before 0.2.20 (0.2.19 and older; 0.2.24 to 0.2.20 read them and leave them) also takes out of
 .I console.yaml
-the settings of 0.2.20 that no older release reads:
+the settings of 0.2.20 that no release before it reads:
 .BR settings.color ,
 .B settings.system_shell_users
 (the system shell of single users; the tiers' list
@@ -403,7 +405,7 @@ stay, for the releases that have them) are removed and a
 of \-1 (never ask) is written as 1000, with every other setting kept and a
 snapshot first.
 .IP
-Every target but 0.2.23, 0.2.22 and 0.2.21, which have it themselves, keeps every user's
+Every target but 0.2.24, 0.2.23, 0.2.22 and 0.2.21, which have it themselves, keeps every user's
 login to this server: an older release answers
 it only for the users that have the server's scope
 .RB ( tacctl )
@@ -412,16 +414,16 @@ to the server and lacks it (it counts and names them; a warning, so
 .B \-\-apply
 needs
 .BR \-\-yes ),
-after a snapshot. Every target but 0.2.23 and 0.2.22 removes
+after a snapshot. Every target but 0.2.24, 0.2.23 and 0.2.22 removes
 .B server.name
 (the name of
 .BR "server name" ),
-and every target but 0.2.23, 0.2.22 and 0.2.21
+and every target but 0.2.24, 0.2.23, 0.2.22 and 0.2.21
 .B server.addresses
 as well, from
 .IR tacctl.yaml ,
 which no older release knows; the host registry keeps the address in this
-server's entry. Every target but 0.2.23 and 0.2.22 also removes the timing scale:
+server's entry. Every target but 0.2.24, 0.2.23 and 0.2.22 also removes the timing scale:
 .B device.timeout_scale
 and
 .B timeout_scale_scope.\fIscope\fR
@@ -436,7 +438,7 @@ key it does not know). It is a note in the plan, not a warning: the older
 release connects to every device with its fixed timings again, which a slow or
 distant device may not meet, and the values stay in the snapshot.
 .IP
-Every target but 0.2.23 removes the users' email addresses
+Every target but 0.2.24 and 0.2.23 removes the users' email addresses
 .RB ( "user email" ,
 .BR "user add \-\-email" )
 from
@@ -464,7 +466,7 @@ snapshot and the users. A store that cannot be read
 refuses every target. Until the older release is installed, the two verbs that
 set an address write the key again, and the command says so.
 .IP
-Every target but 0.2.23 writes the SNMP credential files
+Every target but 0.2.24 and 0.2.23 writes the SNMP credential files
 .RI ( snmp.yaml ,
 .IR snmp/ scope .yaml ,
 .IR snmp/devices/ name .yaml )
@@ -493,7 +495,7 @@ the audit line adds
 and the apply names
 .BR "tacctl backup recover <snapshot> \-\-only snmp\-users" .
 .IP
-Every target but 0.2.23 drops from
+Every target but 0.2.24 and 0.2.23 drops from
 .I state/staging
 the entries marked
 .B covered
@@ -507,7 +509,7 @@ A clone that still waits for its
 .B "device rename \-\-replace"
 loses its entry, and after a re-upgrade the verb refuses it as not staged: remove the clone and clone again from the original, or restore the snapshot. Every other entry stays.
 .IP
-Every target removes the break\-glass firewall: the key
+Every target but 0.2.24 removes the break\-glass firewall: the key
 .B breakglass.firewall
 (when set; every older release refuses it, so it is removed after the snapshot
 like the other keys they do not know), the nftables table
@@ -553,29 +555,51 @@ and
 then
 .BR "systemctl daemon\-reload" .
 .IP
+.B "rollback 0.2.24"
+converts nothing: this release changed no stored file, so 0.2.24 reads every file it
+writes (the break\-glass firewall and its setting, the email addresses, the SNMP
+credential files, the covered staging entries, the server name, the timing scale,
+the server address, the users' login to this server, a user name with a period and
+an emergency lockdown, with or without enrolled hosts, all stay), the per\-tier
+sudoers drop\-in is left (0.2.24 and this release write the same text), no snapshot
+is taken and
+.B \-\-yes
+is never needed. It is refused only while a device's apply is not settled.
+The tacquito clone keeps pointing at the project's fork, which is what 0.2.24 pulls
+from. After the upgrade that ends the rollback, a Junos device whose NETCONF hello
+names the capabilities with the XML namespace's prefix is recorded as
+.B "no hello"
+again by its next pull, and an apply to a Junos virtual chassis whose master prints
+its own label is rolled back again, as before this release.
+.B \-\-hosts
+is accepted and does nothing. The command ends with the next step,
+.BR "tacctl upgrade \-\-branch 0.2.24" .
+.IP
 .B "rollback 0.2.23"
 converts no file but the key
 .B breakglass.firewall
-(0.2.24's; when it is set the snapshot is taken): this release changed no other stored file, so 0.2.23 reads every file it
-writes (the email addresses, the SNMP credential files, the covered staging
+(0.2.24's; when it is set the snapshot is taken): 0.2.24 and this release changed no other stored file, so 0.2.23 reads every file they
+write (the email addresses, the SNMP credential files, the covered staging
 entries, the server name, the timing scale, the server address, the users' login
 to this server, a user name with a period and an emergency lockdown, with or
 without enrolled hosts, all stay), the per\-tier sudoers drop\-in is put back as 0.2.23 wrote it
 (without the operator's
 .BR "log failures *" ;
-when it is exactly this release's text it is rewritten, after
+when it is exactly the text of 0.2.24 and this release it is rewritten, after
 .BR "visudo \-cf" ,
 and any other file is left), no snapshot is taken for them and
 .B \-\-yes
-is never needed. It is refused only while a device's apply is not settled.
+is never needed. When the key was set the snapshot was taken, and the next steps
+say that it holds the 0.2.25 state and is to be restored with 0.2.25 only
+(0.2.23's restore refuses its tacctl.yaml, which has the key). It is refused only while a device's apply is not settled.
 Every older target that rewrites that drop\-in recognises this release's text and
 0.2.23's as tacctl's own and puts back its own.
 The tacquito clone keeps pointing at the project's fork, which has the same
 history as the upstream clone 0.2.23 made.
-What this release changed outside the stored files is 0.2.23's to undo or keep:
+What 0.2.24 changed outside the stored files is 0.2.23's to undo or keep:
 the upgrade that ends the rollback writes the console's sshd drop\-in from 0.2.23's
 text, without the block of users held to a password change, so their new
-connections forward again as their tier allows; it keeps the tacquito this release
+connections forward again as their tier allows; it keeps the tacquito 0.2.24
 built until it next rebuilds it (a new commit on the fork's main), so accounting
 records keep
 .B "Device"
@@ -583,7 +607,7 @@ and the literal <, > and &, which 0.2.23's
 .B log accounting
 shows as they are written; and on a device whose
 .B single\-connection
-this release removed, 0.2.23's
+0.2.24 removed, 0.2.23's
 .B device config diff
 and
 .B plan
@@ -599,7 +623,7 @@ converts nothing but the email addresses, the SNMP credential files, the covered
 with 0.2.22's: the engineer's rule of
 .B "device clone"
 is taken out; an edited drop\-in is left): 0.2.22
-reads every other file 0.2.23 and this release write, so the server name, the timing
+reads every other file 0.2.23, 0.2.24 and this release write, so the server name, the timing
 scale, the server address, the users' login to this server, a user name with a
 period and an emergency lockdown (of scopes with no enrolled host) stay. With no
 address in the store, no SNMP
@@ -724,7 +748,7 @@ An older release lints such a block as an error and plans nothing for the
 devices it reaches. The block files are not rewritten; take the statements
 out before the upgrade.
 .IP
-Every target removes the management filter mode of the scopes
+Every target before 0.2.20 (0.2.19 and older; 0.2.24 to 0.2.20 read it and leave it) removes the management filter mode of the scopes
 .RB ( scope_mgmt_acl.mode.\fIscope\fR ,
 only
 .B strict
@@ -746,7 +770,7 @@ or
 would put that filter back on a device that holds the strict one, without
 saying so. The rollback is not refused, and no device is contacted.
 .IP
-Every target removes the required password change
+Every target but 0.2.24 to 0.2.20 (which read it) removes the required password change
 .RB ( password_change_required
 of a user in
 .IR store.yaml ,
@@ -4815,7 +4839,7 @@ of every
 .B device.apply.pause
 (the seconds
 .B "device config apply"
-waits between the devices of a batch after the canary, 0 to 3600, default 60;
+waits from one device's end to the next one's start, 0 to 3600, default 60;
 0 is none) and
 .B device.apply.transport
 (how
@@ -4902,8 +4926,8 @@ Requires: \fBsuperuser\fR.
 .BI "config devices apply\-pause " "[ seconds ]"
 Show or set the seconds
 .B "device config apply"
-waits between the devices of a batch after the canary, 0 to 3600 (default 60;
-0 is none). A run can replace it with
+waits from one device's end to the next one's start (the first device is not
+delayed), 0 to 3600 (default 60; 0 is none). A run can replace it with
 .BR \-\-pause .
 .\" BEGIN GENERATED: command config devices apply-pause
 .RS
@@ -11314,7 +11338,9 @@ A juniper device also has a NETCONF row: what the probe of its last pull found
 .BR "no hello" ),
 with the time, or
 .B "not probed"
-and the command that probes it; the check itself logs in to nothing. It is
+and the command that probes it; the check itself logs in to nothing. The row
+keeps the probe's word only: why a device gave no hello is shown by the pull
+that found it and by an apply that needed it. It is
 .B netconf
 in the JSON.
 .\" BEGIN GENERATED: command device check
@@ -11497,7 +11523,21 @@ RPC) where the device answers and over an ssh exec channel otherwise;
 .B \-\-transport netconf
 and
 .B ssh
-never fall back. IOS and IOS\-XE are read over the ssh command line, with
+never fall back. A device whose session cannot be opened for any reason but a
+refused subsystem
+.RB ( "port closed" )
+(it answers with something that is not a usable hello, ends the channel after
+accepting the subsystem, or sends no hello in time) is recorded as
+.BR "no hello" ;
+the record keeps only that word, and the line of the pull says why and what the
+device sent, in the first 120 bytes with control characters shown as
+.BR ? ,
+as in
+.BR "ok via ssh (netconf: no hello: the device's first message is <rpc\-error>, not a hello; the device sent \(dq<rpc\-error>...\(dq)" .
+A hello that names its capabilities with the XML namespace's prefix
+.RB ( urn:ietf:params:xml:ns:netconf:... ,
+as a Junos device does) is read as the same capabilities. IOS and IOS\-XE are
+read over the ssh command line, with
 paging off, after
 .BR "show version | include Version" ,
 whose line is kept on the record with the configuration syntax it says (see
@@ -12942,7 +12982,9 @@ checked with its own
 .B "commit check"
 and discarded; the devices that need a change are then shown grouped by
 .BR shape
-and by what the review shows of each (the same change under one heading,
+(a shape is the same change on several devices: a hash of its statements with
+the secrets removed and the per\-device values, such as a location, masked) and
+by what the review shows of each (the same change under one heading,
 every secret elided, a statement whose per\-device value differs printed for
 each device after its name, with what the plan keeps and what it leaves out;
 two devices of one shape whose warnings, sections left out, kept statements
@@ -13030,7 +13072,35 @@ last; a member's block is the check (optional on a commit),
 .B "commit complete"
 and, on a confirmed commit only, the note, which every member of a confirmed
 commit must print; each line once and in that order. A line that is none of
-these, a label twice and two members without a block fail the step. A chassis of one member answers like a single
+these, a label twice and two members without a block fail the step. A virtual chassis of two members whose master
+prints its own label too (captured from a real chassis of two) is read by its
+blocks: a label opens a block of lines up to the next label, and the master's
+lines come in two blocks, its check and the note first and its
+.B "commit complete"
+last, after the other member's block. A member's blocks are joined in the order
+they appear and its lines held to rules: the check (optional, first), then
+.B "commit complete"
+and, on a confirmed commit only, the note, once each and in either order (the
+master prints the note before its
+.BR "commit complete" ,
+the other member after it), and nothing else. Every member of
+.B "show version"
+must be in the answer and end in
+.BR "commit complete" .
+A line before the first label, a member that
+.B "show version"
+did not list, a member without lines or missing, a line twice or none of these,
+a confirmed commit whose note a member does not print, and a note on the
+confirming commit fail the step, and the error names the member and the line.
+Only a chassis of two is read so: in a chassis of three or more in which every
+member has a label, the answer is read one line per label as before, and an
+answer refused in that layout says when a label appears twice (no capture of a
+larger one shows how the blocks fall). The error of a refused answer shows its
+lines, up to 40, each cut at 120 bytes (200 over NETCONF, and for the reason
+that names a member), with control characters (C0, DEL and C1), formatting
+characters (such as the bidirectional overrides) and line separators shown as
+.BR ? ,
+so that a layout not seen before shows itself. A chassis of one member answers like a single
 device:
 .B "show version"
 prints its header
@@ -13048,9 +13118,10 @@ members committed (a confirmed commit rolls back by itself), and the command
 line transport (the default) can be used; a chassis of one member is read like
 a single device, with no member element or one named by that member, and
 another name is refused. The shape of these replies over NETCONF is inferred:
-no capture of it exists, nor of the commits' replies of a chassis in which every
-member has a label on the command line (the shape with an unlabelled master was
-captured from a real three-member chassis). A proof that fails cancels the commit
+no capture of it exists, nor of the commits' replies of a chassis of three or
+more in which every member has a label on the command line (the shape with an
+unlabelled master was captured from a real three-member chassis, and the shape
+with a labelled master from a real chassis of two). A proof that fails cancels the commit
 .RB ( "rollback 1" ,
 .BR commit )
 and the device is
@@ -13139,20 +13210,34 @@ disabling it must find the hello no longer answered
 .RB ( "port closed"
 or
 .BR "no hello" );
-a probe that cannot tell fails the proof and the change is rolled back. The
-line says
+a probe that cannot tell fails the proof and the change is rolled back. When
+enabling finds
+.B "no hello"
+because the device answered with something that is not a usable hello, the
+message says why and what the device sent
+.RB ( "no hello: the device's hello is not a hello; the device sent \(dq...\(dq" ).
+When the device ends the channel after accepting the subsystem, or sends no
+hello in time, the probe cannot tell: the message is
+.B "the NETCONF probe could not tell: session closed: the channel closed after the subsystem was accepted"
+or
+.BR "the NETCONF probe could not tell: timed out: no hello from the device in time" ,
+cut to 120 bytes, whether the change enables or disables the service, and the
+proof fails.
+The line says
 .B "[NETCONF verified: hello ok]"
 or
 .BR "[NETCONF verified: not answering]" ,
 and the record's NETCONF probe becomes what was proved.
 .PP
 .B \-\-check
-stops after the device's own check: nothing is committed, the shape and the
-result are recorded
+stops after the device's own check: nothing is committed, the device's shape
+is filed as new unless it is already known, and the result is recorded
 .RB ( \-\-exit\-code :
 exit 2 when a device needs a change).
 .B \-\-confirmed
-applies only shapes an earlier apply confirmed and skips the others
+applies only shapes a verified apply confirmed (or
+.B "shapes seed"
+filed on a person's word) and skips the others
 .RB ( "unknown shape <hash>: review and apply it by hand first" ),
 and is the one form
 .B \-\-yes
@@ -13160,19 +13245,26 @@ answers the review for (every device's question, with no terminal);
 .B \-\-yes
 without it is refused (exit 2).
 .B \-\-max
-(default 5) caps the devices of every apply run. The first device of every shape is
-applied alone and the rest of its shape follow only when it applied
+(default 5) caps the devices of every apply run, in registry order and after
+.BR \-\-confirmed .
+The first device of every shape (the canary) is applied alone and the rest of
+its shape follow only when it applied, or are skipped
+.RB ( "canary <name> failed" );
+with the default of one device at a time the order is the first device of each
+shape, then the others in registry order
 .RB ( \-\-no\-canary :
-together);
+the devices of a shape together);
 .B \-\-pause
 (default
 .BR "config devices apply\-pause" )
-waits between devices and
+waits from one device's end to the next one's start and
 .B \-\-concurrency
 applies several at a time (default one; the checks run in the pool of
 .BR pull ).
 .B \-\-max\-failures
-defaults to 1. At the start of each device's apply the break\-glass hold, the
+defaults to 1, so a canary that failed also stops the run: the rest of its
+shape is skipped and every device not yet started, of any shape, is not
+started (the other shapes go on only under a higher limit). At the start of each device's apply the break\-glass hold, the
 registry entry (name, address, vendor, hostname, port, host keys) and the
 scope that covers it are read again: a device held, changed or no longer
 yours since the review fails with the reason and nothing is sent to it.
@@ -13354,22 +13446,22 @@ The address the devices are told to authenticate against, for devices behind a t
 The address this server reaches the devices from (not stored).
 .TP
 \fB\-\-check\fR
-Stop after the device's own commit check: nothing is committed, the device's shape is recorded.
+Stop after the device's own commit check: nothing is committed, the device's shape (its change, as one id) is filed as new unless it is already known.
 .TP
 \fB\-\-confirmed\fR
-Apply only the shapes an earlier apply confirmed (the others are skipped), the one form \-\-yes answers the review of.
+Apply only the shapes a verified apply confirmed, or 'shapes seed' filed (the others are skipped), the one form \-\-yes answers the review of.
 .TP
 \fB\-\-max\fR \fI<n>\fR
-Apply at most n devices in one run (default 5; the rest are skipped, run it again).
+Apply at most n devices in one run, in registry order (default 5; the rest are skipped, run it again).
 .TP
 \fB\-\-pause\fR \fI<seconds>\fR
-Wait between the devices after each shape's first, 0\-3600 (default device.apply.pause).
+Wait <seconds> from one device's end to the next one's start, 0\-3600 (default device.apply.pause; the first device starts at once).
 .TP
 \fB\-\-hold\fR
 After the fresh login keep the change only when you log in with one account of each class and type OK (needs a terminal).
 .TP
 \fB\-\-no\-canary\fR
-Start every device of a shape at once, not the first alone.
+Start a shape's devices together, not its first one (the canary) alone.
 .TP
 \fB\-\-section\fR \fI<list>\fR
 Only these sections: aaa, roles, mgmt\-acl, snmp, system.
@@ -13384,25 +13476,43 @@ One object per device and phase, then the summary; the review goes to standard e
 With \-\-check: exit 2 when a device needs a change (and none failed).
 .TP
 \fB\-\-yes\fR
-Answer the review (only with \-\-confirmed: every shape is one an earlier apply confirmed; no terminal needed).
+Answer the review (only with \-\-confirmed: every shape is one a verified apply confirmed or 'shapes seed' filed; no terminal needed).
 .RE
 .\" END GENERATED: command device config apply
 .TP
 .BI "device config shapes " "[ list [ \-\-show " hash " ] [ \-\-json ] | seed " name "[," name "...] [ \-\-yes ] ]"
 The shapes of the changes
 .B "device config apply"
-has seen: two devices that need the same change have one shape, a hash of
-the statements with every secret elided and every per\-device value (a
-location, a contact, a name) masked. The list gives each shape's state
+has seen: a shape is the same change on several devices, so two devices that
+need the same change have one shape, a 12\-hex hash of the statements with every
+secret elided and every per\-device value (a location, a contact, a name)
+masked. The list gives each shape's state
 .RB ( confirmed
-by a verified apply,
+by a verified apply of one device, which lets
+.B "apply \-\-confirmed"
+apply it to others;
 .B seeded
-on someone's word, or
-.BR new ),
-the devices it was confirmed on, the devices at it now by their records and,
-for a new one, the nearest confirmed shape;
+on someone's word, with the same effect; or
+.BR new ,
+which only a check has seen),
+the devices it was confirmed on (a count), how many devices are at it now by
+their records
+.RB ( NOW :
+.BR "49 devices" ,
+.BR "1 device" ,
+or
+.BR \- )
+and, for a new one, the nearest confirmed shape. The names of the devices at
+each shape follow the table under
+.BR "At a shape now (last check or apply):" ,
+one entry per shape wrapped at 80 columns with the continuation lines under the
+first name (no block when no shape has a device);
 .B \-\-show
-prints one shape's statements. It contacts no device; the store is
+prints one shape's statements and wraps its
+.B at this shape now
+line the same way, and
+.B \-\-json
+lists every device of every shape. It contacts no device; the store is
 .I /var/lib/tacctl/device\-apply/shapes.json
 (0600).
 .B seed
@@ -16988,7 +17098,7 @@ Minutes of the commit confirmed of every device config apply: the device undoes 
 .TP
 .B device.apply.pause
 integer, 0 to 3600. Default: 60.
-Seconds device config apply waits between the devices of a batch after the canary; 0: none. Set with \fBtacctl config devices apply\-pause\fR.
+Seconds device config apply waits from one device's end to the next one's start; 0: none. Set with \fBtacctl config devices apply\-pause\fR.
 .TP
 .B device.apply.transport
 one of auto, cli, netconf. Default: cli.

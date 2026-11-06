@@ -69,7 +69,9 @@ func WithFraming(f Framing) NetconfOption { return func(c *netconfConfig) { c.fr
 // called any number of times in sequence; calls are serialised.
 type NetconfSession interface {
 	// Capabilities are the capability URIs of the device's hello, in the
-	// order it sent them.
+	// order it sent them, trimmed of white space and in the form of RFC 6241
+	// (urn:ietf:params:netconf:...) also for a device that sends the XML
+	// namespace's (urn:ietf:params:xml:ns:netconf:...).
 	Capabilities() []string
 	// RPC sends body inside an <rpc> element and returns the complete
 	// <rpc-reply> document. The body must be well-formed XML and must not
@@ -89,8 +91,10 @@ type NetconfSession interface {
 // connect timeout. A device that refuses the subsystem is ErrNoSubsystem; a
 // device that does not send a hello in time is ErrTimeout, one that ends
 // the channel first is ErrClosed, a hello that is not one or offers no
-// usable framing is ErrProtocol. As for every call of a Client, a timeout
-// that fires while the channel is being opened closes the client.
+// usable framing is ErrProtocol; each of these is a *NetconfError, whose
+// Why (NetconfWhy) says why and what the device sent. As for every call of a
+// Client, a timeout that fires while the channel is being opened closes the
+// client.
 func (c *Client) NETCONF(opts ...NetconfOption) (NetconfSession, error) {
 	cfg := netconfConfig{framing: FramingEOM}
 	for _, o := range opts {
@@ -156,63 +160,6 @@ type netconf struct {
 type helloDoc struct {
 	XMLName      xml.Name `xml:"hello"`
 	Capabilities []string `xml:"capabilities>capability"`
-}
-
-// hello sends the client hello and reads the device's.
-func (n *netconf) hello(ctx context.Context, f Framing) error {
-	caps := []string{CapBase10}
-	switch f {
-	case FramingChunked:
-		caps = []string{CapBase11}
-	case FramingAuto:
-		caps = append(caps, CapBase11)
-	}
-	var b strings.Builder
-	b.WriteString(`<hello xmlns="` + nsBase + `"><capabilities>`)
-	for _, c := range caps {
-		b.WriteString("<capability>" + c + "</capability>")
-	}
-	b.WriteString("</capabilities></hello>")
-	// A hello is sent without waiting for the device's: both sides send
-	// first (RFC 6241 section 8.1).
-	if err := n.c.write(ctx, n.ch, []byte(b.String()+eom)); err != nil {
-		return err
-	}
-	raw, err := n.readFrame(ctx)
-	if err != nil {
-		return err
-	}
-	var h helloDoc
-	if err := decodeXML(raw, &h); err != nil {
-		return fmt.Errorf("%w: the device's hello is not a hello", ErrProtocol)
-	}
-	n.caps = h.Capabilities
-	has := func(c string) bool {
-		for _, x := range h.Capabilities {
-			if x == c {
-				return true
-			}
-		}
-		return false
-	}
-	switch f {
-	case FramingEOM:
-		if !has(CapBase10) {
-			return fmt.Errorf("%w: the device does not offer base:1.0 framing", ErrProtocol)
-		}
-	case FramingChunked:
-		if !has(CapBase11) {
-			return fmt.Errorf("%w: the device does not offer base:1.1 framing", ErrProtocol)
-		}
-		n.chunked = true
-	default:
-		n.chunked = has(CapBase11)
-		if !n.chunked && !has(CapBase10) {
-			return fmt.Errorf("%w: the device offers no known framing", ErrProtocol)
-		}
-	}
-	n.fr.chunked = n.chunked
-	return nil
 }
 
 func (n *netconf) Capabilities() []string { return append([]string(nil), n.caps...) }

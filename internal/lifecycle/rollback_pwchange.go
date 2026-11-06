@@ -4,7 +4,7 @@ package lifecycle
 // in store.yaml) in a rollback. Every release before 0.2.20 refuses the key
 // ("user '<name>': unknown field 'password_change_required'" on every store
 // command, and 'backup restore' refuses a snapshot that has it), so each
-// target removes it from the store (store.RollbackPasswordChange), after the
+// target older than 0.2.20 removes it from the store (store.RollbackPasswordChange), after the
 // snapshot --apply takes first. The precedent is the strict management filter
 // mode (mgmtModeWarning): the key cannot stay, and what it did is lost, so
 // the plan says who is affected and --apply refuses without --yes.

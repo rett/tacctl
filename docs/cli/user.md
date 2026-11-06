@@ -176,8 +176,8 @@ only when set, so a store without one is unchanged. No mail is sent to it.
   in any other `user` verb, and `…(redacted)` in place of the rest. Like any
   word on a command line it is in sudo's own log.
 - *Older releases.* A release before 0.2.23 refuses the key, so every `tacctl
-  rollback` target removes it after a snapshot that it keeps, and names the
-  users; `backup recover` puts the addresses back (see
+  rollback` target but 0.2.24 and 0.2.23 (which read it) removes it after a
+  snapshot that it keeps, and names the users; `backup recover` puts the addresses back (see
   [Rolling back](../install/upgrading.md#rolling-back)).
 
 **A name with a period.** A user name is letters, digits, `_` and `-`. A period cannot be part of a
@@ -194,7 +194,7 @@ has no period. Meanwhile:
   has already replaced `tacctl` and the tacquito build when the new `tacctl` refuses, and says so
   (the store, the configuration and the services are not changed); after the rename, `tacctl
   upgrade` finishes it.
-- `tacctl rollback` to any target but 0.2.23, 0.2.22, 0.2.21 and 0.2.20 (which read
+- `tacctl rollback` to any target but 0.2.24, 0.2.23, 0.2.22, 0.2.21 and 0.2.20 (which read
   such a name) is refused (the dry run too), since the releases it goes to
   refuse the name; the refusal lists each user with the rename command.
 - `tacctl passwd`, `user passwd` and `user require-password-change` refuse the name, and for a user
@@ -316,7 +316,7 @@ only when set.
   the reason in `user show`), and one whom devices of a shared scope still accept `flagged, devices in
   a scope shared with the server still accept the password`; `status` names both groups.
 - *Older releases.* A release before 0.2.20 refuses the key, so every `tacctl rollback` target
-  removes it after a snapshot and warns which users get their device access back (see
+  but 0.2.24 to 0.2.20 (which read it) removes it after a snapshot and warns which users get their device access back (see
   [Rolling back](../install/upgrading.md#rolling-back)).
 
 **A hash kept off the command line.** `--hash -` reads the hash from one line

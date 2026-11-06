@@ -465,3 +465,22 @@ func TestZeroQuietIsDefaultQuiet(t *testing.T) {
 		}
 	}
 }
+
+// UnsafeRune is true for C0, DEL and C1 controls, formatting characters and
+// the line and paragraph separators, and false for text.
+func TestUnsafeRune(t *testing.T) {
+	t.Parallel()
+	for _, r := range []rune{0, '\n', 0x1b, 0x7f, 0x80, 0x9b, 0x9f, 0x202e, 0x2066, 0x200d, 0xfeff, 0x2028, 0x2029} {
+		if !UnsafeRune(r) {
+			t.Errorf("U+%04X is safe", r)
+		}
+	}
+	for _, r := range []rune{' ', 'a', '~', 0xa0, 0xe9, 0x4e2d, 0x1f600} {
+		if UnsafeRune(r) {
+			t.Errorf("U+%04X is unsafe", r)
+		}
+	}
+	if got := sanitize("a\u009bb\u202ec"); got != "a?b?c" {
+		t.Errorf("sanitize = %q", got)
+	}
+}

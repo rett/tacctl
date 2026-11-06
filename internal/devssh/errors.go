@@ -138,6 +138,15 @@ func (e RPCError) Error() string {
 // maxErrText is the longest device-controlled text an error carries.
 const maxErrText = 200
 
+// UnsafeRune reports whether a character of device-controlled text must not
+// reach a terminal or a log as it is: a control character (C0, DEL and C1,
+// which includes the escape sequence introducers ESC and U+009B), a
+// formatting character (the bidirectional overrides, the zero-width
+// characters) or a line or paragraph separator.
+func UnsafeRune(r rune) bool {
+	return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029'
+}
+
 // sanitize makes device-controlled text safe to print: control and
 // formatting characters (escape sequences, bidi overrides, line breaks)
 // become '?', and the text is cut at maxErrText bytes. Every string a
@@ -149,7 +158,7 @@ func sanitize(s string) string {
 			b.WriteString("...")
 			break
 		}
-		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029' || r == unicode.ReplacementChar {
+		if UnsafeRune(r) || r == unicode.ReplacementChar {
 			r = '?'
 		}
 		b.WriteRune(r)

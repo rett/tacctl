@@ -213,7 +213,9 @@ func (inv *invocation) deviceConfigShapesList(p Parsed) error {
 			inv.echo(fmt.Sprintf("  confirmed on %s: %s %s %s", c.Device, how, c.By, seenTime(c.At)))
 		}
 		if d := at[h]; len(d) > 0 {
-			inv.echo("  at this shape now (last check or apply): " + strings.Join(d, ", "))
+			for _, l := range hangList("  at this shape now (last check or apply): ", d, shapeWrapWidth) {
+				inv.echo(l)
+			}
 		}
 		inv.echo("")
 		return nil
@@ -230,7 +232,7 @@ func (inv *invocation) deviceConfigShapesList(p Parsed) error {
 		inv.echo("")
 		return nil
 	}
-	tb := ui.NewTable(head, ui.Left("SHAPE"), ui.Left("STATE"), ui.Left("CONFIRMED"), ui.Left("DEVICES NOW"), ui.Left("LINES"), ui.Left("NOTE"))
+	tb := ui.NewTable(head, ui.Left("SHAPE"), ui.Left("STATE"), ui.Left("CONFIRMED"), ui.Left("NOW"), ui.Left("LINES"), ui.Left("NOTE"))
 	for _, j := range objs(hashes, false) {
 		conf := "-"
 		if n := len(shapeDevices(m[j.Shape])); n > 0 {
@@ -238,17 +240,65 @@ func (inv *invocation) deviceConfigShapesList(p Parsed) error {
 		}
 		note := "-"
 		if j.Nearest != "" {
-			note = fmt.Sprintf("nearest confirmed %s, %d lines differ", j.Nearest, j.Differing)
+			note = "nearest confirmed " + j.Nearest + ", " + howMany(j.Differing, "line") + plural(j.Differing, " differs", " differ")
 		}
 		now := "-"
 		if len(j.Devices) > 0 {
-			now = strings.Join(j.Devices, ",")
+			now = howMany(len(j.Devices), "device")
 		}
 		tb.Add(j.Shape, j.State, conf, now, fmt.Sprint(j.Count), note)
 	}
 	inv.write(tb.String())
+	// The devices at each shape now go below the table, wrapped, so that a
+	// shape with many of them does not widen the table.
+	first := true
+	for _, j := range objs(hashes, false) {
+		if len(j.Devices) == 0 {
+			continue
+		}
+		if first {
+			inv.echo("")
+			inv.echoE(ui.Bold + "At a shape now (last check or apply):" + ui.NC)
+			first = false
+		}
+		for _, l := range hangList("  "+j.Shape+"  ", j.Devices, shapeWrapWidth) {
+			inv.echo(l)
+		}
+	}
 	inv.echo("")
 	return nil
+}
+
+// shapeWrapWidth is the width the lists of devices under 'shapes list' wrap at.
+const shapeWrapWidth = 80
+
+// hangList lays out "prefix" and the names, comma separated, in lines of at
+// most width columns: the names follow the prefix (which ends in its spaces),
+// and the continuation lines are indented to where the first name starts. A name is never split
+// (one longer than the room stands alone on its line); each line but the
+// last ends in the comma that follows its last name.
+func hangList(prefix string, names []string, width int) []string {
+	indent := strings.Repeat(" ", ui.Width(prefix))
+	var out []string
+	line := prefix
+	empty := true // no name on the current line yet
+	for i, n := range names {
+		item := n
+		if i < len(names)-1 {
+			item += ","
+		}
+		switch {
+		case empty:
+			line += item
+		case ui.Width(line)+1+ui.Width(item) > width:
+			out = append(out, line)
+			line = indent + item
+		default:
+			line += " " + item
+		}
+		empty = false
+	}
+	return append(out, line)
 }
 
 // deviceConfigSeed is 'shapes seed <name>[,<name>...] [--yes]': the shape of
