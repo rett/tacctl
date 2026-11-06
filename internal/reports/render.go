@@ -163,8 +163,10 @@ func risky(r rune) bool {
 
 // guardCell keeps a spreadsheet from running a cell: one that starts with =,
 // +, - or @, or with a tab or a carriage return, gets a leading single quote.
+// A lone "-" is the report's own placeholder (a standalone device's member id
+// and role) and is no formula, so it is left as it is.
 func guardCell(s string) string {
-	if s != "" && strings.IndexByte("=+-@\t\r", s[0]) >= 0 {
+	if s != "" && s != "-" && strings.IndexByte("=+-@\t\r", s[0]) >= 0 {
 		return "'" + s
 	}
 	return s

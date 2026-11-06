@@ -152,7 +152,8 @@ func TestCSVGuard(t *testing.T) {
 		"=1+1":     "'=1+1",
 		"+1":       "'+1",
 		"-1":       "'-1",
-		"-":        "'-",
+		"-":        "-",
+		"--":       "'--",
 		"@SUM(A1)": "'@SUM(A1)",
 		"\tx":      "'\tx",
 		"\rx":      "'\rx",
@@ -172,7 +173,7 @@ func TestCSVGuard(t *testing.T) {
 		t.Fatal(err)
 	}
 	row := recs[1]
-	for i, w := range map[int]string{0: "'=a", 2: "'+b", 4: "'-c", 5: "'@d", 8: "'\te", 9: "'\rf", 7: "'-"} {
+	for i, w := range map[int]string{0: "'=a", 2: "'+b", 4: "'-c", 5: "'@d", 8: "'\te", 9: "'\rf", 7: "-"} {
 		if row[i] != w {
 			t.Errorf("cell %d = %q, want %q", i, row[i], w)
 		}

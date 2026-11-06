@@ -1,8 +1,8 @@
 name,address,vendor,scope,model,serial,release,members,location,description,pulled
-core1,198.51.100.2,wti,lab,,,,'-,,,2026-11-06 06:00
-fw1,2001:db8::1,cisco,lab,,,,'-,,,never
+core1,198.51.100.2,wti,lab,,,,-,,,2026-11-06 06:00
+fw1,2001:db8::1,cisco,lab,,,,-,,,never
 jsw1,192.0.2.10,junos,site-a,EX4300-48T,SN000001,21.4R3-S5.4,3,"Rack 4, DC1",core virtual chassis,2026-11-06 07:30
-rtr1,198.51.100.1,junos,site-a,MX204,SN000006,22.2R1.9,'-,Lab rack 2,,2026-11-03 22:10
+rtr1,198.51.100.1,junos,site-a,MX204,SN000006,22.2R1.9,-,Lab rack 2,,2026-11-03 22:10
 sw1,192.0.2.11,cisco,site-a,WS-C3850-24T,SN000004,16.12.4,2,"Rack 4, DC1",access stack,2026-11-06 07:45
-web1,203.0.113.20,linux,lab,'=SUM(A1),'+SN000007,'-1.0,'-,"'@Rack 4, DC1",uses[31m colour,2026-11-05 08:00
-ünï1,10.0.0.9,linux,lab,Model Ü,SN000008,1.2,'-,,Zürich,2026-11-04 10:00
+web1,203.0.113.20,linux,lab,'=SUM(A1),'+SN000007,'-1.0,-,"'@Rack 4, DC1",uses[31m colour,2026-11-05 08:00
+ünï1,10.0.0.9,linux,lab,Model Ü,SN000008,1.2,-,,Zürich,2026-11-04 10:00
