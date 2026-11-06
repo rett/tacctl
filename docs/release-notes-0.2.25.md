@@ -68,6 +68,14 @@ everything that differs from 0.2.24.
   formatting character (the bidirectional overrides) and line separator
   replaced by `?`, in the terminal line and in `--json`; only C0 controls and
   DEL were before.
+- `tacctl device config shapes list` says `1 line differs` where it said `1
+  lines differ`, and the `device config apply` row of the usage no longer says
+  a shape is "shown once in the review": devices that need the same change are
+  reviewed together unless their warnings or notes differ.
+- The next steps of `tacctl rollback 0.2.23` name the snapshot the rollback
+  took when `breakglass.firewall` was set (it was not named before), and the
+  pages that say what every rollback target does name the targets that
+  remove the keys 0.2.20 added: only those before 0.2.20 do.
 
 ## Rollback
 
