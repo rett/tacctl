@@ -9,7 +9,7 @@ doctype: explanation
 
 # Vendor Notes
 
-*What differs between Cisco, Junos and WTI for operations staff · Checked against tacctl 0.2.24*
+*What differs between Cisco, Junos and WTI for operations staff · Checked against tacctl 0.2.25*
 
 [Printable PDF](../pdf/tacctl-vendor-notes.pdf){: .pdf-link }
 
@@ -133,7 +133,8 @@ default); you type `commit` yourself after the check.
 On a virtual chassis, two routing engines or a cluster, the apply expects
 the check and the commits to answer for every member `show version` lists,
 and fails the step when one does not. The master of a virtual chassis
-answers without a label, and a chassis of one member is applied to like a
+answers without a label, or, on a chassis of two members, with its own
+label as well, and a chassis of one member is applied to like a
 single device ([Engineer Guide](engineer-guide-device-changes.md) §5.1).
 
 ### 3.3 Other Junos points

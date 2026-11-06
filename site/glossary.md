@@ -9,7 +9,7 @@ doctype: explanation
 
 # Glossary
 
-*The words tacctl and this documentation use, in one list · Checked against tacctl 0.2.24*
+*The words tacctl and this documentation use, in one list · Checked against tacctl 0.2.25*
 
 [Printable PDF](../pdf/tacctl-glossary.pdf){: .pdf-link }
 
