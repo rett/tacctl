@@ -19,15 +19,20 @@ import (
 // read is "". Release is the OS release ('25.4R1-S2.3', '15.6(2)T', '8.10'),
 // Model the platform ('EX4300-48MP', 'CISCO7206VXR') and Serial the chassis
 // serial number. A WTI unit has a release only: its command menu prints
-// neither a model nor a serial number.
+// neither a model nor a serial number. Members are the units of a Junos
+// virtual chassis or a Cisco stack, read only when the device lists two or
+// more; none for any other device.
 type Facts struct {
 	Release string
 	Model   string
 	Serial  string
+	Members []Member
 }
 
 // Empty reports whether no fact was read.
-func (f Facts) Empty() bool { return f.Release == "" && f.Model == "" && f.Serial == "" }
+func (f Facts) Empty() bool {
+	return f.Release == "" && f.Model == "" && f.Serial == "" && len(f.Members) == 0
+}
 
 // The read commands of the facts. The Junos ones are also what a NETCONF
 // <command> RPC carries, without the '| no-more' that keeps the CLI from
@@ -43,6 +48,15 @@ const (
 	// IOSInventoryCommand prints the inventory: the first entry is the
 	// chassis, with its 'PID:' (the model) and 'SN:' (the serial number).
 	IOSInventoryCommand = "show inventory"
+	// JunosVirtualChassisCommand prints the member table of a virtual
+	// chassis: member id, status, serial number, model, priority and role.
+	JunosVirtualChassisCommand = "show virtual-chassis status | no-more"
+	// IOSSwitchCommand prints the switches of a stack: number, role,
+	// priority and state.
+	IOSSwitchCommand = "show switch"
+	// IOSVersionCommand prints, on a stack, the table of each switch's
+	// model and software version; it is run only when a stack was found.
+	IOSVersionCommand = "show version"
 )
 
 // maxFact bounds what the record keeps of one fact.
@@ -61,9 +75,10 @@ func cleanFact(s string) string {
 	return s
 }
 
-// CleanFacts is f with each field cleaned as the record keeps it.
+// CleanFacts is f with each field cleaned as the record keeps it, at most 32
+// members and a negative priority as 0.
 func CleanFacts(f Facts) Facts {
-	return Facts{Release: cleanFact(f.Release), Model: cleanFact(f.Model), Serial: cleanFact(f.Serial)}
+	return Facts{Release: cleanFact(f.Release), Model: cleanFact(f.Model), Serial: cleanFact(f.Serial), Members: cleanMembers(f.Members)}
 }
 
 var (

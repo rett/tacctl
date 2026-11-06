@@ -1,0 +1,21 @@
+# SYNTHETIC FIXTURE, NOT A DEVICE CAPTURE (see README.md)
+# command: show inventory
+# ---
+NAME: "Switch 1", DESCR: "Cisco Catalyst 3750 24 10/100/1000 PoE + 4 SFP"
+PID: WS-C3750G-24PS-S  , VID: V05 , SN: SN000004
+
+NAME: "Switch 1 - Power Supply 0", DESCR: "FRU Power Supply"
+PID: PWR-C1-350WAC     , VID: V01 , SN: SN000007
+
+NAME: "Switch 2", DESCR: "Cisco Catalyst 3750 24 10/100/1000 PoE + 4 SFP"
+PID: WS-C3750G-24PS-S  , VID: V05 , SN: SN000005
+
+NAME: "Switch 2 - Power Supply 0", DESCR: "FRU Power Supply"
+PID: PWR-C1-350WAC     , VID: V01 , SN: SN000008
+
+NAME: "Switch 3", DESCR: "Cisco Catalyst 3750 24 10/100/1000 PoE + 4 SFP"
+PID: WS-C3750G-24PS-S  , VID: V05 , SN: SN000006
+
+NAME: "Switch 3 - Power Supply 0", DESCR: "FRU Power Supply"
+PID: PWR-C1-350WAC     , VID: V01 , SN: SN000009
+
