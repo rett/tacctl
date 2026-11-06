@@ -374,7 +374,7 @@ tacctl upgrade --branch 0.2.24  # install 0.2.24
 the table, the rules file and the boot unit of the break-glass firewall (above).
 It converts no other file and does not need `--yes`; with the key unset and no
 firewall file it takes no snapshot. When it took one, the next steps say that the
-snapshot holds the 0.2.25 state and is to be restored with 0.2.25 only: 0.2.23's
+snapshot holds the 0.2.26 state and is to be restored with 0.2.26 only: 0.2.23's
 restore refuses the snapshot's `tacctl.yaml`, which has the key. It puts back 0.2.23's per-tier sudoers drop-in,
 without the operator's `log failures *` (0.2.23 has no log filters), when the
 file is exactly the text of 0.2.24 and this release: the dry run shows the step, `--apply`

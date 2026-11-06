@@ -44,7 +44,7 @@ func TestUpgradeLoadsTheTableForStandingHolds(t *testing.T) {
 	if code := upgrade(o); code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
 	}
-	if !strings.Contains(o.text(), "[INFO] Break-glass firewall: 192.0.2.10 refused on tcp/49 (reject); tacctl-breakglass-firewall.service loads the table at boot.") {
+	if !strings.Contains(o.text(), "[INFO] Break-glass firewall: 192.0.2.10 refused on tcp/49 (reject).") {
 		t.Errorf("out:\n%s", o.text())
 	}
 	rules := readFile(t, o.p.FirewallRules)
@@ -73,7 +73,7 @@ func TestUpgradeFirewallStepNeverFailsTheUpgrade(t *testing.T) {
 	o := newOhost(t)
 	o.cloned()
 	o.enableBoth()
-	if code := upgrade(o); code != 0 || !strings.Contains(o.text(), "Break-glass firewall: the table inet tacctl is loaded (reject on tcp/49, no address held)") {
+	if code := upgrade(o); code != 0 || !strings.Contains(o.text(), "Break-glass firewall: loaded (reject on tcp/49), no address held.") {
 		t.Fatalf("exit %d\n%s", code, o.text())
 	}
 	if strings.Contains(readFile(t, o.p.FirewallRules), "elements") {
@@ -134,7 +134,7 @@ func TestInstallLoadsTheTable(t *testing.T) {
 	if code := install(o, "--yes"); code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
 	}
-	if !strings.Contains(o.text(), "Break-glass firewall: the table inet tacctl is loaded (reject on tcp/49, no address held)") ||
+	if !strings.Contains(o.text(), "Break-glass firewall: loaded (reject on tcp/49), no address held.") ||
 		!o.run.Called("nft", "-f", o.p.FirewallRules) || !o.run.Called("systemctl", "enable", "--quiet", "tacctl-breakglass-firewall.service") {
 		t.Errorf("out:\n%s\ncalls %v", o.text(), o.run.Argvs())
 	}

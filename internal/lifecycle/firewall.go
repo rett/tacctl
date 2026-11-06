@@ -44,9 +44,9 @@ func (h *Host) firewallStep(ctx context.Context) {
 	case res.State == firewall.Removed:
 		out.Info("Break-glass firewall: off (breakglass.firewall); no table is loaded.")
 	case len(res.Addrs) > 0:
-		out.Info("Break-glass firewall: " + strings.Join(res.Addrs, ", ") + " refused on " + ports + " (" + res.Mode + "); " + firewall.UnitName + " loads the table at boot.")
+		out.Info("Break-glass firewall: " + strings.Join(res.Addrs, ", ") + " refused on " + ports + " (" + res.Mode + ").")
 	default:
-		out.Info("Break-glass firewall: the table inet tacctl is loaded (" + res.Mode + " on " + ports + ", no address held); " + firewall.UnitName + " loads it at boot.")
+		out.Info("Break-glass firewall: loaded (" + res.Mode + " on " + ports + "), no address held.")
 	}
 	if line := res.UnitLine(); line != "" {
 		out.Warn("Break-glass firewall: " + line)

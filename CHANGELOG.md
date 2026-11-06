@@ -3,6 +3,18 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.26 (unreleased)
+
+1. **The break-glass firewall line of `tacctl upgrade` and `install` is one
+   short sentence.** It read `Break-glass firewall: the table inet tacctl is
+   loaded (reject on tcp/49, no address held); tacctl-breakglass-firewall.service
+   loads it at boot.` and, with an address held, `Break-glass firewall:
+   192.0.2.10 refused on tcp/49 (reject); tacctl-breakglass-firewall.service
+   loads the table at boot.` It now reads `Break-glass firewall: loaded (reject
+   on tcp/49), no address held.` and `Break-glass firewall: 192.0.2.10 refused
+   on tcp/49 (reject).` The boot unit is described in the break-glass pages,
+   and `status` still shows its state.
+
 ## 0.2.25 (2026-11-05)
 
 1. **`tacctl device config shapes` keeps its table narrow.** The list put every
