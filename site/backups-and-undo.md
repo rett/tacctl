@@ -9,7 +9,7 @@ doctype: how-to
 
 # Backups and Undo
 
-*Snapshots, comparing them, and restoring tacctl's configuration · Checked against tacctl 0.2.24*
+*Snapshots, comparing them, and restoring tacctl's configuration · Checked against tacctl 0.2.25*
 
 [Printable PDF](../pdf/tacctl-backups-and-undo.pdf){: .pdf-link }
 
@@ -181,31 +181,39 @@ before it again, a superuser converts the state with `tacctl rollback`
 first, then installs that release:
 
 ```bash
-tacctl rollback 0.2.23            # the dry run: its steps and warnings; writes nothing
-tacctl rollback 0.2.23 --apply    # convert the state (add --yes when it warns)
-tacctl upgrade --branch 0.2.23    # install 0.2.23
+tacctl rollback 0.2.24            # the dry run: its steps and warnings; writes nothing
+tacctl rollback 0.2.24 --apply    # convert the state (add --yes when it warns)
+tacctl upgrade --branch 0.2.24    # install 0.2.24
 ```
 
-`tacctl rollback` also takes `0.2.22`, `0.2.21`, `0.2.20`, `0.2.19`, `0.2.18`,
+`tacctl rollback` also takes `0.2.23`, `0.2.22`, `0.2.21`, `0.2.20`, `0.2.19`, `0.2.18`,
 `0.2.17`, `0.2.16`, `0.2.9` and `0.2.3`. It refuses, the dry run too and with
 nothing changed:
 
 - while a Junos apply is not settled (`PENDING` or unknown);
-- for every target but `0.2.23`, `0.2.22`, `0.2.21` and `0.2.20`, while a
-  user name has a period: the refusal lists each user with
+- for every target but `0.2.24`, `0.2.23`, `0.2.22`, `0.2.21` and `0.2.20`,
+  while a user name has a period: the refusal lists each user with
   `tacctl user rename <name> <new-name>`;
-- for every target but `0.2.23`, `0.2.22`, `0.2.21`, `0.2.20` and `0.2.19`,
-  while an emergency lockdown locks a group;
-- for every target but `0.2.23`, while an emergency lockdown has enrolled
+- for every target but `0.2.24`, `0.2.23`, `0.2.22`, `0.2.21`, `0.2.20` and
+  `0.2.19`, while an emergency lockdown locks a group;
+- for every target but `0.2.24` and `0.2.23`, while an emergency lockdown has enrolled
   hosts, or a lifted one still waits for a host: an older release cannot
   lift sshd's lockdown drop-in on a host. The refusal names the hosts: lift
   the lockdown, then `tacctl host sync <hosts>`.
 
+The target `0.2.24` converts nothing, removes no key and takes no snapshot,
+and needs no `--yes`: this release changed no stored file that 0.2.24 reads
+strictly. The break-glass firewall and the other things 0.2.24 has stay. After
+that upgrade, a Junos device that names its NETCONF capabilities with the XML
+namespace's prefix is recorded as `no hello` again by its next pull, and an
+apply to a virtual chassis whose master prints its own label is rolled back
+again, as in 0.2.24.
+
 The target `0.2.23` converts nothing. What 0.2.24 added to the stored files
 is one key, the setting of the break-glass firewall, and the rollback removes
 it (after a snapshot, when the setting is set) together with the nftables
-table, its rules file and its boot unit (every target does; the `nftables`
-package stays). It has no warning and needs no `--yes`. It also puts back 0.2.23's sudoers drop-in, without the
+table, its rules file and its boot unit (every target but `0.2.24` does; the
+`nftables` package stays). It has no warning and needs no `--yes`. It also puts back 0.2.23's sudoers drop-in, without the
 operator's `log failures *`, when the file is exactly the text 0.2.24 wrote.
 
 > **A hold that stands stays, without the firewall.** The older release's
@@ -292,7 +300,7 @@ Every step, per target, is in the repository's
 | Remove the kept copy | `tacctl backup unkeep <ts>` | Superuser |
 | Put back only email addresses or SNMPv3 users | `tacctl backup recover <ts> [--only email,snmp-users]` | Superuser |
 | Find the snapshot before a change | `journalctl -t tacctl \| grep 'cmd end'` | Superuser |
-| Prepare the release before this one (dry run) | `tacctl rollback 0.2.23` | Superuser |
+| Prepare the release before this one (dry run) | `tacctl rollback 0.2.24` | Superuser |
 
 ---
 

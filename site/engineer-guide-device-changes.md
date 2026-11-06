@@ -9,7 +9,7 @@ doctype: how-to
 
 # Engineer Guide: Device Changes
 
-*Register, compare, plan and apply device AAA configuration · Checked against tacctl 0.2.24*
+*Register, compare, plan and apply device AAA configuration · Checked against tacctl 0.2.25*
 
 [Printable PDF](../pdf/tacctl-engineer-guide-device-changes.pdf){: .pdf-link }
 
@@ -589,9 +589,10 @@ An apply that ends as applied by someone else's commit does not confirm its
 shape.
 
 **`shapes list`** (superuser) has more columns than the state. `CONFIRMED`
-counts the devices that confirmed the shape. `DEVICES NOW` names the devices
+counts the devices that confirmed the shape. `NOW` counts the devices
 whose last check or apply is at it (from the records: no device is
-contacted). `LINES` is the size of the shape. For a `new` shape the `NOTE`
+contacted), and their names follow the table, wrapped at 80 columns.
+`LINES` is the size of the shape. For a `new` shape the `NOTE`
 column says `nearest confirmed <hash>, N lines differ`: the confirmed (or
 seeded) shape whose statements differ least from this one, N being the lines
 that are in one of the two and not in the other, the `[section]` headings
@@ -600,14 +601,18 @@ statements; compare the two with `shapes list --show <hash>`. With no
 confirmed shape the note is `-`.
 
 ```text
-  SHAPE         STATE      CONFIRMED  DEVICES NOW  LINES  NOTE
-  3f2a1b9c0d4e  confirmed  1 device   rtr1,rtr2    5      -
-  8d41c7e2a5b0  new        -          jsw1         3      nearest confirmed 3f2a1b9c0d4e,
+  SHAPE         STATE      CONFIRMED  NOW        LINES  NOTE
+  3f2a1b9c0d4e  confirmed  1 device   2 devices  5      -
+  8d41c7e2a5b0  new        -          1 device   3      nearest confirmed 3f2a1b9c0d4e,
                                                           8 lines differ
+
+At a shape now (last check or apply):
+  3f2a1b9c0d4e  rtr1, rtr2
+  8d41c7e2a5b0  jsw1
 ```
 
 (The title of the table and the rules under it are left out here, and the
-note is wrapped.) `--confirmed --yes` is the form for a script: it applies the
+note is wrapped; a shape one line away reads `1 line differs`.) `--confirmed --yes` is the form for a script: it applies the
 confirmed shapes and skips every other device, `jsw1` here, with the row
 `skipped: unknown shape 8d41c7e2a5b0: review and apply it by hand first`.
 `--confirmed` without `--yes` selects the same devices but still asks for each

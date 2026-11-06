@@ -10,7 +10,7 @@ commands: historical
 
 # What's New for Operators
 
-*The changes in each tacctl release that people on shift will notice · Checked against tacctl 0.2.24*
+*The changes in each tacctl release that people on shift will notice · Checked against tacctl 0.2.25*
 
 [Printable PDF](../pdf/tacctl-whats-new-for-operators.pdf){: .pdf-link }
 
@@ -24,7 +24,34 @@ first.
 
 ---
 
-## 1. tacctl 0.2.24
+## 1. tacctl 0.2.25
+
+Released 2026-11-05 ·
+[Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.25.md)
+
+| Change | What it means on shift | Page |
+|---|---|---|
+| **`device config shapes` stays narrow** | The `NOW` column holds a count (`49 devices`, `1 device`, `-`), and a block headed `At a shape now (last check or apply):` below the table lists the devices of each shape, wrapped at 80 columns. A shape one line from a confirmed one says `1 line differs` | [Engineer Guide](engineer-guide-device-changes.md) §5.3 |
+| **Shape, canary and confirmed explained** | The planning pages open with a rollout in five steps and say what a shape, a canary and the states `new`, `confirmed` and `seeded` allow. At the default `--max-failures 1` a failed canary stops the whole run. No behavior changed | [Engineer Guide](engineer-guide-device-changes.md) §5 |
+| **Junos NETCONF hello in the XML-namespace spelling** | A device that names its capabilities `urn:ietf:params:xml:ns:netconf:base:1.0` is read as `hello ok` (it was recorded as `no hello`, and an apply that enabled NETCONF was rolled back). A hello that is none says why on the pull line, in `--json` and in the apply message | [Vendor Notes](vendor-notes.md) §3.2 |
+| **Slow devices no longer fail with `open: configure exclusive`** | A late answer to the empty line the ssh client types is dropped instead of arriving in front of the first command's echo | [Vendor Notes](vendor-notes.md) §3.2 |
+| **Virtual chassis whose master prints its own label** | A two-member chassis whose members both print `fpc0:` and `fpc1:` is applied to; before, every apply on it was rolled back. A refused commit answer shows up to 40 lines | [Vendor Notes](vendor-notes.md) §3.2 |
+| **Device text is cleaned further** | C1 controls, the bidirectional overrides and line separators in text a device sends show as `?`, in the terminal and in `--json` | — |
+| `tacctl rollback 0.2.24` | The release before this one is a target; it converts nothing, removes no key and needs no `--yes` | [Backups and Undo](backups-and-undo.md) §5 |
+
+> **Before upgrading from 0.2.24:**
+>
+> - Nothing is converted; no stored file changed.
+> - A Junos device recorded as `no hello` because of the namespace prefix shows
+>   `hello ok` after a new `tacctl device config pull`; `tacctl device check`
+>   shows it.
+> - After `tacctl rollback 0.2.24` and the install of 0.2.24, those two Junos
+>   failures (the `no hello` record and the labelled-master chassis rolled
+>   back) return.
+
+---
+
+## 2. tacctl 0.2.24
 
 Released 2026-11-05 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.24.md)
@@ -67,7 +94,7 @@ Released 2026-11-05 ·
 >   device whose `single-connection` was removed, 0.2.23's `diff` and `plan`
 >   show the line as missing, and applying that plan types it again.
 
-## 2. tacctl 0.2.23
+## 3. tacctl 0.2.23
 
 Released 2026-10-31 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.23.md)
@@ -104,7 +131,7 @@ Released 2026-10-31 ·
 >   again. The rollback is refused while an emergency lockdown has enrolled
 >   hosts: lift it and sync the hosts first.
 
-## 3. tacctl 0.2.22
+## 4. tacctl 0.2.22
 
 Released 2026-10-29 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.22.md)
@@ -165,7 +192,7 @@ sub-commands, and the one-letter form of `--yes` is refused:
 >   date until its first render writes its own comment, which restarts
 >   tacquito once; the rollback itself restarts nothing.
 
-## 4. tacctl 0.2.21
+## 5. tacctl 0.2.21
 
 Released 2026-10-28 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.21.md)
@@ -186,7 +213,7 @@ Released 2026-10-28 ·
 > `config validate` stop with one line. **After it,** check the line about
 > the machine's own login, and run `tacctl host sync <server>` as before.
 
-## 5. tacctl 0.2.20
+## 6. tacctl 0.2.20
 
 Released 2026-10-28 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.20.md)
@@ -219,7 +246,7 @@ sub-commands:
 > and not before. No existing user must change their password until a
 > superuser says so.
 
-## 6. tacctl 0.2.19
+## 7. tacctl 0.2.19
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.19.md)
 
@@ -232,7 +259,7 @@ sub-commands:
 | Host names may contain dots | `tacctl host rename web1 web1.example.net` works | [Linux Host Operations](linux-host-operations.md) |
 | Unknown commands answered first | A mistyped command is answered before `sudo` asks for a password | — |
 
-## 7. tacctl 0.2.18
+## 8. tacctl 0.2.18
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.18.md)
 
@@ -251,7 +278,7 @@ you may have meant (`tacctl enroll` suggests `device enroll` and
 `host enroll`). Every tier can run `device notice list` and
 `device client-config`.
 
-## 8. tacctl 0.2.17
+## 9. tacctl 0.2.17
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.17.md)
 
