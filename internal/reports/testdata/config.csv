@@ -1,0 +1,8 @@
+name,scope,state,pulled,applied
+core1,lab,ok,2026-11-06 06:00,2026-11-06 06:05
+fw1,lab,never,never,'-
+jsw1,site-a,ok,2026-11-06 07:30,2026-11-02 09:00
+rtr1,site-a,failed,2026-11-03 22:10,'-
+sw1,site-a,ok,2026-11-06 07:45,2026-11-01 12:00
+web1,lab,differs,2026-11-05 08:00,2026-11-04 07:05
+ünï1,lab,ok,2026-11-04 10:00,'-
