@@ -205,6 +205,13 @@ type Record struct {
 	Release string `json:"release,omitempty"`
 	Model   string `json:"model,omitempty"`
 	Serial  string `json:"serial,omitempty"`
+	// Members are the units of a Junos virtual chassis or a Cisco stack as
+	// the last good pull read them (0.2.26, D319): read-only, replaced on
+	// every good pull (a pull that read none leaves the list empty, never the
+	// old one) and empty for a record made before 0.2.26, for a device with
+	// no chassis or a single unit, and for a WTI unit. Derived data: an older
+	// release's decoder ignores the key, and a pull rebuilds it.
+	Members []Member `json:"members,omitempty"`
 	// ArchiveFS is the file system of the IOS device's 'archive' / 'path'
 	// statement as the last good pull read it ('flash:'); empty for another
 	// vendor, a device with no archive path and a record made before 0.2.7.
@@ -289,6 +296,7 @@ func (r *Records) Put(name string, rec Record) {
 		c.Unit = &u
 	}
 	c.Interfaces = rec.Interfaces.Clone()
+	c.Members = cloneMembers(rec.Members)
 	if rec.Sections != nil {
 		c.Sections = make(map[string]SectionRecord, len(rec.Sections))
 		for k, v := range rec.Sections {
@@ -296,6 +304,21 @@ func (r *Records) Put(name string, rec Record) {
 		}
 	}
 	r.Devices[strings.ToLower(name)] = &c
+}
+
+// cloneMembers is a copy of ms that shares nothing with it (nil for none).
+func cloneMembers(ms []Member) []Member {
+	if len(ms) == 0 {
+		return nil
+	}
+	out := make([]Member, len(ms))
+	for i, m := range ms {
+		out[i] = m
+		if m.Components != nil {
+			out[i].Components = append([]Component(nil), m.Components...)
+		}
+	}
+	return out
 }
 
 // Delete drops a device's record and reports whether there was one.
