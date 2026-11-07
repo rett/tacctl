@@ -8,7 +8,6 @@ by number and file name.
 | File | What it is |
 |---|---|
 | `backlog.md` | The roadmap (section 0) and the open items |
-| `0.2.26-plan.md` | Device reports with serial numbers and chassis members (D316-D334) |
 | `apply-deferred.md` | NETCONF apply and rollback, deferred (D77-D93) |
 | `asa-deferred.md` | Cisco ASA, deferred |
 | `wti-interface.md` | The WTI units' menus and levels (a reference) |
@@ -23,6 +22,9 @@ git show 0.2.18:docs/plans/0.2.17-plan.md
 
 The 0.2.23 plan (`D296` to `D315`) is in commit `e73f8e90`:
 `git show e73f8e90:docs/plans/0.2.23-plan.md`.
+
+The 0.2.26 plan (`D316` to `D334`) is in commit `c28f0090`:
+`git show c28f0090:docs/plans/0.2.26-plan.md`.
 
 The release plans `0.2.3` to `0.2.18` (`D29` to `D277`), their handoffs, lab
 sheets and spikes, `0.2.3-baseline-design.md`, `0.2.9-conversion.md`,
