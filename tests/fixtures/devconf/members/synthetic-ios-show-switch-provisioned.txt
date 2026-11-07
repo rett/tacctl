@@ -1,0 +1,11 @@
+# SYNTHETIC FIXTURE, NOT A DEVICE CAPTURE (see README.md)
+# command: show switch
+# ---
+Switch/Stack Mac Address : 0000.5e00.5301 - Local Mac Address
+Mac persistency wait time: Indefinite
+                                             H/W   Current
+Switch#  Role    Mac Address     Priority Version  State
+----------------------------------------------------------
+*1       Master 0000.5e00.5301     15     V01     Ready
+ 2       Member 0000.5e00.5302     14     V01     Ready
+ 3       Member 0000.0000.0000      1             Provisioned

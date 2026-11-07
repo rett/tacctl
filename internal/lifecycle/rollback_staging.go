@@ -7,7 +7,7 @@ package lifecycle
 // other staging entry and writes it back without the field, and its sweep
 // and 'scope staging remove' take the /32 of the entry out of the scope: if
 // the scope holds that exact /32 as a real prefix, a real prefix goes. So
-// every target but 0.2.25, 0.2.24 and 0.2.23 drops these lines from the file. The
+// every target but 0.2.26, 0.2.25, 0.2.24 and 0.2.23 drops these lines from the file. The
 // plan names them, the snapshot --apply takes first holds the file, and
 // nothing needs an answer: no warning and no --yes. A clone still waiting for its 'device rename
 // --replace' loses its entry: a re-upgrade cannot write it again, so the plan

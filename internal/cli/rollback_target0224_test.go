@@ -7,7 +7,7 @@ import (
 	"github.com/rett/tacctl/internal/tier"
 )
 
-// 'tacctl rollback 0.2.24', the release before this one, on the host sandbox
+// 'tacctl rollback 0.2.24' on the host sandbox
 // with this server enrolled. The plan's own cases are internal/lifecycle's.
 
 // rollback0224State is rollback0221State with the per-tier sudoers drop-in

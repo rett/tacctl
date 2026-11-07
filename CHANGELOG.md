@@ -3,6 +3,97 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.27 (unreleased)
+
+1. **A read-only user's device reports no longer hold what `device show`
+   hides from them.** `device show` and `device list` show the model, serial
+   number and release of a device, and its chassis members, from the operator
+   tier up, but `device reports generate` put them in the `inventory`,
+   `members` and `software` reports of a read-only user. The reports follow the
+   same rule now: below the operator tier the `model`, `serial` and `release`
+   of the `inventory` and `software` rows are empty (`-` in text, an empty cell
+   in CSV, an empty string in JSON), the `members` count of `inventory` is `-`
+   (`0` in JSON) and the `members` report has no rows. The name, address,
+   vendor, scope, location, description and the `pulled` date stay, as
+   `device show` shows them to every tier, and the `config` report is as it
+   was. The operator tier and up see what they saw. A report a read-only user
+   made with 0.2.26 keeps what it holds.
+
+2. **A superuser's `device reports prune` of other users' reports writes its
+   audit line before it reads their directories.** Item 7 of 0.2.26 said every
+   access to another user's reports is audited before anything is read or
+   changed, but `prune --user <name>` and `--all-users` listed every directory
+   first and wrote the line afterwards, and only for a user with something to
+   prune. The line is now written for each other user whose directory the run
+   reads, before it is read and also when none of that user's reports is old
+   enough, and with `--all-users` every line is written before the first
+   directory is read, so under `audit.strict` a line that cannot be written
+   refuses the whole run before any directory of another user is read. The
+   line no longer carries the number of reports, which is not known before the
+   read: `device reports access verb=prune owner=bob report=* by=alice`
+   (`prune-dry-run` for `--dry-run`), as `list` writes `report=*`. The
+   superuser's own reports write no access line, as before.
+
+3. **The reader of `show switch` accepts a row whose H/W version column is
+   blank.** A row such as `4  Member 0000.0000.0000  1            Provisioned`
+   was dropped silently, because the reader wanted a word between the priority
+   and the state; the member is now read, with the state `Provisioned` and no
+   version, and shows in the chassis members of `device show` and in the
+   members report. Rows with a version are read as before. This says what the
+   reader accepts, not which devices print such a row.
+
+4. **Two notes of the upgrade and the rollback say what they do.** When
+   `tacctl upgrade` renames a user whose name has a period and `linux-uids`
+   already has a line for the new name, it reused the text of `user rename`
+   (the account is removed on hosts and the new name created with another
+   UID), which is false for a name that never had an account. Nothing in the
+   ledger changes in that case, and the warning now says so: `'alice_smith'
+   already has UID 80007 in linux-uids, so the line of 'alice.smith' (UID
+   80001) is not moved: 'alice_smith' keeps UID 80007 and the line of
+   'alice.smith' stays in the file as it is`. The note that ends `tacctl
+   rollback 0.2.25` and `0.2.24` after a snapshot said that the older
+   release's restore refuses a `tacctl.yaml` with a key it does not know, also
+   when only a user's own report limit (a field of the store) was removed. It
+   now names what the restore refuses for what was removed: a `tacctl.yaml`
+   with a key it does not know (the settings), a `store.yaml` with a field it
+   does not know (a user's own limit), or both.
+
+5. **The reports page no longer says every user has an account on the
+   server.** It said the directory of the reports is the home of the user's
+   Linux account, "which every tacctl user has", but a user whose name has upper
+   case letters or is longer than 32 characters (a user name, not a Linux
+   account name) has none, and neither has a user no sync has given an account
+   yet. The page and the manual page now say what `device reports` does for
+   such a user: `generate` refuses and stores nothing (`the user 'Carol' has no
+   account on this server`), `--stdout` still prints the report, and
+   `tacctl user rename` gives the user a name that can be an account.
+
+6. **`tacctl rollback 0.2.26`, the release before this one, is a target.**
+   This release changed no stored file 0.2.26 reads strictly (what the
+   `show switch` reader accepts, what the reports of a user below the operator
+   tier hold, the audit line of a prune of other users' reports, the wording of
+   two notes and the documentation are all that moved), so 0.2.26 reads
+   everything it writes: the rollback converts no file, removes no key and no
+   field, takes no snapshot and needs no `--yes`. The limits of the stored
+   reports (`reports.max_size` and `reports.max_count` in `tacctl.yaml`, and a
+   user's own `reports_max_size` and `reports_max_count` in `store.yaml`) stay,
+   0.2.26 has them, and so do the chassis `members` of the pull records and
+   every report in the users' homes, which 0.2.26 reads. The per-tier sudoers
+   drop-in is left too: 0.2.26 and this release write the same text. The
+   break-glass firewall, the users' email addresses, the SNMPv3 users, the
+   covered staging entries, the server name, the timing scale and an emergency
+   lockdown with enrolled hosts, which the older targets drop or refuse, stay
+   as well. It is refused only while a device's apply is not settled. The
+   command ends with `tacctl upgrade --branch 0.2.26` and, having nothing to
+   avoid, has no closing note. `rollback 0.2.25` and older keep removing the
+   limits as before, and the lists of "every target but" in the rollback pages
+   and the manual page now include 0.2.26. The top-level help, `docs/cli/conventions.md`,
+   `docs/install/upgrading.md` (Rolling back, To 0.2.26), `docs/releasing.md`,
+   the manual page and the completion list the new target, and `tacctl
+   rollback` now takes thirteen targets. The note that follows a rollback that
+   took a snapshot names this release, 0.2.27, as the state the snapshot holds
+   ("Restore it with 0.2.27 only").
+
 ## 0.2.26 (2026-11-06)
 
 1. **The break-glass firewall line of `tacctl upgrade` and `install` is one

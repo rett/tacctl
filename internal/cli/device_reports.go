@@ -29,7 +29,7 @@ var deviceReportsSpecs = map[string]Spec{
 	"generate": {MaxArgs: 0, Flags: []Flag{
 		{Names: []string{"--type"}, Value: true, Kind: "inventory|members|software|config", Arg: "inventory|members|software|config",
 			Desc: "Make this type of report (required)",
-			Long: "The type of report: inventory (one row per device), members (one row per chassis member), software (one row per device: model and release) or config (one row per device: the state of its last pull). Inventory, software and config have a row for every device, a device that was never pulled with empty facts; members has rows for the devices that have a model or a serial number, so a device with neither is not in it"},
+			Long: "The type of report: inventory (one row per device), members (one row per chassis member), software (one row per device: model and release) or config (one row per device: the state of its last pull). Inventory, software and config have a row for every device, a device that was never pulled with empty facts; members has rows for the devices that have a model or a serial number, so a device with neither is not in it. Below the operator tier the model, serial number, release and chassis members of a device are left out, as 'device show' leaves them: the members report has no rows for such a user"},
 		{Names: []string{"--scope"}, Value: true, Kind: KindScopes, Arg: "<scope>", Desc: "Only the devices that scope answers",
 			Long: "Only the devices that scope answers. A scope that is not one of yours is refused"},
 		{Names: []string{"--vendor"}, Value: true, Kind: KindVendors, Arg: "cisco|juniper|wti|other", Desc: "Only the devices of that vendor"},
@@ -63,9 +63,9 @@ var deviceReportsSpecs = map[string]Spec{
 		{Names: []string{"--older-than"}, Value: true, Kind: "24h|7d|30d|4w", Arg: "<age>", Desc: "Remove reports older than this age: 12h, 30d or 4w (required)",
 			Long: "Remove the reports made longer ago than this age: a whole number and one unit, h (hours), d (days) or w (weeks), for example 30d. There is no default and no zero. The age of a report is the date it was generated, which its metadata file holds, not the time of the file"},
 		{Names: []string{"--user"}, Value: true, Kind: KindUsers, Arg: "<name>", Desc: "Prune the reports of another user",
-			Long: "Prune the reports of another user. It is the superuser's, and writes an audit line with who pruned whose reports and how many, never their names"},
+			Long: "Prune the reports of another user. It is the superuser's, and writes an audit line with who looked at whose reports, before that user's directory is read"},
 		{Names: []string{"--all-users"}, Desc: "Prune the reports of every user",
-			Long: "Prune the reports of every user tacctl knows, one audit line for each user whose reports are listed or removed. It is the superuser's"},
+			Long: "Prune the reports of every user tacctl knows, one audit line for each other user whose directory is read, also when nothing of theirs is old enough. It is the superuser's"},
 		{Names: []string{"--dry-run"}, Desc: "List what would be removed and remove nothing",
 			Long: "List what would be removed and remove nothing; --yes does not change that"},
 		{Names: []string{"--yes"}, Desc: "Do not ask for confirmation"}}},
@@ -141,7 +141,10 @@ model, serial, release, chassis members, location, description, pulled),
 'software' (model and release) and 'config' (the state 'device config list'
 shows, the pull and the apply). Every row has the date of the pull its facts
 came from, 'never' for a device that was not pulled, and the report holds
-only the devices your scopes cover. No secret is in any report.
+only the devices your scopes cover. As 'device show' does, a report leaves
+out the model, serial number, release and chassis members (and the state and
+the apply date of 'config') for a user below the operator tier. No secret is
+in any report.
 
 A report is the file ~/reports/devices/<name>.<txt|csv|json> of your home,
 mode 0600 in a directory of mode 0700, made as you, with <name>.<ext>.meta
@@ -162,8 +165,8 @@ removed.
 A superuser reads other users' reports: 'list --user <name>', 'list
 --all-users', '<user>/<report>' for show, export, rename and remove, and
 'prune --user <name>' or '--all-users' for the old reports of others. Every
-such access writes one audit line (who, whose, which report or how many for a
-prune, never a name or a content). No verb writes into another user's home.
+such access writes one audit line, before anything is read (who, whose and
+which report, '*' for a list or a prune, never a name or a content). No verb writes into another user's home.
 
 Examples:
   tacctl device reports generate --type inventory --format csv
@@ -394,9 +397,12 @@ func (inv *invocation) reportsPull(entries []devreg.Entry, stdout bool) error {
 // against what tacctl renders now, which only the config report shows.
 func (inv *invocation) reportDevices(entries []devreg.Entry, needState bool) []reports.Device {
 	recs := inv.configRecords()
-	// The configuration state and the date of the last apply are what
-	// 'device list' and 'device config list' show from the operator tier up
-	// (D69): below it the config report has "-" for both.
+	// The configuration state, the date of the last apply and what the pull
+	// read of the device (model, serial, release, chassis members) are what
+	// 'device show', 'device list' and 'device config list' show from the
+	// operator tier up (D69): below it the reports have none of them (the
+	// config report "-" for the state and the apply, the others empty facts,
+	// as for a device that was never pulled). The pulled date stays.
 	seeConfig := inv.configVisible()
 	needState = needState && seeConfig
 	var states map[string]configNowState
@@ -409,14 +415,16 @@ func (inv *invocation) reportDevices(entries []devreg.Entry, needState bool) []r
 			Location: cleanLine(e.Location), Description: cleanLine(e.Description)}
 		rec, _ := recs.Of(e.Name)
 		if rec != nil {
-			d.Model, d.Serial, d.Release = cleanLine(rec.Model), cleanLine(rec.Serial), cleanLine(rec.Release)
 			d.Pulled = rec.Pulled
-			if a := rec.Applied; seeConfig && a != nil && a.Result == devconf.AppliedApplied {
-				d.Applied = a.At
-			}
-			for _, m := range rec.Members {
-				d.Members = append(d.Members, reports.Member{ID: cleanLine(m.ID), Role: cleanLine(m.Role), Model: cleanLine(m.Model),
-					Serial: cleanLine(m.Serial), Release: cleanLine(m.Release), Status: cleanLine(m.Status), Priority: m.Priority})
+			if seeConfig {
+				d.Model, d.Serial, d.Release = cleanLine(rec.Model), cleanLine(rec.Serial), cleanLine(rec.Release)
+				if a := rec.Applied; a != nil && a.Result == devconf.AppliedApplied {
+					d.Applied = a.At
+				}
+				for _, m := range rec.Members {
+					d.Members = append(d.Members, reports.Member{ID: cleanLine(m.ID), Role: cleanLine(m.Role), Model: cleanLine(m.Model),
+						Serial: cleanLine(m.Serial), Release: cleanLine(m.Release), Status: cleanLine(m.Status), Priority: m.Priority})
+				}
 			}
 		}
 		if needState {

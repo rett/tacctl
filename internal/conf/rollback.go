@@ -195,7 +195,7 @@ func Added0222Key(path string) bool { return inFamilies(Added0222, path) }
 // TCP connections of a held address (breakglass.firewall). A 0.2.23 or older
 // binary does not know it (its schema refuses the key, so its 'config
 // validate' reports it and its 'backup restore' refuses a snapshot that has
-// it), so every rollback but the one to 0.2.24 removes it, with the nftables
+// it), so every rollback to 0.2.23 or older removes it, with the nftables
 // table, the rules file and the boot unit it belongs to (lifecycle).
 var Added0224 = []Family{
 	{BreakglassFirewallKey, false},
@@ -208,7 +208,7 @@ func Added0224Key(path string) bool { return inFamilies(Added0224, path) }
 // reports (reports.max_size and reports.max_count, 'tacctl config reports'). A
 // 0.2.25 or older binary does not know them (its schema refuses the keys, so
 // its 'config validate' reports them and its 'backup restore' refuses a
-// snapshot that has them), so every rollback removes them.
+// snapshot that has them), so every rollback to 0.2.25 or older removes them (0.2.26 has them).
 var Added0226 = []Family{
 	{ReportsMaxSizeKey, false},
 	{ReportsMaxCountKey, false},

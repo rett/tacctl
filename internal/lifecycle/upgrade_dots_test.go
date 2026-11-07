@@ -307,6 +307,42 @@ func TestUpgradeDottedUserCollisionGetsASuffix(t *testing.T) {
 	}
 }
 
+// A UID line for the dotted name and another for the new name: the ledger is
+// left as it was, 'alice_smith' keeps its number and the old line stays, and
+// the warning says that, not that an account is removed or created (a name
+// with a period never had one).
+func TestUpgradeDottedUserWhoseNewNameHasALedgerLine(t *testing.T) {
+	const ledger = "# UIDs\nalice.smith:80001\nalice_smith:80007\nbob:80002\n"
+	const store = dottedStorePrefix + `users:
+  alice.smith:
+    group: operator
+    scopes: []
+    hash: null
+    disabled: false
+    password_changed: null
+`
+	o := newOhost(t)
+	o.cloned()
+	o.write(o.p.StoreFile, store)
+	o.write(o.p.LinuxUIDs, ledger)
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	all := stripANSI(o.stdout.String() + o.stderr.String())
+	has(t, all, "renamed user alice.smith to alice_smith\n")
+	has(t, all, "'alice_smith' already has UID 80007 in linux-uids, so the line of 'alice.smith' (UID 80001) is not moved: "+
+		"'alice_smith' keeps UID 80007 and the line of 'alice.smith' stays in the file as it is")
+	hasNot(t, all, "is removed on hosts")
+	hasNot(t, all, "created with")
+	hasNot(t, all, "UID 80001 carried")
+	if got := readFile(t, o.p.LinuxUIDs); got != ledger {
+		t.Errorf("ledger:\n%s", got)
+	}
+	if got := strings.Join(o.audit, "\n"); !strings.Contains(got, "user rename from=alice.smith to=alice_smith uid=-") {
+		t.Errorf("audit lines:\n%s", got)
+	}
+}
+
 // A name that is not a user name even with the periods replaced stops the
 // upgrade before anything is changed, and no user that could be renamed is:
 // no command renames such a name, so the refusal names the key to edit. Once

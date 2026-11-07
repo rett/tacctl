@@ -21,3 +21,9 @@ devices' own text.
 16.x or later stack (Catalyst 3650, 3850, 9000), which prints the role `Active`
 where IOS 12.x and 15.x print `Master`; it is synthetic like the others, from
 the documented format.
+
+`synthetic-ios-show-switch-provisioned.txt` is a two-member stack plus a
+provisioned member 3 whose H/W version column is blank (the all-zero MAC
+address and the state `Provisioned` stand alone); it checks that the reader
+accepts a row with that column blank. It is synthetic like the others and says
+nothing about which devices print such a row.
