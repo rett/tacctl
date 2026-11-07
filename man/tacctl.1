@@ -256,7 +256,12 @@ the line reads
 .BR "renamed user alice.smith to alice_smith_k3x9 (alice_smith was taken)" ).
 Of two names that meet the first in the store keeps the name without a suffix,
 and a name longer than a Linux account name (32 characters) is cut before the
-suffix. Only a name that is not a user name even with the periods replaced (one
+suffix. A new name with upper case letters or longer than 32 characters is a user
+name but not a Linux account name: the user gets no account at a sync, so after
+the renames the upgrade lists each such user with the reason and
+.BR "tacctl user rename" " <name> <new\-name>" ,
+and its closing note says that the other new names get their accounts, or that
+none can. Only a name that is not a user name even with the periods replaced (one
 with a space, say) stops the upgrade before anything is changed: it names the
 key to edit under
 .B users:

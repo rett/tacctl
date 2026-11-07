@@ -59,6 +59,15 @@ current behaviour; this file is where history lives.
    the store holds (`finished the rename of user alice.smith to alice_smith`),
    and the message of a failed follow-up now says so besides the snapshot.
 
+   The rule for the new name does not change, so a new name can be a user name
+   that no Linux account can have (upper case: `Alice.Smith` becomes
+   `Alice_Smith`; longer than 32 characters). Such a user never gets an account
+   at a sync, and the line "the new names get theirs at the next sync" was wrong
+   for them. After the renames the upgrade now lists each of them with the
+   reason and the fix (`Alice_Smith has upper case letters: tacctl user rename
+   Alice_Smith <new-name>`), and the closing note says that the other new
+   names get their accounts, or that none can.
+
 3. **A user name with a period is not accepted anywhere.** 0.2.22 to 0.2.25
    refused a period in a new user name but still read one that a store from
    0.2.20 or 0.2.21 held: `user rename` ran from it, `config validate` reported

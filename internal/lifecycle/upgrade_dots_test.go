@@ -710,3 +710,56 @@ func TestUpgradeIgnoresAJournalEntryTheStoreNeverGot(t *testing.T) {
 		t.Errorf("a stale entry was finished:\n%s", o.text())
 	}
 }
+
+// The rule for the new name is not changed (each period becomes '_'), so a
+// new name can be a user name that no Linux account can have: upper case, or
+// longer than 32 characters. Such a user gets no account at a sync, so the
+// output lists each one after the renames with the reason and the command that
+// fixes it, and the closing note does not promise the account.
+func TestUpgradeSaysWhichNewNamesCannotHaveAnAccount(t *testing.T) {
+	long := strings.Repeat("a", 20) + "." + strings.Repeat("b", 20)
+	store := dottedStorePrefix + "users:\n" +
+		"  Alice.Smith:\n    group: operator\n    scopes: []\n    hash: null\n    disabled: false\n    password_changed: null\n" +
+		"  " + long + ":\n    group: operator\n    scopes: []\n    hash: null\n    disabled: false\n    password_changed: null\n" +
+		"  bob.jones:\n    group: operator\n    scopes: []\n    hash: null\n    disabled: false\n    password_changed: null\n"
+	o := newOhost(t)
+	o.cloned()
+	o.write(o.p.StoreFile, store)
+	o.write(o.p.LinuxUIDs, "# UIDs\n")
+	o.nameSuffix = suffixes(t)
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	text := o.text() + stripANSI(o.stderr.String())
+	longNew := strings.Repeat("a", 20) + "_" + strings.Repeat("b", 20)
+	for _, want := range []string{
+		"renamed user Alice.Smith to Alice_Smith",
+		"These new names are not a valid Linux account name, so the users get no account on this server or on a host at a sync",
+		"  Alice_Smith has upper case letters: tacctl user rename Alice_Smith <new-name>",
+		"  " + longNew + " is longer than 32 characters: tacctl user rename " + longNew + " <new-name>",
+		"the other new name gets its account at the next sync.",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("output lacks %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "bob_jones has") || strings.Contains(text, "the new names get theirs") {
+		t.Errorf("a valid name is listed, or the note promises every account:\n%s", text)
+	}
+	inOrder(t, text, "renamed user", "These new names are not a valid Linux account name", "the other new name gets its account")
+
+	// when none can have one, the note says so
+	p := newOhost(t)
+	p.cloned()
+	p.write(p.p.StoreFile, dottedStorePrefix+"users:\n  Alice.Smith:\n    group: operator\n    scopes: []\n    hash: null\n    disabled: false\n    password_changed: null\n")
+	p.nameSuffix = suffixes(t)
+	if code := upgrade(p); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, p.stdout, p.stderr)
+	}
+	text = p.text() + stripANSI(p.stderr.String())
+	for _, want := range []string{"This new name is not a valid Linux account name, so the user gets no account", "none of the new names can have an account (above)."} {
+		if !strings.Contains(text, want) {
+			t.Errorf("output lacks %q:\n%s", want, text)
+		}
+	}
+}

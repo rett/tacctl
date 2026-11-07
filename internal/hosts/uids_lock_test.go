@@ -353,3 +353,23 @@ func TestUIDsCanMove(t *testing.T) {
 		t.Error("a ledger that is a directory can be moved")
 	}
 }
+
+// LinuxNameProblem agrees with LinuxName and says why a name is refused.
+func TestLinuxNameProblem(t *testing.T) {
+	for _, c := range []struct{ name, want string }{
+		{"alice", ""}, {"a_b-c9", ""}, {"_svc", ""},
+		{"Alice", "has upper case letters"},
+		{strings.Repeat("a", 33), "is longer than 32 characters"},
+		{strings.Repeat("A", 33), "is longer than 32 characters and has upper case letters"},
+		{"9lives", "does not start with a lower case letter or '_'"},
+		{"-dash", "does not start with a lower case letter or '_'"},
+		{"root", "is root, which no user can be"},
+	} {
+		if got := LinuxNameProblem(c.name); got != c.want {
+			t.Errorf("%q: %q, want %q", c.name, got, c.want)
+		}
+		if LinuxName(c.name) != (c.want == "") {
+			t.Errorf("%q: LinuxName disagrees", c.name)
+		}
+	}
+}

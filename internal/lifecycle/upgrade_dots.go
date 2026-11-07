@@ -523,8 +523,30 @@ func (h *Host) renameDottedUsers() error {
 		return nil
 	}
 	out.Info("Tell " + pluralWord(len(all), "this user", "these users") + " to log in with the new name: the name typed at a device's login changed, and the old one no longer works.")
-	out.Info("A name with a period never had a Linux account, so no account on this server or on a host is renamed; the new " +
-		pluralWord(len(all), "name gets its account", "names get theirs") + " at the next sync.")
+	// A new name is a user name, not always a Linux account name (upper case,
+	// longer than 32): that user gets no account at a sync.
+	var noAccount []console.UserRename
+	for _, r := range all {
+		if hosts.LinuxNameProblem(r.New) != "" {
+			noAccount = append(noAccount, r)
+		}
+	}
+	if len(noAccount) > 0 {
+		out.Warn(pluralWord(len(noAccount), "This new name is", "These new names are") + " not a valid Linux account name, so " +
+			pluralWord(len(noAccount), "the user gets", "the users get") + " no account on this server or on a host at a sync, and cannot store reports ('tacctl device reports generate' says the user has no account), until renamed:")
+		for _, r := range noAccount {
+			out.Warn("  " + r.New + " " + hosts.LinuxNameProblem(r.New) + ": tacctl user rename " + r.New + " <new-name>")
+		}
+	}
+	note := "A name with a period never had a Linux account, so no account on this server or on a host is renamed; "
+	switch rest := len(all) - len(noAccount); {
+	case len(noAccount) == 0:
+		out.Info(note + "the new " + pluralWord(len(all), "name gets its account", "names get theirs") + " at the next sync.")
+	case rest == 0:
+		out.Info(note + "none of the new names can have an account (above).")
+	default:
+		out.Info(note + "the " + pluralWord(rest, "other new name gets its account", "other new names get theirs") + " at the next sync.")
+	}
 	return nil
 }
 
