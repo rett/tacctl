@@ -68,6 +68,32 @@ current behaviour; this file is where history lives.
    account on this server`), `--stdout` still prints the report, and
    `tacctl user rename` gives the user a name that can be an account.
 
+6. **`tacctl rollback 0.2.26`, the release before this one, is a target.**
+   This release changed no stored file 0.2.26 reads strictly (what the
+   `show switch` reader accepts, what the reports of a user below the operator
+   tier hold, the audit line of a prune of other users' reports, the wording of
+   two notes and the documentation are all that moved), so 0.2.26 reads
+   everything it writes: the rollback converts no file, removes no key and no
+   field, takes no snapshot and needs no `--yes`. The limits of the stored
+   reports (`reports.max_size` and `reports.max_count` in `tacctl.yaml`, and a
+   user's own `reports_max_size` and `reports_max_count` in `store.yaml`) stay,
+   0.2.26 has them, and so do the chassis `members` of the pull records and
+   every report in the users' homes, which 0.2.26 reads. The per-tier sudoers
+   drop-in is left too: 0.2.26 and this release write the same text. The
+   break-glass firewall, the users' email addresses, the SNMPv3 users, the
+   covered staging entries, the server name, the timing scale and an emergency
+   lockdown with enrolled hosts, which the older targets drop or refuse, stay
+   as well. It is refused only while a device's apply is not settled. The
+   command ends with `tacctl upgrade --branch 0.2.26` and, having nothing to
+   avoid, has no closing note. `rollback 0.2.25` and older keep removing the
+   limits as before, and the lists of "every target but" in the rollback pages
+   and the manual page now include 0.2.26. The top-level help, `docs/cli/conventions.md`,
+   `docs/install/upgrading.md` (Rolling back, To 0.2.26), `docs/releasing.md`,
+   the manual page and the completion list the new target, and `tacctl
+   rollback` now takes thirteen targets. The note that follows a rollback that
+   took a snapshot names this release, 0.2.27, as the state the snapshot holds
+   ("Restore it with 0.2.27 only").
+
 ## 0.2.26 (2026-11-06)
 
 1. **The break-glass firewall line of `tacctl upgrade` and `install` is one
