@@ -8,12 +8,14 @@ package cli
 // write to it is refused until 'tacctl upgrade' renames the users. No renderer
 // writes a name with a period (tacquito's parser refuses it in an anchor), so
 // the restore of such a snapshot renders nothing and the services keep the
-// configuration they have.
+// configuration they have. The snapshot's console.yaml is installed without the
+// settings of those users (console.DropDottedUserKeys).
 
 import (
 	"strconv"
 	"strings"
 
+	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/store"
 )
 
@@ -42,6 +44,23 @@ func restoreDotsNote(id string, users []string) string {
 	return "Snapshot " + id + " holds " + strconv.Itoa(n) + " " + plural(n, "user", "users") + " whose name has a period (" + dottedUsersText(users) +
 		"), which a release before 0.2.22 allowed. It is restored, but nothing is rendered: a name with a period cannot be rendered, so the services keep the configuration they have. " +
 		"Run 'tacctl upgrade' to rename " + plural(n, "the user", "the users") + " (each period becomes '_') and render; until then the store can be read and every change to it is refused."
+}
+
+// droppedConsoleLines say which settings of a user with a period the restore
+// leaves out of console.yaml (verb "will drop" before the question, "dropped"
+// after the restore), and that they are set again once the upgrade has renamed
+// the user: the console refuses a name with a period, so a file that kept the
+// keys could not be read and every user below the superuser would be held at
+// the password change.
+func droppedConsoleLines(dropped []console.DroppedSetting, verb string) []string {
+	if len(dropped) == 0 {
+		return nil
+	}
+	var out []string
+	for _, d := range dropped {
+		out = append(out, verb+" console setting of user "+d.User+": "+d.What)
+	}
+	return append(out, "A setting of a user is set again after 'tacctl upgrade' has renamed the user.")
 }
 
 // dotsSkipReason is why 'backup recover' skips a user of the snapshot whose

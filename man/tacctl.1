@@ -7128,7 +7128,14 @@ store then reads and every write to it is refused until
 .B upgrade
 renames the users (each period becomes
 .BR _ )
-and renders; it is also the way back when that rename stops half way.
+and renders; it is also the way back when that rename stops half way. The
+console.yaml of such a snapshot is installed without the settings of those users
+(the system shell, the password cache and the ignored
+.B users
+override), since the console cannot read a name with a period and every user
+below the superuser would be held at the password change; the restore names each
+dropped setting, before the question and after, and the setting is set again
+once the upgrade has renamed the user. Every other setting is kept.
 .\" BEGIN GENERATED: command backup restore
 .RS
 .PP

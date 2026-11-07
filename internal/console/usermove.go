@@ -170,6 +170,18 @@ func renamedText(path string, renames []UserRename) (data, text []byte, res User
 // dropDotted removes every per-user key that has a period from the three
 // mappings and returns the names, sorted.
 func (f *File) dropDotted() []string {
+	out := f.dottedUsers()
+	for _, u := range out {
+		f.DropSystemShellUser(u)
+		delete(f.PasswordCacheUsers, u)
+		delete(f.IgnoredUsers, u)
+	}
+	return out
+}
+
+// dottedUsers are the names with a period in the three per-user mappings,
+// sorted.
+func (f *File) dottedUsers() []string {
 	seen := map[string]bool{}
 	for u := range f.SystemShellUsers {
 		seen[u] = true
@@ -182,14 +194,60 @@ func (f *File) dropDotted() []string {
 	}
 	var out []string
 	for u := range seen {
-		if !strings.Contains(u, ".") {
-			continue
+		if strings.Contains(u, ".") {
+			out = append(out, u)
 		}
-		f.DropSystemShellUser(u)
-		delete(f.PasswordCacheUsers, u)
-		delete(f.IgnoredUsers, u)
-		out = append(out, u)
 	}
 	slices.Sort(out)
 	return out
+}
+
+// DroppedSetting is one per-user setting that DropDottedUserKeys removed:
+// the user's name with a period and what the key held.
+type DroppedSetting struct{ User, What string }
+
+// DropDottedUserKeys reads the console.yaml at path, which may hold per-user
+// keys with a period in the name (a snapshot of 0.2.25 or earlier, from the
+// releases that allowed one in a user name), and returns the text a live file
+// can hold: every such key of the system shell, the password cache and the
+// ignored 'users' mapping removed, each other setting kept. Load refuses a
+// name with a period, so a file that kept one would make the console's policy
+// unreadable, which holds every user below the superuser at the password
+// change until the upgrade renames the user; the dropped keys are returned in
+// the order of the names so that the caller can say them. A file with none is
+// returned as it is, byte for byte. A name the rule refuses that has no
+// period is an error, as is a file that cannot be read.
+func DropDottedUserKeys(path string) (text []byte, dropped []DroppedSetting, err error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, nil, fail("Cannot read " + path + ": " + errText(err))
+	}
+	f, err := parse(data, func(f *File) error { return f.check(func(string) bool { return true }) })
+	if err != nil {
+		return nil, nil, fail(path + ": " + strings.Join(msgs(err), " "))
+	}
+	for _, u := range f.dottedUsers() {
+		if on, ok := f.SystemShellUsers[u]; ok {
+			what := "disable"
+			if on {
+				what = "enable:" + string(f.SystemShellUserTiers[u])
+			}
+			dropped = append(dropped, DroppedSetting{u, "system shell " + what})
+		}
+		if f.PasswordCacheUsers[u] {
+			dropped = append(dropped, DroppedSetting{u, "password cache on"})
+		}
+		if on, ok := f.IgnoredUsers[u]; ok {
+			dropped = append(dropped, DroppedSetting{u, "'users' override " + word(on)})
+		}
+	}
+	if len(dropped) == 0 {
+		return data, nil, nil
+	}
+	f.dropDotted()
+	text, err = f.Text()
+	if err != nil {
+		return nil, nil, fail(path + ": " + strings.Join(msgs(err), " "))
+	}
+	return text, dropped, nil
 }

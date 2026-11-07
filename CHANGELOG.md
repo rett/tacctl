@@ -94,7 +94,14 @@ current behaviour; this file is where history lives.
    renders nothing (no renderer writes the name, so the services keep their
    configuration; a snapshot of that kind that enables a backend not running now
    is refused), and `tacctl upgrade` then renames the users and renders. A
-   recovery skips such a user, naming it: it adds no user to the store.
+   recovery skips such a user, naming it: it adds no user to the store. The
+   restore installs the snapshot's `console.yaml` without the settings of such a
+   user (the system shell, the password cache and the ignored `users` override),
+   because the console cannot read a name with a period and every user below
+   the superuser would be held at the password change until the upgrade;
+   it names each one (`dropped console setting of user alice.smith: system
+   shell enable:operator`) and says to set it again after the upgrade has
+   renamed the user. Every other setting is kept.
 
 4. **A good pull records the members of a Junos virtual chassis or a Cisco
    stack.** `tacctl device config pull` recorded one model and one serial number

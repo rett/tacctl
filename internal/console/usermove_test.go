@@ -126,3 +126,46 @@ settings:
 		t.Errorf("a dropped name is left:\n%s", got)
 	}
 }
+
+// DropDottedUserKeys returns the text a live file can hold: the keys of a name
+// with a period are gone from the three mappings and named in the order of the
+// names, every other setting stays, and a file without one comes back as it
+// was read.
+func TestDropDottedUserKeys(t *testing.T) {
+	dir := t.TempDir()
+	p := write(t, dir, "console.yaml", `version: 1
+users: {alice.smith: disable, bob: enable}
+settings:
+  idle_timeout: 12
+  system_shell_users: {alice.smith: 'enable:operator', bob: disable}
+  password_cache_users: {alice.smith: true, bob: true}
+`, 0o600)
+	text, dropped, err := DropDottedUserKeys(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []DroppedSetting{{"alice.smith", "system shell enable:operator"}, {"alice.smith", "password cache on"}, {"alice.smith", "'users' override disable"}}
+	if len(dropped) != len(want) || dropped[0] != want[0] || dropped[1] != want[1] || dropped[2] != want[2] {
+		t.Errorf("dropped %+v, want %+v", dropped, want)
+	}
+	out := write(t, dir, "out.yaml", string(text), 0o600)
+	f, err := Load(out)
+	if err != nil {
+		t.Fatalf("the text is not read: %v\n%s", err, text)
+	}
+	if f.Idle != 12 || len(f.SystemShellUsers) != 1 || f.SystemShellUsers["bob"] || len(f.PasswordCacheUsers) != 1 || !f.IgnoredUsers["bob"] || len(f.IgnoredUsers) != 1 {
+		t.Errorf("after: %+v", f)
+	}
+	if got, _ := os.ReadFile(p); !strings.Contains(string(got), "alice.smith") {
+		t.Error("the source file was changed")
+	}
+
+	plainText := "version: 1\nsettings:\n  idle_timeout: 7\n"
+	p = write(t, dir, "plain.yaml", plainText, 0o600)
+	if text, dropped, err := DropDottedUserKeys(p); err != nil || len(dropped) != 0 || string(text) != plainText {
+		t.Errorf("a file without one: %q %v %v", text, dropped, err)
+	}
+	if _, _, err := DropDottedUserKeys(filepath.Join(dir, "absent.yaml")); err == nil {
+		t.Error("an absent file is read")
+	}
+}
