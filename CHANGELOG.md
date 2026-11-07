@@ -156,6 +156,31 @@ current behaviour; this file is where history lives.
    its own (the keys and the fields are written only when set); 0.2.25 refuses
    them, so `tacctl rollback` removes them (item 9).
 
+9. **`tacctl rollback 0.2.25` is a target.** The release before this one is
+   prepared like the older ones: a dry run that lists the steps, `--apply` to
+   convert, `--yes` for what needs a decision. 0.2.25 reads every file this
+   release writes but the limits of the stored reports (item 8), so the target
+   removes `reports.max_size` and `reports.max_count` from `tacctl.yaml` and the
+   users' own `reports_max_size` and `reports_max_count` from `store.yaml`
+   (0.2.25 refuses both: its `config validate` reports the keys, its `backup
+   restore` refuses a snapshot that has them, and every store command fails on
+   the fields), and puts back the per-tier sudoers drop-in 0.2.25 wrote, this
+   release's without the rows of `device reports`, when the file is exactly this
+   release's text. It takes a snapshot only when it removes a key or a field; a
+   user's own limit is a warning that `--apply` refuses without `--yes`, naming
+   each user and the values, and the audit line of the rollback names the users
+   (`limit-users=`, never a value). It leaves the chassis `members` of the pull
+   records (0.2.25 ignores the key) and every report in the users' homes, which
+   are the users' own files and which 0.2.25 cannot list or remove, and its
+   closing note says so and names the three commands that would write a limit
+   again (`config reports max-size`, `config reports max-count`, `user
+   reports-limit`). Every other target gets the same removal, the same warning
+   and the same closing note, since none of them reads the limits; the target
+   `0.2.24`, which converted nothing before, now removes the limits and puts
+   back the same sudoers drop-in as `0.2.25`, and the targets `0.2.23` and older
+   name the users' limits in their warnings. The rollback pages and the manual
+   page list `0.2.25` as the release before this one.
+
 ## 0.2.25 (2026-11-05)
 
 1. **`tacctl device config shapes` keeps its table narrow.** The list put every

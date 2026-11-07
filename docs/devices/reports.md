@@ -216,6 +216,10 @@ The value that holds for a user is their own, else the server's, else the defaul
 
 A report that is too large can be made smaller (`--scope`, `--vendor`), printed (`--stdout` has no limit) or allowed by a larger setting; nothing deletes a report to make room, and nothing by age except `prune` (see Looking after reports, above). The settings are the superuser's; every user sees their own limit in `user show`.
 
+## Older releases
+
+A release before 0.2.26 has no `device reports` verb. `tacctl rollback` (see [Rolling back](../install/upgrading.md#rolling-back)) leaves the reports and their metadata files where they are, because they are the users' own files, and says so; it removes the limits of this page (the two settings and the users' own limits, after a snapshot, and `--yes` while a user has one), and puts back the per-tier sudoers drop-in without the `device reports` rows. The `members` of the pull records stay too: an older release ignores them.
+
 ## Exit status
 
 0 on success; 1 when a request was refused (a name in use, a user with no account, no such report, a scope that is not yours, a limit) or when `generate --pull` could not read some device; 2 for wrong arguments (no `--type`, an unknown type or format, a bad name or age, `--name` with `--stdout`).

@@ -178,7 +178,8 @@ users whose address it removed, never an address. When it wrote the SNMP
 credential files in version 1 and dropped something, the line has `snmp-users=<n>
 snmp-levels=<m> snmp-choices=<k> snmp-devices=<p>` (users and the levels they were
 in, devices whose choice of another level's user went, devices without an `snmp:`
-entry whose file went; counts, never a name) after `kept=<id>`.
+entry whose file went; counts, never a name) after `kept=<id>`. When it removed the users' own limits of the
+stored reports, the line has `limit-users=<names>` (never a value) before `by=`.
 
 `device config apply` writes, at `auth.notice`, a review line for each device
 asked, then, when any device was approved, the approval line, and each applied

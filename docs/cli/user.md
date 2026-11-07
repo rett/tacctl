@@ -211,7 +211,7 @@ only when set, so a store without one is unchanged. No mail is sent to it.
   in any other `user` verb, and `…(redacted)` in place of the rest. Like any
   word on a command line it is in sudo's own log.
 - *Older releases.* A release before 0.2.23 refuses the key, so every `tacctl
-  rollback` target but 0.2.24 and 0.2.23 (which read it) removes it after a
+  rollback` target but 0.2.25, 0.2.24 and 0.2.23 (which read it) removes it after a
   snapshot that it keeps, and names the users; `backup recover` puts the addresses back (see
   [Rolling back](../install/upgrading.md#rolling-back)).
 
