@@ -58,6 +58,16 @@ current behaviour; this file is where history lives.
    with a key it does not know (the settings), a `store.yaml` with a field it
    does not know (a user's own limit), or both.
 
+5. **The reports page no longer says every user has an account on the
+   server.** It said the directory of the reports is the home of the user's
+   Linux account, "which every tacctl user has", but a user whose name has upper
+   case letters or is longer than 32 characters (a user name, not a Linux
+   account name) has none, and neither has a user no sync has given an account
+   yet. The page and the manual page now say what `device reports` does for
+   such a user: `generate` refuses and stores nothing (`the user 'Carol' has no
+   account on this server`), `--stdout` still prints the report, and
+   `tacctl user rename` gives the user a name that can be an account.
+
 ## 0.2.26 (2026-11-06)
 
 1. **The break-glass firewall line of `tacctl upgrade` and `install` is one

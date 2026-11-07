@@ -14145,8 +14145,14 @@ the directory of mode 0700 and the file of mode 0600, by tacctl as the user
 .IR <name>.<ext>.meta
 beside it: a JSON file of mode 0600 that holds the name, the type, the format,
 the user, the exact command line, the filters, the time, the date of the oldest
-datum, the size, the number of rows and the schema number. The default name is
-the type and the date in UTC
+datum, the size, the number of rows and the schema number. The home is the one the
+account database of the server gives the user, so a user with no Linux account
+there (a name that is no Linux account name, upper case letters or more than 32
+characters, or a user no sync has given an account yet) is refused with
+.B "the user '<name>' has no account on this server"
+and nothing is stored; such a user can print the report with
+.BR \-\-stdout .
+The default name is the type and the date in UTC
 .RB ( inventory\-20261106 ),
 then
 .B \-2
