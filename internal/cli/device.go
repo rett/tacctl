@@ -986,6 +986,9 @@ type deviceJSON struct {
 	Release string `json:"release,omitempty"`
 	Model   string `json:"model,omitempty"`
 	Serial  string `json:"serial,omitempty"`
+	// Members are the units of a chassis as the last good pull read them
+	// (D319); absent when it read none.
+	Members []deviceMemberJSON `json:"members,omitempty"`
 	// SNMP is what the device is read with and where each value comes from
 	// (D72); 'show' only, never a secret.
 	SNMP *deviceSNMPJSON `json:"snmp,omitempty"`
@@ -1094,6 +1097,17 @@ func deviceSeenJSONOf(inv *invocation, res *devreg.Resolver, e devreg.Entry) *de
 	const layout = "2006-01-02T15:04:05Z07:00"
 	return &deviceSeenJSON{First: x.First.Format(layout), Last: x.Last.Format(layout), Count: x.Count,
 		LastUser: x.LastUser, LastOutcome: x.LastOutcome, Via: x.Via, NASID: x.LastNASID, Stale: stale}
+}
+
+// deviceMemberJSON is a chassis member in 'device show --json'.
+type deviceMemberJSON struct {
+	ID       string `json:"id"`
+	Role     string `json:"role"`
+	Model    string `json:"model"`
+	Serial   string `json:"serial"`
+	Release  string `json:"release"`
+	Status   string `json:"status"`
+	Priority int    `json:"priority"`
 }
 
 func (inv *invocation) printJSON(v any) error {
@@ -1253,6 +1267,13 @@ func (inv *invocation) deviceShow(args []string) error {
 			configs = inv.configRecords()
 		}
 		j := deviceJSONOf(inv, res, e, configs)
+		if rec, _ := configs.Of(e.Name); rec != nil && e.Source == devreg.SourceDevice {
+			// the chassis members (D319): 'show' only, a list stays short
+			for _, m := range rec.Members {
+				j.Members = append(j.Members, deviceMemberJSON{ID: cleanLine(m.ID), Role: cleanLine(m.Role), Model: cleanLine(m.Model),
+					Serial: cleanLine(m.Serial), Release: cleanLine(m.Release), Status: cleanLine(m.Status), Priority: m.Priority})
+			}
+		}
 		if e.Source == devreg.SourceDevice {
 			if info, err := inv.deviceSNMPInfoOf(e); err == nil {
 				j.SNMP = info.json()
@@ -1401,6 +1422,8 @@ func (inv *invocation) deviceShow(args []string) error {
 		row("", hidden)
 	}
 	inv.echo("")
+	// the chassis members of the last pull (D319), a table of their own
+	inv.printMembers(e)
 	return nil
 }
 
