@@ -3,6 +3,22 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.27 (unreleased)
+
+1. **A read-only user's device reports no longer hold what `device show`
+   hides from them.** `device show` and `device list` show the model, serial
+   number and release of a device, and its chassis members, from the operator
+   tier up, but `device reports generate` put them in the `inventory`,
+   `members` and `software` reports of a read-only user. The reports follow the
+   same rule now: below the operator tier the `model`, `serial` and `release`
+   of the `inventory` and `software` rows are empty (`-` in text, an empty cell
+   in CSV, an empty string in JSON), the `members` count of `inventory` is `-`
+   (`0` in JSON) and the `members` report has no rows. The name, address,
+   vendor, scope, location, description and the `pulled` date stay, as
+   `device show` shows them to every tier, and the `config` report is as it
+   was. The operator tier and up see what they saw. A report a read-only user
+   made with 0.2.26 keeps what it holds.
+
 ## 0.2.26 (2026-11-06)
 
 1. **The break-glass firewall line of `tacctl upgrade` and `install` is one

@@ -764,7 +764,8 @@ device reports generate --type inventory|members|software|config [--scope <scope
     chassis member (a standalone device is one row), `software` one per device (model and release)
     and `config` one per device (the state `device config list` shows, the pull and the apply). A
     device never pulled is a row with empty facts and `never` in all but `members`, which lists the
-    devices that have a model or a serial number. The report holds the devices of your scopes (a
+    devices that have a model or a serial number. Below the operator tier the model, serial number,
+    release and chassis members are left out as `device show` leaves them (`members` has no rows). The report holds the devices of your scopes (a
     superuser's: all); `--scope` and `--vendor` narrow it. `--stdout` prints it and
     stores nothing. `--pull` reads the devices first as `device config pull` does, with your own
     password (engineer tier); a device that fails keeps its last facts and the exit status is 1. A

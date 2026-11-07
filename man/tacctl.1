@@ -14081,10 +14081,24 @@ superuser's every device. With no sub\-command the usage is printed.
 Access.
 .B "device reports"
 is open to every tier for the user's own reports, which hold the devices of the
-user's own scopes (the model, serial number, release and chassis members among
-the facts, though
+user's own scopes; as
 .B "device show"
-shows them from the operator tier up);
+does, a report leaves out the model, serial number, release and chassis members
+of the devices (and the state and the apply date of
+.BR config )
+for a user below the operator tier, so that
+.B inventory
+and
+.B software
+show them empty, the
+.B members
+count of
+.B inventory
+is
+.BR \- ,
+and
+.B members
+has no rows;
 .B "generate \-\-pull"
 needs the engineer tier. A superuser reaches other users' reports with
 .BR \-\-user ,
@@ -14212,7 +14226,7 @@ Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show
 Options:
 .TP
 \fB\-\-type\fR \fIinventory|members|software|config\fR
-The type of report: inventory (one row per device), members (one row per chassis member), software (one row per device: model and release) or config (one row per device: the state of its last pull). Inventory, software and config have a row for every device, a device that was never pulled with empty facts; members has rows for the devices that have a model or a serial number, so a device with neither is not in it.
+The type of report: inventory (one row per device), members (one row per chassis member), software (one row per device: model and release) or config (one row per device: the state of its last pull). Inventory, software and config have a row for every device, a device that was never pulled with empty facts; members has rows for the devices that have a model or a serial number, so a device with neither is not in it. Below the operator tier the model, serial number, release and chassis members of a device are left out, as 'device show' leaves them: the members report has no rows for such a user.
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
 Only the devices that scope answers. A scope that is not one of yours is refused.
