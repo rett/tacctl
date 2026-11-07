@@ -55,12 +55,21 @@ current behaviour; this file is where history lives.
    Linux account name).`, the store and `console.yaml` validate user names
    strictly, and `user rename` takes no old name with a period. A store that
    still holds one (an upgrade that stopped for a name that is not a user name, or a
-   restored snapshot of 0.2.20 or 0.2.21) fails every write with `user
+   restored snapshot of 0.2.25 or earlier) fails every write with `user
    'alice.smith': invalid name (a period cannot be part of a Linux account
    name; 'tacctl upgrade' renames such a user)`, and the upgrade is the way
    out. `config validate` no longer has a separate error for it, `tacctl
    rollback` to any target no longer looks for one, and the manual page and the
    documentation lose the sentences about the tolerated user.
+   `backup restore` and `backup recover` still read a snapshot that holds such
+   a user (every snapshot of 0.2.25 or earlier can, and so is the one the
+   upgrade takes before its rename, which its advice names when a rename stops
+   half way): only the user-name rule is relaxed, for the snapshot's store. A
+   restore says which users have a period, before the question and after, and
+   renders nothing (no renderer writes the name, so the services keep their
+   configuration; a snapshot of that kind that enables a backend not running now
+   is refused), and `tacctl upgrade` then renames the users and renders. A
+   recovery skips such a user, naming it: it adds no user to the store.
 
 4. **A good pull records the members of a Junos virtual chassis or a Cisco
    stack.** `tacctl device config pull` recorded one model and one serial number

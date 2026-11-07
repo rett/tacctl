@@ -7092,6 +7092,19 @@ list, diff and restore work on old-style backups only. A restore (of a
 snapshot or an old\-style backup) rewrites the list of users held to a password
 change in the console's sshd drop-in from the store it put back (see
 .BR "console forwarding" ).
+A snapshot of 0.2.25 or earlier (or the one
+.B upgrade
+takes before it renames the users) can hold a user whose name has a period.
+The restore reads it, with the user-name rule relaxed for the snapshot's store
+and nothing else, says which users have a period before the question and after
+the restore, and renders nothing and changes no backend's file, since no
+renderer writes such a name; the services keep the configuration they have, and
+a snapshot of that kind that enables a backend not running now is refused. The
+store then reads and every write to it is refused until
+.B upgrade
+renames the users (each period becomes
+.BR _ )
+and renders; it is also the way back when that rename stops half way.
 .\" BEGIN GENERATED: command backup restore
 .RS
 .PP
@@ -7217,7 +7230,11 @@ a user the snapshot gives an address and who exists now with none gets it
 so an address belongs to one user). A user who no longer exists, one who has
 another address now (the current one is kept) and an address another user holds
 now are skipped and named; a user who has the address already is nothing to
-do. Nothing is rendered or restarted. A snapshot of an older release that holds
+do. A user of the snapshot whose name has a period (a snapshot of 0.2.25 or
+earlier) is skipped and named, with a note that
+.B upgrade
+renames such users: a recovery adds no user, so no such name reaches the live
+store. Nothing is rendered or restarted. A snapshot of an older release that holds
 no address, or an old\-style backup, recovers nothing. The snapshot is looked up
 as every command that takes an id does: in
 .IR backups/ ,
