@@ -3,7 +3,7 @@ package lifecycle
 // The email address of a user (0.2.23, users.<name>.email in store.yaml) in a
 // rollback. Every release before 0.2.23 refuses the key ("user '<name>':
 // unknown field 'email'" on every store command, and 'backup restore'
-// refuses a snapshot that has it), so every target but 0.2.25, 0.2.24 and 0.2.23
+// refuses a snapshot that has it), so every target but 0.2.26, 0.2.25, 0.2.24 and 0.2.23
 // removes it from the store (store.RollbackEmail), after the snapshot --apply
 // takes first. Unlike the
 // files 0.2.22 reads as they are, this makes the 0.2.22 target convert a

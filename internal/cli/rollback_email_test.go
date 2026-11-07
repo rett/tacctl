@@ -74,7 +74,7 @@ func TestRollbackWithAnEmailWarnsSnapshotsAndRemovesTheKey(t *testing.T) {
 			for _, want := range []string{
 				"The email addresses of 2 users (bob, erin) were removed from the store; " + target + " does not know the key.",
 				"They are in snapshot " + id + ", which is kept in " + kept + " (no retention reaches it; " + target + " prunes backups/ by its own):",
-				"once 0.2.26 is installed again, 'tacctl backup recover " + id + " --only email' puts them back; 'tacctl backup unkeep " + id + "' removes the kept copy after that.",
+				"once 0.2.27 is installed again, 'tacctl backup recover " + id + " --only email' puts them back; 'tacctl backup unkeep " + id + "' removes the kept copy after that.",
 				"do not run 'tacctl user email' or 'tacctl user add --email'"} {
 				if !strings.Contains(out, want) {
 					t.Errorf("--apply lacks %q:\n%s", want, out)
@@ -141,7 +141,7 @@ func TestRollback0222SnapshotFollowsTheAddress(t *testing.T) {
 	hs.run(hs.runner(), "rollback", "0.2.22", "--apply", "--yes")
 	hs.expect(0, "Applying.", "")
 	out := hs.all()
-	if hs.snapshots() != snaps+1 || strings.Contains(out, "takes no snapshot") || !strings.Contains(out, "holds the 0.2.26 state. Restore it with 0.2.26 only") {
+	if hs.snapshots() != snaps+1 || strings.Contains(out, "takes no snapshot") || !strings.Contains(out, "holds the 0.2.27 state. Restore it with 0.2.27 only") {
 		t.Errorf("with an address (snapshots %d -> %d):\n%s", snaps, hs.snapshots(), out)
 	}
 	if o := hs.overrides(); strings.Contains(o, "email") {
