@@ -5161,7 +5161,8 @@ default 10 MiB) and the most reports a user keeps
 .RB ( reports.max_count ,
 default 100), and whether each is set or the default. 0 is no cap. A
 .B "device reports generate"
-over either limit is refused with the setting named, and nothing deletes a
+over either limit is refused with the setting named (its key above) and the
+command a superuser changes it with, and nothing deletes a
 report by age but
 .BR "device reports prune" .
 A user's own limit
@@ -14118,7 +14119,7 @@ says so, the report is made and the exit status is 1. With
 .B \-\-stdout
 the pull's output goes to standard error. A report over the largest size, or
 that would exceed the most reports a user keeps, is refused with the setting
-named and nothing written (see
+named (\fBreports.max_size\fR or \fBreports.max_count\fR) and nothing written (see
 .BR "config reports" ).
 .\" BEGIN GENERATED: command device reports generate
 .RS

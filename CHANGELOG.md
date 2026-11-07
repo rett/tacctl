@@ -143,8 +143,10 @@ current behaviour; this file is where history lives.
    generate` now refuses a report larger than `reports.max_size` (default 10
    MiB, which holds the inventory of about 20,000 devices) and a report that
    would make a user's reports more than `reports.max_count` (default 100),
-   names the setting and the way out (`device reports remove`, a narrower
-   `--scope`, or `--stdout`), and writes nothing. A superuser sets the two for
+   names the setting by its key in `tacctl.yaml` (`reports.max_size` or
+   `reports.max_count`) with the command a superuser changes it with
+   (`tacctl config reports max-size <bytes>`) and the way out (`device reports
+   remove`, a narrower `--scope`, or `--stdout`), and writes nothing. A superuser sets the two for
    the server with `tacctl config reports [show|max-size|max-count] [<value>]`
    (a size is bytes or a number with `Ki`, `Mi` or `Gi`, up to 1Gi; a count up
    to 100000; 0 is no cap; `tacctl.yaml` keys `reports.max_size` and

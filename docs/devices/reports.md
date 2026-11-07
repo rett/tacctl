@@ -210,7 +210,8 @@ The value that holds for a user is their own, else the server's, else the defaul
 
 ```
 [ERROR] Cannot save the report: that would be 2 reports, over the count limit of 1 reports
-    (the setting reports.max-count). Remove one with: tacctl device reports remove <name>
+    (the setting reports.max_count; a superuser changes it with:
+    tacctl config reports max-count <n>). Remove one with: tacctl device reports remove <name>
 [ERROR] Nothing was written.
 ```
 

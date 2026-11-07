@@ -363,8 +363,8 @@ func TestReportsPullNeedsTheEngineerTier(t *testing.T) {
 func TestReportsLimitText(t *testing.T) {
 	size := reportLimitText(reports.CheckLimits(11<<20, 1, reports.DefaultMaxSize, reports.DefaultMaxCount))
 	count := reportLimitText(reports.CheckLimits(10, 101, reports.DefaultMaxSize, reports.DefaultMaxCount))
-	for _, c := range []struct{ got, setting string }{{size, "reports.max-size"}, {count, "reports.max-count"}} {
-		if !strings.Contains(c.got, "the setting "+c.setting+")") || !strings.Contains(c.got, "tacctl device reports remove <name>") {
+	for _, c := range []struct{ got, setting, verb string }{{size, "reports.max_size", "max-size <bytes>"}, {count, "reports.max_count", "max-count <n>"}} {
+		if !strings.Contains(c.got, "(the setting "+c.setting+"; a superuser changes it with: tacctl config reports "+c.verb+")") || !strings.Contains(c.got, "tacctl device reports remove <name>") {
 			t.Errorf("%q", c.got)
 		}
 	}
@@ -399,7 +399,7 @@ func TestReportsCountLimitIsEnforced(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.as("bob", asOperator, "generate", "--type", "software")
-	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "that would be 101 reports, over the count limit of 100 reports (the setting reports.max-count). Remove one with: tacctl device reports remove <name>") {
+	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "that would be 101 reports, over the count limit of 100 reports (the setting reports.max_count; a superuser changes it with: tacctl config reports max-count <n>). Remove one with: tacctl device reports remove <name>") {
 		t.Errorf("%d %q", b.sb.code, b.sb.stderr())
 	}
 	if ents, _ := os.ReadDir(dir); len(ents) != 2*reports.DefaultMaxCount+1 {
@@ -651,7 +651,7 @@ func TestReportsFollowTheConfiguredLimits(t *testing.T) {
 		t.Fatal("the first report was refused")
 	}
 	b.as("bob", asOperator, "generate", "--type", "software")
-	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "the setting reports.max-count") {
+	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "the setting reports.max_count") {
 		t.Errorf("global count: %d %q", b.sb.code, b.sb.stderr())
 	}
 	b.sb.asAlice("", "user", "reports-limit", "bob", "max-count", "0")
@@ -662,7 +662,7 @@ func TestReportsFollowTheConfiguredLimits(t *testing.T) {
 	b.sb.asAlice("", "user", "reports-limit", "bob", "max-size", "1")
 	b.sb.expect(0, "", "")
 	b.as("bob", asOperator, "generate", "--type", "inventory")
-	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "reports.max-size") {
+	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "reports.max_size") {
 		t.Errorf("own size: %d %q", b.sb.code, b.sb.stderr())
 	}
 }
