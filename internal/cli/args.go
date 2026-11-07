@@ -72,6 +72,8 @@ const (
 	// KindShapes are the shapes 'device config apply' has seen (the hashes
 	// of the shape store), for 'device config shapes --show'.
 	KindShapes = "shapes"
+	// KindReports are the caller's own device reports ('device reports show').
+	KindReports = "reports"
 	// KindVendors is the fixed list of device vendors.
 	KindVendors = "cisco|juniper|wti|other"
 	// KindFile is a file or directory name: the shell completes paths.
