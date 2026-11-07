@@ -27,3 +27,27 @@ func (inv *invocation) globalReportLimits() (maxSize int64, maxCount int) {
 	}
 	return maxSize, maxCount
 }
+
+// effectiveReportLimits are the limits that hold for user: the user's own
+// override of either, else the global setting, else the default of
+// internal/reports. 0 is no cap. A store that cannot be read, a store without
+// the user and a user without an override give the global value; the override
+// of one limit leaves the other to the global value.
+func (inv *invocation) effectiveReportLimits(user string) (maxSize int64, maxCount int) {
+	maxSize, maxCount = inv.globalReportLimits()
+	m, err := inv.model()
+	if err != nil || m == nil {
+		return maxSize, maxCount
+	}
+	u := m.User(user)
+	if u == nil {
+		return maxSize, maxCount
+	}
+	if u.ReportsMaxSize != nil && *u.ReportsMaxSize >= 0 {
+		maxSize = *u.ReportsMaxSize
+	}
+	if u.ReportsMaxCount != nil && *u.ReportsMaxCount >= 0 {
+		maxCount = *u.ReportsMaxCount
+	}
+	return maxSize, maxCount
+}
