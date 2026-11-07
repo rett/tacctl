@@ -56,6 +56,29 @@ current behaviour; this file is where history lives.
    rollback` to any target no longer looks for one, and the manual page and the
    documentation lose the sentences about the tolerated user.
 
+4. **A good pull records the members of a Junos virtual chassis or a Cisco
+   stack.** `tacctl device config pull` recorded one model and one serial
+   number per device (the chassis's or the first unit's), nothing of the other
+   units of a stack or a virtual chassis. After the
+   configuration, the pull now also reads the units of the chassis, best effort
+   like the other facts: on Junos `show virtual-chassis status` (with the
+   `show chassis hardware` and `show version` it reads already), on IOS and
+   IOS-XE `show switch` (with `show inventory`, and, when a stack is found,
+   `show version` for the release of each switch). Each member is recorded with
+   its id, role (`master`, `backup`, `linecard` or `member`), model, serial
+   number, release, status (`Prsnt`, `Ready`) and priority, at most 32 per
+   device. A device that lists one unit, has no chassis, refuses a command or
+   prints something else has no members, never fails the pull, and a pull that
+   reads none leaves the list empty, never the old one. `device show` and
+   `device config show` print a `Chassis members:` table under the data block
+   (`ID`, `ROLE`, `MODEL`, `SERIAL`, `RELEASE`, `STATUS`, `PRIORITY`), and
+   `device show --json` has a `members` list of the same fields; they are shown
+   to the operator tier and up, as the release, model and serial number are.
+   They are also what the members report of `tacctl device reports` is made of
+   (item 5). An existing record has no members until its device is pulled
+   again, and nothing else about the record changes: the key `members` is
+   derived data that 0.2.25 ignores, so `tacctl rollback` leaves it.
+
 ## 0.2.25 (2026-11-05)
 
 1. **`tacctl device config shapes` keeps its table narrow.** The list put every

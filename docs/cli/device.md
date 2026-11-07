@@ -32,7 +32,9 @@ device show <name|address> [--all] [--json]
     and NAS-Identifier, the SNMP settings it is read with and where each comes from, the
     configuration of the last pull and the state of each section, then the `Release:`, `Model:` and
     `Serial:` rows that pull read from the device (left out when empty; all of this for the operator
-    tier and up), the open notices and how many are acknowledged; --all lists the acknowledged ones
+    tier and up), a `Chassis members:` table (`ID`, `ROLE`, `MODEL`, `SERIAL`, `RELEASE`,
+    `STATUS`, `PRIORITY`; `members` in `--json`) when that pull found a Junos virtual chassis or a
+    Cisco stack, the open notices and how many are acknowledged; --all lists the acknowledged ones
     too, marked)
 
 device add [<name>] <address>
@@ -518,9 +520,10 @@ device config show <name> [--protocol tacacs|radius] [--legacy] [--server <addre
                    [--source <address>]
 
     The device's data (name, address, hostname, vendor, scope and prefix, description, location),
-    then the walkthrough `tacctl config <vendor> --scope <its scope> --name <name>` prints, with the
-    device's own values in the SNMP step (engineers: their own scopes' devices; a vendor `other`, an
-    enrolled host or a device no scope covers is refused with the command that fixes it)
+    the `Chassis members:` table of its last pull when it has one, then the walkthrough
+    `tacctl config <vendor> --scope <its scope> --name <name>` prints, with the device's own values
+    in the SNMP step (engineers: their own scopes' devices; a vendor `other`, an enrolled host or a
+    device no scope covers is refused with the command that fixes it)
 
 device config pull <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale
                    | --differs | --name <text> | --ip <addr|cidr|text>

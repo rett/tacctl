@@ -9372,8 +9372,15 @@ pull), then what the device reported of itself at that pull as
 and
 .B Serial:
 rows (the OS release, the platform and the chassis serial number; a row is left
-out when the pull did not read it; a WTI unit has a release only), and
-the open notices with a count of the acknowledged ones
+out when the pull did not read it; a WTI unit has a release only), a
+.B "Chassis members:"
+table under the data block when that pull found a Junos virtual chassis or a
+Cisco stack (the columns ID, ROLE, MODEL, SERIAL, RELEASE, STATUS and PRIORITY;
+the
+.B members
+list of
+.BR \-\-json ),
+and the open notices with a count of the acknowledged ones
 .RB ( \-\-all
 lists them too, marked). It warns when the
 vendor tag and the registered vendor disagree.
@@ -11366,8 +11373,9 @@ Test the AAA source addresses: read the host key, never log in.
 .TP
 .BI "device config show " name " [ \-\-protocol tacacs|radius ] [ \-\-legacy ] [ \-\-server " "address|name" " ] [ \-\-source " address " ]"
 Print what is registered for the device (name, address, hostname, vendor, the
-scope that covers its address and the prefix, description, location), then the
-walkthrough of its vendor for that scope, exactly as
+scope that covers its address and the prefix, description, location), the
+.B "Chassis members:"
+table of its last pull when it has one, then the walkthrough of its vendor for that scope, exactly as
 .B config cisco|juniper|wti
 prints it with
 .B \-\-scope
@@ -11603,6 +11611,50 @@ on IOS and IOS\-XE (the first entry's PID and SN). A device that refuses a
 command, or answers text that holds none, leaves the field empty: the pull does
 not fail and its result is unchanged, and a command that stalls takes it at
 most 15 seconds more. A WTI unit has a release only.
+.PP
+A good pull also records the members of a chassis, the units of a Junos virtual
+chassis or of a Cisco stack, replaced by every good pull and read the same way
+(best effort, in the same session, after the facts above). On Junos
+.B "show virtual-chassis status"
+gives the members (id, status, priority and the role master, backup or
+linecard), joined by member id with the FPC rows of
+.B "show chassis hardware"
+(model and serial number) and the
+.B fpcN:
+blocks of
+.B "show version"
+(release). On IOS and IOS\-XE
+.B "show switch"
+gives the switches (number, role Master, Member or Standby, priority and
+state), joined with the
+.B "Switch N"
+entries of
+.B "show inventory"
+(PID and SN) and, when a stack was found, with the per\-switch table of
+.B "show version"
+(release). A member has an id, a role
+.RB ( master ,
+.BR backup ,
+.B linecard
+or
+.BR member ;
+any other role text a vendor prints is kept in the status), a model, a serial
+number, a release, a status and a priority (0 when the vendor prints none), at
+most 32 members per device. A device that lists one unit, a refused command, an
+answer that is not what the command prints, a WTI unit and a vendor
+.B other
+leave the list empty, and a pull that reads none never keeps the old list. The
+members are in
+.B "device show"
+and
+.BR "device config show" ,
+for the operator tier and up, and are what the
+.B members
+report of
+.B "device reports"
+is made of. A release before 0.2.26 ignores the key, so
+.B "tacctl rollback"
+leaves it.
 .PP
 A Cisco device stores some typed lines in another form, which the comparison
 takes as the typed ones: a standard ACL entry "permit host A" or
