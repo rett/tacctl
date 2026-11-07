@@ -29,7 +29,7 @@ var deviceReportsSpecs = map[string]Spec{
 	"generate": {MaxArgs: 0, Flags: []Flag{
 		{Names: []string{"--type"}, Value: true, Kind: "inventory|members|software|config", Arg: "inventory|members|software|config",
 			Desc: "Make this type of report (required)",
-			Long: "The type of report: inventory (one row per device), members (one row per chassis member), software (one row per device: model and release) or config (one row per device: the state of its last pull). A device that was never pulled is a row with empty facts, never left out"},
+			Long: "The type of report: inventory (one row per device), members (one row per chassis member), software (one row per device: model and release) or config (one row per device: the state of its last pull). Inventory, software and config have a row for every device, a device that was never pulled with empty facts; members has rows for the devices that have a model or a serial number, so a device with neither is not in it"},
 		{Names: []string{"--scope"}, Value: true, Kind: KindScopes, Arg: "<scope>", Desc: "Only the devices that scope answers",
 			Long: "Only the devices that scope answers. A scope that is not one of yours is refused"},
 		{Names: []string{"--vendor"}, Value: true, Kind: KindVendors, Arg: "cisco|juniper|wti|other", Desc: "Only the devices of that vendor"},

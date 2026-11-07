@@ -131,8 +131,11 @@ current behaviour; this file is where history lives.
    row, from its own model and serial number), `software` the model and release
    of each device, and `config` the state `device config list` shows, with the
    dates of the pull and the apply. A device that was never pulled is a row with
-   empty facts and `never`, not left out, every row carries the date of the pull
-   its facts came from, and the heading gives the date of the oldest datum.
+   empty facts and `never` in the `inventory`, `software` and `config` reports,
+   not left out (the `members` report lists the devices that have a model or a
+   serial number, so a device with neither is not in it), every row carries the
+   date of the pull its facts came from, and the heading gives the date of the
+   oldest datum.
    `--format text|csv|json` (text is the default; a CSV cell that starts with
    `=`, `+`, `-` or `@` is quoted with a leading `'`, so that a spreadsheet does
    not run it; a JSON report is one object with `schema`, `type`, `generated`,

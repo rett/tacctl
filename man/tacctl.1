@@ -14183,7 +14183,7 @@ Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show
 Options:
 .TP
 \fB\-\-type\fR \fIinventory|members|software|config\fR
-The type of report: inventory (one row per device), members (one row per chassis member), software (one row per device: model and release) or config (one row per device: the state of its last pull). A device that was never pulled is a row with empty facts, never left out.
+The type of report: inventory (one row per device), members (one row per chassis member), software (one row per device: model and release) or config (one row per device: the state of its last pull). Inventory, software and config have a row for every device, a device that was never pulled with empty facts; members has rows for the devices that have a model or a serial number, so a device with neither is not in it.
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
 Only the devices that scope answers. A scope that is not one of yours is refused.
