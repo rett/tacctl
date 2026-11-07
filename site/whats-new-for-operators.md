@@ -24,7 +24,56 @@ first.
 
 ---
 
-## 1. tacctl 0.2.25
+## 1. tacctl 0.2.26
+
+Released 2026-11-06 ·
+[Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.26.md)
+
+| Change | What it means on shift | Page |
+|---|---|---|
+| **`device reports`** | `device reports generate --type inventory\|members\|software\|config` makes a saved, dated report of your devices from what tacctl already stores, with no login: `--format text\|csv\|json`, `--scope`, `--vendor`, `--stdout` to print instead of save. The file is `~/reports/devices/<type>-<yyyymmdd>.<ext>` in your own home. `list`, `show`, `export`, `rename`, `remove` and `prune` look after them. Every tier runs all of it for its own reports; only `generate --pull` (read the devices first, with your password) is the engineer's | [Day-to-Day Device Operations](day-to-day-device-operations.md) §1.6, [Engineer Guide](engineer-guide-device-changes.md) §3.2 |
+| **Chassis members** | A good `device config pull` records the members of a Junos virtual chassis or a Cisco stack (id, role, model, serial number, release, status, priority). `device show` and `device config show` print a `Chassis members:` table (operator tier and up), `device show --json` has `members`, and the `members` report has a row for each. A device has none until it is pulled again | [Vendor Notes](vendor-notes.md) §2.5, §3.3 |
+| **Reports are limited** | `generate` refuses a report over `reports.max_size` (10 MiB) and one that would make a user's reports more than `reports.max_count` (100), says which setting and how to get out, and writes nothing. A superuser sets the server's limits with `config reports` and one user's with `user reports-limit` | [Superuser Daily Operations](superuser-daily-operations.md) §4.11 |
+| **Old reports** | `device reports prune --older-than 30d` lists and removes the reports made longer ago than that, after one question (`--dry-run` only lists). Nothing prunes by itself | [Day-to-Day Device Operations](day-to-day-device-operations.md) §1.6 |
+| **A superuser reaches other users' reports, and it is audited** | `list --user <name>`, `list --all-users`, `<user>/<report>` and `prune --user` or `--all-users`. Each writes one `device reports access` line before anything is read, never a content, and with `audit.strict` an access whose line cannot be written is refused | [Superuser Daily Operations](superuser-daily-operations.md) §4.11, [Audit and Compliance](audit-and-compliance.md) §3 |
+| **`tacctl upgrade` renames users whose name has a period** | 0.2.20 and 0.2.21 allowed one; the upgrade used to refuse. Each period becomes `_` (`alice.smith` becomes `alice_smith`), with a snapshot first. If the new name is taken the user gets `_` and four random characters (`alice_smith_k3x9`). Tell the people to log in with the new name | [Access Lifecycle](access-lifecycle.md) §2 |
+| **A period in a user name is refused everywhere** | Every `user` verb, `passwd` and `config linux uid` refuse it, existing or not. `config validate` and `rollback` no longer look for such a user | [Access Lifecycle](access-lifecycle.md) §2 |
+| **`backup restore` and `recover` of an older snapshot** | A snapshot that holds a user with a period still restores: nothing is rendered, the console settings of that user are dropped, and `tacctl upgrade` then renames the user. A recovery skips such a user and names it | [Backups and Undo](backups-and-undo.md) §4.4 |
+| **Break-glass firewall line** | `upgrade` and `install` print one short sentence: `Break-glass firewall: loaded (reject on tcp/49), no address held.` or, with an address held, `Break-glass firewall: 192.0.2.10 refused on tcp/49 (reject).` | [Break Glass](break-glass.md) §2.1 |
+| A name in use | The refusal names the way on that fits the command: `--force` for `export --out` and `plan --out`, another `--name` for `generate`, another new name for `rename` | [Day-to-Day Device Operations](day-to-day-device-operations.md) §1.6 |
+| `tacctl rollback 0.2.25` | The release before this one is a target. It removes the limits of the stored reports (and puts back the sudoers drop-in 0.2.25 wrote); the other targets remove the limits too | [Backups and Undo](backups-and-undo.md) §5 |
+
+> **Before upgrading from 0.2.25:**
+>
+> - `tacctl upgrade` renames every user whose name has a period, with a
+>   snapshot it names (`snapshot <id> holds the state before the rename`);
+>   with no such user it takes none and prints nothing. Read its lines: each
+>   rename is one line, and a name that was taken is `alice_smith_k3x9` and
+>   says why. The people must log in with the new name, the name typed at a
+>   device's login. No Linux account is renamed (a name with a period never
+>   had one); the new name gets its account at the next sync. A new name with
+>   upper case letters, or longer than 32 characters, can never have an
+>   account: the upgrade lists each such user with the reason and the fix.
+> - A name that is not a user name even with the periods replaced (one with a
+>   space, say) stops the upgrade before any change and names the key to edit
+>   in the store; run it again afterwards.
+> - A snapshot taken by 0.2.25 or earlier can hold such a user. It restores
+>   (`tacctl backup restore <id>`), but the store then refuses every write
+>   until `tacctl upgrade` has renamed the user. The snapshot the upgrade
+>   takes before a rename is one of them.
+> - Nothing else is converted. The limits of the stored reports are written
+>   only when set, a device has no chassis members until it is pulled again,
+>   and the first report creates `~/reports/devices/`.
+> - After `tacctl rollback 0.2.25` and the install of 0.2.25, the limits are
+>   removed (a user's own limit needs `--yes`, and the dry run names the user
+>   and the values); 0.2.25 has no `config reports` or `user reports-limit`.
+>   The chassis members of the pull records and every report in the users'
+>   homes stay: they are the users' own files, and 0.2.25 cannot list or
+>   remove the reports.
+
+---
+
+## 2. tacctl 0.2.25
 
 Released 2026-11-05 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.25.md)
@@ -51,7 +100,7 @@ Released 2026-11-05 ·
 
 ---
 
-## 2. tacctl 0.2.24
+## 3. tacctl 0.2.24
 
 Released 2026-11-05 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.24.md)
@@ -94,7 +143,7 @@ Released 2026-11-05 ·
 >   device whose `single-connection` was removed, 0.2.23's `diff` and `plan`
 >   show the line as missing, and applying that plan types it again.
 
-## 3. tacctl 0.2.23
+## 4. tacctl 0.2.23
 
 Released 2026-10-31 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.23.md)
@@ -131,7 +180,7 @@ Released 2026-10-31 ·
 >   again. The rollback is refused while an emergency lockdown has enrolled
 >   hosts: lift it and sync the hosts first.
 
-## 4. tacctl 0.2.22
+## 5. tacctl 0.2.22
 
 Released 2026-10-29 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.22.md)
@@ -192,7 +241,7 @@ sub-commands, and the one-letter form of `--yes` is refused:
 >   date until its first render writes its own comment, which restarts
 >   tacquito once; the rollback itself restarts nothing.
 
-## 5. tacctl 0.2.21
+## 6. tacctl 0.2.21
 
 Released 2026-10-28 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.21.md)
@@ -213,7 +262,7 @@ Released 2026-10-28 ·
 > `config validate` stop with one line. **After it,** check the line about
 > the machine's own login, and run `tacctl host sync <server>` as before.
 
-## 6. tacctl 0.2.20
+## 7. tacctl 0.2.20
 
 Released 2026-10-28 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.20.md)
@@ -246,7 +295,7 @@ sub-commands:
 > and not before. No existing user must change their password until a
 > superuser says so.
 
-## 7. tacctl 0.2.19
+## 8. tacctl 0.2.19
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.19.md)
 
@@ -259,7 +308,7 @@ sub-commands:
 | Host names may contain dots | `tacctl host rename web1 web1.example.net` works | [Linux Host Operations](linux-host-operations.md) |
 | Unknown commands answered first | A mistyped command is answered before `sudo` asks for a password | — |
 
-## 8. tacctl 0.2.18
+## 9. tacctl 0.2.18
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.18.md)
 
@@ -278,7 +327,7 @@ you may have meant (`tacctl enroll` suggests `device enroll` and
 `host enroll`). Every tier can run `device notice list` and
 `device client-config`.
 
-## 9. tacctl 0.2.17
+## 10. tacctl 0.2.17
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.17.md)
 
@@ -294,7 +343,7 @@ you may have meant (`tacctl enroll` suggests `device enroll` and
 
 ---
 
-## 9. Older releases
+## 11. Older releases
 
 Releases 0.2.0 to 0.2.16 are listed on the
 [releases page](https://github.com/rett/tacctl/releases), and every change is
