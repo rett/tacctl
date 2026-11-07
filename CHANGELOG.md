@@ -105,8 +105,10 @@ current behaviour; this file is where history lives.
    version` it reads already), on IOS and IOS-XE `show switch` (with `show
    inventory`, and, when a stack is found, `show version` for the release of
    each switch). Each member is recorded with its id, role (`master`, `backup`,
-   `linecard` or `member`), model, serial number, release, status (`Prsnt`,
-   `Ready`) and priority, at most 32 per device. A device that lists one unit,
+   `linecard` or `member`; Cisco `Master`, and `Active` as IOS-XE 16.x and
+   later (Catalyst 3650, 3850, 9000) print it, are `master`, and `Standby` is
+   `backup`, the words Junos uses), model, serial number, release, status
+   (`Prsnt`, `Ready`) and priority, at most 32 per device. A device that lists one unit,
    has no chassis, refuses a command or prints something else has no members,
    never fails the pull, and a pull that reads none leaves the list empty, never
    the old one. `device show` and `device config show` print a `Chassis

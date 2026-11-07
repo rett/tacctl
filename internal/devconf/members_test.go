@@ -123,6 +123,13 @@ func TestIOSMembers(t *testing.T) {
 			[]Member{{ID: "1", Role: "master", Model: "WS-C3750G-24PS-S", Serial: "SN000004", Status: "Ready", Priority: 15},
 				{ID: "2", Role: "member", Status: "Ready", Priority: 14},
 				{ID: "3", Role: "backup", Model: "WS-C3750G-24PS-S", Serial: "SN000006", Status: "Ready", Priority: 13}}},
+		{"IOS-XE 16.x prints Active for the master", vcFixture(t, "synthetic-iosxe-show-switch-active-3.txt"), "", "", []Member{
+			{ID: "1", Role: "master", Status: "Ready", Priority: 15},
+			{ID: "2", Role: "backup", Status: "Ready", Priority: 14},
+			{ID: "3", Role: "member", Status: "Ready", Priority: 1}}},
+		{"the role words in any case", "*1 ACTIVE 0000.5e00.5301 15 V01 Ready\n 2 standby 0000.5e00.5302 14 V01 Ready\n", "", "", []Member{
+			{ID: "1", Role: "master", Status: "Ready", Priority: 15},
+			{ID: "2", Role: "backup", Status: "Ready", Priority: 14}}},
 		{"a switch that is provisioned and a role of an unknown kind",
 			"*1       Master 0000.5e00.5301     15     V01     Ready\n 2       Member 0000.0000.0000      0      0      Provisioned\n 3       Unknown 0000.5e00.5303     1     V01     HA sync in progress\n", "", "",
 			[]Member{{ID: "1", Role: "master", Status: "Ready", Priority: 15},
