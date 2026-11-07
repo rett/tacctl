@@ -10,12 +10,13 @@ import (
 // 'tacctl rollback 0.2.24', the release before this one, on the host sandbox
 // with this server enrolled. The plan's own cases are internal/lifecycle's.
 
-// rollback0224State is rollback0221State with this release's per-tier sudoers
-// drop-in, which 0.2.24 wrote too: the rollback to 0.2.24 leaves it.
+// rollback0224State is rollback0221State with the per-tier sudoers drop-in
+// 0.2.24 and 0.2.25 wrote (no row of 'device reports'), which the rollback to 0.2.24
+// and 0.2.25 leaves.
 func rollback0224State(t *testing.T) *hostSandbox {
 	t.Helper()
 	hs := rollback0221State(t)
-	hs.write("sudoers.d/tacctl-tiers", tier.Sudoers(), 0o640)
+	hs.write("sudoers.d/tacctl-tiers", tier.Sudoers0225(), 0o640)
 	return hs
 }
 
@@ -116,7 +117,7 @@ func TestRollback0224LeavesTheDropIn(t *testing.T) {
 	before := tree(t, hs.dir)
 	hs.run(hs.runner(), "rollback", "0.2.24", "--apply")
 	hs.expect(0, "Nothing to convert: every file is one 0.2.24 can read.", "")
-	if got := hs.read("sudoers.d/tacctl-tiers"); got != tier.Sudoers() {
+	if got := hs.read("sudoers.d/tacctl-tiers"); got != tier.Sudoers0225() {
 		t.Errorf("the tiers drop-in changed:\n%s", got)
 	}
 	if got := changedFiles(before, tree(t, hs.dir)); len(got) != 0 {
