@@ -168,8 +168,8 @@ rendered or legacy file cannot hold them). `user show` prints a `Report max-size
 max-count:` line for a user who has an own limit, to every tier that can run `user show`; the
 accounting sink takes none. Setting a limit renders and restarts nothing and takes a snapshot, like
 any change of the store, and writes the detail line `user reports-limit name= key=max-size|max-count
-op=set|clear value=`. A release before 0.2.26 refuses the fields, so every `tacctl rollback` target
-removes them after a snapshot, needs `--yes` while a user has one and names the users (see
+op=set|clear value=`. A release before 0.2.26 refuses the fields, so every `tacctl rollback` target before 0.2.26
+(0.2.25 and older; `rollback 0.2.26` keeps them) removes them after a snapshot, needs `--yes` while a user has one and names the users (see
 [Rolling back](../install/upgrading.md#rolling-back)).
 
 ```
@@ -211,7 +211,7 @@ only when set, so a store without one is unchanged. No mail is sent to it.
   in any other `user` verb, and `…(redacted)` in place of the rest. Like any
   word on a command line it is in sudo's own log.
 - *Older releases.* A release before 0.2.23 refuses the key, so every `tacctl
-  rollback` target but 0.2.25, 0.2.24 and 0.2.23 (which read it) removes it after a
+  rollback` target but 0.2.26, 0.2.25, 0.2.24 and 0.2.23 (which read it) removes it after a
   snapshot that it keeps, and names the users; `backup recover` puts the addresses back (see
   [Rolling back](../install/upgrading.md#rolling-back)).
 
@@ -343,7 +343,7 @@ only when set.
   the reason in `user show`), and one whom devices of a shared scope still accept `flagged, devices in
   a scope shared with the server still accept the password`; `status` names both groups.
 - *Older releases.* A release before 0.2.20 refuses the key, so every `tacctl rollback` target
-  but 0.2.24 to 0.2.20 (which read it) removes it after a snapshot and warns which users get their device access back (see
+  but 0.2.26 to 0.2.20 (which read it) removes it after a snapshot and warns which users get their device access back (see
   [Rolling back](../install/upgrading.md#rolling-back)).
 
 **A hash kept off the command line.** `--hash -` reads the hash from one line
