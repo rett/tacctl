@@ -130,6 +130,9 @@ $J | grep -E 'backup (keep|unkeep|recover)'      # snapshots kept, dropped or re
 $J | grep 'user email'                           # email changes (op=set|clear, never the address)
 $J | grep -E 'device (clone|replace)'            # a device copied at a bench address, then moved in
 $J | grep 'device config apply'                  # device changes: review, approval, apply
+$J | grep 'device reports access'                # a superuser's reach into other users' reports
+$J | grep -E 'device reports (generate|rename|remove|prune) '   # a user's own reports
+$J | grep -E 'config reports|user reports-limit' # changes of the limits of the stored reports
 $J | grep 'scope mgmt-acl scope=.* op=mode'      # Junos filter mode changes (value=strict|ssh-only)
 $J | grep -E 'server (addresses|listen|metrics|name)'   # changes of this server's settings
 $J | grep 'group edit'                           # privilege or tier changes to groups
@@ -145,6 +148,28 @@ same way: `scope timeout-scale` writes `scope=`, `from=` and `to=`,
 `device timeout-scale` a `device set` line (`name`, `field=timeout-scale`,
 `from`, `to`), and `config devices timeout-scale` a `config devices` line with
 `key`, `from` and `to`.
+
+**Reports.** A superuser who reads or changes another user's device reports
+(`device reports list --user` or `--all-users`, and `show`, `export`,
+`rename`, `remove` and `prune` of `<user>/<report>`, `--user` or
+`--all-users`) writes one line **before** anything is listed, shown or
+changed, at `auth.notice`, and never a content:
+
+```
+device reports access verb=show owner=bob report=inventory-20261106 by=alice sid=k3x9a0bq
+device reports access verb=prune owner=bob count=2 by=alice sid=k3x9a0bq
+```
+
+`verb` is `list`, `show`, `export`, `rename`, `remove`, `prune` or
+`prune-dry-run`; `list --all-users` has `owner=*`, and a `prune` writes a
+line for each user, with `count=` and never a report name. With
+`audit.strict` on, an access whose line cannot be written is refused. A
+user's own reports write a detail line only when something changes:
+`device reports generate type= name= format= rows=`, `rename name= new=`,
+`remove name=` and `prune older-than= removed=`. `config reports` writes
+`key=max_size|max_count from= to=` and `user reports-limit` writes `name=
+key=max-size|max-count op=set|clear` and `value=` for a set
+([Superuser Daily Operations](superuser-daily-operations.md) §4.11).
 
 > A `cmd start` with no matching `cmd end` means the command did not finish
 > (killed, crash, power loss). The snapshot named on its lines holds the
@@ -165,6 +190,7 @@ same way: `scope timeout-scale` writes `scope=`, `from=` and `to=`,
 | Emergency access use | `grep -E 'breakglass\|emergency lockdown'`, with reason, duration and person |
 | Device configuration changes | `grep 'device config apply'` (`mode=attended` = names typed back) |
 | Commands run on devices | `tacctl log accounting` |
+| Who looked at another user's device reports | `grep 'device reports access'` (verb, owner, report, by); never the content |
 | Failed/denied attempts | `tacctl log failures`; `grep DENY` |
 | Changes can be rolled back | `tacctl backup list`; the `snapshot=` on each `cmd end` ([Backups and Undo](backups-and-undo.md)) |
 
@@ -181,10 +207,12 @@ same way: `scope timeout-scale` writes `scope=`, `from=` and `to=`,
    scopes without break-glass local users).
 6. `$J | grep 'secret-read'`: every secret view is explained.
 7. `$J | grep DENY`: look for repeated refusals of one person (probing).
-8. `tacctl device config list --differs`: devices drifting from the
+8. `$J | grep 'device reports access'`: every look at another user's device
+   reports is explained.
+9. `tacctl device config list --differs`: devices drifting from the
    standard.
-9. `tacctl host check --all`: Linux hosts match.
-10. Save the outputs with the date as review evidence.
+10. `tacctl host check --all`: Linux hosts match.
+11. Save the outputs with the date as review evidence.
 
 ---
 
@@ -194,7 +222,9 @@ Passwords, hashes and shared secrets never appear in any line. Values passed
 with `--hash`, `--secret`, `scope secret … set` and similar options are
 replaced with `<redacted>`. So are a user's email address (`--email` of
 `user add`, the address of `user email`: the detail line says only
-`op=set` or `op=clear`) and the `--note` of `backup keep`.
+`op=set` or `op=clear`) and the `--note` of `backup keep`. The audit lines of
+`device reports` say who, whose and which report, never what a report holds,
+and no report holds a secret, a hash or a community string.
 
 Free text **is** logged as typed: `--reason` for lockdowns and holds, and
 arguments after `--` on `ssh`. **Never put secrets in a reason.**

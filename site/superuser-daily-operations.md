@@ -184,6 +184,10 @@ one, and compares its ssh host key with the pinned one. A source that does not
 answer, or presents another key, is a warning; nothing is pinned or changed
 ([Engineer Guide](engineer-guide-device-changes.md) §3.1).
 
+To keep what these lists show (the model, serial number and release of every
+device, the members of a chassis, the state of the configuration), make a
+saved, dated report with `tacctl device reports generate` (§4.11).
+
 ### 4.2 Register a new device
 
 ```bash
@@ -363,6 +367,96 @@ tacctl config snmp test sw1                      # read one device and say which
   level; going back to an earlier release drops the extra users
   ([Backups and Undo](backups-and-undo.md) §4.3 puts them back).
 
+### 4.11 Device reports: limits and other users' reports
+
+Every user makes, reads and removes their own device reports; the commands
+are in [Day-to-Day Device Operations](day-to-day-device-operations.md) §1.6.
+Two things are the superuser's: the limits on what a user may keep, and
+reaching the reports of other users. A superuser's own report holds every
+device of every scope.
+
+**The limits.** A directory of reports must not grow without bound.
+`device reports generate` refuses a report over the size limit and one that
+would make a user's reports more than the count limit.
+
+```bash
+tacctl config reports                          # both limits, and whether each is set
+tacctl config reports max-size 20Mi            # the largest report: bytes, Ki, Mi or Gi (to 1Gi)
+tacctl config reports max-count 200            # the most reports one user keeps (up to 100000)
+tacctl user reports-limit carol max-count 10   # a limit of carol's own
+tacctl user reports-limit carol                # what holds for carol, and where it comes from
+tacctl user reports-limit carol clear          # carol follows the server's limits again
+```
+
+- The defaults are 10 MiB (the inventory of about 20,000 devices) and 100
+  reports. `0` is no cap, and an own `0` lifts a limit for that one user.
+- A user's own limit wins for that user and the other limit stays the
+  server's. `clear` after a limit removes that one, `clear` after the name
+  removes both. `user show` prints a `Report max-size:` and a `Report
+  max-count:` line for a user who has an own limit.
+- A refused `generate` names the setting (`reports.max_size` or
+  `reports.max_count`) and the command that changes it, and writes nothing.
+  The way out is to remove reports, to narrow the report with `--scope` or
+  `--vendor`, or to print it with `--stdout`, which has no limit.
+- The limits count the reports tacctl made (the files with a valid `.meta`
+  file). They are a guard rail against growth, not a quota enforced against
+  someone who edits their own directory. Nothing deletes a report to make
+  room, and nothing by age but `device reports prune`.
+- The settings are `reports.max_size` and `reports.max_count` of
+  `tacctl.yaml` and the fields `reports_max_size` and `reports_max_count` of a
+  user in `store.yaml`; both are written only when set. A limit restarts
+  nothing. Going back to 0.2.25 removes them
+  ([Backups and Undo](backups-and-undo.md) §5).
+
+**Other users' reports.** The reports are files in each user's home, and a
+superuser can reach them without logging in as the user:
+
+```bash
+tacctl device reports list --user bob            # bob's reports
+tacctl device reports list --all-users           # everyone's, with a USER column
+tacctl device reports show bob/inventory-20261106 --content
+tacctl device reports export bob/inventory-20261106 --out bob-inventory.txt
+tacctl device reports rename bob/inventory-20261106 inventory-checked
+tacctl device reports remove bob/inventory-20261106
+tacctl device reports prune --all-users --older-than 90d --dry-run
+```
+
+- A report is readable whatever devices it holds: a superuser is not held to
+  a user's scopes. Anyone else who names another user's report, or asks for
+  another user's list, is refused with `... is the superuser's: you reach your
+  own reports only. Nothing was done.`
+- Nothing writes a report into another user's home, and there is no
+  `generate --as`: a user makes their own reports, and a superuser already
+  makes one of every scope.
+- What another user wrote is not trusted with your terminal. Exporting
+  another user's report to the standard output, and `list --json`, replace
+  control and formatting characters, escape sequences and line separators with
+  `?`, for a report and for a file that is no report alike (the user makes the
+  `.meta` file too, so it does not vouch for the content). `export --out`
+  copies the bytes as they are.
+- A link, a FIFO or a device node in the directory is refused with its name:
+  only a regular file is read, so that a file a user grew cannot exhaust the
+  memory of the process that reads it.
+
+**Every access is audited.** Each of these verbs writes one line at
+`auth.notice` **before** anything is read or changed, with who, whose and
+which, and never the contents:
+
+```
+device reports access verb=show owner=bob report=inventory-20261106 by=alice sid=k3x9a0bq
+device reports access verb=list owner=* report=* by=alice sid=k3x9a0bq
+device reports access verb=prune owner=bob count=2 by=alice sid=k3x9a0bq
+```
+
+`verb` is `list`, `show`, `export`, `rename`, `remove`, `prune` or
+`prune-dry-run`. `list --all-users` writes one line with `owner=*`, and a
+`prune` one line for each user, with the number of reports and never their
+names. With `audit.strict` on, an access whose line cannot be written is
+refused before anything is shown
+([Audit and Compliance](audit-and-compliance.md) §3). A user's own
+`generate`, `rename`, `remove` and `prune` write detail lines only when
+something changes; `list`, `show` and `export` of your own write none.
+
 ---
 
 ## 5. Linux hosts
@@ -506,9 +600,11 @@ The console is the login shell of every tacctl user on the tacctl server,
 of every tier; there is no switch for it, and the user's scopes play no part:
 every user can log in to the server and its console unless disabled
 (`user disable`) or in a group of tier none. The accounts follow at the next
-`host sync` of the server; a user stored with a period in the name (0.2.20
-and 0.2.21 allowed it) has no Linux account on any host, so no console login. Local accounts that are not tacctl
-users keep their own shells.
+`host sync` of the server; a user whose name has upper case letters (a name
+from before new names became lower case) is no Linux account name, so the sync
+skips it with a warning and that user has no console login until
+`tacctl user rename` gives it a lower case name. Local accounts that are not
+tacctl users keep their own shells.
 
 ```bash
 tacctl console show       # the settings, each user's shell and system-shell access, and why
@@ -689,6 +785,9 @@ ports ([Engineer Guide](engineer-guide-device-changes.md) §4.1).
 | Re-pin host key | `tacctl device hostkey <name> set SHA256:<fp>` |
 | AAA config drift | `tacctl device config pull --scope <s>` then `device config list --differs` |
 | Fix plan | `tacctl device config plan <name>` |
+| Saved report of every device | `tacctl device reports generate --type inventory\|members\|software\|config` |
+| Another user's reports | `tacctl device reports list --user <name>` · `--all-users` · `show <user>/<report>` (audited) |
+| Limits of the stored reports | `tacctl config reports [max-size\|max-count] [<value>]` · `tacctl user reports-limit <name> [max-size\|max-count] [<value>\|clear]` |
 | Which scope owns an IP | `tacctl scope lookup <ip>` |
 | Junos filter mode | `tacctl scope mgmt-acl <s> mode ssh-only\|strict` |
 | Lockdown (preview) | `tacctl emergency lockdown <scope> enable --dry-run` |
