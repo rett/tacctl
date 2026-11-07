@@ -1,12 +1,12 @@
 ---
-title: "Home"
+title: "tacctl documentation"
 description: "The tacctl operations documentation: where to start, by role and by situation"
 nav_order: 1
 permalink: "/"
 doctype: reference
 ---
 
-# Home
+# tacctl documentation
 
 *The tacctl operations documentation: where to start, by role and by situation · Checked against tacctl 0.2.25*
 
