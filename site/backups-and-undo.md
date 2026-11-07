@@ -324,8 +324,8 @@ you add `--yes`:
 
 | The dry run warns of | What happens after the rollback | What to do first |
 |---|---|---|
-| Users who log in to the server and lack its scope (every target but `0.2.23`, `0.2.22` and `0.2.21`) | The plan adds the scope of the server's own login (`tacctl`) to the scopes of each, and names them, because an older release answers that login only for users who have it. A warning, so `--apply` needs `--yes`. | Nothing: it is part of the rollback |
-| Users with an email address, or SNMPv3 users beyond one per level (every target but `0.2.23`) | They are removed, and the rollback keeps the snapshot that holds them | After the upgrade, `tacctl backup recover <snapshot>` (§4.3) |
+| Users who log in to the server and lack its scope (every target but `0.2.25`, `0.2.24`, `0.2.23`, `0.2.22` and `0.2.21`) | The plan adds the scope of the server's own login (`tacctl`) to the scopes of each, and names them, because an older release answers that login only for users who have it. A warning, so `--apply` needs `--yes`. | Nothing: it is part of the rollback |
+| Users with an email address, or SNMPv3 users beyond one per level (every target but `0.2.25`, `0.2.24` and `0.2.23`) | They are removed, and the rollback keeps the snapshot that holds them | After the upgrade, `tacctl backup recover <snapshot>` (§4.3) |
 | Users with a limit of their own for the stored reports (every target) | The limits are removed (`--apply` needs `--yes`), and the snapshot holds them. The dry run names each user with the values; the audit line names the users, never a value | After the upgrade, set them again with `tacctl user reports-limit` (`backup recover` does not bring them back) |
 | Users who must change their password | The requirement is removed. Once the older release renders, those users (superusers aside) can log in to the devices with the password they were to change. | Have them change it, or keep this release |
 | Scopes with a strict Junos management filter | The mode is removed. The older release plans the `ssh-only` filter, which accepts by default again. | Keep this release, or leave those scopes' filters out of the older release's plans |
