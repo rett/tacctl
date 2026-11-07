@@ -292,8 +292,10 @@ func JunosMembers(vcStatus, hardware, version string) []Member {
 
 var (
 	// reIOSSwitchRow is a row of 'show switch': '*1  Master 0000.5e00.5301
-	// 15  V01  Ready' (the star marks the local switch).
-	reIOSSwitchRow = regexp.MustCompile(`^\*?\s*(\d+)\s+(\S+)\s+[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}\s+(\d+)\s+\S+\s+(\S.*)$`)
+	// 15  V01  Ready' (the star marks the local switch). The H/W version
+	// column may be blank ('4  Member 0000.0000.0000  1  Provisioned'): the
+	// word after the priority is then the state.
+	reIOSSwitchRow = regexp.MustCompile(`^\*?\s*(\d+)\s+(\S+)\s+[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}\s+(\d+)\s+(?:\S+\s+)?(\S.*)$`)
 	reIOSName      = regexp.MustCompile(`(?i)^NAME:\s*"\s*(?:Switch\s+)?(\d+)\s*"`)
 	// reIOSVersionHead is the header of the per-switch table of 'show
 	// version', 'Switch Ports Model SW Version SW Image'.

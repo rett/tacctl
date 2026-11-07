@@ -145,7 +145,7 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `device reports generate` | `type` `name` `format` `rows`: a report made in the user's home |
 | `device reports rename`, `device reports remove` | `name` and `new` (rename): one of the user's own reports |
 | `device reports prune` | `older-than` `removed` (the number of the user's own reports removed; never their names) |
-| `device reports access` | `verb=list\|show\|export\|rename\|remove\|prune\|prune-dry-run` `owner` (`*` for every user) `report` (`*` for a list; a prune has `count` instead): a superuser's access to another user's reports, written before anything is read or changed, at `auth.notice`, and refused under `audit.strict` when it cannot be written; never the contents |
+| `device reports access` | `verb=list\|show\|export\|rename\|remove\|prune\|prune-dry-run` `owner` (`*` for every user) `report` (`*` for a list or a prune): a superuser's access to another user's reports, written before anything is read or changed (a prune of other users' reports writes one for each other user whose directory it reads, all before the first is read), at `auth.notice`, and refused under `audit.strict` when it cannot be written; never the contents |
 | `device set` | `name` `field` `from` `to`: `address`, `hostname`, `vendor`, `port`, `description`, `location`, `legacy-ssh`, `ios-syntax`, `netconf`, `timeout-scale`, `stale-days` (no `name`) and `notice:<kind>` |
 
 The verbs that logged before 0.2.17 keep their lines (`host enroll`, `host

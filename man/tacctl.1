@@ -246,7 +246,9 @@ user has a period. The command prints one line for each user
 and a note to tell the people to log in with the new name: the name typed at a
 device's login changed. A name with a period never had a Linux account, so no
 account on the server or a host is renamed; the new name gets its account at
-the next sync. When the new name is taken (a user of that name, a second name
+the next sync. When the ledger already has a line for the new name, the line of
+the old name is not moved: the new name keeps its UID, the old line stays in the
+file as it is, and a warning says so. When the new name is taken (a user of that name, a second name
 that becomes the same, or a break-glass local user of one of the user's scopes),
 the user gets \&'_' and four random lowercase letters or digits after it, drawn
 again until the name is free of every user, every other new name and the
@@ -694,8 +696,10 @@ of the pull records are left (0.2.25's decoder ignores the key), and so is every
 report in the users' homes: they are the users' own files, and 0.2.25 has no
 .B "device reports"
 verb to list or remove them. When the snapshot was taken, the next steps say
-that it holds the 0.2.26 state and is to be restored with 0.2.26 only (0.2.25's
-restore refuses a tacctl.yaml with a key it does not know). The command ends
+that it holds the 0.2.26 state and is to be restored with 0.2.26 only, and what
+0.2.25's restore refuses: a tacctl.yaml with a key it does not know when a
+setting was removed, a store.yaml with a field it does not know when only a
+user's own limit was, both when both were. The command ends
 with the next step,
 .BR "tacctl upgrade \-\-branch 0.2.25" ,
 and a note that the reports stay and that
@@ -14081,10 +14085,24 @@ superuser's every device. With no sub\-command the usage is printed.
 Access.
 .B "device reports"
 is open to every tier for the user's own reports, which hold the devices of the
-user's own scopes (the model, serial number, release and chassis members among
-the facts, though
+user's own scopes; as
 .B "device show"
-shows them from the operator tier up);
+does, a report leaves out the model, serial number, release and chassis members
+of the devices (and the state and the apply date of
+.BR config )
+for a user below the operator tier, so that
+.B inventory
+and
+.B software
+show them empty, the
+.B members
+count of
+.B inventory
+is
+.BR \- ,
+and
+.B members
+has no rows;
 .B "generate \-\-pull"
 needs the engineer tier. A superuser reaches other users' reports with
 .BR \-\-user ,
@@ -14101,9 +14119,11 @@ read or changed, at
 .BI by= user
 (the owner and the report are
 .B *
-for a listing of every user, and a prune has
-.BI count= n
-for the number of reports and no report); the contents are never written. They
+for a listing of every user, and the report is
+.B *
+for a listing and for a prune, which writes one line for each other user whose
+directory it reads, all of them before the first directory is read, also for a
+user with nothing to prune); the contents are never written. They
 are reveals: under
 .B audit.strict
 an access whose line cannot be written is refused before anything is shown. A
@@ -14125,8 +14145,14 @@ the directory of mode 0700 and the file of mode 0600, by tacctl as the user
 .IR <name>.<ext>.meta
 beside it: a JSON file of mode 0600 that holds the name, the type, the format,
 the user, the exact command line, the filters, the time, the date of the oldest
-datum, the size, the number of rows and the schema number. The default name is
-the type and the date in UTC
+datum, the size, the number of rows and the schema number. The home is the one the
+account database of the server gives the user, so a user with no Linux account
+there (a name that is no Linux account name, upper case letters or more than 32
+characters, or a user no sync has given an account yet) is refused with
+.B "the user '<name>' has no account on this server"
+and nothing is stored; such a user can print the report with
+.BR \-\-stdout .
+The default name is the type and the date in UTC
 .RB ( inventory\-20261106 ),
 then
 .B \-2
@@ -14212,7 +14238,7 @@ Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show
 Options:
 .TP
 \fB\-\-type\fR \fIinventory|members|software|config\fR
-The type of report: inventory (one row per device), members (one row per chassis member), software (one row per device: model and release) or config (one row per device: the state of its last pull). Inventory, software and config have a row for every device, a device that was never pulled with empty facts; members has rows for the devices that have a model or a serial number, so a device with neither is not in it.
+The type of report: inventory (one row per device), members (one row per chassis member), software (one row per device: model and release) or config (one row per device: the state of its last pull). Inventory, software and config have a row for every device, a device that was never pulled with empty facts; members has rows for the devices that have a model or a serial number, so a device with neither is not in it. Below the operator tier the model, serial number, release and chassis members of a device are left out, as 'device show' leaves them: the members report has no rows for such a user.
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
 Only the devices that scope answers. A scope that is not one of yours is refused.
@@ -14404,10 +14430,10 @@ Options:
 Remove the reports made longer ago than this age: a whole number and one unit, h (hours), d (days) or w (weeks), for example 30d. There is no default and no zero. The age of a report is the date it was generated, which its metadata file holds, not the time of the file.
 .TP
 \fB\-\-user\fR \fI<name>\fR
-Prune the reports of another user. It is the superuser's, and writes an audit line with who pruned whose reports and how many, never their names.
+Prune the reports of another user. It is the superuser's, and writes an audit line with who looked at whose reports, before that user's directory is read.
 .TP
 \fB\-\-all\-users\fR
-Prune the reports of every user tacctl knows, one audit line for each user whose reports are listed or removed. It is the superuser's.
+Prune the reports of every user tacctl knows, one audit line for each other user whose directory is read, also when nothing of theirs is old enough. It is the superuser's.
 .TP
 \fB\-\-dry\-run\fR
 List what would be removed and remove nothing; \-\-yes does not change that.

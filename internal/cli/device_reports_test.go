@@ -749,8 +749,122 @@ func TestReportsConfigStateIsOperatorAndUp(t *testing.T) {
 			t.Errorf("applied of %v: %v, want null", row["name"], v)
 		}
 	}
-	// the other reports are what they were
-	if inv := b.as("carol", asReadonly, "generate", "--type", "inventory", "--format", "csv", "--stdout"); !strings.Contains(inv, "WS-C3850-48P") {
+	// the other reports keep the pulled date and the facts that 'device show'
+	// shows a read-only user (the next tests hold what it does not show)
+	if inv := b.as("carol", asReadonly, "generate", "--type", "inventory", "--format", "csv", "--stdout"); !strings.Contains(inv, "2026-11-04 10:00") {
 		t.Errorf("inventory:\n%s", inv)
+	}
+}
+
+// What the pull read of a device (model, serial, release, chassis members) is
+// the operator tier's in 'device show' and 'device list'; the reports follow
+// the same rule (configVisible). Inventory: the three facts are "-" and the
+// members count is "-", the rest of the row (address, vendor, scope, location,
+// description, pulled) is what it was.
+func TestReportsInventoryFactsAreOperatorAndUp(t *testing.T) {
+	b := newReportsBox(t)
+	op := b.as("bob", asOperator, "generate", "--type", "inventory", "--format", "csv", "--stdout")
+	for _, want := range []string{
+		"sw1,192.168.1.10,cisco,lab,WS-C3850-48P,SN000001,16.12.4,-,\"Rack 4, DC1\",Access switch,2026-11-04 10:00",
+		"jsw1,192.168.1.20,juniper,lab,EX4300-48T,SN000002,25.4R1-S2.3,2,Lab rack 2,,2026-11-05 09:30"} {
+		if !strings.Contains(op, want) {
+			t.Errorf("the operator's inventory lacks %q:\n%s", want, op)
+		}
+	}
+	ro := b.as("carol", asReadonly, "generate", "--type", "inventory", "--format", "csv", "--stdout")
+	for _, want := range []string{
+		"sw1,192.168.1.10,cisco,lab,,,,-,\"Rack 4, DC1\",Access switch,2026-11-04 10:00",
+		"jsw1,192.168.1.20,juniper,lab,,,,-,Lab rack 2,,2026-11-05 09:30"} {
+		if !strings.Contains(ro, want) {
+			t.Errorf("the read-only inventory lacks %q:\n%s", want, ro)
+		}
+	}
+	for _, word := range []string{"WS-C3850-48P", "EX4300-48T", "SN00000", "16.12.4", "25.4R1"} {
+		if strings.Contains(ro, word) {
+			t.Errorf("the read-only inventory shows %q:\n%s", word, ro)
+		}
+	}
+	txt := b.as("carol", asReadonly, "generate", "--type", "inventory", "--stdout")
+	for _, word := range []string{"WS-C3850-48P", "EX4300-48T", "SN00000", "16.12.4", "25.4R1"} {
+		if strings.Contains(txt, word) {
+			t.Errorf("the read-only text inventory shows %q:\n%s", word, txt)
+		}
+	}
+	js := b.as("carol", asReadonly, "generate", "--type", "inventory", "--format", "json", "--stdout")
+	var doc struct {
+		Rows []map[string]any `json:"rows"`
+	}
+	if err := json.Unmarshal([]byte(js), &doc); err != nil || len(doc.Rows) == 0 {
+		t.Fatalf("json: %v\n%s", err, js)
+	}
+	for _, row := range doc.Rows {
+		for _, k := range []string{"model", "serial", "release"} {
+			if v, ok := row[k]; !ok || v != "" {
+				t.Errorf("%s of %v: %v, want empty", k, row["name"], v)
+			}
+		}
+		if v, ok := row["members"]; !ok || v != float64(0) {
+			t.Errorf("members of %v: %v, want 0", row["name"], v)
+		}
+		if row["name"] == "sw1" && row["pulled"] != "2026-11-04T10:00:00Z" {
+			t.Errorf("pulled of sw1: %v", row["pulled"])
+		}
+	}
+}
+
+// The members report has no rows for a read-only user (a device with neither
+// model nor serial has no row, and its members are not read).
+func TestReportsMembersAreOperatorAndUp(t *testing.T) {
+	b := newReportsBox(t)
+	op := b.as("bob", asOperator, "generate", "--type", "members", "--format", "csv", "--stdout")
+	for _, want := range []string{"jsw1,0,master,EX4300-48T,SN000002", "jsw1,1,backup,EX4300-48T,SN000003", "sw1,-,-,WS-C3850-48P,SN000001"} {
+		if !strings.Contains(op, want) {
+			t.Errorf("the operator's members report lacks %q:\n%s", want, op)
+		}
+	}
+	for _, format := range []string{"csv", "text", "json"} {
+		ro := b.as("carol", asReadonly, "generate", "--type", "members", "--format", format, "--stdout")
+		if b.sb.code != 0 {
+			t.Fatalf("%s: exit %d %q", format, b.sb.code, b.sb.stderr())
+		}
+		for _, word := range []string{"jsw1", "sw1", "EX4300-48T", "WS-C3850-48P", "SN00000"} {
+			if format != "json" && strings.Contains(ro, word) {
+				t.Errorf("the read-only members report (%s) shows %q:\n%s", format, word, ro)
+			}
+		}
+		if format == "json" {
+			var doc struct {
+				Rows []map[string]any `json:"rows"`
+			}
+			if err := json.Unmarshal([]byte(ro), &doc); err != nil || len(doc.Rows) != 0 {
+				t.Errorf("the read-only members json has rows: %v\n%s", err, ro)
+			}
+		}
+	}
+	ro := b.as("carol", asReadonly, "generate", "--type", "members", "--format", "csv", "--stdout")
+	if got := strings.Count(strings.TrimSpace(ro), "\n"); got != 0 {
+		t.Errorf("the read-only members report has more than the header:\n%s", ro)
+	}
+}
+
+// The software report: the model and the release are "-" for a read-only
+// user, the name, the vendor and the pulled date stay.
+func TestReportsSoftwareFactsAreOperatorAndUp(t *testing.T) {
+	b := newReportsBox(t)
+	op := b.as("bob", asOperator, "generate", "--type", "software", "--format", "csv", "--stdout")
+	if !strings.Contains(op, "sw1,cisco,WS-C3850-48P,16.12.4,2026-11-04 10:00") {
+		t.Errorf("the operator's software report:\n%s", op)
+	}
+	ro := b.as("carol", asReadonly, "generate", "--type", "software", "--format", "csv", "--stdout")
+	for _, want := range []string{"sw1,cisco,,,2026-11-04 10:00", "jsw1,juniper,,,2026-11-05 09:30"} {
+		if !strings.Contains(ro, want) {
+			t.Errorf("the read-only software report lacks %q:\n%s", want, ro)
+		}
+	}
+	txt := b.as("carol", asReadonly, "generate", "--type", "software", "--stdout")
+	for _, word := range []string{"WS-C3850-48P", "EX4300-48T", "16.12.4", "25.4R1"} {
+		if strings.Contains(ro, word) || strings.Contains(txt, word) {
+			t.Errorf("the read-only software report shows %q:\n%s%s", word, ro, txt)
+		}
 	}
 }
