@@ -57,27 +57,80 @@ current behaviour; this file is where history lives.
    documentation lose the sentences about the tolerated user.
 
 4. **A good pull records the members of a Junos virtual chassis or a Cisco
-   stack.** `tacctl device config pull` recorded one model and one serial
-   number per device (the chassis's or the first unit's), nothing of the other
-   units of a stack or a virtual chassis. After the
-   configuration, the pull now also reads the units of the chassis, best effort
-   like the other facts: on Junos `show virtual-chassis status` (with the
-   `show chassis hardware` and `show version` it reads already), on IOS and
-   IOS-XE `show switch` (with `show inventory`, and, when a stack is found,
-   `show version` for the release of each switch). Each member is recorded with
-   its id, role (`master`, `backup`, `linecard` or `member`), model, serial
-   number, release, status (`Prsnt`, `Ready`) and priority, at most 32 per
-   device. A device that lists one unit, has no chassis, refuses a command or
-   prints something else has no members, never fails the pull, and a pull that
-   reads none leaves the list empty, never the old one. `device show` and
-   `device config show` print a `Chassis members:` table under the data block
-   (`ID`, `ROLE`, `MODEL`, `SERIAL`, `RELEASE`, `STATUS`, `PRIORITY`), and
-   `device show --json` has a `members` list of the same fields; they are shown
-   to the operator tier and up, as the release, model and serial number are.
-   They are also what the members report of `tacctl device reports` is made of
-   (item 5). An existing record has no members until its device is pulled
-   again, and nothing else about the record changes: the key `members` is
-   derived data that 0.2.25 ignores, so `tacctl rollback` leaves it.
+   stack.** `tacctl device config pull` recorded one model and one serial number
+   per device (the chassis's or the first unit's), nothing of the other units of
+   a stack or a virtual chassis. After the configuration, the pull now also
+   reads the units of the chassis, best effort like the other facts: on Junos
+   `show virtual-chassis status` (with the `show chassis hardware` and `show
+   version` it reads already), on IOS and IOS-XE `show switch` (with `show
+   inventory`, and, when a stack is found, `show version` for the release of
+   each switch). Each member is recorded with its id, role (`master`, `backup`,
+   `linecard` or `member`), model, serial number, release, status (`Prsnt`,
+   `Ready`) and priority, at most 32 per device. A device that lists one unit,
+   has no chassis, refuses a command or prints something else has no members,
+   never fails the pull, and a pull that reads none leaves the list empty, never
+   the old one. `device show` and `device config show` print a `Chassis
+   members:` table under the data block (`ID`, `ROLE`, `MODEL`, `SERIAL`,
+   `RELEASE`, `STATUS`, `PRIORITY`), and `device show --json` has a `members`
+   list of the same fields; they are shown to the operator tier and up, as the
+   release, model and serial number are. They are also what the members report
+   of `tacctl device reports` is made of (item 5). An existing record has no
+   members until its device is pulled again, and nothing else about the record
+   changes: the key `members` is derived data that 0.2.25 ignores, so `tacctl
+   rollback` leaves it.
+
+5. **`tacctl device reports` makes saved, dated reports of the registered
+   devices.** `device show` and `device config list` show the facts of the
+   devices on the screen, nothing that can be kept, dated or handed on. `tacctl
+   device reports generate --type inventory|members|software|config` now makes
+   one from what tacctl stores, with no login: `inventory` has a row for each
+   device (address, vendor, scope, model, serial number, release, the number of
+   chassis members, location, description, the date of the pull), `members` a
+   row for each chassis member of item 4 (a device that is no chassis is one
+   row, from its own model and serial number), `software` the model and release
+   of each device, and `config` the state `device config list` shows, with the
+   dates of the pull and the apply. A device that was never pulled is a row with
+   empty facts and `never`, not left out, every row carries the date of the pull
+   its facts came from, and the heading says how old the oldest datum is.
+   `--format text|csv|json` (text is the default; a CSV cell that starts with
+   `=`, `+`, `-` or `@` is quoted with a leading `'`, so that a spreadsheet does
+   not run it), `--scope` and `--vendor` narrow the report, `--name` names it,
+   `--stdout` prints it and stores nothing, and `--pull` reads the devices first
+   as `device config pull` does, with your own password (the engineer tier). A
+   report holds the devices of your scopes (a superuser's: all) and no secret,
+   hash or community string. It is the file
+   `~/reports/devices/<type>-<yyyymmdd>.<txt|csv|json>` of your home (the
+   directory 0700, the file 0600, made as you; a second report of a day is
+   `-2`), with a `.meta` file beside it that records when, by whom, the command
+   line, the filters and the age of the data. `list`, `show` (which prints the
+   `scp` line that fetches the file), `export [--out <file>]`, `rename` and
+   `remove` look after them, a file you put in the directory is `other` and left
+   alone, and every tier can run them for its own reports; only `--pull` is the
+   engineer's. Nothing changes for existing data: the first report creates the
+   directory.
+
+6. **`tacctl device reports prune` removes the reports that are old.** Reports
+   pile up in a home; nothing deletes one by itself. `prune --older-than
+   <n>h|<n>d|<n>w` (no default; `12h`, `30d`, `4w`) lists the reports made
+   longer ago than that (name, type, the date they were generated, size) and
+   removes them with their `.meta` files after one question; `--yes` skips the
+   question and `--dry-run` only lists. The age is the `generated` date in the
+   metadata file, not the time of the file; a file with no metadata (listed as
+   `other`) and anything outside the reports directory is never removed.
+
+7. **A superuser reaches the reports of other users, and every access is
+   audited.** `device reports list --user <name>`, `list --all-users`, `show`,
+   `export`, `rename` and `remove` with `<user>/<report>` and `prune --user
+   <name>` or `--all-users` are the superuser's, whatever devices the report
+   holds. Each writes one `device reports access verb=... owner=... report=...
+   by=...` line at `auth.notice` before anything is read or changed (a prune one
+   line for each user, with `count=` and never a name), and never a content;
+   with `audit.strict` an access whose line cannot be written is refused. No
+   verb writes into another user's home and there is no `generate --as`: a user
+   makes their own reports, and a superuser already makes one of every scope. A
+   user's own `generate`, `rename`, `remove` and `prune` write the detail lines
+   `device reports generate type= name= format= rows=`, `rename`, `remove` and
+   `prune`.
 
 ## 0.2.25 (2026-11-05)
 

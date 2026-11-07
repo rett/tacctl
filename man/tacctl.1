@@ -13752,6 +13752,341 @@ Options:
 Every record, and the stored sections of every device (one of a device that is no longer registered too).
 .RE
 .\" END GENERATED: command device config forget
+.TP
+.B "device reports"
+Saved, dated reports of the registered devices. A report is made on demand from
+what tacctl stores of the devices (the registry and the records of the last
+pulls) and kept as a file of the home of the user who made it; no device is
+contacted unless
+.B "generate \-\-pull"
+reads them first, nothing makes a report by itself, and no report holds a
+secret, a hash or a community string. There are four types:
+.B inventory
+(a row per device: name, address, vendor, scope, model, serial number, release,
+the number of chassis members, location, description and the date of the pull),
+.B members
+(a row per chassis member: device, member id, role, model, serial number,
+release, status, priority and the date of the pull; a standalone device that
+has a model or a serial number is one row, with the id and the role
+.BR \- ),
+.B software
+(name, vendor, model, release, the reserved column gate, which is empty in this
+release, and the date of the pull) and
+.B config
+(name, scope, the state
+.B "device config list"
+shows, the date of the pull and the date of the last apply). A device that was
+never pulled is a row with empty facts and
+.BR never ,
+not left out, and the heading of a report gives the age of the oldest datum.
+Text that came from a device or an operator is printed as the record keeps it,
+with control, bidirectional and C1 characters replaced by
+.BR ? .
+A report holds the devices of the scopes of the user who made it, a
+superuser's every device. With no sub\-command the usage is printed.
+.PP
+Access.
+.B "device reports"
+is open to every tier for the user's own reports, which hold the devices of the
+user's own scopes (the model, serial number, release and chassis members among
+the facts, though
+.B "device show"
+shows them from the operator tier up);
+.B "generate \-\-pull"
+needs the engineer tier. A superuser reaches other users' reports with
+.BR \-\-user ,
+.BR \-\-all\-users ,
+.I user/report
+and
+.BR prune ;
+anyone else is refused. Every such access writes one line, before anything is
+read or changed, at
+.BR auth.notice :
+.BR "device reports access verb=" list|show|export|rename|remove|prune|prune\-dry\-run
+.BI owner= user
+.BI report= name
+.BI by= user
+(the owner and the report are
+.B *
+for a listing of every user, and a prune has
+.BI count= n
+for the number of reports and no report); the contents are never written. They
+are reveals: under
+.B audit.strict
+an access whose line cannot be written is refused before anything is shown. A
+user's own changes write
+.BR "device reports generate" ,
+.BR "device reports rename" ,
+.B "device reports remove"
+and
+.B "device reports prune"
+lines (type, name, format, rows, new name, number removed). There is no
+.B "generate \-\-as"
+and no verb writes a report into another user's home.
+.TP
+.BI "device reports generate " "\-\-type inventory|members|software|config " "[ \-\-scope " scope " ] [ \-\-vendor cisco|juniper|wti|other ] [ \-\-format text|csv|json ] [ \-\-name " name " ] [ \-\-stdout ] [ \-\-pull ]"
+Make a report. It is written to
+.IR ~/reports/devices/<name>.<ext> ,
+the directory of mode 0700 and the file of mode 0600, by tacctl as the user
+(nothing is written as root), with
+.IR <name>.<ext>.meta
+beside it: a JSON file of mode 0600 that holds the name, the type, the format,
+the user, the exact command line, the filters, the time, the age of the oldest
+datum, the size, the number of rows and the schema number. The default name is
+the type and the date in UTC
+.RB ( inventory\-20261106 ),
+then
+.B \-2
+and so on for a second report of the day in any format; a name that a report or
+a file of the directory has already is refused and never overwritten. A name is
+letters, digits,
+.BR . ,
+.B _
+and
+.BR \- ,
+at most 64 bytes, with no leading dot. The format sets the extension:
+.B text
+(aligned columns under a heading with the type, the time, the age of the oldest
+datum and the number of devices; the default;
+.BR .txt ),
+.B csv
+(RFC 4180, a header line, UTF\-8; a cell that starts with
+.BR = ,
+.BR + ,
+.BR \- ,
+.B @
+or a tab or a carriage return gets a leading
+.B '
+so a spreadsheet does not run it, and a lone
+.B \-
+is left as it is;
+.BR .csv )
+and
+.B json
+(one object with
+.BR schema ,
+.BR type ,
+.BR generated ,
+.BR oldest_data ,
+.B columns
+and
+.BR rows ;
+dates in RFC 3339 UTC, null for a device never pulled; every row of the
+members report has a
+.B components
+list that is empty in this release;
+.BR .json ).
+.B \-\-stdout
+prints the report and stores nothing: no file, no metadata, no limit and no
+account needed.
+.B \-\-pull
+first reads the devices of the selection as
+.B "device config pull"
+does, with the user's own password (asked once, never stored) and no stored
+credential, then makes the report from the fresh records; it needs the
+engineer tier and reads the devices of the user's own scopes. A device that
+cannot be read keeps the facts and the date of its last good pull, a warning
+says so, the report is made and the exit status is 1. With
+.B \-\-stdout
+the pull's output goes to standard error. A report over the largest size, or
+that would exceed the most reports a user keeps, is refused with the setting
+named and nothing written (see
+.BR "config reports" ).
+.\" BEGIN GENERATED: command device reports generate
+.RS
+.PP
+Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show, export, rename and remove its own reports, which hold the devices of its own scopes; generate \-\-pull needs the engineer tier; \-\-user, \-\-all\-users and <user>/<report> (the reports of other users, every access audited) need the superuser tier.
+.PP
+Options:
+.TP
+\fB\-\-type\fR \fIinventory|members|software|config\fR
+The type of report: inventory (one row per device), members (one row per chassis member), software (one row per device: model and release) or config (one row per device: the state of its last pull). A device that was never pulled is a row with empty facts, never left out.
+.TP
+\fB\-\-scope\fR \fI<scope>\fR
+Only the devices that scope answers. A scope that is not one of yours is refused.
+.TP
+\fB\-\-vendor\fR \fIcisco|juniper|wti|other\fR
+Only the devices of that vendor.
+.TP
+\fB\-\-format\fR \fItext|csv|json\fR
+The format: text (aligned columns, the default), csv (RFC 4180, a header line, UTF\-8) or json (one object: schema, type, generated, filters, rows). It sets the extension of the file.
+.TP
+\fB\-\-name\fR \fI<name>\fR
+The name of the report, without the extension: letters, digits, '.', '_' and '\-', at most 64 bytes, no leading dot. The default is the type and the date (inventory\-20261106); a second report of the same day gets \-2. A name in use is refused, never overwritten.
+.TP
+\fB\-\-stdout\fR
+Print the report on standard output and store nothing: no file, no metadata and no limit applies.
+.TP
+\fB\-\-pull\fR
+Read the devices first, as 'tacctl device config pull' does, with your own password (asked for once, never stored) and over the transport the pull chooses, then make the report from the fresh records. A device whose pull fails keeps its last good facts and its old date. It needs the engineer tier and reads the devices of your own scopes.
+.RE
+.\" END GENERATED: command device reports generate
+.TP
+.BI "device reports list " "[ \-\-json ] [ \-\-user " name " | \-\-all\-users ]"
+List the reports of the user, newest first: the name, the type, the format, the
+size and when it was made, and the total. A file of the directory with no
+metadata file, one the user put there, is listed with the type
+.BR other .
+.B \-\-json
+prints a list of objects (the file, the name, the owner, the type, the format,
+the user, the command line, the filters, the dates, the size and the number of
+rows). A superuser lists another user's reports with
+.B \-\-user
+or every user's with
+.BR \-\-all\-users ,
+which add a USER column; each is audited.
+.\" BEGIN GENERATED: command device reports list
+.RS
+.PP
+Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show, export, rename and remove its own reports, which hold the devices of its own scopes; generate \-\-pull needs the engineer tier; \-\-user, \-\-all\-users and <user>/<report> (the reports of other users, every access audited) need the superuser tier.
+.PP
+Options:
+.TP
+\fB\-\-json\fR
+Print the reports as a JSON array: each one's file, name, owner, type, format, user, command line, filters, dates, size and number of rows (a file tacctl did not make has the file, the name, the owner and the size only).
+.TP
+\fB\-\-user\fR \fI<name>\fR
+List the reports of another user. It is the superuser's, and writes an audit line with who looked at whose reports.
+.TP
+\fB\-\-all\-users\fR
+List the reports of every user tacctl knows, one audit line for the whole listing. It is the superuser's.
+.RE
+.\" END GENERATED: command device reports list
+.TP
+.BI "device reports show " "report " [ \-\-content ]
+Print the facts of a report: the file, the type, when it was made, by whom, the
+command line, the filters, the date of the oldest datum, the format, the rows,
+the size and the command that fetches it
+.RB ( "scp user@server:reports/devices/<file> ." ).
+.B \-\-content
+adds the first 200 lines of the report. A report is addressed by its name or by
+its file name; when two files share a name (only a file the user put there can)
+the extension is needed. A superuser names another user's report as
+.IR user/report .
+.\" BEGIN GENERATED: command device reports show
+.RS
+.PP
+Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show, export, rename and remove its own reports, which hold the devices of its own scopes; generate \-\-pull needs the engineer tier; \-\-user, \-\-all\-users and <user>/<report> (the reports of other users, every access audited) need the superuser tier.
+.PP
+Options:
+.TP
+\fB\-\-content\fR
+Print the report itself under the facts, its first 200 lines ('export' prints all of it).
+.RE
+.\" END GENERATED: command device reports show
+.TP
+.BI "device reports export " "report " "[ \-\-out " file " [ \-\-force ] ]"
+Print a report as it is stored, or with
+.B \-\-out
+write it to a file, made as the caller with mode 0600; a file that exists is
+refused unless
+.B \-\-force
+is given. tacctl sends a report nowhere itself: the
+.B scp
+line of
+.B "device reports show"
+is the way off the server. A superuser exports another user's report as
+.IR user/report ;
+it is audited.
+.\" BEGIN GENERATED: command device reports export
+.RS
+.PP
+Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show, export, rename and remove its own reports, which hold the devices of its own scopes; generate \-\-pull needs the engineer tier; \-\-user, \-\-all\-users and <user>/<report> (the reports of other users, every access audited) need the superuser tier.
+.PP
+Options:
+.TP
+\fB\-\-out\fR \fI<file>\fR
+Write the copy to this file, mode 0600, made as you; a file that exists is refused unless \-\-force.
+.TP
+\fB\-\-force\fR
+Replace the file \-\-out names, if there is one.
+.RE
+.\" END GENERATED: command device reports export
+.TP
+.BI "device reports rename " "report new"
+Give a report and its metadata file a new name (the extension stays). A name
+that a report or a file has already is refused, and a file that tacctl did not
+make is not renamed. A superuser renames another user's report as
+.IR user/report ;
+it is audited.
+.\" BEGIN GENERATED: command device reports rename
+.RS
+.PP
+Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show, export, rename and remove its own reports, which hold the devices of its own scopes; generate \-\-pull needs the engineer tier; \-\-user, \-\-all\-users and <user>/<report> (the reports of other users, every access audited) need the superuser tier.
+.RE
+.\" END GENERATED: command device reports rename
+.TP
+.BI "device reports remove " "report " [ \-\-yes ]
+Remove a report and its metadata file, after one question unless
+.B \-\-yes
+is given. A file that tacctl did not make is kept. A superuser removes another
+user's report as
+.IR user/report ;
+it is audited.
+.\" BEGIN GENERATED: command device reports remove
+.RS
+.PP
+Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show, export, rename and remove its own reports, which hold the devices of its own scopes; generate \-\-pull needs the engineer tier; \-\-user, \-\-all\-users and <user>/<report> (the reports of other users, every access audited) need the superuser tier.
+.PP
+Options:
+.TP
+\fB\-\-yes\fR
+Do not ask for confirmation.
+.RE
+.\" END GENERATED: command device reports remove
+.TP
+.BI "device reports prune " "\-\-older\-than age " "[ \-\-user " name " | \-\-all\-users ] [ \-\-dry\-run ] [ \-\-yes ]"
+Remove the reports that were made longer ago than
+.IR age :
+a whole number and one unit,
+.B h
+(hours),
+.B d
+(days) or
+.B w
+(weeks), as
+.BR 12h ,
+.B 30d
+or
+.BR 4w ;
+there is no default and no zero. The age of a report is the
+.B generated
+date of its metadata file. The reports are listed (name, type, generated date
+and size), then, after one question unless
+.B \-\-yes
+is given, removed with their metadata files;
+.B \-\-dry\-run
+only lists. A file with no metadata file is never removed, and nothing outside
+the reports directory is. Nothing prunes by itself. A superuser prunes another
+user's reports with
+.B \-\-user
+or every user's with
+.BR \-\-all\-users ;
+each user whose reports are listed or removed writes one audit line with the
+number of reports and never their names.
+.\" BEGIN GENERATED: command device reports prune
+.RS
+.PP
+Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show, export, rename and remove its own reports, which hold the devices of its own scopes; generate \-\-pull needs the engineer tier; \-\-user, \-\-all\-users and <user>/<report> (the reports of other users, every access audited) need the superuser tier.
+.PP
+Options:
+.TP
+\fB\-\-older\-than\fR \fI<age>\fR
+Remove the reports made longer ago than this age: a whole number and one unit, h (hours), d (days) or w (weeks), for example 30d. There is no default and no zero. The age of a report is the date it was generated, which its metadata file holds, not the time of the file.
+.TP
+\fB\-\-user\fR \fI<name>\fR
+Prune the reports of another user. It is the superuser's, and writes an audit line with who pruned whose reports and how many, never their names.
+.TP
+\fB\-\-all\-users\fR
+Prune the reports of every user tacctl knows, one audit line for each user whose reports are listed or removed. It is the superuser's.
+.TP
+\fB\-\-dry\-run\fR
+List what would be removed and remove nothing; \-\-yes does not change that.
+.TP
+\fB\-\-yes\fR
+Do not ask for confirmation.
+.RE
+.\" END GENERATED: command device reports prune
 .SS SSH to a device \fB(tacctl ssh)\fR
 .TP
 .BI "ssh " name|address " [ \-p " port " ] [ \-X | \-Y ] [ \-g ] [ { \-L | \-R | \-D } " spec " ]... [ \-\- " "ssh args" " ]"
@@ -15630,8 +15965,9 @@ line.
 (no arguments), passwd, status, version, help, \-h, \-\-help,
 user list, user show, group list, group show, scope list,
 backend list, backend status, ssh, device list, device show,
-device notice, device ssh, device client\-config, _completion\-names,
-_console\-policy, \-\-version, \-v, hash, completion, man
+device reports, device notice, device ssh, device client\-config,
+_completion\-names, _console\-policy, \-\-version, \-v, hash,
+completion, man
 .TP
 .B operator
 log tail, log search, log failures, log accounting, config validate,
@@ -15682,6 +16018,9 @@ The CONFIG column (and config, release, model and serial of \-\-json) is the ope
 .TP
 .B device notice
 Every tier may run list; ack and unack need the superuser tier.
+.TP
+.B device reports
+Every tier may generate (without \-\-pull), list, show, export, rename and remove its own reports, which hold the devices of its own scopes; generate \-\-pull needs the engineer tier; \-\-user, \-\-all\-users and <user>/<report> (the reports of other users, every access audited) need the superuser tier.
 .TP
 .B device show
 The Configuration, Release, Model and Serial rows (and config, release, model and serial of \-\-json) are the operator tier's; a read\-only user's output has none.
@@ -15786,14 +16125,15 @@ backup keep, backup recover, config allow, config bcrypt\-cost,
 config branch, config cisco, config deny, config devices,
 config juniper, config linux, config loglevel, config mgmt\-acl,
 config password\-age, config password\-min\-length, config render,
-config secret\-min\-length, config snmp, config validate, config wti,
-console agent\-forwarding, console color, console forwarding,
-console idle\-timeout, console list\-max, console password\-cache,
-console space\-completion, console ssh\-escape, device address,
-device block, device collect, device config, device description,
-device hostkey, device hostname, device import, device ios\-syntax,
-device legacy\-ssh, device location, device netconf, device onboard,
-device port, device snmp, device stale\-days, device sync,
+config reports, config secret\-min\-length, config snmp,
+config validate, config wti, console agent\-forwarding, console color,
+console forwarding, console idle\-timeout, console list\-max,
+console password\-cache, console space\-completion,
+console ssh\-escape, device address, device block, device collect,
+device config, device description, device hostkey, device hostname,
+device import, device ios\-syntax, device legacy\-ssh,
+device location, device netconf, device onboard, device port,
+device reports, device snmp, device stale\-days, device sync,
 device timeout\-scale, device vendor, group commands, group junos,
 group preset, group privilege, group reset, host default\-method,
 host provisioner, host target, scope aaa\-order, scope auth\-method,
@@ -15802,7 +16142,7 @@ scope exec\-timeout, scope mgmt\-acl, scope netconf, scope prefixes,
 scope protocols, scope radius\-group, scope secret, scope snmp,
 scope staging, scope tacacs\-group, scope timeout\-scale,
 scope vendor\-attrs, server listen, server metrics, server name,
-user email, user scope
+user email, user reports\-limit, user scope
 .TP
 .B "mixed, auth.notice"
 config audit\-strict, config breakglass\-firewall, config sudoers,
@@ -17214,6 +17554,14 @@ Days after which a password counts as old: tacctl status warns. Set with \fBtacc
 .B password.min_length
 integer, 8 to 64. Default: 12.
 Shortest password typed at a prompt. Set with \fBtacctl config password\-min\-length\fR.
+.TP
+.B reports.max_count
+integer, 0 to 100000. Default: 100.
+The most reports one user keeps (device reports generate refuses a new one over the count and names this setting); 0: no cap. A user's own limit (user reports-limit) wins. Set with \fBtacctl config reports max\-count\fR.
+.TP
+.B reports.max_size
+integer, 0 to 1073741824. Default: 10485760.
+The largest size of one stored report in bytes (device reports generate refuses a bigger one and names this setting); 0: no cap. A user's own limit (user reports-limit) wins. Set with \fBtacctl config reports max\-size\fR.
 .TP
 .B scope.default
 scope name (a letter, then up to 31 letters, digits, _ or \-) or null. Default: lab.
