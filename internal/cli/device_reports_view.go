@@ -258,17 +258,26 @@ func (inv *invocation) deviceReportsExport(args []string) error {
 	if err != nil {
 		return err
 	}
-	// A file another user put in the directory is not a report tacctl made:
-	// what is in it is not printed to the superuser's terminal, only copied.
-	if t.cross && t.f.Meta == nil && !p.Has("--out") {
-		return inv.usageErr("'" + cleanLine(t.owner+"/"+t.f.File) + "' is not a report tacctl made (it has no metadata file), so it is not printed. Copy it with: tacctl device reports export " +
-			cleanLine(p.Args[0]) + " --out <file>. Nothing was done.")
-	}
 	b, err := t.pl.content(t.f.File, inv.exportLimit(t))
 	if err != nil {
 		return inv.usageErr("Cannot read the report: " + err.Error())
 	}
 	if !p.Has("--out") {
+		if t.cross {
+			// What another user wrote is not trusted with the superuser's
+			// terminal, whatever its metadata file says (the owner makes
+			// that too): each line is cleaned as 'show --content' cleans it.
+			// --out copies the bytes as they are.
+			for rest := string(b); rest != ""; {
+				line, after, found := strings.Cut(rest, "\n")
+				inv.write(cleanLine(line))
+				if found {
+					inv.write("\n")
+				}
+				rest = after
+			}
+			return nil
+		}
 		inv.write(string(b))
 		return nil
 	}

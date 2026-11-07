@@ -127,6 +127,8 @@ type ohost struct {
 	nameSuffix func() string
 	// afterStoreRename, when set, is the Host's AfterStoreRename hook.
 	afterStoreRename func() error
+	// removeFile, when set, is the Host's RemoveFile hook.
+	removeFile func(string) error
 }
 
 func newOhost(t *testing.T) *ohost {
@@ -227,7 +229,7 @@ func (o *ohost) host() *lifecycle.Host {
 	env := lifecycle.NewEnv(o.be, bytes.NewReader(bytes.Repeat([]byte{0xab}, 64)), false)
 	env.Chown = func(string) {}
 	return &lifecycle.Host{Env: env, Environ: paths.NewEnv(o.environ), Commit: o.commit, Completion: testCompletion,
-		OwnLogin: o.ownLogin, NameSuffix: o.nameSuffix, AfterStoreRename: o.afterStoreRename,
+		OwnLogin: o.ownLogin, NameSuffix: o.nameSuffix, AfterStoreRename: o.afterStoreRename, RemoveFile: o.removeFile,
 		Audit: func(event string, kv ...audit.KV) {
 			var b strings.Builder
 			b.WriteString(event)

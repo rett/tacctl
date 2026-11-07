@@ -232,32 +232,50 @@ func TestReportsListJSONCleansTheStrings(t *testing.T) {
 	}
 }
 
-// A file with no valid metadata file is not a report tacctl made: a superuser
-// exporting it from another user's directory gets it copied with --out and not
-// printed to the terminal; a user's own file prints, as before.
-func TestReportsExportOfAnotherUsersOtherFileNeedsOut(t *testing.T) {
+// What another user wrote is not trusted with the superuser's terminal, and
+// the metadata file cannot vouch for it: the owner makes that file too (a copy
+// of a genuine one next to any file). 'export <user>/<report>' to the standard
+// output cleans each line as 'show --content' does, for a file with no
+// metadata and for one with a genuine one; --out copies the bytes as they are;
+// the superuser's own file prints raw.
+func TestReportsExportOfAnotherUsersFileIsCleaned(t *testing.T) {
 	b := newReportsBox(t)
-	b.generate("bob", asOperator, "--type", "inventory")
-	if err := os.WriteFile(filepath.Join(b.dir("bob"), "notes.txt"), []byte("not a report\n"), 0o600); err != nil {
+	name := b.generate("bob", asOperator, "--type", "inventory", "--format", "csv")
+	evil := "title\x1b[31m red\x1b[0m\ttab\u202e\n\x1b]0;owned\x07second\n"
+	clean := "title?[31m red?[0m?tab?\n?]0;owned?second\n"
+	// a file with no metadata
+	if err := os.WriteFile(filepath.Join(b.dir("bob"), "notes.txt"), []byte(evil), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// and a report with a genuine metadata file whose body the owner replaced
+	if err := os.WriteFile(filepath.Join(b.dir("bob"), name+".csv"), []byte(evil), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(b.dir("alice"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(b.dir("alice"), "mine.txt"), []byte("my own file\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(b.dir("alice"), "mine.txt"), []byte("my\town file\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	out := b.as("alice", asSuper, "export", "bob/notes.txt")
-	if b.sb.code != 1 || strings.Contains(out, "not a report\n") ||
-		!strings.Contains(b.sb.stderr(), "'bob/notes.txt' is not a report tacctl made (it has no metadata file), so it is not printed. Copy it with: tacctl device reports export bob/notes.txt --out <file>. Nothing was done.") {
-		t.Errorf("export to stdout: %d %q %q", b.sb.code, out, b.sb.stderr())
+	for _, ref := range []string{"bob/notes.txt", "bob/" + name} {
+		out := b.as("alice", asSuper, "export", ref)
+		if b.sb.code != 0 || out != clean {
+			t.Errorf("export %s: %d %q (want %q) %q", ref, b.sb.code, out, clean, b.sb.stderr())
+		}
+		dest := filepath.Join(t.TempDir(), "copy.txt")
+		b.as("alice", asSuper, "export", ref, "--out", dest)
+		if got, _ := os.ReadFile(dest); b.sb.code != 0 || string(got) != evil {
+			t.Errorf("export %s --out: %d %q", ref, b.sb.code, got)
+		}
 	}
-	dest := filepath.Join(t.TempDir(), "notes-copy.txt")
-	b.as("alice", asSuper, "export", "bob/notes.txt", "--out", dest)
-	if got, _ := os.ReadFile(dest); b.sb.code != 0 || string(got) != "not a report\n" {
-		t.Errorf("export --out: %d %q", b.sb.code, got)
+	// a name that does not end in a newline is printed as it is, cleaned
+	if err := os.WriteFile(filepath.Join(b.dir("bob"), "tail.txt"), []byte("a\x1b[2Jb"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if out := b.as("alice", asSuper, "export", "mine.txt"); b.sb.code != 0 || out != "my own file\n" {
+	if out := b.as("alice", asSuper, "export", "bob/tail.txt"); b.sb.code != 0 || out != "a?[2Jb" {
+		t.Errorf("no final newline: %d %q", b.sb.code, out)
+	}
+	if out := b.as("alice", asSuper, "export", "mine.txt"); b.sb.code != 0 || out != "my\town file\n" {
 		t.Errorf("an own file: %d %q", b.sb.code, out)
 	}
 }

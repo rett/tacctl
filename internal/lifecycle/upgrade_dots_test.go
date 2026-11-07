@@ -691,6 +691,62 @@ func TestUpgradeFinishesARenameThatStoppedAfterTheStore(t *testing.T) {
 	}
 }
 
+// A journal whose removal fails after the move is done is emptied first, so a
+// later upgrade does not replay its renames: the ledger line and the console
+// settings that came back under the old name (a restore, a hand edit) are left
+// alone, and the failure is reported, not ignored.
+func TestUpgradeDoesNotReplayAJournalItCouldNotRemove(t *testing.T) {
+	o := newOhost(t)
+	o.cloned()
+	o.write(o.p.StoreFile, dottedUpgradeStore)
+	o.write(o.p.LinuxUIDs, dottedLedger)
+	o.write(o.p.ConsoleFile, dottedConsole)
+	o.nameSuffix = suffixes(t)
+	o.afterStoreRename = func() error { return errors.New("simulated crash") }
+	if code := upgrade(o); code == 0 {
+		t.Fatal("the simulated crash did not stop the upgrade")
+	}
+	journal := lifecycle.JournalPath(o.p.StateDir)
+	if _, ok := lifecycle.UnfinishedRename(o.p.StateDir, "alice_smith"); !ok {
+		t.Fatalf("the journal after the crash names no rename of alice_smith:\n%s", readFile(t, journal))
+	}
+	if _, ok := lifecycle.UnfinishedRename(o.p.StateDir, "carol"); ok {
+		t.Error("an unrelated name is held back")
+	}
+	if r, ok := lifecycle.UnfinishedRename(o.p.StateDir); !ok || r.Old != "alice.smith" || r.New != "alice_smith" {
+		t.Errorf("any entry: %+v %v", r, ok)
+	}
+
+	o.afterStoreRename = nil
+	o.removeFile = func(string) error { return errors.New("simulated failure to remove") }
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("second run: exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	if got := o.text() + stripANSI(o.stderr.String()); !strings.Contains(got, "could not be removed: simulated failure to remove; remove it") {
+		t.Errorf("the failed removal is not reported:\n%s", got)
+	}
+	if _, err := os.Stat(journal); err != nil {
+		t.Fatalf("the journal is gone, the test cannot show the failed removal: %v", err)
+	}
+	if _, ok := lifecycle.UnfinishedRename(o.p.StateDir); ok {
+		t.Errorf("the journal that could not be removed still holds entries:\n%s", readFile(t, journal))
+	}
+
+	// the old name comes back in the ledger (as a restore would put it)
+	o.removeFile = nil
+	o.write(o.p.LinuxUIDs, dottedLedger)
+	o.write(o.p.ConsoleFile, "version: 1\n")
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("third run: exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	if strings.Contains(o.text(), "finished the rename") || readFile(t, o.p.LinuxUIDs) != dottedLedger {
+		t.Errorf("the emptied journal was replayed:\n%s\n%s", o.text(), readFile(t, o.p.LinuxUIDs))
+	}
+	if _, err := os.Stat(journal); err == nil {
+		t.Error("the journal was left when it could be removed")
+	}
+}
+
 // A journal entry whose old name is still a store user was never written: the
 // new plan covers it, and the entry does not move anything.
 func TestUpgradeIgnoresAJournalEntryTheStoreNeverGot(t *testing.T) {

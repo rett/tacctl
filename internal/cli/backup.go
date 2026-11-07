@@ -30,6 +30,7 @@ import (
 
 	"github.com/rett/tacctl/internal/backend"
 	"github.com/rett/tacctl/internal/conf"
+	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/hosts"
@@ -604,6 +605,18 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	// Users whose name has a period (a snapshot of 0.2.25 or earlier): the
 	// restore puts them back without a render, see backup_dots.go.
 	dotted := snapshotDottedUsers(snapStore)
+	// Its console.yaml can hold settings of those users, which the file read
+	// by the console cannot (a name with a period is refused there): they are
+	// left out of the file that is installed, and named.
+	var conText []byte
+	var conDropped []console.DroppedSetting
+	if snapCon := filepath.Join(dir, "console.yaml"); len(dotted) > 0 && cfgIsFile(snapCon) {
+		var err error
+		if conText, conDropped, err = console.DropDottedUserKeys(snapCon); err != nil {
+			inv.stderrLine(strings.Join(msgs(err), " "))
+			return inv.usageErr("Snapshot " + id + " cannot be restored: its console.yaml cannot be read. Nothing was changed.")
+		}
+	}
 
 	// The backends it enables must be on this machine: a restore cannot
 	// install one. (Nothing is touched yet.)
@@ -644,6 +657,9 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	if len(dotted) > 0 {
 		inv.echo("")
 		inv.echoE(ui.Red + restoreDotsNote(id, dotted) + ui.NC)
+		for _, l := range droppedConsoleLines(conDropped, "will drop") {
+			inv.echoE(ui.Red + l + ui.NC)
+		}
 	}
 	holdNote := inv.restoreHoldNote(dir)
 	if holdNote != "" {
@@ -768,10 +784,23 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	// So do the console's settings: a snapshot without console.yaml leaves
 	// the live file alone.
 	if snapCon := filepath.Join(dir, "console.yaml"); cfgIsFile(snapCon) {
-		if err := backupPut(snapCon, a.Paths.ConsoleFile, 0o600); err != nil {
+		var err error
+		if len(conDropped) > 0 {
+			err = backupPutBytes(conText, a.Paths.ConsoleFile, 0o600)
+		} else {
+			err = backupPut(snapCon, a.Paths.ConsoleFile, 0o600)
+		}
+		if err != nil {
 			inv.stderrLine(err.Error())
 			return err
 		}
+	}
+	// The state a journal of the upgrade's renames describes is replaced: none
+	// of them is pending in what came back (the snapshot holds the ledger and
+	// console.yaml of the same moment), and a later upgrade must not move the
+	// settings of the person it names to whoever holds the new name.
+	if err := lifecycle.DropJournal(a.Paths.StateDir); err != nil {
+		a.Out.WarnE("The upgrade's record of unfinished renames, " + lifecycle.JournalPath(a.Paths.StateDir) + ", could not be removed: " + err.Error() + "; remove it")
 	}
 	// And the SNMP credentials, which the settings in tacctl.yaml name.
 	if err := inv.restoreSNMP(dir); err != nil {
@@ -817,6 +846,9 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	a.Out.InfoE("Restored snapshot " + id + ".")
 	if len(dotted) > 0 {
 		a.Out.WarnE(restoreDotsNote(id, dotted))
+		for _, l := range droppedConsoleLines(conDropped, "dropped") {
+			a.Out.WarnE(l)
+		}
 	}
 	if holdNote != "" {
 		a.Out.WarnE(holdNote)
@@ -1387,12 +1419,17 @@ func (inv *invocation) installSnapshot(dir string) error {
 // backupPut is _backup_put with a mode: src copied to <dst>.tacctl-new,
 // given mode and renamed over dst, so a reader never sees half a file.
 func backupPut(src, dst string, mode os.FileMode) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return backupPutBytes(data, dst, mode)
+}
+
+// backupPutBytes is backupPut for text already in memory.
+func backupPutBytes(data []byte, dst string, mode os.FileMode) error {
 	tmp := dst + ".tacctl-new"
 	err := func() error {
-		data, err := os.ReadFile(src)
-		if err != nil {
-			return err
-		}
 		if err := os.WriteFile(tmp, data, mode); err != nil {
 			return err
 		}
@@ -1458,6 +1495,9 @@ func (inv *invocation) restoreLegacy(id string) error {
 	file, ok := inv.legacyPath(id)
 	if !ok {
 		return inv.usageErr("Old-style backup not found: "+id, "Run 'tacctl backup list' to see available backups.")
+	}
+	if err := inv.upgradeRenamesFinished(); err != nil {
+		return err
 	}
 	inv.echo("")
 	inv.echo("  Checking that the store can take " + file)

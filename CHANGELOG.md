@@ -58,6 +58,15 @@ current behaviour; this file is where history lives.
    moves the ledger line and the console settings of those users to the names
    the store holds (`finished the rename of user alice.smith to alice_smith`),
    and the message of a failed follow-up now says so besides the snapshot.
+   Until that move is finished, `user add`, `user remove` and `user rename`
+   refuse a name the record holds, and `store import` and the restore of an
+   old-style backup refuse whatever the names (`The upgrade's rename of user
+   alice.smith to alice_smith is not finished: run 'tacctl upgrade' first.
+   Nothing was changed.`): a user removed and added again under the new name
+   would otherwise be given the renamed person's ledger line and console
+   settings by the next upgrade. A restore of a snapshot forgets the record,
+   as the state it describes is replaced. The record is emptied before it is
+   removed, and a removal that fails is reported, so it does not replay.
 
    The rule for the new name does not change, so a new name can be a user name
    that no Linux account can have (upper case: `Alice.Smith` becomes
@@ -94,7 +103,15 @@ current behaviour; this file is where history lives.
    renders nothing (no renderer writes the name, so the services keep their
    configuration; a snapshot of that kind that enables a backend not running now
    is refused), and `tacctl upgrade` then renames the users and renders. A
-   recovery skips such a user, naming it: it adds no user to the store.
+   recovery skips such a user, naming it: it adds no user to the store. The
+   restore installs the snapshot's `console.yaml` without the settings of such a
+   user (the system shell, the password cache and the ignored `users` override),
+   because the console cannot read a name with a period and every user below
+   the superuser would be held at the password change until the upgrade;
+   it names each one (`dropped console setting of user alice.smith: system
+   shell enable:operator`) and says to set it again after the upgrade has
+   renamed the user. Every other setting is kept. The restore's note also
+   says that `tacctl upgrade` updates tacctl if its branch has a newer release.
 
 4. **A good pull records the members of a Junos virtual chassis or a Cisco
    stack.** `tacctl device config pull` recorded one model and one serial number
@@ -191,9 +208,11 @@ current behaviour; this file is where history lives.
    that a file a user grew cannot exhaust the memory of the process that reads
    it with a superuser's reach.
    `list --json` cleans every string (file, name, type, format, user, filters)
-   as the text list does, and `export <user>/<file>` of another user's file
-   that has no valid metadata file (not a report tacctl made) needs `--out`
-   instead of printing it to the superuser's terminal.
+   as the text list does, and `export <user>/<report>` of another user's file
+   to the standard output cleans every line as `show --content` does (control
+   and formatting characters, escape sequences and line separators print as
+   `?`), whether or not the file has a valid metadata file, which its owner
+   makes too and so cannot vouch for it; `--out` copies the bytes as they are.
 
 8. **The reports of a user are limited in size and number, by settings.** A
    directory of reports must not grow without bound. `tacctl device reports
