@@ -385,14 +385,7 @@ or
 .B "device config apply <name> \-\-check"
 or
 .B "device config forget <name>"
-settles it), and every target but 0.2.24, 0.2.23, 0.2.22, 0.2.21 and 0.2.20 while the store has a user whose
-name has a period (no other target reads such a name: the refusal lists each, with
-.B "user rename <name> <new\-name>"
-as the way out, and changes nothing; an override under such a name in the
-ignored
-.B users
-mapping of console.yaml does not stop it, the rollback takes that entry out).
-The
+settles it). The
 .B tiers
 and
 .B users
@@ -575,8 +568,8 @@ then
 converts nothing: this release changed no stored file, so 0.2.24 reads every file it
 writes (the break\-glass firewall and its setting, the email addresses, the SNMP
 credential files, the covered staging entries, the server name, the timing scale,
-the server address, the users' login to this server, a user name with a period and
-an emergency lockdown, with or without enrolled hosts, all stay), the per\-tier
+the server address, the users' login to this server and an emergency lockdown,
+with or without enrolled hosts, all stay), the per\-tier
 sudoers drop\-in is left (0.2.24 and this release write the same text), no snapshot
 is taken and
 .B \-\-yes
@@ -597,8 +590,8 @@ converts no file but the key
 (0.2.24's; when it is set the snapshot is taken): 0.2.24 and this release changed no other stored file, so 0.2.23 reads every file they
 write (the email addresses, the SNMP credential files, the covered staging
 entries, the server name, the timing scale, the server address, the users' login
-to this server, a user name with a period and an emergency lockdown, with or
-without enrolled hosts, all stay), the per\-tier sudoers drop\-in is put back as 0.2.23 wrote it
+to this server and an emergency lockdown, with or without enrolled hosts, all
+stay), the per\-tier sudoers drop\-in is put back as 0.2.23 wrote it
 (without the operator's
 .BR "log failures *" ;
 when it is exactly the text of 0.2.24 and this release it is rewritten, after
@@ -640,8 +633,8 @@ with 0.2.22's: the engineer's rule of
 .B "device clone"
 is taken out; an edited drop\-in is left): 0.2.22
 reads every other file 0.2.23, 0.2.24 and this release write, so the server name, the timing
-scale, the server address, the users' login to this server, a user name with a
-period and an emergency lockdown (of scopes with no enrolled host) stay. With no
+scale, the server address, the users' login to this server and an emergency
+lockdown (of scopes with no enrolled host) stay. With no
 address in the store, no SNMP
 credential file in version 2 (a second or non\-default user, a default naming
 another level's user, a device's file without an
@@ -660,8 +653,8 @@ removes
 .B server.name
 and the timing scale, rewrites the per\-tier sudoers drop\-in when it is exactly this release's text or 0.2.23's (with 0.2.21's, which is 0.2.22's: the engineer's rule of
 .B "device clone"
-is taken out; an edited drop\-in is left) and converts nothing else: no scope is added to the users, and a user name with
-a period and an emergency lockdown stay, as 0.2.21 reads both. It needs no
+is taken out; an edited drop\-in is left) and converts nothing else: no scope is added to the users, and an emergency
+lockdown stays, as 0.2.21 reads it. It needs no
 .B \-\-yes
 (it has no warning of its own: the email addresses, above, are the one), and
 .B \-\-hosts
@@ -1371,7 +1364,19 @@ a name with upper case is refused with the lower\-case spelling to use, and a
 user that exists with upper case keeps working as it is
 .RB ( "tacctl config validate"
 lists it). A period is refused: it cannot be part of a Linux account name, and
-every user has an account on the tacctl server.
+every user has an account on the tacctl server. This holds for every
+.B user
+verb, for
+.B passwd
+and for
+.BR "config linux uid" :
+a name with a period is refused with
+.BR "Username must contain only letters, numbers, underscores and hyphens (a period cannot be part of a Linux account name)." .
+A store that 0.2.20 or 0.2.21 wrote can hold such a name until
+.B "tacctl upgrade"
+renames it; every write then fails with
+.BR "user 'alice.smith': invalid name" ,
+which says so.
 Prompts for the password with confirmation. If
 .BI --hash " hash"
 is given, the bcrypt hash is used directly and no password is prompted
@@ -1650,17 +1655,7 @@ Rename a user. The user's
 .B "console system\-shell user"
 setting moves to the new name, and the command says so. The new name is lower case and follows the rules of
 .BR "user add" ;
-the old name may be one with a period, which 0.2.20 and 0.2.21 allowed. Until
-it is renamed, such a user is refused by
-.BR passwd ,
-.B "user passwd"
-and
-.B "user require\-password\-change"
-(with the line
-.BR "rename it first: tacctl user rename <name> <new\-name>" ),
-and
-.B "host sync"
-skips it with a warning, since it has no account on the hosts.
+a period is refused in either name.
 Changing only the spelling
 .RB ( "user rename Alice alice" )
 is how a name from before is fixed. A device matches the typed login name
@@ -2852,13 +2847,7 @@ case) is a warning under
 naming the rename that fixes it
 .RB ( "tacctl user rename Alice alice" ,
 and the like); the one for a user adds that devices match the typed login name
-exactly, so the rename changes what the person types at the device. A user whose
-name has a period (a leftover of 0.2.20 or 0.2.21; a user name is letters, digits,
-\&'_' and \&'\-') is an error under
-.BR "Names:" ,
-naming
-.BR "tacctl user rename <name> <new\-name>" ;
-\fB\-\-fix\-names\fR does not offer it. Only the superuser's view has these findings.
+exactly, so the rename changes what the person types at the device. Only the superuser's view has these findings.
 .IP
 Then, for every enabled backend, whether its rendered config is up to date
 with the store and whether any of its files was edited by hand (drift). With
@@ -4491,9 +4480,7 @@ after the highest one given, never reused, not even after the user is
 removed), and kept in
 .IR /etc/tacctl/linux\-uids ,
 whose first line records the range it is numbered for.
-A user whose name has a period (a leftover of 0.2.20 or 0.2.21) has no Linux
-account: its number is printed if the ledger has one, and a new one is refused,
-since it would never be used. A value outside that range is refused; an existing entry outside it is
+A value outside that range is refused; an existing entry outside it is
 listed as not used on hosts, and its user gets no account until
 given a number in the range. When the range is used up, the script refuses
 the next user.

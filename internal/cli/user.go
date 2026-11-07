@@ -366,7 +366,7 @@ func (inv *invocation) userShow(args []string) error {
 	if username == "" {
 		return inv.usageErr("Usage: tacctl user show <username>")
 	}
-	if err := names.ValidateExistingUsername(username); err != nil {
+	if err := names.ValidateUsername(username); err != nil {
 		return err
 	}
 	u, ok, err := inv.userInfo(username)
@@ -656,7 +656,7 @@ func (inv *invocation) userEmail(args []string) error {
 	if err := inv.requireStore(); err != nil {
 		return err
 	}
-	if err := names.ValidateExistingUsername(username); err != nil {
+	if err := names.ValidateUsername(username); err != nil {
 		return err
 	}
 	u, ok, err := inv.userInfo(username)
@@ -745,7 +745,7 @@ func (inv *invocation) userRemove(args []string) error {
 	if err := inv.requireStore(); err != nil {
 		return err
 	}
-	if err := names.ValidateExistingUsername(username); err != nil {
+	if err := names.ValidateUsername(username); err != nil {
 		return err
 	}
 	if exists, err := inv.userExists(username); err != nil {
@@ -782,22 +782,6 @@ func (inv *invocation) userRemove(args []string) error {
 
 // --- passwd -----------------------------------------------------------------
 
-// newUsername is names.ValidateUsername for a verb that sets or requires a
-// password, which only a user with a Linux account name can use. A name that
-// is refused for its period but stands in the store (0.2.20 and 0.2.21 let
-// it be made, and 'user show' displays it) gets a second line with the way
-// out. The store must have been required.
-func (inv *invocation) newUsername(name string) error {
-	err := names.ValidateUsername(name)
-	if err == nil || !names.MatchExistingUser(name) {
-		return err
-	}
-	if exists, uerr := inv.userExists(name); uerr != nil || !exists {
-		return err
-	}
-	return inv.usageErr(msgsJoin(err), "rename it first: tacctl user rename "+name+" <new-name>")
-}
-
 func (inv *invocation) userPasswd(args []string) error {
 	username := arg(args, 0)
 	if username == "" {
@@ -806,7 +790,7 @@ func (inv *invocation) userPasswd(args []string) error {
 	if err := inv.requireStore(); err != nil {
 		return err
 	}
-	if err := inv.newUsername(username); err != nil {
+	if err := names.ValidateUsername(username); err != nil {
 		return err
 	}
 	if err := names.RejectReservedUsername(username); err != nil {
@@ -947,7 +931,7 @@ func (inv *invocation) userLookup(args []string, verb string, needStore bool) (s
 			return "", userInfo{}, err
 		}
 	}
-	if err := names.ValidateExistingUsername(username); err != nil {
+	if err := names.ValidateUsername(username); err != nil {
 		return "", userInfo{}, err
 	}
 	u, ok, err := inv.userInfo(username)
@@ -1086,7 +1070,7 @@ func (inv *invocation) userRename(args []string) error {
 		return err
 	}
 	for _, check := range []func() error{
-		func() error { return names.ValidateExistingUsername(oldname) },
+		func() error { return names.ValidateUsername(oldname) },
 		func() error { return names.ValidateUsername(newname) },
 		func() error { return names.RejectReservedUsername(newname) },
 		func() error { return names.RequireLower(newname) },
@@ -1199,7 +1183,7 @@ func (inv *invocation) userMove(args []string) error {
 	if err := inv.requireStore(); err != nil {
 		return err
 	}
-	if err := names.ValidateExistingUsername(username); err != nil {
+	if err := names.ValidateUsername(username); err != nil {
 		return err
 	}
 	if err := names.ValidateClassName(newgroup); err != nil {
@@ -1275,7 +1259,7 @@ func (inv *invocation) userScope(args []string) error {
 			return err
 		}
 	}
-	if err := names.ValidateExistingUsername(username); err != nil {
+	if err := names.ValidateUsername(username); err != nil {
 		return err
 	}
 	u, ok, err := inv.userInfo(username)

@@ -59,11 +59,7 @@ var schema = []sectionSpec{
 		{name: "juniper_class", typ: tString, pattern: names.MatchClass, required: true},
 		{name: "builtin", typ: tBool},
 	}},
-	// A user name read from a store may hold periods (0.2.20 and 0.2.21 wrote
-	// them): every store command must keep running so that 'user rename'
-	// can fix it. A new name is refused where it is made (UserSet,
-	// UserRename).
-	{key: "users", label: "user", name: names.MatchExistingUser, fields: []fieldSpec{
+	{key: "users", label: "user", name: names.MatchUser, fields: []fieldSpec{
 		{name: "group", typ: tString, required: true},
 		{name: "scopes", typ: tStringList, required: true},
 		{name: "hash", typ: tBcryptHex, nullable: true, required: true},
@@ -122,6 +118,12 @@ func isInt(v any) (int, bool) {
 	i, ok := v.(int)
 	return i, ok
 }
+
+// reDottedUser is the shape of a user name that 0.2.20 and 0.2.21 allowed and
+// no release does now: single periods between runs of letters, digits, '_'
+// and '-'. Only the message about a name of that shape says the upgrade
+// renames it.
+var reDottedUser = regexp.MustCompile(`^[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)+$`)
 
 var reDate = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
 var reLowerHex = regexp.MustCompile(`^[0-9a-f]+$`)
@@ -349,6 +351,11 @@ func Validate(store any) []string {
 		sections[sec.key] = m
 		for name, ent := range m.All() {
 			if !sec.name(name) {
+				if sec.key == "users" && reDottedUser.MatchString(name) {
+					// 0.2.20 and 0.2.21 allowed it; the upgrade renames it
+					add("%s %s: invalid name (a period cannot be part of a Linux account name; 'tacctl upgrade' renames such a user)", sec.label, PyRepr(name))
+					continue
+				}
 				add("%s %s: invalid name", sec.label, PyRepr(name))
 				continue
 			}

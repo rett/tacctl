@@ -35,7 +35,7 @@ func TestValidateUsernameRejects(t *testing.T) {
 
 const usernameWant = "Username must contain only letters, numbers, underscores and hyphens (a period cannot be part of a Linux account name)."
 
-// TestValidateUsernameNoDots: a new user name is letters, digits, '_' and
+// TestValidateUsernameNoDots: a user name is letters, digits, '_' and
 // '-' and nothing else; a period is refused with the reason.
 func TestValidateUsernameNoDots(t *testing.T) {
 	for _, s := range []string{
@@ -47,31 +47,6 @@ func TestValidateUsernameNoDots(t *testing.T) {
 		}
 		if MatchUser(s) {
 			t.Errorf("MatchUser(%q) = true", s)
-		}
-	}
-}
-
-// TestExistingUsernameKeepsDots: a store written by 0.2.20 or 0.2.21 can
-// hold a name with periods between its parts; it is read, shown, renamed
-// from and removed, and only a bad shape is refused.
-func TestExistingUsernameKeepsDots(t *testing.T) {
-	for _, s := range []string{"alice.smith", "a.b-c_d", "a.b.c", "1.2", "-.-", "jsmith", "A.B"} {
-		if err := ValidateExistingUsername(s); err != nil {
-			t.Errorf("%q refused: %v", s, err)
-		}
-		if !MatchExistingUser(s) {
-			t.Errorf("MatchExistingUser(%q) = false", s)
-		}
-	}
-	for _, s := range []string{
-		"", ".alice", "alice.", "alice..smith", ".", "..", "alice. smith", "alice.smith\n", "alice.sm/th", "alice.\u00e9",
-		"al ice.smith", "alice\x00.smith",
-	} {
-		if got := msg(t, ValidateExistingUsername(s)); got != usernameWant {
-			t.Errorf("%q: %q", s, got)
-		}
-		if MatchExistingUser(s) {
-			t.Errorf("MatchExistingUser(%q) = true", s)
 		}
 	}
 }

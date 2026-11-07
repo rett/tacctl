@@ -37,6 +37,25 @@ current behaviour; this file is where history lives.
    frees the name (`tacctl user rename alice_smith <other-name>`); run it
    again afterwards. A second upgrade does nothing.
 
+3. **A user name with a period is not accepted anywhere.** 0.2.22 to 0.2.25
+   refused a period in a new user name but still read one that a store from
+   0.2.20 or 0.2.21 held: `user rename` ran from it, `config validate` reported
+   it, the password verbs and `config linux uid` refused it with a line of their
+   own, `tacctl rollback` refused or noted it, and the TACACS+ renderer wrote a
+   special anchor for it. All of that is gone, since `tacctl upgrade` now renames
+   such a user (item 2). Every `user` verb, `passwd` and `config linux uid`
+   refuse a name with a period, existing or not, with `Username must contain
+   only letters, numbers, underscores and hyphens (a period cannot be part of a
+   Linux account name).`, the store and `console.yaml` validate user names
+   strictly, and `user rename` takes no old name with a period. A store that
+   still holds one (an upgrade that stopped for a name that is taken, or a
+   restored snapshot of 0.2.20 or 0.2.21) fails every write with `user
+   'alice.smith': invalid name (a period cannot be part of a Linux account
+   name; 'tacctl upgrade' renames such a user)`, and the upgrade is the way
+   out. `config validate` no longer has a separate error for it, `tacctl
+   rollback` to any target no longer looks for one, and the manual page and the
+   documentation lose the sentences about the tolerated user.
+
 ## 0.2.25 (2026-11-05)
 
 1. **`tacctl device config shapes` keeps its table narrow.** The list put every

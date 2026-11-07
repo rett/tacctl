@@ -386,7 +386,7 @@ func ValidShellPath(p string) error {
 }
 
 // validate is the invariants of a file.
-func (f *File) validate() error { return f.check(names.MatchExistingUser) }
+func (f *File) validate() error { return f.check(names.MatchUser) }
 
 // check is validate with userName deciding which user names the per-user
 // mappings may hold.

@@ -69,17 +69,6 @@ func TestRollback0221WithNoServerName(t *testing.T) {
 	hs.expect(0, "Nothing to convert: every file is one 0.2.21 can read.", "")
 }
 
-// 0.2.21 reads a user name with a period (0.2.20 and 0.2.21 allowed one), so
-// it does not stop its rollback; 0.2.19 refuses the name, as before.
-func TestRollback0221IsNotStoppedByADottedName(t *testing.T) {
-	hs := rollback0221State(t)
-	hs.write("state/store.yaml", strings.Replace(hs.store(), "\n  erin:", "\n  erin.smith:", 1), 0o600)
-	hs.run(hs.runner(), "rollback", "0.2.21")
-	hs.expect(0, "Roll back to 0.2.21 (dry run)", "")
-	hs.run(hs.runner(), "rollback", "0.2.19")
-	hs.expect(1, "", "erin.smith")
-}
-
 // 0.2.21 has the emergency lockdown record, so a lockdown that stands does not
 // stop its rollback, in the dry run and with --apply, and the record stays;
 // 0.2.18 has none and refuses, with the way out. (A reorder of the 0.2.21
@@ -104,12 +93,10 @@ func TestRollback0221IsNotStoppedByALockdown(t *testing.T) {
 
 // The check against the real release: built from the 0.2.21 tag, its config
 // validate refuses the server name before the rollback and reads the state
-// after, with its server address, the users' login to the server and a user
-// whose name has a period.
+// after, with its server address and the users' login to the server.
 func TestRollbackRealOldBinary0221(t *testing.T) {
 	bin := oldBinaryOf(t, "0.2.21", old0221Flag)
 	hs := rollback0221State(t)
-	hs.write("state/store.yaml", strings.Replace(hs.store(), "\n  erin:", "\n  erin.smith:", 1), 0o600)
 	hs.step("", "server", "name", "core-1")
 	// the timing scale of 0.2.22, in the three places 0.2.21 refuses it
 	hs.step("", "config", "devices", "timeout-scale", "3")
@@ -156,8 +143,8 @@ func TestRollbackRealOldBinary0221(t *testing.T) {
 	if out, code := run("device", "list"); code != 0 || !strings.Contains(out, "sw2") {
 		t.Errorf("0.2.21 device list after: %d\n%s", code, out)
 	}
-	if out, code := run("user", "show", "erin.smith"); code != 0 || !strings.Contains(out, "erin.smith") {
-		t.Errorf("0.2.21 user show of the dotted name after: %d\n%s", code, out)
+	if out, code := run("user", "show", "erin"); code != 0 || !strings.Contains(out, "erin") {
+		t.Errorf("0.2.21 user show of erin after: %d\n%s", code, out)
 	}
 	if out, code := run("server", "addresses"); code != 0 || !strings.Contains(out, "192.0.2.10") {
 		t.Errorf("0.2.21 server addresses after: %d\n%s", code, out)

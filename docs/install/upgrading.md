@@ -95,8 +95,7 @@ the other hosts. Before upgrading, rename it (`tacctl scope rename tacctl
 `tacctl rollback` takes eleven targets: `0.2.24`, the release before this
 one, `0.2.23`, `0.2.22`, `0.2.21`, `0.2.20`, `0.2.19`, `0.2.18`, `0.2.17`, `0.2.16`, `0.2.9` and
 `0.2.3`. All are the dry run described below until `--apply` is given, all
-refuse while an apply is not settled, all but `0.2.24`, `0.2.23`, `0.2.22`,
-`0.2.21` and `0.2.20` while a user name has a period, all but `0.2.24`,
+refuse while an apply is not settled, all but `0.2.24`,
 `0.2.23`, `0.2.22`, `0.2.21`, `0.2.20` and `0.2.19` while an emergency
 lockdown locks a group, all but `0.2.24` and `0.2.23` while an emergency lockdown has enrolled hosts, and each release's tool prepares the state for
 the releases it knows. `0.2.4` to `0.2.8` and `0.2.2`
@@ -232,16 +231,6 @@ any more (`emergency lockdown <scope> enable <its groups>` or `disable` drops
 the name). A lockdown on a scope with no enrolled host is taken over as
 before.
 
-**A user name with a period stops every rollback but the ones to 0.2.24,
-0.2.23, 0.2.22, 0.2.21 and 0.2.20** (the dry run too): 0.2.20 and 0.2.21 allowed periods and
-0.2.22 to 0.2.24 read a stored one (a restored snapshot of any of them can bring such a
-user back); no other target reads one (it fails with `user '<name>': invalid
-name` on every store command). The refusal lists each such user of the store
-with the command that fixes it (`tacctl user rename <name> <new-name>`); do
-that, then run the rollback again. Nothing is changed while it refuses. An
-override under such a name in the ignored `users` mapping of `console.yaml`
-does not stop it: the rollback takes that entry out of the file.
-
 **The password cache is the user's choice (0.2.20).** `console password-cache tiers` is now only the permission: a tier that is listed no longer has the cache on for everyone in it. Each user turns it on for themselves with `console password-cache on` (off by default), so a console that had the cache on for a tier has it off for every user until they do; `tacctl shell --password-cache` is unchanged. The choices are stored in `settings.password_cache_users` (written only when a user turned it on). No release before 0.2.20 reads that key: the rollback removes it for every target before 0.2.20 (0.2.19, 0.2.18, 0.2.17, 0.2.16, 0.2.9 and 0.2.3; the plan names the users), and the older release then has the cache on for every user of a listed tier, as it always did (0.2.3 has no cache). The targets 0.2.24 to 0.2.20 read the key and leave it.
 
 **The system shell of single users.** `settings.system_shell_users` (`console system-shell user`, written only when a user has a setting) is a key no release before 0.2.20 reads: the rollback to a target before 0.2.20 removes it (the plan names the users and their setting), and the older release has the tiers' list `settings.system_shell_tiers` alone; the targets 0.2.24 to 0.2.20 read the key and leave it. That list always holds `superuser` once this release has written it.
@@ -350,9 +339,8 @@ nothing. It removes no key (`breakglass.firewall` and the firewall stay,
 0.2.24 has them), rewrites no sudoers drop-in (0.2.24 and this release write
 the same text), takes no snapshot and does not need `--yes`; the users' email
 addresses, the SNMPv3 users, the covered staging entries, the server name, the
-timing scale, the server address, the users' login to this server, a user name
-with a period and an emergency lockdown (with or without enrolled hosts) all
-stay. It still refuses while an apply is not settled. `--hosts` is accepted
+timing scale, the server address, the users' login to this server and an
+emergency lockdown (with or without enrolled hosts) all stay. It still refuses while an apply is not settled. `--hosts` is accepted
 and does nothing. The tacquito checkout in `/opt/tacquito-src` keeps pointing
 at the project's fork, which is what 0.2.24 pulls from.
 
@@ -384,8 +372,7 @@ writes it after `visudo -cf`, and a file `tacctl` did not write is left. Every
 older target that rewrites the per-tier drop-in recognises this release's text
 and 0.2.23's as `tacctl`'s own and puts back its own. The users' email addresses, the SNMPv3 users, the covered staging entries, the
 server name, the timing scale, the server address, the users' login to this
-server, a user name with a period and an emergency lockdown (with or without
-enrolled hosts) all stay. It still refuses while an apply is not settled.
+server and an emergency lockdown (with or without enrolled hosts) all stay. It still refuses while an apply is not settled.
 What 0.2.24 changed outside the stored files is 0.2.23's to undo or keep. The `tacctl upgrade --branch 0.2.23` that ends the rollback writes the console's sshd drop-in from 0.2.23's text, without the block of users held to a password change, so their new connections forward again as their tier allows. It keeps the tacquito 0.2.24 built until it next rebuilds it (a new commit on the fork's `main`), so accounting records keep `"Device"` and the literal `<`, `>` and `&`; 0.2.23's `log accounting` shows them as they are written. On a device whose `single-connection` 0.2.24 removed, 0.2.23's `device config diff` and `plan` show the line as missing, and applying that plan types it again.
 `--hosts` is accepted and does nothing. The tacquito clone in `/opt/tacquito-src`
 keeps pointing at the project's fork, which has the same history as the
@@ -403,8 +390,8 @@ tacctl upgrade --branch 0.2.23  # install 0.2.23
 0.2.22 reads every file 0.2.23, 0.2.24 and this release write but the users' email addresses in
 `store.yaml`, so the rollback removes those (above) and converts nothing else
 but the sudoers drop-in (below): the server name, the timing scale, the server
-address, the users' login to this server, a user name with a period and an
-emergency lockdown (of scopes with no enrolled host) all stay. With no address
+address, the users' login to this server and an emergency lockdown (of
+scopes with no enrolled host) all stay. With no address
 in the store, no SNMP credential file in version 2 (a second or a non-default
 user, a default naming another level's user, a device's file without an
 `snmp:` entry: above) and no covered staging entry (above), no file is
@@ -427,8 +414,8 @@ tacctl upgrade --branch 0.2.22  # install 0.2.22
 0.2.21 reads every file this release writes but `server.name`
 (`tacctl server name`) and the timing scale, so the rollback removes those
 keys, after a snapshot, and converts nothing else: no scope is added to the users (0.2.21 has the login to
-this server itself), a user name with a period and an emergency lockdown stay
-(0.2.21 reads both), and the new `server show`, `server listen` and `server
+this server itself) and an emergency lockdown stay (0.2.21 reads it), and the
+new `server show`, `server listen` and `server
 metrics` write the keys that `config listen` and `config metrics` wrote. The
 per-tier sudoers drop-in, when it is exactly this release's text or 0.2.23's,
 is rewritten with 0.2.21's, which is 0.2.22's (it loses the engineer's row of `device

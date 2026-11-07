@@ -35,7 +35,7 @@ func (inv *invocation) userReportsLimit(args []string) error {
 	if err := inv.requireStore(); err != nil {
 		return err
 	}
-	if err := names.ValidateExistingUsername(username); err != nil {
+	if err := names.ValidateUsername(username); err != nil {
 		return err
 	}
 	u, ok, err := inv.userInfo(username)

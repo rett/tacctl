@@ -17,8 +17,7 @@ package lifecycle
 //	                  accepts: it stays, and rootBreakGlassWarning says what
 //	                  0.2.19 makes of it (every target).
 //	store.yaml        password_change_required (0.2.20): removed for every
-//	                  target (rollback_pwchange.go). A user name with a
-//	                  period refuses every target (DottedUsersRefusal).
+//	                  target (rollback_pwchange.go).
 //	console.yaml      settings.color, settings.system_shell_users (the
 //	                  values 'disable' and 'enable:<tier>' alike),
 //	                  settings.password_cache_users and a list_max of -1 are
