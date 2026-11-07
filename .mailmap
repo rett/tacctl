@@ -1,0 +1,5 @@
+# One author for every commit: the owner. Git tools that read this file (git log, shortlog, blame) show the
+# owner for the identities that were not. GitHub does not read it.
+Everett C. Haimes III <rett@users.noreply.github.com> qargi <qargi@example.invalid>
+Everett C. Haimes III <rett@users.noreply.github.com> check <check@example.invalid>
+Everett C. Haimes III <rett@users.noreply.github.com> Tacctl Docs Writer <docs@users.noreply.github.com>

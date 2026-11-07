@@ -7,7 +7,7 @@ package lifecycle
 // older schema refuses). A release before 0.2.23 cannot lift a lockdown on a
 // host: its 'emergency lockdown disable' renders the devices and its 'host
 // sync' never removes the file, so the host would stay closed with nothing
-// that says so. Every target but 0.2.24 and 0.2.23 is therefore refused, in the
+// that says so. Every target but 0.2.25, 0.2.24 and 0.2.23 is therefore refused, in the
 // dry run and --apply alike, while a lockdown stands on a scope that has an
 // enrolled host, or a lifted one still waits for a host to drop the file; the
 // lockdowns of scopes with no host, which the 0.2.19 to 0.2.22 targets take over as they stand,

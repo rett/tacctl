@@ -159,6 +159,11 @@ func (inv *invocation) storeImport(args []string) error {
 		return err
 	}
 	if !p.check {
+		// An unfinished rename of the upgrade ties a name to a person: the
+		// users this brings in could be given that person's settings.
+		if err := inv.upgradeRenamesFinished(); err != nil {
+			return err
+		}
 		// The import and the tier pins after it are one change of the
 		// store and tacctl.yaml: no other command changes them between.
 		unlock, err := inv.holdApply()

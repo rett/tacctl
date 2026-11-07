@@ -131,7 +131,15 @@ func Load(path string) (*Store, error) {
 // store file (each printed by 0.1.16 as 'tacctl store: <message>' on
 // stderr; any message means exit 1). A missing file is *NotFoundError, a
 // file that cannot be read, parsed or walked is an *Error.
-func ValidateFile(path string) ([]string, error) {
+func ValidateFile(path string) ([]string, error) { return validateFile(path, false) }
+
+// ValidateFileLegacyDots is ValidateFile for the store of a snapshot that
+// 'backup restore' and 'backup recover' read: a user name with a period is
+// accepted (ValidateLegacyDots) and nothing else is relaxed. No other caller
+// uses it; the live store is judged by ValidateFile.
+func ValidateFileLegacyDots(path string) ([]string, error) { return validateFile(path, true) }
+
+func validateFile(path string, legacyDots bool) ([]string, error) {
 	if st, err := os.Stat(path); err != nil || !st.Mode().IsRegular() {
 		return nil, &NotFoundError{Path: path}
 	}
@@ -146,7 +154,7 @@ func ValidateFile(path string) ([]string, error) {
 		}
 		raw = s.doc
 	}
-	return Validate(raw), nil
+	return validate(raw, legacyDots), nil
 }
 
 // Lock is store_lock: an exclusive flock on <dir>/.store.lock (created

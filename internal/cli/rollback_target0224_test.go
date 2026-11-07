@@ -10,16 +10,25 @@ import (
 // 'tacctl rollback 0.2.24', the release before this one, on the host sandbox
 // with this server enrolled. The plan's own cases are internal/lifecycle's.
 
-// rollback0224State is rollback0221State with this release's per-tier sudoers
-// drop-in, which 0.2.24 wrote too: the rollback to 0.2.24 leaves it.
+// rollback0224State is rollback0221State with the per-tier sudoers drop-in
+// 0.2.24 and 0.2.25 wrote (no row of 'device reports'), which the rollback to 0.2.24
+// and 0.2.25 leaves.
 func rollback0224State(t *testing.T) *hostSandbox {
 	t.Helper()
 	hs := rollback0221State(t)
-	hs.write("sudoers.d/tacctl-tiers", tier.Sudoers(), 0o640)
+	hs.write("sudoers.d/tacctl-tiers", tier.Sudoers0225(), 0o640)
 	return hs
 }
 
-// This release changed no stored file, so 0.2.24 reads everything: the dry run
+// beforeReportsNote is out up to the note every target ends with: the reports
+// in the users' homes stay and the commands of the limits (0.2.26) write a
+// key the older release refuses (rollbackReportLimitsNote).
+func beforeReportsNote(out string) string {
+	before, _, _ := strings.Cut(out, "The reports in the users' homes stay")
+	return before
+}
+
+// This release changed no stored file 0.2.24 reads but the limits of the stored reports, so 0.2.24 reads everything: the dry run
 // lists nothing to do and --apply converts nothing, even with an email address
 // in the store and the break-glass firewall set (0.2.24's own; the 0.2.23
 // target removes them), takes no snapshot and asks for no --yes.
@@ -54,7 +63,7 @@ func TestRollback0224ConvertsNothing(t *testing.T) {
 	if !strings.Contains(out, "tacctl upgrade --branch 0.2.24") {
 		t.Errorf("--apply lacks the upgrade:\n%s", out)
 	}
-	if strings.Contains(out, "holds the") || strings.Contains(out, "took first") || strings.Contains(out, "Until the upgrade") || strings.Contains(out, "firewall is removed") {
+	if out = beforeReportsNote(out); strings.Contains(out, "holds the") || strings.Contains(out, "took first") || strings.Contains(out, "Until the upgrade") || strings.Contains(out, "firewall is removed") {
 		t.Errorf("--apply speaks of a snapshot, a command to avoid or the firewall:\n%s", out)
 	}
 	if hs.snapshots() != snaps {
@@ -108,7 +117,7 @@ func TestRollback0224LeavesTheDropIn(t *testing.T) {
 	before := tree(t, hs.dir)
 	hs.run(hs.runner(), "rollback", "0.2.24", "--apply")
 	hs.expect(0, "Nothing to convert: every file is one 0.2.24 can read.", "")
-	if got := hs.read("sudoers.d/tacctl-tiers"); got != tier.Sudoers() {
+	if got := hs.read("sudoers.d/tacctl-tiers"); got != tier.Sudoers0225() {
 		t.Errorf("the tiers drop-in changed:\n%s", got)
 	}
 	if got := changedFiles(before, tree(t, hs.dir)); len(got) != 0 {

@@ -144,7 +144,6 @@ TestNoNewKeysUnlessSet 3.18
 TestDeviceCheckSourcesAllPresentTheKey 3.11
 TestRollbackRoundTrip 3.10
 TestRollback0220NextStepNamesYes 3.09
-TestRollbackRefusesDottedUsersCLI 3.09
 TestFixNamesHostScopeRefusedCountsAsRenamed 3.04
 TestLocalLoginTakesAnyLocalAccount 3.01
 TestSystemShellEnableIsForTheTierItWasSetFor 3.00
@@ -196,7 +195,7 @@ TestListNameAndIP 2.46
 TestRollback0223IsToldApartFromTheOlderTargets 2.46
 TestBreakglassHostHoldRefusals 2.45
 TestManGeneratedBlocksAreCurrent 2.44
-TestRollback0222IsNotStoppedByADottedNameOrALockdown 2.43
+TestRollback0222IsNotStoppedByALockdown 2.43
 TestFixNamesSharedScopeIsOfferedOnItsOwn 2.42
 TestConsolePtyCommandLineIsHeldToThePasswordChange 2.41
 TestGroupResetPrompt 2.39
@@ -211,7 +210,6 @@ TestConsolePtyIdle 2.26
 TestHostSyncExpiresAFlaggedUserOnTheOtherHostsOnly 2.26
 TestBreakglassHostHoldRoundTrip 2.25
 TestHostFactsFallbackAndLoginDefs 2.24
-TestRollbackTo0220IgnoresADottedUser 2.24
 TestHostEnrollOfANameADeviceTookMeanwhileIsRefused 2.22
 TestRollback0222IsToldApartFromTheOlderTargets 2.22
 TestRequiredChangeKnowsTheServersLoginAddresses 2.21
@@ -225,11 +223,9 @@ TestRollback0217WritesTheSyntaxKeyBack 2.08
 TestStandingOfAFlaggedUserIsShownEverywhere 2.04
 TestUserAddDoesNotRequireWhatCannotBeMet 2.04
 TestLockdownDisableSyncsAndKeepsWhatFails 2.03
-TestRollback0221IsNotStoppedByADottedName 2.02
 TestUserAddRequiresAPasswordChangeByDefault 2.02
 TestRollbackRefusesOtherVersions 2.00
 TestCommandsAreRefusedWhileAPasswordChangeIsRequired 1.98
-TestDottedUserIsStillRead 1.96
 TestGroupResetDryRunWritesNothing 1.95
 TestCentralLinesActorAndConsole 1.93
 TestPasswordCacheSettingFollowsTheUser 1.93
@@ -458,7 +454,6 @@ TestBackendDisableLegacyWaitsForTheApplyLock 0.86
 TestNewUserAndScopeNamesAreLowerCase 0.86
 TestScopeSecretStdinNudges 0.86
 TestUserEmailShowSetClear 0.86
-TestDottedUserVerifyAndReservedNames 0.85
 TestFixNamesConflictIsNotOffered 0.85
 TestManPageDocumentsEveryConfigKey 0.85
 TestUserVerbShowsTheWarningsOfTheSync 0.85
@@ -481,7 +476,6 @@ TestSNMPPoolAcrossTheLevels 0.81
 TestStrictOffByDefault 0.81
 TestBreakglassDeviceAddressSaysWhenTheRestartFailed 0.80
 TestConfigShowAndValidate 0.80
-TestConfigValidateNamesDottedUsers 0.80
 TestDeviceBlockCisco 0.80
 TestHostListJSONUsers 0.80
 TestPlanFollowsTheMgmtACLMode 0.80
@@ -669,7 +663,6 @@ TestConfigAuditStrictIsTheWayOut 0.48
 TestHostListJSON 0.48
 TestBreakglassDeviceAddressOtherRefusals 0.47
 TestBuiltinOperatorAt15WithALostTierIsAmbiguous 0.47
-TestDottedUserRenameFrom 0.47
 TestEngineerDevicesOfOwnScopes 0.47
 TestHostForgetOrphan 0.47
 TestHostKeyScanUsesTheScale 0.47
@@ -851,7 +844,6 @@ TestUserRenameOnAServerThatIsNotEnrolledSaysNothingOfTiers 0.30
 TestDeviceBlockEngineer 0.29
 TestDeviceRenameStagingWarnsWithTheAddresses 0.29
 TestDeviceReplaceOfACloneAtACoveredAddress 0.29
-TestFixNamesDoesNotProposeAPeriod 0.29
 TestSSHNoTerminalKeepsSSHsOwnPrompt 0.29 serial
 TestScopeMgmtACLModeRefusals 0.29
 TestSectionResetClearIsGone 0.29
@@ -1242,7 +1234,6 @@ TestLifecycleVerbsThroughTheCLI 0.06
 TestLogArgumentsAndHeadings 0.06
 TestLogFollowWithFilters 0.06
 TestManKeyDocsAreComplete 0.06 serial
-TestPasswordVerbsRefuseAPeriod 0.06
 TestPullWTIOtherVersionIsUnsupported 0.06
 TestScopeBlockRefusesTheScopesOwnCommunity 0.06
 TestScopeBlockSystemIsElidedAndRevealed 0.06
@@ -1341,7 +1332,6 @@ TestHeldListFollowsEveryVerbWhateverTheSyncDoes 0.03 serial
 TestHelpRequest 0.03
 TestHoldToTimeout 0.03 serial
 TestHostEnrollThatCannotSnapshotLeavesTheRegistry 0.03
-TestLinuxUIDForADottedUser 0.03
 TestLogDeviceWithoutAnAddress 0.03
 TestOnboardStrictAcceptanceLine 0.03
 TestPhaseRadiusUpgradeFilesGolden 0.03

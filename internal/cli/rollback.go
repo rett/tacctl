@@ -3,7 +3,7 @@ package cli
 // 'tacctl rollback <version> [--apply] [--yes] [--hosts]' (docs/plans/
 // 0.2.3-plan.md D50, docs/plans/0.2.4-plan.md D73, docs/plans/
 // 0.2.9-rollout-plan.md D143, docs/plans/0.2.10-plan.md): prepare tacctl's
-// state for the release before this one (0.2.24), for 0.2.23, 0.2.22, 0.2.21, 0.2.20, 0.2.19, 0.2.18, 0.2.17, 0.2.16, for 0.2.9 or for 0.2.3. The plan and the conversions of
+// state for the release before this one (0.2.25), for 0.2.24, 0.2.23, 0.2.22, 0.2.21, 0.2.20, 0.2.19, 0.2.18, 0.2.17, 0.2.16, for 0.2.9 or for 0.2.3. The plan and the conversions of
 // the files are internal/lifecycle's (rollback.go); this is the command
 // around them: the arguments, what is printed, the snapshot and the
 // sudoers installer.
@@ -33,7 +33,7 @@ const rollbackUsage = "Usage: tacctl rollback <version> [--apply] [--yes] [--hos
 var rollbackSpec = Spec{
 	Flags:   []Flag{{Names: []string{"--apply"}}, {Names: []string{"--yes"}}, {Names: []string{"--hosts"}}},
 	MinArgs: 1, MaxArgs: 1,
-	Args: []string{lifecycle.RollbackTarget0224 + "|" + lifecycle.RollbackTarget0223 + "|" + lifecycle.RollbackTarget0222 + "|" + lifecycle.RollbackTarget0221 + "|" + lifecycle.RollbackTarget0220 + "|" + lifecycle.RollbackTarget0219 + "|" + lifecycle.RollbackTarget0218 + "|" + lifecycle.RollbackTarget0217 + "|" + lifecycle.RollbackTarget0216 + "|" + lifecycle.RollbackTarget029 + "|" + lifecycle.RollbackTarget},
+	Args: []string{lifecycle.RollbackTarget0225 + "|" + lifecycle.RollbackTarget0224 + "|" + lifecycle.RollbackTarget0223 + "|" + lifecycle.RollbackTarget0222 + "|" + lifecycle.RollbackTarget0221 + "|" + lifecycle.RollbackTarget0220 + "|" + lifecycle.RollbackTarget0219 + "|" + lifecycle.RollbackTarget0218 + "|" + lifecycle.RollbackTarget0217 + "|" + lifecycle.RollbackTarget0216 + "|" + lifecycle.RollbackTarget029 + "|" + lifecycle.RollbackTarget},
 }
 
 func rollbackCmd(inv *invocation) *cobra.Command {
@@ -164,6 +164,12 @@ func (inv *invocation) rollback(args []string) error {
 		}
 		rollbackBase += by
 	}
+	// The users' own limits of the stored reports go with the snapshot, and the
+	// line names the users (never more: the values are in the plan above).
+	limitUsers := plan.ReportLimitUserNames()
+	if len(limitUsers) > 0 {
+		rollbackBase = strings.TrimSuffix(rollbackBase, by) + " limit-users=" + namesList(limitUsers, 10) + by
+	}
 	done, err := lifecycle.ApplyRollback(plan)
 	for _, d := range done {
 		a.Out.InfoE(d)
@@ -193,6 +199,9 @@ func (inv *invocation) rollback(args []string) error {
 	}
 	if dropsPool {
 		inv.rollbackSNMPPoolNote(version, snapID, plan)
+	}
+	if len(limitUsers) > 0 {
+		inv.rollbackReportLimitUsersNote(version, snapID, plan)
 	}
 	inv.verbResult(audit.Info, rollbackBase, "")
 	return nil
@@ -250,9 +259,16 @@ func (inv *invocation) rollbackNextSteps(version string, snapshot bool) {
 	if lifecycle.RollbackUndoes(version, "0.2.22") {
 		defer inv.rollbackTimeoutScaleNote(version)
 	}
+	// every target keeps no limit of the stored reports (0.2.26)
+	if lifecycle.RollbackUndoes(version, "0.2.26") {
+		defer inv.rollbackReportLimitsNote(version)
+	}
 	switch version {
+	case lifecycle.RollbackTarget0225:
+		inv.rollbackNextSteps0225(version, snapshot)
+		return
 	case lifecycle.RollbackTarget0224:
-		inv.rollbackNextSteps0224(version)
+		inv.rollbackNextSteps0224(version, snapshot)
 		return
 	case lifecycle.RollbackTarget0223:
 		inv.rollbackNextSteps0223(version, snapshot)
@@ -297,7 +313,7 @@ func (inv *invocation) rollbackNextSteps(version string, snapshot bool) {
 // its snapshot. It moves with each release (docs/releasing.md, The rollback
 // target); TestRollbackFromIsTheReleaseOfTheChangelog compares it with the
 // first release heading of CHANGELOG.md.
-const rollbackFrom = "0.2.25"
+const rollbackFrom = "0.2.26"
 
 // rollbackSnapshotNote says where the state before the rollback is, when the
 // apply took a snapshot (it takes none when no file of tacctl's own is
@@ -312,7 +328,7 @@ func (inv *invocation) rollbackSnapshotNote(snapshot bool, tail string) {
 }
 
 // rollbackFirewallNote says, after a rollback that removed the break-glass
-// firewall (every target but 0.2.24): what went and what stays, what a hold that stands
+// firewall (every target but 0.2.25 and 0.2.24): what went and what stays, what a hold that stands
 // gets from the older release, and that the setting command writes the key it
 // refuses.
 func (inv *invocation) rollbackFirewallNote(version string, plan *lifecycle.RollbackPlan) {
@@ -326,7 +342,7 @@ func (inv *invocation) rollbackFirewallNote(version string, plan *lifecycle.Roll
 }
 
 // rollbackEmailNote says, after a rollback that removed the users' email
-// addresses (every target but 0.2.24 and 0.2.23), where they are and how they come back, and that
+// addresses (every target but 0.2.25, 0.2.24 and 0.2.23), where they are and how they come back, and that
 // the commands that set one write the key again.
 func (inv *invocation) rollbackEmailNote(version, snapID string, users []string) {
 	n := len(users)
@@ -378,6 +394,29 @@ func (inv *invocation) rollbackSNMPPoolNote(version, snapID string, plan *lifecy
 	inv.echo("If one did, run 'tacctl rollback " + version + " --apply --yes' again (it writes version 1).")
 }
 
+// rollbackReportLimitUsersNote says, after a rollback that removed the users'
+// own limits of the stored reports (every target older than 0.2.26), whose they
+// were, where the snapshot is and how they are set again.
+func (inv *invocation) rollbackReportLimitUsersNote(version, snapID string, plan *lifecycle.RollbackPlan) {
+	users := plan.ReportLimitUsers()
+	n := len(users)
+	inv.echo("")
+	inv.echo("The own limits of the stored reports were removed from the store for " + strconv.Itoa(n) + " " + plural(n, "user", "users") + "; " + version + " does not know the keys:")
+	for _, u := range users {
+		inv.echo("  " + u)
+	}
+	inv.echo("They are also in snapshot " + snapID + "; once " + rollbackFrom + " is installed again, 'tacctl user reports-limit <user> max-size|max-count <value>' sets them again.")
+}
+
+// rollbackReportLimitsNote says, after a rollback to a release before 0.2.26,
+// that the reports stay where they are and what writes a limit again.
+func (inv *invocation) rollbackReportLimitsNote(version string) {
+	inv.echo("")
+	inv.echo("The reports in the users' homes stay: they are the users' own files, and " + version + " has no 'device reports' verbs to list or remove them.")
+	inv.echo("Until the upgrade, do not run 'tacctl config reports max-size', 'config reports max-count' or 'tacctl user reports-limit': they write a limit again, which " + version + " refuses.")
+	inv.echo("If one did, run 'tacctl rollback " + version + " --apply' again (it removes it; with --yes while a user has a limit of their own).")
+}
+
 // rollbackTimeoutScaleNote says, after a rollback to a release before 0.2.22, that the commands of the
 // timing scale write what the older release refuses until it is installed.
 func (inv *invocation) rollbackTimeoutScaleNote(version string) {
@@ -386,15 +425,33 @@ func (inv *invocation) rollbackTimeoutScaleNote(version string) {
 	inv.echo("If one did, run 'tacctl rollback " + version + " --apply' again (it removes it).")
 }
 
-// rollbackNextSteps0224 is the next steps of the rollback to 0.2.24: the
-// upgrade of the tag. 0.2.24 reads every file this release writes, so the
-// rollback converted nothing, took no snapshot and leaves no command to avoid.
-func (inv *invocation) rollbackNextSteps0224(version string) {
+// rollbackNextSteps0225 is the next steps of the rollback to 0.2.25: the
+// upgrade of the tag. 0.2.25 reads every file this release writes but the
+// limits of the stored reports (rollbackReportLimitsNote, printed after these
+// steps, says that the reports stay in the users' homes and what to avoid), so
+// the rollback converted a file only when a limit was set; snapshot is whether
+// it took the snapshot then, and the note says why 0.2.25 cannot restore it.
+func (inv *invocation) rollbackNextSteps0225(version string, snapshot bool) {
+	inv.rollbackNextStepsAfter0224(version, snapshot)
+}
+
+// rollbackNextSteps0224 is the next steps of the rollback to 0.2.24: those of
+// 0.2.25, which reads the same files.
+func (inv *invocation) rollbackNextSteps0224(version string, snapshot bool) {
+	inv.rollbackNextStepsAfter0224(version, snapshot)
+}
+
+// rollbackNextStepsAfter0224 is the next steps of the targets that read the
+// same files, 0.2.25 and 0.2.24: the upgrade of the tag and, when the apply
+// took a snapshot (a limit of the stored reports was removed), where the state
+// of this release is and why the older release cannot restore it.
+func (inv *invocation) rollbackNextStepsAfter0224(version string, snapshot bool) {
 	inv.echo("")
 	inv.echo(ui.Bold + "Next steps" + ui.NC)
 	inv.echo("  1. Install " + version + " with the upgrade (see Upgrading in the README), which switches the clone in " + inv.app.Paths.Deploy + " to the tag, builds it and re-executes it:")
 	inv.echo("       tacctl upgrade --branch " + version)
 	inv.echo("  2. Check it: tacctl status; tacctl config validate")
+	inv.rollbackSnapshotNote(snapshot, "; "+version+"'s restore refuses a tacctl.yaml with a key it does not know.")
 }
 
 // rollbackNextSteps0223 is the next steps of the rollback to 0.2.23: the

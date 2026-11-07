@@ -146,3 +146,84 @@ func joinCSV(list []string) string {
 	}
 	return out
 }
+
+// The user keys of the limits of the stored reports (0.2.26): the size of one
+// report in bytes and the count a user keeps, 0 for no cap. Every release
+// before 0.2.26 refuses them ("user '<name>': unknown field
+// 'reports_max_size'"), so a rollback removes them (RollbackReportLimits).
+const (
+	ReportsMaxSizeKey  = "reports_max_size"
+	ReportsMaxCountKey = "reports_max_count"
+)
+
+// ReportLimitHolder is a user with a limit of the stored reports of their
+// own. Size and Count are the stored values as text ("" when that key is not
+// there); they are numbers in a valid store, and read as they are so that a
+// rollback names what it drops from a store that no longer validates too.
+type ReportLimitHolder struct {
+	User, Size, Count string
+}
+
+// ReportLimitHolders are the users of the store at path that carry either key,
+// by name, read as PasswordChangeKeys reads its key (the file as it is, not
+// validated).
+func ReportLimitHolders(path string) ([]ReportLimitHolder, error) {
+	raw, err := LoadRaw(path)
+	if err != nil {
+		return nil, err
+	}
+	root, ok := raw.(*yamlpy.Map)
+	if !ok {
+		return nil, nil
+	}
+	um, ok := get(root, "users").(*yamlpy.Map)
+	if !ok {
+		return nil, nil
+	}
+	var out []ReportLimitHolder
+	for _, name := range sortedKeys(um) {
+		u, ok := mapOf(get(um, name))
+		if !ok || (!u.Has(ReportsMaxSizeKey) && !u.Has(ReportsMaxCountKey)) {
+			continue
+		}
+		h := ReportLimitHolder{User: name}
+		if u.Has(ReportsMaxSizeKey) {
+			h.Size = PyStr(get(u, ReportsMaxSizeKey))
+		}
+		if u.Has(ReportsMaxCountKey) {
+			h.Count = PyStr(get(u, ReportsMaxCountKey))
+		}
+		out = append(out, h)
+	}
+	return out, nil
+}
+
+// RollbackReportLimits removes both keys from every user of the store at path,
+// as RollbackEmail removes its key: one validated write under the store's lock
+// after before, which a rollback uses to take the snapshot. It reports the
+// users that had either and whether the file was written.
+func RollbackReportLimits(path string, before func() error) (removed []string, changed bool, err error) {
+	if before != nil {
+		if err := before(); err != nil {
+			return nil, false, err
+		}
+	}
+	changed, err = mutate(path, false, nil, func(s *Store) error {
+		users := s.section("users")
+		for _, name := range sortedKeys(users) {
+			u, ok := mapOf(get(users, name))
+			if !ok {
+				continue
+			}
+			a, b := u.Delete(ReportsMaxSizeKey), u.Delete(ReportsMaxCountKey)
+			if a || b {
+				removed = append(removed, name)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	return removed, changed, nil
+}

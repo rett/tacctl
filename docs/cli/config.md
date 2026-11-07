@@ -87,11 +87,9 @@ config validate [--json | --fix-names [--yes]]
     `host rename`; see cli/host.md). A device, host, user or scope whose name has upper case (the
     names of new ones are lower case) gets a `Names:` warning that names the rename which fixes it
     (`tacctl user rename Alice alice`; for a user it adds that devices match the typed login name
-    exactly, so the rename changes what the person types); the superuser's view only. A user whose
-    name has a period (a leftover of 0.2.20 or 0.2.21) is a `Names:` error that names `tacctl user
-    rename <name> <new-name>`; `--fix-names` does not offer it. Exits 1 on errors. The verb takes no
-    argument: a word other than its options is refused (`Unknown argument`) and no report is
-    printed. `--json` prints the findings as one JSON object and
+    exactly, so the rename changes what the person types); the superuser's view only. Exits 1 on
+    errors. The verb takes no argument: a word other than its options is refused (`Unknown
+    argument`) and no report is printed. `--json` prints the findings as one JSON object and
     nothing else on standard output (the schema is below); the exit status is the same.
     `--fix-names` follows the report with the offer to rename each such name to its lower-case
     spelling (below); the superuser's
@@ -125,8 +123,7 @@ config linux remove-script [--output <file>]
 
 config linux uid [<user> [<uid>]]
 
-    Show or change the UID a user gets on every host. A user whose name has a period (a leftover of
-    0.2.20 or 0.2.21) has no Linux account: its number can be shown, and a new one is refused
+    Show or change the UID a user gets on every host.
 
 config linux uid-range [<min>-<max>]
 
@@ -239,6 +236,21 @@ config sudoers [show|install|remove] [<group>]
 config sudoers tiers [show|install|remove]
 
     Manage per-tier (RO/OP/SU) sudoers rules for tacctl users with local accounts
+
+config reports [show]
+config reports max-size [<bytes|Ki|Mi|Gi>]
+config reports max-count [<n>]
+
+    The limits of the reports `device reports generate` keeps in the users' homes, the same for
+    every user (a user's own `user reports-limit` wins): `max-size`, the largest report, in bytes
+    or with the suffix `Ki`, `Mi` or `Gi`, from 0 to 1Gi (default 10 MiB, which holds the inventory
+    of about 20,000 devices); `max-count`, the most reports one user keeps, from 0 to 100000
+    (default 100). 0 is no cap. `show`, or no word, prints both and whether each is set or the
+    default; with no value `max-size` and `max-count` print the one setting. They are
+    `reports.max_size` and `reports.max_count` of `tacctl.yaml`, written only when set. A report
+    over a limit is refused with the setting named and nothing is written; nothing deletes a
+    report by age but `device reports prune`. Superuser. See
+    [Device reports](../devices/reports.md#limits)
 
 config password-age [<days>]
 

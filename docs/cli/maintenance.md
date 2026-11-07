@@ -34,7 +34,8 @@ store import [--check|--force] [--replace] [<file>]
                                              --force drops what the store cannot represent;
                                              --replace overwrites a store (keeping what the
                                              file cannot hold: password dates, a required
-                                             password change)
+                                             password change, email addresses, the users' own
+                                             limits of the stored reports)
 store rollback                               Restore the pre-store tacquito.yaml, remove the store,
                                              restart (legacy read-only mode)
 ```
@@ -152,6 +153,8 @@ everything, records included, since it is what undoes the restore.
 
 `backup restore <ts>` puts back both files, re-renders every enabled backend's config (a hand-edited file is kept under `backups/legacy/` first), and restarts the backends. It snapshots the current state first, so a restore can be undone with another restore, and it changes nothing if the snapshot is invalid or the render fails. The snapshot's `backends.enabled` comes back with the rest of `tacctl.yaml`: a backend it enables must already be installed (otherwise nothing changes and the message says to run `backend enable`) and is started; one it leaves out is stopped and disabled.
 
+A snapshot taken by 0.2.25 or earlier (or by `tacctl upgrade` just before it renames the users) can hold a user whose name has a period, which 0.2.20 and 0.2.21 allowed. The restore reads such a snapshot: only the user-name rule is relaxed, for the snapshot's store, and every other problem still refuses it. It says before the question and after the restore which users have a period, and it **renders nothing and changes no backend's file**, because no renderer writes such a name (tacquito's parser refuses a period in an anchor); the services keep the configuration they have, and a snapshot of that kind that enables a backend the machine does not run now is refused with nothing changed. The store then reads, and every write to it is refused until `tacctl upgrade` renames the users (each period becomes `_`) and renders. This is also the way back when the upgrade's rename stops half way: `tacctl backup restore <id>` of the snapshot it named, then fix the file and run the upgrade again. The snapshot's `console.yaml` is installed without the settings of such a user (the system shell, the password cache and the ignored `users` override): the console cannot read a name with a period, and a file that kept one would hold every user below the superuser at the password change. Each dropped setting is named before the question and after the restore (`dropped console setting of user alice.smith: system shell enable:operator`), every other setting is kept, and the setting is set again once the upgrade has renamed the user. `tacctl upgrade` also updates tacctl if its branch has a newer release, which the restore's note says.
+
 `backup keep <ts> [--note <text>]` copies a snapshot to
 `/etc/tacctl/backups-kept/<ts>/` (0700, the files 0600), where no retention
 reaches it: this release prunes `backups/` beyond the newest 30, and the older
@@ -205,7 +208,7 @@ removes it once the data is recovered. `--dry-run` lists what would be
 recovered and changes nothing; otherwise the command asks for confirmation
 (`--yes` does not), snapshots the current state first (the snapshot being read
 is not taken by the retention), and ends with the number recovered and
-skipped. Nothing is rendered or restarted. A snapshot from before the data
+skipped. Nothing is rendered or restarted. A user of the snapshot whose name has a period (a snapshot of 0.2.25 or earlier) is skipped and named, with a note that `tacctl upgrade` renames such users: a recovery sets data on users that exist and adds none, so no such name reaches the live store. A snapshot from before the data
 existed, or an old-style backup, recovers nothing. The audit line is `backup
 recover id= pre= kinds= restored= skipped=`, with no address.
 

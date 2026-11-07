@@ -444,23 +444,23 @@ func TestSystemShellUsersSetting(t *testing.T) {
 	}
 	if _, err := Mutate(p, nil, func(f *File) error {
 		f.SetSystemShellUser("carol", true, tier.Readonly)
-		f.SetSystemShellUser("alice.smith", false, "")
+		f.SetSystemShellUser("alice_smith", false, "")
 		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := os.ReadFile(p)
-	if !strings.Contains(string(got), "  system_shell_users: {alice.smith: disable, carol: 'enable:readonly'}\n") {
+	if !strings.Contains(string(got), "  system_shell_users: {alice_smith: disable, carol: 'enable:readonly'}\n") {
 		t.Errorf("the key is not written as a map:\n%s", got)
 	}
 	f, err := Load(p)
-	if err != nil || !f.SystemShellUsers["carol"] || f.SystemShellUsers["alice.smith"] || len(f.SystemShellUsers) != 2 {
+	if err != nil || !f.SystemShellUsers["carol"] || f.SystemShellUsers["alice_smith"] || len(f.SystemShellUsers) != 2 {
 		t.Fatalf("round trip: %+v %v", f.SystemShellUsers, err)
 	}
 	if f.SystemShellUserTiers["carol"] != tier.Readonly || len(f.SystemShellUserTiers) != 1 {
 		t.Errorf("the tiers of the enables: %v", f.SystemShellUserTiers)
 	}
-	if _, err := Mutate(p, nil, func(f *File) error { f.DropSystemShellUser("carol"); f.DropSystemShellUser("alice.smith"); return nil }); err != nil {
+	if _, err := Mutate(p, nil, func(f *File) error { f.DropSystemShellUser("carol"); f.DropSystemShellUser("alice_smith"); return nil }); err != nil {
 		t.Fatal(err)
 	}
 	if again, _ := os.ReadFile(p); string(again) != string(without) {
@@ -475,7 +475,7 @@ func TestSystemShellUsersSetting(t *testing.T) {
 		"engineer":     "version: 1\nsettings: {system_shell_users: {carol: 'enable:engineer'}}\n",
 		"disable tier": "version: 1\nsettings: {system_shell_users: {carol: 'disable:operator'}}\n",
 		"bad name":     "version: 1\nsettings: {system_shell_users: {'a b': disable}}\n",
-		"dot leading":  "version: 1\nsettings: {system_shell_users: {.carol: disable}}\n",
+		"a period":     "version: 1\nsettings: {system_shell_users: {alice.smith: disable}}\n",
 	} {
 		if _, err := Load(write(t, dir, "bad.yaml", text, 0o600)); err == nil {
 			t.Errorf("%s: accepted", name)
@@ -896,23 +896,23 @@ func TestPasswordCacheRollback023(t *testing.T) {
 	}
 }
 
-// A user name written by 0.2.20 or 0.2.21 may hold periods
-// (names.MatchExistingUser): the ignored users mapping of the file writes and
-// reads such a key back, and a bad shape is refused.
-func TestUsersWithPeriods(t *testing.T) {
+// A user name is letters, digits, '_' and '-' (names.MatchUser): the ignored
+// users mapping of the file writes and reads such a key back, and a name with
+// a period or another bad shape is refused.
+func TestUsersMappingNames(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "console.yaml")
 	if _, err := Mutate(p, nil, func(f *File) error {
-		f.IgnoredUsers["alice.smith"] = true
-		f.IgnoredUsers["1.5"] = false
+		f.IgnoredUsers["alice_smith"] = true
+		f.IgnoredUsers["15"] = false
 		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
 	f, err := Load(p)
-	if err != nil || !f.IgnoredUsers["alice.smith"] || f.IgnoredUsers["1.5"] || len(f.IgnoredUsers) != 2 {
+	if err != nil || !f.IgnoredUsers["alice_smith"] || f.IgnoredUsers["15"] || len(f.IgnoredUsers) != 2 {
 		t.Fatalf("round trip: %+v %v", f.IgnoredUsers, err)
 	}
-	for _, bad := range []string{".alice", "alice.", "alice..smith"} {
+	for _, bad := range []string{"alice.smith", ".alice", "alice.", "alice..smith", "a b"} {
 		if _, err := Mutate(p, nil, func(f *File) error { f.IgnoredUsers[bad] = true; return nil }); err == nil || !strings.Contains(err.Error(), "invalid user name '"+bad+"'") {
 			t.Errorf("%q: %v", bad, err)
 		}
@@ -934,18 +934,18 @@ func TestPasswordCacheUsersSetting(t *testing.T) {
 	}
 	if _, err := Mutate(p, nil, func(f *File) error {
 		f.PasswordCacheUsers["carol"] = true
-		f.PasswordCacheUsers["alice.smith"] = true
+		f.PasswordCacheUsers["alice_smith"] = true
 		f.PasswordCacheUsers["dave"] = false // not stored: a user who is off is a user without a setting
 		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := os.ReadFile(p)
-	if !strings.Contains(string(got), "  password_cache_users: {alice.smith: true, carol: true}\n") {
+	if !strings.Contains(string(got), "  password_cache_users: {alice_smith: true, carol: true}\n") {
 		t.Errorf("the key is not written as a map of the users who are on:\n%s", got)
 	}
 	f, err := Load(p)
-	if err != nil || !f.PasswordCacheUsers["carol"] || f.PasswordCacheUsers["dave"] || !reflect.DeepEqual(f.PasswordCacheUserNames(), []string{"alice.smith", "carol"}) {
+	if err != nil || !f.PasswordCacheUsers["carol"] || f.PasswordCacheUsers["dave"] || !reflect.DeepEqual(f.PasswordCacheUserNames(), []string{"alice_smith", "carol"}) {
 		t.Fatalf("round trip: %+v %v", f.PasswordCacheUsers, err)
 	}
 	if _, err := Mutate(p, nil, func(f *File) error { f.PasswordCacheUsers = map[string]bool{}; return nil }); err != nil {
@@ -958,6 +958,7 @@ func TestPasswordCacheUsersSetting(t *testing.T) {
 		"not a map":  "version: 1\nsettings: {password_cache_users: [carol]}\n",
 		"not a bool": "version: 1\nsettings: {password_cache_users: {carol: maybe}}\n",
 		"bad name":   "version: 1\nsettings: {password_cache_users: {'a b': true}}\n",
+		"a period":   "version: 1\nsettings: {password_cache_users: {alice.smith: true}}\n",
 	} {
 		if _, err := Load(write(t, dir, "bad.yaml", text, 0o600)); err == nil {
 			t.Errorf("%s: accepted", name)

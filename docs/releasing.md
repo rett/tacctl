@@ -101,6 +101,12 @@ Also before step 1, on `develop`:
   `docs/plans/` keeps the backlog, what is deferred and the plan of the
   release in progress.
 
+- **The notes.** `tests/tools/release-notes-check.sh <version>` (qargi runs
+  it as `release.preflight` before `release start` and `release push`) checks
+  that `docs/release-notes-<version>.md` exists and points at the CHANGELOG,
+  that the CHANGELOG section of the version has items numbered 1, 2, 3 ...
+  without a gap, and that `const rollbackFrom` is the version.
+
 ### 1. The release branch, the dates, the tag
 
 ```sh

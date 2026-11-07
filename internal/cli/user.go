@@ -14,10 +14,12 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/hash"
 	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/model"
 	"github.com/rett/tacctl/internal/names"
+	"github.com/rett/tacctl/internal/policy"
 	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/shellquote"
 	"github.com/rett/tacctl/internal/store"
@@ -34,8 +36,9 @@ var userSpecs = map[string]Spec{
 			Long: "Record an email address for the user (a plain address, local@domain). No mail is sent to it. An address belongs to one user"},
 		{Names: []string{noChangeRequired}, Desc: "Skip the required password change",
 			Long: "Do not require the user to change the password at the first login to this server. Without it a new user must change it first, and no device accepts the user until then (a superuser, and a user with no login on this server, never must)"}}},
-	"remove": {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}},
-	"email":  {MinArgs: 1, MaxArgs: 2, Args: []string{KindUsers, names.EmailClear}},
+	"remove":        {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}},
+	"email":         {MinArgs: 1, MaxArgs: 2, Args: []string{KindUsers, names.EmailClear}},
+	"reports-limit": {MinArgs: 1, MaxArgs: 3, Args: []string{KindUsers, "max-size|max-count|clear", names.ClearWord}},
 	"passwd": {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}, Flags: []Flag{{Names: []string{"--hash"}, Value: true, Secret: true},
 		{Names: []string{noChangeRequired}, Desc: "Skip the required password change",
 			Long: "Do not require the user to change the password at the next login to this server. Without it the reset requires one, and no device accepts the user until it is done (a superuser, and a user with no login on this server, never must); with it a requirement that stands is lifted"}}},
@@ -61,6 +64,7 @@ func userCmd(inv *invocation) *cobra.Command {
 		withRun(verb("add <username> <group> [--hash <hash>|-] [--scopes <s>[,s...]] [--email <address>] [--no-change-required]", "Add a new user; lands in default scope"), n(inv.userAdd)),
 		withRun(verb("remove <username>", "Remove a user"), n(inv.userRemove)),
 		withRun(verb("email <username> [<address>|clear]", "Show, set or clear a user's email address"), n(inv.userEmail)),
+		withRun(verb("reports-limit <username> [max-size|max-count] [<value>|clear]", "Show, set or clear a user's own limits of the stored reports"), n(inv.userReportsLimit)),
 		withRun(verb("passwd <username> [--hash <hash>|-] [--no-change-required]", "Change a user's password"), n(inv.userPasswd)),
 		withRun(verb("disable <username>", "Disable a user (preserves hash)"), n(inv.userDisable)),
 		withRun(verb("enable <username>", "Re-enable a disabled user"), n(inv.userEnable)),
@@ -122,6 +126,10 @@ type userInfo struct {
 	scopes, orphans                                                 []string
 	// email is the user's address, "" when none is set.
 	email string
+	// reportsMaxSize and reportsMaxCount are the user's own limits of the
+	// stored reports (0.2.26), nil when the user has none.
+	reportsMaxSize  *int64
+	reportsMaxCount *int
 }
 
 func (inv *invocation) userInfo(name string) (ui userInfo, ok bool, err error) {
@@ -153,6 +161,14 @@ func (inv *invocation) userInfo(name string) (ui userInfo, ok bool, err error) {
 			ui.hasHash = v == "1"
 		case "email":
 			ui.email = v
+		case "reports_max_size":
+			if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+				ui.reportsMaxSize = &n
+			}
+		case "reports_max_count":
+			if n, err := strconv.Atoi(v); err == nil {
+				ui.reportsMaxCount = &n
+			}
 		case "scope":
 			s, exists := v, "1"
 			if i := strings.LastIndexByte(v, '|'); i >= 0 {
@@ -350,7 +366,7 @@ func (inv *invocation) userShow(args []string) error {
 	if username == "" {
 		return inv.usageErr("Usage: tacctl user show <username>")
 	}
-	if err := names.ValidateExistingUsername(username); err != nil {
+	if err := names.ValidateUsername(username); err != nil {
 		return err
 	}
 	u, ok, err := inv.userInfo(username)
@@ -375,6 +391,12 @@ func (inv *invocation) userShow(args []string) error {
 	inv.echoE("  " + b + "UID:" + nc + "              " + inv.userUID(username))
 	if u.email != "" {
 		inv.echoE("  " + b + "Email:" + nc + "            " + u.email)
+	}
+	if u.reportsMaxSize != nil {
+		inv.echoE("  " + b + "Report max-size:" + nc + "  " + names.FormatReportSize(*u.reportsMaxSize) + " (own limit)")
+	}
+	if u.reportsMaxCount != nil {
+		inv.echoE("  " + b + "Report max-count:" + nc + " " + names.FormatReportCount(*u.reportsMaxCount) + " (own limit)")
 	}
 	if u.status == "disabled" {
 		inv.echoE("  " + b + "Status:" + nc + "           " + ui.Red + "disabled" + nc)
@@ -528,7 +550,7 @@ func (inv *invocation) userAdd(args []string) error {
 		scopes = []string{def}
 	}
 	display := strings.Join(scopes, ",")
-	if why := breakGlassClash(a.Conf(), username, scopes); why != "" {
+	if why := policy.BreakGlassClash(a.Conf(), username, scopes); why != "" {
 		return inv.usageErr(why)
 	}
 	// A new user must change the password at the first login to this server,
@@ -549,6 +571,9 @@ func (inv *invocation) userAdd(args []string) error {
 		require = barrier.why == ""
 	}
 
+	if err := inv.upgradeRenamesFinished(username); err != nil {
+		return err
+	}
 	if err := inv.consoleSettingsReadable(); err != nil {
 		return err
 	}
@@ -572,7 +597,7 @@ func (inv *invocation) userAdd(args []string) error {
 	}
 	// A system-shell setting left under the name (a hand edit, a removal that
 	// could not write console.yaml) is not inherited by the new user.
-	var stale userSettingsMove
+	var stale console.UserSettingsMove
 	if err := inv.storeApplyThen(func(s *store.Store) error {
 		return s.UserSet(username, fields...)
 	}, func() { stale = inv.moveUserSettings(username, "") }); err != nil {
@@ -634,7 +659,7 @@ func (inv *invocation) userEmail(args []string) error {
 	if err := inv.requireStore(); err != nil {
 		return err
 	}
-	if err := names.ValidateExistingUsername(username); err != nil {
+	if err := names.ValidateUsername(username); err != nil {
 		return err
 	}
 	u, ok, err := inv.userInfo(username)
@@ -723,13 +748,16 @@ func (inv *invocation) userRemove(args []string) error {
 	if err := inv.requireStore(); err != nil {
 		return err
 	}
-	if err := names.ValidateExistingUsername(username); err != nil {
+	if err := names.ValidateUsername(username); err != nil {
 		return err
 	}
 	if exists, err := inv.userExists(username); err != nil {
 		return err
 	} else if !exists {
 		return inv.usageErr("User '" + username + "' does not exist.")
+	}
+	if err := inv.upgradeRenamesFinished(username); err != nil {
+		return err
 	}
 	if err := inv.consoleSettingsReadable(); err != nil {
 		return err
@@ -740,7 +768,7 @@ func (inv *invocation) userRemove(args []string) error {
 		return nil
 	}
 	before, _ := inv.model()
-	var shell userSettingsMove
+	var shell console.UserSettingsMove
 	if err := inv.storeApplyThen(func(s *store.Store) error { return s.UserDel(username) },
 		func() { shell = inv.moveUserSettings(username, "") }); err != nil {
 		return err
@@ -760,22 +788,6 @@ func (inv *invocation) userRemove(args []string) error {
 
 // --- passwd -----------------------------------------------------------------
 
-// newUsername is names.ValidateUsername for a verb that sets or requires a
-// password, which only a user with a Linux account name can use. A name that
-// is refused for its period but stands in the store (0.2.20 and 0.2.21 let
-// it be made, and 'user show' displays it) gets a second line with the way
-// out. The store must have been required.
-func (inv *invocation) newUsername(name string) error {
-	err := names.ValidateUsername(name)
-	if err == nil || !names.MatchExistingUser(name) {
-		return err
-	}
-	if exists, uerr := inv.userExists(name); uerr != nil || !exists {
-		return err
-	}
-	return inv.usageErr(msgsJoin(err), "rename it first: tacctl user rename "+name+" <new-name>")
-}
-
 func (inv *invocation) userPasswd(args []string) error {
 	username := arg(args, 0)
 	if username == "" {
@@ -784,7 +796,7 @@ func (inv *invocation) userPasswd(args []string) error {
 	if err := inv.requireStore(); err != nil {
 		return err
 	}
-	if err := inv.newUsername(username); err != nil {
+	if err := names.ValidateUsername(username); err != nil {
 		return err
 	}
 	if err := names.RejectReservedUsername(username); err != nil {
@@ -925,7 +937,7 @@ func (inv *invocation) userLookup(args []string, verb string, needStore bool) (s
 			return "", userInfo{}, err
 		}
 	}
-	if err := names.ValidateExistingUsername(username); err != nil {
+	if err := names.ValidateUsername(username); err != nil {
 		return "", userInfo{}, err
 	}
 	u, ok, err := inv.userInfo(username)
@@ -1064,7 +1076,7 @@ func (inv *invocation) userRename(args []string) error {
 		return err
 	}
 	for _, check := range []func() error{
-		func() error { return names.ValidateExistingUsername(oldname) },
+		func() error { return names.ValidateUsername(oldname) },
 		func() error { return names.ValidateUsername(newname) },
 		func() error { return names.RejectReservedUsername(newname) },
 		func() error { return names.RequireLower(newname) },
@@ -1086,19 +1098,22 @@ func (inv *invocation) userRename(args []string) error {
 	if u, ok, err := inv.userInfo(oldname); err != nil {
 		return err
 	} else if ok {
-		if why := breakGlassClash(inv.app.Conf(), newname, u.scopes); why != "" {
+		if why := policy.BreakGlassClash(inv.app.Conf(), newname, u.scopes); why != "" {
 			return inv.usageErr(why)
 		}
 	}
 	// The old name is gone from the model afterwards, so its account on this
 	// server (and its tac-superuser) goes at the sync that follows; the new
 	// name gets its account there.
+	if err := inv.upgradeRenamesFinished(oldname, newname); err != nil {
+		return err
+	}
 	if err := inv.consoleSettingsReadable(); err != nil {
 		return err
 	}
 	before, _ := inv.model()
-	var mv uidMove
-	var shell userSettingsMove
+	var mv hosts.UIDMove
+	var shell console.UserSettingsMove
 	if err := inv.storeApplyThen(func(s *store.Store) error { return s.UserRename(oldname, newname) }, func() {
 		mv = inv.moveUID(oldname, newname)
 		shell = inv.moveUserSettings(oldname, newname)
@@ -1106,7 +1121,7 @@ func (inv *invocation) userRename(args []string) error {
 		return err
 	}
 	uidWord := "-"
-	if mv.moved {
+	if mv.Moved {
 		uidWord = "carried"
 	}
 	inv.detail("user rename", kvp("from", oldname), kvp("to", newname), kvp("uid", uidWord))
@@ -1116,19 +1131,19 @@ func (inv *invocation) userRename(args []string) error {
 	inv.refreshHeldForwarding()
 	shellErr := inv.userSettingsMoved(shell, oldname, newname)
 	switch {
-	case mv.err != nil:
+	case mv.Err != nil:
 		id := "<id>"
 		if ids := inv.snapshotIDs(); len(ids) > 0 {
 			id = ids[0]
 		}
-		out.Error("User renamed, but linux-uids could not be rewritten: " + msgsJoin(mv.err) +
+		out.Error("User renamed, but linux-uids could not be rewritten: " + msgsJoin(mv.Err) +
 			". Restore snapshot " + id + " (tacctl backup restore " + id + ") and rename again once the file can be written.")
 		return exit(1)
-	case mv.moved:
-		out.Info("UID " + mv.uid + " follows the rename (linux-uids).")
-	case mv.heldBy != "":
-		out.Warn("'" + newname + "' already has UID " + mv.heldBy + " in linux-uids; the account '" + oldname + "' (UID " + mv.uid +
-			") is removed on hosts and '" + newname + "' created with " + mv.heldBy)
+	case mv.Moved:
+		out.Info("UID " + mv.UID + " follows the rename (linux-uids).")
+	case mv.HeldBy != "":
+		out.Warn("'" + newname + "' already has UID " + mv.HeldBy + " in linux-uids; the account '" + oldname + "' (UID " + mv.UID +
+			") is removed on hosts and '" + newname + "' created with " + mv.HeldBy)
 	}
 	inv.loaded = false
 	// An enrolled server syncs now, and the sync renames the account with
@@ -1136,7 +1151,7 @@ func (inv *invocation) userRename(args []string) error {
 	// sync, by its UID (or, when the new name has a number of its own, remove
 	// the old account and create the new one): a user with no number in the
 	// ledger has no account there to change.
-	if !mv.moved && mv.heldBy == "" {
+	if !mv.Moved && mv.HeldBy == "" {
 		if err := inv.syncOwnAccounts(newname); err != nil {
 			return err
 		}
@@ -1144,7 +1159,7 @@ func (inv *invocation) userRename(args []string) error {
 		return shellErr
 	}
 	if err := inv.afterUserChange(before, []string{oldname, newname}, func(h string) string {
-		if mv.heldBy != "" {
+		if mv.HeldBy != "" {
 			return "The change reaches " + h + " at each host's next sync"
 		}
 		return "The account '" + oldname + "' is renamed to '" + newname + "' on " + h + " at each host's next sync, home kept where it is"
@@ -1154,43 +1169,9 @@ func (inv *invocation) userRename(args []string) error {
 	return shellErr
 }
 
-// uidMove is what a rename did to the UID ledger: moved (the line of the
-// old name is now the new name's, uid its number), heldBy (the new name
-// already had a line, with that number, and the ledger is as it was; uid
-// is the old name's), or err.
-type uidMove struct {
-	moved  bool
-	uid    string
-	heldBy string
-	err    error
-}
-
-// moveUID is the ledger half of 'user rename', run by the writer under the
-// apply lock (the snapshot holds linux-uids). The move is one window of the
-// ledger's lock, taken inside the apply lock (D239, D240): a 'host sync'
-// building its script meanwhile waits for it, and so sends the names as they
-// were before the move or after it. A lock held for the whole wait is the
-// move's err.
-func (inv *invocation) moveUID(oldname, newname string) uidMove {
-	uids := hosts.UIDs{Path: inv.app.Paths.LinuxUIDs}
-	unlock, err := uids.Lock()
-	if err != nil {
-		return uidMove{err: err}
-	}
-	defer unlock()
-	uid, err := uids.Lookup(oldname)
-	if err != nil || uid == "" {
-		return uidMove{err: err}
-	}
-	moved, err := uids.Rename(oldname, newname)
-	if err != nil {
-		return uidMove{uid: uid, err: err}
-	}
-	if moved {
-		return uidMove{moved: true, uid: uid}
-	}
-	held, err := uids.Lookup(newname)
-	return uidMove{uid: uid, heldBy: held, err: err}
+// moveUID is the ledger half of 'user rename' (hosts.UIDs.MoveUser).
+func (inv *invocation) moveUID(oldname, newname string) hosts.UIDMove {
+	return hosts.UIDs{Path: inv.app.Paths.LinuxUIDs}.MoveUser(oldname, newname)
 }
 
 // hostsText is "1 enrolled host" or "3 enrolled hosts".
@@ -1211,7 +1192,7 @@ func (inv *invocation) userMove(args []string) error {
 	if err := inv.requireStore(); err != nil {
 		return err
 	}
-	if err := names.ValidateExistingUsername(username); err != nil {
+	if err := names.ValidateUsername(username); err != nil {
 		return err
 	}
 	if err := names.ValidateClassName(newgroup); err != nil {
@@ -1287,7 +1268,7 @@ func (inv *invocation) userScope(args []string) error {
 			return err
 		}
 	}
-	if err := names.ValidateExistingUsername(username); err != nil {
+	if err := names.ValidateUsername(username); err != nil {
 		return err
 	}
 	u, ok, err := inv.userInfo(username)
@@ -1384,7 +1365,7 @@ func (inv *invocation) userScope(args []string) error {
 		}
 	}
 	if sub == "add" || sub == "replace" {
-		if why := breakGlassClash(a.Conf(), username, changed); why != "" {
+		if why := policy.BreakGlassClash(a.Conf(), username, changed); why != "" {
 			return inv.usageErr(why)
 		}
 	}

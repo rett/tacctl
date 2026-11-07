@@ -45,7 +45,8 @@ type rollbackAddition struct {
 // the users' email addresses are rollback_email.go and the SNMPv3 user pool
 // is rollback_snmp_pool.go, the lockdown on hosts is
 // rollback_lockdown_hosts.go and the covered staging entries are
-// rollback_staging.go, and the break-glass firewall is rollback_firewall.go.
+// rollback_staging.go, the break-glass firewall is rollback_firewall.go, and the users' own limits of
+// the stored reports are rollback_reportlimits.go.
 var rollbackAdditions = []rollbackAddition{
 	{Release: "0.2.22", Read: (*RollbackPlan).planTimeoutScale, Add: (*RollbackPlan).addTimeoutScale},
 	{Release: "0.2.23", Read: (*RollbackPlan).planEmail, Add: (*RollbackPlan).addEmail},
@@ -53,6 +54,7 @@ var rollbackAdditions = []rollbackAddition{
 	{Release: "0.2.23", Read: (*RollbackPlan).planLockdownHosts},
 	{Release: "0.2.23", Read: (*RollbackPlan).planStagingCovered, Add: (*RollbackPlan).addStagingCovered},
 	{Release: "0.2.24", Read: (*RollbackPlan).planFirewall, Add: (*RollbackPlan).addFirewall},
+	{Release: "0.2.26", Read: (*RollbackPlan).planReportLimits, Add: (*RollbackPlan).addReportLimits},
 }
 
 // addReleaseChanges runs the entries of additions that apply to p's target.

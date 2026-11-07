@@ -170,7 +170,7 @@ func TestBcryptHelpers(t *testing.T) {
 
 func TestFieldsAndBuiltins(t *testing.T) {
 	f, label := Fields("users")
-	if label != "user" || strings.Join(f, ",") != "group,scopes,hash,disabled,password_changed,accounting_sink,password_change_required,email" {
+	if label != "user" || strings.Join(f, ",") != "group,scopes,hash,disabled,password_changed,accounting_sink,password_change_required,email,reports_max_size,reports_max_count" {
 		t.Error(f, label)
 	}
 	if f, _ := Fields("nope"); f != nil {

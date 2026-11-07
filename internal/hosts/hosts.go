@@ -243,6 +243,32 @@ var reLinuxName = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
 // 32) and is not root.
 func LinuxName(name string) bool { return name != "root" && reLinuxName.MatchString(name) }
 
+// LinuxNameProblem says why a tacctl user name cannot be a Linux account
+// name, in a phrase that follows "it" ("" when it can): what LinuxName
+// refuses, one reason or several.
+func LinuxNameProblem(name string) string {
+	if LinuxName(name) {
+		return ""
+	}
+	var why []string
+	if name == "root" {
+		why = append(why, "is root, which no user can be")
+	}
+	if len(name) > 32 {
+		why = append(why, "is longer than 32 characters")
+	}
+	if strings.ToLower(name) != name {
+		why = append(why, "has upper case letters")
+	}
+	if name != "" && !strings.ContainsRune("abcdefghijklmnopqrstuvwxyz_", rune(name[0])) && strings.ToLower(name) == name {
+		why = append(why, "does not start with a lower case letter or '_'")
+	}
+	if len(why) == 0 {
+		why = append(why, "is not lower case letters, digits, '_' and '-' starting with a letter or '_'")
+	}
+	return strings.Join(why, " and ")
+}
+
 // tierOf is the tier of a user whose group has the tier setting set (""
 // when none) and the priv-lvl privlvl (tier.ForGroup).
 func tierOf(setting, privlvl string) string { return string(tier.ForGroup(setting, privlvl)) }

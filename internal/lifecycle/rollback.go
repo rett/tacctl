@@ -6,8 +6,11 @@ package lifecycle
 // one. The command (internal/cli/rollback.go) adds what needs the
 // invocation: the snapshot and the sudoers installer.
 //
-// The targets are 0.2.24 (the release before this one: RollbackTarget0224;
-// rollback0224.go: nothing, this release changed no stored file), 0.2.23
+// The targets are 0.2.25 (the release before this one: RollbackTarget0225;
+// rollback0225.go: the limits of the stored reports, which are keys and
+// fields it refuses, and the per-tier sudoers drop-in), 0.2.24
+// (RollbackTarget0224; rollback0224.go: the same, 0.2.24 and 0.2.25 read the
+// same files), 0.2.23
 // (RollbackTarget0223; rollback0223.go: the operator's row of 'log failures *'
 // in the per-tier sudoers drop-in), 0.2.22
 // (RollbackTarget0222; rollback0222.go: the engineer's row of 'device
@@ -136,12 +139,9 @@ package lifecycle
 // changed reaches them), the sshd drop-ins, the tier-pin marker and the host
 // records (all as 0.2.3 has them).
 //
-// Every target but 0.2.24, 0.2.23, 0.2.22, 0.2.21 and 0.2.20, which read such a name, is refused while
-// the store has a user name with a period (0.2.20 and 0.2.21 allowed one;
-// DottedUsersRefusal): the targets read letters, digits, '_' and '-' only, and fail on every store command with "user '<name>': invalid name".
-// An override under such a name in console.yaml (the console switches of a
-// user, ignored since 0.2.20) is taken out of the file by the plan; the other
-// 'tiers' and 'users' entries stay, for the older release reads them.
+// The 'tiers' and 'users' entries of console.yaml (the console switches of a
+// tier and of a user, ignored since 0.2.20) stay, for the older release reads
+// them.
 //
 // Every target is refused while a record of devices-config.json says an
 // apply of 'device config apply' is pending or unknown (PendingRefusal): the
@@ -197,8 +197,9 @@ import (
 // the managed scope of the server's own login, RollbackTarget0221 the one
 // before the server name and the timing scale, RollbackTarget0222 the one
 // before the users' email addresses, RollbackTarget0223 the one before the
-// break-glass firewall and RollbackTarget0224 the release before this one
-// (0.2.10 to 0.2.16 changed no format 0.2.9 reads strictly, so 0.2.9 stays a
+// break-glass firewall, RollbackTarget0224 the one before the limits of the
+// stored reports (it reads what 0.2.25 reads) and RollbackTarget0225 the
+// release before this one (0.2.10 to 0.2.16 changed no format 0.2.9 reads strictly, so 0.2.9 stays a
 // target; 0.2.18 changed none 0.2.16 or 0.2.17 reads, so 0.2.16 stays one
 // too).
 const (
@@ -213,6 +214,7 @@ const (
 	RollbackTarget0222 = "0.2.22"
 	RollbackTarget0223 = "0.2.23"
 	RollbackTarget0224 = "0.2.24"
+	RollbackTarget0225 = "0.2.25"
 )
 
 // RollbackRefusal is a version the command does not take: Lines say why.
@@ -296,9 +298,9 @@ func pluralWord(n int, one, many string) string {
 
 var reVersion = regexp.MustCompile(`^v?([0-9]+)\.([0-9]+)\.([0-9]+)$`)
 
-const rollbackUsage = "Usage: tacctl rollback " + RollbackTarget0224 + "|" + RollbackTarget0223 + "|" + RollbackTarget0222 + "|" + RollbackTarget0221 + "|" + RollbackTarget0220 + "|" + RollbackTarget0219 + "|" + RollbackTarget0218 + "|" + RollbackTarget0217 + "|" + RollbackTarget0216 + "|" + RollbackTarget029 + "|" + RollbackTarget + " [--apply] [--yes] [--hosts]"
+const rollbackUsage = "Usage: tacctl rollback " + RollbackTarget0225 + "|" + RollbackTarget0224 + "|" + RollbackTarget0223 + "|" + RollbackTarget0222 + "|" + RollbackTarget0221 + "|" + RollbackTarget0220 + "|" + RollbackTarget0219 + "|" + RollbackTarget0218 + "|" + RollbackTarget0217 + "|" + RollbackTarget0216 + "|" + RollbackTarget029 + "|" + RollbackTarget + " [--apply] [--yes] [--hosts]"
 
-// CheckRollbackVersion is the version a rollback is asked for ("0.2.24", "0.2.23", "0.2.22", "0.2.21",
+// CheckRollbackVersion is the version a rollback is asked for ("0.2.25", "0.2.24", "0.2.23", "0.2.22", "0.2.21",
 // "0.2.20", "0.2.19", "0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3" or any with a "v"), or a *RollbackRefusal: 0.2.4
 // to 0.2.8 and older than 0.2.3 (a release's tool prepares the state for the
 // releases it knows, so the way back is one release at a time), 0.2.10 to
@@ -313,11 +315,11 @@ func CheckRollbackVersion(arg string) (string, error) {
 			rollbackUsage}}
 	}
 	v := strings.TrimPrefix(arg, "v")
-	if v == RollbackTarget || v == RollbackTarget029 || v == RollbackTarget0216 || v == RollbackTarget0217 || v == RollbackTarget0218 || v == RollbackTarget0219 || v == RollbackTarget0220 || v == RollbackTarget0221 || v == RollbackTarget0222 || v == RollbackTarget0223 || v == RollbackTarget0224 {
+	if v == RollbackTarget || v == RollbackTarget029 || v == RollbackTarget0216 || v == RollbackTarget0217 || v == RollbackTarget0218 || v == RollbackTarget0219 || v == RollbackTarget0220 || v == RollbackTarget0221 || v == RollbackTarget0222 || v == RollbackTarget0223 || v == RollbackTarget0224 || v == RollbackTarget0225 {
 		return v, nil
 	}
 	n := func(i int) int { x, _ := strconv.Atoi(m[i]); return x }
-	both := "'tacctl rollback' prepares the state for " + RollbackTarget0224 + " (the release before this one), " + RollbackTarget0223 + ", " + RollbackTarget0222 + ", " + RollbackTarget0221 + ", " + RollbackTarget0220 + ", " + RollbackTarget0219 + ", " + RollbackTarget0218 + ", " + RollbackTarget0217 + ", " + RollbackTarget0216 + ", " + RollbackTarget029 + " and " + RollbackTarget + " only"
+	both := "'tacctl rollback' prepares the state for " + RollbackTarget0225 + " (the release before this one), " + RollbackTarget0224 + ", " + RollbackTarget0223 + ", " + RollbackTarget0222 + ", " + RollbackTarget0221 + ", " + RollbackTarget0220 + ", " + RollbackTarget0219 + ", " + RollbackTarget0218 + ", " + RollbackTarget0217 + ", " + RollbackTarget0216 + ", " + RollbackTarget029 + " and " + RollbackTarget + " only"
 	fallback := "The fallback that needs no tool is 'tacctl backup restore' of a snapshot of the time (see 'tacctl backup list')."
 	switch {
 	case n(1) == 0 && n(2) == 2 && n(3) > 3 && n(3) < 9:
@@ -414,7 +416,7 @@ type RollbackInput struct {
 	HasStore bool
 	// WithHosts: the command was given --hosts.
 	WithHosts bool
-	// Target is the release rolled back to: RollbackTarget0224, RollbackTarget0219,
+	// Target is the release rolled back to: RollbackTarget0225, RollbackTarget0224, RollbackTarget0219,
 	// RollbackTarget0218, RollbackTarget0217, RollbackTarget0216, RollbackTarget029 or RollbackTarget (the zero value is 0.2.3, as
 	// before 0.2.9).
 	Target string
@@ -466,6 +468,10 @@ type RollbackPlan struct {
 	// (0.2.23), which every older release refuses (rollback_email.go): every
 	// target older than 0.2.23.
 	emailUsers []string
+	// limitUsers are the users of the store that have a limit of the stored
+	// reports of their own (0.2.26), which every older release refuses
+	// (rollback_reportlimits.go): every target older than 0.2.26.
+	limitUsers []store.ReportLimitHolder
 	// snmpPool are the SNMP credential files in version 2 (the pool of v3
 	// users, 0.2.23), which every older release refuses
 	// (rollback_snmp_pool.go): every target older than 0.2.23.
@@ -538,7 +544,7 @@ func (p *RollbackPlan) Pending() bool {
 // PendingFiles: there is a file of tacctl's own to convert (the snapshot
 // holds those; the sudoers drop-ins and the stored pulls are not in it).
 func (p *RollbackPlan) PendingFiles() bool {
-	return len(p.keys) > 0 || len(p.pwStore) > 0 || len(p.emailUsers) > 0 || len(p.snmpPool) > 0 || len(p.stagingCovered) > 0 || len(p.managedUsers) > 0 || p.console.Text != nil || len(p.snmpDev) > 0 || len(p.syntaxDev) > 0 || len(p.netconfDev) > 0 || len(p.syntaxKeyDev) > 0 || len(p.timeoutDev) > 0
+	return len(p.keys) > 0 || len(p.pwStore) > 0 || len(p.emailUsers) > 0 || len(p.limitUsers) > 0 || len(p.snmpPool) > 0 || len(p.stagingCovered) > 0 || len(p.managedUsers) > 0 || p.console.Text != nil || len(p.snmpDev) > 0 || len(p.syntaxDev) > 0 || len(p.netconfDev) > 0 || len(p.syntaxKeyDev) > 0 || len(p.timeoutDev) > 0
 }
 
 func (p *RollbackPlan) todoSudoers() []sudoersPlan {
@@ -614,9 +620,15 @@ func planRollback(in RollbackInput) (*RollbackPlan, error) {
 	if len(pend) > 0 {
 		return nil, PendingRefusal(pend)
 	}
-	// 0.2.24 reads every file this release writes: it converts nothing
-	// (rollback0224.go), and has the managed scope of the server's own
-	// login, so nothing is added to the users.
+	// 0.2.25 reads every file this release writes but what a step of
+	// rollbackAdditions undoes and the key list (rollback0225.go): the limits
+	// of the stored reports, and the per-tier sudoers drop-in; it has the
+	// managed scope of the server's own login, so nothing is added to the
+	// users.
+	if in.Target == RollbackTarget0225 {
+		return planRollback0225(p)
+	}
+	// 0.2.24 reads the same files as 0.2.25 (rollback0224.go).
 	if in.Target == RollbackTarget0224 {
 		return planRollback0224(p)
 	}
@@ -663,14 +675,6 @@ func planRollback(in RollbackInput) (*RollbackPlan, error) {
 	// takes a lockdown over as it stands.
 	if ls := in.Conf.Lockdowns(); len(ls) > 0 && in.Target != RollbackTarget0219 {
 		return nil, LockdownRefusal(ls)
-	}
-	// A store user name with a period (0.2.20, 0.2.21) is refused for every
-	// target but 0.2.24, 0.2.23, 0.2.22, 0.2.21 and 0.2.20 (handled above): no other release reads it (DottedUsersRefusal). An
-	// override of such a name in console.yaml is taken out by the plan.
-	if inStore, err := DottedUsers(pa, in.HasStore); err != nil {
-		return nil, err
-	} else if len(inStore) > 0 {
-		return nil, DottedUsersRefusal(inStore)
 	}
 	// The required password change (0.2.20) is a key every older release
 	// refuses in the store: it is removed for every target older than 0.2.20
@@ -809,7 +813,7 @@ func (p *RollbackPlan) confStep() RollbackStep {
 	}
 	var added, other []string
 	for _, k := range p.keys {
-		if conf.Added024Key(k) || conf.Added025Key(k) || conf.Added027Key(k) || conf.Added029Key(k) || conf.Added0210Key(k) || conf.Added0217Key(k) || conf.Added0220Key(k) || conf.Added0221Key(k) || conf.Added0222Key(k) || conf.Added0224Key(k) {
+		if conf.Added024Key(k) || conf.Added025Key(k) || conf.Added027Key(k) || conf.Added029Key(k) || conf.Added0210Key(k) || conf.Added0217Key(k) || conf.Added0220Key(k) || conf.Added0221Key(k) || conf.Added0222Key(k) || conf.Added0224Key(k) || conf.Added0226Key(k) {
 			added = append(added, k)
 		} else {
 			other = append(other, k)
@@ -821,7 +825,7 @@ func (p *RollbackPlan) confStep() RollbackStep {
 	for _, k := range other {
 		s.Lines = append(s.Lines, "remove "+k+"  (no release knows this key; 0.2.3 refuses a file that has it)")
 	}
-	s.Lines = append(s.Lines, "(the settings of 'device config pull' and 'plan', the Cisco source interface, the break-glass records, the list of configuration blocks in force and audit.strict are these; every other key is one 0.2.3 has and stays)")
+	s.Lines = append(s.Lines, "(the settings of 'device config pull' and 'plan', the Cisco source interface, the break-glass records, the list of configuration blocks in force, audit.strict and the limits of the stored reports are these; every other key is one 0.2.3 has and stays)")
 	return s
 }
 
@@ -867,7 +871,7 @@ func (p *RollbackPlan) addConsoleStep() {
 	}
 	cf := p.in.Paths.ConsoleFile
 	s := RollbackStep{Title: cf + ": take out the settings " + p.target() + " does not know", Todo: true}
-	s.Lines = append(p.consoleChangeLines(), "("+p.target()+"'s parser rejects what 0.2.20 added to console.yaml (the colour setting, the system shell and the password cache of single users, a list_max of -1) and an override of a user name with a period; everything else is kept)")
+	s.Lines = append(p.consoleChangeLines(), "("+p.target()+"'s parser rejects what 0.2.20 added to console.yaml (the colour setting, the system shell and the password cache of single users, a list_max of -1); everything else is kept)")
 	at := len(p.Steps)
 	for i := range p.Steps {
 		if p.Steps[i].Title == "leave every other file untouched" {
@@ -915,7 +919,7 @@ func (p *RollbackPlan) planSudoers() []sudoersPlan {
 	tiers := sudoersPlan{label: "the per-tier drop-in", file: pt.TierSudoersFile, state: "absent"}
 	if b, err := os.ReadFile(pt.TierSudoersFile); err == nil {
 		switch got := string(b); {
-		case got == tier.Sudoers(), got == tier.Sudoers0223(), got == tier.Sudoers0222(), got == tier.Sudoers0219(), got == tier.Sudoers0218(), got == tier.Sudoers0217(), got == tier.Sudoers0216(), got == tier.Sudoers0214(), got == tier.Sudoers0213(), got == tier.Sudoers028(), got == tier.Sudoers027():
+		case got == tier.Sudoers(), got == tier.Sudoers0225(), got == tier.Sudoers0223(), got == tier.Sudoers0222(), got == tier.Sudoers0219(), got == tier.Sudoers0218(), got == tier.Sudoers0217(), got == tier.Sudoers0216(), got == tier.Sudoers0214(), got == tier.Sudoers0213(), got == tier.Sudoers028(), got == tier.Sudoers027():
 			tiers.state, tiers.body = "rewrite", tier.Sudoers023()
 		case got == tier.Sudoers023():
 			tiers.state = "done"
@@ -1202,6 +1206,11 @@ func ApplyRollback(p *RollbackPlan) ([]string, error) {
 		if len(removed) > 0 {
 			done = append(done, fmt.Sprintf("%s: removed the email address of %d %s", pt.StoreFile, len(removed), plural(len(removed), "user", "users")))
 		}
+	}
+	if line, err := p.applyReportLimits(); err != nil {
+		return done, fmt.Errorf("%s: %w", pt.StoreFile, err)
+	} else if line != "" {
+		done = append(done, line)
 	}
 	if len(p.snmpPool) > 0 {
 		n, err := p.applySNMPPool()

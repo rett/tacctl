@@ -363,6 +363,22 @@ func (s *Set) rollback(keep string, post [2]fileState) {
 // be interleaved holds the reentrant lock itself), and refuses to be started
 // inside a writer.
 func (s *Set) ApplyForced(ctx context.Context, writer func() error) ([]string, error) {
+	return s.applyForced(ctx, writer, true)
+}
+
+// ApplyForcedUnrendered is ApplyForced without the render: the writer's
+// files are installed under the same lock and with the same rollback when the
+// writer fails, and no artifact changes. 'backup restore' uses it for a
+// snapshot whose store holds a user name with a period, which no renderer can
+// write (tacquito's parser refuses a period in an anchor): the services keep
+// the configuration they have until 'tacctl upgrade' renames the user and
+// renders.
+func (s *Set) ApplyForcedUnrendered(ctx context.Context, writer func() error) error {
+	_, err := s.applyForced(ctx, writer, false)
+	return err
+}
+
+func (s *Set) applyForced(ctx context.Context, writer func() error, render bool) ([]string, error) {
 	env := s.Env
 	if err := s.begin(); err != nil {
 		return nil, err
@@ -398,7 +414,7 @@ func (s *Set) ApplyForced(ctx context.Context, writer func() error) ([]string, e
 	s.reloadConf() // the writer replaced tacctl.yaml (_conf_invalidate)
 	post := s.filesNow()
 	var changed []string
-	if err == nil {
+	if err == nil && render {
 		changed, err = s.RenderAll(ctx, RenderOptions{ForceAll: true})
 	}
 	release()

@@ -8,9 +8,11 @@ import (
 	"github.com/rett/tacctl/internal/tier"
 )
 
-// The rollback to 0.2.24 on the sandbox of rollback_test.go: this release
-// changed no stored file, so the plan converts nothing, whatever 0.2.24 itself
-// added to the state (the break-glass firewall included).
+// The rollback to 0.2.24 on the sandbox of rollback_test.go: 0.2.24 reads the
+// same files as 0.2.25 (rollback0225_test.go has the limits of the stored
+// reports, which both refuse), so with none set the plan converts nothing,
+// whatever 0.2.24 itself added to the state (the break-glass firewall
+// included).
 
 func plan0224(t *testing.T, s *rbSandbox) *RollbackPlan {
 	t.Helper()
@@ -22,8 +24,9 @@ func plan0224(t *testing.T, s *rbSandbox) *RollbackPlan {
 	return p
 }
 
-// The plan leaves every file, asks for no --yes, takes no snapshot, and keeps
-// what 0.2.24 has and the older targets drop: the users' email addresses, a
+// With no limit of the stored reports set, the plan leaves every file, asks
+// for no --yes, takes no snapshot, and keeps what 0.2.24 has and the older
+// targets drop: the users' email addresses, a
 // pool of SNMPv3 users, a staging entry marked covered, the break-glass
 // firewall (its setting, its rules file and its boot unit). The per-tier
 // drop-in is the same text in both releases, so it is left too. It writes
@@ -39,6 +42,8 @@ func TestPlanRollback0224ConvertsNothing(t *testing.T) {
 	s.write(s.p.FirewallUnit, "[Unit]\n", 0o644)
 	calls := 0
 	s.in.RemoveFirewall = func() ([]string, error) { calls++; return []string{"the nftables table inet tacctl"}, nil }
+	// the host 0.2.25 left: its per-tier drop-in has no row of 'device reports'
+	s.write(s.p.TierSudoersFile, tier.Sudoers0225(), 0o640)
 	before := s.snapshotOf()
 	p := plan0224(t, s)
 	if p.Target != RollbackTarget0224 {
@@ -46,7 +51,7 @@ func TestPlanRollback0224ConvertsNothing(t *testing.T) {
 	}
 	st := stepText(p)
 	for _, w := range []string{s.p.Overrides + ": remove the keys 0.2.24 does not know", "nothing to remove (every key of tacctl.yaml is one 0.2.24 knows)",
-		"leave every other file untouched", "are in formats 0.2.24 reads"} {
+		"leave every other file untouched", "are in formats 0.2.24 reads", "the pull records, the reports in the users' homes"} {
 		if !strings.Contains(st, w) {
 			t.Errorf("steps lack %q:\n%s", w, st)
 		}
@@ -74,7 +79,7 @@ func TestPlanRollback0224ConvertsNothing(t *testing.T) {
 	if after := s.snapshotOf(); !reflect.DeepEqual(after, before) {
 		t.Error("the apply wrote a file")
 	}
-	if got := string(mustRead(t, s.p.TierSudoersFile)); got != tier.Sudoers() {
+	if got := string(mustRead(t, s.p.TierSudoersFile)); got != tier.Sudoers0225() {
 		t.Error("the per-tier drop-in was rewritten")
 	}
 }

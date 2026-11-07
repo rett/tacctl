@@ -52,6 +52,12 @@ type User struct {
 	// Email is the optional address of the user (0.2.23, users.<name>.email),
 	// "" when none is set. It is kept as typed; no mail is sent to it.
 	Email string
+	// ReportsMaxSize and ReportsMaxCount are the user's own limits of the
+	// stored reports (0.2.26, users.<name>.reports_max_size and
+	// reports_max_count): nil when the user has none and the server's setting
+	// stands, a pointer to 0 for no cap. They win over the settings.
+	ReportsMaxSize  *int64
+	ReportsMaxCount *int
 }
 
 // IsDisabled is user_is_disabled: the user cannot authenticate (flagged,
@@ -233,6 +239,13 @@ func FromStore(s *store.Store) *Model {
 			u.AccountingSink = truthy(get(e, "accounting_sink"))
 			u.PasswordChangeRequired = truthy(get(e, "password_change_required"))
 			u.Email = str(get(e, "email"))
+			if n, ok := get(e, "reports_max_size").(int); ok {
+				v := int64(n)
+				u.ReportsMaxSize = &v
+			}
+			if n, ok := get(e, "reports_max_count").(int); ok {
+				u.ReportsMaxCount = &n
+			}
 		}
 		m.Users = append(m.Users, u)
 		m.users[name] = u

@@ -10,7 +10,8 @@ user list
 user show <name>
 
     Show user details incl. scope membership, last login and, when the user
-    has one, the email address (no password prompt)
+    has one, the email address and the own limits of the stored reports (no
+    password prompt)
 
 user add <name> <group>
 
@@ -49,6 +50,15 @@ user email <name> <address>
 user email <name> clear
 
     Remove the email address
+
+user reports-limit <name> [max-size|max-count] [<value>|clear]
+user reports-limit <name> clear
+
+    Show, set or clear a user's own limits of the stored reports (see "Report limits"): `max-size`
+    is the largest report, in bytes or with the suffix `Ki`, `Mi` or `Gi`, from 0 to 1Gi;
+    `max-count` the most reports the user keeps, from 0 to 100000; 0 is no cap. With the name
+    alone, or one limit, it shows what holds and where it comes from. `clear` after a limit
+    removes it, after the name removes both. Superuser
 
 user remove <name>
 
@@ -107,8 +117,7 @@ user rename <old> <new>
     they were before the rename or after it, never a mix; an account created under the old name is
     renamed at that host's next sync. If the ledger is locked by another command for 30 seconds,
     the rename stops at the snapshot with nothing changed (see [Consistent UIDs and
-    GIDs](../hosts/ids-and-groups.md)). A user whose name has a period (see "A name with a period"
-    below) is renamed to a name that has none.
+    GIDs](../hosts/ids-and-groups.md)).
 
 user move <name> <group>
 
@@ -147,6 +156,32 @@ device. A user kept off the server is disabled (`user disable`) or in a group
 of tier none. When a command next writes a user's record, a stored copy of the
 server's own scope (from an install before 0.2.21) is dropped from it.
 
+**Report limits.** `tacctl device reports generate` keeps a report in the user's home if it is
+no larger than the user's largest report (`max-size`) and the user keeps no more reports than
+`max-count`. The server has one value of each (`config reports`, 10 MiB and 100 reports by
+default), and `user reports-limit` gives a user a value of their own that wins over it, for one limit
+or both; the other limit stays the server's. 0 is no cap, so an own `0` lifts the server's limit for
+that user, and `clear` returns the user to the server's. The limits are the user's fields
+`reports_max_size` (bytes) and `reports_max_count` in `store.yaml`, written only when set, so a store
+without one is unchanged; `user rename` carries them and `store import --replace` keeps them (a
+rendered or legacy file cannot hold them). `user show` prints a `Report max-size:` and a `Report
+max-count:` line for a user who has an own limit, to every tier that can run `user show`; the
+accounting sink takes none. Setting a limit renders and restarts nothing and takes a snapshot, like
+any change of the store, and writes the detail line `user reports-limit name= key=max-size|max-count
+op=set|clear value=`. A release before 0.2.26 refuses the fields, so every `tacctl rollback` target
+removes them after a snapshot, needs `--yes` while a user has one and names the users (see
+[Rolling back](../install/upgrading.md#rolling-back)).
+
+```
+$ tacctl user reports-limit carol max-size 1Mi
+[INFO] The max-size of 'carol' set to 1 MiB.
+$ tacctl user reports-limit carol
+
+  Report limits of carol
+  max-size:  1 MiB   (own limit; the server's setting is 20 MiB)
+  max-count: 100 reports   (the server's setting)
+```
+
 **An email address.** A user may have an email address, for the people who
 look after the accounts. It is `users.<name>.email` in `store.yaml`, written
 only when set, so a store without one is unchanged. No mail is sent to it.
@@ -176,31 +211,23 @@ only when set, so a store without one is unchanged. No mail is sent to it.
   in any other `user` verb, and `…(redacted)` in place of the rest. Like any
   word on a command line it is in sudo's own log.
 - *Older releases.* A release before 0.2.23 refuses the key, so every `tacctl
-  rollback` target but 0.2.24 and 0.2.23 (which read it) removes it after a
+  rollback` target but 0.2.25, 0.2.24 and 0.2.23 (which read it) removes it after a
   snapshot that it keeps, and names the users; `backup recover` puts the addresses back (see
   [Rolling back](../install/upgrading.md#rolling-back)).
 
 **A name with a period.** A user name is letters, digits, `_` and `-`. A period cannot be part of a
-Linux account name, and every user has an account on the tacctl server. A store from 0.2.20 or 0.2.21
-can still hold a name with periods; it keeps loading, so the user can be shown, listed, disabled,
-moved, given scopes, removed and renamed. `user rename <old> <new>` is the way out, and the new name
-has no period. Meanwhile:
-
-- `config validate` reports each such user as an error with the command that renames it
-  (`tacctl user rename alice.smith <new-name>`), and `config validate --fix-names` does not offer a
-  name with a period.
-- `tacctl upgrade` refuses and names each user with the rename command. Rename such a user
-  *before* upgrading from 0.2.20 or 0.2.21 (`user rename` works there): the old release's upgrade
-  has already replaced `tacctl` and the tacquito build when the new `tacctl` refuses, and says so
-  (the store, the configuration and the services are not changed); after the rename, `tacctl
-  upgrade` finishes it.
-- `tacctl rollback` to any target but 0.2.24, 0.2.23, 0.2.22, 0.2.21 and 0.2.20 (which read
-  such a name) is refused (the dry run too), since the releases it goes to
-  refuse the name; the refusal lists each user with the rename command.
-- `tacctl passwd`, `user passwd` and `user require-password-change` refuse the name, and for a user
-  that stands add `rename it first: tacctl user rename <name> <new-name>`. `config linux uid <user>`
-  prints the number the ledger has for the user, if any, and `config linux uid <user> <uid>` is
-  refused. `host sync` skips the user with a warning (no account on enrolled hosts).
+Linux account name, and every user has an account on the tacctl server, so every `user` verb, `passwd`
+and `config linux uid` refuse a name with a period with `Username must contain only letters, numbers,
+underscores and hyphens (a period cannot be part of a Linux account name).` 0.2.20 and 0.2.21 allowed
+periods: `tacctl upgrade` renames each user a store of theirs still holds, replacing every period with
+`_` (`alice.smith` becomes `alice_smith`), with the user's record, UID line and console settings,
+after a snapshot it names; it prints `renamed user alice.smith to alice_smith` for each and asks you to
+tell the people to log in with the new name. If the new name is taken (by a user, by another renamed name or by a break-glass local user of the
+user's scopes) the user gets `_` and four random letters or digits after it
+(`alice_smith_k3x9`; `renamed user alice.smith to alice_smith_k3x9 (alice_smith was taken)`),
+and `tacctl user rename` gives another name afterwards (see [Upgrading](../install/upgrading.md)). Until the
+upgrade runs, a store that still holds such a name fails every write with `user 'alice.smith':
+invalid name` and says that `tacctl upgrade` renames it.
 
 **This server's accounts.** `user add`, `remove`, `rename`, `move`, `enable`,
 `disable`, `scope add|remove|replace|remove --all` and
@@ -263,7 +290,7 @@ only when set.
   user can neither log in nor change the password until `tacctl host sync <name>`.
 - *A user must be able to change it.* The flag is not set, and the verb says why, for a user with no
   login on this server: the server is not enrolled (`host enroll --local`), the name is no Linux
-  account name (a leftover name with a period), the user is disabled, the group has no priv-lvl, or,
+  account name (it has upper case), the user is disabled, the group has no priv-lvl, or,
   for a server still registered in a scope it shares with devices, the user is not in that scope.
   `off` clears the flag of the user or of every user who has it, a superuser's included.
 - *Devices.* The TACACS+ and RADIUS configuration put the user in the scope this server is enrolled

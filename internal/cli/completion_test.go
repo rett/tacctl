@@ -168,6 +168,11 @@ func TestCompleteScenarios(t *testing.T) {
 		{[]string{"user", "add", "carol", "ops", ""}, []string{"--hash", "--scopes", "--email", "--no-change-required"}},
 		{[]string{"user", "email", ""}, []string{"alice", "bob"}},
 		{[]string{"user", "email", "alice", ""}, []string{"clear"}},
+		{[]string{"user", "reports-limit", ""}, []string{"alice", "bob"}},
+		{[]string{"user", "reports-limit", "alice", ""}, []string{"max-size", "max-count", "clear"}},
+		{[]string{"user", "reports-limit", "alice", "max-size", ""}, []string{"clear"}},
+		{[]string{"user", "reports-limit", "alice", "max-count", ""}, []string{"clear"}},
+		{[]string{"config", "reports", ""}, []string{"max-count", "max-size", "show"}},
 		{[]string{"user", "passwd", "alice", ""}, []string{"--hash", "--no-change-required"}},
 		{[]string{"user", "require-password-change", ""}, []string{"alice", "bob", "on", "off", "--all"}},
 		{[]string{"user", "require-password-change", "bob", ""}, []string{"on", "off", "--all"}},
@@ -541,7 +546,7 @@ func TestCompleteThisReleasesWords(t *testing.T) {
 		{[]string{"scope", "secret", "lab", "set", "--"}, []string{"--stdin"}, false},
 		{[]string{"user", "add", "x", "--"}, []string{"--hash"}, false},
 		{[]string{"user", "passwd", "x", "--"}, []string{"--hash"}, false},
-		{[]string{"rollback", ""}, []string{"0.2.24", "0.2.23", "0.2.22", "0.2.21", "0.2.20", "0.2.19", "0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3"}, true},
+		{[]string{"rollback", ""}, []string{"0.2.25", "0.2.24", "0.2.23", "0.2.22", "0.2.21", "0.2.20", "0.2.19", "0.2.18", "0.2.17", "0.2.16", "0.2.9", "0.2.3"}, true},
 	}
 	for _, c := range cases {
 		got, _ := completeWords(t, liveNames, c.words...)
