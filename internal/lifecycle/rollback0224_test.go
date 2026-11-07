@@ -42,6 +42,8 @@ func TestPlanRollback0224ConvertsNothing(t *testing.T) {
 	s.write(s.p.FirewallUnit, "[Unit]\n", 0o644)
 	calls := 0
 	s.in.RemoveFirewall = func() ([]string, error) { calls++; return []string{"the nftables table inet tacctl"}, nil }
+	// the host 0.2.25 left: its per-tier drop-in has no row of 'device reports'
+	s.write(s.p.TierSudoersFile, tier.Sudoers0225(), 0o640)
 	before := s.snapshotOf()
 	p := plan0224(t, s)
 	if p.Target != RollbackTarget0224 {
@@ -77,7 +79,7 @@ func TestPlanRollback0224ConvertsNothing(t *testing.T) {
 	if after := s.snapshotOf(); !reflect.DeepEqual(after, before) {
 		t.Error("the apply wrote a file")
 	}
-	if got := string(mustRead(t, s.p.TierSudoersFile)); got != tier.Sudoers() {
+	if got := string(mustRead(t, s.p.TierSudoersFile)); got != tier.Sudoers0225() {
 		t.Error("the per-tier drop-in was rewritten")
 	}
 }
