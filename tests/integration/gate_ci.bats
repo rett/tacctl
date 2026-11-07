@@ -57,6 +57,18 @@ SH
     chmod +x "$STUB"
     export GO="$STUB" GOCACHE="$BATS_TEST_TMPDIR/cache" LOG="$BATS_TEST_TMPDIR/gate.log"
     export STUB_CALLS="$BATS_TEST_TMPDIR/calls"
+    mkdir -p "$BATS_TEST_TMPDIR/bin"
+    cat >"$BATS_TEST_TMPDIR/bin/make" <<'SH'
+#!/bin/bash
+# STUB_LINT: ok (the default) | fail (a finding, as golangci-lint prints it)
+echo "make $*" >>"$MAKE_CALLS"
+if [[ "${STUB_LINT:-ok}" = fail ]]; then
+    printf "internal/x/x.go:12:5: QF1001: could apply De Morgan's law (staticcheck)\n1 issues:\nmake: *** [Makefile:225: lint-go] Error 1\n"
+    exit 2
+fi
+SH
+    chmod +x "$BATS_TEST_TMPDIR/bin/make"
+    export PATH="$BATS_TEST_TMPDIR/bin:$PATH" MAKE_CALLS="$BATS_TEST_TMPDIR/make-calls"
 }
 
 # The `sleep` the hanging stub go has become, among the processes below pid $1
@@ -74,9 +86,9 @@ sleeper_below() {
     return 1
 }
 
-@test "six jobs ok is a PASS, the last line of stdout and of the log" {
+@test "seven jobs ok (lint and six test jobs) is a PASS, the last line of stdout and of the log" {
     STUB_MODE=ok run -0 "$GATE" -o "$LOG"
-    [[ "${lines[-1]}" == "GATE-CI PASS rc=0 jobs=6/6 failures=0 races=0 secs="*" log=$LOG" ]]
+    [[ "${lines[-1]}" == "GATE-CI PASS rc=0 jobs=7/7 failures=0 races=0 secs="*" log=$LOG" ]]
     [[ "$(tail -n 1 "$LOG")" == "${lines[-1]}" ]]
 }
 
@@ -89,7 +101,7 @@ sleeper_below() {
 @test "a test skipped in two jobs is counted once per job and listed once, above the PASS verdict" {
     # TestY and TestZ/sub skip in other and in other/testknobs: four SKIP lines, two names
     STUB_MODE=skip run -0 "$GATE" -o "$LOG"
-    [[ "${lines[-1]}" == "GATE-CI PASS rc=0 jobs=6/6 failures=0 races=0 secs="*" skipped=4 log=$LOG" ]]
+    [[ "${lines[-1]}" == "GATE-CI PASS rc=0 jobs=7/7 failures=0 races=0 secs="*" skipped=4 log=$LOG" ]]
     [[ "${lines[-2]}" == "gate-ci: skipped: TestZ/sub" ]]
     [[ "${lines[-3]}" == "gate-ci: skipped: TestY" ]]
     [[ "$(printf '%s\n' "${lines[@]}" | grep -c '^gate-ci: skipped:')" -eq 2 ]]
@@ -99,7 +111,7 @@ sleeper_below() {
 @test "the ten slowest top-level tests are listed with their job above the verdict, below the skipped names" {
     # TestO is slower in the knobs run of the other packages, TestB in the untagged shard 1
     STUB_MODE=slow run -0 "$GATE" -o "$LOG"
-    [[ "${lines[-1]}" == "GATE-CI PASS rc=0 jobs=6/6 failures=0 races=0 secs="*" skipped=2 log=$LOG" ]]
+    [[ "${lines[-1]}" == "GATE-CI PASS rc=0 jobs=7/7 failures=0 races=0 secs="*" skipped=2 log=$LOG" ]]
     [[ "${lines[-2]}" == "gate-ci: slowest: TestA 1.5s (cli0)" ]]
     [[ "${lines[-3]}" == "gate-ci: slowest: TestO 15.0s (other/testknobs)" ]]
     [[ "${lines[-4]}" == "gate-ci: slowest: TestB 83.0s (cli1)" ]]
@@ -137,23 +149,23 @@ sleeper_below() {
 
 @test "a data race fails both tag runs of the other packages, named, and the other jobs still run" {
     STUB_MODE=race run -1 "$GATE" -o "$LOG"
-    [[ "${lines[-1]}" == "GATE-CI FAIL rc=1 jobs=4/6 failures=2 races=2 secs="*" failed=other:TestRacy,other/testknobs:TestRacy log=$LOG" ]]
+    [[ "${lines[-1]}" == "GATE-CI FAIL rc=1 jobs=5/7 failures=2 races=2 secs="*" failed=other:TestRacy,other/testknobs:TestRacy log=$LOG" ]]
     [[ "$(wc -l <"$STUB_CALLS")" -eq 6 ]]
 }
 
 @test "a test that fails only with the test knobs is named with its shard" {
     STUB_MODE=knobs run -1 "$GATE" -o "$LOG"
-    [[ "${lines[-1]}" == "GATE-CI FAIL rc=1 jobs=5/6 failures=1 races=0 secs="*" failed=cli1/testknobs:TestB log=$LOG" ]]
+    [[ "${lines[-1]}" == "GATE-CI FAIL rc=1 jobs=6/7 failures=1 races=0 secs="*" failed=cli1/testknobs:TestB log=$LOG" ]]
 }
 
 @test "a package that does not build is named by its package" {
     STUB_MODE=build run -1 "$GATE" -o "$LOG"
-    [[ "${lines[-1]}" == "GATE-CI FAIL rc=1 jobs=4/6 failures=2 races=0 secs="*" failed=other:p/a,other/testknobs:p/a log=$LOG" ]]
+    [[ "${lines[-1]}" == "GATE-CI FAIL rc=1 jobs=5/7 failures=2 races=0 secs="*" failed=other:p/a,other/testknobs:p/a log=$LOG" ]]
 }
 
 @test "a package that printed nothing is a FAIL although go test exited 0" {
     STUB_MODE=lost run -1 "$GATE" -o "$LOG"
-    [[ "${lines[-1]}" == "GATE-CI FAIL rc=0 jobs=4/6 failures=2 "*"failed=other:rc=0 packages=1/2,other/testknobs:rc=0 packages=1/2 log=$LOG" ]]
+    [[ "${lines[-1]}" == "GATE-CI FAIL rc=0 jobs=5/7 failures=2 "*"failed=other:rc=0 packages=1/2,other/testknobs:rc=0 packages=1/2 log=$LOG" ]]
 }
 
 @test "SIGTERM stops the run, reaps go and prints a FAIL verdict" {
@@ -176,4 +188,18 @@ sleeper_below() {
     [[ "$output" != *GATE-CI* ]]
     run -2 "$GATE" p/a
     [[ "$output" != *GATE-CI* ]]
+}
+
+@test "the lint job runs once, as make lint, before the test jobs" {
+    STUB_MODE=ok run -0 "$GATE" -o "$LOG"
+    [[ "$(cat "$MAKE_CALLS")" == "make lint" ]]
+    [[ "$output" == *"gate-ci: lint ok ("*" s)"* ]]
+}
+
+@test "a lint finding fails the run, named by file and line and by make target, and the test jobs still run" {
+    STUB_LINT=fail STUB_MODE=ok run -1 "$GATE" -o "$LOG"
+    [[ "${lines[-1]}" == "GATE-CI FAIL rc=2 jobs=6/7 failures=2 races=0 secs="*" failed=lint:internal/x/x.go:12:5,lint:lint-go log=$LOG" ]]
+    [[ "$output" == *"gate-ci: lint FAIL rc=2 failing=2 ("*" s)"* ]]
+    [[ "$output" == *"gate-ci: lint: internal/x/x.go:12:5: QF1001"* ]]
+    [[ "$output" == *"gate-ci: other ok ("* ]]
 }

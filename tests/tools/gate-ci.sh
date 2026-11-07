@@ -9,6 +9,12 @@
 #           failures=<failing tests> races=<data races> secs=<n>
 #           skipped=<n> [failed=<job>:<test>,...] log=<path>
 #
+# The lint job of CI runs first, as 'make lint' (shellcheck, gofmt, go vet and
+# golangci-lint in both tag sets, the man tests and the repository's own
+# checks); a finding shows up here and not on the pull request. A missing or
+# wrong-version golangci-lint fails it (the message names the install line):
+# it is never skipped.
+#
 # 'make gate-go' runs ./internal/... once, without the race detector and
 # without the test knobs; this runs what CI runs, so a data race or a test
 # that exists only with '-tags testknobs' fails here and not on the pull
@@ -116,7 +122,7 @@ fi
 
 start=$(date +%s)
 child=""
-total=$((${#tagsets[@]} * (1 + shards)))
+total=$((${#tagsets[@]} * (1 + shards) + 1))
 passed=0 failures=0 races=0 firstrc=0 ran=0 skipped=0
 skipnames=""
 failed=()
@@ -167,6 +173,41 @@ job() {
     return 1
 }
 
+# lintjob: 'make lint', the lint job of CI, judged by its exit status; a
+# failure names the files and lines it reports and the failing make target.
+lintjob() {
+    local from jstart rc out names n name
+    from=$(wc -l <"$log")
+    jstart=$(date +%s)
+    echo "=== lint: make lint" >>"$log"
+    setsid make lint </dev/null >>"$log" 2>&1 &
+    child=$!
+    wait "$child"
+    rc=$?
+    child=""
+    ran=$((ran + 1))
+    if [[ "$rc" -eq 0 ]]; then
+        passed=$((passed + 1))
+        say "gate-ci: lint ok ($(($(date +%s) - jstart)) s)"
+        return 0
+    fi
+    [[ "$firstrc" -ne 0 ]] || firstrc=$rc
+    out=$(tail -n +"$((from + 2))" "$log")
+    names=$(grep -E '^[^[:space:]]+\.go:[0-9]+:[0-9]+: ' <<<"$out" | sed 's/: .*//' | sort -u)
+    names+=$'\n'$(sed -n 's/^make: \*\*\* \[[^]]*: \([^]]*\)\].*/\1/p' <<<"$out" | sort -u)
+    names=$(grep . <<<"$names")
+    [[ -n "$names" ]] || names="rc=$rc"
+    n=0
+    while IFS= read -r name; do
+        failed+=("lint:$name")
+        n=$((n + 1))
+    done <<<"$names"
+    failures=$((failures + n))
+    say "gate-ci: lint FAIL rc=$rc failing=$n ($(($(date +%s) - jstart)) s)"
+    tail -n 40 <<<"$out" | sed 's/^/gate-ci: lint: /'
+    return 1
+}
+
 verdict() { # <note>
     local note=${1:-} v=FAIL secs list max=20 names n
     secs=$(($(date +%s) - start))
@@ -212,10 +253,13 @@ trap interrupted TERM INT HUP
 
 say "gate-ci: $total jobs, go $("$GO" env GOVERSION 2>/dev/null), log $log"
 
+# The lint job of CI; the jobs after it run whatever it did.
+lintjob
+
 # The static job's shard check; with it failing no test runs.
 if ! check=$(tests/tools/go-test-shard.sh --check "$shards" 2>&1); then
     echo "$check" >>"$log"
-    firstrc=1 failures=1 failed=("shard-check:$(tail -n 1 <<<"$check")")
+    firstrc=1 failures=$((failures + 1)) failed+=("shard-check:$(tail -n 1 <<<"$check")")
     say "gate-ci: shard check FAIL"
     verdict "" && exit 0
     exit 1

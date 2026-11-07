@@ -30,6 +30,18 @@ test) case "$STUB_MODE" in
 esac
 SH
     chmod +x "$STUB"
+    mkdir -p "$BATS_TEST_TMPDIR/bin"
+    cat >"$BATS_TEST_TMPDIR/bin/make" <<'SH'
+#!/bin/bash
+# STUB_LINT: ok (the default) | fail (a finding, as golangci-lint prints it)
+echo "make $*" >>"$MAKE_CALLS"
+if [[ "${STUB_LINT:-ok}" = fail ]]; then
+    printf "internal/x/x.go:12:5: QF1001: could apply De Morgan's law (staticcheck)\n1 issues:\nmake: *** [Makefile:225: lint-go] Error 1\n"
+    exit 2
+fi
+SH
+    chmod +x "$BATS_TEST_TMPDIR/bin/make"
+    export PATH="$BATS_TEST_TMPDIR/bin:$PATH" MAKE_CALLS="$BATS_TEST_TMPDIR/make-calls"
     export GO="$STUB" GOCACHE="$BATS_TEST_TMPDIR/cache" LOG="$BATS_TEST_TMPDIR/gate.log"
 }
 
@@ -155,4 +167,28 @@ sleeper_below() {
     export STUB_ARGS_OUT="$BATS_TEST_TMPDIR/args"
     STUB_MODE=args run -0 "$GATE" -o "$LOG"
     [[ "$(cat "$STUB_ARGS_OUT")" == "test -v -parallel 16 -timeout 40m ./internal/..." ]]
+}
+
+@test "a run of the whole suite runs make lint-go once before the tests" {
+    STUB_MODE=ok run -0 "$GATE" -o "$LOG"
+    [[ "$(cat "$MAKE_CALLS")" == "make lint-go" ]]
+    [[ "$output" == *"gate-go: lint ok ("*" s)"* ]]
+    [[ "${lines[-1]}" == "GATE-GO PASS rc=0 packages=2/2 failures=0 secs="*" log=$LOG" ]]
+}
+
+@test "a lint finding fails the run before any test runs, with its output in the log and the verdict line" {
+    STUB_LINT=fail STUB_MODE=ok run -1 "$GATE" -o "$LOG"
+    [[ "${lines[-1]}" == "GATE-GO FAIL rc=2 packages=0/2 failures=0 secs="*" skipped=0 lint-failed log=$LOG" ]]
+    [[ "$output" == *"gate-go: lint: internal/x/x.go:12:5: QF1001"* ]]
+    grep -q 'QF1001' "$LOG"
+    ! grep -q $'^ok  \tp/a' "$LOG"
+}
+
+@test "--no-lint, a package list and --tags leave the lint out" {
+    STUB_MODE=args STUB_ARGS_OUT="$BATS_TEST_TMPDIR/args" run -0 "$GATE" -o "$LOG" --no-lint
+    [[ ! -e "$MAKE_CALLS" ]]
+    STUB_MODE=args STUB_ARGS_OUT="$BATS_TEST_TMPDIR/args" run -0 "$GATE" -o "$LOG" p/a
+    [[ ! -e "$MAKE_CALLS" ]]
+    STUB_MODE=args STUB_ARGS_OUT="$BATS_TEST_TMPDIR/args" run -0 "$GATE" -o "$LOG" --tags testknobs
+    [[ ! -e "$MAKE_CALLS" ]]
 }
