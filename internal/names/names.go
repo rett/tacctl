@@ -45,19 +45,15 @@ var (
 )
 
 var (
-	// reUser: letters, digits, '_' and '-': the name of a new user, which
-	// is also its Linux account name on the tacctl server.
-	reUser = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
-	// reExistingUser is reUser with single periods between its runs, the
-	// shape 0.2.20 and 0.2.21 accepted. A store written by them can still
-	// hold such a name; it is read, shown, renamed from and removed.
-	reExistingUser = regexp.MustCompile(`^[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)*$`)
-	reGroup        = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
-	reScope        = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,31}$`)
-	reClass        = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
-	reACL          = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
-	reCmd          = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,31}$`)
-	rePriv         = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9 _-]+$`)
+	// reUser: letters, digits, '_' and '-': the name of a user, which is
+	// also its Linux account name on the tacctl server.
+	reUser  = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+	reGroup = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+	reScope = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,31}$`)
+	reClass = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+	reACL   = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
+	reCmd   = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,31}$`)
+	rePriv  = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9 _-]+$`)
 )
 
 // The patterns are ASCII-only, as the store's Python validators are. Bash's
@@ -94,15 +90,9 @@ func RequireLower(name string) error {
 	return nil
 }
 
-// MatchUser reports whether s has the shape of a new username: letters,
-// digits, '_' and '-'. Reserved names are separate.
+// MatchUser reports whether s has the shape of a username: letters, digits,
+// '_' and '-'. Reserved names are separate.
 func MatchUser(s string) bool { return reUser.MatchString(s) }
-
-// MatchExistingUser reports whether s has the shape of a username that may
-// already stand in a store: MatchUser, or the same with single periods
-// between the parts (0.2.20 and 0.2.21 allowed them). It is what the store
-// and console.yaml accept when they read; a new name is MatchUser.
-func MatchExistingUser(s string) bool { return reExistingUser.MatchString(s) }
 
 // MatchGroup reports whether s is a group name: lower case, starting with a
 // letter (the store's RE_GROUP).
@@ -132,23 +122,13 @@ func ValidateClassName(value string) error {
 // '-': it says why a period is not among them.
 const usernameShape = "Username must contain only letters, numbers, underscores and hyphens (a period cannot be part of a Linux account name)."
 
-// ValidateUsername is validate_username: the shape of a new name, letters,
-// digits, '_' and '-'. See RejectReservedUsername for the creation-path
-// check. A command that reads a user that exists uses
-// ValidateExistingUsername.
+// ValidateUsername is validate_username: the shape of a user name, letters,
+// digits, '_' and '-'. A name with a period is refused whatever the verb:
+// every user has an account on the tacctl server and a period cannot be
+// part of a Linux account name. See RejectReservedUsername for the
+// creation-path check.
 func ValidateUsername(value string) error {
 	if !reUser.MatchString(value) {
-		return fail(usernameShape)
-	}
-	return nil
-}
-
-// ValidateExistingUsername is the shape check of a command that names a
-// user that is already there (show, remove, rename from): a name with
-// periods that 0.2.20 or 0.2.21 stored passes, so that it can be shown,
-// removed or renamed. Any other bad shape is refused with the same text.
-func ValidateExistingUsername(value string) error {
-	if !reExistingUser.MatchString(value) {
 		return fail(usernameShape)
 	}
 	return nil

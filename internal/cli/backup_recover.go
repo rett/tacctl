@@ -162,7 +162,7 @@ func (inv *invocation) backupRecover(args []string) error {
 		}
 		return inv.usageErr("Backup not found: "+id, "Run 'tacctl backup list' to see available backups.")
 	}
-	if errs, err := store.ValidateFile(filepath.Join(dir, "store.yaml")); err != nil || len(errs) > 0 {
+	if errs, err := store.ValidateFileLegacyDots(filepath.Join(dir, "store.yaml")); err != nil || len(errs) > 0 {
 		return inv.usageErr("Snapshot " + id + " cannot be read: its store.yaml is missing or not valid. Nothing was changed.")
 	}
 
@@ -172,6 +172,9 @@ func (inv *invocation) backupRecover(args []string) error {
 	inv.echoE(ui.Bold + "Recover from snapshot " + id + ui.NC)
 	if kept {
 		inv.echo("  (a kept copy, " + dir + ")")
+	}
+	if dotted := snapshotDottedUsers(filepath.Join(dir, "store.yaml")); len(dotted) > 0 {
+		inv.echoE(ui.Red + recoverDotsNote(id, dotted) + ui.NC)
 	}
 	for i, k := range kinds {
 		pl, err := k.plan(inv, dir)
@@ -298,6 +301,9 @@ func decideEmails(snap map[string]string, live *model.Model) []emailItem {
 		it := emailItem{user: n, address: addr}
 		u := live.User(n)
 		switch {
+		case strings.Contains(n, "."):
+			// no user has a period now, and none is made by a recovery
+			it.why = dotsSkipReason
 		case u == nil:
 			it.why = "no longer exists"
 		case u.Email != "" && names.SameEmail(u.Email, addr):

@@ -17,8 +17,7 @@ package lifecycle
 //	                  accepts: it stays, and rootBreakGlassWarning says what
 //	                  0.2.19 makes of it (every target).
 //	store.yaml        password_change_required (0.2.20): removed for every
-//	                  target (rollback_pwchange.go). A user name with a
-//	                  period refuses every target (DottedUsersRefusal).
+//	                  target (rollback_pwchange.go).
 //	console.yaml      settings.color, settings.system_shell_users (the
 //	                  values 'disable' and 'enable:<tier>' alike),
 //	                  settings.password_cache_users and a list_max of -1 are
@@ -71,9 +70,9 @@ func planRollback0219(p *RollbackPlan) (*RollbackPlan, error) {
 	in := p.in
 	pt := in.Paths
 	p.keys = slices.DeleteFunc(in.Conf.RollbackKeys0218(), func(k string) bool {
-		return !conf.Added0220Key(k) && !conf.Added0221Key(k) && !conf.Added0222Key(k) && !conf.Added0224Key(k)
+		return !conf.Added0220Key(k) && !conf.Added0221Key(k) && !conf.Added0222Key(k) && !conf.Added0224Key(k) && !conf.Added0226Key(k)
 	})
-	tiers := p.tiersPlan(tier.Sudoers0219(), tier.Sudoers(), tier.Sudoers0223(), tier.Sudoers0222())
+	tiers := p.tiersPlan(tier.Sudoers0219(), tier.Sudoers(), tier.Sudoers0225(), tier.Sudoers0223(), tier.Sudoers0222())
 	p.sudoers = []sudoersPlan{tiers}
 	p.Steps = append(p.Steps, p.lockdownKeysStep(RollbackTarget0219), p.tiersStep(RollbackTarget0219, tiers,
 		"the engineer's rule of 'scope mgmt-acl * mode' and the operator's rules of 'console system-shell' and 'console password-cache' are taken out"),

@@ -1,0 +1,113 @@
+{
+  "schema": 1,
+  "type": "inventory",
+  "generated": "2026-11-06T09:30:15Z",
+  "oldest_data": "2026-11-03T22:10:00Z",
+  "filters": {},
+  "columns": [
+    "name",
+    "address",
+    "vendor",
+    "scope",
+    "model",
+    "serial",
+    "release",
+    "members",
+    "location",
+    "description",
+    "pulled"
+  ],
+  "rows": [
+    {
+      "name": "core1",
+      "address": "198.51.100.2",
+      "vendor": "wti",
+      "scope": "lab",
+      "model": "",
+      "serial": "",
+      "release": "",
+      "members": 0,
+      "location": "",
+      "description": "",
+      "pulled": "2026-11-06T06:00:00Z"
+    },
+    {
+      "name": "fw1",
+      "address": "2001:db8::1",
+      "vendor": "cisco",
+      "scope": "lab",
+      "model": "",
+      "serial": "",
+      "release": "",
+      "members": 0,
+      "location": "",
+      "description": "",
+      "pulled": null
+    },
+    {
+      "name": "jsw1",
+      "address": "192.0.2.10",
+      "vendor": "junos",
+      "scope": "site-a",
+      "model": "EX4300-48T",
+      "serial": "SN000001",
+      "release": "21.4R3-S5.4",
+      "members": 3,
+      "location": "Rack 4, DC1",
+      "description": "core virtual chassis",
+      "pulled": "2026-11-06T07:30:00Z"
+    },
+    {
+      "name": "rtr1",
+      "address": "198.51.100.1",
+      "vendor": "junos",
+      "scope": "site-a",
+      "model": "MX204",
+      "serial": "SN000006",
+      "release": "22.2R1.9",
+      "members": 0,
+      "location": "Lab rack 2",
+      "description": "",
+      "pulled": "2026-11-03T22:10:00Z"
+    },
+    {
+      "name": "sw1",
+      "address": "192.0.2.11",
+      "vendor": "cisco",
+      "scope": "site-a",
+      "model": "WS-C3850-24T",
+      "serial": "SN000004",
+      "release": "16.12.4",
+      "members": 2,
+      "location": "Rack 4, DC1",
+      "description": "access stack",
+      "pulled": "2026-11-06T07:45:00Z"
+    },
+    {
+      "name": "web1",
+      "address": "203.0.113.20",
+      "vendor": "linux",
+      "scope": "lab",
+      "model": "=SUM(A1)",
+      "serial": "+SN000007",
+      "release": "-1.0",
+      "members": 0,
+      "location": "@Rack 4, DC1",
+      "description": "uses\u001b[31m colour",
+      "pulled": "2026-11-05T08:00:00Z"
+    },
+    {
+      "name": "ünï1",
+      "address": "10.0.0.9",
+      "vendor": "linux",
+      "scope": "lab",
+      "model": "Model Ü",
+      "serial": "SN000008",
+      "release": "1.2",
+      "members": 0,
+      "location": "",
+      "description": "Zürich",
+      "pulled": "2026-11-04T10:00:00Z"
+    }
+  ]
+}

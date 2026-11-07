@@ -15,9 +15,8 @@ package lifecycle
 // What 0.2.22 has that every older target lacks stays: the server name and
 // the timing scale (the additions of 0.2.22 are undone by the older targets
 // only), the users' login to this server through the managed scope (no scope
-// is added to the users' own lists), the server address, the user names with
-// a period (0.2.22 reads a stored one; a new one is refused only where it is
-// made), the emergency lockdown, the required password change, the
+// is added to the users' own lists), the server address, the emergency
+// lockdown, the required password change, the
 // management filter mode and the console settings of 0.2.20.
 
 import "github.com/rett/tacctl/internal/tier"
@@ -46,7 +45,7 @@ func planRollback0222(p *RollbackPlan) (*RollbackPlan, error) {
 // of 'device clone'. A file that is already that
 // text, or absent, needs no step; any other text is left and said so.
 func (p *RollbackPlan) tiers0222Step(target string) []RollbackStep {
-	tiers := p.tiersPlan(tier.Sudoers0222(), tier.Sudoers(), tier.Sudoers0223())
+	tiers := p.tiersPlan(tier.Sudoers0222(), tier.Sudoers(), tier.Sudoers0225(), tier.Sudoers0223())
 	p.sudoers = []sudoersPlan{tiers}
 	if tiers.state != "rewrite" && tiers.state != "left" {
 		return nil

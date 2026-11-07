@@ -1,0 +1,26 @@
+# SYNTHETIC FIXTURE, NOT A DEVICE CAPTURE (see README.md)
+# command: show chassis hardware | no-more
+# ---
+Hardware inventory:
+Item             Version  Part number  Serial number     Description
+Chassis                                SN000001          Virtual Chassis
+Routing Engine 0          BUILTIN      BUILTIN           RE-EX4300-48T
+FPC 0            REV 09   650-000001   SN000001          EX4300-48T
+  CPU                     BUILTIN      BUILTIN           FPC CPU
+  PIC 0          REV 09   BUILTIN      BUILTIN           48x 10/100/1000 Base-T
+  PIC 1          REV 09   650-000001   SN000001          4x10G SFP+
+Power Supply 0   REV 03   740-000001   SN000004          JPSU-350-AC-AFO
+Fan Tray 0                                               Fan Module, Airflow Out (AFO)
+Routing Engine 1          BUILTIN      BUILTIN           RE-EX4300-48T
+FPC 1            REV 09   650-000001   SN000002          EX4300-48T
+  CPU                     BUILTIN      BUILTIN           FPC CPU
+  PIC 0          REV 09   BUILTIN      BUILTIN           48x 10/100/1000 Base-T
+  PIC 1          REV 09   650-000001   SN000002          4x10G SFP+
+Power Supply 0   REV 03   740-000001   SN000005          JPSU-350-AC-AFO
+Fan Tray 0                                               Fan Module, Airflow Out (AFO)
+FPC 2            REV 09   650-000001   SN000003          EX4300-48T
+  CPU                     BUILTIN      BUILTIN           FPC CPU
+  PIC 0          REV 09   BUILTIN      BUILTIN           48x 10/100/1000 Base-T
+  PIC 1          REV 09   650-000001   SN000003          4x10G SFP+
+Power Supply 0   REV 03   740-000001   SN000006          JPSU-350-AC-AFO
+Fan Tray 0                                               Fan Module, Airflow Out (AFO)

@@ -20,11 +20,29 @@ import (
 // Sudoers023 is the per-tier drop-in 0.2.3 wrote.
 func Sudoers023() string { return sudoers023 }
 
-// rules0223 are the rules 0.2.23 had: this release's without the operator's
+// withoutReportRows is rs without the rows of 'device reports' (0.2.26): the
+// verbs of the stored reports, which every older release lacks.
+func withoutReportRows(rs []Rule) []Rule {
+	return slices.DeleteFunc(slices.Clone(rs), func(r Rule) bool { return r.Cmd == "device" && r.Sub == "reports" })
+}
+
+// rules0225 are the rules 0.2.24 and 0.2.25 had: this release's without the
+// rows of 'device reports' (0.2.26).
+func rules0225() []Rule { return withoutReportRows(Rules) }
+
+// Sudoers0225 is the per-tier drop-in 0.2.24 and 0.2.25 wrote: this release's
+// rules without the rows of 'device reports' (0.2.26). 'tacctl rollback
+// 0.2.25' and 'rollback 0.2.24' put it back, and every older target
+// recognises it as an older text of this tool's. It is derived (a rule that
+// moves on again makes its own frozen copy); where the 0.2.25 tag is in the
+// repository a test holds it equal to that tag's golden file.
+func Sudoers0225() string { return sudoersFrom(rules0225()) }
+
+// rules0223 are the rules 0.2.23 had: 0.2.25's without the operator's
 // 'log failures *' (the log filters, which sudo had to accept for
 // 'log failures').
 func rules0223() []Rule {
-	rules := slices.Clone(Rules)
+	rules := rules0225()
 	for i, r := range rules {
 		if r.Tier == Operator && r.Cmd == "log" && r.Sub == "failures" {
 			rules[i].Sudoers = slices.DeleteFunc(slices.Clone(r.Sudoers), func(p string) bool { return p == "log failures *" })
@@ -33,7 +51,7 @@ func rules0223() []Rule {
 	return rules
 }
 
-// Sudoers0223 is the per-tier drop-in 0.2.23 wrote: this release's rules
+// Sudoers0223 is the per-tier drop-in 0.2.23 wrote: 0.2.25's rules
 // without the operator's 'log failures *'. It is an older text of this tool's:
 // every target that rewrites the drop-in recognises it, as it does this
 // release's, and 'tacctl rollback 0.2.23' puts it back. It is derived (a rule

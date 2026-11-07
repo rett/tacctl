@@ -1,0 +1,8 @@
+# SYNTHETIC FIXTURE, NOT A DEVICE CAPTURE (see README.md)
+# command: show virtual-chassis status | no-more
+# ---
+Virtual Chassis ID: 0000.5e00.5301
+Virtual Chassis Mode: Enabled
+                                                Mstr           Mixed Route Neighbor List
+Member ID  Status   Serial No    Model          prio  Role      Mode Mode ID  Interface
+0 (FPC 0)  Prsnt    SN000001     ex4300-48t      129  Master*      N  VC

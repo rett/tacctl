@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
 )
@@ -1143,7 +1144,7 @@ func TestUserVerbsRefuseWhenConsoleYAMLCannotBeRead(t *testing.T) {
 func TestUserSettingsMoveThatCannotRead(t *testing.T) {
 	h := newHarness(t, nil)
 	inv := &invocation{ctx: context.Background(), app: h.app, hooks: newTestHooks()}
-	err := inv.userSettingsMoved(userSettingsMove{err: errors.New("boom\nsecond line")}, "bob", "")
+	err := inv.userSettingsMoved(console.UserSettingsMove{Err: errors.New("boom\nsecond line")}, "bob", "")
 	if code := exitCode(err, h.app.Out); code != 1 {
 		t.Errorf("exit %d", code)
 	}

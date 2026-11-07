@@ -100,7 +100,8 @@ func Upgrade(ctx context.Context, h *Host, args []string) error {
 		return err
 	}
 	// A user name with a period (0.2.20, 0.2.21) is no account name on this
-	// server: renamed first, nothing changed until then.
+	// server and is renamed below, under the lock; it stops the upgrade here,
+	// with nothing changed, when a new name is taken.
 	if err := h.dottedUsersGate(); err != nil {
 		return err
 	}
@@ -180,6 +181,13 @@ func Upgrade(ctx context.Context, h *Host, args []string) error {
 		return err
 	}
 	defer unlock()
+
+	// A user whose name has a period (0.2.20, 0.2.21) is renamed (period to
+	// '_') after a snapshot, before the configuration is rendered from the
+	// store.
+	if err := h.renameDottedUsers(); err != nil {
+		return err
+	}
 
 	// A group at priv-lvl 15 gets the explicit tier 0.2.2 gave it by its band.
 	h.pinGroupTiers()

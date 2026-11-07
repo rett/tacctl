@@ -774,6 +774,13 @@ func (inv *invocation) asCaller(fn func() error) error {
 	if !ok || os.Geteuid() != 0 {
 		return fn()
 	}
+	return asIDs(uid, gid, fn)
+}
+
+// asIDs runs fn with the file-system identity uid:gid on a thread of its own
+// (see asCaller). The caller has decided that it is root and that the
+// identity is to be taken.
+func asIDs(uid, gid int, fn func() error) error {
 	errc := make(chan error, 1)
 	go func() {
 		runtime.LockOSThread()
@@ -784,6 +791,23 @@ func (inv *invocation) asCaller(fn func() error) error {
 		errc <- err
 	}()
 	return <-errc
+}
+
+// fileExistsError is writePrivate's refusal of a name in use. It says nothing
+// of how to go on, because that differs by verb: 'plan --out' and 'reports
+// export --out' have --force, 'reports generate' has --name, 'reports rename'
+// takes another new name. The caller adds its own hint (existsText).
+type fileExistsError struct{ path string }
+
+func (e *fileExistsError) Error() string { return e.path + " exists" }
+
+// existsText is err as text, with hint after it when err is a name in use.
+func existsText(err error, hint string) string {
+	var ex *fileExistsError
+	if errors.As(err, &ex) {
+		return err.Error() + hint
+	}
+	return err.Error()
 }
 
 // writePrivate writes data to path as a new file, 0600, through a temporary
@@ -822,7 +846,7 @@ func writePrivate(path string, data []byte, force bool) error {
 	// link fails when the name exists, whatever it is
 	if err := os.Link(tmp, path); err != nil {
 		if errors.Is(err, os.ErrExist) {
-			return fmt.Errorf("%s exists (--force replaces it)", path)
+			return &fileExistsError{path}
 		}
 		return err
 	}
@@ -871,7 +895,7 @@ func (inv *invocation) writePlanFiles(dir string, files []planFile, stale []stri
 		}
 		for _, f := range files {
 			if err := writePrivate(f.path, []byte(f.data), force); err != nil {
-				return err
+				return errors.New(existsText(err, " (--force replaces it)"))
 			}
 		}
 		for _, p := range stale {

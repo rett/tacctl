@@ -1,0 +1,116 @@
+{
+  "schema": 1,
+  "type": "members",
+  "generated": "2026-11-06T09:30:15Z",
+  "oldest_data": "2026-11-03T22:10:00Z",
+  "filters": {},
+  "columns": [
+    "device",
+    "member",
+    "role",
+    "model",
+    "serial",
+    "release",
+    "status",
+    "priority",
+    "pulled"
+  ],
+  "rows": [
+    {
+      "device": "jsw1",
+      "id": "0",
+      "role": "master",
+      "model": "EX4300-48T",
+      "serial": "SN000001",
+      "release": "21.4R3-S5.4",
+      "status": "Prsnt",
+      "priority": 129,
+      "components": [],
+      "pulled": "2026-11-06T07:30:00Z"
+    },
+    {
+      "device": "jsw1",
+      "id": "1",
+      "role": "backup",
+      "model": "EX4300-48T",
+      "serial": "SN000002",
+      "release": "21.4R3-S5.4",
+      "status": "Prsnt",
+      "priority": 129,
+      "components": [],
+      "pulled": "2026-11-06T07:30:00Z"
+    },
+    {
+      "device": "jsw1",
+      "id": "10",
+      "role": "linecard",
+      "model": "EX4300-48T",
+      "serial": "SN000003",
+      "release": "21.4R3-S5.4",
+      "status": "Prsnt",
+      "priority": 0,
+      "components": [],
+      "pulled": "2026-11-06T07:30:00Z"
+    },
+    {
+      "device": "rtr1",
+      "id": "-",
+      "role": "-",
+      "model": "MX204",
+      "serial": "SN000006",
+      "release": "22.2R1.9",
+      "status": "",
+      "priority": 0,
+      "components": [],
+      "pulled": "2026-11-03T22:10:00Z"
+    },
+    {
+      "device": "sw1",
+      "id": "1",
+      "role": "master",
+      "model": "WS-C3850-24T",
+      "serial": "SN000004",
+      "release": "16.12.4",
+      "status": "Ready",
+      "priority": 15,
+      "components": [],
+      "pulled": "2026-11-06T07:45:00Z"
+    },
+    {
+      "device": "sw1",
+      "id": "2",
+      "role": "member",
+      "model": "WS-C3850-24T",
+      "serial": "SN000005",
+      "release": "16.12.4",
+      "status": "Ready",
+      "priority": 1,
+      "components": [],
+      "pulled": "2026-11-06T07:45:00Z"
+    },
+    {
+      "device": "web1",
+      "id": "-",
+      "role": "-",
+      "model": "=SUM(A1)",
+      "serial": "+SN000007",
+      "release": "-1.0",
+      "status": "",
+      "priority": 0,
+      "components": [],
+      "pulled": "2026-11-05T08:00:00Z"
+    },
+    {
+      "device": "ünï1",
+      "id": "-",
+      "role": "-",
+      "model": "Model Ü",
+      "serial": "SN000008",
+      "release": "1.2",
+      "status": "",
+      "priority": 0,
+      "components": [],
+      "pulled": "2026-11-04T10:00:00Z"
+    }
+  ]
+}

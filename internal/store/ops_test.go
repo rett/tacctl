@@ -80,12 +80,11 @@ func TestUserSetBadNames(t *testing.T) {
 	}
 }
 
-// A store written by 0.2.20 or 0.2.21 can hold a user name with periods. It
-// still loads and validates (so that every store command, 'user rename'
-// included, runs), the user is changed, renamed to a valid name and removed.
-// The store ops leave the shape of a new name to the commands that call
-// them, which refuse a period.
-func TestUserNamesWithPeriodsInAnOldStore(t *testing.T) {
+// A user name is letters, digits, '_' and '-': a store that holds one with a
+// period (0.2.20 and 0.2.21 wrote them) fails to validate and says what to do,
+// no operation writes one, and a write that renames every such user to a valid
+// name goes through (the upgrade's rename).
+func TestUserNamesWithPeriodsAreInvalid(t *testing.T) {
 	e := newEnv(t)
 	e.useFixture("store.multiscope.yaml")
 	body := string(readFile(t, e.path))
@@ -93,20 +92,74 @@ func TestUserNamesWithPeriodsInAnOldStore(t *testing.T) {
 	if err := os.WriteFile(e.path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if msgs, err := store.ValidateFile(e.path); err != nil || len(msgs) != 0 {
+	msgs, err := store.ValidateFile(e.path)
+	if err != nil || len(msgs) != 2 {
 		t.Fatalf("an old store with dotted users: %v %v", msgs, err)
 	}
-	equal(t, e.mustGet("users", "alice.smith", "group"), "readonly")
-	// another user is changed in a store that has them
-	e.mustMutate(userSet("bob", "group=readonly"))
-	// the dotted user is changed, renamed to a valid name and removed
-	e.mustMutate(userSet("alice.smith", "group=operator"))
-	equal(t, e.mustGet("users", "alice.smith", "group"), "operator")
-	e.mustMutate(func(s *store.Store) error { return s.UserRename("alice.smith", "alice-smith") })
-	equal(t, e.mustGet("users", "alice-smith", "group"), "operator")
-	e.mustMutate(func(s *store.Store) error { return s.UserDel("a.b-c_d") })
-	if _, code := e.get("users", "a.b-c_d"); code != 1 {
-		t.Error("a.b-c_d still exists")
+	for _, m := range msgs {
+		if !strings.Contains(m, "invalid name (a period cannot be part of a Linux account name; 'tacctl upgrade' renames such a user)") {
+			t.Errorf("message: %s", m)
+		}
+	}
+	// a change that leaves one is refused, one that renames them all is not
+	contains(t, e.mutate(userSet("bob", "group=readonly")), "invalid name")
+	e.mustMutate(func(s *store.Store) error {
+		if err := s.UserRename("alice.smith", "alice_smith"); err != nil {
+			return err
+		}
+		return s.UserRename("a.b-c_d", "a_b-c_d")
+	})
+	equal(t, e.mustGet("users", "alice_smith", "group"), "readonly")
+	if msgs, err := store.ValidateFile(e.path); err != nil || len(msgs) != 0 {
+		t.Fatalf("after the rename: %v %v", msgs, err)
+	}
+	// and no operation makes one
+	for _, n := range []string{"carol.jones", "a.b", "1.5"} {
+		contains(t, e.mutate(userSet(n, "group=readonly")), "invalid name")
+	}
+}
+
+// A restore reads a snapshot's store with ValidateFileLegacyDots: a user name
+// with a period passes there, every other problem is still reported, and the
+// live store's ValidateFile does not change.
+func TestValidateFileLegacyDotsAcceptsOnlyThePeriod(t *testing.T) {
+	e := newEnv(t)
+	e.useFixture("store.multiscope.yaml")
+	body := string(readFile(t, e.path))
+	dotted := strings.Replace(body, "users:\n", "users:\n  alice.smith:\n    group: readonly\n    scopes: [lab]\n    hash: null\n    disabled: true\n", 1)
+	if err := os.WriteFile(e.path, []byte(dotted), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if msgs, err := store.ValidateFileLegacyDots(e.path); err != nil || len(msgs) != 0 {
+		t.Fatalf("a dotted user in a snapshot: %v %v", msgs, err)
+	}
+	if msgs, err := store.ValidateFile(e.path); err != nil || len(msgs) != 1 {
+		t.Fatalf("the live rule changed: %v %v", msgs, err)
+	}
+	raw, err := store.LoadRaw(e.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := store.DottedUsers(raw); len(got) != 1 || got[0] != "alice.smith" {
+		t.Errorf("DottedUsers: %q", got)
+	}
+	// a period in a group or scope name, a name that is not of the old shape
+	// and a bad field are not relaxed
+	for _, bad := range []string{"  a..b:\n", "  .ab:\n", "  a b:\n"} {
+		body := strings.Replace(body, "users:\n", "users:\n"+bad+"    group: readonly\n    scopes: [lab]\n    hash: null\n    disabled: true\n", 1)
+		if err := os.WriteFile(e.path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if msgs, err := store.ValidateFileLegacyDots(e.path); err != nil || len(msgs) != 1 || !strings.Contains(msgs[0], "invalid name") {
+			t.Errorf("%q: %v %v", bad, msgs, err)
+		}
+	}
+	nogroup := strings.Replace(dotted, "group: readonly", "group: nosuchgroup", 1)
+	if err := os.WriteFile(e.path, []byte(nogroup), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if msgs, _ := store.ValidateFileLegacyDots(e.path); len(msgs) != 1 || !strings.Contains(msgs[0], "nosuchgroup") {
+		t.Errorf("a bad group: %v", msgs)
 	}
 }
 

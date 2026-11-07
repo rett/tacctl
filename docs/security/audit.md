@@ -122,6 +122,8 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `server listen` | `backend` `listener` `from` `to` |
 | `server addresses` | `op=add\|replace` `address` |
 | `config devices` | `key` `from` `to` |
+| `config reports` | `key=max_size\|max_count` `from` `to` (bytes, or a count; 0 is no cap) |
+| `user reports-limit` | `name` `key=max-size\|max-count` `op=set\|clear` and `value` for a set |
 | `config audit-strict` | `from` `to` (`on` or `off`); `auth.notice` |
 | `config breakglass-firewall` | `from` `to` (`reject`, `drop` or `off`) `firewall` (what the table did: the setting, or `failed`); `auth.notice` |
 | `firewall reload` (after `server listen` of a tacquito listener, when an address is held or a table was written) | `reason=listener` `firewall` |
@@ -140,6 +142,10 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `device enroll hostkey`, `device collect hostkey`, `device onboard hostkey` | `user` `addr` `device` `alg` `fp` `result=accepted\|skipped\|refused` `source=confirmed\|flag`; every answer to a host key's question, before the key is pinned or used; `auth.notice` |
 | `device enroll` | `user` `addr` `device` `vendor` `source=snmp\|given\|asked` `result`; one line per address at the end of the run |
 | `device import` | `source` `added` `updated` `removed` `count` |
+| `device reports generate` | `type` `name` `format` `rows`: a report made in the user's home |
+| `device reports rename`, `device reports remove` | `name` and `new` (rename): one of the user's own reports |
+| `device reports prune` | `older-than` `removed` (the number of the user's own reports removed; never their names) |
+| `device reports access` | `verb=list\|show\|export\|rename\|remove\|prune\|prune-dry-run` `owner` (`*` for every user) `report` (`*` for a list; a prune has `count` instead): a superuser's access to another user's reports, written before anything is read or changed, at `auth.notice`, and refused under `audit.strict` when it cannot be written; never the contents |
 | `device set` | `name` `field` `from` `to`: `address`, `hostname`, `vendor`, `port`, `description`, `location`, `legacy-ssh`, `ios-syntax`, `netconf`, `timeout-scale`, `stale-days` (no `name`) and `notice:<kind>` |
 
 The verbs that logged before 0.2.17 keep their lines (`host enroll`, `host
@@ -172,7 +178,8 @@ users whose address it removed, never an address. When it wrote the SNMP
 credential files in version 1 and dropped something, the line has `snmp-users=<n>
 snmp-levels=<m> snmp-choices=<k> snmp-devices=<p>` (users and the levels they were
 in, devices whose choice of another level's user went, devices without an `snmp:`
-entry whose file went; counts, never a name) after `kept=<id>`.
+entry whose file went; counts, never a name) after `kept=<id>`. When it removed the users' own limits of the
+stored reports, the line has `limit-users=<names>` (never a value) before `by=`.
 
 `device config apply` writes, at `auth.notice`, a review line for each device
 asked, then, when any device was approved, the approval line, and each applied
@@ -373,6 +380,8 @@ carries, but are not refused for it: a line that cannot be written is the
 warning. Those that change something are refused by their `cmd start` line as
 above; `scope secret <scope> generate` writes its start line before it prints
 the value it generated.
+
+A superuser's access to another user's reports (`device reports list --user`, `--all-users`, `show`, `export`, `rename`, `remove` and `prune` of `<user>/<report>`, `--user` or `--all-users`) writes its `device reports access` line before anything is listed, shown or changed, and is refused the same way when the line cannot be written ([Device reports](../devices/reports.md#who-may-do-what)).
 
 `config audit-strict` itself is never refused by the setting. When `logger`
 is down and every change is refused, `tacctl config audit-strict off` still

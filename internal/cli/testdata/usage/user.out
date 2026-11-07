@@ -15,6 +15,10 @@ Subcommands:
   [1memail[0m [0;36m<username>[0m                             Show the user's email address
   [1memail[0m [0;36m<username>[0m [0;36m<address>[0m                   Set it (an address belongs to one user)
   [1memail[0m [0;36m<username>[0m [0;36mclear[0m                       Remove it
+  [1mreports-limit[0m [0;36m<username>[0m                     Show the user's own limits of the stored reports
+  [1mreports-limit[0m [0;36m<username>[0m [0;36mmax-size[0m [0;36m<value>[0m        Set the largest report (bytes, or Ki, Mi, Gi; 0: no cap)
+  [1mreports-limit[0m [0;36m<username>[0m [0;36mmax-count[0m [0;36m<n>[0m           Set the most reports the user keeps (0: no cap)
+  [1mreports-limit[0m [0;36m<username>[0m [max-size|max-count] [0;36mclear[0m  Return to the server's setting (alone: both)
   [1mpasswd[0m [0;36m<username>[0m                            Change a user's password
   [1mpasswd[0m [0;36m<username>[0m [0;36m--hash <hash>[0m              Change with pre-generated bcrypt hash ([0;36m-[0m reads it from stdin)
   [1mpasswd[0m [0;36m<username>[0m [0;36m--no-change-required[0m       Skip the required password change (a reset requires one)
@@ -36,6 +40,8 @@ Examples:
   tacctl user add jsmith superuser --scopes prod,lab
   tacctl user add alice superuser --email alice@example.net
   tacctl user email alice alice@example.net
+  tacctl user reports-limit alice max-size 20Mi
+  tacctl user reports-limit alice clear
   tacctl user scope jsmith add prod
   tacctl user verify jsmith
 

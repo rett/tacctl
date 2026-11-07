@@ -186,7 +186,15 @@ var Rules = []Rule{
 	{Tier: Readonly, Cmd: "device", Sub: "list", Sudoers: []string{"device list", "device list *"},
 		Note: "device list: the CONFIG column (and config, release, model and serial of --json) is the operator tier's; a read-only user's list has none."},
 	{Tier: Readonly, Cmd: "device", Sub: "show", Sudoers: []string{"device show *"},
-		Note: "device show: the Configuration, Release, Model and Serial rows (and config, release, model and serial of --json) are the operator tier's; a read-only user's output has none."},
+		Note: "device show: the Configuration, Release, Model and Serial rows, the Chassis members table (and config, release, model, serial and members of --json) are the operator tier's; a read-only user's output has none."},
+	// 'device reports' (0.2.26, D327): the saved reports of the registered
+	// devices, made from the stored records. Every tier may generate, list,
+	// show, export, rename and remove its own reports; the gate sees
+	// 'device reports', and the verb keeps 'generate --pull' (it logs in to
+	// the devices as the caller) to the engineer tier and the reports of other
+	// users to the superuser.
+	{Tier: Readonly, Cmd: "device", Sub: "reports", Sudoers: []string{"device reports", "device reports *"},
+		Note: "device reports: every tier may generate (without --pull), list, show, export, rename and remove its own reports, which hold the devices of its own scopes; generate --pull needs the engineer tier; --user, --all-users and <user>/<report> (the reports of other users, every access audited) need the superuser tier."},
 	// 'device notice list' (0.2.18, D274) is every tier's; the gate sees
 	// 'device notice', and the verb keeps 'ack' and 'unack' the superuser's.
 	{Tier: Readonly, Cmd: "device", Sub: "notice", Sudoers: []string{"device notice list", "device notice list *"},

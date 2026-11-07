@@ -64,7 +64,7 @@ func TestRollback0223ConvertsNothing(t *testing.T) {
 	if !strings.Contains(out, "tacctl upgrade --branch 0.2.23") {
 		t.Errorf("--apply lacks the upgrade:\n%s", out)
 	}
-	if strings.Contains(out, "holds the") || strings.Contains(out, "took first") || strings.Contains(out, "Until the upgrade") {
+	if out = beforeReportsNote(out); strings.Contains(out, "holds the") || strings.Contains(out, "took first") || strings.Contains(out, "Until the upgrade") {
 		t.Errorf("--apply speaks of a snapshot or a command to avoid:\n%s", out)
 	}
 	if hs.snapshots() != snaps {
@@ -78,18 +78,13 @@ func TestRollback0223ConvertsNothing(t *testing.T) {
 	}
 }
 
-// The 0.2.22 target still removes the email address, and a name with a period
-// stops neither 0.2.23 nor 0.2.22. An emergency lockdown on the scope the
-// enrolled host answers stays in the rollback to 0.2.23 (the host's sshd
-// drop-in is one only this release and 0.2.23 lift), and is a reason to
-// refuse every older target, 0.2.22 first.
+// The 0.2.22 target still removes the email address. An emergency lockdown on
+// the scope the enrolled host answers stays in the rollback to 0.2.23 (the
+// host's sshd drop-in is one only this release and 0.2.23 lift), and is a
+// reason to refuse every older target, 0.2.22 first.
 func TestRollback0223IsToldApartFromTheOlderTargets(t *testing.T) {
 	hs := rollback0223State(t)
 	hs.step("", "user", "email", "bob", "bob@example.net")
-	hs.run(hs.runner(), "rollback", "0.2.22")
-	hs.expect(0, "remove email of bob", "")
-	hs.write("state/store.yaml", strings.Replace(hs.store(), "\n  erin:", "\n  erin.smith:", 1), 0o600)
-	// both targets read the stored name with a period
 	hs.run(hs.runner(), "rollback", "0.2.22")
 	hs.expect(0, "remove email of bob", "")
 	hs.run(hs.runner(), "rollback", "0.2.23", "--apply")

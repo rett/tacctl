@@ -59,11 +59,7 @@ var schema = []sectionSpec{
 		{name: "juniper_class", typ: tString, pattern: names.MatchClass, required: true},
 		{name: "builtin", typ: tBool},
 	}},
-	// A user name read from a store may hold periods (0.2.20 and 0.2.21 wrote
-	// them): every store command must keep running so that 'user rename'
-	// can fix it. A new name is refused where it is made (UserSet,
-	// UserRename).
-	{key: "users", label: "user", name: names.MatchExistingUser, fields: []fieldSpec{
+	{key: "users", label: "user", name: names.MatchUser, fields: []fieldSpec{
 		{name: "group", typ: tString, required: true},
 		{name: "scopes", typ: tStringList, required: true},
 		{name: "hash", typ: tBcryptHex, nullable: true, required: true},
@@ -78,6 +74,12 @@ var schema = []sectionSpec{
 		// refuses the key (lifecycle's rollback removes it). An address
 		// belongs to one user (Validate).
 		{name: "email", typ: tString, pattern: names.MatchEmail, patternMsg: "must be a plain address (local@domain, no spaces, angle brackets or quotes, at most 254 characters)"},
+		// reports_max_size (bytes) and reports_max_count (0.2.26, D326) are
+		// the user's own limits of the stored reports, written only when
+		// set (0 is no cap): a release before 0.2.26 refuses the keys
+		// (lifecycle's rollback removes them).
+		{name: ReportsMaxSizeKey, typ: tInt, min: 0, max: int(names.ReportMaxSizeCap)},
+		{name: ReportsMaxCountKey, typ: tInt, min: 0, max: names.ReportMaxCountCap},
 	}},
 	{key: "scopes", label: "scope", name: names.MatchScope, fields: []fieldSpec{
 		{name: "prefixes", typ: tCIDRList, minItems: 1, required: true},
@@ -116,6 +118,12 @@ func isInt(v any) (int, bool) {
 	i, ok := v.(int)
 	return i, ok
 }
+
+// reDottedUser is the shape of a user name that 0.2.20 and 0.2.21 allowed and
+// no release does now: single periods between runs of letters, digits, '_'
+// and '-'. Only the message about a name of that shape says the upgrade
+// renames it.
+var reDottedUser = regexp.MustCompile(`^[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)+$`)
 
 var reDate = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
 var reLowerHex = regexp.MustCompile(`^[0-9a-f]+$`)
@@ -313,7 +321,37 @@ func get(m *yamlpy.Map, key string) any {
 // Validate is store_validate: every problem with a store document (raw
 // from LoadRaw, or normalised), one message each, in 0.1.16's order
 // and wording. An empty result means valid.
-func Validate(store any) []string {
+func Validate(store any) []string { return validate(store, false) }
+
+// ValidateLegacyDots is Validate for a snapshot of 0.2.25 or earlier that
+// 'backup restore' and 'backup recover' read: a user name with a period (0.2.20
+// and 0.2.21 allowed one) is not a problem there, and nothing else is
+// relaxed. The live store is judged by Validate; 'tacctl upgrade' renames
+// such a user, and until then the store reads and every write is refused.
+func ValidateLegacyDots(store any) []string { return validate(store, true) }
+
+// DottedUsers lists the user names of a store document that have the shape
+// of a name 0.2.20 and 0.2.21 allowed: a period between runs of letters,
+// digits, '_' and '-'. The result is in the order of the store.
+func DottedUsers(store any) []string {
+	root, ok := mapOf(store)
+	if !ok {
+		return nil
+	}
+	users, ok := mapOf(get(root, "users"))
+	if !ok {
+		return nil
+	}
+	var out []string
+	for name := range users.All() {
+		if reDottedUser.MatchString(name) {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+func validate(store any, legacyDots bool) []string {
 	root, ok := mapOf(store)
 	if !ok {
 		return []string{"store is not a YAML mapping"}
@@ -342,7 +380,14 @@ func Validate(store any) []string {
 		}
 		sections[sec.key] = m
 		for name, ent := range m.All() {
-			if !sec.name(name) {
+			// 0.2.20 and 0.2.21 allowed a period in a user name; the upgrade
+			// renames such a user. Only a restore reads one (legacyDots).
+			dotted := sec.key == "users" && reDottedUser.MatchString(name)
+			if !sec.name(name) && !(dotted && legacyDots) {
+				if dotted {
+					add("%s %s: invalid name (a period cannot be part of a Linux account name; 'tacctl upgrade' renames such a user)", sec.label, PyRepr(name))
+					continue
+				}
 				add("%s %s: invalid name", sec.label, PyRepr(name))
 				continue
 			}
@@ -421,6 +466,9 @@ func Validate(store any) []string {
 			}
 			if u.Has("email") {
 				add("user '%s': the accounting sink must not carry an email address", name)
+			}
+			if u.Has(ReportsMaxSizeKey) || u.Has(ReportsMaxCountKey) {
+				add("user '%s': the accounting sink must not carry a limit of the stored reports", name)
 			}
 		}
 	}

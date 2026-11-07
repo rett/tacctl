@@ -30,7 +30,7 @@ func carryOver(s *Store, existing string, rep *LegacyReport) {
 		rep.note("existing store could not be read (%s); nothing carried over", err.Error())
 		return
 	}
-	var keptProtocols, keptDates, keptHashes, keptVendor, keptFlags, keptEmails int
+	var keptProtocols, keptDates, keptHashes, keptVendor, keptFlags, keptEmails, keptLimits int
 	oldScopes, oldUsers := old.section("scopes"), old.section("users")
 	scopes := s.section("scopes")
 	for name, sv := range scopes.All() {
@@ -85,6 +85,17 @@ func carryOver(s *Store, existing string, rep *LegacyReport) {
 			u.Set("email", e)
 			keptEmails++
 		}
+		// The same for a user's own limits of the stored reports (0.2.26).
+		kept := false
+		for _, k := range []string{ReportsMaxSizeKey, ReportsMaxCountKey} {
+			if n, ok := get(prev, k).(int); ok && !u.Has(k) {
+				u.Set(k, n)
+				kept = true
+			}
+		}
+		if kept {
+			keptLimits++
+		}
 	}
 	if keptProtocols > 0 {
 		rep.note("kept the protocols filter of %d scope(s) from the existing store", keptProtocols)
@@ -103,6 +114,9 @@ func carryOver(s *Store, existing string, rep *LegacyReport) {
 	}
 	if keptEmails > 0 {
 		rep.note("kept the email address of %d user(s) from the existing store", keptEmails)
+	}
+	if keptLimits > 0 {
+		rep.note("kept the report limits of %d user(s) from the existing store", keptLimits)
 	}
 }
 

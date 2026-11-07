@@ -79,6 +79,7 @@ Keys without a shipped default (`backends.*`, `listeners.*`, `snmp.*`, `device.c
 | `blocks_device.<device>.<vendor>` | the same, the device's dots written `~` | `device block` |
 | `password.max_age_days`, `password.min_length` | 1 or more (90); 8 to 64 (12) | `config password-age`, `password-min-length` |
 | `secret.min_length` | 16 to 128 (16) | `config secret-min-length` |
+| `reports.max_size`, `reports.max_count` | 0 to 1073741824 bytes (10485760: 10 MiB); 0 to 100000 (100); 0 is no cap: the largest report and the most reports a user keeps (`device reports generate`); a user's own limit wins | `config reports max-size`, `max-count` |
 | `scope.default` | scope name or null (`lab`) | `scope default` |
 | `snmp.version`, `snmp.port`, `snmp.timeout`, `snmp.v3.auth`, `snmp.v3.priv` | `v2c`/`v3` (unset); 1 to 65535 (161); 1 to 10 (2); `sha`/`sha256`; `aes128` | `config snmp` |
 | `device.config.max_concurrency`, `device.config.transport`, `device.config.timeout`, `device.config.confirm_timeout` | 1 to 64 (8); `auto`, `netconf` or `ssh` (`auto`); 10 to 600 seconds (90); 1 to 60 minutes (5) | `config devices` |

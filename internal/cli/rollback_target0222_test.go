@@ -47,7 +47,7 @@ func TestRollback0222ConvertsNothing(t *testing.T) {
 	if strings.Contains(out, "holds the") || strings.Contains(out, "took first") || strings.Contains(out, "takes a snapshot") {
 		t.Errorf("--apply speaks of a snapshot that was not taken:\n%s", out)
 	}
-	if strings.Contains(out, "Until the upgrade") {
+	if strings.Contains(beforeReportsNote(out), "Until the upgrade") {
 		t.Errorf("--apply names a command to avoid; 0.2.22 reads them all:\n%s", out)
 	}
 	if hs.snapshots() != snaps {
@@ -64,12 +64,10 @@ func TestRollback0222ConvertsNothing(t *testing.T) {
 	}
 }
 
-// 0.2.22 reads a user name with a period and has the emergency lockdown, so
-// neither stops its rollback, in the dry run and with --apply; 0.2.19 refuses
-// the name, 0.2.18 the lockdown.
-func TestRollback0222IsNotStoppedByADottedNameOrALockdown(t *testing.T) {
+// 0.2.22 has the emergency lockdown, so it does not stop its rollback, in the
+// dry run and with --apply; 0.2.18 refuses it.
+func TestRollback0222IsNotStoppedByALockdown(t *testing.T) {
 	hs := rollback0221State(t)
-	hs.write("state/store.yaml", strings.Replace(hs.store(), "\n  erin:", "\n  erin.smith:", 1), 0o600)
 	hs.write("state/tacctl.yaml", hs.read("state/tacctl.yaml")+"emergency:\n  lockdown:\n    lab:\n      groups:\n      - operator\n      since: '2026-10-25T12:00:00+00:00'\n      by: alice\n      reason: drill\n", 0o640)
 	hs.run(hs.runner(), "rollback", "0.2.22")
 	hs.expect(0, "Roll back to 0.2.22 (dry run)", "")
@@ -81,8 +79,8 @@ func TestRollback0222IsNotStoppedByADottedNameOrALockdown(t *testing.T) {
 	if o := hs.overrides(); !strings.Contains(o, "lockdown:") || !strings.Contains(o, "reason: drill") {
 		t.Errorf("tacctl.yaml after --apply:\n%s", o)
 	}
-	hs.run(hs.runner(), "rollback", "0.2.19")
-	hs.expect(1, "", "erin.smith")
+	hs.run(hs.runner(), "rollback", "0.2.18")
+	hs.expect(1, "", "Scope lab is locked down")
 }
 
 // The older targets still remove the timing scale and name the commands that
@@ -96,8 +94,8 @@ func TestRollback0222IsToldApartFromTheOlderTargets(t *testing.T) {
 	if !strings.Contains(hs.all(), "Until the upgrade, do not run 'tacctl device timeout-scale'") {
 		t.Errorf("0.2.21 lacks the note:\n%s", hs.all())
 	}
-	hs.run(hs.runner(), "rollback", "0.2.25")
-	hs.expect(1, "", "prepares the state for 0.2.24 (the release before this one), 0.2.23, 0.2.22, 0.2.21")
+	hs.run(hs.runner(), "rollback", "0.2.26")
+	hs.expect(1, "", "prepares the state for 0.2.25 (the release before this one), 0.2.24, 0.2.23, 0.2.22, 0.2.21")
 }
 
 // The snapshot is announced, and its state named, only when the apply takes

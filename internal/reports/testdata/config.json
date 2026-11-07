@@ -1,0 +1,65 @@
+{
+  "schema": 1,
+  "type": "config",
+  "generated": "2026-11-06T09:30:15Z",
+  "oldest_data": "2026-11-03T22:10:00Z",
+  "filters": {},
+  "columns": [
+    "name",
+    "scope",
+    "state",
+    "pulled",
+    "applied"
+  ],
+  "rows": [
+    {
+      "name": "core1",
+      "scope": "lab",
+      "state": "ok",
+      "pulled": "2026-11-06T06:00:00Z",
+      "applied": "2026-11-06T06:05:00Z"
+    },
+    {
+      "name": "fw1",
+      "scope": "lab",
+      "state": "never",
+      "pulled": null,
+      "applied": null
+    },
+    {
+      "name": "jsw1",
+      "scope": "site-a",
+      "state": "ok",
+      "pulled": "2026-11-06T07:30:00Z",
+      "applied": "2026-11-02T09:00:00Z"
+    },
+    {
+      "name": "rtr1",
+      "scope": "site-a",
+      "state": "failed",
+      "pulled": "2026-11-03T22:10:00Z",
+      "applied": null
+    },
+    {
+      "name": "sw1",
+      "scope": "site-a",
+      "state": "ok",
+      "pulled": "2026-11-06T07:45:00Z",
+      "applied": "2026-11-01T12:00:00Z"
+    },
+    {
+      "name": "web1",
+      "scope": "lab",
+      "state": "differs",
+      "pulled": "2026-11-05T08:00:00Z",
+      "applied": "2026-11-04T07:05:00Z"
+    },
+    {
+      "name": "ünï1",
+      "scope": "lab",
+      "state": "ok",
+      "pulled": "2026-11-04T10:00:00Z",
+      "applied": null
+    }
+  ]
+}

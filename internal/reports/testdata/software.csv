@@ -1,0 +1,8 @@
+name,vendor,model,release,pulled
+core1,wti,,,2026-11-06 06:00
+fw1,cisco,,,never
+jsw1,junos,EX4300-48T,21.4R3-S5.4,2026-11-06 07:30
+rtr1,junos,MX204,22.2R1.9,2026-11-03 22:10
+sw1,cisco,WS-C3850-24T,16.12.4,2026-11-06 07:45
+web1,linux,'=SUM(A1),'-1.0,2026-11-05 08:00
+ünï1,linux,Model Ü,1.2,2026-11-04 10:00

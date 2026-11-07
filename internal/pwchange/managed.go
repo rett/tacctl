@@ -105,10 +105,10 @@ func (s Server) Prefixes() []string {
 
 // Implicit reports whether u is a member of the managed scope without having
 // it: every user but the accounting sink, a user whose name is no Linux
-// account name (a period: no account on the server) and a user whose tier is
-// none (a group without a priv-lvl, no login). A disabled user is one, so the
-// server expires the account rather than removing it, as for a disabled user
-// of any scope.
+// account name (no account on the server) and a user whose tier is none (a
+// group without a priv-lvl, no login). A disabled user is one, so the server
+// expires the account rather than removing it, as for a disabled user of any
+// scope.
 func Implicit(c *conf.Config, m *model.Model, u *model.User) bool {
 	return u != nil && !u.AccountingSink && hosts.LinuxName(u.Name) && Tier(c, m, u) != tier.None
 }

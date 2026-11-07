@@ -1,0 +1,27 @@
+# SYNTHETIC FIXTURE, NOT A DEVICE CAPTURE (see README.md)
+# command: show version | no-more
+# ---
+fpc0:
+--------------------------------------------------------------------------
+Hostname: sw1
+Model: ex4300-48t
+Junos: 25.4R1-S2.3
+JUNOS OS Kernel 64-bit  [20260303.8fd1d6b_builder_bsd15_254]
+JUNOS modules [20260416.135510_builder_junos_254_r1_s2]
+
+fpc1:
+--------------------------------------------------------------------------
+Hostname: sw1
+Model: ex4300-48t
+Junos: 25.4R1-S2.3
+JUNOS OS Kernel 64-bit  [20260303.8fd1d6b_builder_bsd15_254]
+JUNOS modules [20260416.135510_builder_junos_254_r1_s2]
+
+fpc2:
+--------------------------------------------------------------------------
+Hostname: sw1
+Model: ex4300-48t
+Junos: 24.4R2.9
+JUNOS OS Kernel 64-bit  [20260303.8fd1d6b_builder_bsd15_254]
+JUNOS modules [20260416.135510_builder_junos_254_r1_s2]
+

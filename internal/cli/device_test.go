@@ -81,6 +81,17 @@ func TestDeviceSpecsCoverEveryVerb(t *testing.T) {
 			}
 			continue
 		}
+		if w == "reports" {
+			// 'device reports <verb>' has specs of its own.
+			s, ok := specFor([]string{"device", "reports", f[1]})
+			if !ok || !reflect.DeepEqual(s, deviceReportsSpecs[f[1]]) {
+				t.Errorf("no spec for 'device reports %s'", f[1])
+			}
+			if _, ok := specFor([]string{"device", "reports"}); ok {
+				t.Error("the node 'device reports' has a spec of its own")
+			}
+			continue
+		}
 		// 'notice' is two rows of one verb (list, ack|unack).
 		if slices.Contains(words, w) {
 			continue
@@ -97,14 +108,21 @@ func TestDeviceSpecsCoverEveryVerb(t *testing.T) {
 	if len(deviceConfigSpecs) != len(deviceConfigWords) {
 		t.Errorf("%d specs for %d device config verbs", len(deviceConfigSpecs), len(deviceConfigWords))
 	}
+	if len(deviceReportsSpecs) != len(deviceReportsWords) {
+		t.Errorf("%d specs for %d device reports verbs", len(deviceReportsSpecs), len(deviceReportsWords))
+	}
 	root := newRoot(&invocation{})
 	c := child(root, "device")
-	if c == nil || len(c.Commands()) != len(words) {
+	if c == nil || len(c.Commands()) != len(words)+1 { // the words and the node 'reports'
 		t.Fatalf("the device family is not in the tree: %v", c)
 	}
 	cfg := child(c, "config")
 	if cfg == nil || len(cfg.Commands()) != len(deviceConfigWords) {
 		t.Fatalf("device config has no sub-commands for %v: %v", deviceConfigWords, cfg)
+	}
+	rep := child(c, "reports")
+	if rep == nil || len(rep.Commands()) != len(deviceReportsWords) {
+		t.Fatalf("device reports has no sub-commands for %v: %v", deviceReportsWords, rep)
 	}
 }
 

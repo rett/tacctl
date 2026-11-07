@@ -33,6 +33,7 @@ func TestDispatcherWordsAreChildren(t *testing.T) {
 		{[]string{"breakglass"}, "breakglass"},
 		{[]string{"config", "snmp"}, "configSNMP"},
 		{[]string{"config", "devices"}, "configDevices"},
+		{[]string{"config", "reports"}, "configReports"},
 		{[]string{"config", "linux"}, "configLinux"},
 		{[]string{"config", "sudoers"}, "configSudoers"},
 		{[]string{"config", "sudoers", "tiers"}, "configSudoersTiers"},

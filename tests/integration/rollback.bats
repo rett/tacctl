@@ -455,10 +455,10 @@ JSON
     assert_output --partial "Roll back to 0.2.19 (dry run)"
     assert_output --partial "put back the per-tier sudoers drop-in 0.2.19 writes"
     [[ "$(_sums)" == "$before" ]]
-    run "$TACCTL_BIN_SCRIPT" rollback 0.2.25
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.26
     assert_failure 1
-    assert_output --partial "'0.2.25' is not a release to roll back to"
-    assert_output --partial "prepares the state for 0.2.24 (the release before this one), 0.2.23, 0.2.22"
+    assert_output --partial "'0.2.26' is not a release to roll back to"
+    assert_output --partial "prepares the state for 0.2.25 (the release before this one), 0.2.24, 0.2.23, 0.2.22"
 }
 
 @test "rollback 0.2.21: the release before 0.2.22; the dry run writes nothing and --apply takes out the server name and nothing else" {
@@ -486,7 +486,53 @@ JSON
     assert_output --partial "Nothing to convert: every file is one 0.2.21 can read."
 }
 
-@test "rollback 0.2.24: the release before this one; the dry run writes nothing and --apply converts nothing" {
+@test "rollback 0.2.25: the release before this one; the dry run writes nothing and --apply takes out the report limits only" {
+    _state_024
+    "$TACCTL_BIN_SCRIPT" server name core-1 > /dev/null
+    before=$(_sums)
+    n=$(_snapshots)
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.25 --hosts
+    assert_success
+    assert_output --partial "Roll back to 0.2.25 (dry run)"
+    assert_output --partial "nothing to remove (every key of tacctl.yaml is one 0.2.25 knows)"
+    assert_output --partial "nothing to do for 0.2.25: this release changed nothing on the enrolled hosts"
+    assert_output --partial "--apply converts no file of tacctl's own and takes no snapshot"
+    assert_output --partial "This was a dry run: nothing was changed."
+    [[ "$(_sums)" == "$before" ]]
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.25 --apply
+    assert_success
+    assert_output --partial "Nothing to convert: every file is one 0.2.25 can read."
+    assert_output --partial "tacctl upgrade --branch 0.2.25"
+    assert_output --partial "The reports in the users' homes stay"
+    [[ "$(_sums)" == "$before" ]]
+    [[ "$(_snapshots)" == "$n" ]]
+    # the settings and a user's own limit go, with a snapshot, and the limit needs --yes
+    "$TACCTL_BIN_SCRIPT" config reports max-size 20Mi > /dev/null
+    "$TACCTL_BIN_SCRIPT" user reports-limit bob max-count 7 > /dev/null
+    before=$(_sums)
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.25
+    assert_success
+    assert_output --partial "remove reports.max_size"
+    assert_output --partial "remove the report limits of bob (max-count 7 reports)"
+    assert_output --partial "tacctl rollback 0.2.25 --apply --yes"
+    [[ "$(_sums)" == "$before" ]]
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.25 --apply
+    assert_failure 1
+    assert_output --partial "The warnings above need your decision"
+    [[ "$(_sums)" == "$before" ]]
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.25 --apply --yes
+    assert_success
+    assert_output --partial "removed the report limits of 1 user"
+    [[ "$(_snapshots)" == "$((n + 1))" ]]
+    run "$TACCTL_BIN_SCRIPT" config get reports.max_size unset-marker
+    assert_output "unset-marker"
+    run "$TACCTL_BIN_SCRIPT" user show bob
+    refute_output --partial "Report max-count"
+    run "$TACCTL_BIN_SCRIPT" config get server.name unset-marker
+    assert_output "core-1"
+}
+
+@test "rollback 0.2.24: the release before 0.2.25; the dry run writes nothing and --apply converts nothing" {
     _state_024
     "$TACCTL_BIN_SCRIPT" server name core-1 > /dev/null
     "$TACCTL_BIN_SCRIPT" config devices timeout-scale 3 > /dev/null

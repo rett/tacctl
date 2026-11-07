@@ -133,7 +133,7 @@ func TestReaderWithFacts(t *testing.T) {
 		t.Errorf("junos: %+v %v", f, err)
 	}
 	_, _, f, err = jread(ctx, &fakeRunner{out: map[string]string{jcmd: "set system a b\n"}})
-	if err != nil || f != (Facts{}) {
+	if err != nil || !factsEqual(f, Facts{}) {
 		t.Errorf("junos, no statement: %+v %v", f, err)
 	}
 	iread, _ := ReaderWithFacts("cisco")
@@ -144,7 +144,7 @@ func TestReaderWithFacts(t *testing.T) {
 	}
 	out[VersionCommand] = "% Invalid input detected at '^' marker.\n"
 	_, version, f, err = iread(ctx, &fakeRunner{out: out})
-	if err != nil || f != (Facts{}) || version != "" {
+	if err != nil || !factsEqual(f, Facts{}) || version != "" {
 		t.Errorf("ios, refused: %+v %q %v", f, version, err)
 	}
 }
@@ -158,8 +158,8 @@ func TestReadFacts(t *testing.T) {
 		f := &fakeRunner{out: map[string]string{JunosChassisCommand: hw}}
 		got := ReadFacts(ctx, f, "juniper", Facts{Release: "25.4R1-S2.3"})
 		// show version is asked all the same: it names the running release
-		if got != (Facts{Release: "25.4R1-S2.3", Model: "EX4300-48MP", Serial: "FXYZ00000001"}) ||
-			!slices.Equal(f.ran, []string{JunosChassisCommand, JunosVersionCommand}) {
+		if !factsEqual(got, Facts{Release: "25.4R1-S2.3", Model: "EX4300-48MP", Serial: "FXYZ00000001"}) ||
+			!slices.Equal(f.ran, []string{JunosChassisCommand, JunosVersionCommand, JunosVirtualChassisCommand}) {
 			t.Errorf("%+v %v", got, f.ran)
 		}
 	})
@@ -167,8 +167,8 @@ func TestReadFacts(t *testing.T) {
 		f := &fakeRunner{out: map[string]string{JunosChassisCommand: hw, JunosVersionCommand: sv}}
 		got := ReadFacts(ctx, f, "junos", Facts{})
 		// the chassis description stays the model
-		if got != (Facts{Release: "25.4R1-S2.3", Model: "EX4300-48MP", Serial: "FXYZ00000001"}) ||
-			!slices.Equal(f.ran, []string{JunosChassisCommand, JunosVersionCommand}) {
+		if !factsEqual(got, Facts{Release: "25.4R1-S2.3", Model: "EX4300-48MP", Serial: "FXYZ00000001"}) ||
+			!slices.Equal(f.ran, []string{JunosChassisCommand, JunosVersionCommand, JunosVirtualChassisCommand}) {
 			t.Errorf("%+v %v", got, f.ran)
 		}
 	})
@@ -182,7 +182,7 @@ func TestReadFacts(t *testing.T) {
 	t.Run("junos: show version's Model: when the chassis gave none", func(t *testing.T) {
 		f := &fakeRunner{out: map[string]string{JunosChassisCommand: "error: permission denied\n", JunosVersionCommand: sv}}
 		got := ReadFacts(ctx, f, "juniper", Facts{})
-		if got != (Facts{Release: "25.4R1-S2.3", Model: "ex4300-48mp"}) {
+		if !factsEqual(got, Facts{Release: "25.4R1-S2.3", Model: "ex4300-48mp"}) {
 			t.Errorf("%+v", got)
 		}
 	})
@@ -194,20 +194,20 @@ func TestReadFacts(t *testing.T) {
 	})
 	t.Run("junos refuses both", func(t *testing.T) {
 		f := &fakeRunner{errs: map[string]error{JunosChassisCommand: errors.New("denied"), JunosVersionCommand: errors.New("denied")}}
-		if got := ReadFacts(ctx, f, "junos", Facts{}); got != (Facts{}) {
+		if got := ReadFacts(ctx, f, "junos", Facts{}); !factsEqual(got, Facts{}) {
 			t.Errorf("%+v", got)
 		}
 	})
 	t.Run("junos answers an error text", func(t *testing.T) {
 		f := &fakeRunner{out: map[string]string{JunosChassisCommand: "error: permission denied\n", JunosVersionCommand: "syntax error\n"}}
-		if got := ReadFacts(ctx, f, "junos", Facts{Release: "11.4R7.5"}); got != (Facts{Release: "11.4R7.5"}) {
+		if got := ReadFacts(ctx, f, "junos", Facts{Release: "11.4R7.5"}); !factsEqual(got, Facts{Release: "11.4R7.5"}) {
 			t.Errorf("%+v", got)
 		}
 	})
 	t.Run("ios", func(t *testing.T) {
 		f := &fakeRunner{out: map[string]string{IOSInventoryCommand: capture(t, "ios/facts-iosv/show-inventory.txt")}}
 		got := ReadFacts(ctx, f, "cisco", Facts{Release: "15.6(2)T"})
-		if got != (Facts{Release: "15.6(2)T", Model: "IOSv", Serial: "FXYZ0000001"}) || !slices.Equal(f.ran, []string{IOSInventoryCommand}) {
+		if !factsEqual(got, Facts{Release: "15.6(2)T", Model: "IOSv", Serial: "FXYZ0000001"}) || !slices.Equal(f.ran, []string{IOSInventoryCommand, IOSSwitchCommand}) {
 			t.Errorf("%+v %v", got, f.ran)
 		}
 	})
@@ -217,17 +217,17 @@ func TestReadFacts(t *testing.T) {
 			{errs: map[string]error{IOSInventoryCommand: errors.New("closed")}},
 			{out: map[string]string{}},
 		} {
-			if got := ReadFacts(ctx, f, "ios-xe", Facts{Release: "16.7.1"}); got != (Facts{Release: "16.7.1"}) {
+			if got := ReadFacts(ctx, f, "ios-xe", Facts{Release: "16.7.1"}); !factsEqual(got, Facts{Release: "16.7.1"}) {
 				t.Errorf("%+v", got)
 			}
 		}
 	})
 	t.Run("wti and an unknown vendor: nothing is run", func(t *testing.T) {
 		f := &fakeRunner{}
-		if got := ReadFacts(ctx, f, "wti", Facts{Release: "8.10"}); got != (Facts{Release: "8.10"}) || len(f.ran) != 0 {
+		if got := ReadFacts(ctx, f, "wti", Facts{Release: "8.10"}); !factsEqual(got, Facts{Release: "8.10"}) || len(f.ran) != 0 {
 			t.Errorf("%+v %v", got, f.ran)
 		}
-		if got := ReadFacts(ctx, f, "other", Facts{}); got != (Facts{}) || len(f.ran) != 0 {
+		if got := ReadFacts(ctx, f, "other", Facts{}); !factsEqual(got, Facts{}) || len(f.ran) != 0 {
 			t.Errorf("%+v %v", got, f.ran)
 		}
 	})
@@ -235,7 +235,7 @@ func TestReadFacts(t *testing.T) {
 		cctx, cancel := context.WithCancel(ctx)
 		cancel()
 		f := &fakeRunner{out: map[string]string{JunosChassisCommand: hw}}
-		if got := ReadFacts(cctx, f, "junos", Facts{}); got != (Facts{}) || len(f.ran) != 0 {
+		if got := ReadFacts(cctx, f, "junos", Facts{}); !factsEqual(got, Facts{}) || len(f.ran) != 0 {
 			t.Errorf("%+v %v", got, f.ran)
 		}
 	})
