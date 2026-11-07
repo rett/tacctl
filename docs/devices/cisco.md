@@ -35,4 +35,4 @@ Chassis members:
   2   member  WS-C3850-24T  SN000004  16.12.4  Ready   1
 ```
 
-A device that is no stack (`show switch` is refused, or lists one switch) has no members and is one row of the members report. A refused command changes nothing in the pull (see **Chassis members** in [Device configuration](configuration.md)).
+The reader accepts a row of `show switch` whose H/W version column is blank (`4  Member 0000.0000.0000  1  Provisioned`): the state is the text after the priority and the row is a member like the others. A device that is no stack (`show switch` is refused, or lists one switch) has no members and is one row of the members report. A refused command changes nothing in the pull (see **Chassis members** in [Device configuration](configuration.md)).

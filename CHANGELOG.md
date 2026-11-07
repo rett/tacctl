@@ -34,6 +34,14 @@ current behaviour; this file is where history lives.
    (`prune-dry-run` for `--dry-run`), as `list` writes `report=*`. The
    superuser's own reports write no access line, as before.
 
+3. **The reader of `show switch` accepts a row whose H/W version column is
+   blank.** A row such as `4  Member 0000.0000.0000  1            Provisioned`
+   was dropped silently, because the reader wanted a word between the priority
+   and the state; the member is now read, with the state `Provisioned` and no
+   version, and shows in the chassis members of `device show` and in the
+   members report. Rows with a version are read as before. This says what the
+   reader accepts, not which devices print such a row.
+
 ## 0.2.26 (2026-11-06)
 
 1. **The break-glass firewall line of `tacctl upgrade` and `install` is one
