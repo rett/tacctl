@@ -196,6 +196,8 @@ A directory of reports cannot grow without bound: `generate` refuses a report th
 | The largest report | `reports.max_size`, `config reports max-size`, in bytes or with `Ki`, `Mi`, `Gi`; 0 to 1Gi | 10 MiB (the inventory of about 20,000 devices) | `user reports-limit <user> max-size <value>` |
 | The most reports a user keeps | `reports.max_count`, `config reports max-count`; 0 to 100000 | 100 | `user reports-limit <user> max-count <value>` |
 
+The limits count the reports tacctl made: the files that have a valid `.meta` file beside them. They are a guard rail against a directory growing by itself, not a quota that is enforced against the user: the directory is the user's own, and whoever has a login can put files in it (they count for neither limit, show as `other`, and nothing removes them) or edit and delete what is there, including a `.meta` file, whatever the limits say. `generate` checks them when it makes a report, and nothing else does.
+
 ```
 $ tacctl config reports
   Stored reports ('tacctl device reports')

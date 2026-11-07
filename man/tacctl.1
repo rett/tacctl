@@ -5186,7 +5186,12 @@ report by age but
 .BR "device reports prune" .
 A user's own limit
 .RB ( "user reports\-limit" )
-wins over these for that user. The setters are the superuser's.
+wins over these for that user. The limits count the reports tacctl made (the
+files with a valid metadata file) and are a guard rail against growth, checked
+when
+.B generate
+makes a report, not a quota enforced against a user who edits their own
+directory. The setters are the superuser's.
 .TP
 .BI "config reports max\-size " "[ bytes|Ki|Mi|Gi ]"
 Show or set

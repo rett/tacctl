@@ -220,6 +220,9 @@ current behaviour; this file is where history lives.
    `user reports-limit`; a limit restarts nothing. An upgrade changes nothing on
    its own (the keys and the fields are written only when set); 0.2.25 refuses
    them, so `tacctl rollback` removes them (item 9).
+   The limits count the reports tacctl made (the files with a valid `.meta`
+   file) and are a guard rail against growth, not a quota enforced against a
+   user who edits their own directory.
 
 9. **`tacctl rollback 0.2.25` is a target.** The release before this one is
    prepared like the older ones: a dry run that lists the steps, `--apply` to
