@@ -10,7 +10,8 @@ user list
 user show <name>
 
     Show user details incl. scope membership, last login and, when the user
-    has one, the email address (no password prompt)
+    has one, the email address and the own limits of the stored reports (no
+    password prompt)
 
 user add <name> <group>
 
@@ -49,6 +50,15 @@ user email <name> <address>
 user email <name> clear
 
     Remove the email address
+
+user reports-limit <name> [max-size|max-count] [<value>|clear]
+user reports-limit <name> clear
+
+    Show, set or clear a user's own limits of the stored reports (see "Report limits"): `max-size`
+    is the largest report, in bytes or with the suffix `Ki`, `Mi` or `Gi`, from 0 to 1Gi;
+    `max-count` the most reports the user keeps, from 0 to 100000; 0 is no cap. With the name
+    alone, or one limit, it shows what holds and where it comes from. `clear` after a limit
+    removes it, after the name removes both. Superuser
 
 user remove <name>
 
@@ -146,6 +156,32 @@ device. A user kept off the server is disabled (`user disable`) or in a group
 of tier none. When a command next writes a user's record, a stored copy of the
 server's own scope (from an install before 0.2.21) is dropped from it.
 
+**Report limits.** `tacctl device reports generate` keeps a report in the user's home if it is
+no larger than the user's largest report (`max-size`) and the user keeps no more reports than
+`max-count`. The server has one value of each (`config reports`, 10 MiB and 100 reports by
+default), and `user reports-limit` gives a user a value of their own that wins over it, for one limit
+or both; the other limit stays the server's. 0 is no cap, so an own `0` lifts the server's limit for
+that user, and `clear` returns the user to the server's. The limits are the user's fields
+`reports_max_size` (bytes) and `reports_max_count` in `store.yaml`, written only when set, so a store
+without one is unchanged; `user rename` carries them and `store import --replace` keeps them (a
+rendered or legacy file cannot hold them). `user show` prints a `Report max-size:` and a `Report
+max-count:` line for a user who has an own limit, to every tier that can run `user show`; the
+accounting sink takes none. Setting a limit renders and restarts nothing and takes a snapshot, like
+any change of the store, and writes the detail line `user reports-limit name= key=max-size|max-count
+op=set|clear value=`. A release before 0.2.26 refuses the fields, so every `tacctl rollback` target
+removes them after a snapshot, needs `--yes` while a user has one and names the users (see
+[Rolling back](../install/upgrading.md#rolling-back)).
+
+```
+$ tacctl user reports-limit carol max-size 1Mi
+[INFO] The max-size of 'carol' set to 1 MiB.
+$ tacctl user reports-limit carol
+
+  Report limits of carol
+  max-size:  1 MiB   (own limit; the server's setting is 20 MiB)
+  max-count: 100 reports   (the server's setting)
+```
+
 **An email address.** A user may have an email address, for the people who
 look after the accounts. It is `users.<name>.email` in `store.yaml`, written
 only when set, so a store without one is unchanged. No mail is sent to it.
@@ -175,7 +211,7 @@ only when set, so a store without one is unchanged. No mail is sent to it.
   in any other `user` verb, and `…(redacted)` in place of the rest. Like any
   word on a command line it is in sudo's own log.
 - *Older releases.* A release before 0.2.23 refuses the key, so every `tacctl
-  rollback` target but 0.2.24 and 0.2.23 (which read it) removes it after a
+  rollback` target but 0.2.25, 0.2.24 and 0.2.23 (which read it) removes it after a
   snapshot that it keeps, and names the users; `backup recover` puts the addresses back (see
   [Rolling back](../install/upgrading.md#rolling-back)).
 

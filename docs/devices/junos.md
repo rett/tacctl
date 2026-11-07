@@ -12,3 +12,16 @@ The generated config includes template user creation, TACACS+ server setup, and 
 - The server's port is the configured listener's (`tacctl server listen`; 49 by default): a listener that moved adds `set system tacplus-server <address> port <n>`, a default one adds nothing, and in management filter mode `strict` the replies term accepts that source port (see [The server's port](walkthroughs.md#the-servers-port)).
 - The server is set without `single-connection`: tacquito closes a connection that has been idle for 15 seconds, and a device that keeps one connection for many sessions is left with a dead socket (a later login over it fails with `Network read timed out`). An earlier walkthrough set it; `tacctl device config plan` removes it (`delete system tacplus-server <address> single-connection`) and `diff` lists it as an extra
 - Use `config juniper` to regenerate after adding groups
+
+**A virtual chassis.** A good `tacctl device config pull` of a device that is a virtual chassis also records its members: `show virtual-chassis status` lists them (member id, status, priority and role `master`, `backup` or `linecard`), and the `FPC` rows of `show chassis hardware` and the `fpcN:` blocks of `show version`, which the pull reads already, give each member's model, serial number and release. `device show` and `device config show` print them under the data block, and the [members report](reports.md) has a row for each:
+
+```
+Chassis members:
+-----------------------------------------------------------------
+  ID  ROLE    MODEL       SERIAL    RELEASE      STATUS  PRIORITY
+  ---------------------------------------------------------------
+  0   master  EX4300-48T  SN000001  21.4R3-S5.4  Prsnt   129
+  1   backup  EX4300-48T  SN000002  21.4R3-S5.4  Prsnt   129
+```
+
+A device that is no virtual chassis (the command is refused, or lists one member) has no members and is one row of the members report. The two routing engines of a chassis are not members, and a cluster is not read. Nothing here is a setting: the commands are read-only and a refusal changes nothing in the pull (see **Chassis members** in [Device configuration](configuration.md)).

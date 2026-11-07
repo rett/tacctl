@@ -34,7 +34,8 @@ store import [--check|--force] [--replace] [<file>]
                                              --force drops what the store cannot represent;
                                              --replace overwrites a store (keeping what the
                                              file cannot hold: password dates, a required
-                                             password change)
+                                             password change, email addresses, the users' own
+                                             limits of the stored reports)
 store rollback                               Restore the pre-store tacquito.yaml, remove the store,
                                              restart (legacy read-only mode)
 ```

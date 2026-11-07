@@ -350,8 +350,9 @@ The tacctl repo branch to install or upgrade from (default: the current one).
 Prepare tacctl's state for the release before this one; run on the newer
 release, before the older one is installed. A dry run by default: it lists
 every step and every warning and changes nothing. The versions it takes are
-.B 0.2.24
+.B 0.2.25
 (the release before this one),
+.BR 0.2.24 ,
 .BR 0.2.23 ,
 .BR 0.2.22 ,
 .BR 0.2.21 ,
@@ -370,12 +371,12 @@ and older are refused, with the way there (one release at a time: this
 rollback,
 .BR "tacctl upgrade \-\-branch 0.2.9" ,
 then the rollback of that release), and so is any other word (0.2.10 to
-0.2.15 included: the refusal names the targets). Every target but 0.2.24, 0.2.23, 0.2.22, 0.2.21, 0.2.20
+0.2.15 included: the refusal names the targets). Every target but 0.2.25, 0.2.24, 0.2.23, 0.2.22, 0.2.21, 0.2.20
 and 0.2.19 is refused while an emergency lockdown locks a group (the refusal lists each
 one and
 .B "emergency lockdown <scope> disable"
 lifts it; a release before 0.2.19 would render the locked users back into the
-scope; 0.2.19 has the record and keeps it), every target but 0.2.24 and 0.2.23 is refused while an emergency lockdown stands on a scope that has enrolled hosts, or a lifted one still waits for a host to drop sshd's lockdown drop\-in (older releases cannot lift it on a host; lift it and sync the hosts first), and every target is refused while a device's record says a confirmed commit of
+scope; 0.2.19 has the record and keeps it), every target but 0.2.25, 0.2.24 and 0.2.23 is refused while an emergency lockdown stands on a scope that has enrolled hosts, or a lifted one still waits for a host to drop sshd's lockdown drop\-in (older releases cannot lift it on a host; lift it and sync the hosts first), and every target is refused while a device's record says a confirmed commit of
 .B "device config apply"
 is
 .B pending
@@ -390,7 +391,7 @@ settles it). The
 and
 .B users
 mappings of console.yaml that this release ignores stay in the file, and a
-release before 0.2.20 (the targets 0.2.19 and older; 0.2.24 to 0.2.20 ignore
+release before 0.2.20 (the targets 0.2.19 and older; 0.2.25 to 0.2.20 ignore
 them too, and their rollback says nothing of it) reads them as it always did: a user or a tier
 switched off there gets a plain shell again, and the password cache is on again
 for every user of a tier that is allowed it, so the plan lists each user who
@@ -398,7 +399,7 @@ would gain a system shell or the cache, with the reason, as a warning that
 .B \-\-apply
 refuses without
 .BR \-\-yes .
-Every target before 0.2.20 (0.2.19 and older; 0.2.24 to 0.2.20 read them and leave them) also takes out of
+Every target before 0.2.20 (0.2.19 and older; 0.2.25 to 0.2.20 read them and leave them) also takes out of
 .I console.yaml
 the settings of 0.2.20 that no release before it reads:
 .BR settings.color ,
@@ -414,7 +415,7 @@ stay, for the releases that have them) are removed and a
 of \-1 (never ask) is written as 1000, with every other setting kept and a
 snapshot first.
 .IP
-Every target but 0.2.24, 0.2.23, 0.2.22 and 0.2.21, which have it themselves, keeps every user's
+Every target but 0.2.25, 0.2.24, 0.2.23, 0.2.22 and 0.2.21, which have it themselves, keeps every user's
 login to this server: an older release answers
 it only for the users that have the server's scope
 .RB ( tacctl )
@@ -423,16 +424,16 @@ to the server and lacks it (it counts and names them; a warning, so
 .B \-\-apply
 needs
 .BR \-\-yes ),
-after a snapshot. Every target but 0.2.24, 0.2.23 and 0.2.22 removes
+after a snapshot. Every target but 0.2.25, 0.2.24, 0.2.23 and 0.2.22 removes
 .B server.name
 (the name of
 .BR "server name" ),
-and every target but 0.2.24, 0.2.23, 0.2.22 and 0.2.21
+and every target but 0.2.25, 0.2.24, 0.2.23, 0.2.22 and 0.2.21
 .B server.addresses
 as well, from
 .IR tacctl.yaml ,
 which no older release knows; the host registry keeps the address in this
-server's entry. Every target but 0.2.24, 0.2.23 and 0.2.22 also removes the timing scale:
+server's entry. Every target but 0.2.25, 0.2.24, 0.2.23 and 0.2.22 also removes the timing scale:
 .B device.timeout_scale
 and
 .B timeout_scale_scope.\fIscope\fR
@@ -447,7 +448,7 @@ key it does not know). It is a note in the plan, not a warning: the older
 release connects to every device with its fixed timings again, which a slow or
 distant device may not meet, and the values stay in the snapshot.
 .IP
-Every target but 0.2.24 and 0.2.23 removes the users' email addresses
+Every target but 0.2.25, 0.2.24 and 0.2.23 removes the users' email addresses
 .RB ( "user email" ,
 .BR "user add \-\-email" )
 from
@@ -475,7 +476,7 @@ snapshot and the users. A store that cannot be read
 refuses every target. Until the older release is installed, the two verbs that
 set an address write the key again, and the command says so.
 .IP
-Every target but 0.2.24 and 0.2.23 writes the SNMP credential files
+Every target but 0.2.25, 0.2.24 and 0.2.23 writes the SNMP credential files
 .RI ( snmp.yaml ,
 .IR snmp/ scope .yaml ,
 .IR snmp/devices/ name .yaml )
@@ -504,7 +505,7 @@ the audit line adds
 and the apply names
 .BR "tacctl backup recover <snapshot> \-\-only snmp\-users" .
 .IP
-Every target but 0.2.24 and 0.2.23 drops from
+Every target but 0.2.25, 0.2.24 and 0.2.23 drops from
 .I state/staging
 the entries marked
 .B covered
@@ -518,7 +519,7 @@ A clone that still waits for its
 .B "device rename \-\-replace"
 loses its entry, and after a re-upgrade the verb refuses it as not staged: remove the clone and clone again from the original, or restore the snapshot. Every other entry stays.
 .IP
-Every target but 0.2.24 removes the break\-glass firewall: the key
+Every target but 0.2.25 and 0.2.24 removes the break\-glass firewall: the key
 .B breakglass.firewall
 (when set; every older release refuses it, so it is removed after the snapshot
 like the other keys they do not know), the nftables table
@@ -564,22 +565,123 @@ and
 then
 .BR "systemctl daemon\-reload" .
 .IP
-.B "rollback 0.2.24"
-converts nothing: this release changed no stored file, so 0.2.24 reads every file it
-writes (the break\-glass firewall and its setting, the email addresses, the SNMP
-credential files, the covered staging entries, the server name, the timing scale,
-the server address, the users' login to this server and an emergency lockdown,
-with or without enrolled hosts, all stay), the per\-tier
-sudoers drop\-in is left (0.2.24 and this release write the same text), no snapshot
-is taken and
+Every target removes the limits of the stored reports of
+.BR "device reports" :
+the settings
+.B reports.max_size
+and
+.B reports.max_count
+of
+.I tacctl.yaml
+.RB ( "config reports" ),
+which go with the other keys the target does not know, after the snapshot, and
+the users' own limits, the fields
+.B reports_max_size
+and
+.B reports_max_count
+of the user in
+.I store.yaml
+.RB ( "user reports\-limit" ),
+which no older release reads. A user's own limit is data somebody chose, so the
+plan names each user with the values in a warning
+.RB ( "remove the report limits of bob (max\-size 20 MiB, max\-count 50 reports)" ),
+.B \-\-apply
+needs
 .B \-\-yes
-is never needed. It is refused only while a device's apply is not settled.
-The tacquito clone keeps pointing at the project's fork, which is what 0.2.24 pulls
-from. After the upgrade that ends the rollback, a Junos device whose NETCONF hello
+while any user has one, the snapshot holds them, and the audit line of the
+rollback names the users
+.RB ( limit\-users= ,
+never a value). Once this release is installed again,
+.B "user reports\-limit"
+sets them again from the list the rollback prints
+.RB ( "backup recover"
+does not). A store that cannot be read refuses every target: a limit that cannot
+be seen is not hidden. The reports in the users' homes stay, as the users' own
+files (an older release has no
+.B "device reports"
+verb), and so do the chassis
+.B members
+of the pull records, which an older decoder ignores; the per\-tier sudoers
+drop\-in loses the rows of
+.BR "device reports" .
+Until the older release is installed, run none of
+.BR "config reports max\-size" ,
+.B "config reports max\-count"
+and
+.BR "user reports\-limit" :
+they write what the older release refuses. Every target ends with a note that
+the reports stay and what to avoid; if one of the commands ran, run the rollback
+again (with
+.B \-\-yes
+while a user has a limit of their own).
+.IP
+.B "rollback 0.2.25"
+removes the limits of the stored reports of this release and converts nothing
+else: 0.2.25 reads every other file this release writes (the break\-glass
+firewall and its setting, the email addresses, the SNMP credential files, the
+covered staging entries, the server name, the timing scale, the server address,
+the users' login to this server and an emergency lockdown, with or without
+enrolled hosts, all stay). It removes
+.B reports.max_size
+and
+.B reports.max_count
+from
+.I tacctl.yaml
+(0.2.25's schema refuses them) and the fields
+.B reports_max_size
+and
+.B reports_max_count
+of the users from
+.I store.yaml
+(0.2.25's validator refuses them), after the snapshot, which is taken only when
+one of them is there; with none it converts nothing, takes no snapshot and
+needs no
+.BR \-\-yes ,
+and a user's own limit is a warning that
+.B \-\-apply
+refuses without
+.BR \-\-yes ,
+naming each user and the values (see below). The per\-tier sudoers drop\-in is
+rewritten, after
+.BR "visudo \-cf" ,
+with the text 0.2.25 wrote, this release's without the rows of
+.BR "device reports" ,
+when the file is exactly this release's text (no snapshot holds it; a file tacctl
+did not write is left). The
+.B members
+of the pull records are left (0.2.25's decoder ignores the key), and so is every
+report in the users' homes: they are the users' own files, and 0.2.25 has no
+.B "device reports"
+verb to list or remove them. When the snapshot was taken, the next steps say
+that it holds the 0.2.26 state and is to be restored with 0.2.26 only (0.2.25's
+restore refuses a tacctl.yaml with a key it does not know). The command ends
+with the next step,
+.BR "tacctl upgrade \-\-branch 0.2.25" ,
+and a note that the reports stay and that
+.BR "config reports max\-size" ,
+.B "config reports max\-count"
+and
+.B "user reports\-limit"
+are not to be run until then (they write what 0.2.25 refuses; run the rollback
+again if one was).
+.B \-\-hosts
+is accepted and does nothing. It is refused only while a device's apply is not
+settled.
+.IP
+.B "rollback 0.2.24"
+reads the same files as 0.2.25 and does the same: it removes the limits of the
+stored reports, rewrites the per\-tier sudoers drop\-in with the text 0.2.24 and
+0.2.25 wrote, and converts nothing else (the break\-glass firewall and its
+setting, the email addresses, the SNMP credential files, the covered staging
+entries, the server name, the timing scale, the server address, the users' login
+to this server and an emergency lockdown, with or without enrolled hosts, all
+stay). It is refused only while a device's apply is not settled. The tacquito
+clone keeps pointing at the project's fork, which is what 0.2.24 pulls from.
+After the upgrade that ends the rollback, a Junos device whose NETCONF hello
 names the capabilities with the XML namespace's prefix is recorded as
 .B "no hello"
 again by its next pull, and an apply to a Junos virtual chassis whose master prints
-its own label is rolled back again, as before this release.
+its own label is rolled back again, as before 0.2.25.
 .B \-\-hosts
 is accepted and does nothing. The command ends with the next step,
 .BR "tacctl upgrade \-\-branch 0.2.24" .
@@ -587,22 +689,22 @@ is accepted and does nothing. The command ends with the next step,
 .B "rollback 0.2.23"
 converts no file but the key
 .B breakglass.firewall
-(0.2.24's; when it is set the snapshot is taken): 0.2.24 and this release changed no other stored file, so 0.2.23 reads every file they
+(0.2.24's) and the limits of the stored reports (this release's; when either is set the snapshot is taken): 0.2.24, 0.2.25 and this release changed no other stored file, so 0.2.23 reads every file they
 write (the email addresses, the SNMP credential files, the covered staging
 entries, the server name, the timing scale, the server address, the users' login
 to this server and an emergency lockdown, with or without enrolled hosts, all
 stay), the per\-tier sudoers drop\-in is put back as 0.2.23 wrote it
 (without the operator's
 .BR "log failures *" ;
-when it is exactly the text of 0.2.24 and this release it is rewritten, after
+when it is exactly the text of 0.2.24 and 0.2.25, or this release's, it is rewritten, after
 .BR "visudo \-cf" ,
 and any other file is left), no snapshot is taken for them and
 .B \-\-yes
-is never needed. When the key was set the snapshot was taken, and the next steps
+is never needed unless a user has an own limit of the stored reports. When the key was set the snapshot was taken, and the next steps
 say that it holds the 0.2.26 state and is to be restored with 0.2.26 only
 (0.2.23's restore refuses its tacctl.yaml, which has the key). It is refused only while a device's apply is not settled.
-Every older target that rewrites that drop\-in recognises this release's text and
-0.2.23's as tacctl's own and puts back its own.
+Every older target that rewrites that drop\-in recognises this release's text,
+0.2.25's and 0.2.23's as tacctl's own and puts back its own.
 The tacquito clone keeps pointing at the project's fork, which has the same
 history as the upstream clone 0.2.23 made.
 What 0.2.24 changed outside the stored files is 0.2.23's to undo or keep:
@@ -627,12 +729,12 @@ is accepted and does nothing. The command ends with the next step,
 .IP
 .B "rollback 0.2.22"
 converts nothing but the email addresses, the SNMP credential files, the covered staging entries and the per\-tier sudoers drop\-in
-(when it is exactly this release's text or 0.2.23's it is rewritten, after
+(when it is exactly this release's text, 0.2.25's or 0.2.23's it is rewritten, after
 .BR "visudo \-cf" ,
 with 0.2.22's: the engineer's rule of
 .B "device clone"
 is taken out; an edited drop\-in is left): 0.2.22
-reads every other file 0.2.23, 0.2.24 and this release write, so the server name, the timing
+reads every other file 0.2.23, 0.2.24, 0.2.25 and this release write, so the server name, the timing
 scale, the server address, the users' login to this server and an emergency
 lockdown (of scopes with no enrolled host) stay. With no
 address in the store, no SNMP
@@ -651,7 +753,7 @@ is accepted and does nothing. The command ends with the next step,
 .B "rollback 0.2.21"
 removes
 .B server.name
-and the timing scale, rewrites the per\-tier sudoers drop\-in when it is exactly this release's text or 0.2.23's (with 0.2.21's, which is 0.2.22's: the engineer's rule of
+and the timing scale, rewrites the per\-tier sudoers drop\-in when it is exactly this release's text, 0.2.25's or 0.2.23's (with 0.2.21's, which is 0.2.22's: the engineer's rule of
 .B "device clone"
 is taken out; an edited drop\-in is left) and converts nothing else: no scope is added to the users, and an emergency
 lockdown stays, as 0.2.21 reads it. It needs no
@@ -672,7 +774,7 @@ removes
 .B server.addresses
 and
 .B server.name
-and the timing scale, adds the scope to the users (above) and rewrites the per\-tier sudoers drop\-in when it is exactly this release's text or 0.2.23's (with 0.2.20's, which is 0.2.22's: the engineer's rule of
+and the timing scale, adds the scope to the users (above) and rewrites the per\-tier sudoers drop\-in when it is exactly this release's text, 0.2.25's or 0.2.23's (with 0.2.20's, which is 0.2.22's: the engineer's rule of
 .B "device clone"
 is taken out; an edited drop\-in is left); 0.2.20 reads every other file this
 release writes, so nothing else is converted, and
@@ -757,7 +859,7 @@ An older release lints such a block as an error and plans nothing for the
 devices it reaches. The block files are not rewritten; take the statements
 out before the upgrade.
 .IP
-Every target before 0.2.20 (0.2.19 and older; 0.2.24 to 0.2.20 read it and leave it) removes the management filter mode of the scopes
+Every target before 0.2.20 (0.2.19 and older; 0.2.25 to 0.2.20 read it and leave it) removes the management filter mode of the scopes
 .RB ( scope_mgmt_acl.mode.\fIscope\fR ,
 only
 .B strict
@@ -779,7 +881,7 @@ or
 would put that filter back on a device that holds the strict one, without
 saying so. The rollback is not refused, and no device is contacted.
 .IP
-Every target but 0.2.24 to 0.2.20 (which read it) removes the required password change
+Every target but 0.2.25 to 0.2.20 (which read it) removes the required password change
 .RB ( password_change_required
 of a user in
 .IR store.yaml ,
@@ -1347,7 +1449,13 @@ which the flag never binds; with the reason when the user cannot log in to chang
 accounting log, the RADIUS auth log), Cisco privilege level, Juniper
 class, a hash fingerprint and, for a user who has one, the
 .B Email
-address. Read-only: does not prompt for the
+address and the lines
+.B "Report max\-size"
+and
+.B "Report max\-count"
+for a user who has an own limit of the stored reports
+.RB ( "user reports\-limit" ).
+Read-only: does not prompt for the
 password (unlike
 .BR "user verify" ).
 .\" BEGIN GENERATED: command user show
@@ -1553,6 +1661,57 @@ removes it, after a snapshot, and names the users.
 Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command user email
+.TP
+.BI "user reports\-limit " "name " "[ max\-size | max\-count ] [ " value " | clear ]"
+Show, set or clear a user's own limits of the stored reports of
+.BR "device reports" :
+.B max\-size
+is the largest report in bytes, or a number with the suffix
+.BR Ki ,
+.B Mi
+or
+.B Gi
+(powers of 1024), from 0 to 1Gi, and
+.B max\-count
+the most reports the user keeps, from 0 to 100000. 0 is no cap. An own limit
+wins over the server's setting
+.RB ( "config reports" )
+for that user, one limit at a time (the other stays the server's);
+.B clear
+after a limit removes it, and
+.B clear
+after the name removes both, so the user is held to the server's settings
+again. With the name alone, or the name and a limit, it shows what holds for the
+user and where it comes from. Setting the value a user has already changes
+nothing. The limits are the fields
+.B reports_max_size
+and
+.B reports_max_count
+of the user in
+.IR store.yaml ,
+written only when set, carried by
+.BR "user rename" ,
+kept by
+.BR "store import \-\-replace" ,
+listed by
+.B "user show"
+(a line each, for a user who has one) and by
+.BR "store show \-\-json" .
+The accounting sink takes none. The command is the superuser's and writes the
+detail line
+.BR "user reports\-limit name=" ...
+.BR "key=max\-size|max\-count op=set|clear" ;
+no sudoers rule names it. An older release refuses the fields: every
+.B "tacctl rollback"
+target removes them, after a snapshot, needs
+.B \-\-yes
+while a user has one, and names the users.
+.\" BEGIN GENERATED: command user reports-limit
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command user reports-limit
 .TP
 .BI "user remove " name
 Remove a user after confirmation. The user's
@@ -4984,6 +5143,64 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config devices show
 .TP
+.B "config reports " "[ show ]"
+Show the limits of the stored reports of
+.BR "device reports" ,
+global to the server: the largest report
+.RB ( reports.max_size ,
+default 10 MiB) and the most reports a user keeps
+.RB ( reports.max_count ,
+default 100), and whether each is set or the default. 0 is no cap. A
+.B "device reports generate"
+over either limit is refused with the setting named, and nothing deletes a
+report by age but
+.BR "device reports prune" .
+A user's own limit
+.RB ( "user reports\-limit" )
+wins over these for that user. The setters are the superuser's.
+.TP
+.BI "config reports max\-size " "[ bytes|Ki|Mi|Gi ]"
+Show or set
+.BR reports.max_size :
+a number of bytes, or a number with the suffix
+.BR Ki ,
+.B Mi
+or
+.B Gi
+(powers of 1024), from 0 (no cap) to 1Gi. The default is 10 MiB, which holds the
+inventory of about twenty thousand devices. The key is written only when set.
+The detail line is
+.BR "config reports key=max_size from=" ... " to=" ... .
+.\" BEGIN GENERATED: command config reports max-size
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config reports max-size
+.TP
+.BI "config reports max\-count " "[ n ]"
+Show or set
+.BR reports.max_count ,
+the most reports a user keeps (a report is a file with its metadata file),
+from 0 (no cap) to 100000. The default is 100. The key is written only when
+set. The detail line is
+.BR "config reports key=max_count from=" ... " to=" ... .
+.\" BEGIN GENERATED: command config reports max-count
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config reports max-count
+.TP
+.B "config reports show"
+Show the settings.
+.\" BEGIN GENERATED: command config reports show
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config reports show
+.TP
 .B "config sudoers " "{ show | install | remove } " [ group ]
 Manage the optional
 .I /etc/sudoers.d/tacctl
@@ -6276,7 +6493,9 @@ fails unless
 is given. A required password change, which no rendered file holds, is carried
 over from the existing store
 .RB ( \-\-replace ),
-as the password dates are: an import never lifts it. The scope
+as the password dates are: an import never lifts it. The same goes for the email address of a user and for the limits of the stored reports a user has
+.RB ( "user reports\-limit" ),
+which a rendered or legacy file cannot hold. The scope
 .B tacctl
 of a rendered file (the login of the server it came from, which every user is
 in) is not imported and is taken out of the users' scopes, in one line; a
@@ -9372,8 +9591,15 @@ pull), then what the device reported of itself at that pull as
 and
 .B Serial:
 rows (the OS release, the platform and the chassis serial number; a row is left
-out when the pull did not read it; a WTI unit has a release only), and
-the open notices with a count of the acknowledged ones
+out when the pull did not read it; a WTI unit has a release only), a
+.B "Chassis members:"
+table under the data block when that pull found a Junos virtual chassis or a
+Cisco stack (the columns ID, ROLE, MODEL, SERIAL, RELEASE, STATUS and PRIORITY;
+the
+.B members
+list of
+.BR \-\-json ),
+and the open notices with a count of the acknowledged ones
 .RB ( \-\-all
 lists them too, marked). It warns when the
 vendor tag and the registered vendor disagree.
@@ -11366,8 +11592,9 @@ Test the AAA source addresses: read the host key, never log in.
 .TP
 .BI "device config show " name " [ \-\-protocol tacacs|radius ] [ \-\-legacy ] [ \-\-server " "address|name" " ] [ \-\-source " address " ]"
 Print what is registered for the device (name, address, hostname, vendor, the
-scope that covers its address and the prefix, description, location), then the
-walkthrough of its vendor for that scope, exactly as
+scope that covers its address and the prefix, description, location), the
+.B "Chassis members:"
+table of its last pull when it has one, then the walkthrough of its vendor for that scope, exactly as
 .B config cisco|juniper|wti
 prints it with
 .B \-\-scope
@@ -11603,6 +11830,50 @@ on IOS and IOS\-XE (the first entry's PID and SN). A device that refuses a
 command, or answers text that holds none, leaves the field empty: the pull does
 not fail and its result is unchanged, and a command that stalls takes it at
 most 15 seconds more. A WTI unit has a release only.
+.PP
+A good pull also records the members of a chassis, the units of a Junos virtual
+chassis or of a Cisco stack, replaced by every good pull and read the same way
+(best effort, in the same session, after the facts above). On Junos
+.B "show virtual-chassis status"
+gives the members (id, status, priority and the role master, backup or
+linecard), joined by member id with the FPC rows of
+.B "show chassis hardware"
+(model and serial number) and the
+.B fpcN:
+blocks of
+.B "show version"
+(release). On IOS and IOS\-XE
+.B "show switch"
+gives the switches (number, role Master, Member or Standby, priority and
+state), joined with the
+.B "Switch N"
+entries of
+.B "show inventory"
+(PID and SN) and, when a stack was found, with the per\-switch table of
+.B "show version"
+(release). A member has an id, a role
+.RB ( master ,
+.BR backup ,
+.B linecard
+or
+.BR member ;
+any other role text a vendor prints is kept in the status), a model, a serial
+number, a release, a status and a priority (0 when the vendor prints none), at
+most 32 members per device. A device that lists one unit, a refused command, an
+answer that is not what the command prints, a WTI unit and a vendor
+.B other
+leave the list empty, and a pull that reads none never keeps the old list. The
+members are in
+.B "device show"
+and
+.BR "device config show" ,
+for the operator tier and up, and are what the
+.B members
+report of
+.B "device reports"
+is made of. A release before 0.2.26 ignores the key, so
+.B "tacctl rollback"
+leaves it.
 .PP
 A Cisco device stores some typed lines in another form, which the comparison
 takes as the typed ones: a standard ACL entry "permit host A" or
@@ -13700,6 +13971,341 @@ Options:
 Every record, and the stored sections of every device (one of a device that is no longer registered too).
 .RE
 .\" END GENERATED: command device config forget
+.TP
+.B "device reports"
+Saved, dated reports of the registered devices. A report is made on demand from
+what tacctl stores of the devices (the registry and the records of the last
+pulls) and kept as a file of the home of the user who made it; no device is
+contacted unless
+.B "generate \-\-pull"
+reads them first, nothing makes a report by itself, and no report holds a
+secret, a hash or a community string. There are four types:
+.B inventory
+(a row per device: name, address, vendor, scope, model, serial number, release,
+the number of chassis members, location, description and the date of the pull),
+.B members
+(a row per chassis member: device, member id, role, model, serial number,
+release, status, priority and the date of the pull; a standalone device that
+has a model or a serial number is one row, with the id and the role
+.BR \- ),
+.B software
+(name, vendor, model, release, the reserved column gate, which is empty in this
+release, and the date of the pull) and
+.B config
+(name, scope, the state
+.B "device config list"
+shows, the date of the pull and the date of the last apply). A device that was
+never pulled is a row with empty facts and
+.BR never ,
+not left out, and the heading of a report gives the date of the oldest datum.
+Text that came from a device or an operator is printed as the record keeps it,
+with control, bidirectional and C1 characters replaced by
+.BR ? .
+A report holds the devices of the scopes of the user who made it, a
+superuser's every device. With no sub\-command the usage is printed.
+.PP
+Access.
+.B "device reports"
+is open to every tier for the user's own reports, which hold the devices of the
+user's own scopes (the model, serial number, release and chassis members among
+the facts, though
+.B "device show"
+shows them from the operator tier up);
+.B "generate \-\-pull"
+needs the engineer tier. A superuser reaches other users' reports with
+.BR \-\-user ,
+.BR \-\-all\-users ,
+.I user/report
+and
+.BR prune ;
+anyone else is refused. Every such access writes one line, before anything is
+read or changed, at
+.BR auth.notice :
+.BR "device reports access verb=" list|show|export|rename|remove|prune|prune\-dry\-run
+.BI owner= user
+.BI report= name
+.BI by= user
+(the owner and the report are
+.B *
+for a listing of every user, and a prune has
+.BI count= n
+for the number of reports and no report); the contents are never written. They
+are reveals: under
+.B audit.strict
+an access whose line cannot be written is refused before anything is shown. A
+user's own changes write
+.BR "device reports generate" ,
+.BR "device reports rename" ,
+.B "device reports remove"
+and
+.B "device reports prune"
+lines (type, name, format, rows, new name, number removed). There is no
+.B "generate \-\-as"
+and no verb writes a report into another user's home.
+.TP
+.BI "device reports generate " "\-\-type inventory|members|software|config " "[ \-\-scope " scope " ] [ \-\-vendor cisco|juniper|wti|other ] [ \-\-format text|csv|json ] [ \-\-name " name " ] [ \-\-stdout ] [ \-\-pull ]"
+Make a report. It is written to
+.IR ~/reports/devices/<name>.<ext> ,
+the directory of mode 0700 and the file of mode 0600, by tacctl as the user
+(nothing is written as root), with
+.IR <name>.<ext>.meta
+beside it: a JSON file of mode 0600 that holds the name, the type, the format,
+the user, the exact command line, the filters, the time, the date of the oldest
+datum, the size, the number of rows and the schema number. The default name is
+the type and the date in UTC
+.RB ( inventory\-20261106 ),
+then
+.B \-2
+and so on for a second report of the day in any format; a name that a report or
+a file of the directory has already is refused and never overwritten. A name is
+letters, digits,
+.BR . ,
+.B _
+and
+.BR \- ,
+at most 64 bytes, with no leading dot. The format sets the extension:
+.B text
+(aligned columns under a heading with the type, the time, the date of the oldest
+datum and the number of devices; the default;
+.BR .txt ),
+.B csv
+(RFC 4180, a header line, UTF\-8; a cell that starts with
+.BR = ,
+.BR + ,
+.BR \- ,
+.B @
+or a tab or a carriage return gets a leading
+.B '
+so a spreadsheet does not run it, and a lone
+.B \-
+is left as it is;
+.BR .csv )
+and
+.B json
+(one object with
+.BR schema ,
+.BR type ,
+.BR generated ,
+.BR oldest_data ,
+.B columns
+and
+.BR rows ;
+dates in RFC 3339 UTC, null for a device never pulled; every row of the
+members report has a
+.B components
+list that is empty in this release;
+.BR .json ).
+.B \-\-stdout
+prints the report and stores nothing: no file, no metadata, no limit and no
+account needed.
+.B \-\-pull
+first reads the devices of the selection as
+.B "device config pull"
+does, with the user's own password (asked once, never stored) and no stored
+credential, then makes the report from the fresh records; it needs the
+engineer tier and reads the devices of the user's own scopes. A device that
+cannot be read keeps the facts and the date of its last good pull, a warning
+says so, the report is made and the exit status is 1. With
+.B \-\-stdout
+the pull's output goes to standard error. A report over the largest size, or
+that would exceed the most reports a user keeps, is refused with the setting
+named and nothing written (see
+.BR "config reports" ).
+.\" BEGIN GENERATED: command device reports generate
+.RS
+.PP
+Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show, export, rename and remove its own reports, which hold the devices of its own scopes; generate \-\-pull needs the engineer tier; \-\-user, \-\-all\-users and <user>/<report> (the reports of other users, every access audited) need the superuser tier.
+.PP
+Options:
+.TP
+\fB\-\-type\fR \fIinventory|members|software|config\fR
+The type of report: inventory (one row per device), members (one row per chassis member), software (one row per device: model and release) or config (one row per device: the state of its last pull). A device that was never pulled is a row with empty facts, never left out.
+.TP
+\fB\-\-scope\fR \fI<scope>\fR
+Only the devices that scope answers. A scope that is not one of yours is refused.
+.TP
+\fB\-\-vendor\fR \fIcisco|juniper|wti|other\fR
+Only the devices of that vendor.
+.TP
+\fB\-\-format\fR \fItext|csv|json\fR
+The format: text (aligned columns, the default), csv (RFC 4180, a header line, UTF\-8) or json (one object: schema, type, generated, filters, rows). It sets the extension of the file.
+.TP
+\fB\-\-name\fR \fI<name>\fR
+The name of the report, without the extension: letters, digits, '.', '_' and '\-', at most 64 bytes, no leading dot. The default is the type and the date (inventory\-20261106); a second report of the same day gets \-2. A name in use is refused, never overwritten.
+.TP
+\fB\-\-stdout\fR
+Print the report on standard output and store nothing: no file, no metadata and no limit applies.
+.TP
+\fB\-\-pull\fR
+Read the devices first, as 'tacctl device config pull' does, with your own password (asked for once, never stored) and over the transport the pull chooses, then make the report from the fresh records. A device whose pull fails keeps its last good facts and its old date. It needs the engineer tier and reads the devices of your own scopes.
+.RE
+.\" END GENERATED: command device reports generate
+.TP
+.BI "device reports list " "[ \-\-json ] [ \-\-user " name " | \-\-all\-users ]"
+List the reports of the user, newest first: the name, the type, the format, the
+size and when it was made, and the total. A file of the directory with no
+metadata file, one the user put there, is listed with the type
+.BR other .
+.B \-\-json
+prints a list of objects (the file, the name, the owner, the type, the format,
+the user, the command line, the filters, the dates, the size and the number of
+rows). A superuser lists another user's reports with
+.B \-\-user
+or every user's with
+.BR \-\-all\-users ,
+which add a USER column; each is audited.
+.\" BEGIN GENERATED: command device reports list
+.RS
+.PP
+Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show, export, rename and remove its own reports, which hold the devices of its own scopes; generate \-\-pull needs the engineer tier; \-\-user, \-\-all\-users and <user>/<report> (the reports of other users, every access audited) need the superuser tier.
+.PP
+Options:
+.TP
+\fB\-\-json\fR
+Print the reports as a JSON array: each one's file, name, owner, type, format, user, command line, filters, dates, size and number of rows (a file tacctl did not make has the file, the name, the owner and the size only).
+.TP
+\fB\-\-user\fR \fI<name>\fR
+List the reports of another user. It is the superuser's, and writes an audit line with who looked at whose reports.
+.TP
+\fB\-\-all\-users\fR
+List the reports of every user tacctl knows, one audit line for the whole listing. It is the superuser's.
+.RE
+.\" END GENERATED: command device reports list
+.TP
+.BI "device reports show " "report " [ \-\-content ]
+Print the facts of a report: the file, the type, when it was made, by whom, the
+command line, the filters, the date of the oldest datum, the format, the rows,
+the size and the command that fetches it
+.RB ( "scp user@server:reports/devices/<file> ." ).
+.B \-\-content
+adds the first 200 lines of the report. A report is addressed by its name or by
+its file name; when two files share a name (only a file the user put there can)
+the extension is needed. A superuser names another user's report as
+.IR user/report .
+.\" BEGIN GENERATED: command device reports show
+.RS
+.PP
+Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show, export, rename and remove its own reports, which hold the devices of its own scopes; generate \-\-pull needs the engineer tier; \-\-user, \-\-all\-users and <user>/<report> (the reports of other users, every access audited) need the superuser tier.
+.PP
+Options:
+.TP
+\fB\-\-content\fR
+Print the report itself under the facts, its first 200 lines ('export' prints all of it).
+.RE
+.\" END GENERATED: command device reports show
+.TP
+.BI "device reports export " "report " "[ \-\-out " file " [ \-\-force ] ]"
+Print a report as it is stored, or with
+.B \-\-out
+write it to a file, made as the caller with mode 0600; a file that exists is
+refused unless
+.B \-\-force
+is given. tacctl sends a report nowhere itself: the
+.B scp
+line of
+.B "device reports show"
+is the way off the server. A superuser exports another user's report as
+.IR user/report ;
+it is audited.
+.\" BEGIN GENERATED: command device reports export
+.RS
+.PP
+Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show, export, rename and remove its own reports, which hold the devices of its own scopes; generate \-\-pull needs the engineer tier; \-\-user, \-\-all\-users and <user>/<report> (the reports of other users, every access audited) need the superuser tier.
+.PP
+Options:
+.TP
+\fB\-\-out\fR \fI<file>\fR
+Write the copy to this file, mode 0600, made as you; a file that exists is refused unless \-\-force.
+.TP
+\fB\-\-force\fR
+Replace the file \-\-out names, if there is one.
+.RE
+.\" END GENERATED: command device reports export
+.TP
+.BI "device reports rename " "report new"
+Give a report and its metadata file a new name (the extension stays). A name
+that a report or a file has already is refused, and a file that tacctl did not
+make is not renamed. A superuser renames another user's report as
+.IR user/report ;
+it is audited.
+.\" BEGIN GENERATED: command device reports rename
+.RS
+.PP
+Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show, export, rename and remove its own reports, which hold the devices of its own scopes; generate \-\-pull needs the engineer tier; \-\-user, \-\-all\-users and <user>/<report> (the reports of other users, every access audited) need the superuser tier.
+.RE
+.\" END GENERATED: command device reports rename
+.TP
+.BI "device reports remove " "report " [ \-\-yes ]
+Remove a report and its metadata file, after one question unless
+.B \-\-yes
+is given. A file that tacctl did not make is kept. A superuser removes another
+user's report as
+.IR user/report ;
+it is audited.
+.\" BEGIN GENERATED: command device reports remove
+.RS
+.PP
+Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show, export, rename and remove its own reports, which hold the devices of its own scopes; generate \-\-pull needs the engineer tier; \-\-user, \-\-all\-users and <user>/<report> (the reports of other users, every access audited) need the superuser tier.
+.PP
+Options:
+.TP
+\fB\-\-yes\fR
+Do not ask for confirmation.
+.RE
+.\" END GENERATED: command device reports remove
+.TP
+.BI "device reports prune " "\-\-older\-than age " "[ \-\-user " name " | \-\-all\-users ] [ \-\-dry\-run ] [ \-\-yes ]"
+Remove the reports that were made longer ago than
+.IR age :
+a whole number and one unit,
+.B h
+(hours),
+.B d
+(days) or
+.B w
+(weeks), as
+.BR 12h ,
+.B 30d
+or
+.BR 4w ;
+there is no default and no zero. The age of a report is the
+.B generated
+date of its metadata file. The reports are listed (name, type, generated date
+and size), then, after one question unless
+.B \-\-yes
+is given, removed with their metadata files;
+.B \-\-dry\-run
+only lists. A file with no metadata file is never removed, and nothing outside
+the reports directory is. Nothing prunes by itself. A superuser prunes another
+user's reports with
+.B \-\-user
+or every user's with
+.BR \-\-all\-users ;
+each user whose reports are listed or removed writes one audit line with the
+number of reports and never their names.
+.\" BEGIN GENERATED: command device reports prune
+.RS
+.PP
+Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show, export, rename and remove its own reports, which hold the devices of its own scopes; generate \-\-pull needs the engineer tier; \-\-user, \-\-all\-users and <user>/<report> (the reports of other users, every access audited) need the superuser tier.
+.PP
+Options:
+.TP
+\fB\-\-older\-than\fR \fI<age>\fR
+Remove the reports made longer ago than this age: a whole number and one unit, h (hours), d (days) or w (weeks), for example 30d. There is no default and no zero. The age of a report is the date it was generated, which its metadata file holds, not the time of the file.
+.TP
+\fB\-\-user\fR \fI<name>\fR
+Prune the reports of another user. It is the superuser's, and writes an audit line with who pruned whose reports and how many, never their names.
+.TP
+\fB\-\-all\-users\fR
+Prune the reports of every user tacctl knows, one audit line for each user whose reports are listed or removed. It is the superuser's.
+.TP
+\fB\-\-dry\-run\fR
+List what would be removed and remove nothing; \-\-yes does not change that.
+.TP
+\fB\-\-yes\fR
+Do not ask for confirmation.
+.RE
+.\" END GENERATED: command device reports prune
 .SS SSH to a device \fB(tacctl ssh)\fR
 .TP
 .BI "ssh " name|address " [ \-p " port " ] [ \-X | \-Y ] [ \-g ] [ { \-L | \-R | \-D } " spec " ]... [ \-\- " "ssh args" " ]"
@@ -15578,8 +16184,9 @@ line.
 (no arguments), passwd, status, version, help, \-h, \-\-help,
 user list, user show, group list, group show, scope list,
 backend list, backend status, ssh, device list, device show,
-device notice, device ssh, device client\-config, _completion\-names,
-_console\-policy, \-\-version, \-v, hash, completion, man
+device reports, device notice, device ssh, device client\-config,
+_completion\-names, _console\-policy, \-\-version, \-v, hash,
+completion, man
 .TP
 .B operator
 log tail, log search, log failures, log accounting, config validate,
@@ -15630,6 +16237,9 @@ The CONFIG column (and config, release, model and serial of \-\-json) is the ope
 .TP
 .B device notice
 Every tier may run list; ack and unack need the superuser tier.
+.TP
+.B device reports
+Every tier may generate (without \-\-pull), list, show, export, rename and remove its own reports, which hold the devices of its own scopes; generate \-\-pull needs the engineer tier; \-\-user, \-\-all\-users and <user>/<report> (the reports of other users, every access audited) need the superuser tier.
 .TP
 .B device show
 The Configuration, Release, Model and Serial rows (and config, release, model and serial of \-\-json) are the operator tier's; a read\-only user's output has none.
@@ -15734,14 +16344,15 @@ backup keep, backup recover, config allow, config bcrypt\-cost,
 config branch, config cisco, config deny, config devices,
 config juniper, config linux, config loglevel, config mgmt\-acl,
 config password\-age, config password\-min\-length, config render,
-config secret\-min\-length, config snmp, config validate, config wti,
-console agent\-forwarding, console color, console forwarding,
-console idle\-timeout, console list\-max, console password\-cache,
-console space\-completion, console ssh\-escape, device address,
-device block, device collect, device config, device description,
-device hostkey, device hostname, device import, device ios\-syntax,
-device legacy\-ssh, device location, device netconf, device onboard,
-device port, device snmp, device stale\-days, device sync,
+config reports, config secret\-min\-length, config snmp,
+config validate, config wti, console agent\-forwarding, console color,
+console forwarding, console idle\-timeout, console list\-max,
+console password\-cache, console space\-completion,
+console ssh\-escape, device address, device block, device collect,
+device config, device description, device hostkey, device hostname,
+device import, device ios\-syntax, device legacy\-ssh,
+device location, device netconf, device onboard, device port,
+device reports, device snmp, device stale\-days, device sync,
 device timeout\-scale, device vendor, group commands, group junos,
 group preset, group privilege, group reset, host default\-method,
 host provisioner, host target, scope aaa\-order, scope auth\-method,
@@ -15750,7 +16361,7 @@ scope exec\-timeout, scope mgmt\-acl, scope netconf, scope prefixes,
 scope protocols, scope radius\-group, scope secret, scope snmp,
 scope staging, scope tacacs\-group, scope timeout\-scale,
 scope vendor\-attrs, server listen, server metrics, server name,
-user email, user scope
+user email, user reports\-limit, user scope
 .TP
 .B "mixed, auth.notice"
 config audit\-strict, config breakglass\-firewall, config sudoers,
@@ -17162,6 +17773,14 @@ Days after which a password counts as old: tacctl status warns. Set with \fBtacc
 .B password.min_length
 integer, 8 to 64. Default: 12.
 Shortest password typed at a prompt. Set with \fBtacctl config password\-min\-length\fR.
+.TP
+.B reports.max_count
+integer, 0 to 100000. Default: 100.
+The most reports one user keeps (device reports generate refuses a new one over the count and names this setting); 0: no cap. A user's own limit (user reports-limit) wins. Set with \fBtacctl config reports max\-count\fR.
+.TP
+.B reports.max_size
+integer, 0 to 1073741824. Default: 10485760.
+The largest size of one stored report in bytes (device reports generate refuses a bigger one and names this setting); 0: no cap. A user's own limit (user reports-limit) wins. Set with \fBtacctl config reports max\-size\fR.
 .TP
 .B scope.default
 scope name (a letter, then up to 31 letters, digits, _ or \-) or null. Default: lab.

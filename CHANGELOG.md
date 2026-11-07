@@ -56,6 +56,131 @@ current behaviour; this file is where history lives.
    rollback` to any target no longer looks for one, and the manual page and the
    documentation lose the sentences about the tolerated user.
 
+4. **A good pull records the members of a Junos virtual chassis or a Cisco
+   stack.** `tacctl device config pull` recorded one model and one serial number
+   per device (the chassis's or the first unit's), nothing of the other units of
+   a stack or a virtual chassis. After the configuration, the pull now also
+   reads the units of the chassis, best effort like the other facts: on Junos
+   `show virtual-chassis status` (with the `show chassis hardware` and `show
+   version` it reads already), on IOS and IOS-XE `show switch` (with `show
+   inventory`, and, when a stack is found, `show version` for the release of
+   each switch). Each member is recorded with its id, role (`master`, `backup`,
+   `linecard` or `member`), model, serial number, release, status (`Prsnt`,
+   `Ready`) and priority, at most 32 per device. A device that lists one unit,
+   has no chassis, refuses a command or prints something else has no members,
+   never fails the pull, and a pull that reads none leaves the list empty, never
+   the old one. `device show` and `device config show` print a `Chassis
+   members:` table under the data block (`ID`, `ROLE`, `MODEL`, `SERIAL`,
+   `RELEASE`, `STATUS`, `PRIORITY`), and `device show --json` has a `members`
+   list of the same fields; they are shown to the operator tier and up, as the
+   release, model and serial number are. They are also what the members report
+   of `tacctl device reports` is made of (item 5). An existing record has no
+   members until its device is pulled again, and nothing else about the record
+   changes: the key `members` is derived data that 0.2.25 ignores, so `tacctl
+   rollback` leaves it.
+
+5. **`tacctl device reports` makes saved, dated reports of the registered
+   devices.** `device show` and `device config list` show the facts of the
+   devices on the screen, nothing that can be kept, dated or handed on. `tacctl
+   device reports generate --type inventory|members|software|config` now makes
+   one from what tacctl stores, with no login: `inventory` has a row for each
+   device (address, vendor, scope, model, serial number, release, the number of
+   chassis members, location, description, the date of the pull), `members` a
+   row for each chassis member of item 4 (a device that is no chassis is one
+   row, from its own model and serial number), `software` the model and release
+   of each device, and `config` the state `device config list` shows, with the
+   dates of the pull and the apply. A device that was never pulled is a row with
+   empty facts and `never`, not left out, every row carries the date of the pull
+   its facts came from, and the heading gives the date of the oldest datum.
+   `--format text|csv|json` (text is the default; a CSV cell that starts with
+   `=`, `+`, `-` or `@` is quoted with a leading `'`, so that a spreadsheet does
+   not run it), `--scope` and `--vendor` narrow the report, `--name` names it,
+   `--stdout` prints it and stores nothing, and `--pull` reads the devices first
+   as `device config pull` does, with your own password (the engineer tier). A
+   report holds the devices of your scopes (a superuser's: all) and no secret,
+   hash or community string. It is the file
+   `~/reports/devices/<type>-<yyyymmdd>.<txt|csv|json>` of your home (the
+   directory 0700, the file 0600, made as you; a second report of a day is
+   `-2`), with a `.meta` file beside it that records when, by whom, the command
+   line, the filters and the date of the oldest datum. `list`, `show` (which
+   prints the `scp` line that fetches the file), `export [--out <file>]`,
+   `rename` and `remove` look after them, a file you put in the directory is
+   `other` and left alone, and every tier can run them for its own reports; only
+   `--pull` is the engineer's. Nothing changes for existing data: the first
+   report creates the directory.
+
+6. **`tacctl device reports prune` removes the reports that are old.** Reports
+   pile up in a home; nothing deletes one by itself. `prune --older-than
+   <n>h|<n>d|<n>w` (no default; `12h`, `30d`, `4w`) lists the reports made
+   longer ago than that (name, type, the date they were generated, size) and
+   removes them with their `.meta` files after one question; `--yes` skips the
+   question and `--dry-run` only lists. The age is the `generated` date in the
+   metadata file, not the time of the file; a file with no metadata (listed as
+   `other`) and anything outside the reports directory is never removed.
+
+7. **A superuser reaches the reports of other users, and every access is
+   audited.** `device reports list --user <name>`, `list --all-users`, `show`,
+   `export`, `rename` and `remove` with `<user>/<report>` and `prune --user
+   <name>` or `--all-users` are the superuser's, whatever devices the report
+   holds. Each writes one `device reports access verb=... owner=... report=...
+   by=...` line at `auth.notice` before anything is read or changed (a prune one
+   line for each user, with `count=` and never a name), and never a content;
+   with `audit.strict` an access whose line cannot be written is refused. No
+   verb writes into another user's home and there is no `generate --as`: a user
+   makes their own reports, and a superuser already makes one of every scope. A
+   user's own `generate`, `rename`, `remove` and `prune` write the detail lines
+   `device reports generate type= name= format= rows=`, `rename`, `remove` and
+   `prune`.
+
+8. **The reports of a user are limited in size and number, by settings.** A
+   directory of reports must not grow without bound. `tacctl device reports
+   generate` now refuses a report larger than `reports.max_size` (default 10
+   MiB, which holds the inventory of about 20,000 devices) and a report that
+   would make a user's reports more than `reports.max_count` (default 100),
+   names the setting and the way out (`device reports remove`, a narrower
+   `--scope`, or `--stdout`), and writes nothing. A superuser sets the two for
+   the server with `tacctl config reports [show|max-size|max-count] [<value>]`
+   (a size is bytes or a number with `Ki`, `Mi` or `Gi`, up to 1Gi; a count up
+   to 100000; 0 is no cap; `tacctl.yaml` keys `reports.max_size` and
+   `reports.max_count`, written only when set), and gives one user a value of
+   their own that wins for that user with `tacctl user reports-limit <user>
+   [max-size|max-count [<value>|clear] | clear]`; the other limit stays the
+   server's, an own 0 lifts a limit for that user and `clear` returns the user
+   to the server's. `user show` prints a `Report max-size:` and a `Report
+   max-count:` line for a user who has an own limit. The own limits are the
+   fields `reports_max_size` and `reports_max_count` of the user in
+   `store.yaml`, written only when set, so a store without one is unchanged;
+   `user rename` carries them and `store import --replace` keeps them. Both
+   verbs are the superuser's and write the detail lines `config reports` and
+   `user reports-limit`; a limit restarts nothing. An upgrade changes nothing on
+   its own (the keys and the fields are written only when set); 0.2.25 refuses
+   them, so `tacctl rollback` removes them (item 9).
+
+9. **`tacctl rollback 0.2.25` is a target.** The release before this one is
+   prepared like the older ones: a dry run that lists the steps, `--apply` to
+   convert, `--yes` for what needs a decision. 0.2.25 reads every file this
+   release writes but the limits of the stored reports (item 8), so the target
+   removes `reports.max_size` and `reports.max_count` from `tacctl.yaml` and the
+   users' own `reports_max_size` and `reports_max_count` from `store.yaml`
+   (0.2.25 refuses both: its `config validate` reports the keys, its `backup
+   restore` refuses a snapshot that has them, and every store command fails on
+   the fields), and puts back the per-tier sudoers drop-in 0.2.25 wrote, this
+   release's without the rows of `device reports`, when the file is exactly this
+   release's text. It takes a snapshot only when it removes a key or a field; a
+   user's own limit is a warning that `--apply` refuses without `--yes`, naming
+   each user and the values, and the audit line of the rollback names the users
+   (`limit-users=`, never a value). It leaves the chassis `members` of the pull
+   records (0.2.25 ignores the key) and every report in the users' homes, which
+   are the users' own files and which 0.2.25 cannot list or remove, and its
+   closing note says so and names the three commands that would write a limit
+   again (`config reports max-size`, `config reports max-count`, `user
+   reports-limit`). Every other target gets the same removal, the same warning
+   and the same closing note, since none of them reads the limits; the target
+   `0.2.24`, which converted nothing before, now removes the limits and puts
+   back the same sudoers drop-in as `0.2.25`, and the targets `0.2.23` and older
+   name the users' limits in their warnings. The rollback pages and the manual
+   page list `0.2.25` as the release before this one.
+
 ## 0.2.25 (2026-11-05)
 
 1. **`tacctl device config shapes` keeps its table narrow.** The list put every

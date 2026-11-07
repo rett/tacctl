@@ -32,7 +32,9 @@ device show <name|address> [--all] [--json]
     and NAS-Identifier, the SNMP settings it is read with and where each comes from, the
     configuration of the last pull and the state of each section, then the `Release:`, `Model:` and
     `Serial:` rows that pull read from the device (left out when empty; all of this for the operator
-    tier and up), the open notices and how many are acknowledged; --all lists the acknowledged ones
+    tier and up), a `Chassis members:` table (`ID`, `ROLE`, `MODEL`, `SERIAL`, `RELEASE`,
+    `STATUS`, `PRIORITY`; `members` in `--json`) when that pull found a Junos virtual chassis or a
+    Cisco stack, the open notices and how many are acknowledged; --all lists the acknowledged ones
     too, marked)
 
 device add [<name>] <address>
@@ -518,9 +520,10 @@ device config show <name> [--protocol tacacs|radius] [--legacy] [--server <addre
                    [--source <address>]
 
     The device's data (name, address, hostname, vendor, scope and prefix, description, location),
-    then the walkthrough `tacctl config <vendor> --scope <its scope> --name <name>` prints, with the
-    device's own values in the SNMP step (engineers: their own scopes' devices; a vendor `other`, an
-    enrolled host or a device no scope covers is refused with the command that fixes it)
+    the `Chassis members:` table of its last pull when it has one, then the walkthrough
+    `tacctl config <vendor> --scope <its scope> --name <name>` prints, with the device's own values
+    in the SNMP step (engineers: their own scopes' devices; a vendor `other`, an enrolled host or a
+    device no scope covers is refused with the command that fixes it)
 
 device config pull <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> | --stale
                    | --differs | --name <text> | --ip <addr|cidr|text>
@@ -748,6 +751,55 @@ device config forget <name>[,<name>...] | --all
 
     Delete the pull records and stored sections (derived data: a pull makes them again);
     administrators
+
+device reports generate --type inventory|members|software|config [--scope <scope>]
+                        [--vendor cisco|juniper|wti|other] [--format text|csv|json]
+                        [--name <name>] [--stdout] [--pull]
+
+    Make a dated report of the registered devices from what is stored (no device is contacted) and
+    keep it as `~/reports/devices/<name>.<txt|csv|json>` of your home, mode 0600, with a `.meta`
+    file beside it; the name is `<type>-<yyyymmdd>` (`-2`, `-3` for a second one the same day) or
+    `--name`. `inventory` has a row per device (address, vendor, scope, model, serial number,
+    release, number of chassis members, location, description, date of the pull), `members` one per
+    chassis member (a standalone device is one row), `software` one per device (model and release)
+    and `config` one per device (the state `device config list` shows, the pull and the apply). A
+    device never pulled is a row with empty facts and `never`. The report holds the devices of your
+    scopes (a superuser's: all); `--scope` and `--vendor` narrow it. `--stdout` prints it and
+    stores nothing. `--pull` reads the devices first as `device config pull` does, with your own
+    password (engineer tier); a device that fails keeps its last facts and the exit status is 1. A
+    report over the size or the count limit is refused (see `config reports`). See
+    [Device reports](../devices/reports.md)
+
+device reports list [--json] [--user <name> | --all-users]
+
+    Your reports, newest first (name, type, format, size, when); a file you put in the directory is
+    `other`. A superuser: `--user` and `--all-users` list other users' (a USER column; audited)
+
+device reports show <report> [--content]
+
+    When, by whom and with what command the report was made, its filters, the date of its oldest
+    datum, its size and the `scp` line that fetches it; `--content` adds its first 200 lines. A
+    report is its name, or its file name when two files share a name; a superuser names another
+    user's as `<user>/<report>` (audited)
+
+device reports export <report> [--out <file>] [--force]
+
+    Print the report, or write it to a file (made as you, mode 0600; an existing file needs
+    `--force`)
+
+device reports rename <report> <new>
+
+    Rename a report and its metadata file; a name in use is never overwritten
+
+device reports remove <report> [--yes]
+
+    Remove a report and its metadata file after confirmation; a file tacctl did not make is kept
+
+device reports prune --older-than <n>h|<n>d|<n>w [--user <name> | --all-users] [--dry-run] [--yes]
+
+    Remove your reports made longer ago than the age (the `generated` date of the metadata file;
+    no default), after listing them and one confirmation; `--dry-run` only lists. Files without
+    metadata are never removed. A superuser: `--user` and `--all-users` (one audit line per user)
 ```
 
 New device names are lower case: `device add`, `rename` and the
@@ -760,7 +812,7 @@ export. A name that exists with upper case keeps working, is found in any
 case, and is listed by `tacctl config validate` with the `device rename` that
 fixes it.
 
-A device is found by name (any case) or by its registered address; an unregistered address is not found, even when a scope covers it. An address is registered once. A device name is letters, digits, `.`, `_` and `-`, starting with a letter or digit, at most 253 characters with each dotted part at most 63, so a fully qualified host name (`sw1.site-a.example`) is one. An enrolled host's name is the same, starting with a letter; `host enroll` borrows the short name from the target (`alice@sw1.example.net` is `sw1`), and a fully qualified name is given with `--name` or `host rename`. Enrolled Linux hosts share the namespace and `show` (and the other verbs that take a device, which do not change a host) takes one by name, as a `linux` entry, read-only; `list` shows devices only, and `host list` the hosts. `list`, `show`, `notice list`, `client-config` and `tacctl ssh` are open to the read-only and operator tiers, limited to the entries of their own scopes (`tacctl ssh` is limited so for every tier); `export` is operator-level, filtered the same way.
+A device is found by name (any case) or by its registered address; an unregistered address is not found, even when a scope covers it. An address is registered once. A device name is letters, digits, `.`, `_` and `-`, starting with a letter or digit, at most 253 characters with each dotted part at most 63, so a fully qualified host name (`sw1.site-a.example`) is one. An enrolled host's name is the same, starting with a letter; `host enroll` borrows the short name from the target (`alice@sw1.example.net` is `sw1`), and a fully qualified name is given with `--name` or `host rename`. Enrolled Linux hosts share the namespace and `show` (and the other verbs that take a device, which do not change a host) takes one by name, as a `linux` entry, read-only; `list` shows devices only, and `host list` the hosts. `list`, `show`, `notice list`, `client-config` and `tacctl ssh` are open to the read-only and operator tiers, limited to the entries of their own scopes (`tacctl ssh` is limited so for every tier); `export` is operator-level, filtered the same way. `device reports` is open to every tier for its own reports (made from stored data and limited to the user's own scopes); `generate --pull` is the engineer's, and another user's reports (`--user`, `--all-users`, `<user>/<report>`) the superuser's (see [Device reports](../devices/reports.md)).
 
 A name that is a factory or image default is refused with the command that names the device on the device itself (`hostname`, `set system host-name`, ...); a host already enrolled under such a name is not refused and carries a `generic-name` notice. `host enroll --name` follows the same rules. Add your own patterns with `generic_names:` (regular expressions, whole-name, case-insensitive) in `devices.yaml`.
 
@@ -794,4 +846,4 @@ device that then has no change, never a change nobody reviewed. `apply
 --pull` pulls the devices the other selectors pick first and applies
 `--stale` and `--differs` to the records that pull wrote.
 
-Each change also writes a line of its own to the audit log, beside the `cmd start` and `cmd end` pair: `device add`, `device clone`, `device remove`, `device rename`, `device replace`, `device import`, `device set name= field= from= to=` for the setters and `device sync` with the devices written; a shown SNMP secret is `secret-read kind= name=` for every caller, and `device config show|plan` and the walkthroughs log the secret they read the same way ([Audit log](../security/audit.md#detail-lines)).
+Each change also writes a line of its own to the audit log, beside the `cmd start` and `cmd end` pair: `device add`, `device clone`, `device remove`, `device rename`, `device replace`, `device import`, `device set name= field= from= to=` for the setters and `device sync` with the devices written, `device reports generate|rename|remove|prune` for a user's own reports and `device reports access` for a superuser's access to another user's; a shown SNMP secret is `secret-read kind= name=` for every caller, and `device config show|plan` and the walkthroughs log the secret they read the same way ([Audit log](../security/audit.md#detail-lines)).
