@@ -915,7 +915,7 @@ func (p *RollbackPlan) planSudoers() []sudoersPlan {
 	tiers := sudoersPlan{label: "the per-tier drop-in", file: pt.TierSudoersFile, state: "absent"}
 	if b, err := os.ReadFile(pt.TierSudoersFile); err == nil {
 		switch got := string(b); {
-		case got == tier.Sudoers(), got == tier.Sudoers0223(), got == tier.Sudoers0222(), got == tier.Sudoers0219(), got == tier.Sudoers0218(), got == tier.Sudoers0217(), got == tier.Sudoers0216(), got == tier.Sudoers0214(), got == tier.Sudoers0213(), got == tier.Sudoers028(), got == tier.Sudoers027():
+		case got == tier.Sudoers(), got == tier.Sudoers0225(), got == tier.Sudoers0223(), got == tier.Sudoers0222(), got == tier.Sudoers0219(), got == tier.Sudoers0218(), got == tier.Sudoers0217(), got == tier.Sudoers0216(), got == tier.Sudoers0214(), got == tier.Sudoers0213(), got == tier.Sudoers028(), got == tier.Sudoers027():
 			tiers.state, tiers.body = "rewrite", tier.Sudoers023()
 		case got == tier.Sudoers023():
 			tiers.state = "done"
