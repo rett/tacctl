@@ -571,6 +571,9 @@ func (inv *invocation) userAdd(args []string) error {
 		require = barrier.why == ""
 	}
 
+	if err := inv.upgradeRenamesFinished(username); err != nil {
+		return err
+	}
 	if err := inv.consoleSettingsReadable(); err != nil {
 		return err
 	}
@@ -752,6 +755,9 @@ func (inv *invocation) userRemove(args []string) error {
 		return err
 	} else if !exists {
 		return inv.usageErr("User '" + username + "' does not exist.")
+	}
+	if err := inv.upgradeRenamesFinished(username); err != nil {
+		return err
 	}
 	if err := inv.consoleSettingsReadable(); err != nil {
 		return err
@@ -1099,6 +1105,9 @@ func (inv *invocation) userRename(args []string) error {
 	// The old name is gone from the model afterwards, so its account on this
 	// server (and its tac-superuser) goes at the sync that follows; the new
 	// name gets its account there.
+	if err := inv.upgradeRenamesFinished(oldname, newname); err != nil {
+		return err
+	}
 	if err := inv.consoleSettingsReadable(); err != nil {
 		return err
 	}

@@ -78,6 +78,9 @@ type Host struct {
 	// follow; an error stops the upgrade there, as a crash would. Tests set
 	// it. Nil: nothing.
 	AfterStoreRename func() error
+	// RemoveFile, when set, removes the upgrade's journal of renames instead
+	// of os.Remove; tests set it to make the removal fail. Nil: os.Remove.
+	RemoveFile func(path string) error
 }
 
 // OwnLoginOptions say how install or upgrade asks for this machine's own

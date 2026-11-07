@@ -283,6 +283,19 @@ store was written, the renames stay recorded in
 .I upgrade\-renames
 in the state directory and the next upgrade finishes the move
 .RB ( "finished the rename of user alice.smith to alice_smith" ).
+Until then
+.BR "user add" ,
+.B user remove
+and
+.B user rename
+refuse the new name of such a record, and
+.B store import
+and the restore of an old\-style backup refuse whatever the names
+.RB ( "The upgrade's rename of user alice.smith to alice_smith is not finished: run 'tacctl upgrade' first." ),
+since the upgrade would give the ledger line and the console settings of the
+person it renamed to whoever holds the name by then; a restore of a snapshot
+forgets the record. The record is emptied before it is removed, so a removal
+that fails, and is reported, does not replay the renames.
 .IP
 The upgrade installs the
 .B nftables

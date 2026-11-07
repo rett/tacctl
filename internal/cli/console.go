@@ -19,6 +19,7 @@ import (
 	"github.com/rett/tacctl/internal/audit"
 	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/hosts"
+	"github.com/rett/tacctl/internal/lifecycle"
 	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
@@ -1192,6 +1193,19 @@ func (inv *invocation) consoleSettingsReadable() error {
 	if _, err := console.Load(inv.app.Paths.ConsoleFile); err != nil {
 		return inv.usageErr("console.yaml could not be read: "+cutErr(err)+".",
 			"It holds settings of users (the system shell, the password cache) that this command drops or moves with the user, so that the next user of the name does not inherit them; nothing was changed. Repair the file, then run the command again.")
+	}
+	return nil
+}
+
+// upgradeRenamesFinished refuses a command that adds, removes or renames one
+// of users (none: any change of the store's users) while a rename of the
+// upgrade that names it is not finished (the journal in the state directory,
+// lifecycle.UnfinishedRename): the next upgrade would move the ledger line and
+// the console settings of the person it renamed to the user who now holds the
+// name.
+func (inv *invocation) upgradeRenamesFinished(users ...string) error {
+	if r, ok := lifecycle.UnfinishedRename(inv.app.Paths.StateDir, users...); ok {
+		return inv.usageErr(lifecycle.UnfinishedRenameText(r))
 	}
 	return nil
 }

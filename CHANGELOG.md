@@ -58,6 +58,15 @@ current behaviour; this file is where history lives.
    moves the ledger line and the console settings of those users to the names
    the store holds (`finished the rename of user alice.smith to alice_smith`),
    and the message of a failed follow-up now says so besides the snapshot.
+   Until that move is finished, `user add`, `user remove` and `user rename`
+   refuse a name the record holds, and `store import` and the restore of an
+   old-style backup refuse whatever the names (`The upgrade's rename of user
+   alice.smith to alice_smith is not finished: run 'tacctl upgrade' first.
+   Nothing was changed.`): a user removed and added again under the new name
+   would otherwise be given the renamed person's ledger line and console
+   settings by the next upgrade. A restore of a snapshot forgets the record,
+   as the state it describes is replaced. The record is emptied before it is
+   removed, and a removal that fails is reported, so it does not replay.
 
    The rule for the new name does not change, so a new name can be a user name
    that no Linux account can have (upper case: `Alice.Smith` becomes

@@ -795,6 +795,13 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 			return err
 		}
 	}
+	// The state a journal of the upgrade's renames describes is replaced: none
+	// of them is pending in what came back (the snapshot holds the ledger and
+	// console.yaml of the same moment), and a later upgrade must not move the
+	// settings of the person it names to whoever holds the new name.
+	if err := lifecycle.DropJournal(a.Paths.StateDir); err != nil {
+		a.Out.WarnE("The upgrade's record of unfinished renames, " + lifecycle.JournalPath(a.Paths.StateDir) + ", could not be removed: " + err.Error() + "; remove it")
+	}
 	// And the SNMP credentials, which the settings in tacctl.yaml name.
 	if err := inv.restoreSNMP(dir); err != nil {
 		inv.stderrLine(err.Error())
@@ -1488,6 +1495,9 @@ func (inv *invocation) restoreLegacy(id string) error {
 	file, ok := inv.legacyPath(id)
 	if !ok {
 		return inv.usageErr("Old-style backup not found: "+id, "Run 'tacctl backup list' to see available backups.")
+	}
+	if err := inv.upgradeRenamesFinished(); err != nil {
+		return err
 	}
 	inv.echo("")
 	inv.echo("  Checking that the store can take " + file)

@@ -225,7 +225,7 @@ func (h *Host) dottedPlan(warn bool, suffix func() string) (plan DottedUserPlan,
 
 // journalPath is the file that records the renames between the write of the
 // store and the end of the move of the ledger and console.yaml.
-func (h *Host) journalPath() string { return filepath.Join(h.Paths.StateDir, "upgrade-renames") }
+func (h *Host) journalPath() string { return JournalPath(h.Paths.StateDir) }
 
 // readJournal is the renames an interrupted upgrade recorded: one line each,
 // "<old> <new>". A file that is absent or cannot be read records none.
@@ -243,16 +243,72 @@ func readJournal(path string) []console.UserRename {
 	return out
 }
 
-// writeJournal records renames (none: removes the file).
-func writeJournal(path string, renames []console.UserRename) error {
-	if len(renames) == 0 {
-		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
+// journalHeader is the comment that opens the journal.
+const journalHeader = "# renames of users whose name had a period, recorded by 'tacctl upgrade'; removed when they are done\n"
+
+// JournalPath is the journal of an upgrade's renames in the state directory.
+func JournalPath(stateDir string) string { return filepath.Join(stateDir, "upgrade-renames") }
+
+// UnfinishedRename is an entry of the journal in stateDir that names one of
+// users, as its old or its new name (no name: any entry): an upgrade that
+// renamed a user whose name had a period stopped before it was done. The
+// entry ties the new name to the person the upgrade renamed, so a verb that
+// removes, adds or renames a user of that name must wait for the upgrade to
+// finish the move: until then the next upgrade would give the ledger line and
+// the console settings of the renamed person to whoever holds the name.
+func UnfinishedRename(stateDir string, users ...string) (console.UserRename, bool) {
+	for _, r := range readJournal(JournalPath(stateDir)) {
+		if len(users) == 0 || slices.Contains(users, r.Old) || slices.Contains(users, r.New) {
+			return r, true
 		}
+	}
+	return console.UserRename{}, false
+}
+
+// UnfinishedRenameText is the refusal that says so.
+func UnfinishedRenameText(r console.UserRename) string {
+	return "The upgrade's rename of user " + r.Old + " to " + r.New + " is not finished: run 'tacctl upgrade' first. Nothing was changed."
+}
+
+// DropJournal forgets the renames an interrupted upgrade recorded, for a
+// command that replaces the state they describe (a restore of a snapshot):
+// none of them is pending in what is put back.
+func DropJournal(stateDir string) error {
+	return clearJournal(JournalPath(stateDir), os.Remove)
+}
+
+// clearJournal removes the journal. A removal that fails must not leave the
+// entries to be replayed by a later upgrade, so the file is first rewritten
+// with none; an error is returned when the file is left, with the entries
+// gone or not (the file is read as empty when the rewrite worked). remove is
+// os.Remove, or a test's.
+func clearJournal(path string, remove func(string) error) error {
+	if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
+	werr := writeFileAtomic(path, []byte(journalHeader), 0o600)
+	err := remove(path)
+	if err == nil || errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if werr != nil {
+		return fmt.Errorf("%w (and its entries could not be cleared: %s)", err, errLine(werr))
+	}
+	return err
+}
+
+// writeJournal records renames (none: removes the file, see clearJournal).
+func (h *Host) writeJournal(renames []console.UserRename) error {
+	path := h.journalPath()
+	if len(renames) == 0 {
+		remove := h.RemoveFile
+		if remove == nil {
+			remove = os.Remove
+		}
+		return clearJournal(path, remove)
+	}
 	var b strings.Builder
-	b.WriteString("# renames of users whose name had a period, recorded by 'tacctl upgrade'; removed when they are done\n")
+	b.WriteString(journalHeader)
 	for _, r := range renames {
 		b.WriteString(r.Old + " " + r.New + "\n")
 	}
@@ -412,7 +468,9 @@ func (h *Host) renameDottedUsers() error {
 		// nothing to rename and nothing in console.yaml to drop; a file that
 		// cannot be read is not this step's business
 		if ferr == nil {
-			_ = writeJournal(h.journalPath(), nil)
+			if err := h.writeJournal(nil); err != nil {
+				out.Warn("The record of the renames, " + h.journalPath() + ", could not be removed: " + errLine(err) + "; remove it")
+			}
 		}
 		return nil
 	}
@@ -439,7 +497,7 @@ func (h *Host) renameDottedUsers() error {
 	}
 	out.Info("  snapshot " + id + " holds the state before the rename (tacctl backup restore " + id + ")")
 
-	if err := writeJournal(h.journalPath(), all); err != nil {
+	if err := h.writeJournal(all); err != nil {
 		out.Error("The renames could not be recorded in " + h.journalPath() + ", so no user was renamed: " + errLine(err))
 		return backend.ErrFailed
 	}
@@ -453,7 +511,7 @@ func (h *Host) renameDottedUsers() error {
 			return nil
 		})
 		if err != nil {
-			_ = writeJournal(h.journalPath(), pending)
+			_ = h.writeJournal(pending)
 			out.Error("The store was not changed, and no user was renamed: " + errLine(err))
 			return backend.ErrFailed
 		}
@@ -484,7 +542,7 @@ func (h *Host) renameDottedUsers() error {
 		return failed(h.Paths.ConsoleFile, err)
 	}
 	settings := res.Moves
-	if err := writeJournal(h.journalPath(), nil); err != nil {
+	if err := h.writeJournal(nil); err != nil {
 		out.Warn("The record of the renames, " + h.journalPath() + ", could not be removed: " + errLine(err) + "; remove it")
 	}
 	for i, r := range all {
