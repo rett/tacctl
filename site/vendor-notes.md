@@ -35,6 +35,7 @@ links to them.
 | `enable` | Local enable secret only | — | — |
 | Host key on the console | `show ip ssh` | `file show /etc/ssh/ssh_host_ed25519_key.pub` | — |
 | Break-glass login | Local account after the server timeout; console list is local | Local `system login user`, or `root` when the scope records it; `root` on the console is always local | Only if *Fallback Local* is `On` |
+| Chassis members a pull records | A stack: `show switch`, with `show inventory` and `show version` (§2.5) | A virtual chassis: `show virtual-chassis status`, with `show chassis hardware` and `show version` (§3.3) | None: a WTI unit has no members |
 | Steps | Engineer Guide §5.5 | Engineer Guide §5.1 | Engineer Guide §5.6 |
 
 Junos is the only vendor tacctl writes to. For Cisco and WTI it reads,
@@ -102,6 +103,36 @@ A new IOS 15.6 router may need `--legacy-ssh` and still speak `modern`.
   ([Engineer Guide](engineer-guide-device-changes.md) §4).
 - **Vendor detection** by SNMP does not name IOS 12.x devices (or ASA and
   IOS XR). Register them with `--vendor cisco`.
+- **A stack (0.2.26).** A good `tacctl device config pull` of a Cisco device
+  that is a stack also records its switches. `show switch` lists them (number,
+  role, priority and state), `show inventory` gives the model and serial number
+  of each (the `Switch N` entries) and, only when a stack was found, `show
+  version` gives the release of each. `device show` and `device config show`
+  (operator tier and up) print them under the data block, and the `members`
+  report of `device reports` has a row for each
+  ([Day-to-Day Device Operations](day-to-day-device-operations.md) §1.6):
+
+  ```
+  Chassis members:
+  -----------------------------------------------------------------
+    ID  ROLE    MODEL         SERIAL    RELEASE  STATUS  PRIORITY
+    ---------------------------------------------------------------
+    1   master  WS-C3850-24T  SN000001  16.12.4  Ready   15
+    2   member  WS-C3850-24T  SN000002  16.12.4  Ready   1
+  ```
+
+  The roles are one vocabulary for both vendors: a `Master` switch, or
+  `Active` as IOS-XE 16.x and later print it (Catalyst 3650, 3850, 9000), is
+  `master`, `Standby` is `backup` and `Member` is `member`. At most 32
+  members are kept. A device that is no stack (`show switch` is refused, or
+  lists one switch) has no members and is one row of the `members` report; a
+  refused command changes nothing in the pull. A device has no members until
+  it is pulled again since 0.2.26.
+- **A stack's fixtures are hand written.** No capture of a stack of more than
+  one switch was available for 0.2.26. The reader is tested against fixtures
+  written by hand from Cisco's documented formats; the only real captures are
+  of devices that are no stack. After the first pull of a real stack, compare
+  the `Chassis members:` table with `show switch` on the device.
 
 ---
 
@@ -146,6 +177,39 @@ single device ([Engineer Guide](engineer-guide-device-changes.md) §5.1).
 | A blank device with only a local account | `tacctl device onboard` (Engineer Guide §2.3) |
 | The TACACS+ listener is not on 49 (`tacctl server listen`) | The walkthrough adds `set system tacplus-server <address> port <n>` |
 | Break-glass | A local `system login user` works after the tacplus timeout; `root` on the console is always local. Over ssh, `root` needs the scope to record it and `root-login allow` on the device ([Break Glass](break-glass.md) §1.1) |
+
+**A virtual chassis (0.2.26).** A good `tacctl device config pull` of a device
+that is a virtual chassis also records its members. `show virtual-chassis
+status` lists them (member id, status, priority and role `master`, `backup` or
+`linecard`), and the `FPC` rows of `show chassis hardware` and the `fpcN:`
+blocks of `show version`, which the pull reads already, give each member's
+model, serial number and release. `device show` and `device config show`
+(operator tier and up) print them under the data block, `device show --json`
+has them as `members`, and the `members` report of `device reports` has a row
+for each:
+
+```
+Chassis members:
+-----------------------------------------------------------------
+  ID  ROLE    MODEL       SERIAL    RELEASE      STATUS  PRIORITY
+  ---------------------------------------------------------------
+  0   master  EX4300-48T  SN000001  21.4R3-S5.4  Prsnt   129
+  1   backup  EX4300-48T  SN000002  21.4R3-S5.4  Prsnt   129
+```
+
+- A device that is no virtual chassis (the command is refused, or lists one
+  member) has no members and is one row of the `members` report. The two
+  routing engines of a chassis are not members, and a cluster is not read.
+- The commands are read only, and a refusal changes nothing in the pull. At
+  most 32 members are kept, and a pull that reads none leaves the list empty,
+  never the old one. A device has no members until it is pulled again since
+  0.2.26.
+- **The fixtures are hand written.** No capture of a virtual chassis of more
+  than one member was available for 0.2.26. The reader is tested against
+  fixtures written by hand from Juniper's documented formats; the only real
+  captures are of devices that are no chassis. After the first pull of a real
+  virtual chassis, compare the table with `show virtual-chassis status` on
+  the device.
 
 ### 3.4 The management filter: `ssh-only` or `strict`
 
