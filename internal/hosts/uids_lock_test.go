@@ -323,3 +323,33 @@ func TestWriteScriptReleasesTheLock(t *testing.T) {
 		t.Errorf("after a refusal: %v", err)
 	}
 }
+
+// CanMove says whether a MoveUser can work before anything is renamed: an
+// absent ledger and a readable one can, and a ledger that cannot be read
+// cannot. It changes nothing.
+func TestUIDsCanMove(t *testing.T) {
+	dir := t.TempDir()
+	u := UIDs{Path: filepath.Join(dir, "linux-uids")}
+	if err := u.CanMove(); err != nil {
+		t.Errorf("an absent ledger: %v", err)
+	}
+	if err := os.WriteFile(u.Path, []byte("# UIDs\nalice.smith:80001\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := u.CanMove(); err != nil {
+		t.Errorf("a ledger: %v", err)
+	}
+	if got := readFile(t, u.Path); got != "# UIDs\nalice.smith:80001\n" {
+		t.Errorf("the ledger changed:\n%s", got)
+	}
+	if m, _ := filepath.Glob(filepath.Join(dir, ".linux-uids.[0-9]*")); len(m) != 0 {
+		t.Errorf("left behind: %q", m)
+	}
+	bad := UIDs{Path: filepath.Join(dir, "dir")}
+	if err := os.Mkdir(bad.Path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := bad.CanMove(); err == nil {
+		t.Error("a ledger that is a directory can be moved")
+	}
+}

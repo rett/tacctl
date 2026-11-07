@@ -43,6 +43,22 @@ current behaviour; this file is where history lives.
    say) stops the upgrade before any change, naming the key to edit in the
    store; run it again afterwards. A second upgrade does nothing.
 
+   The store is renamed before the UID ledger and `console.yaml` follow, so
+   the upgrade first checks, before the snapshot and before any write, that
+   both can take the renames: a `console.yaml` that cannot be read or holds a
+   name the rule refuses, or a ledger that cannot be read or locked, stops it
+   with the file and the reason and nothing changed. A key with a period in
+   `console.yaml` that no rename covers (a hand edit, a user who is gone, the
+   `users` mapping) would make the file unreadable and belongs to nobody: it
+   is dropped, with a line naming it, also when the store has no such user,
+   and not renamed, so that the next user of the name does not inherit its
+   system shell or password cache. The renames are recorded in `upgrade-renames`
+   in the state directory before the store is written; an upgrade that stops
+   after the store (a crash, a failed write) is finished by the next one, which
+   moves the ledger line and the console settings of those users to the names
+   the store holds (`finished the rename of user alice.smith to alice_smith`),
+   and the message of a failed follow-up now says so besides the snapshot.
+
 3. **A user name with a period is not accepted anywhere.** 0.2.22 to 0.2.25
    refused a period in a new user name but still read one that a store from
    0.2.20 or 0.2.21 held: `user rename` ran from it, `config validate` reported

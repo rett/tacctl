@@ -263,7 +263,21 @@ key to edit under
 in the store; run it again afterwards. When the release being upgraded has already replaced
 tacctl and the tacquito build, the message says so (the store, the
 configuration and the services are not changed). A store that cannot be read
-does not hold it up.
+does not hold it up. The store is renamed before
+.I linux\-uids
+and
+.I console.yaml
+follow, so both are checked first, before the snapshot and before any write: a
+console.yaml that cannot be read or holds a name the rule refuses, or a ledger
+that cannot be read or locked, stops the upgrade with the file and the reason and
+nothing changed. A key with a period in console.yaml that no rename covers (a
+hand edit, a user who is gone) would make the file unreadable and belongs to
+nobody: it is dropped, with a line naming it, and not renamed, so that the next
+user of that name does not inherit its settings. When the upgrade stops after the
+store was written, the renames stay recorded in
+.I upgrade\-renames
+in the state directory and the next upgrade finishes the move
+.RB ( "finished the rename of user alice.smith to alice_smith" ).
 .IP
 The upgrade installs the
 .B nftables
