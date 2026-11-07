@@ -9,7 +9,7 @@ doctype: how-to
 
 # Break Glass
 
-*Local emergency accounts, and holding a device or host back from the server · Checked against tacctl 0.2.25*
+*Local emergency accounts, and holding a device or host back from the server · Checked against tacctl 0.2.26*
 
 [Printable PDF](../pdf/tacctl-break-glass.pdf){: .pdf-link }
 
@@ -134,7 +134,10 @@ refuses the connection before tacquito sees it.
   setting loads the table again, and the boot unit
   `tacctl-breakglass-firewall.service` loads it at boot. `install` and
   `upgrade` install the `nftables` package, and an upgrade with holds standing
-  loads the table for them.
+  loads the table for them. Since 0.2.26 they report it in one short
+  sentence: `Break-glass firewall: loaded (reject on tcp/49), no address
+  held.` or, with an address held, `Break-glass firewall: 192.0.2.10 refused
+  on tcp/49 (reject).` `status` still shows the state of the boot unit.
 - The audit lines of a hold and a release end `firewall=reject|drop|off|failed`.
 - `status`, `config validate` and `tacctl breakglass list` compare the live
   table with the holds and the setting, and name each difference with the

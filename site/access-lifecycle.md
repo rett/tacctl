@@ -9,7 +9,7 @@ doctype: how-to
 
 # Access Lifecycle
 
-*Joiners, movers and leavers · Checked against tacctl 0.2.25*
+*Joiners, movers and leavers · Checked against tacctl 0.2.26*
 
 [Printable PDF](../pdf/tacctl-access-lifecycle.pdf){: .pdf-link }
 
@@ -81,23 +81,68 @@ tacctl user email alice clear                # remove it
 
 Names are lower case: letters, digits, `_` and `-` (`alice-smith`). A period
 is refused, because every user has an account on the tacctl server and a
-period cannot be part of a Linux account name. `root` and `tacquito` are
+period cannot be part of a Linux account name. Every `user` verb, `passwd`
+and `config linux uid` refuse it, whether the user exists or not, with
+`Username must contain only letters, numbers, underscores and hyphens (a
+period cannot be part of a Linux account name).` `root` and `tacquito` are
 reserved.
 
-**A user stored with a period.** 0.2.20 and 0.2.21 accepted a period, so a
-store can still hold a name with one. The user stays readable (show, list,
-disable, move, scopes, remove) and has no Linux account on any host, so no
-console login. Rename it:
+**A user stored with a period: the upgrade renames it (0.2.26).** 0.2.20 and
+0.2.21 accepted a period, so a store from then can still hold a name with one
+(`alice.smith`). `tacctl upgrade` renames every such user, replacing each
+period with `_`:
 
 ```bash
-tacctl user rename <name> <new-name>
+tacctl upgrade        # names the snapshot it takes first, then one line for each rename
 ```
 
-Until then `config validate` reports it as an error with that command (also
-in `--json`; `--fix-names` does not offer it), `passwd`, `user passwd` and
-`user require-password-change` refuse it with `rename it first`, `host sync`
-skips it with a warning, and `tacctl upgrade` refuses and lists each such
-user. Rename them before upgrading from 0.2.20 or 0.2.21.
+```
+snapshot <id> holds the state before the rename
+renamed user alice.smith to alice_smith
+```
+
+- **Tell the people.** The name typed at a device's login changed, and the
+  old one no longer works. Each rename is one line (with an audit line as
+  `user rename` writes it), followed by a note to tell the people to log in
+  with the new name.
+- **What is renamed.** The store record (group, scopes, email, flags and
+  limits), the user's line in the UID ledger (`linux-uids`) and the user's
+  settings in `console.yaml` (the system shell, the password cache). A name
+  with a period never had a Linux account, so no account on the server or on
+  a host is renamed: the new name gets its account at the next sync.
+- **The snapshot.** It is taken first and named in the output;
+  `tacctl backup restore <id>` undoes the rename. When no user has a period,
+  none is taken and nothing is printed. A second upgrade does nothing.
+- **A name that is taken.** When the new name belongs to a user, to a second
+  name that becomes the same, or to a break-glass local user of one of the
+  user's scopes, the user gets `_` and four random lowercase letters or
+  digits after it (`alice_smith_k3x9`), and the line says why. Of two names
+  that meet, the first keeps the name without the suffix. Give the user
+  another name afterwards with `tacctl user rename <name> <new-name>`.
+- **A new name that no Linux account can have** (upper case letters, as
+  `Alice_Smith` from `Alice.Smith`, or more than 32 characters) is still a
+  user name, but that user gets no account at a sync. The upgrade lists each
+  such user after the renames with the reason and the fix (`Alice_Smith has
+  upper case letters: tacctl user rename Alice_Smith <new-name>`).
+- **What stops it.** A name that is not a user name even with the periods
+  replaced (one with a space, say) stops the upgrade before any change and
+  names the key to edit in the store; run it again afterwards. So does a
+  `console.yaml` that cannot be read or holds a name the rules refuse, or an
+  ID ledger that cannot be read or locked: `No user was renamed.` and `Nothing
+  was changed.` A key with a period in `console.yaml` that no rename covers
+  is dropped, with a line naming it.
+- **If it stops half way.** The renames are recorded, and the next `tacctl
+  upgrade` finishes them (`finished the rename of user alice.smith to
+  alice_smith`). Until then `user add`, `user remove` and `user rename`
+  refuse a name the record holds, and `store import` and the restore of an
+  old-style backup refuse: `The upgrade's rename of user alice.smith to
+  alice_smith is not finished: run 'tacctl upgrade' first. Nothing was
+  changed.`
+- **Until the upgrade runs,** a store that still holds a name with a period
+  fails every write with `user 'alice.smith': invalid name (a period cannot be
+  part of a Linux account name; 'tacctl upgrade' renames such a user)`. That
+  is the case after a restore of a snapshot of 0.2.25 or earlier that held
+  such a user ([Backups and Undo](backups-and-undo.md) §4.4).
 
 **Password without you seeing it.** The person creates a bcrypt hash on
 their own machine (`tacctl hash commands` prints the recipes for Linux,
@@ -222,7 +267,8 @@ make the change; otherwise the command says why and sets nothing. A user
 cannot when:
 
 - the server is not enrolled (`tacctl host enroll --local`);
-- the name has a period (a leftover; rename it);
+- the name has upper case letters, so it is no Linux account name (a
+  leftover from before new names were lower case; rename it);
 - the user is disabled;
 - the user's group has no privilege level;
 - the server is still registered in a scope it shares with devices (an

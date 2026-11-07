@@ -9,7 +9,7 @@ doctype: how-to
 
 # Engineer Guide: Device Changes
 
-*Register, compare, plan and apply device AAA configuration · Checked against tacctl 0.2.25*
+*Register, compare, plan and apply device AAA configuration · Checked against tacctl 0.2.26*
 
 [Printable PDF](../pdf/tacctl-engineer-guide-device-changes.pdf){: .pdf-link }
 
@@ -255,6 +255,41 @@ Two checks look at it:
 
 The settings a device keeps for its own AAA server (a source address, a
 routing instance and the like) are no longer listed as differences.
+
+### 3.2 Reports from what the pulls recorded
+
+A good pull records more than the configuration: the device's release, model
+and serial number and, for a Junos virtual chassis or a Cisco stack, its
+members (see [Vendor Notes](vendor-notes.md) §2.5, §3.3). `device reports`
+turns those records into a saved, dated report, as text, CSV or JSON. How to
+read and look after the files is in
+[Day-to-Day Device Operations](day-to-day-device-operations.md) §1.6; this is
+the part that logs in.
+
+```bash
+tacctl device reports generate --type inventory                  # from the last pulls, no login
+tacctl device reports generate --type inventory --pull           # read the devices first
+tacctl device reports generate --type members --scope site-a --pull --format csv
+tacctl device reports generate --type config --pull --stdout     # the report alone on stdout
+```
+
+- Without `--pull` no device is contacted and no password is asked. The
+  report shows the facts of each device's **last good pull**, with its date.
+  An old pull is an old fact: read the `pulled` column and the `Oldest data:`
+  line of the heading.
+- `--pull` is an **engineer's** option. It reads the devices of the report as
+  `device config pull` does, with your own password (asked once, never
+  stored), then makes the report from the fresh records. It reads the devices
+  of your own scopes whose vendor the pull reads (Cisco, Junos and WTI), and
+  a scope that covers them.
+- A device that cannot be read keeps the facts and the date of its last good
+  pull. The report is still made, `Some devices were not read: the report
+  holds the facts of their last good pull, with its date.` is printed, and the
+  exit status is 1.
+- With `--stdout` and `--pull`, the pull's own output goes to standard error,
+  so that standard output holds the report only: a script can redirect it.
+- A WTI unit has a release only (its menu prints no model or serial number),
+  so its model and serial number columns stay empty.
 
 ---
 
@@ -696,6 +731,7 @@ tacctl device config plan sw1 --converge  # optional: remove old servers and sim
 | Register + read | `tacctl device add <n> <ip> --vendor <v> --pull` |
 | Enroll discovered | `tacctl device enroll --discovered` |
 | Read a scope | `tacctl device config pull --scope <s>` |
+| Report on fresh data (§3.2) | `tacctl device reports generate --type <t> --pull` |
 | Where the time of a run goes | add `--timing` to `pull`, `diff --pull`, `plan --pull` or `apply` |
 | Scale in force for a slow device | `tacctl device show <n>` (`Timeout scale` row) |
 | What differs | `tacctl device config list --differs` |

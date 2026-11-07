@@ -9,7 +9,7 @@ doctype: how-to
 
 # Day-to-Day Device Operations
 
-*A console-first guide for operators and engineers · Checked against tacctl 0.2.25*
+*A console-first guide for operators and engineers · Checked against tacctl 0.2.26*
 
 [Printable PDF](../pdf/tacctl-day-to-day-device-operations.pdf){: .pdf-link }
 
@@ -24,9 +24,10 @@ engineers. **Section 2** is for engineers only. For superuser tasks, see
 > You: `alice`
 
 > **Read-only users:** you can use the console, `device list`,
-> `device show`, `device notice list`, `ssh` and `passwd`. The checks,
-> logs and drift views in Section 1 need the **operator** tier. In the
-> console, `help` lists exactly what your role can run.
+> `device show`, `device notice list`, `device reports` (your own), `ssh`
+> and `passwd`. The checks, logs and drift views in Section 1 need the
+> **operator** tier. In the console, `help` lists exactly what your role can
+> run.
 
 ---
 
@@ -53,6 +54,12 @@ device list --vendor juniper
 device list --probe              # (operator) add REACH: does each device answer on ssh right now
 device show sw1                  # full details for one device
 ```
+
+For a Junos virtual chassis or a Cisco stack, `device show` (operator tier
+and up) also prints a `Chassis members:` table under the data block: id,
+role, model, serial number, release, status and priority of each member, as
+the last `device config pull` read them. A device has none until it has been
+pulled again since 0.2.26 ([Vendor Notes](vendor-notes.md) §2.5, §3.3).
 
 ### 1.2 Connect to a device
 
@@ -153,6 +160,91 @@ device config list --never       # devices never read
 
 Report these to an engineer.
 
+### 1.6 Make a report of your devices
+
+A report is a saved, dated document about the devices of your scopes. It is
+made from what tacctl already stores (the registry and the records of the
+last pulls), so no device is contacted and no password is asked. Nothing
+makes a report by itself, and no report holds a secret, a hash or a
+community string. Every tier can make, read and remove **its own** reports.
+
+```bash
+device reports generate --type inventory             # saved in your home
+device reports generate --type members --format csv  # one row per chassis member
+device reports generate --type software --scope site-a
+device reports generate --type config --stdout       # print it, store nothing
+device reports list                                  # your reports, newest first
+device reports show inventory-20261106 --content     # who, when, the first 200 lines
+device reports export inventory-20261106             # print all of it
+```
+
+| Type | One row per | Columns |
+|---|---|---|
+| `inventory` | device | name, address, vendor, scope, model, serial number, release, number of chassis members, location, description, date of the pull |
+| `members` | chassis member | device, member id, role, model, serial number, release, status, priority, date of the pull |
+| `software` | device | name, vendor, model, release, date of the pull |
+| `config` | device | name, scope, state (as `device config list` shows it), date of the pull, date of the last apply |
+
+- **Check the dates before you hand a report on.** Every row carries the date
+  of the pull its facts came from, and the heading gives the date of the
+  oldest datum. There is no warning for old data: the dates are the
+  information. A device that was never pulled is a row with empty facts and
+  `never`, not a gap; only `members` leaves it out (it lists the devices that
+  have a model or a serial number, and a device that is no chassis is one row).
+- `--format text` (the default) is aligned columns, `csv` follows RFC 4180
+  and `json` is one object with `schema`, `type`, `generated`, `oldest_data`,
+  `filters`, `columns` and `rows`. A CSV cell that starts with `=`, `+`, `-` or `@` gets
+  a leading `'`, so that a spreadsheet shows it and does not run it.
+- `--scope` (one of yours) and `--vendor cisco|juniper|wti|other` narrow the
+  report and combine. A selection that matches nothing writes a report with
+  no rows, after a warning. A superuser's report holds every device.
+- A **read-only** user's report holds the model, serial number, release and
+  chassis members, although `device show` shows those from the operator tier
+  up. The `state` and `applied` columns of the `config` report are `-` for a
+  read-only user (`null` in JSON): the configuration state is shown from the
+  operator tier up.
+- **Engineers** can add `--pull`, which reads the devices first as `device
+  config pull` does, with your own password
+  ([Engineer Guide](engineer-guide-device-changes.md) §3.2).
+
+**Where the report goes.** The file is
+`~/reports/devices/<type>-<yyyymmdd>.<txt|csv|json>` in your home on the
+tacctl server (the directory 0700, the file 0600, made as you), and the first
+report creates the directory. A second report of the same type on the same
+day is `-2`, then `-3`; `--name <name>` chooses another name (letters,
+digits, `.`, `_` and `-`). A name already in use is refused and nothing is
+written. Beside each report lies a `.meta` file that records when, by whom,
+the command line, the filters and the date of the oldest datum: leave it
+alone. A file you put in the directory yourself is listed as `other`, and
+`rename`, `remove` and `prune` leave it alone.
+
+tacctl sends a report nowhere itself. `device reports show <report>` prints
+the `scp` line that fetches it with your own login, and `export --out <file>`
+writes a copy (an existing file needs `--force`). A user with no account on
+the server can print a report with `--stdout` and cannot store one.
+
+**Looking after your reports:**
+
+```bash
+device reports rename inventory-20261106 inventory-before-move
+device reports remove inventory-20261106 --yes
+device reports prune --older-than 30d --dry-run      # what would go
+device reports prune --older-than 30d                # asks once, then removes
+```
+
+- `prune --older-than` takes a whole number and `h`, `d` or `w` (`12h`,
+  `30d`, `4w`); there is no default. The age is the `generated` date in the
+  metadata file, not the time of the file. A file with no metadata is never
+  removed. Nothing prunes by itself.
+- `remove` and `prune` ask `Confirm removal? [y/N]` first; `--yes` answers it.
+- `generate` refuses a report over the size limit (10 MiB by default) or one
+  more than the count limit allows (100 by default), names the setting and
+  writes nothing. Remove old reports, narrow the report with `--scope` or
+  `--vendor`, or print it with `--stdout`; the limits are a superuser's
+  ([Superuser Daily Operations](superuser-daily-operations.md) §4.11).
+- Another user's reports are a superuser's to reach. Anyone else who names
+  them is refused with `Nothing was done.`
+
 ---
 
 ## 2. Engineers
@@ -222,6 +314,7 @@ holds in your scopes.
 | A pull fails with `timed out` | Check reachability with `device check <name>`. | Operator |
 | A pull or ssh is refused: break-glass held | The server isn't answering that device on purpose. See `breakglass list`. | — |
 | Apply says `failed: calls itself '<x>'` | The device's hostname doesn't match the registry. Check you have the right device. | Engineer |
+| `device reports generate` names `reports.max_size` or `reports.max_count` and writes nothing | Your reports are over a limit. Remove old ones (`device reports prune`), narrow the report (`--scope`) or print it (`--stdout`). | Everyone; a superuser changes the limit |
 
 ---
 
@@ -236,11 +329,15 @@ holds in your scopes.
 | Health check | `device check <name>` | Operators |
 | Failed logins | `log failures` / `log search <user>` | Operators |
 | Devices with drift | `device config list --differs` | Operators |
+| Report on your devices | `device reports generate --type inventory\|members\|software\|config` | Everyone |
+| Read or fetch a report | `device reports list` · `show <report>` · `export <report>` | Everyone |
+| Remove old reports | `device reports prune --older-than 30d` | Everyone |
 | Onboard a device | `device enroll <address>` | Engineers |
 | Read configurations | `device config pull <name>` or `--scope <scope>` | Engineers |
 | What differs | `device config diff <name>` | Engineers |
 | How to fix it | `device config plan <name>` | Engineers |
 | Fix it (Junos) | `device config apply <name>` | Engineers |
+| Report on fresh data | `device reports generate --type <type> --pull` | Engineers |
 | Back-out | `device config plan <name> --backout` | Engineers |
 
 For more detail, type `help <command>`, `<command> --help` or

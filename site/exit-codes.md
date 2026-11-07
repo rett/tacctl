@@ -9,7 +9,7 @@ doctype: reference
 
 # Exit Codes
 
-*What each tacctl exit status means on shift and in scripts · Checked against tacctl 0.2.25*
+*What each tacctl exit status means on shift and in scripts · Checked against tacctl 0.2.26*
 
 [Printable PDF](../pdf/tacctl-exit-codes.pdf){: .pdf-link }
 
@@ -44,6 +44,12 @@ setting `off`, or nothing held), a missing `nft` is no failure and the status
 is 0. `emergency lockdown enable` and `disable` exit 0 when hosts are left on
 the pending list, because the lockdown on the devices is in force
 ([Emergency Lockdown](emergency-lockdown.md) §3.1).
+
+`tacctl device reports generate --pull` also exits 1 when it could not read
+some device, although the report is made: it holds the facts of their last
+good pull, with its date. For `device reports`, a refused request (a name in
+use, no such report, a report over a limit) is 1 and wrong arguments (no
+`--type`, an unknown type, format or age) are 2.
 
 ---
 
