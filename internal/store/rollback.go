@@ -183,7 +183,7 @@ func ReportLimitHolders(path string) ([]ReportLimitHolder, error) {
 	var out []ReportLimitHolder
 	for _, name := range sortedKeys(um) {
 		u, ok := mapOf(get(um, name))
-		if !ok || !(u.Has(ReportsMaxSizeKey) || u.Has(ReportsMaxCountKey)) {
+		if !ok || (!u.Has(ReportsMaxSizeKey) && !u.Has(ReportsMaxCountKey)) {
 			continue
 		}
 		h := ReportLimitHolder{User: name}

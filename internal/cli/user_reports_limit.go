@@ -118,7 +118,7 @@ func (inv *invocation) userReportsLimitSet(username string, u userInfo, which, v
 		return err
 	}
 	inv.detail("user reports-limit", kvp("name", username), kvp("key", which), kvp("op", "set"), kvp("value", text))
-	said := text
+	var said string
 	if which == "max-size" {
 		n, _ := strconv.ParseInt(text, 10, 64)
 		said = names.FormatReportSize(n)
