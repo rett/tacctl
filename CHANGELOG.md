@@ -132,6 +132,30 @@ current behaviour; this file is where history lives.
    `device reports generate type= name= format= rows=`, `rename`, `remove` and
    `prune`.
 
+8. **The reports of a user are limited in size and number, by settings.** A
+   directory of reports must not grow without bound. `tacctl device reports
+   generate` now refuses a report larger than `reports.max_size` (default 10
+   MiB, which holds the inventory of about 20,000 devices) and a report that
+   would make a user's reports more than `reports.max_count` (default 100),
+   names the setting and the way out (`device reports remove`, a narrower
+   `--scope`, or `--stdout`), and writes nothing. A superuser sets the two for
+   the server with `tacctl config reports [show|max-size|max-count] [<value>]`
+   (a size is bytes or a number with `Ki`, `Mi` or `Gi`, up to 1Gi; a count up
+   to 100000; 0 is no cap; `tacctl.yaml` keys `reports.max_size` and
+   `reports.max_count`, written only when set), and gives one user a value of
+   their own that wins for that user with `tacctl user reports-limit <user>
+   [max-size|max-count [<value>|clear] | clear]`; the other limit stays the
+   server's, an own 0 lifts a limit for that user and `clear` returns the user
+   to the server's. `user show` prints a `Report max-size:` and a `Report
+   max-count:` line for a user who has an own limit. The own limits are the
+   fields `reports_max_size` and `reports_max_count` of the user in
+   `store.yaml`, written only when set, so a store without one is unchanged;
+   `user rename` carries them and `store import --replace` keeps them. Both
+   verbs are the superuser's and write the detail lines `config reports` and
+   `user reports-limit`; a limit restarts nothing. An upgrade changes nothing on
+   its own (the keys and the fields are written only when set); 0.2.25 refuses
+   them, so `tacctl rollback` removes them (item 9).
+
 ## 0.2.25 (2026-11-05)
 
 1. **`tacctl device config shapes` keeps its table narrow.** The list put every

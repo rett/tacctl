@@ -1347,7 +1347,13 @@ which the flag never binds; with the reason when the user cannot log in to chang
 accounting log, the RADIUS auth log), Cisco privilege level, Juniper
 class, a hash fingerprint and, for a user who has one, the
 .B Email
-address. Read-only: does not prompt for the
+address and the lines
+.B "Report max\-size"
+and
+.B "Report max\-count"
+for a user who has an own limit of the stored reports
+.RB ( "user reports\-limit" ).
+Read-only: does not prompt for the
 password (unlike
 .BR "user verify" ).
 .\" BEGIN GENERATED: command user show
@@ -1553,6 +1559,57 @@ removes it, after a snapshot, and names the users.
 Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command user email
+.TP
+.BI "user reports\-limit " "name " "[ max\-size | max\-count ] [ " value " | clear ]"
+Show, set or clear a user's own limits of the stored reports of
+.BR "device reports" :
+.B max\-size
+is the largest report in bytes, or a number with the suffix
+.BR Ki ,
+.B Mi
+or
+.B Gi
+(powers of 1024), from 0 to 1Gi, and
+.B max\-count
+the most reports the user keeps, from 0 to 100000. 0 is no cap. An own limit
+wins over the server's setting
+.RB ( "config reports" )
+for that user, one limit at a time (the other stays the server's);
+.B clear
+after a limit removes it, and
+.B clear
+after the name removes both, so the user is held to the server's settings
+again. With the name alone, or the name and a limit, it shows what holds for the
+user and where it comes from. Setting the value a user has already changes
+nothing. The limits are the fields
+.B reports_max_size
+and
+.B reports_max_count
+of the user in
+.IR store.yaml ,
+written only when set, carried by
+.BR "user rename" ,
+kept by
+.BR "store import \-\-replace" ,
+listed by
+.B "user show"
+(a line each, for a user who has one) and by
+.BR "store show \-\-json" .
+The accounting sink takes none. The command is the superuser's and writes the
+detail line
+.BR "user reports\-limit name=" ...
+.BR "key=max\-size|max\-count op=set|clear" ;
+no sudoers rule names it. An older release refuses the fields: every
+.B "tacctl rollback"
+target removes them, after a snapshot, needs
+.B \-\-yes
+while a user has one, and names the users.
+.\" BEGIN GENERATED: command user reports-limit
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command user reports-limit
 .TP
 .BI "user remove " name
 Remove a user after confirmation. The user's
@@ -4984,6 +5041,64 @@ Requires: \fBsuperuser\fR.
 .RE
 .\" END GENERATED: command config devices show
 .TP
+.B "config reports " "[ show ]"
+Show the limits of the stored reports of
+.BR "device reports" ,
+global to the server: the largest report
+.RB ( reports.max_size ,
+default 10 MiB) and the most reports a user keeps
+.RB ( reports.max_count ,
+default 100), and whether each is set or the default. 0 is no cap. A
+.B "device reports generate"
+over either limit is refused with the setting named, and nothing deletes a
+report by age but
+.BR "device reports prune" .
+A user's own limit
+.RB ( "user reports\-limit" )
+wins over these for that user. The setters are the superuser's.
+.TP
+.BI "config reports max\-size " "[ bytes|Ki|Mi|Gi ]"
+Show or set
+.BR reports.max_size :
+a number of bytes, or a number with the suffix
+.BR Ki ,
+.B Mi
+or
+.B Gi
+(powers of 1024), from 0 (no cap) to 1Gi. The default is 10 MiB, which holds the
+inventory of about twenty thousand devices. The key is written only when set.
+The detail line is
+.BR "config reports key=max_size from=" ... " to=" ... .
+.\" BEGIN GENERATED: command config reports max-size
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config reports max-size
+.TP
+.BI "config reports max\-count " "[ n ]"
+Show or set
+.BR reports.max_count ,
+the most reports a user keeps (a report is a file with its metadata file),
+from 0 (no cap) to 100000. The default is 100. The key is written only when
+set. The detail line is
+.BR "config reports key=max_count from=" ... " to=" ... .
+.\" BEGIN GENERATED: command config reports max-count
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config reports max-count
+.TP
+.B "config reports show"
+Show the settings.
+.\" BEGIN GENERATED: command config reports show
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command config reports show
+.TP
 .B "config sudoers " "{ show | install | remove } " [ group ]
 Manage the optional
 .I /etc/sudoers.d/tacctl
@@ -6276,7 +6391,9 @@ fails unless
 is given. A required password change, which no rendered file holds, is carried
 over from the existing store
 .RB ( \-\-replace ),
-as the password dates are: an import never lifts it. The scope
+as the password dates are: an import never lifts it. The same goes for the email address of a user and for the limits of the stored reports a user has
+.RB ( "user reports\-limit" ),
+which a rendered or legacy file cannot hold. The scope
 .B tacctl
 of a rendered file (the login of the server it came from, which every user is
 in) is not imported and is taken out of the users' scopes, in one line; a

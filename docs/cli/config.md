@@ -237,6 +237,21 @@ config sudoers tiers [show|install|remove]
 
     Manage per-tier (RO/OP/SU) sudoers rules for tacctl users with local accounts
 
+config reports [show]
+config reports max-size [<bytes|Ki|Mi|Gi>]
+config reports max-count [<n>]
+
+    The limits of the reports `device reports generate` keeps in the users' homes, the same for
+    every user (a user's own `user reports-limit` wins): `max-size`, the largest report, in bytes
+    or with the suffix `Ki`, `Mi` or `Gi`, from 0 to 1Gi (default 10 MiB, which holds the inventory
+    of about 20,000 devices); `max-count`, the most reports one user keeps, from 0 to 100000
+    (default 100). 0 is no cap. `show`, or no word, prints both and whether each is set or the
+    default; with no value `max-size` and `max-count` print the one setting. They are
+    `reports.max_size` and `reports.max_count` of `tacctl.yaml`, written only when set. A report
+    over a limit is refused with the setting named and nothing is written; nothing deletes a
+    report by age but `device reports prune`. Superuser. See
+    [Device reports](../devices/reports.md#limits)
+
 config password-age [<days>]
 
     Show or set password age warning threshold (default 90)

@@ -131,7 +131,7 @@ Report inventory-20261106
 - **`export <report>`** prints the report on standard output, as it is stored. `--out <file>` writes it there instead, made as you with mode 0600, and refuses a file that exists unless `--force` is given. To fetch a report from the server use the `scp` line of `show`.
 - **`rename <report> <new>`** gives a report and its metadata file a new name; the extension stays. It never overwrites: a name that a report or a file has already is refused, and nothing is changed.
 - **`remove <report> [--yes]`** removes a report and its metadata file after one question (`Confirm removal? [y/N]`; `--yes` skips it). A file that tacctl did not make is not removed.
-- **`prune --older-than <age>`** removes your reports that were made longer ago than an age: a whole number and one unit, `h` (hours), `d` (days) or `w` (weeks), as `12h`, `30d` or `4w`. There is no default age and no zero. The age of a report is its own `generated` date in the metadata file, not the time of the file. `prune` lists what it would remove (name, type, generated date and size), asks once (`Confirm removal? [y/N]`) and removes the reports with their metadata files; `--yes` skips the question, and `--dry-run` only lists and removes nothing, whatever else is given. A file with no metadata, and anything outside the reports directory, is never removed. Nothing prunes by itself: there is no timer and no setting. The number of reports a user keeps is capped instead (see Limits, below).
+- **`prune --older-than <age>`** removes your reports that were made longer ago than an age: a whole number and one unit, `h` (hours), `d` (days) or `w` (weeks), as `12h`, `30d` or `4w`. There is no default age and no zero. The age of a report is its own `generated` date in the metadata file, not the time of the file. `prune` lists what it would remove (name, type, generated date and size), asks once (`Confirm removal? [y/N]`) and removes the reports with their metadata files; `--yes` skips the question, and `--dry-run` only lists and removes nothing, whatever else is given. A file with no metadata, and anything outside the reports directory, is never removed. Nothing prunes by itself: there is no timer and no setting. The number of reports a user keeps is capped instead (see [Limits](#limits)).
 
 ```
 $ tacctl device reports prune --older-than 30d --dry-run
@@ -183,6 +183,38 @@ device reports access verb=prune owner=bob count=2 by=alice sid=k3x9a0bq
 ```
 
 `verb` is `list`, `show`, `export`, `rename`, `remove`, `prune` or `prune-dry-run`. `list --all-users` writes one line with `owner=*`; a `prune` writes one line for each user whose reports it lists or removes, with the number of reports and never their names. The lines are at `auth.notice` and they are reveals: with `audit.strict` on, an access whose line cannot be written is refused before anything is shown ([Audit log](../security/audit.md)). Your own reports write a detail line only when something changes: `device reports generate type= name= format= rows=`, `device reports rename name= new=`, `device reports remove name=` and `device reports prune older-than= removed=`; `list`, `show` and `export` write none.
+
+## Limits
+
+A directory of reports cannot grow without bound: `generate` refuses a report that is too large, or that would be one too many for the user. There are two limits, each with a value for the whole server and an own value a superuser can give one user, and 0 means no cap:
+
+| Limit | Server setting (`tacctl.yaml`, `config reports`) | Default | Own value of a user (`user reports-limit`) |
+|---|---|---|---|
+| The largest report | `reports.max_size`, `config reports max-size`, in bytes or with `Ki`, `Mi`, `Gi`; 0 to 1Gi | 10 MiB (the inventory of about 20,000 devices) | `user reports-limit <user> max-size <value>` |
+| The most reports a user keeps | `reports.max_count`, `config reports max-count`; 0 to 100000 | 100 | `user reports-limit <user> max-count <value>` |
+
+```
+$ tacctl config reports
+  Stored reports ('tacctl device reports')
+  max-size:  10 MiB   (default; 0-1Gi, the largest report; 0 is no cap)
+  max-count: 100 reports   (default; 0-100000, the most reports per user; 0 is no cap)
+
+  A user's own limit wins ('tacctl user reports-limit').
+$ tacctl config reports max-size 20Mi
+[INFO] The largest report set to 20 MiB.
+$ tacctl user reports-limit carol max-count 10
+[INFO] The max-count of 'carol' set to 10 reports.
+```
+
+The value that holds for a user is their own, else the server's, else the default; `clear` returns a user to the server's value (`user reports-limit carol clear`, or `carol max-count clear` for one limit), and an own `0` lifts a limit for that user. The size is that of the report as it would be stored; the count is the reports tacctl made (a file you put in the directory does not count). A `generate` over a limit is refused, names the setting and the way out, and writes nothing (the message is one line, wrapped here):
+
+```
+[ERROR] Cannot save the report: that would be 2 reports, over the count limit of 1 reports
+    (the setting reports.max-count). Remove one with: tacctl device reports remove <name>
+[ERROR] Nothing was written.
+```
+
+A report that is too large can be made smaller (`--scope`, `--vendor`), printed (`--stdout` has no limit) or allowed by a larger setting; nothing deletes a report to make room, and nothing by age except `prune` (see Looking after reports, above). The settings are the superuser's; every user sees their own limit in `user show`.
 
 ## Exit status
 
