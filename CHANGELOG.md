@@ -168,6 +168,14 @@ current behaviour; this file is where history lives.
    user's own `generate`, `rename`, `remove` and `prune` write the detail lines
    `device reports generate type= name= format= rows=`, `rename`, `remove` and
    `prune`.
+   A report file is opened without following a link and without waiting, and
+   only a regular file is read (a link, a FIFO or a device node in the directory,
+   or put there after the listing, is refused, as is a `.meta` file that is not
+   a regular file): `export` reads at most the size limit in force for the
+   report's owner (or the size its metadata records, 1 GiB at the most) and
+   `show --content` reads the first 200 lines, no further than 256 KiB, so
+   that a file a user grew cannot exhaust the memory of the process that reads
+   it with a superuser's reach.
 
 8. **The reports of a user are limited in size and number, by settings.** A
    directory of reports must not grow without bound. `tacctl device reports

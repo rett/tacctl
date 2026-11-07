@@ -14237,7 +14237,9 @@ command line, the filters, the date of the oldest datum, the format, the rows,
 the size and the command that fetches it
 .RB ( "scp user@server:reports/devices/<file> ." ).
 .B \-\-content
-adds the first 200 lines of the report. A report is addressed by its name or by
+adds the first 200 lines of the report, read from the start of the file and no
+further than 256 KiB (a file with more says that, and counts the lines only when it
+read all of it). A report is addressed by its name or by
 its file name; when two files share a name (only a file the user put there can)
 the extension is needed. A superuser names another user's report as
 .IR user/report .
@@ -14263,7 +14265,13 @@ is given. tacctl sends a report nowhere itself: the
 .B scp
 line of
 .B "device reports show"
-is the way off the server. A superuser exports another user's report as
+is the way off the server. The export reads at most the size limit in force for
+the report's owner
+.RB ( reports.max_size ,
+or the larger size the report's metadata records, 1 GiB at the most) and refuses a
+file over it. Both verbs open the file without following a link and without
+waiting, and read a regular file only: a link, a FIFO or a device node is refused,
+the metadata file too. A superuser exports another user's report as
 .IR user/report ;
 it is audited.
 .\" BEGIN GENERATED: command device reports export
