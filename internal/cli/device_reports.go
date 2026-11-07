@@ -3,8 +3,8 @@ package cli
 // 'device reports' (docs/plans/0.2.26-plan.md D316 to D330): saved, dated
 // documents about the registered devices, made on demand from the records
 // tacctl already stores. 'generate' makes one (device_reports.go), 'list',
-// 'show', 'export', 'rename' and 'remove' keep them (device_reports_view.go);
-// a superuser reaches other users' reports (device_reports_super.go). The
+// 'show', 'export', 'rename' and 'remove' keep them (device_reports_view.go),
+// 'prune' removes the old ones (device_reports_prune.go); a superuser reaches other users' reports (device_reports_super.go). The
 // model, the renderers and the rules for names and limits are
 // internal/reports; the files are device_reports_store.go.
 
@@ -59,10 +59,20 @@ var deviceReportsSpecs = map[string]Spec{
 	"rename": {MinArgs: 2, MaxArgs: 2, Args: []string{KindReports, ""}},
 	"remove": {MinArgs: 1, MaxArgs: 1, Args: []string{KindReports}, Flags: []Flag{
 		{Names: []string{"--yes"}, Desc: "Do not ask for confirmation"}}},
+	"prune": {MaxArgs: 0, Flags: []Flag{
+		{Names: []string{"--older-than"}, Value: true, Kind: "24h|7d|30d|4w", Arg: "<age>", Desc: "Remove reports older than this age: 12h, 30d or 4w (required)",
+			Long: "Remove the reports made longer ago than this age: a whole number and one unit, h (hours), d (days) or w (weeks), for example 30d. There is no default and no zero. The age of a report is the date it was generated, which its metadata file holds, not the time of the file"},
+		{Names: []string{"--user"}, Value: true, Kind: KindUsers, Arg: "<name>", Desc: "Prune the reports of another user",
+			Long: "Prune the reports of another user. It is the superuser's, and writes an audit line with who pruned whose reports and how many, never their names"},
+		{Names: []string{"--all-users"}, Desc: "Prune the reports of every user",
+			Long: "Prune the reports of every user tacctl knows, one audit line for each user whose reports are listed or removed. It is the superuser's"},
+		{Names: []string{"--dry-run"}, Desc: "List what would be removed and remove nothing",
+			Long: "List what would be removed and remove nothing; --yes does not change that"},
+		{Names: []string{"--yes"}, Desc: "Do not ask for confirmation"}}},
 }
 
 // deviceReportsWords are the verbs in the order of device.go's rows.
-var deviceReportsWords = []string{"generate", "list", "show", "export", "rename", "remove"}
+var deviceReportsWords = []string{"generate", "list", "show", "export", "rename", "remove", "prune"}
 
 func init() {
 	// The option lines of the usage are the flags' own text.
@@ -142,12 +152,18 @@ files share a name, give the extension. A file you put in the directory is
 listed as 'other': 'rename' and 'remove' leave it alone.
 
 At most reports.max-count reports of reports.max-size bytes each are kept for
-each user (a generate over either is refused); nothing deletes a report by age.
+each user (a generate over either is refused). Nothing deletes a report by
+age unless you run 'prune --older-than <age>' (<n>h, <n>d or <n>w, no default):
+it lists the reports whose generated date is older, asks once (--yes does not,
+--dry-run only lists) and removes them with their metadata files. A file that
+is listed as 'other' and anything outside the reports directory is never
+removed.
 
 A superuser reads other users' reports: 'list --user <name>', 'list
---all-users', and '<user>/<report>' for show, export, rename and remove.
-Every such access writes one audit line (who, whose, which report, never its
-content). No verb writes into another user's home.
+--all-users', '<user>/<report>' for show, export, rename and remove, and
+'prune --user <name>' or '--all-users' for the old reports of others. Every
+such access writes one audit line (who, whose, which report or how many for a
+prune, never a name or a content). No verb writes into another user's home.
 
 Examples:
   tacctl device reports generate --type inventory --format csv
@@ -156,6 +172,7 @@ Examples:
   tacctl device reports show inventory-20261106
   tacctl device reports export inventory-20261106 --out inventory.csv
   tacctl device reports remove inventory-20261106
+  tacctl device reports prune --older-than 30d --dry-run
 
 `)
 	return b.String()
@@ -180,6 +197,8 @@ func (inv *invocation) deviceReports(args []string) error {
 		return inv.deviceReportsRename(args[1:])
 	case "remove":
 		return inv.deviceReportsRemove(args[1:])
+	case "prune":
+		return inv.deviceReportsPrune(args[1:])
 	default:
 		return inv.unknownSub(sub)
 	}

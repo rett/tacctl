@@ -244,6 +244,7 @@ var deviceVerbs = [][2]string{
 	{"reports export <report> [--out <file>] [--force]", "Copy a report to standard output or to a file"},
 	{"reports rename <report> <new>", "Rename a report and its metadata file"},
 	{"reports remove <report> [--yes]", "Remove a report and its metadata file (confirms)"},
+	{"reports prune --older-than <age> [--user <name> | --all-users] [--dry-run] [--yes]", "Remove your reports made longer ago than an age (confirms)"},
 }
 
 // deviceOptions are the option lines under a verb's row in the usage, one
