@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/rett/tacctl/internal/reports"
@@ -25,8 +26,14 @@ import (
 // hundred bytes.
 const reportMetaMax = 1 << 20
 
-// reportReadMax is the most that export and show --content read of one file.
+// reportReadMax is the most that export reads of one file, when the size limit
+// in force is not smaller.
 const reportReadMax = 1 << 30
+
+// reportHeadBytes is the most that show --content reads of one file: its first
+// 200 lines are a few kilobytes of a report, and a file with a very long line
+// is cut here.
+const reportHeadBytes = 256 << 10
 
 // reportUserRE is a user name as a directory is looked up for: letters,
 // digits, '_' and '-'.
@@ -171,8 +178,15 @@ func readReportMeta(path string) (*reports.Meta, string) {
 	case st.Size() > reportMetaMax:
 		return nil, "the metadata file is too large"
 	}
-	b, err := os.ReadFile(path)
-	if err != nil {
+	// opened again without following a link and checked on the descriptor: the
+	// file may have been swapped since the Lstat
+	f, size, err := openRegular(path)
+	if err != nil || size > reportMetaMax {
+		return nil, "the metadata file cannot be read"
+	}
+	defer func() { _ = f.Close() }()
+	b, err := io.ReadAll(io.LimitReader(f, reportMetaMax+1))
+	if err != nil || len(b) > reportMetaMax {
 		return nil, "the metadata file cannot be read"
 	}
 	m, err := reports.ParseMeta(b)
@@ -230,22 +244,93 @@ func (pl reportPlace) write(file string, body, meta []byte) error {
 	})
 }
 
-// content reads the report file (at most reportReadMax bytes).
-func (pl reportPlace) content(file string) ([]byte, error) {
+// openRegular opens a file for reading and checks the open descriptor: no
+// link is followed (a link swapped in after the listing is refused, not read
+// with the reach of the process), the open does not block on a pipe, and what
+// was opened must be a regular file (a FIFO or a device node is refused before
+// a byte is read). It returns the file and its size.
+func openRegular(path string) (*os.File, int64, error) {
+	name := filepath.Base(path)
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
+	if err != nil {
+		if errors.Is(err, syscall.ELOOP) {
+			return nil, 0, fmt.Errorf("%s is a symbolic link, which is not read", name)
+		}
+		return nil, 0, err
+	}
+	st, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, 0, err
+	}
+	if !st.Mode().IsRegular() {
+		_ = f.Close()
+		return nil, 0, fmt.Errorf("%s is not a regular file", name)
+	}
+	return f, st.Size(), nil
+}
+
+// openReport is openRegular for a file of the reports directory.
+func (pl reportPlace) openReport(file string) (*os.File, int64, error) {
+	return openRegular(filepath.Join(pl.dir, file))
+}
+
+// content reads the report file, at most limit bytes (limit 0 or over
+// reportReadMax: reportReadMax); a longer file is an error and nothing of it
+// is returned.
+func (pl reportPlace) content(file string, limit int64) ([]byte, error) {
+	if limit <= 0 || limit > reportReadMax {
+		limit = reportReadMax
+	}
 	var b []byte
 	err := pl.as(func() error {
-		f, err := os.Open(filepath.Join(pl.dir, file))
+		f, size, err := pl.openReport(file)
 		if err != nil {
 			return err
 		}
 		defer func() { _ = f.Close() }()
-		b, err = io.ReadAll(io.LimitReader(f, reportReadMax+1))
-		if err == nil && len(b) > reportReadMax {
-			err = fmt.Errorf("%s is larger than %d bytes", file, reportReadMax)
+		if size > limit {
+			return fmt.Errorf("%s is larger than %d bytes", file, limit)
+		}
+		b, err = io.ReadAll(io.LimitReader(f, limit+1))
+		if err == nil && int64(len(b)) > limit {
+			b, err = nil, fmt.Errorf("%s is larger than %d bytes", file, limit)
 		}
 		return err
 	})
 	return b, err
+}
+
+// head reads the first lines of the report file: at most n lines and
+// reportHeadBytes bytes, whatever the file holds (it is not read whole, and a
+// file with one enormous line is cut). rest counts the lines after the n
+// when the whole file was read (-1 when it was cut at the byte cap).
+func (pl reportPlace) head(file string, n int) (lines []string, rest int, err error) {
+	err = pl.as(func() error {
+		f, _, err := pl.openReport(file)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = f.Close() }()
+		b, err := io.ReadAll(io.LimitReader(f, reportHeadBytes+1))
+		if err != nil {
+			return err
+		}
+		cut := len(b) > reportHeadBytes
+		if cut {
+			b = b[:reportHeadBytes]
+		}
+		all := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
+		lines, rest = all, 0
+		if len(all) > n {
+			lines, rest = all[:n], len(all)-n
+		}
+		if cut {
+			rest = -1
+		}
+		return nil
+	})
+	return lines, rest, err
 }
 
 // remove deletes a report and its metadata.
@@ -274,7 +359,7 @@ func (pl reportPlace) rename(old reportFile, newName string, meta []byte) (strin
 		from, to := filepath.Join(pl.dir, old.File), filepath.Join(pl.dir, newFile)
 		if err := os.Link(from, to); err != nil {
 			if errors.Is(err, os.ErrExist) {
-				return fmt.Errorf("%s exists", newFile)
+				return &fileExistsError{newFile}
 			}
 			return err
 		}

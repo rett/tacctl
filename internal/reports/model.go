@@ -65,7 +65,8 @@ type Device struct {
 	// Applied is the time of the last apply; zero means never.
 	Applied time.Time `json:"applied"`
 	// ConfigState is the state word of `device config list`: ok, differs,
-	// never or failed.
+	// never or failed; empty when the caller may not see it (below the
+	// operator tier), and the config report then shows "-" (null in JSON).
 	ConfigState string   `json:"config_state"`
 	Members     []Member `json:"members"`
 }

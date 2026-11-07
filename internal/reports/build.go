@@ -117,8 +117,14 @@ func Build(typ string, devs []Device, now time.Time) (Report, error) {
 				map[string]any{"name": d.Name, "vendor": d.Vendor, "model": d.Model, "release": d.Release,
 					"pulled": jsonTime(d.Pulled)})
 		case TypeConfig:
-			r.add([]string{d.Name, d.Scope, d.ConfigState, pulledCell(d.Pulled), appliedCell(d.Applied)},
-				map[string]any{"name": d.Name, "scope": d.Scope, "state": d.ConfigState,
+			// no state (the caller is below the operator tier, D69) is "-" and null
+			var state any
+			cell := "-"
+			if d.ConfigState != "" {
+				state, cell = d.ConfigState, d.ConfigState
+			}
+			r.add([]string{d.Name, d.Scope, cell, pulledCell(d.Pulled), appliedCell(d.Applied)},
+				map[string]any{"name": d.Name, "scope": d.Scope, "state": state,
 					"pulled": jsonTime(d.Pulled), "applied": jsonTime(d.Applied)})
 		}
 	}

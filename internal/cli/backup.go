@@ -585,7 +585,7 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	if !cfgIsFile(snapStore) {
 		return inv.usageErr("Snapshot " + id + " has no store.yaml. Nothing was changed.")
 	}
-	problems, err := store.ValidateFile(snapStore)
+	problems, err := store.ValidateFileLegacyDots(snapStore)
 	if err != nil {
 		inv.stderrLine(store.Report(err))
 	}
@@ -601,6 +601,9 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 		}
 		return inv.usageErr("Snapshot " + id + " cannot be restored: its tacctl.yaml is not valid. Nothing was changed.")
 	}
+	// Users whose name has a period (a snapshot of 0.2.25 or earlier): the
+	// restore puts them back without a render, see backup_dots.go.
+	dotted := snapshotDottedUsers(snapStore)
 
 	// The backends it enables must be on this machine: a restore cannot
 	// install one. (Nothing is touched yet.)
@@ -614,6 +617,10 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 		for _, b := range inv.snapshotEnabled(dir) {
 			if slices.Contains(before, b) {
 				continue
+			}
+			if len(dotted) > 0 {
+				return inv.usageErr("Snapshot " + id + " enables backend '" + b + "' and holds users whose name has a period (" + dottedUsersText(dotted) +
+					"), so nothing could be rendered for the backend. Run 'tacctl upgrade' after a restore of a snapshot that does not enable it, or enable it first. Nothing was changed.")
 			}
 			if mod, err := set.Get(b); err != nil || !mod.Installed() {
 				return inv.usageErr("Snapshot " + id + " enables backend '" + b + "', which is not installed here. Run 'tacctl backend enable " + b + "' first. Nothing was changed.")
@@ -634,6 +641,10 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	// A restore is a render like any other: the break-glass holds come back
 	// with a tacctl.yaml that has them and go with one that lacks them
 	// (D126), so a change of the set is said before the question.
+	if len(dotted) > 0 {
+		inv.echo("")
+		inv.echoE(ui.Red + restoreDotsNote(id, dotted) + ui.NC)
+	}
 	holdNote := inv.restoreHoldNote(dir)
 	if holdNote != "" {
 		inv.echo("")
@@ -727,7 +738,14 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	// the rollback of a failed one does not cover, so the names are kept to
 	// see whether the registry put back differs.
 	renderedHosts := hosts.EnrolledNames(a.Paths.LinuxHosts)
-	if _, err := set.ApplyForced(inv.ctx, func() error { return inv.installSnapshot(dir) }); err != nil {
+	install := func() error { return inv.installSnapshot(dir) }
+	var applyErr error
+	if len(dotted) > 0 {
+		applyErr = set.ApplyForcedUnrendered(inv.ctx, install)
+	} else {
+		_, applyErr = set.ApplyForced(inv.ctx, install)
+	}
+	if err := applyErr; err != nil {
 		if err == backend.ErrNotStarted {
 			return err
 		}
@@ -781,7 +799,7 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	// It changes nothing when the words agree, and the restart below is the
 	// one the restore makes anyway.
 	var renderErr error
-	if snapshot.KnowsHosts(dir) && !maps.Equal(renderedHosts, hosts.EnrolledNames(a.Paths.LinuxHosts)) {
+	if len(dotted) == 0 && snapshot.KnowsHosts(dir) && !maps.Equal(renderedHosts, hosts.EnrolledNames(a.Paths.LinuxHosts)) {
 		if _, err := set.RenderAll(inv.ctx, backend.RenderOptions{ForceAll: true}); err != nil {
 			renderErr = err
 		}
@@ -797,6 +815,9 @@ func (inv *invocation) restoreSnapshot(id string, keepUIDs bool) error {
 	fw := inv.firewallEngine().Apply(inv.ctx)
 	inv.detail("backup restore", kvp("id", id), kvp("pre", preID), kvp("keep-uids", yesNo(keepUIDs)), kvp("legacy", "no"), kvp("firewall", firewallWord(fw)))
 	a.Out.InfoE("Restored snapshot " + id + ".")
+	if len(dotted) > 0 {
+		a.Out.WarnE(restoreDotsNote(id, dotted))
+	}
 	if holdNote != "" {
 		a.Out.WarnE(holdNote)
 	}

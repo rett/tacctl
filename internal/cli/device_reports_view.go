@@ -95,10 +95,18 @@ func (inv *invocation) deviceReportsList(args []string) error {
 	if p.Has("--json") {
 		out := []reportListJSON{}
 		for _, r := range rows {
-			j := reportListJSON{Owner: r.owner, File: r.f.File, Name: r.f.Name, Other: r.f.Meta == nil, Size: r.f.Size}
+			// every string is cleaned as the text list cleans it: a file name
+			// or a metadata field is the user's to write
+			j := reportListJSON{Owner: cleanLine(r.owner), File: cleanLine(r.f.File), Name: cleanLine(r.f.Name), Other: r.f.Meta == nil, Size: r.f.Size}
 			if m := r.f.Meta; m != nil {
 				n := m.Count
-				j.Type, j.Format, j.User, j.Command, j.Filters, j.Rows = m.Type, m.Format, m.User, cleanLine(m.Command), m.Filters, &n
+				j.Type, j.Format, j.User, j.Command, j.Rows = cleanLine(m.Type), cleanLine(m.Format), cleanLine(m.User), cleanLine(m.Command), &n
+				if m.Filters != nil {
+					j.Filters = make(map[string]string, len(m.Filters))
+					for k, v := range m.Filters {
+						j.Filters[cleanLine(k)] = cleanLine(v)
+					}
+				}
 				j.Generated = m.Generated.UTC().Format(time.RFC3339)
 				if !m.OldestData.IsZero() {
 					j.OldestData = m.OldestData.UTC().Format(time.RFC3339)
@@ -133,7 +141,7 @@ func (inv *invocation) deviceReportsList(args []string) error {
 		}
 		cells := []any{cleanLine(r.f.Name), cleanLine(typ), cleanLine(format), reportSize(r.f.Size), when}
 		if withUser {
-			cells = append([]any{r.owner}, cells...)
+			cells = append([]any{cleanLine(r.owner)}, cells...)
 		}
 		tb.Add(cells...)
 		total += r.f.Size
@@ -201,23 +209,36 @@ func (inv *invocation) deviceReportsShow(args []string) error {
 	if !p.Has("--content") {
 		return nil
 	}
-	b, err := t.pl.content(f.File)
+	shown, rest, err := t.pl.head(f.File, reportContentLines)
 	if err != nil {
 		return inv.usageErr("Cannot read the report: " + err.Error())
-	}
-	lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
-	shown := lines
-	if len(shown) > reportContentLines {
-		shown = shown[:reportContentLines]
 	}
 	for _, l := range shown {
 		inv.echo(cleanLine(l))
 	}
-	if len(lines) > len(shown) {
-		inv.echo("... " + howMany(len(lines)-len(shown), "more line") + "; 'tacctl device reports export " + p.Args[0] + "' prints all of it.")
+	switch {
+	case rest > 0:
+		inv.echo("... " + howMany(rest, "more line") + "; 'tacctl device reports export " + p.Args[0] + "' prints all of it.")
+	case rest < 0:
+		inv.echo("... more; 'tacctl device reports export " + p.Args[0] + "' prints all of it.")
 	}
 	inv.echo("")
 	return nil
+}
+
+// exportLimit is the most export reads of the report: the size limit in force
+// for its owner, or reportReadMax when that is none or larger. A report made
+// under a higher limit that was lowered since is read to the size its metadata
+// records, so that lowering the limit does not lock a report away.
+func (inv *invocation) exportLimit(t reportTarget) int64 {
+	limit := int64(reportReadMax)
+	if max, _ := reportLimits(inv, t.owner); max > 0 && max < limit {
+		limit = max
+	}
+	if m := t.f.Meta; m != nil && m.Size > limit && m.Size <= reportReadMax {
+		limit = m.Size
+	}
+	return limit
 }
 
 // deviceReportsExport is 'device reports export'.
@@ -237,7 +258,13 @@ func (inv *invocation) deviceReportsExport(args []string) error {
 	if err != nil {
 		return err
 	}
-	b, err := t.pl.content(t.f.File)
+	// A file another user put in the directory is not a report tacctl made:
+	// what is in it is not printed to the superuser's terminal, only copied.
+	if t.cross && t.f.Meta == nil && !p.Has("--out") {
+		return inv.usageErr("'" + cleanLine(t.owner+"/"+t.f.File) + "' is not a report tacctl made (it has no metadata file), so it is not printed. Copy it with: tacctl device reports export " +
+			cleanLine(p.Args[0]) + " --out <file>. Nothing was done.")
+	}
+	b, err := t.pl.content(t.f.File, inv.exportLimit(t))
 	if err != nil {
 		return inv.usageErr("Cannot read the report: " + err.Error())
 	}
@@ -247,7 +274,7 @@ func (inv *invocation) deviceReportsExport(args []string) error {
 	}
 	out := p.Value("--out")
 	if err := inv.asCaller(func() error { return writePrivate(out, b, p.Has("--force")) }); err != nil {
-		return inv.usageErr("Cannot write " + out + ": " + err.Error())
+		return inv.usageErr("Cannot write " + out + ": " + existsText(err, " (--force replaces it)"))
 	}
 	inv.app.Out.Info("Copied " + t.f.File + " to " + out + " (" + reportSize(int64(len(b))) + ", mode 0600).")
 	return nil
@@ -282,7 +309,7 @@ func (inv *invocation) deviceReportsRename(args []string) error {
 	}
 	file, err := t.pl.rename(*t.f, newName, mb)
 	if err != nil {
-		return inv.usageErr("Cannot rename the report: " + err.Error())
+		return inv.usageErr("Cannot rename the report: " + existsText(err, " (give another new name)"))
 	}
 	if !t.cross {
 		inv.detail("device reports rename", kvp("name", t.f.Name), kvp("new", newName))

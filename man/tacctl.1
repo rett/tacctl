@@ -256,14 +256,33 @@ the line reads
 .BR "renamed user alice.smith to alice_smith_k3x9 (alice_smith was taken)" ).
 Of two names that meet the first in the store keeps the name without a suffix,
 and a name longer than a Linux account name (32 characters) is cut before the
-suffix. Only a name that is not a user name even with the periods replaced (one
+suffix. A new name with upper case letters or longer than 32 characters is a user
+name but not a Linux account name: the user gets no account at a sync, so after
+the renames the upgrade lists each such user with the reason and
+.BR "tacctl user rename" " <name> <new\-name>" ,
+and its closing note says that the other new names get their accounts, or that
+none can. Only a name that is not a user name even with the periods replaced (one
 with a space, say) stops the upgrade before anything is changed: it names the
 key to edit under
 .B users:
 in the store; run it again afterwards. When the release being upgraded has already replaced
 tacctl and the tacquito build, the message says so (the store, the
 configuration and the services are not changed). A store that cannot be read
-does not hold it up.
+does not hold it up. The store is renamed before
+.I linux\-uids
+and
+.I console.yaml
+follow, so both are checked first, before the snapshot and before any write: a
+console.yaml that cannot be read or holds a name the rule refuses, or a ledger
+that cannot be read or locked, stops the upgrade with the file and the reason and
+nothing changed. A key with a period in console.yaml that no rename covers (a
+hand edit, a user who is gone) would make the file unreadable and belongs to
+nobody: it is dropped, with a line naming it, and not renamed, so that the next
+user of that name does not inherit its settings. When the upgrade stops after the
+store was written, the renames stay recorded in
+.I upgrade\-renames
+in the state directory and the next upgrade finishes the move
+.RB ( "finished the rename of user alice.smith to alice_smith" ).
 .IP
 The upgrade installs the
 .B nftables
@@ -5167,7 +5186,12 @@ report by age but
 .BR "device reports prune" .
 A user's own limit
 .RB ( "user reports\-limit" )
-wins over these for that user. The setters are the superuser's.
+wins over these for that user. The limits count the reports tacctl made (the
+files with a valid metadata file) and are a guard rail against growth, checked
+when
+.B generate
+makes a report, not a quota enforced against a user who edits their own
+directory. The setters are the superuser's.
 .TP
 .BI "config reports max\-size " "[ bytes|Ki|Mi|Gi ]"
 Show or set
@@ -7092,6 +7116,19 @@ list, diff and restore work on old-style backups only. A restore (of a
 snapshot or an old\-style backup) rewrites the list of users held to a password
 change in the console's sshd drop-in from the store it put back (see
 .BR "console forwarding" ).
+A snapshot of 0.2.25 or earlier (or the one
+.B upgrade
+takes before it renames the users) can hold a user whose name has a period.
+The restore reads it, with the user-name rule relaxed for the snapshot's store
+and nothing else, says which users have a period before the question and after
+the restore, and renders nothing and changes no backend's file, since no
+renderer writes such a name; the services keep the configuration they have, and
+a snapshot of that kind that enables a backend not running now is refused. The
+store then reads and every write to it is refused until
+.B upgrade
+renames the users (each period becomes
+.BR _ )
+and renders; it is also the way back when that rename stops half way.
 .\" BEGIN GENERATED: command backup restore
 .RS
 .PP
@@ -7217,7 +7254,11 @@ a user the snapshot gives an address and who exists now with none gets it
 so an address belongs to one user). A user who no longer exists, one who has
 another address now (the current one is kept) and an address another user holds
 now are skipped and named; a user who has the address already is nothing to
-do. Nothing is rendered or restarted. A snapshot of an older release that holds
+do. A user of the snapshot whose name has a period (a snapshot of 0.2.25 or
+earlier) is skipped and named, with a note that
+.B upgrade
+renames such users: a recovery adds no user, so no such name reaches the live
+store. Nothing is rendered or restarted. A snapshot of an older release that holds
 no address, or an old\-style backup, recovers nothing. The snapshot is looked up
 as every command that takes an id does: in
 .IR backups/ ,
@@ -11854,8 +11895,9 @@ blocks of
 .B "show version"
 (release). On IOS and IOS\-XE
 .B "show switch"
-gives the switches (number, role Master, Member or Standby, priority and
-state), joined with the
+gives the switches (number, role Master, or Active on IOS\-XE 16.x and later,
+Member or Standby, priority and state; Master and Active are the role master and
+Standby is backup, the words Junos uses), joined with the
 .B "Switch N"
 entries of
 .B "show inventory"
@@ -14115,6 +14157,14 @@ members report has a
 .B components
 list that is empty in this release;
 .BR .json ).
+The state and applied columns of the config report are the configuration state
+that
+.B "device list"
+and
+.B "device config list"
+show from the operator tier up; for a caller below it both are
+.B \-
+(null in JSON), the pulled date stays.
 .B \-\-stdout
 prints the report and stores nothing: no file, no metadata, no limit and no
 account needed.
@@ -14139,7 +14189,7 @@ Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show
 Options:
 .TP
 \fB\-\-type\fR \fIinventory|members|software|config\fR
-The type of report: inventory (one row per device), members (one row per chassis member), software (one row per device: model and release) or config (one row per device: the state of its last pull). A device that was never pulled is a row with empty facts, never left out.
+The type of report: inventory (one row per device), members (one row per chassis member), software (one row per device: model and release) or config (one row per device: the state of its last pull). Inventory, software and config have a row for every device, a device that was never pulled with empty facts; members has rows for the devices that have a model or a serial number, so a device with neither is not in it.
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
 Only the devices that scope answers. A scope that is not one of yours is refused.
@@ -14198,7 +14248,9 @@ command line, the filters, the date of the oldest datum, the format, the rows,
 the size and the command that fetches it
 .RB ( "scp user@server:reports/devices/<file> ." ).
 .B \-\-content
-adds the first 200 lines of the report. A report is addressed by its name or by
+adds the first 200 lines of the report, read from the start of the file and no
+further than 256 KiB (a file with more says that, and counts the lines only when it
+read all of it). A report is addressed by its name or by
 its file name; when two files share a name (only a file the user put there can)
 the extension is needed. A superuser names another user's report as
 .IR user/report .
@@ -14224,9 +14276,18 @@ is given. tacctl sends a report nowhere itself: the
 .B scp
 line of
 .B "device reports show"
-is the way off the server. A superuser exports another user's report as
+is the way off the server. The export reads at most the size limit in force for
+the report's owner
+.RB ( reports.max_size ,
+or the larger size the report's metadata records, 1 GiB at the most) and refuses a
+file over it. Both verbs open the file without following a link and without
+waiting, and read a regular file only: a link, a FIFO or a device node is refused,
+the metadata file too. A superuser exports another user's report as
 .IR user/report ;
-it is audited.
+it is audited. A file of another user's directory that has no valid metadata
+file is not a report tacctl made, and is not printed: without
+.B \-\-out
+the command says so and names the option; the user's own file prints as before.
 .\" BEGIN GENERATED: command device reports export
 .RS
 .PP

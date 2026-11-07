@@ -29,7 +29,7 @@ var deviceReportsSpecs = map[string]Spec{
 	"generate": {MaxArgs: 0, Flags: []Flag{
 		{Names: []string{"--type"}, Value: true, Kind: "inventory|members|software|config", Arg: "inventory|members|software|config",
 			Desc: "Make this type of report (required)",
-			Long: "The type of report: inventory (one row per device), members (one row per chassis member), software (one row per device: model and release) or config (one row per device: the state of its last pull). A device that was never pulled is a row with empty facts, never left out"},
+			Long: "The type of report: inventory (one row per device), members (one row per chassis member), software (one row per device: model and release) or config (one row per device: the state of its last pull). Inventory, software and config have a row for every device, a device that was never pulled with empty facts; members has rows for the devices that have a model or a serial number, so a device with neither is not in it"},
 		{Names: []string{"--scope"}, Value: true, Kind: KindScopes, Arg: "<scope>", Desc: "Only the devices that scope answers",
 			Long: "Only the devices that scope answers. A scope that is not one of yours is refused"},
 		{Names: []string{"--vendor"}, Value: true, Kind: KindVendors, Arg: "cisco|juniper|wti|other", Desc: "Only the devices of that vendor"},
@@ -328,7 +328,7 @@ func (inv *invocation) deviceReportsGenerate(args []string) error {
 		return err
 	}
 	if err := pl.write(file, body.Bytes(), mb); err != nil {
-		return inv.usageErr("Cannot store the report: " + err.Error())
+		return inv.usageErr("Cannot store the report: " + existsText(err, " (choose another name with --name)"))
 	}
 	inv.detail("device reports generate", kvp("type", typ), kvp("name", name), kvp("format", format), kvp("rows", strconv.Itoa(len(rep.Rows))))
 	inv.app.Out.Info("Report " + name + " written: " + pl.dir + "/" + file)
@@ -394,6 +394,11 @@ func (inv *invocation) reportsPull(entries []devreg.Entry, stdout bool) error {
 // against what tacctl renders now, which only the config report shows.
 func (inv *invocation) reportDevices(entries []devreg.Entry, needState bool) []reports.Device {
 	recs := inv.configRecords()
+	// The configuration state and the date of the last apply are what
+	// 'device list' and 'device config list' show from the operator tier up
+	// (D69): below it the config report has "-" for both.
+	seeConfig := inv.configVisible()
+	needState = needState && seeConfig
 	var states map[string]configNowState
 	if needState {
 		states = inv.configNowStates(entries)
@@ -406,7 +411,7 @@ func (inv *invocation) reportDevices(entries []devreg.Entry, needState bool) []r
 		if rec != nil {
 			d.Model, d.Serial, d.Release = cleanLine(rec.Model), cleanLine(rec.Serial), cleanLine(rec.Release)
 			d.Pulled = rec.Pulled
-			if a := rec.Applied; a != nil && a.Result == devconf.AppliedApplied {
+			if a := rec.Applied; seeConfig && a != nil && a.Result == devconf.AppliedApplied {
 				d.Applied = a.At
 			}
 			for _, m := range rec.Members {

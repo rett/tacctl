@@ -1,6 +1,7 @@
 package lifecycle_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -504,5 +505,261 @@ func TestRandomSuffixShape(t *testing.T) {
 	}
 	if len(seen) < 100 {
 		t.Errorf("only %d different suffixes in 200 draws", len(seen))
+	}
+}
+
+// console.yaml and the UID ledger are checked before the snapshot and before
+// the store is written: the store is renamed first, and a file that fails
+// after it is a half-done rename that a second upgrade (which looks at the
+// store) would not see. A console.yaml that cannot be read, one that holds a
+// name the rule refuses that is not a name with a period, and a ledger that
+// cannot be read each stop the upgrade with nothing changed.
+func TestUpgradeDottedUsersStopBeforeAnyWriteWhenAFileCannotFollow(t *testing.T) {
+	for _, c := range []struct {
+		name, want string
+		arrange    func(o *ohost)
+	}{
+		{"console.yaml is not YAML", "console.yaml cannot take the renames", func(o *ohost) { o.write(o.p.ConsoleFile, "settings: [\n") }},
+		{"console.yaml holds a name that is not a user name", "invalid user name 'x y'", func(o *ohost) {
+			o.write(o.p.ConsoleFile, "version: 1\nsettings:\n  password_cache_users: {'x y': true}\n")
+		}},
+		{"the ledger cannot be read", "linux-uids cannot be moved", func(o *ohost) {
+			if err := os.Remove(o.p.LinuxUIDs); err != nil {
+				o.t.Fatal(err)
+			}
+			if err := os.Mkdir(o.p.LinuxUIDs, 0o700); err != nil {
+				o.t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			o := newOhost(t)
+			o.cloned()
+			o.write(o.p.StoreFile, dottedUpgradeStore)
+			o.write(o.p.LinuxUIDs, dottedLedger)
+			o.write(o.p.ConsoleFile, dottedConsole)
+			c.arrange(o)
+			cons, _ := os.ReadFile(o.p.ConsoleFile)
+			o.nameSuffix = suffixes(t)
+			if code := upgrade(o); code != 1 {
+				t.Fatalf("exit %d, want 1\n%s\n%s", code, o.stdout, o.stderr)
+			}
+			errs := stripANSI(o.stderr.String())
+			for _, want := range []string{"The upgrade renames a user whose name has a period, but ", c.want, "Repair the file, then run the upgrade again. No user was renamed.", "Nothing was changed."} {
+				if !strings.Contains(errs, want) {
+					t.Errorf("stderr lacks %q:\n%s", want, errs)
+				}
+			}
+			if strings.Contains(o.text(), "tacctl Upgrade") {
+				t.Errorf("the upgrade went on:\n%s", o.text())
+			}
+			if ids := snapshotIDs(o); len(ids) != 0 {
+				t.Errorf("snapshots: %v", ids)
+			}
+			if got := readFile(t, o.p.StoreFile); got != dottedUpgradeStore {
+				t.Errorf("the store changed:\n%s", got)
+			}
+			if got, _ := os.ReadFile(o.p.ConsoleFile); string(got) != string(cons) {
+				t.Errorf("console.yaml changed:\n%s", got)
+			}
+			if _, err := os.Stat(filepath.Join(o.p.StateDir, "upgrade-renames")); err == nil {
+				t.Error("a journal was left")
+			}
+		})
+	}
+}
+
+// A key with a period in console.yaml that no rename covers (a hand edit, the
+// 'users' mapping, a user who is gone) is dropped with a line naming it and
+// the file reads afterwards, whether or not the store has a user to rename.
+// It is not renamed: the next user of that name would inherit its settings.
+// A second upgrade does nothing.
+func TestUpgradeDropsAConsoleKeyWithAPeriodNoRenameCovers(t *testing.T) {
+	const cons = `version: 1
+users:
+  gone.user: enable
+settings:
+  password_cache_users:
+    alice.smith: true
+    gone.user: true
+`
+	for _, withStore := range []bool{true, false} {
+		o := newOhost(t)
+		o.cloned()
+		store := dottedUpgradeStore
+		if !withStore {
+			store = dottedStorePrefix + "users:\n  bob:\n    group: operator\n    scopes: []\n    hash: null\n    disabled: false\n    password_changed: null\n"
+		}
+		o.write(o.p.StoreFile, store)
+		o.write(o.p.LinuxUIDs, dottedLedger)
+		o.write(o.p.ConsoleFile, cons)
+		if code := upgrade(o); code != 0 {
+			t.Fatalf("store %v: exit %d\n%s\n%s", withStore, code, o.stdout, o.stderr)
+		}
+		text := o.text() + stripANSI(o.stderr.String())
+		if !strings.Contains(text, "dropped the console settings of 'gone.user'") {
+			t.Errorf("store %v: no line names the dropped key:\n%s", withStore, text)
+		}
+		got := readFile(t, o.p.ConsoleFile)
+		if strings.Contains(got, "gone") || strings.Contains(got, ".") && strings.Contains(got, "alice.smith") {
+			t.Errorf("store %v: console.yaml:\n%s", withStore, got)
+		}
+		if withStore != strings.Contains(got, "alice_smith") {
+			t.Errorf("store %v: alice_smith in console.yaml: %v\n%s", withStore, !withStore, got)
+		}
+		if withStore && !strings.Contains(text, "renamed user alice.smith to alice_smith (UID 80001 carried, console settings moved)") {
+			t.Errorf("the rename is not reported:\n%s", text)
+		}
+		ids := snapshotIDs(o)
+		if len(ids) == 0 {
+			t.Errorf("store %v: no snapshot was taken before console.yaml changed", withStore)
+		}
+		// again: nothing
+		if code := upgrade(o); code != 0 {
+			t.Fatalf("second run: exit %d\n%s\n%s", code, o.stdout, o.stderr)
+		}
+		if strings.Contains(o.text()+stripANSI(o.stderr.String()), "dropped") || !slices.Equal(snapshotIDs(o), ids) {
+			t.Errorf("store %v: the second run did something:\n%s", withStore, o.text())
+		}
+	}
+}
+
+// An upgrade that stops after the store was written and before the ledger and
+// console.yaml follow (a crash, a power cut) leaves the user renamed in the
+// store only. A second upgrade finishes the move for that user, with the same
+// new name (a suffixed one too), reads nothing from the names, and the third
+// does nothing.
+func TestUpgradeFinishesARenameThatStoppedAfterTheStore(t *testing.T) {
+	// alice_smith is a user already, so alice.smith gets the suffix k3x9
+	store := strings.Replace(dottedUpgradeStore, "  bob:\n", "  alice_smith:\n    group: readonly\n    scopes: []\n    hash: null\n    disabled: false\n    password_changed: null\n  bob:\n", 1)
+	o := newOhost(t)
+	o.cloned()
+	o.write(o.p.StoreFile, store)
+	o.write(o.p.LinuxUIDs, dottedLedger)
+	o.write(o.p.ConsoleFile, dottedConsole)
+	o.nameSuffix = suffixes(t, "k3x9")
+	o.afterStoreRename = func() error { return errors.New("simulated crash") }
+	if code := upgrade(o); code == 0 {
+		t.Fatalf("the simulated crash did not stop the upgrade\n%s\n%s", o.stdout, o.stderr)
+	}
+	st := readFile(t, o.p.StoreFile)
+	if strings.Contains(st, "alice.smith") || !strings.Contains(st, "alice_smith_k3x9:") {
+		t.Fatalf("the store after the crash:\n%s", st)
+	}
+	if readFile(t, o.p.LinuxUIDs) != dottedLedger || readFile(t, o.p.ConsoleFile) != dottedConsole {
+		t.Fatal("the ledger or console.yaml followed before the crash")
+	}
+	// the store has no dotted user: a second upgrade used to find nothing here
+	ids := snapshotIDs(o)
+	o.afterStoreRename = nil
+	o.nameSuffix = suffixes(t) // no draw: the journal has the name
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("second run: exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	text := o.text()
+	for _, want := range []string{
+		"Finishing the rename of 2 users whose name had a period",
+		"finished the rename of user alice.smith to alice_smith_k3x9 (UID 80001 carried, console settings moved, alice_smith was taken)",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("output lacks %q:\n%s", want, text)
+		}
+	}
+	if got := readFile(t, o.p.LinuxUIDs); got != "# UIDs\nalice_smith_k3x9:80001\nbob:80002\n" {
+		t.Errorf("ledger:\n%s", got)
+	}
+	cons := readFile(t, o.p.ConsoleFile)
+	if strings.Contains(cons, "alice.smith") || strings.Count(cons, "alice_smith_k3x9") != 3 || strings.Contains(cons, "alice_smith:") {
+		t.Errorf("console.yaml:\n%s", cons)
+	}
+	if _, err := os.Stat(filepath.Join(o.p.StateDir, "upgrade-renames")); err == nil {
+		t.Error("the journal was not removed")
+	}
+	if got := readFile(t, o.p.StoreFile); got != st {
+		t.Errorf("the second run changed the store:\n%s", got)
+	}
+	if len(snapshotIDs(o)) < len(ids) {
+		t.Error("snapshots went missing")
+	}
+	// a third run has nothing to do
+	after := snapshotIDs(o)
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("third run: exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	if strings.Contains(o.text(), "rename") || !slices.Equal(snapshotIDs(o), after) {
+		t.Errorf("third run:\n%s", o.text())
+	}
+}
+
+// A journal entry whose old name is still a store user was never written: the
+// new plan covers it, and the entry does not move anything.
+func TestUpgradeIgnoresAJournalEntryTheStoreNeverGot(t *testing.T) {
+	o := newOhost(t)
+	o.cloned()
+	o.write(o.p.StoreFile, dottedUpgradeStore)
+	o.write(o.p.LinuxUIDs, dottedLedger)
+	o.write(o.p.ConsoleFile, dottedConsole)
+	o.write(filepath.Join(o.p.StateDir, "upgrade-renames"), "alice.smith bob\ngone.user gone_user\n")
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	if got := readFile(t, o.p.LinuxUIDs); got != "# UIDs\nalice_smith:80001\nbob:80002\n" {
+		t.Errorf("ledger:\n%s", got)
+	}
+	if strings.Contains(o.text(), "finished the rename") {
+		t.Errorf("a stale entry was finished:\n%s", o.text())
+	}
+}
+
+// The rule for the new name is not changed (each period becomes '_'), so a
+// new name can be a user name that no Linux account can have: upper case, or
+// longer than 32 characters. Such a user gets no account at a sync, so the
+// output lists each one after the renames with the reason and the command that
+// fixes it, and the closing note does not promise the account.
+func TestUpgradeSaysWhichNewNamesCannotHaveAnAccount(t *testing.T) {
+	long := strings.Repeat("a", 20) + "." + strings.Repeat("b", 20)
+	store := dottedStorePrefix + "users:\n" +
+		"  Alice.Smith:\n    group: operator\n    scopes: []\n    hash: null\n    disabled: false\n    password_changed: null\n" +
+		"  " + long + ":\n    group: operator\n    scopes: []\n    hash: null\n    disabled: false\n    password_changed: null\n" +
+		"  bob.jones:\n    group: operator\n    scopes: []\n    hash: null\n    disabled: false\n    password_changed: null\n"
+	o := newOhost(t)
+	o.cloned()
+	o.write(o.p.StoreFile, store)
+	o.write(o.p.LinuxUIDs, "# UIDs\n")
+	o.nameSuffix = suffixes(t)
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	text := o.text() + stripANSI(o.stderr.String())
+	longNew := strings.Repeat("a", 20) + "_" + strings.Repeat("b", 20)
+	for _, want := range []string{
+		"renamed user Alice.Smith to Alice_Smith",
+		"These new names are not a valid Linux account name, so the users get no account on this server or on a host at a sync",
+		"  Alice_Smith has upper case letters: tacctl user rename Alice_Smith <new-name>",
+		"  " + longNew + " is longer than 32 characters: tacctl user rename " + longNew + " <new-name>",
+		"the other new name gets its account at the next sync.",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("output lacks %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "bob_jones has") || strings.Contains(text, "the new names get theirs") {
+		t.Errorf("a valid name is listed, or the note promises every account:\n%s", text)
+	}
+	inOrder(t, text, "renamed user", "These new names are not a valid Linux account name", "the other new name gets its account")
+
+	// when none can have one, the note says so
+	p := newOhost(t)
+	p.cloned()
+	p.write(p.p.StoreFile, dottedStorePrefix+"users:\n  Alice.Smith:\n    group: operator\n    scopes: []\n    hash: null\n    disabled: false\n    password_changed: null\n")
+	p.nameSuffix = suffixes(t)
+	if code := upgrade(p); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, p.stdout, p.stderr)
+	}
+	text = p.text() + stripANSI(p.stderr.String())
+	for _, want := range []string{"This new name is not a valid Linux account name, so the user gets no account", "none of the new names can have an account (above)."} {
+		if !strings.Contains(text, want) {
+			t.Errorf("output lacks %q:\n%s", want, text)
+		}
 	}
 }

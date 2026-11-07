@@ -263,3 +263,18 @@ func TestDeviceMarshalNoNull(t *testing.T) {
 		t.Errorf("%s %v", b, err)
 	}
 }
+
+// A device with no config state (the caller is below the operator tier) has
+// "-" in the text and csv cell and null in JSON, like a date that is not there.
+func TestConfigStateHiddenIsADashAndNull(t *testing.T) {
+	r, _ := Build(TypeConfig, []Device{{Name: "a", Scope: "lab"}, {Name: "b", Scope: "lab", ConfigState: "ok"}}, now)
+	if got := strings.Join(column(r, "state"), "|"); got != "-|ok" {
+		t.Errorf("state = %s", got)
+	}
+	if v, ok := r.Objects[0]["state"]; !ok || v != nil {
+		t.Errorf("json state = %#v", v)
+	}
+	if r.Objects[1]["state"] != "ok" {
+		t.Errorf("json state = %#v", r.Objects[1]["state"])
+	}
+}

@@ -119,6 +119,50 @@ func TestUserNamesWithPeriodsAreInvalid(t *testing.T) {
 	}
 }
 
+// A restore reads a snapshot's store with ValidateFileLegacyDots: a user name
+// with a period passes there, every other problem is still reported, and the
+// live store's ValidateFile does not change.
+func TestValidateFileLegacyDotsAcceptsOnlyThePeriod(t *testing.T) {
+	e := newEnv(t)
+	e.useFixture("store.multiscope.yaml")
+	body := string(readFile(t, e.path))
+	dotted := strings.Replace(body, "users:\n", "users:\n  alice.smith:\n    group: readonly\n    scopes: [lab]\n    hash: null\n    disabled: true\n", 1)
+	if err := os.WriteFile(e.path, []byte(dotted), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if msgs, err := store.ValidateFileLegacyDots(e.path); err != nil || len(msgs) != 0 {
+		t.Fatalf("a dotted user in a snapshot: %v %v", msgs, err)
+	}
+	if msgs, err := store.ValidateFile(e.path); err != nil || len(msgs) != 1 {
+		t.Fatalf("the live rule changed: %v %v", msgs, err)
+	}
+	raw, err := store.LoadRaw(e.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := store.DottedUsers(raw); len(got) != 1 || got[0] != "alice.smith" {
+		t.Errorf("DottedUsers: %q", got)
+	}
+	// a period in a group or scope name, a name that is not of the old shape
+	// and a bad field are not relaxed
+	for _, bad := range []string{"  a..b:\n", "  .ab:\n", "  a b:\n"} {
+		body := strings.Replace(body, "users:\n", "users:\n"+bad+"    group: readonly\n    scopes: [lab]\n    hash: null\n    disabled: true\n", 1)
+		if err := os.WriteFile(e.path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if msgs, err := store.ValidateFileLegacyDots(e.path); err != nil || len(msgs) != 1 || !strings.Contains(msgs[0], "invalid name") {
+			t.Errorf("%q: %v %v", bad, msgs, err)
+		}
+	}
+	nogroup := strings.Replace(dotted, "group: readonly", "group: nosuchgroup", 1)
+	if err := os.WriteFile(e.path, []byte(nogroup), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if msgs, _ := store.ValidateFileLegacyDots(e.path); len(msgs) != 1 || !strings.Contains(msgs[0], "nosuchgroup") {
+		t.Errorf("a bad group: %v", msgs)
+	}
+}
+
 func TestUserDelAndRename(t *testing.T) {
 	e := newEnv(t)
 	e.useFixture("store.multiscope.yaml")

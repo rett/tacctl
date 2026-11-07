@@ -73,6 +73,11 @@ type Host struct {
 	// upgrade whose new name is taken (four lowercase letters or digits,
 	// RandomSuffix); tests set it. Nil: RandomSuffix.
 	NameSuffix func() string
+	// AfterStoreRename, when set, runs after the upgrade has written the
+	// renamed users into the store and before the ledger and console.yaml
+	// follow; an error stops the upgrade there, as a crash would. Tests set
+	// it. Nil: nothing.
+	AfterStoreRename func() error
 }
 
 // OwnLoginOptions say how install or upgrade asks for this machine's own

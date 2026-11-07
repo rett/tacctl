@@ -323,3 +323,53 @@ func TestWriteScriptReleasesTheLock(t *testing.T) {
 		t.Errorf("after a refusal: %v", err)
 	}
 }
+
+// CanMove says whether a MoveUser can work before anything is renamed: an
+// absent ledger and a readable one can, and a ledger that cannot be read
+// cannot. It changes nothing.
+func TestUIDsCanMove(t *testing.T) {
+	dir := t.TempDir()
+	u := UIDs{Path: filepath.Join(dir, "linux-uids")}
+	if err := u.CanMove(); err != nil {
+		t.Errorf("an absent ledger: %v", err)
+	}
+	if err := os.WriteFile(u.Path, []byte("# UIDs\nalice.smith:80001\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := u.CanMove(); err != nil {
+		t.Errorf("a ledger: %v", err)
+	}
+	if got := readFile(t, u.Path); got != "# UIDs\nalice.smith:80001\n" {
+		t.Errorf("the ledger changed:\n%s", got)
+	}
+	if m, _ := filepath.Glob(filepath.Join(dir, ".linux-uids.[0-9]*")); len(m) != 0 {
+		t.Errorf("left behind: %q", m)
+	}
+	bad := UIDs{Path: filepath.Join(dir, "dir")}
+	if err := os.Mkdir(bad.Path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := bad.CanMove(); err == nil {
+		t.Error("a ledger that is a directory can be moved")
+	}
+}
+
+// LinuxNameProblem agrees with LinuxName and says why a name is refused.
+func TestLinuxNameProblem(t *testing.T) {
+	for _, c := range []struct{ name, want string }{
+		{"alice", ""}, {"a_b-c9", ""}, {"_svc", ""},
+		{"Alice", "has upper case letters"},
+		{strings.Repeat("a", 33), "is longer than 32 characters"},
+		{strings.Repeat("A", 33), "is longer than 32 characters and has upper case letters"},
+		{"9lives", "does not start with a lower case letter or '_'"},
+		{"-dash", "does not start with a lower case letter or '_'"},
+		{"root", "is root, which no user can be"},
+	} {
+		if got := LinuxNameProblem(c.name); got != c.want {
+			t.Errorf("%q: %q, want %q", c.name, got, c.want)
+		}
+		if LinuxName(c.name) != (c.want == "") {
+			t.Errorf("%q: LinuxName disagrees", c.name)
+		}
+	}
+}

@@ -43,6 +43,31 @@ current behaviour; this file is where history lives.
    say) stops the upgrade before any change, naming the key to edit in the
    store; run it again afterwards. A second upgrade does nothing.
 
+   The store is renamed before the UID ledger and `console.yaml` follow, so
+   the upgrade first checks, before the snapshot and before any write, that
+   both can take the renames: a `console.yaml` that cannot be read or holds a
+   name the rule refuses, or a ledger that cannot be read or locked, stops it
+   with the file and the reason and nothing changed. A key with a period in
+   `console.yaml` that no rename covers (a hand edit, a user who is gone, the
+   `users` mapping) would make the file unreadable and belongs to nobody: it
+   is dropped, with a line naming it, also when the store has no such user,
+   and not renamed, so that the next user of the name does not inherit its
+   system shell or password cache. The renames are recorded in `upgrade-renames`
+   in the state directory before the store is written; an upgrade that stops
+   after the store (a crash, a failed write) is finished by the next one, which
+   moves the ledger line and the console settings of those users to the names
+   the store holds (`finished the rename of user alice.smith to alice_smith`),
+   and the message of a failed follow-up now says so besides the snapshot.
+
+   The rule for the new name does not change, so a new name can be a user name
+   that no Linux account can have (upper case: `Alice.Smith` becomes
+   `Alice_Smith`; longer than 32 characters). Such a user never gets an account
+   at a sync, and the line "the new names get theirs at the next sync" was wrong
+   for them. After the renames the upgrade now lists each of them with the
+   reason and the fix (`Alice_Smith has upper case letters: tacctl user rename
+   Alice_Smith <new-name>`), and the closing note says that the other new
+   names get their accounts, or that none can.
+
 3. **A user name with a period is not accepted anywhere.** 0.2.22 to 0.2.25
    refused a period in a new user name but still read one that a store from
    0.2.20 or 0.2.21 held: `user rename` ran from it, `config validate` reported
@@ -55,12 +80,21 @@ current behaviour; this file is where history lives.
    Linux account name).`, the store and `console.yaml` validate user names
    strictly, and `user rename` takes no old name with a period. A store that
    still holds one (an upgrade that stopped for a name that is not a user name, or a
-   restored snapshot of 0.2.20 or 0.2.21) fails every write with `user
+   restored snapshot of 0.2.25 or earlier) fails every write with `user
    'alice.smith': invalid name (a period cannot be part of a Linux account
    name; 'tacctl upgrade' renames such a user)`, and the upgrade is the way
    out. `config validate` no longer has a separate error for it, `tacctl
    rollback` to any target no longer looks for one, and the manual page and the
    documentation lose the sentences about the tolerated user.
+   `backup restore` and `backup recover` still read a snapshot that holds such
+   a user (every snapshot of 0.2.25 or earlier can, and so is the one the
+   upgrade takes before its rename, which its advice names when a rename stops
+   half way): only the user-name rule is relaxed, for the snapshot's store. A
+   restore says which users have a period, before the question and after, and
+   renders nothing (no renderer writes the name, so the services keep their
+   configuration; a snapshot of that kind that enables a backend not running now
+   is refused), and `tacctl upgrade` then renames the users and renders. A
+   recovery skips such a user, naming it: it adds no user to the store.
 
 4. **A good pull records the members of a Junos virtual chassis or a Cisco
    stack.** `tacctl device config pull` recorded one model and one serial number
@@ -71,8 +105,10 @@ current behaviour; this file is where history lives.
    version` it reads already), on IOS and IOS-XE `show switch` (with `show
    inventory`, and, when a stack is found, `show version` for the release of
    each switch). Each member is recorded with its id, role (`master`, `backup`,
-   `linecard` or `member`), model, serial number, release, status (`Prsnt`,
-   `Ready`) and priority, at most 32 per device. A device that lists one unit,
+   `linecard` or `member`; Cisco `Master`, and `Active` as IOS-XE 16.x and
+   later (Catalyst 3650, 3850, 9000) print it, are `master`, and `Standby` is
+   `backup`, the words Junos uses), model, serial number, release, status
+   (`Prsnt`, `Ready`) and priority, at most 32 per device. A device that lists one unit,
    has no chassis, refuses a command or prints something else has no members,
    never fails the pull, and a pull that reads none leaves the list empty, never
    the old one. `device show` and `device config show` print a `Chassis
@@ -97,8 +133,11 @@ current behaviour; this file is where history lives.
    row, from its own model and serial number), `software` the model and release
    of each device, and `config` the state `device config list` shows, with the
    dates of the pull and the apply. A device that was never pulled is a row with
-   empty facts and `never`, not left out, every row carries the date of the pull
-   its facts came from, and the heading gives the date of the oldest datum.
+   empty facts and `never` in the `inventory`, `software` and `config` reports,
+   not left out (the `members` report lists the devices that have a model or a
+   serial number, so a device with neither is not in it), every row carries the
+   date of the pull its facts came from, and the heading gives the date of the
+   oldest datum.
    `--format text|csv|json` (text is the default; a CSV cell that starts with
    `=`, `+`, `-` or `@` is quoted with a leading `'`, so that a spreadsheet does
    not run it; a JSON report is one object with `schema`, `type`, `generated`,
@@ -115,8 +154,11 @@ current behaviour; this file is where history lives.
    prints the `scp` line that fetches the file), `export [--out <file>]`,
    `rename` and `remove` look after them, a file you put in the directory is
    `other` and left alone, and every tier can run them for its own reports; only
-   `--pull` is the engineer's. Nothing changes for existing data: the first
-   report creates the directory.
+   `--pull` is the engineer's. The `state` and `applied` columns of the
+   `config` report are the configuration state that `device list` and
+   `device config list` keep for the operator tier and up (the CONFIG column):
+   for a read-only user both are `-` in text and CSV and `null` in JSON. Nothing
+   changes for existing data: the first report creates the directory.
 
 6. **`tacctl device reports prune` removes the reports that are old.** Reports
    pile up in a home; nothing deletes one by itself. `prune --older-than
@@ -140,6 +182,18 @@ current behaviour; this file is where history lives.
    user's own `generate`, `rename`, `remove` and `prune` write the detail lines
    `device reports generate type= name= format= rows=`, `rename`, `remove` and
    `prune`.
+   A report file is opened without following a link and without waiting, and
+   only a regular file is read (a link, a FIFO or a device node in the directory,
+   or put there after the listing, is refused, as is a `.meta` file that is not
+   a regular file): `export` reads at most the size limit in force for the
+   report's owner (or the size its metadata records, 1 GiB at the most) and
+   `show --content` reads the first 200 lines, no further than 256 KiB, so
+   that a file a user grew cannot exhaust the memory of the process that reads
+   it with a superuser's reach.
+   `list --json` cleans every string (file, name, type, format, user, filters)
+   as the text list does, and `export <user>/<file>` of another user's file
+   that has no valid metadata file (not a report tacctl made) needs `--out`
+   instead of printing it to the superuser's terminal.
 
 8. **The reports of a user are limited in size and number, by settings.** A
    directory of reports must not grow without bound. `tacctl device reports
@@ -166,6 +220,14 @@ current behaviour; this file is where history lives.
    `user reports-limit`; a limit restarts nothing. An upgrade changes nothing on
    its own (the keys and the fields are written only when set); 0.2.25 refuses
    them, so `tacctl rollback` removes them (item 9).
+   The limits count the reports tacctl made (the files with a valid `.meta`
+   file) and are a guard rail against growth, not a quota enforced against a
+   user who edits their own directory.
+
+   A name in use is refused with the way on that fits the verb: `export
+   --out` and `plan --out` say `--force` replaces it, `generate` says to
+   choose another name with `--name`, and `rename` to give another new name
+   (all said `--force` before, which only the first two have).
 
 9. **`tacctl rollback 0.2.25` is a target.** The release before this one is
    prepared like the older ones: a dry run that lists the steps, `--apply` to

@@ -16,3 +16,8 @@ capture of a multi-member chassis was at hand: real captures from a
 two-member EX virtual chassis and a Catalyst stack replace them when
 available, and the tests that read them then check the readers against the
 devices' own text.
+
+`synthetic-iosxe-show-switch-active-3.txt` is the `show switch` of an IOS-XE
+16.x or later stack (Catalyst 3650, 3850, 9000), which prints the role `Active`
+where IOS 12.x and 15.x print `Master`; it is synthetic like the others, from
+the documented format.

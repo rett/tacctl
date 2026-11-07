@@ -305,8 +305,10 @@ var (
 // lists (number, role, priority and state), with the model and the serial
 // number of each member's chassis entry ('Switch N' or 'N') of 'show
 // inventory' and the model and release of its row of the table in 'show
-// version' when it prints one. The role Master is master, Member member and
-// Standby backup; any other role text is kept in Status after the state. nil
+// version' when it prints one. The role Master (IOS 12.x and 15.x) or Active
+// (IOS-XE 16.x and later) is master, Member member and Standby backup, the
+// words Junos' master and backup use too; any other role text is kept in Status
+// after the state. nil
 // when the first output lists no switch (a refusal, an empty reply) or fewer
 // than two: one is no stack.
 func IOSMembers(showSwitch, inventory, version string) []Member {
@@ -321,7 +323,8 @@ func IOSMembers(showSwitch, inventory, version string) []Member {
 		m := Member{ID: g[1], Status: g[4]}
 		m.Priority, _ = strconv.Atoi(g[3])
 		switch strings.ToLower(g[2]) {
-		case "master":
+		case "master", "active":
+			// IOS 12.x and 15.x print Master, IOS-XE 16.x and later Active
 			m.Role = "master"
 		case "member":
 			m.Role = "member"

@@ -700,3 +700,57 @@ func TestReportsFollowTheConfiguredLimits(t *testing.T) {
 		t.Errorf("own size: %d %q", b.sb.code, b.sb.stderr())
 	}
 }
+
+// The config report's state and applied date are the configuration state that
+// 'device list' shows from the operator tier up (D69): a read-only user's
+// report has "-" for both (null in JSON), an operator's has them, and the
+// pulled date, which the other reports hold too, stays.
+func TestReportsConfigStateIsOperatorAndUp(t *testing.T) {
+	b := newReportsBox(t)
+	st := devconf.Store{Records: filepath.Join(b.sb.dir, "var-lib", "devices-config.json"), Dir: filepath.Join(b.sb.dir, "var-lib", "device-config")}
+	recs, err := st.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, _ := recs.Of("sw1")
+	rec.Applied = &devconf.Applied{Result: devconf.AppliedApplied, At: time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)}
+	recs.Put("sw1", *rec)
+	if err := st.Save(recs); err != nil {
+		t.Fatal(err)
+	}
+
+	op := b.as("bob", asOperator, "generate", "--type", "config", "--format", "csv", "--stdout")
+	if !strings.Contains(op, "sw1,lab,never,2026-11-04 10:00,2026-11-05 12:00") || !strings.Contains(op, "jsw1,lab,never,2026-11-05 09:30,-") {
+		t.Errorf("the operator's config report has no state and applied date:\n%s", op)
+	}
+	ro := b.as("carol", asReadonly, "generate", "--type", "config", "--format", "csv", "--stdout")
+	for _, want := range []string{"sw1,lab,-,2026-11-04 10:00,-", "jsw1,lab,-,2026-11-05 09:30,-"} {
+		if !strings.Contains(ro, want) {
+			t.Errorf("the read-only config report lacks %q:\n%s", want, ro)
+		}
+	}
+	for _, word := range []string{"lab,never,", "lab,differs,", "lab,ok,", "lab,failed,", "2026-11-05 12:00"} {
+		if strings.Contains(ro, word) {
+			t.Errorf("the read-only config report shows %q:\n%s", word, ro)
+		}
+	}
+	js := b.as("carol", asReadonly, "generate", "--type", "config", "--format", "json", "--stdout")
+	var doc struct {
+		Rows []map[string]any `json:"rows"`
+	}
+	if err := json.Unmarshal([]byte(js), &doc); err != nil || len(doc.Rows) == 0 {
+		t.Fatalf("json: %v\n%s", err, js)
+	}
+	for _, row := range doc.Rows {
+		if v, ok := row["state"]; !ok || v != nil {
+			t.Errorf("state of %v: %v, want null", row["name"], v)
+		}
+		if v, ok := row["applied"]; !ok || v != nil {
+			t.Errorf("applied of %v: %v, want null", row["name"], v)
+		}
+	}
+	// the other reports are what they were
+	if inv := b.as("carol", asReadonly, "generate", "--type", "inventory", "--format", "csv", "--stdout"); !strings.Contains(inv, "WS-C3850-48P") {
+		t.Errorf("inventory:\n%s", inv)
+	}
+}

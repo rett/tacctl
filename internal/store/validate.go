@@ -321,7 +321,37 @@ func get(m *yamlpy.Map, key string) any {
 // Validate is store_validate: every problem with a store document (raw
 // from LoadRaw, or normalised), one message each, in 0.1.16's order
 // and wording. An empty result means valid.
-func Validate(store any) []string {
+func Validate(store any) []string { return validate(store, false) }
+
+// ValidateLegacyDots is Validate for a snapshot of 0.2.25 or earlier that
+// 'backup restore' and 'backup recover' read: a user name with a period (0.2.20
+// and 0.2.21 allowed one) is not a problem there, and nothing else is
+// relaxed. The live store is judged by Validate; 'tacctl upgrade' renames
+// such a user, and until then the store reads and every write is refused.
+func ValidateLegacyDots(store any) []string { return validate(store, true) }
+
+// DottedUsers lists the user names of a store document that have the shape
+// of a name 0.2.20 and 0.2.21 allowed: a period between runs of letters,
+// digits, '_' and '-'. The result is in the order of the store.
+func DottedUsers(store any) []string {
+	root, ok := mapOf(store)
+	if !ok {
+		return nil
+	}
+	users, ok := mapOf(get(root, "users"))
+	if !ok {
+		return nil
+	}
+	var out []string
+	for name := range users.All() {
+		if reDottedUser.MatchString(name) {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+func validate(store any, legacyDots bool) []string {
 	root, ok := mapOf(store)
 	if !ok {
 		return []string{"store is not a YAML mapping"}
@@ -350,9 +380,11 @@ func Validate(store any) []string {
 		}
 		sections[sec.key] = m
 		for name, ent := range m.All() {
-			if !sec.name(name) {
-				if sec.key == "users" && reDottedUser.MatchString(name) {
-					// 0.2.20 and 0.2.21 allowed it; the upgrade renames it
+			// 0.2.20 and 0.2.21 allowed a period in a user name; the upgrade
+			// renames such a user. Only a restore reads one (legacyDots).
+			dotted := sec.key == "users" && reDottedUser.MatchString(name)
+			if !sec.name(name) && !(dotted && legacyDots) {
+				if dotted {
 					add("%s %s: invalid name (a period cannot be part of a Linux account name; 'tacctl upgrade' renames such a user)", sec.label, PyRepr(name))
 					continue
 				}
