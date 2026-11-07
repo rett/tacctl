@@ -394,6 +394,11 @@ func (inv *invocation) reportsPull(entries []devreg.Entry, stdout bool) error {
 // against what tacctl renders now, which only the config report shows.
 func (inv *invocation) reportDevices(entries []devreg.Entry, needState bool) []reports.Device {
 	recs := inv.configRecords()
+	// The configuration state and the date of the last apply are what
+	// 'device list' and 'device config list' show from the operator tier up
+	// (D69): below it the config report has "-" for both.
+	seeConfig := inv.configVisible()
+	needState = needState && seeConfig
 	var states map[string]configNowState
 	if needState {
 		states = inv.configNowStates(entries)
@@ -406,7 +411,7 @@ func (inv *invocation) reportDevices(entries []devreg.Entry, needState bool) []r
 		if rec != nil {
 			d.Model, d.Serial, d.Release = cleanLine(rec.Model), cleanLine(rec.Serial), cleanLine(rec.Release)
 			d.Pulled = rec.Pulled
-			if a := rec.Applied; a != nil && a.Result == devconf.AppliedApplied {
+			if a := rec.Applied; seeConfig && a != nil && a.Result == devconf.AppliedApplied {
 				d.Applied = a.At
 			}
 			for _, m := range rec.Members {

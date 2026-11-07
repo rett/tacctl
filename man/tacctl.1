@@ -14146,6 +14146,14 @@ members report has a
 .B components
 list that is empty in this release;
 .BR .json ).
+The state and applied columns of the config report are the configuration state
+that
+.B "device list"
+and
+.B "device config list"
+show from the operator tier up; for a caller below it both are
+.B \-
+(null in JSON), the pulled date stays.
 .B \-\-stdout
 prints the report and stores nothing: no file, no metadata, no limit and no
 account needed.

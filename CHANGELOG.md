@@ -140,8 +140,11 @@ current behaviour; this file is where history lives.
    prints the `scp` line that fetches the file), `export [--out <file>]`,
    `rename` and `remove` look after them, a file you put in the directory is
    `other` and left alone, and every tier can run them for its own reports; only
-   `--pull` is the engineer's. Nothing changes for existing data: the first
-   report creates the directory.
+   `--pull` is the engineer's. The `state` and `applied` columns of the
+   `config` report are the configuration state that `device list` and
+   `device config list` keep for the operator tier and up (the CONFIG column):
+   for a read-only user both are `-` in text and CSV and `null` in JSON. Nothing
+   changes for existing data: the first report creates the directory.
 
 6. **`tacctl device reports prune` removes the reports that are old.** Reports
    pile up in a home; nothing deletes one by itself. `prune --older-than
