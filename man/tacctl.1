@@ -9616,7 +9616,7 @@ vendor tag and the registered vendor disagree.
 .\" BEGIN GENERATED: command device show
 .RS
 .PP
-Requires: \fBreadonly\fR. The Configuration, Release, Model and Serial rows (and config, release, model and serial of \-\-json) are the operator tier's; a read\-only user's output has none.
+Requires: \fBreadonly\fR. The Configuration, Release, Model and Serial rows, the Chassis members table (and config, release, model, serial and members of \-\-json) are the operator tier's; a read\-only user's output has none.
 .PP
 Options:
 .TP
@@ -16262,7 +16262,7 @@ Every tier may run list; ack and unack need the superuser tier.
 Every tier may generate (without \-\-pull), list, show, export, rename and remove its own reports, which hold the devices of its own scopes; generate \-\-pull needs the engineer tier; \-\-user, \-\-all\-users and <user>/<report> (the reports of other users, every access audited) need the superuser tier.
 .TP
 .B device show
-The Configuration, Release, Model and Serial rows (and config, release, model and serial of \-\-json) are the operator tier's; a read\-only user's output has none.
+The Configuration, Release, Model and Serial rows, the Chassis members table (and config, release, model, serial and members of \-\-json) are the operator tier's; a read\-only user's output has none.
 .TP
 .B device snmp
 An engineer may read the settings of a device of their own scope (show [\-\-reveal [<user>]], version, port, timeout, v3\-user list|default, clients list); every setter and clear needs the superuser tier.

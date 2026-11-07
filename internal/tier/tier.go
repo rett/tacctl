@@ -186,7 +186,7 @@ var Rules = []Rule{
 	{Tier: Readonly, Cmd: "device", Sub: "list", Sudoers: []string{"device list", "device list *"},
 		Note: "device list: the CONFIG column (and config, release, model and serial of --json) is the operator tier's; a read-only user's list has none."},
 	{Tier: Readonly, Cmd: "device", Sub: "show", Sudoers: []string{"device show *"},
-		Note: "device show: the Configuration, Release, Model and Serial rows (and config, release, model and serial of --json) are the operator tier's; a read-only user's output has none."},
+		Note: "device show: the Configuration, Release, Model and Serial rows, the Chassis members table (and config, release, model, serial and members of --json) are the operator tier's; a read-only user's output has none."},
 	// 'device reports' (0.2.26, D327): the saved reports of the registered
 	// devices, made from the stored records. Every tier may generate, list,
 	// show, export, rename and remove its own reports; the gate sees

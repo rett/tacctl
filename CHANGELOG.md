@@ -79,8 +79,9 @@ current behaviour; this file is where history lives.
    members:` table under the data block (`ID`, `ROLE`, `MODEL`, `SERIAL`,
    `RELEASE`, `STATUS`, `PRIORITY`), and `device show --json` has a `members`
    list of the same fields; they are shown to the operator tier and up, as the
-   release, model and serial number are. They are also what the members report
-   of `tacctl device reports` is made of (item 5). An existing record has no
+   release, model and serial number are (the tier table's note for `device
+   show`, in the manual page too, names the table and `members`). They are also
+   what the members report of `tacctl device reports` is made of (item 5). An existing record has no
    members until its device is pulled again, and nothing else about the record
    changes: the key `members` is derived data that 0.2.25 ignores, so `tacctl
    rollback` leaves it.
