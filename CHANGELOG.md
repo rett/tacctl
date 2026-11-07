@@ -91,7 +91,7 @@ current behaviour; this file is where history lives.
    of each device, and `config` the state `device config list` shows, with the
    dates of the pull and the apply. A device that was never pulled is a row with
    empty facts and `never`, not left out, every row carries the date of the pull
-   its facts came from, and the heading says how old the oldest datum is.
+   its facts came from, and the heading gives the date of the oldest datum.
    `--format text|csv|json` (text is the default; a CSV cell that starts with
    `=`, `+`, `-` or `@` is quoted with a leading `'`, so that a spreadsheet does
    not run it), `--scope` and `--vendor` narrow the report, `--name` names it,
@@ -102,12 +102,12 @@ current behaviour; this file is where history lives.
    `~/reports/devices/<type>-<yyyymmdd>.<txt|csv|json>` of your home (the
    directory 0700, the file 0600, made as you; a second report of a day is
    `-2`), with a `.meta` file beside it that records when, by whom, the command
-   line, the filters and the age of the data. `list`, `show` (which prints the
-   `scp` line that fetches the file), `export [--out <file>]`, `rename` and
-   `remove` look after them, a file you put in the directory is `other` and left
-   alone, and every tier can run them for its own reports; only `--pull` is the
-   engineer's. Nothing changes for existing data: the first report creates the
-   directory.
+   line, the filters and the date of the oldest datum. `list`, `show` (which
+   prints the `scp` line that fetches the file), `export [--out <file>]`,
+   `rename` and `remove` look after them, a file you put in the directory is
+   `other` and left alone, and every tier can run them for its own reports; only
+   `--pull` is the engineer's. Nothing changes for existing data: the first
+   report creates the directory.
 
 6. **`tacctl device reports prune` removes the reports that are old.** Reports
    pile up in a home; nothing deletes one by itself. `prune --older-than

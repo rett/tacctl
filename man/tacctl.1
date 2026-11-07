@@ -13997,7 +13997,7 @@ release, and the date of the pull) and
 shows, the date of the pull and the date of the last apply). A device that was
 never pulled is a row with empty facts and
 .BR never ,
-not left out, and the heading of a report gives the age of the oldest datum.
+not left out, and the heading of a report gives the date of the oldest datum.
 Text that came from a device or an operator is printed as the record keeps it,
 with control, bidirectional and C1 characters replaced by
 .BR ? .
@@ -14050,7 +14050,7 @@ the directory of mode 0700 and the file of mode 0600, by tacctl as the user
 (nothing is written as root), with
 .IR <name>.<ext>.meta
 beside it: a JSON file of mode 0600 that holds the name, the type, the format,
-the user, the exact command line, the filters, the time, the age of the oldest
+the user, the exact command line, the filters, the time, the date of the oldest
 datum, the size, the number of rows and the schema number. The default name is
 the type and the date in UTC
 .RB ( inventory\-20261106 ),
@@ -14065,7 +14065,7 @@ and
 .BR \- ,
 at most 64 bytes, with no leading dot. The format sets the extension:
 .B text
-(aligned columns under a heading with the type, the time, the age of the oldest
+(aligned columns under a heading with the type, the time, the date of the oldest
 datum and the number of devices; the default;
 .BR .txt ),
 .B csv
