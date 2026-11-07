@@ -224,6 +224,11 @@ current behaviour; this file is where history lives.
    file) and are a guard rail against growth, not a quota enforced against a
    user who edits their own directory.
 
+   A name in use is refused with the way on that fits the verb: `export
+   --out` and `plan --out` say `--force` replaces it, `generate` says to
+   choose another name with `--name`, and `rename` to give another new name
+   (all said `--force` before, which only the first two have).
+
 9. **`tacctl rollback 0.2.25` is a target.** The release before this one is
    prepared like the older ones: a dry run that lists the steps, `--apply` to
    convert, `--yes` for what needs a decision. 0.2.25 reads every file this

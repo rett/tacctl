@@ -359,7 +359,7 @@ func (pl reportPlace) rename(old reportFile, newName string, meta []byte) (strin
 		from, to := filepath.Join(pl.dir, old.File), filepath.Join(pl.dir, newFile)
 		if err := os.Link(from, to); err != nil {
 			if errors.Is(err, os.ErrExist) {
-				return fmt.Errorf("%s exists", newFile)
+				return &fileExistsError{newFile}
 			}
 			return err
 		}

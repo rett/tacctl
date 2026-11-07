@@ -328,7 +328,7 @@ func (inv *invocation) deviceReportsGenerate(args []string) error {
 		return err
 	}
 	if err := pl.write(file, body.Bytes(), mb); err != nil {
-		return inv.usageErr("Cannot store the report: " + err.Error())
+		return inv.usageErr("Cannot store the report: " + existsText(err, " (choose another name with --name)"))
 	}
 	inv.detail("device reports generate", kvp("type", typ), kvp("name", name), kvp("format", format), kvp("rows", strconv.Itoa(len(rep.Rows))))
 	inv.app.Out.Info("Report " + name + " written: " + pl.dir + "/" + file)

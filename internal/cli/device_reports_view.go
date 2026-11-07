@@ -274,7 +274,7 @@ func (inv *invocation) deviceReportsExport(args []string) error {
 	}
 	out := p.Value("--out")
 	if err := inv.asCaller(func() error { return writePrivate(out, b, p.Has("--force")) }); err != nil {
-		return inv.usageErr("Cannot write " + out + ": " + err.Error())
+		return inv.usageErr("Cannot write " + out + ": " + existsText(err, " (--force replaces it)"))
 	}
 	inv.app.Out.Info("Copied " + t.f.File + " to " + out + " (" + reportSize(int64(len(b))) + ", mode 0600).")
 	return nil
@@ -309,7 +309,7 @@ func (inv *invocation) deviceReportsRename(args []string) error {
 	}
 	file, err := t.pl.rename(*t.f, newName, mb)
 	if err != nil {
-		return inv.usageErr("Cannot rename the report: " + err.Error())
+		return inv.usageErr("Cannot rename the report: " + existsText(err, " (give another new name)"))
 	}
 	if !t.cross {
 		inv.detail("device reports rename", kvp("name", t.f.Name), kvp("new", newName))

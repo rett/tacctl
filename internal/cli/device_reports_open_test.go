@@ -118,3 +118,40 @@ func TestReportsShowContentDoesNotReadTheWholeFile(t *testing.T) {
 		t.Errorf("export: %d %q", b.sb.code, b.sb.stderr())
 	}
 }
+
+// A name in use is refused by writePrivate without a hint, and each verb adds
+// its own: --force only where the verb has it ('export --out'), --name for
+// 'generate', another new name for 'rename'.
+func TestWritePrivateNameInUseHintsFollowTheVerb(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "taken.txt")
+	if err := writePrivate(p, []byte("one"), false); err != nil {
+		t.Fatal(err)
+	}
+	err := writePrivate(p, []byte("two"), false)
+	if err == nil || err.Error() != p+" exists" {
+		t.Fatalf("a name in use: %v", err)
+	}
+	for _, c := range []struct{ hint, want string }{
+		{" (--force replaces it)", p + " exists (--force replaces it)"},
+		{" (choose another name with --name)", p + " exists (choose another name with --name)"},
+		{" (give another new name)", p + " exists (give another new name)"},
+	} {
+		if got := existsText(err, c.hint); got != c.want {
+			t.Errorf("%q", got)
+		}
+	}
+	// another failure keeps its own text, with no hint
+	other := os.ErrPermission
+	if got := existsText(other, " (--force replaces it)"); got != other.Error() {
+		t.Errorf("%q", got)
+	}
+	// rename onto a name in use is the same refusal
+	pl := reportPlace{user: "alice", home: dir, dir: dir}
+	if err := os.WriteFile(filepath.Join(dir, "old.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pl.rename(reportFile{File: "old.txt", Name: "old"}, "taken", []byte("{}")); err == nil || existsText(err, " (give another new name)") != "taken.txt exists (give another new name)" {
+		t.Errorf("rename onto a name in use: %v", err)
+	}
+}
