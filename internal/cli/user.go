@@ -34,8 +34,9 @@ var userSpecs = map[string]Spec{
 			Long: "Record an email address for the user (a plain address, local@domain). No mail is sent to it. An address belongs to one user"},
 		{Names: []string{noChangeRequired}, Desc: "Skip the required password change",
 			Long: "Do not require the user to change the password at the first login to this server. Without it a new user must change it first, and no device accepts the user until then (a superuser, and a user with no login on this server, never must)"}}},
-	"remove": {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}},
-	"email":  {MinArgs: 1, MaxArgs: 2, Args: []string{KindUsers, names.EmailClear}},
+	"remove":        {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}},
+	"email":         {MinArgs: 1, MaxArgs: 2, Args: []string{KindUsers, names.EmailClear}},
+	"reports-limit": {MinArgs: 1, MaxArgs: 3, Args: []string{KindUsers, "max-size|max-count|clear", names.ClearWord}},
 	"passwd": {MinArgs: 1, MaxArgs: 1, Args: []string{KindUsers}, Flags: []Flag{{Names: []string{"--hash"}, Value: true, Secret: true},
 		{Names: []string{noChangeRequired}, Desc: "Skip the required password change",
 			Long: "Do not require the user to change the password at the next login to this server. Without it the reset requires one, and no device accepts the user until it is done (a superuser, and a user with no login on this server, never must); with it a requirement that stands is lifted"}}},
@@ -61,6 +62,7 @@ func userCmd(inv *invocation) *cobra.Command {
 		withRun(verb("add <username> <group> [--hash <hash>|-] [--scopes <s>[,s...]] [--email <address>] [--no-change-required]", "Add a new user; lands in default scope"), n(inv.userAdd)),
 		withRun(verb("remove <username>", "Remove a user"), n(inv.userRemove)),
 		withRun(verb("email <username> [<address>|clear]", "Show, set or clear a user's email address"), n(inv.userEmail)),
+		withRun(verb("reports-limit <username> [max-size|max-count] [<value>|clear]", "Show, set or clear a user's own limits of the stored reports"), n(inv.userReportsLimit)),
 		withRun(verb("passwd <username> [--hash <hash>|-] [--no-change-required]", "Change a user's password"), n(inv.userPasswd)),
 		withRun(verb("disable <username>", "Disable a user (preserves hash)"), n(inv.userDisable)),
 		withRun(verb("enable <username>", "Re-enable a disabled user"), n(inv.userEnable)),
@@ -122,6 +124,10 @@ type userInfo struct {
 	scopes, orphans                                                 []string
 	// email is the user's address, "" when none is set.
 	email string
+	// reportsMaxSize and reportsMaxCount are the user's own limits of the
+	// stored reports (0.2.26), nil when the user has none.
+	reportsMaxSize  *int64
+	reportsMaxCount *int
 }
 
 func (inv *invocation) userInfo(name string) (ui userInfo, ok bool, err error) {
@@ -153,6 +159,14 @@ func (inv *invocation) userInfo(name string) (ui userInfo, ok bool, err error) {
 			ui.hasHash = v == "1"
 		case "email":
 			ui.email = v
+		case "reports_max_size":
+			if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+				ui.reportsMaxSize = &n
+			}
+		case "reports_max_count":
+			if n, err := strconv.Atoi(v); err == nil {
+				ui.reportsMaxCount = &n
+			}
 		case "scope":
 			s, exists := v, "1"
 			if i := strings.LastIndexByte(v, '|'); i >= 0 {
@@ -375,6 +389,12 @@ func (inv *invocation) userShow(args []string) error {
 	inv.echoE("  " + b + "UID:" + nc + "              " + inv.userUID(username))
 	if u.email != "" {
 		inv.echoE("  " + b + "Email:" + nc + "            " + u.email)
+	}
+	if u.reportsMaxSize != nil {
+		inv.echoE("  " + b + "Report max-size:" + nc + "  " + names.FormatReportSize(*u.reportsMaxSize) + " (own limit)")
+	}
+	if u.reportsMaxCount != nil {
+		inv.echoE("  " + b + "Report max-count:" + nc + " " + names.FormatReportCount(*u.reportsMaxCount) + " (own limit)")
 	}
 	if u.status == "disabled" {
 		inv.echoE("  " + b + "Status:" + nc + "           " + ui.Red + "disabled" + nc)

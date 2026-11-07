@@ -184,6 +184,12 @@ func (m *Model) UserInfo(name string) (lines []string, ok bool) {
 	if u.Email != "" {
 		lines = append(lines, "email="+u.Email)
 	}
+	if u.ReportsMaxSize != nil {
+		lines = append(lines, "reports_max_size="+strconv.FormatInt(*u.ReportsMaxSize, 10))
+	}
+	if u.ReportsMaxCount != nil {
+		lines = append(lines, "reports_max_count="+strconv.Itoa(*u.ReportsMaxCount))
+	}
 	return lines, true
 }
 

@@ -94,6 +94,10 @@ Subcommands:
   <b>email</b> <o><username></o>                             Show the user's email address
   <b>email</b> <o><username></o> <o><address></o>                   Set it (an address belongs to one user)
   <b>email</b> <o><username></o> <o>clear</o>                       Remove it
+  <b>reports-limit</b> <o><username></o>                     Show the user's own limits of the stored reports
+  <b>reports-limit</b> <o><username></o> <o>max-size</o> <o><value></o>        Set the largest report (bytes, or Ki, Mi, Gi; 0: no cap)
+  <b>reports-limit</b> <o><username></o> <o>max-count</o> <o><n></o>           Set the most reports the user keeps (0: no cap)
+  <b>reports-limit</b> <o><username></o> [max-size|max-count] <o>clear</o>  Return to the server's setting (alone: both)
   <b>passwd</b> <o><username></o>                            Change a user's password
   <b>passwd</b> <o><username></o> <o>--hash <hash></o>              Change with pre-generated bcrypt hash (<o>-</o> reads it from stdin)
   <b>passwd</b> <o><username></o> <o>--no-change-required</o>       Skip the required password change (a reset requires one)
@@ -115,6 +119,8 @@ Examples:
   tacctl user add jsmith superuser --scopes prod,lab
   tacctl user add alice superuser --email alice@example.net
   tacctl user email alice alice@example.net
+  tacctl user reports-limit alice max-size 20Mi
+  tacctl user reports-limit alice clear
   tacctl user scope jsmith add prod
   tacctl user verify jsmith
 

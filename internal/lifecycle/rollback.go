@@ -466,6 +466,10 @@ type RollbackPlan struct {
 	// (0.2.23), which every older release refuses (rollback_email.go): every
 	// target older than 0.2.23.
 	emailUsers []string
+	// limitUsers are the users of the store that have a limit of the stored
+	// reports of their own (0.2.26), which every older release refuses
+	// (rollback_reportlimits.go): every target older than 0.2.26.
+	limitUsers []store.ReportLimitHolder
 	// snmpPool are the SNMP credential files in version 2 (the pool of v3
 	// users, 0.2.23), which every older release refuses
 	// (rollback_snmp_pool.go): every target older than 0.2.23.
@@ -538,7 +542,7 @@ func (p *RollbackPlan) Pending() bool {
 // PendingFiles: there is a file of tacctl's own to convert (the snapshot
 // holds those; the sudoers drop-ins and the stored pulls are not in it).
 func (p *RollbackPlan) PendingFiles() bool {
-	return len(p.keys) > 0 || len(p.pwStore) > 0 || len(p.emailUsers) > 0 || len(p.snmpPool) > 0 || len(p.stagingCovered) > 0 || len(p.managedUsers) > 0 || p.console.Text != nil || len(p.snmpDev) > 0 || len(p.syntaxDev) > 0 || len(p.netconfDev) > 0 || len(p.syntaxKeyDev) > 0 || len(p.timeoutDev) > 0
+	return len(p.keys) > 0 || len(p.pwStore) > 0 || len(p.emailUsers) > 0 || len(p.limitUsers) > 0 || len(p.snmpPool) > 0 || len(p.stagingCovered) > 0 || len(p.managedUsers) > 0 || p.console.Text != nil || len(p.snmpDev) > 0 || len(p.syntaxDev) > 0 || len(p.netconfDev) > 0 || len(p.syntaxKeyDev) > 0 || len(p.timeoutDev) > 0
 }
 
 func (p *RollbackPlan) todoSudoers() []sudoersPlan {
@@ -1202,6 +1206,11 @@ func ApplyRollback(p *RollbackPlan) ([]string, error) {
 		if len(removed) > 0 {
 			done = append(done, fmt.Sprintf("%s: removed the email address of %d %s", pt.StoreFile, len(removed), plural(len(removed), "user", "users")))
 		}
+	}
+	if line, err := p.applyReportLimits(); err != nil {
+		return done, fmt.Errorf("%s: %w", pt.StoreFile, err)
+	} else if line != "" {
+		done = append(done, line)
 	}
 	if len(p.snmpPool) > 0 {
 		n, err := p.applySNMPPool()

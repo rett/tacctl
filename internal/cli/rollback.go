@@ -164,6 +164,12 @@ func (inv *invocation) rollback(args []string) error {
 		}
 		rollbackBase += by
 	}
+	// The users' own limits of the stored reports go with the snapshot, and the
+	// line names the users (never more: the values are in the plan above).
+	limitUsers := plan.ReportLimitUserNames()
+	if len(limitUsers) > 0 {
+		rollbackBase = strings.TrimSuffix(rollbackBase, by) + " limit-users=" + namesList(limitUsers, 10) + by
+	}
 	done, err := lifecycle.ApplyRollback(plan)
 	for _, d := range done {
 		a.Out.InfoE(d)
@@ -193,6 +199,9 @@ func (inv *invocation) rollback(args []string) error {
 	}
 	if dropsPool {
 		inv.rollbackSNMPPoolNote(version, snapID, plan)
+	}
+	if len(limitUsers) > 0 {
+		inv.rollbackReportLimitUsersNote(version, snapID, plan)
 	}
 	inv.verbResult(audit.Info, rollbackBase, "")
 	return nil
@@ -382,13 +391,27 @@ func (inv *invocation) rollbackSNMPPoolNote(version, snapID string, plan *lifecy
 	inv.echo("If one did, run 'tacctl rollback " + version + " --apply --yes' again (it writes version 1).")
 }
 
+// rollbackReportLimitUsersNote says, after a rollback that removed the users'
+// own limits of the stored reports (every target older than 0.2.26), whose they
+// were, where the snapshot is and how they are set again.
+func (inv *invocation) rollbackReportLimitUsersNote(version, snapID string, plan *lifecycle.RollbackPlan) {
+	users := plan.ReportLimitUsers()
+	n := len(users)
+	inv.echo("")
+	inv.echo("The own limits of the stored reports were removed from the store for " + strconv.Itoa(n) + " " + plural(n, "user", "users") + "; " + version + " does not know the keys:")
+	for _, u := range users {
+		inv.echo("  " + u)
+	}
+	inv.echo("They are also in snapshot " + snapID + "; once " + rollbackFrom + " is installed again, 'tacctl user reports-limit <user> max-size|max-count <value>' sets them again.")
+}
+
 // rollbackReportLimitsNote says, after a rollback to a release before 0.2.26,
 // that the reports stay where they are and what writes a limit again.
 func (inv *invocation) rollbackReportLimitsNote(version string) {
 	inv.echo("")
 	inv.echo("The reports in the users' homes stay: they are the users' own files, and " + version + " has no 'device reports' verbs to list or remove them.")
-	inv.echo("Until the upgrade, do not run 'tacctl config reports max-size' or 'max-count': they write a limit again, which " + version + " refuses.")
-	inv.echo("If one did, run 'tacctl rollback " + version + " --apply' again (it removes it).")
+	inv.echo("Until the upgrade, do not run 'tacctl config reports max-size', 'config reports max-count' or 'tacctl user reports-limit': they write a limit again, which " + version + " refuses.")
+	inv.echo("If one did, run 'tacctl rollback " + version + " --apply' again (it removes it; with --yes while a user has a limit of their own).")
 }
 
 // rollbackTimeoutScaleNote says, after a rollback to a release before 0.2.22, that the commands of the

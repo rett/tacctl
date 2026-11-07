@@ -284,6 +284,12 @@ func (s *Store) DiskForm() *yamlpy.Map {
 		if e, ok := get(u, "email").(string); ok && e != "" {
 			ent.Set("email", e)
 		}
+		// 0 is a limit (no cap): the key is written whenever it is set
+		for _, k := range []string{ReportsMaxSizeKey, ReportsMaxCountKey} {
+			if n, ok := get(u, k).(int); ok {
+				ent.Set(k, n)
+			}
+		}
 		get(out, "users").(*yamlpy.Map).Set(name, ent)
 	}
 	scopes := s.section("scopes")
