@@ -201,6 +201,40 @@ func TestReportsRowsOfEachType(t *testing.T) {
 	}
 }
 
+// A JSON report carries the filters of the command: the keys scope and vendor,
+// only those that were given, {} for none; the stored file has the same.
+func TestReportsJSONCarriesTheFilters(t *testing.T) {
+	b := newReportsBox(t)
+	filters := func(out string) map[string]string {
+		t.Helper()
+		var doc struct {
+			Filters map[string]string `json:"filters"`
+		}
+		if err := json.Unmarshal([]byte(out), &doc); err != nil || doc.Filters == nil {
+			t.Fatalf("%v %q", err, out)
+		}
+		return doc.Filters
+	}
+	if f := filters(b.as("alice", asSuper, "generate", "--type", "software", "--format", "json", "--stdout")); len(f) != 0 {
+		t.Errorf("no filters: %v", f)
+	}
+	if f := filters(b.as("alice", asSuper, "generate", "--type", "software", "--format", "json", "--stdout", "--scope", "lab")); len(f) != 1 || f["scope"] != "lab" {
+		t.Errorf("scope: %v", f)
+	}
+	f := filters(b.as("alice", asSuper, "generate", "--type", "software", "--format", "json", "--stdout", "--scope", "lab", "--vendor", "cisco"))
+	if len(f) != 2 || f["scope"] != "lab" || f["vendor"] != "cisco" {
+		t.Errorf("both: %v", f)
+	}
+	name := b.generate("alice", asSuper, "--type", "software", "--format", "json", "--vendor", "cisco")
+	body, err := os.ReadFile(filepath.Join(b.dir("alice"), name+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f := filters(string(body)); len(f) != 1 || f["vendor"] != "cisco" {
+		t.Errorf("stored: %v", f)
+	}
+}
+
 func TestReportsGenerateStoresTheFiles(t *testing.T) {
 	b := newReportsBox(t)
 	out := b.as("alice", asSuper, "generate", "--type", "inventory", "--format", "csv", "--scope", "lab", "--vendor", "cisco")

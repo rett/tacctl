@@ -3,6 +3,7 @@
   "type": "config",
   "generated": "2026-11-06T09:30:15Z",
   "oldest_data": "2026-11-03T22:10:00Z",
+  "filters": {},
   "columns": [
     "name",
     "scope",

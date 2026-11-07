@@ -235,6 +235,10 @@ func renderJSON(r Report) ([]byte, error) {
 	if cols == nil {
 		cols = []string{}
 	}
+	filters := r.Filters
+	if filters == nil {
+		filters = map[string]string{}
+	}
 	c.WriteByte('{')
 	for i, f := range []struct {
 		k string
@@ -244,6 +248,7 @@ func renderJSON(r Report) ([]byte, error) {
 		{"type", r.Type},
 		{"generated", r.Generated.UTC().Format(time.RFC3339)},
 		{"oldest_data", oldest},
+		{"filters", filters},
 		{"columns", cols},
 	} {
 		if err := field(f.k, f.v, i == 0); err != nil {

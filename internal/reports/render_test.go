@@ -215,12 +215,13 @@ func TestJSONDecodes(t *testing.T) {
 			t.Errorf("%s: not pretty printed:\n%s", typ, out)
 		}
 		var doc struct {
-			Schema     int              `json:"schema"`
-			Type       string           `json:"type"`
-			Generated  string           `json:"generated"`
-			OldestData *string          `json:"oldest_data"`
-			Columns    []string         `json:"columns"`
-			Rows       []map[string]any `json:"rows"`
+			Schema     int               `json:"schema"`
+			Type       string            `json:"type"`
+			Generated  string            `json:"generated"`
+			OldestData *string           `json:"oldest_data"`
+			Filters    map[string]string `json:"filters"`
+			Columns    []string          `json:"columns"`
+			Rows       []map[string]any  `json:"rows"`
 		}
 		dec := json.NewDecoder(strings.NewReader(out))
 		dec.DisallowUnknownFields()
@@ -241,8 +242,23 @@ func TestJSONDecodes(t *testing.T) {
 	if !(i < j && j < k) || !strings.Contains(out, `"components": []`) || !strings.Contains(out, `"priority": 129,`) {
 		t.Errorf("members json:\n%s", out)
 	}
+	// The filters of the command: only the ones given, {} for none.
+	r := mustBuild(t, TypeSoftware)
+	if out := render(t, r, "json"); !strings.Contains(out, "\n  \"filters\": {},\n") {
+		t.Errorf("no filters:\n%s", out)
+	}
+	r.Filters = map[string]string{"vendor": "juniper", "scope": "site-a"}
+	out = render(t, r, "json")
+	if !strings.Contains(out, "\n  \"filters\": {\n    \"scope\": \"site-a\",\n    \"vendor\": \"juniper\"\n  },\n") {
+		t.Errorf("filters:\n%s", out)
+	}
+	r.Filters = map[string]string{"scope": "site-a"}
+	out = render(t, r, "json")
+	if !strings.Contains(out, `"scope": "site-a"`) || strings.Contains(out, `"vendor": "juniper"`) {
+		t.Errorf("one filter:\n%s", out)
+	}
 	// No pull at all: oldest_data is null.
-	r, _ := Build(TypeInventory, nil, now)
+	r, _ = Build(TypeInventory, nil, now)
 	out = render(t, r, "json")
 	if !strings.Contains(out, `"oldest_data": null`) || !strings.Contains(out, `"rows": []`) {
 		t.Errorf("empty json:\n%s", out)

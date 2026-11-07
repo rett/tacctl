@@ -46,7 +46,7 @@ $ tacctl device reports generate --type inventory --format csv
 
 - **text** is aligned columns under a heading that gives the type, when the report was made (UTC), the date of the oldest datum and the number of devices; an empty cell is `-`.
 - **csv** follows RFC 4180: a header line with the column names, UTF-8, `\n` line ends, a cell with a comma or a quote in quotes. A cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return gets a leading `'`, so that a spreadsheet shows it and does not run it; the lone `-` that stands for nothing is left as it is.
-- **json** is one object: `schema` (1), `type`, `generated`, `oldest_data`, `columns` and `rows`, an object for each row keyed by the column (the member id of the `members` report is `id`; dates are RFC 3339 UTC, `null` for a device never pulled or applied; `members` in the `inventory` report is a count). Each row of the `members` report also has `components`, an empty list in this release.
+- **json** is one object: `schema` (1), `type`, `generated`, `oldest_data`, `filters`, `columns` and `rows`, an object for each row keyed by the column (the member id of the `members` report is `id`; dates are RFC 3339 UTC, `null` for a device never pulled or applied; `members` in the `inventory` report is a count). `filters` holds the `--scope` and `--vendor` of the command as an object with the keys `scope` and `vendor`, each only when it was given (`{}` for none). Each row of the `members` report also has `components`, an empty list in this release.
 
 Text that came from a device or an operator (model, serial number, release, member fields, location and description) is printed as the record keeps it, with control, bidirectional and C1 characters replaced by `?`.
 

@@ -44,6 +44,10 @@ type Report struct {
 	// OldestData is the oldest non-zero Pulled among the devices; zero when no
 	// device was ever pulled.
 	OldestData time.Time
+	// Filters are the filters of the command that made the report, by name
+	// ("scope", "vendor"); a filter that was not given is not a key. The JSON
+	// format carries them as the object "filters" ({} when there are none).
+	Filters map[string]string
 }
 
 // Columns returns the column names of a report type, or nil for an unknown

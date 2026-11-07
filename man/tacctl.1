@@ -14097,6 +14097,17 @@ and
 .BR type ,
 .BR generated ,
 .BR oldest_data ,
+.BR filters
+(the
+.B \-\-scope
+and
+.B \-\-vendor
+given, as the keys
+.B scope
+and
+.BR vendor ,
+.B {}
+for none),
 .B columns
 and
 .BR rows ;
@@ -14138,7 +14149,7 @@ Only the devices that scope answers. A scope that is not one of yours is refused
 Only the devices of that vendor.
 .TP
 \fB\-\-format\fR \fItext|csv|json\fR
-The format: text (aligned columns, the default), csv (RFC 4180, a header line, UTF\-8) or json (one object: schema, type, generated, filters, rows). It sets the extension of the file.
+The format: text (aligned columns, the default), csv (RFC 4180, a header line, UTF\-8) or json (one object: schema, type, generated, oldest_data, filters, columns, rows). It sets the extension of the file.
 .TP
 \fB\-\-name\fR \fI<name>\fR
 The name of the report, without the extension: letters, digits, '.', '_' and '\-', at most 64 bytes, no leading dot. The default is the type and the date (inventory\-20261106); a second report of the same day gets \-2. A name in use is refused, never overwritten.

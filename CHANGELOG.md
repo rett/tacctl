@@ -100,11 +100,13 @@ current behaviour; this file is where history lives.
    its facts came from, and the heading gives the date of the oldest datum.
    `--format text|csv|json` (text is the default; a CSV cell that starts with
    `=`, `+`, `-` or `@` is quoted with a leading `'`, so that a spreadsheet does
-   not run it), `--scope` and `--vendor` narrow the report, `--name` names it,
-   `--stdout` prints it and stores nothing, and `--pull` reads the devices first
-   as `device config pull` does, with your own password (the engineer tier). A
-   report holds the devices of your scopes (a superuser's: all) and no secret,
-   hash or community string. It is the file
+   not run it; a JSON report is one object with `schema`, `type`, `generated`,
+   `oldest_data`, `filters` (`scope` and `vendor` as given, only those that
+   were, `{}` for none), `columns` and `rows`), `--scope` and `--vendor` narrow
+   the report, `--name` names it, `--stdout` prints it and stores nothing, and
+   `--pull` reads the devices first as `device config pull` does, with your own
+   password (the engineer tier). A report holds the devices of your scopes (a
+   superuser's: all) and no secret, hash or community string. It is the file
    `~/reports/devices/<type>-<yyyymmdd>.<txt|csv|json>` of your home (the
    directory 0700, the file 0600, made as you; a second report of a day is
    `-2`), with a `.meta` file beside it that records when, by whom, the command
