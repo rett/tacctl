@@ -31,22 +31,32 @@ func BreakGlassUsers(c *conf.Config, scope string) []BreakGlassUser {
 	return out
 }
 
-// BreakGlassClash is the refusal for a tacctl user name equal (without
-// regard to case) to a break-glass account recorded for one of scopes, ""
-// when there is none: the device's local account of that name would answer
-// for the user with its own class or privilege, not the group's (always on
-// Junos, first with aaa-order local-first on Cisco).
-func BreakGlassClash(c *conf.Config, name string, scopes []string) string {
+// BreakGlassMatch finds the break-glass account recorded for one of scopes
+// that is equal, without regard to case, to the tacctl user name: the
+// device's local account of that name would answer for the user with its own
+// class or privilege, not the group's (always on Junos, first with
+// aaa-order local-first on Cisco).
+func BreakGlassMatch(c *conf.Config, name string, scopes []string) (u BreakGlassUser, scope string, found bool) {
 	for _, s := range scopes {
 		for _, u := range BreakGlassUsers(c, s) {
 			if strings.EqualFold(u.Name, name) {
-				return "'" + name + "' is a break-glass local user of scope '" + s + "' (" + u.Role + "): the device's local account of that name " +
-					"would answer for the user with its own class. Remove the break-glass user first " +
-					"(tacctl scope breakglass " + s + " remove " + u.Name + ") or pick another name."
+				return u, s, true
 			}
 		}
 	}
-	return ""
+	return BreakGlassUser{}, "", false
+}
+
+// BreakGlassClash is the refusal for a tacctl user name that BreakGlassMatch
+// finds among the break-glass accounts of scopes, "" when there is none.
+func BreakGlassClash(c *conf.Config, name string, scopes []string) string {
+	u, s, ok := BreakGlassMatch(c, name, scopes)
+	if !ok {
+		return ""
+	}
+	return "'" + name + "' is a break-glass local user of scope '" + s + "' (" + u.Role + "): the device's local account of that name " +
+		"would answer for the user with its own class. Remove the break-glass user first " +
+		"(tacctl scope breakglass " + s + " remove " + u.Name + ") or pick another name."
 }
 
 // WriteBreakGlassUsers stores the scope's break-glass users; none at all

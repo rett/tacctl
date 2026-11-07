@@ -189,11 +189,11 @@ has no period. Meanwhile:
 - `config validate` reports each such user as an error with the command that renames it
   (`tacctl user rename alice.smith <new-name>`), and `config validate --fix-names` does not offer a
   name with a period.
-- `tacctl upgrade` refuses and names each user with the rename command. Rename such a user
-  *before* upgrading from 0.2.20 or 0.2.21 (`user rename` works there): the old release's upgrade
-  has already replaced `tacctl` and the tacquito build when the new `tacctl` refuses, and says so
-  (the store, the configuration and the services are not changed); after the rename, `tacctl
-  upgrade` finishes it.
+- `tacctl upgrade` renames each such user, replacing every period with `_` (`alice.smith` becomes
+  `alice_smith`), with the user's record, UID line and console settings, after a snapshot it names;
+  it prints `renamed user alice.smith to alice_smith` for each and asks you to tell the people to log
+  in with the new name. If the new name is taken it renames nobody and names the pair and the
+  command that frees the name (see [Upgrading](../install/upgrading.md)).
 - `tacctl rollback` to any target but 0.2.24, 0.2.23, 0.2.22, 0.2.21 and 0.2.20 (which read
   such a name) is refused (the dry run too), since the releases it goes to
   refuse the name; the refusal lists each user with the rename command.

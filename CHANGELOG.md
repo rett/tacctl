@@ -15,6 +15,28 @@ current behaviour; this file is where history lives.
    on tcp/49 (reject).` The boot unit is described in the break-glass pages,
    and `status` still shows its state.
 
+2. **`tacctl upgrade` renames a user whose name has a period.** 0.2.20 and
+   0.2.21 allowed periods in a user name; a name is letters, digits, `_` and
+   `-` since 0.2.22, because a period cannot be part of a Linux account name,
+   and the upgrade refused while one was stored. It now renames every such
+   user, replacing each period with `_` (`alice.smith` becomes `alice_smith`),
+   with everything that follows a user name: the store record (group, scopes,
+   email, flags and limits), the user's line in `linux-uids` and the user's
+   settings in `console.yaml` (the system shell, the password cache and the
+   ignored override of the `users` mapping). A snapshot is taken first and
+   named in the output (`snapshot <id> holds the state before the rename`),
+   and none is taken, and nothing printed, when no user has a period. Each
+   rename is one line (`renamed user alice.smith to alice_smith`, with an audit
+   line as `user rename` writes), followed by a note to tell the people to log
+   in with the new name: the name typed at a device's login changed. A name
+   with a period never had a Linux account, so no account on the server or a
+   host is renamed; the new name gets its account at the next sync. When a new
+   name is taken (a user of that name, a second name that becomes the same, or
+   a break-glass local user of one of the user's scopes) nothing is renamed and
+   the upgrade stops before any change, naming each pair with the command that
+   frees the name (`tacctl user rename alice_smith <other-name>`); run it
+   again afterwards. A second upgrade does nothing.
+
 ## 0.2.25 (2026-11-05)
 
 1. **`tacctl device config shapes` keeps its table narrow.** The list put every

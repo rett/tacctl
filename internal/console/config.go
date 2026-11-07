@@ -386,7 +386,11 @@ func ValidShellPath(p string) error {
 }
 
 // validate is the invariants of a file.
-func (f *File) validate() error {
+func (f *File) validate() error { return f.check(names.MatchExistingUser) }
+
+// check is validate with userName deciding which user names the per-user
+// mappings may hold.
+func (f *File) check(userName func(string) bool) error {
 	if f.Idle < 0 || f.Idle > MaxIdle {
 		return fail("settings.idle_timeout must be 0-" + strconv.Itoa(MaxIdle) + ".")
 	}
@@ -409,7 +413,7 @@ func (f *File) validate() error {
 		}
 	}
 	for u, on := range f.SystemShellUsers {
-		if !names.MatchExistingUser(u) {
+		if !userName(u) {
 			return fail("settings.system_shell_users: invalid user name '" + u + "'.")
 		}
 		if t := f.SystemShellUserTiers[u]; on && t != tier.Readonly && t != tier.Operator {
@@ -417,7 +421,7 @@ func (f *File) validate() error {
 		}
 	}
 	for u := range f.PasswordCacheUsers {
-		if !names.MatchExistingUser(u) {
+		if !userName(u) {
 			return fail("settings.password_cache_users: invalid user name '" + u + "'.")
 		}
 	}
@@ -435,7 +439,7 @@ func (f *File) validate() error {
 		return fail("settings.password_cache.max must be 1-" + strconv.Itoa(MaxPasswordCacheMax) + " (hours).")
 	}
 	for u := range f.IgnoredUsers {
-		if !names.MatchExistingUser(u) {
+		if !userName(u) {
 			return fail("users: invalid user name '" + u + "'.")
 		}
 	}
@@ -472,7 +476,7 @@ func Load(path string) (*File, error) {
 	case err != nil:
 		return nil, fail("Cannot read " + path + ": " + errText(err))
 	}
-	f, err := parse(data)
+	f, err := parse(data, (*File).validate)
 	if err != nil {
 		return nil, fail(path + ": " + strings.Join(msgs(err), " "))
 	}
@@ -487,7 +491,7 @@ func onOff(v any) (bool, bool) {
 	return s == On, true
 }
 
-func parse(data []byte) (*File, error) {
+func parse(data []byte, validate func(*File) error) (*File, error) {
 	v, err := pyyaml.LoadBytes(data)
 	if err != nil {
 		return nil, fail("not valid YAML: " + firstLine(err.Error()))
@@ -546,7 +550,7 @@ func parse(data []byte) (*File, error) {
 			return nil, fail("unknown key '" + k + "'.")
 		}
 	}
-	if err := f.validate(); err != nil {
+	if err := validate(f); err != nil {
 		return nil, err
 	}
 	return f, nil

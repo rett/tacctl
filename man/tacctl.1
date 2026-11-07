@@ -228,17 +228,33 @@ fails where ssh used to ask whether to trust an unknown host); a fetch that fail
 with
 .BR "git fetch failed. Check network / credentials." .
 .IP
-The upgrade is refused while the store has a user whose name has a period
-(0.2.20 and 0.2.21 allowed one; a user name is letters, digits, \&'_' and \&'\-'):
-the refusal lists each, with
-.B "user rename <name> <new\-name>"
-as the way out. Rename such a user before upgrading from 0.2.20 or 0.2.21: the
-upgrade of those releases has already replaced tacctl and the tacquito build
-when the new tacctl refuses, and the refusal says so (the store, the
-configuration and the services are not changed); run
-.B "tacctl upgrade"
-again after the rename to finish. Run on 0.2.22 itself, the refusal comes before
-anything is changed. A store that cannot be read does not hold it up.
+The upgrade renames every user whose name has a period (0.2.20 and 0.2.21
+allowed one; a user name is letters, digits, \&'_' and \&'\-', and a period cannot
+be part of a Linux account name): each period becomes \&'_', so
+.B alice.smith
+becomes
+.BR alice_smith ,
+with everything that follows a user name: the record in the store, the user's
+UID line in
+.I linux\-uids
+and the user's settings in
+.I console.yaml
+(the system shell, the password cache and the ignored override of the users
+mapping). A snapshot is taken first and named in the output, and none when no
+user has a period. The command prints one line for each user
+.RB ( "renamed user alice.smith to alice_smith" )
+and a note to tell the people to log in with the new name: the name typed at a
+device's login changed. A name with a period never had a Linux account, so no
+account on the server or a host is renamed; the new name gets its account at
+the next sync. When a new name is taken (a user of that name, a second name that
+becomes the same, or a break-glass local user of one of the user's scopes), the
+upgrade stops before anything is changed and names each pair with the command
+that frees the name, such as
+.BR "user rename alice_smith <other\-name>" ;
+run it again afterwards. When the release being upgraded has already replaced
+tacctl and the tacquito build, the message says so (the store, the
+configuration and the services are not changed). A store that cannot be read
+does not hold it up.
 .IP
 The upgrade installs the
 .B nftables
