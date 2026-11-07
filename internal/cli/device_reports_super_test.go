@@ -188,3 +188,76 @@ func TestReportsOthersAreRefusedTheReportsOfOtherUsers(t *testing.T) {
 		t.Errorf("something was made in bob's home: %v", ents)
 	}
 }
+
+// 'list --json' cleans every string as the text list does: a file name or a
+// metadata field is the user's to write, and a control character in it is a
+// '?' and never a character of the output.
+func TestReportsListJSONCleansTheStrings(t *testing.T) {
+	b := newReportsBox(t)
+	name := b.generate("bob", asOperator, "--type", "inventory", "--format", "csv", "--scope", "lab")
+	dir := b.dir("bob")
+	if err := os.WriteFile(filepath.Join(dir, "evil\x1b[31m.txt"), []byte("x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	metaPath := filepath.Join(dir, name+".csv.meta")
+	meta, err := os.ReadFile(metaPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the filter value and the type carry a control character and a bidi mark
+	edited := strings.Replace(string(meta), `"lab"`, `"l\u001bab\u202e"`, 1)
+	edited = strings.Replace(edited, `"type": "inventory"`, `"type": "inven\u001btory"`, 1)
+	if edited == string(meta) {
+		t.Fatalf("the metadata has no filter to edit:\n%s", meta)
+	}
+	if err := os.WriteFile(metaPath, []byte(edited), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := b.as("alice", asSuper, "list", "--user", "bob", "--json")
+	if b.sb.code != 0 {
+		t.Fatalf("exit %d %q", b.sb.code, b.sb.stderr())
+	}
+	for _, bad := range []string{`\u001b`, `\u202e`, "\x1b"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("the JSON holds %q:\n%s", bad, out)
+		}
+	}
+	// the edited metadata is still read (the row is a report, not an other file)
+	// and its fields came through cleaned
+	if !strings.Contains(out, `"type": "inven?tory"`) || !strings.Contains(out, `"scope": "l?ab?"`) {
+		t.Errorf("the metadata fields are not cleaned:\n%s", out)
+	}
+	if !strings.Contains(out, "evil?[31m.txt") {
+		t.Errorf("the file name is not cleaned:\n%s", out)
+	}
+}
+
+// A file with no valid metadata file is not a report tacctl made: a superuser
+// exporting it from another user's directory gets it copied with --out and not
+// printed to the terminal; a user's own file prints, as before.
+func TestReportsExportOfAnotherUsersOtherFileNeedsOut(t *testing.T) {
+	b := newReportsBox(t)
+	b.generate("bob", asOperator, "--type", "inventory")
+	if err := os.WriteFile(filepath.Join(b.dir("bob"), "notes.txt"), []byte("not a report\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(b.dir("alice"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(b.dir("alice"), "mine.txt"), []byte("my own file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := b.as("alice", asSuper, "export", "bob/notes.txt")
+	if b.sb.code != 1 || strings.Contains(out, "not a report\n") ||
+		!strings.Contains(b.sb.stderr(), "'bob/notes.txt' is not a report tacctl made (it has no metadata file), so it is not printed. Copy it with: tacctl device reports export bob/notes.txt --out <file>. Nothing was done.") {
+		t.Errorf("export to stdout: %d %q %q", b.sb.code, out, b.sb.stderr())
+	}
+	dest := filepath.Join(t.TempDir(), "notes-copy.txt")
+	b.as("alice", asSuper, "export", "bob/notes.txt", "--out", dest)
+	if got, _ := os.ReadFile(dest); b.sb.code != 0 || string(got) != "not a report\n" {
+		t.Errorf("export --out: %d %q", b.sb.code, got)
+	}
+	if out := b.as("alice", asSuper, "export", "mine.txt"); b.sb.code != 0 || out != "my own file\n" {
+		t.Errorf("an own file: %d %q", b.sb.code, out)
+	}
+}

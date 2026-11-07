@@ -95,10 +95,18 @@ func (inv *invocation) deviceReportsList(args []string) error {
 	if p.Has("--json") {
 		out := []reportListJSON{}
 		for _, r := range rows {
-			j := reportListJSON{Owner: r.owner, File: r.f.File, Name: r.f.Name, Other: r.f.Meta == nil, Size: r.f.Size}
+			// every string is cleaned as the text list cleans it: a file name
+			// or a metadata field is the user's to write
+			j := reportListJSON{Owner: cleanLine(r.owner), File: cleanLine(r.f.File), Name: cleanLine(r.f.Name), Other: r.f.Meta == nil, Size: r.f.Size}
 			if m := r.f.Meta; m != nil {
 				n := m.Count
-				j.Type, j.Format, j.User, j.Command, j.Filters, j.Rows = m.Type, m.Format, m.User, cleanLine(m.Command), m.Filters, &n
+				j.Type, j.Format, j.User, j.Command, j.Rows = cleanLine(m.Type), cleanLine(m.Format), cleanLine(m.User), cleanLine(m.Command), &n
+				if m.Filters != nil {
+					j.Filters = make(map[string]string, len(m.Filters))
+					for k, v := range m.Filters {
+						j.Filters[cleanLine(k)] = cleanLine(v)
+					}
+				}
 				j.Generated = m.Generated.UTC().Format(time.RFC3339)
 				if !m.OldestData.IsZero() {
 					j.OldestData = m.OldestData.UTC().Format(time.RFC3339)
@@ -133,7 +141,7 @@ func (inv *invocation) deviceReportsList(args []string) error {
 		}
 		cells := []any{cleanLine(r.f.Name), cleanLine(typ), cleanLine(format), reportSize(r.f.Size), when}
 		if withUser {
-			cells = append([]any{r.owner}, cells...)
+			cells = append([]any{cleanLine(r.owner)}, cells...)
 		}
 		tb.Add(cells...)
 		total += r.f.Size
@@ -249,6 +257,12 @@ func (inv *invocation) deviceReportsExport(args []string) error {
 	t, err := inv.reportTargetOf("export", p.Args[0])
 	if err != nil {
 		return err
+	}
+	// A file another user put in the directory is not a report tacctl made:
+	// what is in it is not printed to the superuser's terminal, only copied.
+	if t.cross && t.f.Meta == nil && !p.Has("--out") {
+		return inv.usageErr("'" + cleanLine(t.owner+"/"+t.f.File) + "' is not a report tacctl made (it has no metadata file), so it is not printed. Copy it with: tacctl device reports export " +
+			cleanLine(p.Args[0]) + " --out <file>. Nothing was done.")
 	}
 	b, err := t.pl.content(t.f.File, inv.exportLimit(t))
 	if err != nil {
