@@ -14307,10 +14307,16 @@ file over it. Both verbs open the file without following a link and without
 waiting, and read a regular file only: a link, a FIFO or a device node is refused,
 the metadata file too. A superuser exports another user's report as
 .IR user/report ;
-it is audited. A file of another user's directory that has no valid metadata
-file is not a report tacctl made, and is not printed: without
+it is audited. What another user wrote is not trusted with the superuser's
+terminal, and the metadata file does not vouch for it (its owner makes it too):
+to the standard output the command cleans every line of
+.IR user/report ,
+as
+.B show \-\-content
+does (control and formatting characters, escape sequences and line separators
+print as \&'?'), whether the file has a valid metadata file or not; with
 .B \-\-out
-the command says so and names the option; the user's own file prints as before.
+the bytes are copied as they are, and a user's own file prints as stored.
 .\" BEGIN GENERATED: command device reports export
 .RS
 .PP

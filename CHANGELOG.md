@@ -208,9 +208,11 @@ current behaviour; this file is where history lives.
    that a file a user grew cannot exhaust the memory of the process that reads
    it with a superuser's reach.
    `list --json` cleans every string (file, name, type, format, user, filters)
-   as the text list does, and `export <user>/<file>` of another user's file
-   that has no valid metadata file (not a report tacctl made) needs `--out`
-   instead of printing it to the superuser's terminal.
+   as the text list does, and `export <user>/<report>` of another user's file
+   to the standard output cleans every line as `show --content` does (control
+   and formatting characters, escape sequences and line separators print as
+   `?`), whether or not the file has a valid metadata file, which its owner
+   makes too and so cannot vouch for it; `--out` copies the bytes as they are.
 
 8. **The reports of a user are limited in size and number, by settings.** A
    directory of reports must not grow without bound. `tacctl device reports
