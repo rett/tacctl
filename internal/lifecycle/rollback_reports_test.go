@@ -11,7 +11,7 @@ import (
 // key included, and no target keeps another key with them.
 
 // targetsBefore0226 are all the targets: every one is older than 0.2.26.
-var targetsBefore0226 = append([]string{RollbackTarget0224, RollbackTarget0223}, allRollbackTargets...)
+var targetsBefore0226 = append([]string{RollbackTarget0225, RollbackTarget0224, RollbackTarget0223}, allRollbackTargets...)
 
 // reportKeysState is the sandbox with both limits set.
 func reportKeysState(t *testing.T) *rbSandbox {

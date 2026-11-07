@@ -46,7 +46,7 @@ func planRollback0222(p *RollbackPlan) (*RollbackPlan, error) {
 // of 'device clone'. A file that is already that
 // text, or absent, needs no step; any other text is left and said so.
 func (p *RollbackPlan) tiers0222Step(target string) []RollbackStep {
-	tiers := p.tiersPlan(tier.Sudoers0222(), tier.Sudoers(), tier.Sudoers0223())
+	tiers := p.tiersPlan(tier.Sudoers0222(), tier.Sudoers(), tier.Sudoers0225(), tier.Sudoers0223())
 	p.sudoers = []sudoersPlan{tiers}
 	if tiers.state != "rewrite" && tiers.state != "left" {
 		return nil

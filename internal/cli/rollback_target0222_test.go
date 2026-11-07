@@ -96,8 +96,8 @@ func TestRollback0222IsToldApartFromTheOlderTargets(t *testing.T) {
 	if !strings.Contains(hs.all(), "Until the upgrade, do not run 'tacctl device timeout-scale'") {
 		t.Errorf("0.2.21 lacks the note:\n%s", hs.all())
 	}
-	hs.run(hs.runner(), "rollback", "0.2.25")
-	hs.expect(1, "", "prepares the state for 0.2.24 (the release before this one), 0.2.23, 0.2.22, 0.2.21")
+	hs.run(hs.runner(), "rollback", "0.2.26")
+	hs.expect(1, "", "prepares the state for 0.2.25 (the release before this one), 0.2.24, 0.2.23, 0.2.22, 0.2.21")
 }
 
 // The snapshot is announced, and its state named, only when the apply takes
