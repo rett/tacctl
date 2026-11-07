@@ -23,6 +23,7 @@ import (
 
 	"github.com/rett/tacctl/internal/hosts"
 	"github.com/rett/tacctl/internal/model"
+	"github.com/rett/tacctl/internal/names"
 	"github.com/rett/tacctl/internal/pwchange"
 	"github.com/rett/tacctl/internal/store"
 	"github.com/rett/tacctl/internal/tier"
@@ -71,7 +72,7 @@ func (c *pwCtx) barrier(name, group string, scopes []string, disabled bool) pwBa
 	case !c.enrolled:
 		return pwBarrier{why: "this server is not enrolled (tacctl host enroll --local), so no user has a login on it to change the password at"}
 	case !hosts.LinuxName(name):
-		return pwBarrier{why: "its name is no Linux account name (a period), so it has no login on this server"}
+		return pwBarrier{why: "its name is no Linux account name, so it has no login on this server"}
 	case !slices.Contains(scopes, e.Scope) && (!pwchange.ServerOf(e).ManagedIn(c.m) || !c.implicit(name, group)):
 		return pwBarrier{why: "it is not in scope '" + e.Scope + "', the scope of this server, so it has no login on it"}
 	}
@@ -222,7 +223,7 @@ func (inv *invocation) userRequirePasswordChange(args []string) error {
 		return err
 	}
 	if target != "" {
-		if err := inv.newUsername(target); err != nil {
+		if err := names.ValidateUsername(target); err != nil {
 			return err
 		}
 	}

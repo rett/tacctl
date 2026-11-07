@@ -87,11 +87,9 @@ config validate [--json | --fix-names [--yes]]
     `host rename`; see cli/host.md). A device, host, user or scope whose name has upper case (the
     names of new ones are lower case) gets a `Names:` warning that names the rename which fixes it
     (`tacctl user rename Alice alice`; for a user it adds that devices match the typed login name
-    exactly, so the rename changes what the person types); the superuser's view only. A user whose
-    name has a period (a leftover of 0.2.20 or 0.2.21) is a `Names:` error that names `tacctl user
-    rename <name> <new-name>`; `--fix-names` does not offer it. Exits 1 on errors. The verb takes no
-    argument: a word other than its options is refused (`Unknown argument`) and no report is
-    printed. `--json` prints the findings as one JSON object and
+    exactly, so the rename changes what the person types); the superuser's view only. Exits 1 on
+    errors. The verb takes no argument: a word other than its options is refused (`Unknown
+    argument`) and no report is printed. `--json` prints the findings as one JSON object and
     nothing else on standard output (the schema is below); the exit status is the same.
     `--fix-names` follows the report with the offer to rename each such name to its lower-case
     spelling (below); the superuser's
@@ -125,8 +123,7 @@ config linux remove-script [--output <file>]
 
 config linux uid [<user> [<uid>]]
 
-    Show or change the UID a user gets on every host. A user whose name has a period (a leftover of
-    0.2.20 or 0.2.21) has no Linux account: its number can be shown, and a new one is refused
+    Show or change the UID a user gets on every host.
 
 config linux uid-range [<min>-<max>]
 

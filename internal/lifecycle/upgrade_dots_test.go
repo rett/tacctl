@@ -1,82 +1,284 @@
 package lifecycle_test
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/rett/tacctl/internal/lifecycle"
+	"github.com/rett/tacctl/internal/snapshot"
 )
 
-const dottedUpgradeStore = "version: 1\nusers:\n  alice.smith:\n    group: operator\n  bob:\n    group: operator\n  a.b-c_d:\n    group: operator\n"
+// dottedStorePrefix is what a store has before its users: the built-in
+// groups and the scope the users are in.
+const dottedStorePrefix = `version: 1
+groups:
+  readonly: {priv_lvl: 1, juniper_class: RO-CLASS, builtin: true}
+  operator: {priv_lvl: 7, juniper_class: OP-CLASS, builtin: true}
+  superuser: {priv_lvl: 15, juniper_class: RW-CLASS, builtin: true}
+scopes:
+  site-a:
+    prefixes: [192.0.2.0/24]
+    secret: example-secret
+filters:
+  allow: []
+  deny: []
+`
 
-// A user name with a period (0.2.20 and 0.2.21 allowed it) stops the upgrade
-// before it changes anything: each such user is named with the command that
-// renames it, and the run does not go on to the backends, the state or the
-// files. Once the users are renamed it goes through.
-func TestUpgradeRefusesDottedUsers(t *testing.T) {
+// A store written by 0.2.20 or 0.2.21: users with a period in the name, with
+// the things that follow a user name.
+const dottedUpgradeStore = dottedStorePrefix + `users:
+  alice.smith:
+    group: operator
+    scopes: [site-a]
+    hash: null
+    disabled: false
+    password_changed: null
+    email: alice@example.net
+    password_change_required: true
+  bob:
+    group: operator
+    scopes: []
+    hash: null
+    disabled: false
+    password_changed: null
+  a.b-c_d:
+    group: operator
+    scopes: []
+    hash: null
+    disabled: false
+    password_changed: null
+`
+
+const dottedLedger = "# UIDs\nalice.smith:80001\nbob:80002\n"
+
+const dottedConsole = `version: 1
+users:
+  alice.smith: enable
+settings:
+  system_shell_users:
+    alice.smith: enable:operator
+  password_cache_users:
+    alice.smith: true
+`
+
+func snapshotIDs(o *ohost) []string { return snapshot.IDs(o.p.BackupDir) }
+
+// The upgrade renames a user whose name has a period (alice.smith is
+// alice_smith) with everything that follows the name: the store record, the
+// UID line, the console settings. A snapshot comes first and is named; one
+// line says each rename and a note says what to tell the people. A second
+// run does nothing and takes no snapshot.
+func TestUpgradeRenamesDottedUsers(t *testing.T) {
 	o := newOhost(t)
 	o.cloned()
 	o.write(o.p.StoreFile, dottedUpgradeStore)
-	o.write(o.p.Overrides, "backends:\n  enabled: [tacacs]\n")
+	o.write(o.p.LinuxUIDs, dottedLedger)
+	o.write(o.p.ConsoleFile, dottedConsole)
+	if n := len(snapshotIDs(o)); n != 0 {
+		t.Fatalf("%d snapshots before the upgrade", n)
+	}
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	ids := snapshotIDs(o)
+	if len(ids) == 0 {
+		t.Fatalf("no snapshot was taken\n%s", o.text())
+	}
+	text := o.text()
+	for _, want := range []string{
+		"Renaming 2 users whose name has a period",
+		"snapshot " + ids[0] + " holds the state before the rename (tacctl backup restore " + ids[0] + ")",
+		"renamed user a.b-c_d to a_b-c_d",
+		"renamed user alice.smith to alice_smith (UID 80001 carried, console settings moved)",
+		"Tell these users to log in with the new name",
+		"never had a Linux account",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("output lacks %q:\n%s", want, text)
+		}
+	}
+	// the snapshot is named before the renames are reported, and holds the
+	// store as it was
+	inOrder(t, text, "Renaming 2 users", "snapshot "+ids[0], "renamed user", "Tell these users", "Updating system files")
+	if got := readFile(t, filepath.Join(o.p.BackupDir, ids[0], filepath.Base(o.p.StoreFile))); got != dottedUpgradeStore {
+		t.Errorf("the snapshot's store is not the one before:\n%s", got)
+	}
+
+	// the store record moved whole
+	st := readFile(t, o.p.StoreFile)
+	for _, want := range []string{"alice_smith:", "a_b-c_d:", "email: alice@example.net", "password_change_required: true", "site-a", "bob:"} {
+		if !strings.Contains(st, want) {
+			t.Errorf("store lacks %q:\n%s", want, st)
+		}
+	}
+	if strings.Contains(st, "alice.smith") || strings.Contains(st, "a.b-c_d") {
+		t.Errorf("store still holds a name with a period:\n%s", st)
+	}
+	if got := readFile(t, o.p.LinuxUIDs); got != "# UIDs\nalice_smith:80001\nbob:80002\n" {
+		t.Errorf("ledger:\n%s", got)
+	}
+	cons := readFile(t, o.p.ConsoleFile)
+	if strings.Contains(cons, "alice.smith") || strings.Count(cons, "alice_smith") != 3 {
+		t.Errorf("console.yaml:\n%s", cons)
+	}
+	// one audit line per rename, as 'user rename' writes it
+	if got := strings.Join(o.audit, "\n"); !strings.Contains(got, "user rename from=alice.smith to=alice_smith uid=carried") ||
+		!strings.Contains(got, "user rename from=a.b-c_d to=a_b-c_d uid=-") {
+		t.Errorf("audit lines:\n%s", got)
+	}
+
+	// idempotent: nothing to do, no snapshot, no output about it
+	after := readFile(t, o.p.StoreFile)
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("second run: exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	if got := snapshotIDs(o); !slices.Equal(got, ids) {
+		t.Errorf("snapshots after the second run: %v, before %v", got, ids)
+	}
+	if strings.Contains(o.text(), "renamed user") || strings.Contains(o.text(), "Renaming") || strings.Contains(o.text(), "Tell these") {
+		t.Errorf("second run:\n%s", o.text())
+	}
+	if got := readFile(t, o.p.StoreFile); got != after {
+		t.Errorf("the store changed in the second run:\n%s", got)
+	}
+	if strings.Contains(strings.Join(o.audit, "\n"), "user rename") {
+		t.Errorf("audit lines of the second run: %v", o.audit)
+	}
+}
+
+// With no user whose name has a period nothing is done: no snapshot, no
+// line, the store as it was.
+func TestUpgradeWithoutDottedUsersTakesNoSnapshot(t *testing.T) {
+	o := newOhost(t)
+	o.cloned()
+	const clean = dottedStorePrefix + "users:\n  alice:\n    group: operator\n    scopes: []\n    hash: null\n    disabled: false\n    password_changed: null\n"
+	o.write(o.p.StoreFile, clean)
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	if ids := snapshotIDs(o); len(ids) != 0 {
+		t.Errorf("snapshots: %v", ids)
+	}
+	if strings.Contains(o.text(), "Renaming") || strings.Contains(o.text(), "renamed user") {
+		t.Errorf("output:\n%s", o.text())
+	}
+	if got := readFile(t, o.p.StoreFile); got != clean {
+		t.Errorf("the store changed:\n%s", got)
+	}
+	// and an install with no store at all
+	p := newOhost(t)
+	p.cloned()
+	if code := upgrade(p); code != 0 {
+		t.Fatalf("no store: exit %d\n%s\n%s", code, p.stdout, p.stderr)
+	}
+}
+
+// A new name that is taken stops the upgrade before anything is changed:
+// each clashing pair is named with the way to free the name, and neither the
+// users that could be renamed nor anything else is. A snapshot is not taken.
+// Once the name is free the upgrade goes through.
+func TestUpgradeDottedUserClashChangesNothing(t *testing.T) {
+	const store = dottedStorePrefix + `users:
+  alice.smith:
+    group: operator
+    scopes: [site-a]
+    hash: null
+    disabled: false
+    password_changed: null
+  alice_smith:
+    group: operator
+    scopes: []
+    hash: null
+    disabled: false
+    password_changed: null
+  carol.jones:
+    group: operator
+    scopes: [site-a]
+    hash: null
+    disabled: false
+    password_changed: null
+  dave.x:
+    group: operator
+    scopes: []
+    hash: null
+    disabled: false
+    password_changed: null
+`
+	o := newOhost(t)
+	o.cloned()
+	o.write(o.p.StoreFile, store)
+	o.write(o.p.Overrides, "backends:\n  enabled: [tacacs]\nbreakglass_scope:\n  site-a:\n    users: ['Carol_Jones:admin']\n")
+	o.be.Conf.Reload()
+	o.write(o.p.LinuxUIDs, dottedLedger)
+	o.write(o.p.ConsoleFile, dottedConsole)
 	beforeOverrides := readFile(t, o.p.Overrides)
 	if code := upgrade(o); code != 1 {
 		t.Fatalf("exit %d, want 1\n%s\n%s", code, o.stdout, o.stderr)
 	}
 	errs := stripANSI(o.stderr.String())
 	for _, want := range []string{
-		"The store has 2 users whose name has a period, which user names no longer hold:",
-		"  a.b-c_d   (tacctl user rename a.b-c_d <new-name>)",
-		"  alice.smith   (tacctl user rename alice.smith <new-name>)",
-		"Rename the users first, then run the upgrade again. Nothing was changed.",
+		"2 new names are not free:",
+		"  alice.smith -> alice_smith: a user of that name exists   (tacctl user rename alice_smith <other-name>, or tacctl user remove alice_smith)",
+		"  carol.jones -> carol_jones: a break-glass local user of scope 'site-a' (admin)   (tacctl scope breakglass site-a remove Carol_Jones)",
+		"No user was renamed. Free the names, then run the upgrade again.",
+		"Nothing was changed.",
 	} {
 		if !strings.Contains(errs, want) {
 			t.Errorf("stderr lacks %q:\n%s", want, errs)
 		}
+	}
+	if strings.Contains(errs, "dave.x") {
+		t.Errorf("a user that could be renamed is named:\n%s", errs)
 	}
 	for _, p := range o.phases {
 		if !strings.HasSuffix(p, " upgrade preflight") {
 			t.Errorf("phase %q ran after the refusal", p)
 		}
 	}
-	if strings.Contains(o.text(), "tacctl Upgrade") || slices.ContainsFunc(o.phases, func(p string) bool { return strings.Contains(p, "build") }) {
-		t.Errorf("the upgrade went on:\n%s\n%v", o.text(), o.phases)
+	if strings.Contains(o.text(), "tacctl Upgrade") {
+		t.Errorf("the upgrade went on:\n%s", o.text())
 	}
-	if got := readFile(t, o.p.StoreFile); got != dottedUpgradeStore {
+	if ids := snapshotIDs(o); len(ids) != 0 {
+		t.Errorf("snapshots: %v", ids)
+	}
+	if got := readFile(t, o.p.StoreFile); got != store {
 		t.Errorf("the store changed:\n%s", got)
 	}
-	if got := readFile(t, o.p.Overrides); got != beforeOverrides {
-		t.Errorf("tacctl.yaml changed:\n%s", got)
+	if readFile(t, o.p.Overrides) != beforeOverrides || readFile(t, o.p.LinuxUIDs) != dottedLedger || readFile(t, o.p.ConsoleFile) != dottedConsole {
+		t.Error("a file changed")
 	}
 
-	// A user renamed is not named again.
-	o.write(o.p.StoreFile, strings.NewReplacer("alice.smith", "alice-smith", "a.b-c_d", "abcd").Replace(dottedUpgradeStore))
+	// The names freed, the same state goes through.
+	o.write(o.p.StoreFile, strings.NewReplacer("  alice_smith:", "  alice_two:", "  carol.jones:", "  carol-jones:").Replace(store))
 	if code := upgrade(o); code != 0 {
-		t.Fatalf("after the rename: exit %d\n%s\n%s", code, o.stdout, o.stderr)
+		t.Fatalf("after freeing the names: exit %d\n%s\n%s", code, o.stdout, o.stderr)
 	}
-	if strings.Contains(o.stderr.String(), "a period") {
-		t.Errorf("stderr:\n%s", o.stderr)
+	if !strings.Contains(o.text(), "renamed user alice.smith to alice_smith") || !strings.Contains(o.text(), "renamed user dave.x to dave_x") {
+		t.Errorf("output:\n%s", o.text())
 	}
 }
 
 // The new command of an upgrade started by an older release (ReexecEnv=1) is
-// where the gate refuses in practice: the installed command and the tacquito
-// build are already replaced, so the refusal says that and what is left to
-// do, and does not say that nothing was changed.
-func TestUpgradeRefusesDottedUsersAfterTheReexec(t *testing.T) {
+// where the refusal comes in practice: the installed command and the tacquito
+// build are already replaced, so the refusal says that and does not say that
+// nothing was changed.
+func TestUpgradeDottedUserClashAfterTheReexec(t *testing.T) {
+	const store = dottedStorePrefix + "users:\n  alice.smith:\n    group: operator\n  alice_smith:\n    group: operator\n"
 	o := newOhost(t)
 	o.cloned()
-	o.write(o.p.StoreFile, dottedUpgradeStore)
+	o.write(o.p.StoreFile, store)
 	o.environ = append(o.environ, lifecycle.ReexecEnv+"=1")
 	if code := upgrade(o); code != 1 {
 		t.Fatalf("exit %d, want 1\n%s\n%s", code, o.stdout, o.stderr)
 	}
 	errs := stripANSI(o.stderr.String())
 	for _, want := range []string{
-		"The store has 2 users whose name has a period",
-		"  alice.smith   (tacctl user rename alice.smith <new-name>)",
+		"1 new name is not free:",
+		"  alice.smith -> alice_smith: a user of that name exists",
 		"tacctl and the tacquito build were updated; the store, the configuration and the services were not.",
-		"Rename the users, then run 'tacctl upgrade' again to finish.",
 	} {
 		if !strings.Contains(errs, want) {
 			t.Errorf("stderr lacks %q:\n%s", want, errs)
@@ -85,18 +287,34 @@ func TestUpgradeRefusesDottedUsersAfterTheReexec(t *testing.T) {
 	if strings.Contains(errs, "Nothing was changed") {
 		t.Errorf("says nothing was changed after the update:\n%s", errs)
 	}
-	if got := readFile(t, o.p.StoreFile); got != dottedUpgradeStore {
+	if got := readFile(t, o.p.StoreFile); got != store {
 		t.Errorf("the store changed:\n%s", got)
-	}
-	// Renamed, the run goes on to the end.
-	o.write(o.p.StoreFile, "version: 1\nusers:\n  alice-smith:\n    group: operator\n")
-	if code := upgrade(o); code != 0 {
-		t.Fatalf("after the rename: exit %d\n%s\n%s", code, o.stdout, o.stderr)
 	}
 }
 
-// A store that cannot be read does not make the upgrade refuse for a name it
-// cannot see: it warns and goes on; the store gate the backends run
+// A snapshot that cannot be made stops the rename: no user is renamed.
+func TestUpgradeDottedUsersNeedTheSnapshot(t *testing.T) {
+	o := newOhost(t)
+	o.cloned()
+	o.write(o.p.StoreFile, dottedUpgradeStore)
+	// a file where the snapshot directory goes
+	if err := os.MkdirAll(filepath.Dir(o.p.BackupDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	o.write(o.p.BackupDir, "not a directory\n")
+	if code := upgrade(o); code == 0 {
+		t.Fatalf("exit 0\n%s\n%s", o.stdout, o.stderr)
+	}
+	if !strings.Contains(stripANSI(o.stderr.String()), "A snapshot could not be made, so no user was renamed") {
+		t.Errorf("stderr:\n%s", o.stderr)
+	}
+	if got := readFile(t, o.p.StoreFile); got != dottedUpgradeStore {
+		t.Errorf("the store changed:\n%s", got)
+	}
+}
+
+// A store that cannot be read does not make the upgrade stop for a name it
+// cannot see: it warns once and goes on; the store gate the backends run
 // reports the file.
 func TestUpgradeUnreadableStoreIsNotHeldUp(t *testing.T) {
 	o := newOhost(t)
@@ -105,8 +323,30 @@ func TestUpgradeUnreadableStoreIsNotHeldUp(t *testing.T) {
 	if code := upgrade(o); code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
 	}
-	if !strings.Contains(o.text(), "store.yaml cannot be read, so a user name with a period was not looked for") ||
-		strings.Contains(o.text(), "fix it first") {
-		t.Errorf("no word about the store:\n%s", o.text())
+	if n := strings.Count(o.text(), "store.yaml cannot be read, so a user name with a period was not looked for"); n != 1 || strings.Contains(o.text(), "fix it first") {
+		t.Errorf("%d warnings:\n%s", n, o.text())
+	}
+}
+
+// The plan: a name that two names with periods become, a name that is not a
+// user name, and the order of the renames.
+func TestPlanDottedUsers(t *testing.T) {
+	users := []lifecycle.DottedUser{{Name: "b.c"}, {Name: "a.b_c"}, {Name: "a_b.c"}, {Name: "zed"}, {Name: "x y.z"}, {Name: "q.r"}}
+	plan := lifecycle.PlanDottedUsers(nil, users, "/etc/tacctl/store.yaml")
+	var got []string
+	for _, r := range plan.Renames {
+		got = append(got, r.Old+">"+r.New)
+	}
+	if want := []string{"b.c>b_c", "a.b_c>a_b_c", "q.r>q_r"}; !slices.Equal(got, want) {
+		t.Errorf("renames %v, want %v", got, want)
+	}
+	text := strings.Join(plan.Clashes, "\n")
+	for _, want := range []string{
+		"  a_b.c -> a_b_c: 'a.b_c' becomes the same name; no command renames a name with a period, so edit one of the two keys under 'users:' in /etc/tacctl/store.yaml",
+		"  x y.z -> x y_z: not a name a user can have",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("clashes lack %q:\n%s", want, text)
+		}
 	}
 }

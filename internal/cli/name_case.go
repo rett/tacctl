@@ -16,9 +16,7 @@ import (
 // case, each with its fix, in that order and sorted within a kind. Only the
 // superuser's view has them (a restricted caller is told nothing: what they
 // would name is not theirs). A fix names the lower-case spelling, or <new>
-// when another name of the namespace is equal to it ignoring case. A user
-// whose name has a period is not among them (dottedUserFindings has it): its
-// lower-case spelling would keep the period.
+// when another name of the namespace is equal to it ignoring case.
 func (inv *invocation) caseFindings() []hostFinding {
 	if inv.callerScopes().restricted {
 		return nil
@@ -85,7 +83,7 @@ func (inv *invocation) caseFindings() []hostFinding {
 				lowers[strings.ToLower(n)]++
 			}
 			for _, n := range set.all {
-				if names.HasUpper(n) && (set.kind != "user" || !strings.Contains(n, ".")) {
+				if names.HasUpper(n) {
 					out = append(out, hostFinding{
 						Text: "the " + set.kind + " '" + n + "' has upper case in its name; new names are lower case" + set.note,
 						Fix:  "tacctl " + set.verb + " rename " + n + " " + target(n, lowers),
@@ -95,32 +93,5 @@ func (inv *invocation) caseFindings() []hostFinding {
 			}
 		}
 	}
-	return out
-}
-
-// dottedUserFindings are the users whose name has a period, sorted, each an
-// error with the verb that renames it. 0.2.20 and 0.2.21 allowed the period;
-// a user name is letters, digits, '_' and '-' since 0.2.22 because every user
-// has an account on the tacctl server and a period cannot be part of a Linux
-// account name. Only the superuser's view has them, as for caseFindings.
-func (inv *invocation) dottedUserFindings() []validateFinding {
-	if inv.callerScopes().restricted {
-		return nil
-	}
-	m, err := inv.model()
-	if err != nil {
-		return nil
-	}
-	var out []validateFinding
-	for _, n := range m.UserNames() {
-		if strings.Contains(n, ".") {
-			out = append(out, validateFinding{
-				Section: "names", Level: levelError,
-				Text: "the user '" + n + "' has a period in its name; a user name is letters, digits, '_' and '-'",
-				Fix:  "tacctl user rename " + n + " <new-name>",
-			})
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Text < out[j].Text })
 	return out
 }

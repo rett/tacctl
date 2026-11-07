@@ -269,24 +269,6 @@ func quoteJoin(list []string) string {
 	return strings.Join(q, ", ")
 }
 
-// breakGlassClash is the refusal for a tacctl user name equal (without
-// regard to case) to a break-glass account recorded for one of scopes, ""
-// when there is none: the device's local account of that name would answer
-// for the user with its own class or privilege, not the group's (always on
-// Junos, first with aaa-order local-first on Cisco).
-func breakGlassClash(c *conf.Config, name string, scopes []string) string {
-	for _, s := range scopes {
-		for _, u := range policy.BreakGlassUsers(c, s) {
-			if strings.EqualFold(u.Name, name) {
-				return "'" + name + "' is a break-glass local user of scope '" + s + "' (" + u.Role + "): the device's local account of that name " +
-					"would answer for the user with its own class. Remove the break-glass user first " +
-					"(tacctl scope breakglass " + s + " remove " + u.Name + ") or pick another name."
-			}
-		}
-	}
-	return ""
-}
-
 // onlyJunosRoot reports a scope whose break-glass record is 'root' alone:
 // an account of its Junos devices only.
 func onlyJunosRoot(users []policy.BreakGlassUser) bool {

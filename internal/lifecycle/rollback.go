@@ -139,12 +139,9 @@ package lifecycle
 // changed reaches them), the sshd drop-ins, the tier-pin marker and the host
 // records (all as 0.2.3 has them).
 //
-// Every target but 0.2.25, 0.2.24, 0.2.23, 0.2.22, 0.2.21 and 0.2.20, which read such a name, is refused while
-// the store has a user name with a period (0.2.20 and 0.2.21 allowed one;
-// DottedUsersRefusal): the targets read letters, digits, '_' and '-' only, and fail on every store command with "user '<name>': invalid name".
-// An override under such a name in console.yaml (the console switches of a
-// user, ignored since 0.2.20) is taken out of the file by the plan; the other
-// 'tiers' and 'users' entries stay, for the older release reads them.
+// The 'tiers' and 'users' entries of console.yaml (the console switches of a
+// tier and of a user, ignored since 0.2.20) stay, for the older release reads
+// them.
 //
 // Every target is refused while a record of devices-config.json says an
 // apply of 'device config apply' is pending or unknown (PendingRefusal): the
@@ -679,14 +676,6 @@ func planRollback(in RollbackInput) (*RollbackPlan, error) {
 	if ls := in.Conf.Lockdowns(); len(ls) > 0 && in.Target != RollbackTarget0219 {
 		return nil, LockdownRefusal(ls)
 	}
-	// A store user name with a period (0.2.20, 0.2.21) is refused for every
-	// target but 0.2.25, 0.2.24, 0.2.23, 0.2.22, 0.2.21 and 0.2.20 (handled above): no other release reads it (DottedUsersRefusal). An
-	// override of such a name in console.yaml is taken out by the plan.
-	if inStore, err := DottedUsers(pa, in.HasStore); err != nil {
-		return nil, err
-	} else if len(inStore) > 0 {
-		return nil, DottedUsersRefusal(inStore)
-	}
 	// The required password change (0.2.20) is a key every older release
 	// refuses in the store: it is removed for every target older than 0.2.20
 	// (the 0.2.20 target and the newer ones return above), after the
@@ -882,7 +871,7 @@ func (p *RollbackPlan) addConsoleStep() {
 	}
 	cf := p.in.Paths.ConsoleFile
 	s := RollbackStep{Title: cf + ": take out the settings " + p.target() + " does not know", Todo: true}
-	s.Lines = append(p.consoleChangeLines(), "("+p.target()+"'s parser rejects what 0.2.20 added to console.yaml (the colour setting, the system shell and the password cache of single users, a list_max of -1) and an override of a user name with a period; everything else is kept)")
+	s.Lines = append(p.consoleChangeLines(), "("+p.target()+"'s parser rejects what 0.2.20 added to console.yaml (the colour setting, the system shell and the password cache of single users, a list_max of -1); everything else is kept)")
 	at := len(p.Steps)
 	for i := range p.Steps {
 		if p.Steps[i].Title == "leave every other file untouched" {

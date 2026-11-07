@@ -10,16 +10,13 @@ package lifecycle
 //
 // What 0.2.21 has that every older target lacks stays: the users' login to
 // this server through the managed scope (no scope is added to the users'
-// own lists, as the older targets do), the server address, the user names
-// with a period (0.2.20 and 0.2.21 allowed one, so the rollback is not
-// refused for one), the emergency lockdown, the required password change,
-// the management filter mode and the console settings of 0.2.20. Changes of
-// this release that 0.2.21 does not need a conversion for: the user name
-// rule (a name with a period is read as before; a new one is refused only
-// where it is made), the verbs 'server show', 'server listen' and 'server
-// metrics' (the keys they write are the ones 'config listen' and 'config
-// metrics' wrote), and the checks of the host-key scan and of the Junos
-// virtual chassis (no stored format).
+// own lists, as the older targets do), the server address, the emergency
+// lockdown, the required password change, the management filter mode and the
+// console settings of 0.2.20. Changes of this release that 0.2.21 does not
+// need a conversion for: the verbs 'server show', 'server listen' and
+// 'server metrics' (the keys they write are the ones 'config listen' and
+// 'config metrics' wrote), and the checks of the host-key scan and of the
+// Junos virtual chassis (no stored format).
 
 // planRollback0221 completes p (a plan whose tacctl.yaml was read and whose
 // records hold no unsettled apply) for 0.2.21.
