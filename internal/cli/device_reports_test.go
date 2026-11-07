@@ -639,3 +639,30 @@ func countLines(text, line string) int {
 	}
 	return n
 }
+
+// generate follows the settings of 'config reports' and the user's own limit
+// (D326): the global count of one refuses a second report, an own limit of no
+// cap lifts it for that user only, and an own size of one byte refuses a report.
+func TestReportsFollowTheConfiguredLimits(t *testing.T) {
+	b := newReportsBox(t)
+	b.sb.asAlice("", "config", "reports", "max-count", "1")
+	b.sb.expect(0, "", "")
+	if b.generate("bob", asOperator, "--type", "software") == "" {
+		t.Fatal("the first report was refused")
+	}
+	b.as("bob", asOperator, "generate", "--type", "software")
+	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "the setting reports.max-count") {
+		t.Errorf("global count: %d %q", b.sb.code, b.sb.stderr())
+	}
+	b.sb.asAlice("", "user", "reports-limit", "bob", "max-count", "0")
+	b.sb.expect(0, "", "")
+	if b.generate("bob", asOperator, "--type", "members") == "" {
+		t.Error("an own limit of no cap did not lift the global count")
+	}
+	b.sb.asAlice("", "user", "reports-limit", "bob", "max-size", "1")
+	b.sb.expect(0, "", "")
+	b.as("bob", asOperator, "generate", "--type", "inventory")
+	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "reports.max-size") {
+		t.Errorf("own size: %d %q", b.sb.code, b.sb.stderr())
+	}
+}
