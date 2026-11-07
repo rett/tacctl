@@ -489,6 +489,7 @@ JSON
 @test "rollback 0.2.26: the release before this one; the dry run writes nothing and --apply converts nothing, the report limits stay" {
     _state_024
     "$TACCTL_BIN_SCRIPT" server name core-1 > /dev/null
+    "$TACCTL_BIN_SCRIPT" user add bob engineer --hash "$HASH" --scopes lab > /dev/null
     "$TACCTL_BIN_SCRIPT" config reports max-size 20Mi > /dev/null
     "$TACCTL_BIN_SCRIPT" user reports-limit bob max-count 7 > /dev/null
     before=$(_sums)
@@ -530,19 +531,28 @@ JSON
     assert_output --partial "nothing to remove (every key of tacctl.yaml is one 0.2.25 knows)"
     assert_output --partial "nothing to do for 0.2.25: this release changed nothing on the enrolled hosts"
     assert_output --partial "--apply converts no file of tacctl's own and takes no snapshot"
+    assert_output --partial "put back the per-tier sudoers drop-in 0.2.25 writes"
     assert_output --partial "This was a dry run: nothing was changed."
     [[ "$(_sums)" == "$before" ]]
     run "$TACCTL_BIN_SCRIPT" rollback 0.2.25 --apply
     assert_success
-    assert_output --partial "Nothing to convert: every file is one 0.2.25 can read."
+    assert_output --partial "rewritten with the text 0.2.25 writes"
     assert_output --partial "tacctl upgrade --branch 0.2.25"
     assert_output --partial "The reports in the users' homes stay"
-    [[ "$(_sums)" == "$before" ]]
+    # only the per-tier sudoers drop-in changed (0.2.26 added the rows of 'device reports')
+    [[ "$(_sums)" != "$before" ]]
     [[ "$(_snapshots)" == "$n" ]]
+    before=$(_sums)
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.25 --apply
+    assert_success
+    assert_output --partial "Nothing to convert: every file is one 0.2.25 can read."
+    [[ "$(_sums)" == "$before" ]]
     # the settings and a user's own limit go, with a snapshot, and the limit needs --yes
+    "$TACCTL_BIN_SCRIPT" user add bob engineer --hash "$HASH" --scopes lab > /dev/null
     "$TACCTL_BIN_SCRIPT" config reports max-size 20Mi > /dev/null
     "$TACCTL_BIN_SCRIPT" user reports-limit bob max-count 7 > /dev/null
     before=$(_sums)
+    n=$(_snapshots)
     run "$TACCTL_BIN_SCRIPT" rollback 0.2.25
     assert_success
     assert_output --partial "remove reports.max_size"
@@ -578,17 +588,22 @@ JSON
     assert_output --partial "nothing to do for 0.2.24: this release changed nothing on the enrolled hosts"
     assert_output --partial "--apply converts no file of tacctl's own and takes no snapshot"
     refute_output --partial "remove device.timeout_scale"
-    refute_output --partial "sudoers drop-in 0.2"
+    assert_output --partial "put back the per-tier sudoers drop-in 0.2.24 writes"
     assert_output --partial "This was a dry run: nothing was changed."
     [[ "$(_sums)" == "$before" ]]
     [[ "$(_snapshots)" == "$n" ]]
     run "$TACCTL_BIN_SCRIPT" rollback 0.2.24 --apply
     assert_success
-    assert_output --partial "Nothing to convert: every file is one 0.2.24 can read."
+    assert_output --partial "rewritten with the text 0.2.24 writes"
     assert_output --partial "tacctl upgrade --branch 0.2.24"
-    # Not even the sudoers drop-in changes: 0.2.24 and this release write the same text.
-    [[ "$(_sums)" == "$before" ]]
+    # Only the per-tier sudoers drop-in changes (0.2.26 added the rows of 'device reports').
+    [[ "$(_sums)" != "$before" ]]
     [[ "$(_snapshots)" == "$n" ]]
+    before=$(_sums)
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.24 --apply
+    assert_success
+    assert_output --partial "Nothing to convert: every file is one 0.2.24 can read."
+    [[ "$(_sums)" == "$before" ]]
     run "$TACCTL_BIN_SCRIPT" config get server.name unset-marker
     assert_output "core-1"
 }
