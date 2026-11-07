@@ -26,7 +26,7 @@ func TestColumns(t *testing.T) {
 	want := map[string]string{
 		TypeInventory: "name,address,vendor,scope,model,serial,release,members,location,description,pulled",
 		TypeMembers:   "device,member,role,model,serial,release,status,priority,pulled",
-		TypeSoftware:  "name,vendor,model,release,gate,pulled",
+		TypeSoftware:  "name,vendor,model,release,pulled",
 		TypeConfig:    "name,scope,state,pulled,applied",
 	}
 	for typ, cols := range want {
@@ -244,7 +244,7 @@ func TestOldestData(t *testing.T) {
 
 func TestSoftwareAndConfig(t *testing.T) {
 	r, _ := Build(TypeSoftware, fixture(), now)
-	if got := strings.Join(r.Rows[2], "|"); got != "jsw1|junos|EX4300-48T|21.4R3-S5.4|held|2026-11-06 07:30" {
+	if got := strings.Join(r.Rows[2], "|"); got != "jsw1|junos|EX4300-48T|21.4R3-S5.4|2026-11-06 07:30" {
 		t.Errorf("software row = %s", got)
 	}
 	r, _ = Build(TypeConfig, fixture(), now)

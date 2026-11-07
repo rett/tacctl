@@ -121,13 +121,13 @@ func TestTextLayout(t *testing.T) {
 // An empty cell is shown as "-" in the text format only.
 func TestEmptyCell(t *testing.T) {
 	r := mustBuild(t, TypeSoftware)
-	if out := render(t, r, "text"); !strings.Contains(out, "rtr1   junos   MX204         22.2R1.9     -      2026-11-03 22:10\n") {
+	if out := render(t, r, "text"); !strings.Contains(out, "core1  wti     -             -            2026-11-06 06:00\n") {
 		t.Errorf("text lost the placeholder:\n%s", out)
 	}
-	if out := render(t, r, "csv"); !strings.Contains(out, "rtr1,junos,MX204,22.2R1.9,,2026-11-03 22:10\n") {
+	if out := render(t, r, "csv"); !strings.Contains(out, "core1,wti,,,2026-11-06 06:00\n") {
 		t.Errorf("csv lost the empty cell:\n%s", out)
 	}
-	if out := render(t, r, "json"); !strings.Contains(out, `"gate": ""`) {
+	if out := render(t, r, "json"); !strings.Contains(out, `"model": "",`) {
 		t.Errorf("json lost the empty cell:\n%s", out)
 	}
 }
@@ -276,7 +276,7 @@ func TestNoControlBytes(t *testing.T) {
 	nasty := "a\x1b[2Jb\x00c\td\re\x7ff\u0085g‮h⁦i\xff\xfej k"
 	devs := []Device{{
 		Name: nasty, Address: nasty, Vendor: nasty, Scope: nasty, Model: nasty, Serial: nasty,
-		Release: nasty, Location: nasty, Description: nasty, ConfigState: nasty, GateState: nasty,
+		Release: nasty, Location: nasty, Description: nasty, ConfigState: nasty,
 		Members: []Member{{ID: nasty, Role: nasty, Model: nasty, Serial: nasty, Release: nasty, Status: nasty}},
 	}}
 	for _, typ := range Types() {

@@ -59,7 +59,7 @@ func Columns(typ string) []string {
 	case TypeMembers:
 		return []string{"device", "member", "role", "model", "serial", "release", "status", "priority", "pulled"}
 	case TypeSoftware:
-		return []string{"name", "vendor", "model", "release", "gate", "pulled"}
+		return []string{"name", "vendor", "model", "release", "pulled"}
 	case TypeConfig:
 		return []string{"name", "scope", "state", "pulled", "applied"}
 	}
@@ -75,7 +75,7 @@ func jsonKeys(typ string) []string {
 	case TypeMembers:
 		return []string{"device", "id", "role", "model", "serial", "release", "status", "priority", "components", "pulled"}
 	case TypeSoftware:
-		return []string{"name", "vendor", "model", "release", "gate", "pulled"}
+		return []string{"name", "vendor", "model", "release", "pulled"}
 	case TypeConfig:
 		return []string{"name", "scope", "state", "pulled", "applied"}
 	}
@@ -113,9 +113,9 @@ func Build(typ string, devs []Device, now time.Time) (Report, error) {
 				r.add(m.cells, m.obj)
 			}
 		case TypeSoftware:
-			r.add([]string{d.Name, d.Vendor, d.Model, d.Release, d.GateState, pulledCell(d.Pulled)},
+			r.add([]string{d.Name, d.Vendor, d.Model, d.Release, pulledCell(d.Pulled)},
 				map[string]any{"name": d.Name, "vendor": d.Vendor, "model": d.Model, "release": d.Release,
-					"gate": d.GateState, "pulled": jsonTime(d.Pulled)})
+					"pulled": jsonTime(d.Pulled)})
 		case TypeConfig:
 			r.add([]string{d.Name, d.Scope, d.ConfigState, pulledCell(d.Pulled), appliedCell(d.Applied)},
 				map[string]any{"name": d.Name, "scope": d.Scope, "state": d.ConfigState,

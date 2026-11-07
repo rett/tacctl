@@ -613,7 +613,7 @@ func TestReportsExtensionAmbiguity(t *testing.T) {
 	if out := b.as("alice", asSuper, "show", "fleet.json"); b.sb.code != 0 || !strings.Contains(out, "other (a file") {
 		t.Errorf("with the extension: %d %q", b.sb.code, out)
 	}
-	if out := b.as("alice", asSuper, "export", "fleet.csv"); b.sb.code != 0 || !strings.Contains(out, "name,vendor,model,release,gate,pulled") {
+	if out := b.as("alice", asSuper, "export", "fleet.csv"); b.sb.code != 0 || !strings.Contains(out, "name,vendor,model,release,pulled") {
 		t.Errorf("export: %d %q", b.sb.code, out)
 	}
 	// the name is taken in any extension

@@ -66,10 +66,8 @@ type Device struct {
 	Applied time.Time `json:"applied"`
 	// ConfigState is the state word of `device config list`: ok, differs,
 	// never or failed.
-	ConfigState string `json:"config_state"`
-	// GateState is the state of the version gate, free text, may be empty.
-	GateState string   `json:"gate_state"`
-	Members   []Member `json:"members"`
+	ConfigState string   `json:"config_state"`
+	Members     []Member `json:"members"`
 }
 
 // MarshalJSON writes the members as [] when there are none, never null.
