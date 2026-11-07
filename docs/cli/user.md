@@ -222,8 +222,10 @@ underscores and hyphens (a period cannot be part of a Linux account name).` 0.2.
 periods: `tacctl upgrade` renames each user a store of theirs still holds, replacing every period with
 `_` (`alice.smith` becomes `alice_smith`), with the user's record, UID line and console settings,
 after a snapshot it names; it prints `renamed user alice.smith to alice_smith` for each and asks you to
-tell the people to log in with the new name. If the new name is taken it renames nobody and names the
-pair and the command that frees the name (see [Upgrading](../install/upgrading.md)). Until the
+tell the people to log in with the new name. If the new name is taken (by a user, by another renamed name or by a break-glass local user of the
+user's scopes) the user gets `_` and four random letters or digits after it
+(`alice_smith_k3x9`; `renamed user alice.smith to alice_smith_k3x9 (alice_smith was taken)`),
+and `tacctl user rename` gives another name afterwards (see [Upgrading](../install/upgrading.md)). Until the
 upgrade runs, a store that still holds such a name fails every write with `user 'alice.smith':
 invalid name` and says that `tacctl upgrade` renames it.
 

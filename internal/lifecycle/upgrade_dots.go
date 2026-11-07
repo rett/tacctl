@@ -16,6 +16,7 @@ package lifecycle
 // sync like any user.
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"strings"
@@ -43,28 +44,73 @@ type DottedUser struct {
 
 // DottedUserPlan is what the upgrade does about the store's users whose name
 // has a period: Renames, in the order of the store, or Clashes, one line each
-// for the users whose new name cannot be used (then nothing is renamed).
+// for the users who cannot be given a name (then nothing is renamed).
 type DottedUserPlan struct {
 	Renames []console.UserRename
 	Clashes []string
 }
 
 // NameWithoutPeriods is the name the upgrade gives a user: each period is a
-// '_'.
+// '_'. A user whose name that is taken gets a suffix after it
+// (PlanDottedUsers).
 func NameWithoutPeriods(name string) string { return strings.ReplaceAll(name, ".", "_") }
 
+const (
+	// suffixLen is the length of the random suffix, after its '_'.
+	suffixLen = 4
+	// maxNameLen is the longest name a Linux account has (hosts.LinuxName);
+	// a suffixed name is kept within it by shortening the part before the
+	// suffix.
+	maxNameLen = 32
+	// suffixTries bounds the draws for one name, so a source that always
+	// answers the same cannot loop for ever.
+	suffixTries = 1000
+	suffixAlpha = "abcdefghijklmnopqrstuvwxyz0123456789"
+)
+
+// RandomSuffix is the suffix of a renamed user whose new name is taken:
+// suffixLen lowercase letters or digits from the system's random source.
+func RandomSuffix() string {
+	out := make([]byte, 0, suffixLen)
+	buf := make([]byte, 16)
+	// 252 is the largest multiple of len(suffixAlpha) below 256: a byte
+	// from 252 up is dropped, so every character is equally likely.
+	for len(out) < suffixLen {
+		if _, err := rand.Read(buf); err != nil {
+			panic("tacctl: no system random source: " + err.Error())
+		}
+		for _, b := range buf {
+			if b < 252 && len(out) < suffixLen {
+				out = append(out, suffixAlpha[int(b)%len(suffixAlpha)])
+			}
+		}
+	}
+	return string(out)
+}
+
 // PlanDottedUsers decides the renames for a store holding users (all of them,
-// in the order of the store, with the scopes of each). A new name is a clash
-// when it is a user already, when a second name with a period becomes it too,
-// when it is a break-glass local account of one of the user's scopes (c; the
-// clash 'user rename' refuses) or when it is not a user name. storePath is
-// named in the line about two names that meet, which no command can tell
-// apart.
-func PlanDottedUsers(c *conf.Config, users []DottedUser, storePath string) DottedUserPlan {
-	taken := map[string]string{} // name -> the name with a period that becomes it, "" for a user
+// in the order of the store, with the scopes of each). A user's new name is
+// its name with each period a '_'. When that name is a user already, when an
+// earlier name with a period became it too, or when it is a break-glass local
+// account of one of the user's scopes (c; the clash 'user rename' refuses),
+// the user gets a suffix instead: '_' and suffixLen letters or digits from
+// suffix (nil: RandomSuffix), drawn again until the name is free of every
+// user, every other new name, every name a user with a period would get
+// without a suffix, and the break-glass accounts of the user's scopes. A
+// name too long for a Linux account with its suffix has the part before it
+// shortened. A new name that is not a user name at all is a clash, and so is
+// a name for which no free suffix is found: then nothing is renamed.
+func PlanDottedUsers(c *conf.Config, users []DottedUser, suffix func() string) DottedUserPlan {
+	if suffix == nil {
+		suffix = RandomSuffix
+	}
+	taken := map[string]bool{} // the users with no period and the names given so far
+	plain := map[string]bool{} // what each name with a period becomes without a suffix
 	for _, u := range users {
-		if !strings.Contains(u.Name, ".") {
-			taken[u.Name] = ""
+		if strings.Contains(u.Name, ".") {
+			plain[NameWithoutPeriods(u.Name)] = true
+		} else {
+			taken[u.Name] = true
 		}
 	}
 	var plan DottedUserPlan
@@ -74,22 +120,37 @@ func PlanDottedUsers(c *conf.Config, users []DottedUser, storePath string) Dotte
 		}
 		to := NameWithoutPeriods(u.Name)
 		line := "  " + u.Name + " -> " + to + ": "
-		other, held := taken[to]
-		switch {
-		case names.ValidateUsername(to) != nil:
+		if names.ValidateUsername(to) != nil {
 			plan.Clashes = append(plan.Clashes, line+"not a name a user can have")
-		case held && other == "":
-			plan.Clashes = append(plan.Clashes, line+"a user of that name exists   (tacctl user rename "+to+" <other-name>, or tacctl user remove "+to+")")
-		case held:
-			plan.Clashes = append(plan.Clashes, line+"'"+other+"' becomes the same name; no command renames a name with a period, so edit one of the two keys under 'users:' in "+storePath)
-		default:
-			if bg, scope, ok := policy.BreakGlassMatch(c, to, u.Scopes); ok {
-				plan.Clashes = append(plan.Clashes, line+"a break-glass local user of scope '"+scope+"' ("+bg.Role+")   (tacctl scope breakglass "+scope+" remove "+bg.Name+")")
+			continue
+		}
+		free := func(name string) bool {
+			if taken[name] {
+				return false
+			}
+			_, _, held := policy.BreakGlassMatch(c, name, u.Scopes)
+			return !held
+		}
+		if !free(to) {
+			base := to
+			if len(base)+1+suffixLen > maxNameLen {
+				base = base[:maxNameLen-1-suffixLen]
+			}
+			to = ""
+			for range suffixTries {
+				cand := base + "_" + suffix()
+				if names.ValidateUsername(cand) == nil && !plain[cand] && free(cand) {
+					to = cand
+					break
+				}
+			}
+			if to == "" {
+				plan.Clashes = append(plan.Clashes, line+"taken, and no free name with a suffix was found")
 				continue
 			}
-			taken[to] = u.Name
-			plan.Renames = append(plan.Renames, console.UserRename{Old: u.Name, New: to})
 		}
+		taken[to] = true
+		plan.Renames = append(plan.Renames, console.UserRename{Old: u.Name, New: to})
 	}
 	return plan
 }
@@ -131,11 +192,11 @@ func storeUsersOf(pa paths.Paths) ([]DottedUser, error) {
 	return out, nil
 }
 
-// dottedPlan reads the store and plans. A store that cannot be read is said
+// dottedPlan reads the store and plans with the suffixes of suffix. A store that cannot be read is said
 // so and does not stop the upgrade (ok false): the store gate the backends
 // run later reports the file, and an upgrade is what may put it right. The
 // warning is said once, by the first look (warn).
-func (h *Host) dottedPlan(warn bool) (plan DottedUserPlan, ok bool) {
+func (h *Host) dottedPlan(warn bool, suffix func() string) (plan DottedUserPlan, ok bool) {
 	users, err := storeUsersOf(h.Paths)
 	if err != nil {
 		if !warn {
@@ -145,10 +206,11 @@ func (h *Host) dottedPlan(warn bool) (plan DottedUserPlan, ok bool) {
 			errLine(err) + "); the upgrade goes on, and the store gate reports the file")
 		return plan, false
 	}
-	return PlanDottedUsers(h.Conf, users, h.Paths.StoreFile), true
+	return PlanDottedUsers(h.Conf, users, suffix), true
 }
 
-// How far an upgrade got when it stops for a new name that is taken.
+// How far an upgrade got when it stops for a new name that is not a user
+// name.
 const (
 	refusedEarly  = iota // before anything was changed
 	refusedReexec        // after the update of the installed command by an older release's upgrade
@@ -157,16 +219,18 @@ const (
 
 // dottedUsersGate is the upgrade's first look at the store for a user name
 // with a period, before anything is changed: it prints the refusal and
-// returns backend.ErrFailed when a new name cannot be used, so the upgrade
-// stops with the state as it was. The rename itself comes later, under the
-// apply lock (renameDottedUsers).
+// returns backend.ErrFailed when a user cannot be given a name, so the
+// upgrade stops with the state as it was. (A taken name is no reason to stop:
+// the user gets a suffix.) The rename itself comes later, under the apply
+// lock (renameDottedUsers), which draws the suffixes; this look only decides
+// whether to go on.
 //
 // An upgrade started by a release before 0.2.22 has no such check: it moves
 // the state, pulls and rebuilds, replaces the installed command and
 // re-executes it (ReexecEnv=1), and this gate is the new command's. The
 // refusal then says what was done and what was not.
 func (h *Host) dottedUsersGate() error {
-	plan, ok := h.dottedPlan(true)
+	plan, ok := h.dottedPlan(true, RandomSuffix)
 	if !ok || len(plan.Clashes) == 0 {
 		return nil
 	}
@@ -174,24 +238,26 @@ func (h *Host) dottedUsersGate() error {
 	if h.Environ.Get(ReexecEnv) == "1" {
 		stage = refusedReexec
 	}
-	for _, l := range UpgradeDottedUsersRefusal(plan, stage) {
+	for _, l := range UpgradeDottedUsersRefusal(plan, stage, h.Paths.StoreFile) {
 		h.Out.Error(l)
 	}
 	return backend.ErrFailed
 }
 
-// UpgradeDottedUsersRefusal is the refusal of an upgrade while the new name
-// of a user whose name has a period is taken: each such user with the reason
-// and the way to free the name. stage says what the upgrade changed before
-// it stopped: nothing, the installed command and the tacquito build (the
-// upgrade was re-executed by the command an older release replaced), or the
-// state migration and the builds, but not the store.
-func UpgradeDottedUsersRefusal(plan DottedUserPlan, stage int) []string {
+// UpgradeDottedUsersRefusal is the refusal of an upgrade while a user whose
+// name has a period cannot be given a name: each such user with the reason.
+// stage says what the upgrade changed before it stopped: nothing, the
+// installed command and the tacquito build (the upgrade was re-executed by
+// the command an older release replaced), or the state migration and the
+// builds, but not the store. storePath is the file whose key is edited, as no
+// command renames a name that is not a user name.
+func UpgradeDottedUsersRefusal(plan DottedUserPlan, stage int, storePath string) []string {
 	n := len(plan.Clashes)
 	out := []string{"The upgrade renames a user whose name has a period (a user name is letters, digits, '_' and '-') by replacing each period with '_', but " +
-		fmt.Sprint(n) + " new " + pluralWord(n, "name is", "names are") + " not free:"}
+		fmt.Sprint(n) + " " + pluralWord(n, "user cannot", "users cannot") + " be given a name:"}
 	out = append(out, plan.Clashes...)
-	out = append(out, "No user was renamed. Free the "+pluralWord(n, "name", "names")+", then run the upgrade again.")
+	out = append(out, "No user was renamed. No command renames a name that is not a user name, so edit the "+pluralWord(n, "key", "keys")+
+		" under 'users:' in "+storePath+", then run the upgrade again.")
 	switch stage {
 	case refusedReexec:
 		return append(out, "tacctl and the tacquito build were updated; the store, the configuration and the services were not.")
@@ -207,13 +273,13 @@ func UpgradeDottedUsersRefusal(plan DottedUserPlan, stage int) []string {
 // store is changed in one write, and the ledger and console.yaml follow each
 // rename. With no such user it does nothing, and takes no snapshot.
 func (h *Host) renameDottedUsers() error {
-	plan, ok := h.dottedPlan(false)
+	plan, ok := h.dottedPlan(false, h.NameSuffix)
 	if !ok || len(plan.Renames)+len(plan.Clashes) == 0 {
 		return nil
 	}
 	out := h.Out
 	if len(plan.Clashes) > 0 {
-		for _, l := range UpgradeDottedUsersRefusal(plan, refusedLate) {
+		for _, l := range UpgradeDottedUsersRefusal(plan, refusedLate, h.Paths.StoreFile) {
 			out.Error(l)
 		}
 		return backend.ErrFailed
@@ -265,6 +331,9 @@ func (h *Host) renameDottedUsers() error {
 		}
 		if settings[i].Had() {
 			with = append(with, "console settings moved")
+		}
+		if plain := NameWithoutPeriods(r.Old); r.New != plain {
+			with = append(with, plain+" was taken")
 		}
 		line := "  renamed user " + r.Old + " to " + r.New
 		if len(with) > 0 {

@@ -30,12 +30,18 @@ current behaviour; this file is where history lives.
    line as `user rename` writes), followed by a note to tell the people to log
    in with the new name: the name typed at a device's login changed. A name
    with a period never had a Linux account, so no account on the server or a
-   host is renamed; the new name gets its account at the next sync. When a new
-   name is taken (a user of that name, a second name that becomes the same, or
-   a break-glass local user of one of the user's scopes) nothing is renamed and
-   the upgrade stops before any change, naming each pair with the command that
-   frees the name (`tacctl user rename alice_smith <other-name>`); run it
-   again afterwards. A second upgrade does nothing.
+   host is renamed; the new name gets its account at the next sync. When the
+   new name is taken (a user of that name, a second name that becomes the same,
+   or a break-glass local user of one of the user's scopes) the user gets `_`
+   and four random lowercase letters or digits after it, drawn again until the
+   name is free of every user, every other new name and the break-glass users
+   of the user's scopes (`alice.smith` becomes `alice_smith_k3x9`; a name that
+   would be longer than a Linux account name is cut before the suffix), and the
+   line says why (`renamed user alice.smith to alice_smith_k3x9 (alice_smith
+   was taken)`); the first of two names that meet keeps the name without it.
+   Only a name that is not a user name even with the periods replaced (a space,
+   say) stops the upgrade before any change, naming the key to edit in the
+   store; run it again afterwards. A second upgrade does nothing.
 
 3. **A user name with a period is not accepted anywhere.** 0.2.22 to 0.2.25
    refused a period in a new user name but still read one that a store from
@@ -48,7 +54,7 @@ current behaviour; this file is where history lives.
    only letters, numbers, underscores and hyphens (a period cannot be part of a
    Linux account name).`, the store and `console.yaml` validate user names
    strictly, and `user rename` takes no old name with a period. A store that
-   still holds one (an upgrade that stopped for a name that is taken, or a
+   still holds one (an upgrade that stopped for a name that is not a user name, or a
    restored snapshot of 0.2.20 or 0.2.21) fails every write with `user
    'alice.smith': invalid name (a period cannot be part of a Linux account
    name; 'tacctl upgrade' renames such a user)`, and the upgrade is the way
