@@ -42,6 +42,22 @@ current behaviour; this file is where history lives.
    members report. Rows with a version are read as before. This says what the
    reader accepts, not which devices print such a row.
 
+4. **Two notes of the upgrade and the rollback say what they do.** When
+   `tacctl upgrade` renames a user whose name has a period and `linux-uids`
+   already has a line for the new name, it reused the text of `user rename`
+   (the account is removed on hosts and the new name created with another
+   UID), which is false for a name that never had an account. Nothing in the
+   ledger changes in that case, and the warning now says so: `'alice_smith'
+   already has UID 80007 in linux-uids, so the line of 'alice.smith' (UID
+   80001) is not moved: 'alice_smith' keeps UID 80007 and the line of
+   'alice.smith' stays in the file as it is`. The note that ends `tacctl
+   rollback 0.2.25` and `0.2.24` after a snapshot said that the older
+   release's restore refuses a `tacctl.yaml` with a key it does not know, also
+   when only a user's own report limit (a field of the store) was removed. It
+   now names what the restore refuses for what was removed: a `tacctl.yaml`
+   with a key it does not know (the settings), a `store.yaml` with a field it
+   does not know (a user's own limit), or both.
+
 ## 0.2.26 (2026-11-06)
 
 1. **The break-glass firewall line of `tacctl upgrade` and `install` is one

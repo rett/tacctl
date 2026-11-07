@@ -190,7 +190,7 @@ func (inv *invocation) rollback(args []string) error {
 	inv.loaded = false
 	a.Conf().Reload()
 
-	inv.rollbackNextSteps(version, plan.PendingFiles())
+	inv.rollbackNextSteps(version, plan.PendingFiles(), len(plan.Keys()) > 0, len(plan.ReportLimitUserNames()) > 0)
 	if plan.FirewallTodo() {
 		inv.rollbackFirewallNote(version, plan)
 	}
@@ -253,8 +253,10 @@ func (inv *invocation) printRollbackPlan(version string, plan *lifecycle.Rollbac
 }
 
 // rollbackNextSteps tells the operator what to do next, exactly; snapshot is
-// whether the apply took one.
-func (inv *invocation) rollbackNextSteps(version string, snapshot bool) {
+// whether the apply took one; keys and fields are whether it removed a key of
+// tacctl.yaml and a field of the store (what the older release's restore
+// refuses, in the note of the targets 0.2.25 and 0.2.24).
+func (inv *invocation) rollbackNextSteps(version string, snapshot, keys, fields bool) {
 	// every target older than 0.2.22 refuses the timing scale
 	if lifecycle.RollbackUndoes(version, "0.2.22") {
 		defer inv.rollbackTimeoutScaleNote(version)
@@ -265,10 +267,10 @@ func (inv *invocation) rollbackNextSteps(version string, snapshot bool) {
 	}
 	switch version {
 	case lifecycle.RollbackTarget0225:
-		inv.rollbackNextSteps0225(version, snapshot)
+		inv.rollbackNextSteps0225(version, snapshot, keys, fields)
 		return
 	case lifecycle.RollbackTarget0224:
-		inv.rollbackNextSteps0224(version, snapshot)
+		inv.rollbackNextSteps0224(version, snapshot, keys, fields)
 		return
 	case lifecycle.RollbackTarget0223:
 		inv.rollbackNextSteps0223(version, snapshot)
@@ -431,27 +433,37 @@ func (inv *invocation) rollbackTimeoutScaleNote(version string) {
 // steps, says that the reports stay in the users' homes and what to avoid), so
 // the rollback converted a file only when a limit was set; snapshot is whether
 // it took the snapshot then, and the note says why 0.2.25 cannot restore it.
-func (inv *invocation) rollbackNextSteps0225(version string, snapshot bool) {
-	inv.rollbackNextStepsAfter0224(version, snapshot)
+func (inv *invocation) rollbackNextSteps0225(version string, snapshot, keys, fields bool) {
+	inv.rollbackNextStepsAfter0224(version, snapshot, keys, fields)
 }
 
 // rollbackNextSteps0224 is the next steps of the rollback to 0.2.24: those of
 // 0.2.25, which reads the same files.
-func (inv *invocation) rollbackNextSteps0224(version string, snapshot bool) {
-	inv.rollbackNextStepsAfter0224(version, snapshot)
+func (inv *invocation) rollbackNextSteps0224(version string, snapshot, keys, fields bool) {
+	inv.rollbackNextStepsAfter0224(version, snapshot, keys, fields)
 }
 
 // rollbackNextStepsAfter0224 is the next steps of the targets that read the
 // same files, 0.2.25 and 0.2.24: the upgrade of the tag and, when the apply
 // took a snapshot (a limit of the stored reports was removed), where the state
-// of this release is and why the older release cannot restore it.
-func (inv *invocation) rollbackNextStepsAfter0224(version string, snapshot bool) {
+// of this release is and why the older release cannot restore it: keys says
+// that a key of tacctl.yaml was removed (the settings of the limits), fields
+// that a field of the store was (a user's own limits), and the note names what
+// the older release's restore refuses for the case it is.
+func (inv *invocation) rollbackNextStepsAfter0224(version string, snapshot, keys, fields bool) {
 	inv.echo("")
 	inv.echo(ui.Bold + "Next steps" + ui.NC)
 	inv.echo("  1. Install " + version + " with the upgrade (see Upgrading in the README), which switches the clone in " + inv.app.Paths.Deploy + " to the tag, builds it and re-executes it:")
 	inv.echo("       tacctl upgrade --branch " + version)
 	inv.echo("  2. Check it: tacctl status; tacctl config validate")
-	inv.rollbackSnapshotNote(snapshot, "; "+version+"'s restore refuses a tacctl.yaml with a key it does not know.")
+	tail := "a tacctl.yaml with a key it does not know"
+	switch {
+	case fields && keys:
+		tail += " and a store.yaml with a field it does not know"
+	case fields:
+		tail = "a store.yaml with a field it does not know"
+	}
+	inv.rollbackSnapshotNote(snapshot, "; "+version+"'s restore refuses "+tail+".")
 }
 
 // rollbackNextSteps0223 is the next steps of the rollback to 0.2.23: the

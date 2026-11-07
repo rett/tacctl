@@ -246,7 +246,9 @@ user has a period. The command prints one line for each user
 and a note to tell the people to log in with the new name: the name typed at a
 device's login changed. A name with a period never had a Linux account, so no
 account on the server or a host is renamed; the new name gets its account at
-the next sync. When the new name is taken (a user of that name, a second name
+the next sync. When the ledger already has a line for the new name, the line of
+the old name is not moved: the new name keeps its UID, the old line stays in the
+file as it is, and a warning says so. When the new name is taken (a user of that name, a second name
 that becomes the same, or a break-glass local user of one of the user's scopes),
 the user gets \&'_' and four random lowercase letters or digits after it, drawn
 again until the name is free of every user, every other new name and the
@@ -694,8 +696,10 @@ of the pull records are left (0.2.25's decoder ignores the key), and so is every
 report in the users' homes: they are the users' own files, and 0.2.25 has no
 .B "device reports"
 verb to list or remove them. When the snapshot was taken, the next steps say
-that it holds the 0.2.26 state and is to be restored with 0.2.26 only (0.2.25's
-restore refuses a tacctl.yaml with a key it does not know). The command ends
+that it holds the 0.2.26 state and is to be restored with 0.2.26 only, and what
+0.2.25's restore refuses: a tacctl.yaml with a key it does not know when a
+setting was removed, a store.yaml with a field it does not know when only a
+user's own limit was, both when both were. The command ends
 with the next step,
 .BR "tacctl upgrade \-\-branch 0.2.25" ,
 and a note that the reports stay and that
