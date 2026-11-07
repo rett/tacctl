@@ -410,6 +410,7 @@ var auditTable = map[string]auditEntry{
 	"device snmp":           withSecret(mixed(), secretSNMPSurplus(1, func() map[string]Spec { return deviceSNMPSpecs })),
 	"device block":          mixed(),
 	"device config":         mixed(),
+	"device reports":        mixed(),
 
 	"config show":                read(),
 	"config dump":                read(),

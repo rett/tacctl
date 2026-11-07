@@ -437,8 +437,8 @@ func (rp *readPlan) fingerprints(vendor string) map[string]string {
 
 // refresh keeps what a read saw as the pull record of the device (D131 step
 // 2, D138): the sections, their comparison and the facts it carried. The
-// device's model and serial number are the last pull's own; this read only
-// has the release.
+// device's model, serial number and chassis members are the last pull's
+// own; this read only has the release.
 func (r *applyRun) refresh(e devreg.Entry, rp *readPlan, dur time.Duration) error {
 	facts := devconf.Facts{Release: devconf.JunosRelease(rp.raw)}
 	if recs, err := r.store.Load(); err == nil {
@@ -446,7 +446,7 @@ func (r *applyRun) refresh(e devreg.Entry, rp *readPlan, dur time.Duration) erro
 			if facts.Release == "" {
 				facts.Release = old.Release
 			}
-			facts.Model, facts.Serial = old.Model, old.Serial
+			facts.Model, facts.Serial, facts.Members = old.Model, old.Serial, old.Members
 		}
 	}
 	pr := &pullRun{inv: r.inv, user: r.user, store: r.store}

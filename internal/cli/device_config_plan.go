@@ -774,6 +774,13 @@ func (inv *invocation) asCaller(fn func() error) error {
 	if !ok || os.Geteuid() != 0 {
 		return fn()
 	}
+	return asIDs(uid, gid, fn)
+}
+
+// asIDs runs fn with the file-system identity uid:gid on a thread of its own
+// (see asCaller). The caller has decided that it is root and that the
+// identity is to be taken.
+func asIDs(uid, gid int, fn func() error) error {
 	errc := make(chan error, 1)
 	go func() {
 		runtime.LockOSThread()

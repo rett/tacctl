@@ -50,6 +50,8 @@ var completionArgKinds = map[string]func(inv *invocation, args []string) []strin
 	KindHeld: (*invocation).heldNames,
 	// The shapes of 'device config apply' ('device config shapes --show').
 	KindShapes: (*invocation).shapeNames,
+	// The caller's own device reports ('device reports show|export|...').
+	KindReports: (*invocation).reportNames,
 }
 
 // completionDescKinds answer '_completion-names <kind> --desc' (the shell's

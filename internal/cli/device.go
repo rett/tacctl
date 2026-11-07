@@ -37,13 +37,17 @@ import (
 func init() {
 	registerFamily(deviceCmd)
 	// 'device <verb>' is deviceSpecs; 'device config <verb>' is
-	// deviceConfigSpecs (device_config.go).
+	// deviceConfigSpecs (device_config.go); 'device reports <verb>' is
+	// deviceReportsSpecs (device_reports.go).
 	registerSpecFunc("device", func(path []string) (Spec, bool) {
 		switch {
 		case len(path) == 3 && path[1] == "config":
 			s, ok := deviceConfigSpecs[path[2]]
 			return s, ok
-		case len(path) == 2 && path[1] == "config":
+		case len(path) == 3 && path[1] == "reports":
+			s, ok := deviceReportsSpecs[path[2]]
+			return s, ok
+		case len(path) == 2 && (path[1] == "config" || path[1] == "reports"):
 			// A node of its own verbs: none of its flags is the node's.
 			return Spec{}, false
 		case len(path) == 2:
@@ -234,6 +238,12 @@ var deviceVerbs = [][2]string{
 	{"config shapes [list [--show <hash>] [--json] | seed <name>[,<name>...] [--yes]]", "Superusers: the shapes of the changes 'apply' has seen (a shape is the same change on several devices) and whether a verified apply confirmed each; 'seed' files a device's shape as confirmed on your word, for a change applied and verified by hand"},
 	{"config list [--stale] [--never] [--failed] [--differs] [--name <text>] [--ip <addr|cidr|text>] [--transport netconf|ssh|none] [--scope <scope>] [--vendor <vendor>] [--json]", "Each device's configuration state, when it was read, by whom and over what"},
 	{"config forget <name>[,<name>...] | --all", "Delete the pull records (a pull makes them again)"},
+	{"reports generate --type inventory|members|software|config [--scope <scope>] [--vendor <vendor>] [--format text|csv|json] [--name <name>] [--stdout] [--pull]", "Make a dated report of the registered devices from what is stored"},
+	{"reports list [--json] [--user <name> | --all-users]", "List your saved reports, newest first"},
+	{"reports show <report> [--content]", "Show when, by whom and how a report was made"},
+	{"reports export <report> [--out <file>] [--force]", "Copy a report to standard output or to a file"},
+	{"reports rename <report> <new>", "Rename a report and its metadata file"},
+	{"reports remove <report> [--yes]", "Remove a report and its metadata file (confirms)"},
 }
 
 // deviceOptions are the option lines under a verb's row in the usage, one
@@ -413,10 +423,25 @@ func deviceCmd(inv *invocation) *cobra.Command {
 	c.RunE = inv.native(withPreflight, inv.device)
 	// 'device config' has verbs of its own (show, pull, diff, list, forget):
 	// its rows are the sub-commands of one node.
-	var cfg *cobra.Command
+	var cfg, rep *cobra.Command
 	for _, v := range deviceVerbs {
 		f := strings.Fields(v[0])
 		word := f[0]
+		// 'device reports' is a node of its own verbs as well.
+		if word == "reports" && len(f) > 1 {
+			if rep == nil {
+				rep = verb("reports <subcommand>", "Saved reports of the registered devices")
+				rep.RunE = inv.native(withPreflight, func(args []string) error {
+					return inv.device(append([]string{"reports"}, args...))
+				})
+				c.AddCommand(rep)
+			}
+			sub := f[1]
+			rep.AddCommand(withRun(verb(strings.TrimPrefix(v[0], "reports "), v[1]), inv.native(withPreflight, func(args []string) error {
+				return inv.device(append([]string{"reports", sub}, args...))
+			})))
+			continue
+		}
 		if word == "config" && len(f) > 1 {
 			if cfg == nil {
 				cfg = verb("config <subcommand>", "A device's walkthrough, reading its configuration (pull, diff, list, forget), what to paste (plan) and writing it (apply, shapes)")
@@ -446,8 +471,8 @@ func deviceCmd(inv *invocation) *cobra.Command {
 // first word, and for a 'config' row the second as well.
 func deviceOptKey(use string) string {
 	f := strings.Fields(use)
-	if f[0] == "config" && len(f) > 1 {
-		return "config " + f[1]
+	if (f[0] == "config" || f[0] == "reports") && len(f) > 1 {
+		return f[0] + " " + f[1]
 	}
 	return f[0]
 }
@@ -599,7 +624,7 @@ func (inv *invocation) device(args []string) error {
 		"list": inv.deviceList, "show": inv.deviceShow, "add": inv.deviceAdd, "remove": inv.deviceRemove,
 		"rename": inv.deviceRename, "legacy-ssh": inv.deviceLegacySSH, "ios-syntax": inv.deviceIOSSyntax, "netconf": inv.deviceNetconf, "timeout-scale": inv.deviceTimeoutScale, "stale-days": inv.deviceStaleDays,
 		"notice": inv.deviceNotice, "import": inv.deviceImport, "export": inv.deviceExport,
-		"hostkey": inv.deviceHostkey, "onboard": inv.deviceOnboard, "collect": inv.deviceCollect, "enroll": inv.deviceEnroll, "sync": inv.deviceSync, "support-bundle": inv.deviceSupportBundle, "clone": inv.deviceClone, "snmp": inv.deviceSNMP, "block": inv.deviceBlock, "ssh": inv.ssh, "client-config": inv.deviceClientConfig, "config": inv.deviceConfig,
+		"hostkey": inv.deviceHostkey, "onboard": inv.deviceOnboard, "collect": inv.deviceCollect, "enroll": inv.deviceEnroll, "sync": inv.deviceSync, "support-bundle": inv.deviceSupportBundle, "clone": inv.deviceClone, "snmp": inv.deviceSNMP, "block": inv.deviceBlock, "ssh": inv.ssh, "client-config": inv.deviceClientConfig, "config": inv.deviceConfig, "reports": inv.deviceReports,
 		"scan": inv.deviceScan, "discover": inv.deviceDiscover, "check": inv.deviceCheck,
 		"address": inv.deviceSetter("address"), "hostname": inv.deviceSetter("hostname"), "vendor": inv.deviceSetter("vendor"),
 		"port": inv.deviceSetter("port"), "description": inv.deviceSetter("description"), "location": inv.deviceSetter("location"),
@@ -961,6 +986,9 @@ type deviceJSON struct {
 	Release string `json:"release,omitempty"`
 	Model   string `json:"model,omitempty"`
 	Serial  string `json:"serial,omitempty"`
+	// Members are the units of a chassis as the last good pull read them
+	// (D319); absent when it read none.
+	Members []deviceMemberJSON `json:"members,omitempty"`
 	// SNMP is what the device is read with and where each value comes from
 	// (D72); 'show' only, never a secret.
 	SNMP *deviceSNMPJSON `json:"snmp,omitempty"`
@@ -1069,6 +1097,17 @@ func deviceSeenJSONOf(inv *invocation, res *devreg.Resolver, e devreg.Entry) *de
 	const layout = "2006-01-02T15:04:05Z07:00"
 	return &deviceSeenJSON{First: x.First.Format(layout), Last: x.Last.Format(layout), Count: x.Count,
 		LastUser: x.LastUser, LastOutcome: x.LastOutcome, Via: x.Via, NASID: x.LastNASID, Stale: stale}
+}
+
+// deviceMemberJSON is a chassis member in 'device show --json'.
+type deviceMemberJSON struct {
+	ID       string `json:"id"`
+	Role     string `json:"role"`
+	Model    string `json:"model"`
+	Serial   string `json:"serial"`
+	Release  string `json:"release"`
+	Status   string `json:"status"`
+	Priority int    `json:"priority"`
 }
 
 func (inv *invocation) printJSON(v any) error {
@@ -1228,6 +1267,13 @@ func (inv *invocation) deviceShow(args []string) error {
 			configs = inv.configRecords()
 		}
 		j := deviceJSONOf(inv, res, e, configs)
+		if rec, _ := configs.Of(e.Name); rec != nil && e.Source == devreg.SourceDevice {
+			// the chassis members (D319): 'show' only, a list stays short
+			for _, m := range rec.Members {
+				j.Members = append(j.Members, deviceMemberJSON{ID: cleanLine(m.ID), Role: cleanLine(m.Role), Model: cleanLine(m.Model),
+					Serial: cleanLine(m.Serial), Release: cleanLine(m.Release), Status: cleanLine(m.Status), Priority: m.Priority})
+			}
+		}
 		if e.Source == devreg.SourceDevice {
 			if info, err := inv.deviceSNMPInfoOf(e); err == nil {
 				j.SNMP = info.json()
@@ -1376,6 +1422,8 @@ func (inv *invocation) deviceShow(args []string) error {
 		row("", hidden)
 	}
 	inv.echo("")
+	// the chassis members of the last pull (D319), a table of their own
+	inv.printMembers(e)
 	return nil
 }
 
