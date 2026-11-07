@@ -239,7 +239,7 @@ func TestJSONDecodes(t *testing.T) {
 	// The key order is the documented one, not alphabetical.
 	out := render(t, mustBuild(t, TypeMembers), "json")
 	i, j, k := strings.Index(out, `"device"`), strings.Index(out, `"id"`), strings.Index(out, `"components"`)
-	if !(i < j && j < k) || !strings.Contains(out, `"components": []`) || !strings.Contains(out, `"priority": 129,`) {
+	if i >= j || j >= k || !strings.Contains(out, `"components": []`) || !strings.Contains(out, `"priority": 129,`) {
 		t.Errorf("members json:\n%s", out)
 	}
 	// The filters of the command: only the ones given, {} for none.
@@ -273,7 +273,7 @@ func TestJSONDecodes(t *testing.T) {
 // TestNoControlBytes: the text format never carries a byte below 0x20 other
 // than the newline, nor DEL, nor a C1 control, whatever the records hold.
 func TestNoControlBytes(t *testing.T) {
-	nasty := "a\x1b[2Jb\x00c\td\re\x7ff\u0085g‮h⁦i\xff\xfej k"
+	nasty := "a\x1b[2Jb\x00c\td\re\x7ff\u0085g\u202eh\u2066i\xff\xfej\u2028k"
 	devs := []Device{{
 		Name: nasty, Address: nasty, Vendor: nasty, Scope: nasty, Model: nasty, Serial: nasty,
 		Release: nasty, Location: nasty, Description: nasty, ConfigState: nasty,
@@ -293,7 +293,7 @@ func TestNoControlBytes(t *testing.T) {
 		if !utf8.ValidString(out) {
 			t.Errorf("%s: not UTF-8", typ)
 		}
-		for _, bad := range []string{"\u0085", "‮", "⁦", " "} {
+		for _, bad := range []string{"\u0085", "\u202e", "\u2066", "\u2028"} {
 			if strings.Contains(out, bad) {
 				t.Errorf("%s: %q survived", typ, bad)
 			}

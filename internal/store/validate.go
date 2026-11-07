@@ -383,7 +383,7 @@ func validate(store any, legacyDots bool) []string {
 			// 0.2.20 and 0.2.21 allowed a period in a user name; the upgrade
 			// renames such a user. Only a restore reads one (legacyDots).
 			dotted := sec.key == "users" && reDottedUser.MatchString(name)
-			if !sec.name(name) && !(dotted && legacyDots) {
+			if !sec.name(name) && (!dotted || !legacyDots) {
 				if dotted {
 					add("%s %s: invalid name (a period cannot be part of a Linux account name; 'tacctl upgrade' renames such a user)", sec.label, PyRepr(name))
 					continue
