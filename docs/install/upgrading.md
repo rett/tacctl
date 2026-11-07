@@ -126,7 +126,7 @@ systemctl daemon-reload
 log in to the tacctl server and its console, unless disabled or of tier none,
 without the server's scope in the user's own scopes. Every older release
 needs it there (0.2.21 to 0.2.25 have it themselves), so every target but
-`0.2.24`, `0.2.23`, `0.2.22` and `0.2.21` adds the scope of this server's own login (`tacctl`) to
+`0.2.25`, `0.2.24`, `0.2.23`, `0.2.22` and `0.2.21` adds the scope of this server's own login (`tacctl`) to
 the scopes of each user who logs in to the server and lacks it (the plan
 counts and names them; a warning, so `--apply` needs `--yes`), after a
 snapshot. Every target but `0.2.25`, `0.2.24`, `0.2.23` and `0.2.22` removes the server name
