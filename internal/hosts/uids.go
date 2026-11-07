@@ -355,6 +355,45 @@ func (u UIDs) Rename(old, new string) (moved bool, err error) {
 	return true, nil
 }
 
+// UIDMove is what MoveUser did to the ledger: Moved (the line of the old
+// name is now the new name's, UID its number), HeldBy (the new name already
+// had a line, with that number, and the ledger is as it was; UID is the old
+// name's), or Err.
+type UIDMove struct {
+	Moved  bool
+	UID    string
+	HeldBy string
+	Err    error
+}
+
+// MoveUser is the ledger half of 'user rename' (and of the upgrade's rename
+// of a user whose name has a period), run by the writer under the apply
+// lock (the snapshot holds the ledger). The move is one window of the
+// ledger's lock, taken inside the apply lock (D239, D240): a 'host sync'
+// building its script meanwhile waits for it, and so sends the names as they
+// were before the move or after it. A lock held for the whole wait is the
+// move's Err.
+func (u UIDs) MoveUser(old, new string) UIDMove {
+	unlock, err := u.Lock()
+	if err != nil {
+		return UIDMove{Err: err}
+	}
+	defer unlock()
+	uid, err := u.Lookup(old)
+	if err != nil || uid == "" {
+		return UIDMove{Err: err}
+	}
+	moved, err := u.Rename(old, new)
+	if err != nil {
+		return UIDMove{UID: uid, Err: err}
+	}
+	if moved {
+		return UIDMove{Moved: true, UID: uid}
+	}
+	held, err := u.Lookup(new)
+	return UIDMove{UID: uid, HeldBy: held, Err: err}
+}
+
 // Listing is the body of 'config linux uid' with no user:
 // "sort -t: -k2 -n | awk -F: '{ printf "  %-24s %s\n", $1, $2 }'", an
 // entry outside the range marked as not used on hosts.

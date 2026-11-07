@@ -1109,91 +1109,45 @@ func (inv *invocation) consolePolicyLine([]string) error {
 	return nil
 }
 
-// userSettingsMove is what 'user remove', 'user rename' and 'user add' did to
-// a user's own settings in console.yaml: the system shell (settings.
-// system_shell_users: shellHad, with value shellOn) and the password cache
-// (settings.password_cache_users: cacheHad, always on). err says console.yaml
-// could not be written.
-type userSettingsMove struct {
-	shellHad, shellOn, cacheHad bool
-	err                         error
-}
-
-// had reports whether the user had any of them.
-func (m userSettingsMove) had() bool { return m.shellHad || m.cacheHad }
-
 // moveUserSettings carries the settings of oldname to newname (newname "":
-// drops them) in console.yaml, under its lock, as part of the user verb that
-// follows the store's change (the snapshot the verb took first holds
-// console.yaml). A person who is renamed keeps the access they had, a user who
-// is removed leaves none behind for the next user of the name; a file without
-// a setting for oldname is not touched, and an absent file is not created. An
-// entry already under newname (hand-edited) is replaced by the carried one, or
-// dropped by the removal.
-func (inv *invocation) moveUserSettings(oldname, newname string) userSettingsMove {
-	p := inv.app.Paths.ConsoleFile
-	f, err := console.Load(p)
-	if err != nil {
-		return userSettingsMove{err: err}
-	}
-	if _, shell := f.SystemShellUsers[oldname]; !shell && !f.PasswordCacheUsers[oldname] {
-		return userSettingsMove{}
-	}
-	// What is carried is read under the file's lock, in the same step that
-	// writes it: a setting changed meanwhile is moved as it is now.
-	var m userSettingsMove
-	_, m.err = console.Mutate(p, nil, func(f *console.File) error {
-		on, shellHad := f.SystemShellUsers[oldname]
-		was := f.SystemShellUserTiers[oldname]
-		cacheHad := f.PasswordCacheUsers[oldname]
-		m = userSettingsMove{shellHad: shellHad, shellOn: on, cacheHad: cacheHad}
-		f.DropSystemShellUser(oldname)
-		delete(f.PasswordCacheUsers, oldname)
-		if newname != "" {
-			if shellHad {
-				f.SetSystemShellUser(newname, on, was)
-			}
-			if cacheHad {
-				f.PasswordCacheUsers[newname] = true
-			}
-		}
-		return nil
-	})
-	return m
+// drops them) in console.yaml (console.MoveUserSettings), as part of the user
+// verb that follows the store's change.
+func (inv *invocation) moveUserSettings(oldname, newname string) console.UserSettingsMove {
+	return console.MoveUserSettings(inv.app.Paths.ConsoleFile, oldname, newname)
 }
 
 // userSettingsMoved reports a move: the lines of the command's output and the
 // 'console set' details. It returns the error of a console.yaml that could not
 // be written (the store has changed already; the command says how to finish).
-func (inv *invocation) userSettingsMoved(m userSettingsMove, oldname, newname string) error {
+func (inv *invocation) userSettingsMoved(m console.UserSettingsMove, oldname, newname string) error {
 	out := inv.app.Out
 	verb := map[bool]string{true: "moved", false: "dropped"}[newname != ""]
-	if !m.had() && m.err != nil {
+	if !m.Had() && m.Err != nil {
 		// console.yaml could not be read (it was read just before the store
 		// changed, so it broke in between) or locked: whether it held a setting
 		// of the user is not known.
-		out.Error("console.yaml could not be read or written (" + cutErr(m.err) + "), so the console settings of '" + oldname + "' were not " + verb +
+		out.Error("console.yaml could not be read or written (" + cutErr(m.Err) + "), so the console settings of '" + oldname + "' were not " + verb +
 			". The user is changed already. After repairing the file, check them: tacctl console system-shell user " + oldname +
 			", and tacctl console password-cache user " + oldname + " (each followed by clear to drop it)" +
 			map[bool]string{true: "; a renamed user's settings are set again under '" + newname + "' by a superuser, and the user turns the password cache on again themselves", false: ""}[newname != ""] + ".")
 		return exit(1)
 	}
-	if !m.had() {
+	if !m.Had() {
 		return nil
 	}
-	if m.err != nil {
+	if m.Err != nil {
 		var fix []string
-		if m.shellHad {
+		if m.ShellHad {
 			fix = append(fix, "tacctl console system-shell user "+oldname+" clear")
 			if newname != "" {
-				fix = append(fix, "tacctl console system-shell user "+newname+" "+onOff(m.shellOn))
+				fix = append(fix, "tacctl console system-shell user "+newname+" "+onOff(m.ShellOn))
 			}
 		}
-		if m.cacheHad {
+		if m.CacheHad {
 			fix = append(fix, "tacctl console password-cache user "+oldname+" clear")
 		}
-		out.Error("The console settings of '" + oldname + "' could not be " + verb + " in console.yaml: " + msgsJoin(m.err) +
-			". Finish it with: " + strings.Join(fix, ", then ") + map[bool]string{true: " (the user turns the password cache on again themselves)", false: ""}[m.cacheHad && newname != ""])
+		out.Error("The console settings of '" + oldname + "' could not be " + verb + " in console.yaml: " + msgsJoin(m.Err) +
+			". Finish it with: " + strings.Join(fix, ", then ") + map[bool]string{true: " (the user turns the password cache on again themselves)", false: ""}[m.CacheHad && newname != ""])
 		return exit(1)
 	}
 	report := func(what, key, word string) {
@@ -1205,10 +1159,10 @@ func (inv *invocation) userSettingsMoved(m userSettingsMove, oldname, newname st
 		inv.detailAt(audit.Notice, "console set", kvp("key", key), kvp("item", "user:"+newname), kvp("from", "none"), kvp("to", word))
 		out.Info("The " + what + " setting of '" + oldname + "' (" + word + ") moves to '" + newname + "'.")
 	}
-	if m.shellHad {
-		report("system-shell", "system-shell", onOff(m.shellOn))
+	if m.ShellHad {
+		report("system-shell", "system-shell", onOff(m.ShellOn))
 	}
-	if m.cacheHad {
+	if m.CacheHad {
 		report("password-cache", "password-cache", "on")
 	}
 	return nil

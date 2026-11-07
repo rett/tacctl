@@ -190,14 +190,14 @@ func TestLedgerLockMoveUIDReportsABusyLedger(t *testing.T) {
 		t.Fatal(err)
 	}
 	mv := inv.moveUID("alice", "zed")
-	if !errors.Is(mv.err, hosts.ErrLedgerBusy) || mv.moved {
+	if !errors.Is(mv.Err, hosts.ErrLedgerBusy) || mv.Moved {
 		t.Errorf("move %+v", mv)
 	}
 	if sb.read("state/linux-uids") != renameLedger {
 		t.Errorf("ledger %q", sb.read("state/linux-uids"))
 	}
 	unlock()
-	if mv := inv.moveUID("alice", "zed"); mv.err != nil || !mv.moved || mv.uid != "80001" {
+	if mv := inv.moveUID("alice", "zed"); mv.Err != nil || !mv.Moved || mv.UID != "80001" {
 		t.Errorf("move after release %+v", mv)
 	}
 }
