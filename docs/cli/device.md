@@ -801,7 +801,8 @@ device reports prune --older-than <n>h|<n>d|<n>w [--user <name> | --all-users] [
 
     Remove your reports made longer ago than the age (the `generated` date of the metadata file;
     no default), after listing them and one confirmation; `--dry-run` only lists. Files without
-    metadata are never removed. A superuser: `--user` and `--all-users` (one audit line per user)
+    metadata are never removed. A superuser: `--user` and `--all-users` (one audit line for each other
+    user whose directory is read, written before it is read)
 ```
 
 New device names are lower case: `device add`, `rename` and the

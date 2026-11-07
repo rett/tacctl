@@ -14115,9 +14115,11 @@ read or changed, at
 .BI by= user
 (the owner and the report are
 .B *
-for a listing of every user, and a prune has
-.BI count= n
-for the number of reports and no report); the contents are never written. They
+for a listing of every user, and the report is
+.B *
+for a listing and for a prune, which writes one line for each other user whose
+directory it reads, all of them before the first directory is read, also for a
+user with nothing to prune); the contents are never written. They
 are reveals: under
 .B audit.strict
 an access whose line cannot be written is refused before anything is shown. A
@@ -14418,10 +14420,10 @@ Options:
 Remove the reports made longer ago than this age: a whole number and one unit, h (hours), d (days) or w (weeks), for example 30d. There is no default and no zero. The age of a report is the date it was generated, which its metadata file holds, not the time of the file.
 .TP
 \fB\-\-user\fR \fI<name>\fR
-Prune the reports of another user. It is the superuser's, and writes an audit line with who pruned whose reports and how many, never their names.
+Prune the reports of another user. It is the superuser's, and writes an audit line with who looked at whose reports, before that user's directory is read.
 .TP
 \fB\-\-all\-users\fR
-Prune the reports of every user tacctl knows, one audit line for each user whose reports are listed or removed. It is the superuser's.
+Prune the reports of every user tacctl knows, one audit line for each other user whose directory is read, also when nothing of theirs is old enough. It is the superuser's.
 .TP
 \fB\-\-dry\-run\fR
 List what would be removed and remove nothing; \-\-yes does not change that.

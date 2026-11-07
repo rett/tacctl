@@ -19,6 +19,21 @@ current behaviour; this file is where history lives.
    was. The operator tier and up see what they saw. A report a read-only user
    made with 0.2.26 keeps what it holds.
 
+2. **A superuser's `device reports prune` of other users' reports writes its
+   audit line before it reads their directories.** Item 7 of 0.2.26 said every
+   access to another user's reports is audited before anything is read or
+   changed, but `prune --user <name>` and `--all-users` listed every directory
+   first and wrote the line afterwards, and only for a user with something to
+   prune. The line is now written for each other user whose directory the run
+   reads, before it is read and also when none of that user's reports is old
+   enough, and with `--all-users` every line is written before the first
+   directory is read, so under `audit.strict` a line that cannot be written
+   refuses the whole run before any directory of another user is read. The
+   line no longer carries the number of reports, which is not known before the
+   read: `device reports access verb=prune owner=bob report=* by=alice`
+   (`prune-dry-run` for `--dry-run`), as `list` writes `report=*`. The
+   superuser's own reports write no access line, as before.
+
 ## 0.2.26 (2026-11-06)
 
 1. **The break-glass firewall line of `tacctl upgrade` and `install` is one

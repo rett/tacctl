@@ -10,7 +10,6 @@ package cli
 
 import (
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/rett/tacctl/internal/audit"
@@ -35,16 +34,6 @@ func (inv *invocation) reportsDenied(what string) error {
 func (inv *invocation) reportsAccess(verb, owner, report string) {
 	inv.app.Audit().Reveal(audit.Notice, "device reports access",
 		kvp("verb", verb), kvp("owner", owner), kvp("report", report), audit.Pair("by", inv.sudoUser()))
-}
-
-// reportsPruneAccess writes the audit line of a prune of another user's
-// reports, listed (verb prune-dry-run) or removed (prune): who, whose and how
-// many, never a name. It is written before the reports are listed or
-// removed, and is a reveal, so that under audit.strict a line that cannot be
-// written refuses the prune.
-func (inv *invocation) reportsPruneAccess(verb, owner string, n int) {
-	inv.app.Audit().Reveal(audit.Notice, "device reports access",
-		kvp("verb", verb), kvp("owner", owner), kvp("count", strconv.Itoa(n)), audit.Pair("by", inv.sudoUser()))
 }
 
 // reportTarget is the report a verb works on.

@@ -182,10 +182,10 @@ Device reports (3)
 ```
 device reports access verb=show owner=bob report=inventory-20261106 by=alice sid=k3x9a0bq
 device reports access verb=list owner=* report=* by=alice sid=k3x9a0bq
-device reports access verb=prune owner=bob count=2 by=alice sid=k3x9a0bq
+device reports access verb=prune owner=bob report=* by=alice sid=k3x9a0bq
 ```
 
-`verb` is `list`, `show`, `export`, `rename`, `remove`, `prune` or `prune-dry-run`. `list --all-users` writes one line with `owner=*`; a `prune` writes one line for each user whose reports it lists or removes, with the number of reports and never their names. The lines are at `auth.notice` and they are reveals: with `audit.strict` on, an access whose line cannot be written is refused before anything is shown ([Audit log](../security/audit.md)). Your own reports write a detail line only when something changes: `device reports generate type= name= format= rows=`, `device reports rename name= new=`, `device reports remove name=` and `device reports prune older-than= removed=`; `list`, `show` and `export` write none.
+`verb` is `list`, `show`, `export`, `rename`, `remove`, `prune` or `prune-dry-run`. `list --all-users` writes one line with `owner=*`; a `prune` of other users' reports writes one line, with `report=*`, for each other user whose directory it reads (`prune --all-users` for every user tacctl knows that has an account on the server), also for a user none of whose reports is old enough, and never a report name; all the lines of a run are written before the first directory of another user is read. The lines are at `auth.notice` and they are reveals: with `audit.strict` on, an access whose line cannot be written is refused before anything is shown ([Audit log](../security/audit.md)). Your own reports write a detail line only when something changes: `device reports generate type= name= format= rows=`, `device reports rename name= new=`, `device reports remove name=` and `device reports prune older-than= removed=`; `list`, `show` and `export` write none.
 
 ## Limits
 
