@@ -62,6 +62,10 @@ var deviceReportsSpecs = map[string]Spec{
 	"prune": {MaxArgs: 0, Flags: []Flag{
 		{Names: []string{"--older-than"}, Value: true, Kind: "24h|7d|30d|4w", Arg: "<age>", Desc: "Remove reports older than this age: 12h, 30d or 4w (required)",
 			Long: "Remove the reports made longer ago than this age: a whole number and one unit, h (hours), d (days) or w (weeks), for example 30d. There is no default and no zero. The age of a report is the date it was generated, which its metadata file holds, not the time of the file"},
+		{Names: []string{"--user"}, Value: true, Kind: KindUsers, Arg: "<name>", Desc: "Prune the reports of another user",
+			Long: "Prune the reports of another user. It is the superuser's, and writes an audit line with who pruned whose reports and how many, never their names"},
+		{Names: []string{"--all-users"}, Desc: "Prune the reports of every user",
+			Long: "Prune the reports of every user tacctl knows, one audit line for each user whose reports are listed or removed. It is the superuser's"},
 		{Names: []string{"--dry-run"}, Desc: "List what would be removed and remove nothing",
 			Long: "List what would be removed and remove nothing; --yes does not change that"},
 		{Names: []string{"--yes"}, Desc: "Do not ask for confirmation"}}},
@@ -156,9 +160,10 @@ is listed as 'other' and anything outside the reports directory is never
 removed.
 
 A superuser reads other users' reports: 'list --user <name>', 'list
---all-users', and '<user>/<report>' for show, export, rename and remove.
-Every such access writes one audit line (who, whose, which report, never its
-content). No verb writes into another user's home.
+--all-users', '<user>/<report>' for show, export, rename and remove, and
+'prune --user <name>' or '--all-users' for the old reports of others. Every
+such access writes one audit line (who, whose, which report or how many for a
+prune, never a name or a content). No verb writes into another user's home.
 
 Examples:
   tacctl device reports generate --type inventory --format csv

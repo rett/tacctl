@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rett/tacctl/internal/execx/fake"
 	"github.com/rett/tacctl/internal/reports"
 )
 
@@ -425,4 +426,327 @@ func TestReportsPruneCompletion(t *testing.T) {
 		t.Errorf("--older-than again: %q", got)
 	}
 	has(got, "--dry-run", "--yes")
+}
+
+// --- the superuser's reach (D333, D328) ---
+
+// pruneLines are the audit lines of the last run that are about a prune of
+// other users' reports.
+func (b *reportsBox) pruneLines() []string {
+	var out []string
+	for _, l := range b.audits() {
+		if strings.Contains(l, "verb=prune") {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+func TestReportsPruneSuperuserUser(t *testing.T) {
+	b := newReportsBox(t)
+	mine := b.seed("alice", "old-mine", "inventory", 30*day)
+	b1 := b.seed("bob", "bob-old-1", "inventory", 30*day)
+	b2 := b.seed("bob", "bob-old-2", "software", 20*day)
+	b3 := b.seed("bob", "bob-new", "software", time.Hour)
+	c1 := b.seed("carol", "carol-old", "members", 30*day)
+
+	out := b.as("alice", asSuper, "prune", "--older-than", "7d", "--user", "bob", "--yes")
+	if b.sb.code != 0 {
+		t.Fatalf("%d %q %q", b.sb.code, out, b.sb.stderr())
+	}
+	for _, w := range []string{"Reports older than 7d (2)", "USER", "bob-old-1", "bob-old-2", "2 reports, ", "of 1 user", "Removed 2 reports"} {
+		if !strings.Contains(out, w) {
+			t.Errorf("the output lacks %q:\n%s", w, out)
+		}
+	}
+	for _, row := range strings.Split(out, "\n") {
+		if f := strings.Fields(row); len(f) > 1 && strings.HasPrefix(f[1], "bob-old") && f[0] != "bob" {
+			t.Errorf("the owner column: %q", row)
+		}
+	}
+	for _, p := range []string{b1, b2} {
+		if exists(t, p) || exists(t, p+".meta") {
+			t.Errorf("%s is still there", p)
+		}
+	}
+	for _, p := range []string{mine, b3, c1} {
+		if !exists(t, p) {
+			t.Errorf("%s was removed", p)
+		}
+	}
+	// one audit line for bob, with the number and no name; no detail line of
+	// an own prune
+	l := b.pruneLines()
+	if len(l) != 1 || !strings.Contains(l[0], "device reports access verb=prune owner=bob count=2 by=alice") {
+		t.Errorf("audit lines: %v", l)
+	}
+	if all := b.loggerLines(); strings.Contains(all, "bob-old") || strings.Contains(all, "device reports prune ") {
+		t.Errorf("the log:\n%s", all)
+	}
+
+	// nothing of bob's is old enough now: no access line
+	out = b.as("alice", asSuper, "prune", "--older-than", "7d", "--user", "bob", "--yes")
+	if b.sb.code != 0 || !strings.Contains(out, "Nothing to prune: no report of the users asked for is older than 7d.") || len(b.audits()) != 0 {
+		t.Errorf("again: %d %q %v", b.sb.code, out, b.audits())
+	}
+
+	// --user with his own name is his own prune: no access line
+	out = b.as("alice", asSuper, "prune", "--older-than", "7d", "--user", "alice", "--yes")
+	if b.sb.code != 0 || !strings.Contains(out, "Removed 1 report ") || exists(t, mine) || len(b.audits()) != 0 ||
+		!strings.Contains(b.loggerLines(), "device reports prune older-than=7d removed=1 by=alice") {
+		t.Errorf("own: %d %q %v", b.sb.code, out, b.audits())
+	}
+	if strings.Contains(out, "USER") {
+		t.Errorf("a USER column for his own reports:\n%s", out)
+	}
+	// a user with no account
+	b.as("alice", asSuper, "prune", "--older-than", "7d", "--user", "no/body", "--yes")
+	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "is not a user name") {
+		t.Errorf("a bad name: %d %q", b.sb.code, b.sb.stderr())
+	}
+}
+
+func TestReportsPruneSuperuserAllUsers(t *testing.T) {
+	b := newReportsBox(t)
+	a1 := b.seed("alice", "alice-old", "inventory", 30*day)
+	a2 := b.seed("alice", "alice-new", "inventory", time.Hour)
+	b1 := b.seed("bob", "bob-old-1", "inventory", 30*day)
+	b2 := b.seed("bob", "bob-old-2", "software", 20*day)
+	c1 := b.seed("carol", "carol-new", "members", time.Hour)
+	out := b.as("alice", asSuper, "prune", "--older-than", "7d", "--all-users", "--yes")
+	if b.sb.code != 0 {
+		t.Fatalf("%d %q %q", b.sb.code, out, b.sb.stderr())
+	}
+	for _, w := range []string{"Reports older than 7d (3)", "USER", "alice-old", "bob-old-1", "bob-old-2", "3 reports, ", "of 2 users", "Removed 3 reports"} {
+		if !strings.Contains(out, w) {
+			t.Errorf("the output lacks %q:\n%s", w, out)
+		}
+	}
+	for _, p := range []string{a1, b1, b2} {
+		if exists(t, p) || exists(t, p+".meta") {
+			t.Errorf("%s is still there", p)
+		}
+	}
+	for _, p := range []string{a2, c1} {
+		if !exists(t, p) {
+			t.Errorf("%s was removed", p)
+		}
+	}
+	// bob has an access line; alice's own reports have a detail line; carol
+	// had nothing to prune and has no line
+	l := b.pruneLines()
+	if len(l) != 1 || !strings.Contains(l[0], "device reports access verb=prune owner=bob count=2 by=alice") {
+		t.Errorf("audit lines: %v", l)
+	}
+	if !strings.Contains(b.loggerLines(), "device reports prune older-than=7d removed=1 by=alice") {
+		t.Errorf("no detail line of the own reports:\n%s", b.loggerLines())
+	}
+	if strings.Contains(b.loggerLines(), "owner=carol") || strings.Contains(b.loggerLines(), "owner=alice") {
+		t.Errorf("a line for a user with nothing pruned or for himself:\n%s", b.loggerLines())
+	}
+
+	// two users with reports to prune: a line each, in the order of the names
+	b.seed("bob", "bob-old-3", "config", 9*day)
+	b.seed("carol", "carol-old", "config", 9*day)
+	b.seed("carol", "carol-old-2", "config", 12*day)
+	b.as("alice", asSuper, "prune", "--older-than", "1w", "--all-users", "--yes")
+	l = b.pruneLines()
+	if b.sb.code != 0 || len(l) != 2 || !strings.Contains(l[0], "owner=bob count=1 ") || !strings.Contains(l[1], "owner=carol count=2 ") {
+		t.Errorf("%d audit lines: %v", b.sb.code, l)
+	}
+}
+
+func TestReportsPruneSuperuserDryRunAndNo(t *testing.T) {
+	b := newReportsBox(t)
+	b1 := b.seed("bob", "bob-old", "inventory", 30*day)
+	for _, args := range [][]string{
+		{"prune", "--older-than", "7d", "--user", "bob", "--dry-run"},
+		{"prune", "--older-than", "7d", "--user", "bob", "--dry-run", "--yes"},
+		{"prune", "--older-than", "7d", "--all-users", "--dry-run", "--yes"},
+	} {
+		out := b.asYes("y\n", "alice", asSuper, args...)
+		if b.sb.code != 0 || !strings.Contains(out, "bob-old") || !strings.Contains(out, "Dry run: nothing was removed.") || !exists(t, b1) || !exists(t, b1+".meta") {
+			t.Errorf("%v: %d %q", args, b.sb.code, out)
+		}
+		// looking at another user's reports is an access, a dry run too
+		if l := b.pruneLines(); len(l) != 1 || !strings.Contains(l[0], "device reports access verb=prune-dry-run owner=bob count=1 by=alice") {
+			t.Errorf("%v: audit lines %v", args, l)
+		}
+	}
+	// a dry run of his own reports is not an access
+	b.seed("alice", "alice-old", "inventory", 30*day)
+	b.as("alice", asSuper, "prune", "--older-than", "7d", "--dry-run")
+	if len(b.audits()) != 0 {
+		t.Errorf("own dry run: %v", b.audits())
+	}
+
+	// an answer of no lists them (that is an access) and removes nothing
+	out := b.asYes("n\n", "alice", asSuper, "prune", "--older-than", "7d", "--user", "bob")
+	if b.sb.code != 0 || !strings.Contains(out, "Aborted.") || !exists(t, b1) {
+		t.Errorf("no: %d %q", b.sb.code, out)
+	}
+	if l := b.pruneLines(); len(l) != 1 || !strings.Contains(l[0], "verb=prune owner=bob count=1") {
+		t.Errorf("no: audit lines %v", l)
+	}
+	out = b.asYes("y\n", "alice", asSuper, "prune", "--older-than", "7d", "--user", "bob")
+	if b.sb.code != 0 || !strings.Contains(out, "Removed 1 report ") || exists(t, b1) {
+		t.Errorf("yes: %d %q", b.sb.code, out)
+	}
+}
+
+func TestReportsPruneOthersAreRefusedTheReportsOfOtherUsers(t *testing.T) {
+	b := newReportsBox(t)
+	mine := b.seed("alice", "alice-old", "inventory", 30*day)
+	theirs := b.seed("bob", "bob-old", "inventory", 30*day)
+	for _, who := range []struct{ user, groups string }{{"bob", asOperator}, {"carol", asReadonly}} {
+		for _, args := range [][]string{
+			{"prune", "--older-than", "7d", "--user", "alice", "--yes"},
+			{"prune", "--older-than", "7d", "--user", "alice", "--dry-run"},
+			{"prune", "--older-than", "7d", "--all-users", "--yes"},
+			{"prune", "--older-than", "7d", "--all-users", "--dry-run"},
+		} {
+			out := b.as(who.user, who.groups, args...)
+			if b.sb.code != 1 || out != "" || !strings.Contains(b.sb.stderr(), "is the superuser's: you reach your own reports only. Nothing was done.") {
+				t.Errorf("%s %v: %d %q %q", who.user, args, b.sb.code, out, b.sb.stderr())
+			}
+			if l := b.loggerLines(); !strings.Contains(l, "cmd DENY") || !strings.Contains(l, "reason=superuser") {
+				t.Errorf("%s %v: the denial is not logged:\n%s", who.user, args, l)
+			}
+			if len(b.audits()) != 0 {
+				t.Errorf("%s %v: an access line for a refused access", who.user, args)
+			}
+		}
+	}
+	if !exists(t, mine) || !exists(t, mine+".meta") || !exists(t, theirs) {
+		t.Error("a report went")
+	}
+	// his own name is his own
+	b.as("bob", asOperator, "prune", "--older-than", "7d", "--user", "bob", "--yes")
+	if b.sb.code != 0 || exists(t, theirs) || !exists(t, mine) {
+		t.Errorf("--user of his own name: %d", b.sb.code)
+	}
+}
+
+func TestReportsPruneUserOptionsAreChecked(t *testing.T) {
+	b := newReportsBox(t)
+	old := b.seed("bob", "bob-old", "inventory", 30*day)
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"prune", "--older-than", "7d", "--user", "bob", "--all-users"}, "give one"},
+		{[]string{"prune", "--older-than", "7d", "--user", ""}, "--user takes a user name"},
+		{[]string{"prune", "--user", "bob"}, "--older-than is required"},
+	} {
+		for _, who := range []struct{ user, groups string }{{"alice", asSuper}, {"carol", asReadonly}} {
+			out := b.as(who.user, who.groups, c.args...)
+			if b.sb.code != 2 || out != "" || !strings.Contains(b.sb.stderr(), c.want) {
+				t.Errorf("%s %v: %d %q %q", who.user, c.args, b.sb.code, out, b.sb.stderr())
+			}
+		}
+	}
+	if !exists(t, old) {
+		t.Error("a report went")
+	}
+}
+
+// audit.strict: an access line that cannot be written refuses the prune of
+// another user's reports before anything is listed or removed; the own
+// reports of the superuser, which write no access line, are not refused by it.
+func TestReportsPruneStrictRefusesWhenTheAccessLineCannotBeWritten(t *testing.T) {
+	b := newReportsBox(t)
+	b.sb.write("state/tacctl.yaml", testBcryptOverride+"server:\n  name: tacctl\naudit:\n  strict: true\n", 0o600)
+	mine := b.seed("alice", "alice-old", "inventory", 30*day)
+	theirs := b.seed("bob", "bob-old", "inventory", 30*day)
+	noLogger := func(user, groups string) func(*fake.Runner) {
+		return func(r *fake.Runner) {
+			idAs(user, "tac-users "+groups)(r)
+			r.Missing("logger")
+		}
+	}
+	for _, args := range [][]string{
+		{"prune", "--older-than", "7d", "--user", "bob", "--yes"},
+		{"prune", "--older-than", "7d", "--user", "bob", "--dry-run"},
+		{"prune", "--older-than", "7d", "--all-users", "--yes"},
+	} {
+		out := plain(b.sb.cfgRun("", append([]string{"device", "reports"}, args...), noLogger("alice", asSuper), "SUDO_USER=alice"))
+		if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "audit.strict is set; nothing was shown.") ||
+			strings.Contains(out, "bob-old") || strings.Contains(out, "Removed") {
+			t.Errorf("%v: %d %q %q", args, b.sb.code, out, b.sb.stderr())
+		}
+		if !exists(t, theirs) || !exists(t, theirs+".meta") || !exists(t, mine) {
+			t.Fatalf("%v: a report went", args)
+		}
+	}
+	// with the line written, the same prune goes through
+	b.as("alice", asSuper, "prune", "--older-than", "7d", "--user", "bob", "--yes")
+	if b.sb.code != 0 || exists(t, theirs) {
+		t.Errorf("with a logger: %d %q", b.sb.code, b.sb.stderr())
+	}
+}
+
+// One user's directory that cannot be pruned does not stop the others, and
+// the exit status says some were not removed.
+func TestReportsPruneAllUsersPartialFailure(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root removes from a directory whatever its mode")
+	}
+	b := newReportsBox(t)
+	a1 := b.seed("alice", "alice-old", "inventory", 30*day)
+	b1 := b.seed("bob", "bob-old", "inventory", 30*day)
+	c1 := b.seed("carol", "carol-old", "software", 30*day)
+	if err := os.Chmod(b.dir("bob"), 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(b.dir("bob"), 0o700) })
+
+	out := b.as("alice", asSuper, "prune", "--older-than", "7d", "--all-users", "--yes")
+	if b.sb.code != 1 || !strings.Contains(out, "Removed 2 reports") ||
+		!strings.Contains(b.sb.stderr(), "Cannot remove bob/bob-old.txt:") || !strings.Contains(b.sb.stderr(), "1 report could not be removed (see above). The others were removed.") {
+		t.Errorf("%d %q %q", b.sb.code, out, b.sb.stderr())
+	}
+	if exists(t, a1) || exists(t, c1) || !exists(t, b1) || !exists(t, b1+".meta") {
+		t.Error("the others were not pruned, or the failed one went")
+	}
+	// the access line of bob was written all the same: before the removal
+	if l := b.pruneLines(); len(l) != 2 || !strings.Contains(l[0], "owner=bob count=1") || !strings.Contains(l[1], "owner=carol count=1") {
+		t.Errorf("audit lines: %v", l)
+	}
+}
+
+// A directory that cannot be read is said, the others are pruned, and the
+// exit status is not 0.
+func TestReportsPruneAllUsersUnreadableDirectory(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a directory whatever its mode")
+	}
+	b := newReportsBox(t)
+	b1 := b.seed("bob", "bob-old", "inventory", 30*day)
+	c1 := b.seed("carol", "carol-old", "software", 30*day)
+	if err := os.Chmod(b.dir("bob"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(b.dir("bob"), 0o700) })
+
+	b.as("alice", asSuper, "prune", "--older-than", "7d", "--all-users", "--yes")
+	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "(skipped)") || !strings.Contains(b.sb.stderr(), "1 directory could not be read (see above). The others were removed.") {
+		t.Errorf("%d %q", b.sb.code, b.sb.stderr())
+	}
+	if exists(t, c1) {
+		t.Error("carol's report was not pruned")
+	}
+	if err := os.Chmod(b.dir("bob"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if !exists(t, b1) {
+		t.Error("bob's report went")
+	}
+	// with only the unreadable one asked for, there is nothing else to say
+	if err := os.Chmod(b.dir("bob"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	b.as("alice", asSuper, "prune", "--older-than", "7d", "--user", "bob", "--yes")
+	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "cannot read") {
+		t.Errorf("--user: %d %q", b.sb.code, b.sb.stderr())
+	}
 }
