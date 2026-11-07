@@ -64,7 +64,7 @@ func TestRollback0223ConvertsNothing(t *testing.T) {
 	if !strings.Contains(out, "tacctl upgrade --branch 0.2.23") {
 		t.Errorf("--apply lacks the upgrade:\n%s", out)
 	}
-	if strings.Contains(out, "holds the") || strings.Contains(out, "took first") || strings.Contains(out, "Until the upgrade") {
+	if out = beforeReportsNote(out); strings.Contains(out, "holds the") || strings.Contains(out, "took first") || strings.Contains(out, "Until the upgrade") {
 		t.Errorf("--apply speaks of a snapshot or a command to avoid:\n%s", out)
 	}
 	if hs.snapshots() != snaps {

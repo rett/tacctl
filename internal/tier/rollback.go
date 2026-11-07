@@ -20,18 +20,22 @@ import (
 // Sudoers023 is the per-tier drop-in 0.2.3 wrote.
 func Sudoers023() string { return sudoers023 }
 
-// rules0225 are the rules 0.2.24 and 0.2.25 had: this release's without the
-// read-only row of 'device reports' (0.2.26).
-func rules0225() []Rule {
-	return slices.DeleteFunc(slices.Clone(Rules), func(r Rule) bool {
-		return r.Tier == Readonly && r.Cmd == "device" && r.Sub == "reports"
-	})
+// withoutReportRows is rs without the rows of 'device reports' (0.2.26): the
+// verbs of the stored reports, which every older release lacks.
+func withoutReportRows(rs []Rule) []Rule {
+	return slices.DeleteFunc(slices.Clone(rs), func(r Rule) bool { return r.Cmd == "device" && r.Sub == "reports" })
 }
 
+// rules0225 are the rules 0.2.24 and 0.2.25 had: this release's without the
+// rows of 'device reports' (0.2.26).
+func rules0225() []Rule { return withoutReportRows(Rules) }
+
 // Sudoers0225 is the per-tier drop-in 0.2.24 and 0.2.25 wrote: this release's
-// rules without the read-only row of 'device reports' (0.2.26). It is an older
-// text of this tool's: the rollbacks recognise it, as they do this release's.
-// It is derived (a rule that moves on again makes its own frozen copy).
+// rules without the rows of 'device reports' (0.2.26). 'tacctl rollback
+// 0.2.25' and 'rollback 0.2.24' put it back, and every older target
+// recognises it as an older text of this tool's. It is derived (a rule that
+// moves on again makes its own frozen copy); where the 0.2.25 tag is in the
+// repository a test holds it equal to that tag's golden file.
 func Sudoers0225() string { return sudoersFrom(rules0225()) }
 
 // rules0223 are the rules 0.2.23 had: 0.2.25's without the operator's
@@ -47,12 +51,11 @@ func rules0223() []Rule {
 	return rules
 }
 
-// Sudoers0223 is the per-tier drop-in 0.2.23 wrote: this release's rules
-// without the read-only row of 'device reports' (0.2.26) and the operator's
-// 'log failures *'. It is an older text of this tool's: every target that
-// rewrites the drop-in recognises it, as it does this release's, and 'tacctl
-// rollback 0.2.23' puts it back. It is derived (a rule that moves on again
-// makes its own frozen copy).
+// Sudoers0223 is the per-tier drop-in 0.2.23 wrote: 0.2.25's rules
+// without the operator's 'log failures *'. It is an older text of this tool's:
+// every target that rewrites the drop-in recognises it, as it does this
+// release's, and 'tacctl rollback 0.2.23' puts it back. It is derived (a rule
+// that moves on again makes its own frozen copy).
 func Sudoers0223() string { return sudoersFrom(rules0223()) }
 
 // rules0222 are the rules 0.2.20 to 0.2.22 had: 0.2.23's without the

@@ -186,6 +186,16 @@ func NewSchema(backends []string) *Schema {
 			// binary does not know the key (Added0224, rollback.go).
 			BreakglassFirewallKey: {Type: TypeEnum, Values: []string{"reject", "drop", "off"},
 				Default: "reject", HasDefault: true},
+			// The limits of the stored reports (0.2.26, D326; 'config
+			// reports'): the largest size of one report in bytes and the
+			// most reports one user keeps, 0 for no cap. A user's own
+			// override (a field of the user record) wins. Both are
+			// written only when set. A 0.2.25 binary does not know the
+			// keys (Added0226, rollback.go).
+			ReportsMaxSizeKey: {Type: TypeInt, Min: intp(0), Max: intp(int(names.ReportMaxSizeCap)),
+				Default: ReportsMaxSizeDefault, HasDefault: true},
+			ReportsMaxCountKey: {Type: TypeInt, Min: intp(0), Max: intp(names.ReportMaxCountCap),
+				Default: ReportsMaxCountDefault, HasDefault: true},
 		},
 		wildcards: append([]wildcard{
 			{"privileges.", Rule{Type: TypeCiscoCmdList}},

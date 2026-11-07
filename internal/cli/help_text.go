@@ -25,7 +25,7 @@ Commands:
       <o>--yes</o>                             Answer yes to the confirmations
   <b>upgrade</b> [<o>--branch <name></o>]             Pull latest source, rebuild, update scripts and every enabled backend
   <b>uninstall</b> [<o>--yes</o>]                     Remove tacctl, its backends' services and all associated files
-  <b>rollback</b> <o><version></o> [options]          Prepare the state for the release before this one (0.2.24), for 0.2.23, 0.2.22, 0.2.21, 0.2.20, 0.2.19, 0.2.18, 0.2.17, 0.2.16, 0.2.9 or 0.2.3: a dry run unless <o>--apply</o>
+  <b>rollback</b> <o><version></o> [options]          Prepare the state for the release before this one (0.2.25), for 0.2.24, 0.2.23, 0.2.22, 0.2.21, 0.2.20, 0.2.19, 0.2.18, 0.2.17, 0.2.16, 0.2.9 or 0.2.3: a dry run unless <o>--apply</o>
       <o>--apply</o>                           Take a snapshot, then convert the files the target cannot read (tacctl.yaml, sudoers; for 0.2.3 also console.yaml, devices.yaml)
       <o>--yes</o>                             Acknowledge the warnings that <o>--apply</o> refuses to go on without
       <o>--hosts</o>                           Accepted; the hosts need nothing for this target (no host is synced)
@@ -94,6 +94,10 @@ Subcommands:
   <b>email</b> <o><username></o>                             Show the user's email address
   <b>email</b> <o><username></o> <o><address></o>                   Set it (an address belongs to one user)
   <b>email</b> <o><username></o> <o>clear</o>                       Remove it
+  <b>reports-limit</b> <o><username></o>                     Show the user's own limits of the stored reports
+  <b>reports-limit</b> <o><username></o> <o>max-size</o> <o><value></o>        Set the largest report (bytes, or Ki, Mi, Gi; 0: no cap)
+  <b>reports-limit</b> <o><username></o> <o>max-count</o> <o><n></o>           Set the most reports the user keeps (0: no cap)
+  <b>reports-limit</b> <o><username></o> [max-size|max-count] <o>clear</o>  Return to the server's setting (alone: both)
   <b>passwd</b> <o><username></o>                            Change a user's password
   <b>passwd</b> <o><username></o> <o>--hash <hash></o>              Change with pre-generated bcrypt hash (<o>-</o> reads it from stdin)
   <b>passwd</b> <o><username></o> <o>--no-change-required</o>       Skip the required password change (a reset requires one)
@@ -115,6 +119,8 @@ Examples:
   tacctl user add jsmith superuser --scopes prod,lab
   tacctl user add alice superuser --email alice@example.net
   tacctl user email alice alice@example.net
+  tacctl user reports-limit alice max-size 20Mi
+  tacctl user reports-limit alice clear
   tacctl user scope jsmith add prod
   tacctl user verify jsmith
 
@@ -465,6 +471,7 @@ Subcommands:
   <b>linux</b>   build|script|remove-script|uid|builds  TACACS+ or RADIUS login for Linux hosts (install/removal scripts)
   <b>snmp</b>    show|version|community|v3-user|port|timeout|clear|test  SNMP for the name hint of 'device add' (sysName)
   <b>devices</b> [show|max-concurrency|transport|timeout|confirm-timeout|apply-confirm-timeout|apply-pause|apply-transport|timeout-scale] [<o><value></o>]  How 'device config pull' reads the devices (default 8 at once, auto, 90 s), the confirm timeout of 'plan' (5 min), how 'device config apply' runs (confirm 10 min, pause 60 s, transport cli) and the timing scale (1)
+  <b>reports</b> [show|max-size|max-count] [<o><value></o>]  Limits of the stored reports (10 MiB a report, 100 reports a user; 0: no cap)
   <b>branch</b> [<o><name></o>]                      Show or change the tacctl repo branch
 
 Examples:

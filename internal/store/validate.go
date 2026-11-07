@@ -78,6 +78,12 @@ var schema = []sectionSpec{
 		// refuses the key (lifecycle's rollback removes it). An address
 		// belongs to one user (Validate).
 		{name: "email", typ: tString, pattern: names.MatchEmail, patternMsg: "must be a plain address (local@domain, no spaces, angle brackets or quotes, at most 254 characters)"},
+		// reports_max_size (bytes) and reports_max_count (0.2.26, D326) are
+		// the user's own limits of the stored reports, written only when
+		// set (0 is no cap): a release before 0.2.26 refuses the keys
+		// (lifecycle's rollback removes them).
+		{name: ReportsMaxSizeKey, typ: tInt, min: 0, max: int(names.ReportMaxSizeCap)},
+		{name: ReportsMaxCountKey, typ: tInt, min: 0, max: names.ReportMaxCountCap},
 	}},
 	{key: "scopes", label: "scope", name: names.MatchScope, fields: []fieldSpec{
 		{name: "prefixes", typ: tCIDRList, minItems: 1, required: true},
@@ -421,6 +427,9 @@ func Validate(store any) []string {
 			}
 			if u.Has("email") {
 				add("user '%s': the accounting sink must not carry an email address", name)
+			}
+			if u.Has(ReportsMaxSizeKey) || u.Has(ReportsMaxCountKey) {
+				add("user '%s': the accounting sink must not carry a limit of the stored reports", name)
 			}
 		}
 	}

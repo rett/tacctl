@@ -53,7 +53,7 @@ func planRollback0223(p *RollbackPlan) (*RollbackPlan, error) {
 // takes out the operator's row of 'log failures *'. A file that is already
 // that text, or absent, needs no step; any other text is left and said so.
 func (p *RollbackPlan) tiers0223Step(target string) []RollbackStep {
-	tiers := p.tiersPlan(tier.Sudoers0223(), tier.Sudoers())
+	tiers := p.tiersPlan(tier.Sudoers0223(), tier.Sudoers(), tier.Sudoers0225())
 	p.sudoers = []sudoersPlan{tiers}
 	if tiers.state != "rewrite" && tiers.state != "left" {
 		return nil
