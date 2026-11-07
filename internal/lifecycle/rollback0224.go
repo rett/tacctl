@@ -25,6 +25,7 @@ package lifecycle
 // records hold no unsettled apply) for the release before this one.
 func planRollback0224(p *RollbackPlan) (*RollbackPlan, error) {
 	pt := p.in.Paths
+	p.keys = p.in.Conf.RollbackKeys0225()
 	p.Steps = append(p.Steps, p.lockdownKeysStep(RollbackTarget0224))
 	p.Steps = append(p.Steps, RollbackStep{Title: "leave every other file untouched",
 		Lines: []string{pt.StoreFile + ", " + pt.DevicesFile + ", " + pt.ConsoleFile + ", the per-tier and the group sudoers drop-ins, the SNMP credentials, the blocks, the apply state directory, the host registry and the rendered backend files are in formats " + RollbackTarget0224 + " reads;",

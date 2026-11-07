@@ -47,7 +47,7 @@ func TestRollback0222ConvertsNothing(t *testing.T) {
 	if strings.Contains(out, "holds the") || strings.Contains(out, "took first") || strings.Contains(out, "takes a snapshot") {
 		t.Errorf("--apply speaks of a snapshot that was not taken:\n%s", out)
 	}
-	if strings.Contains(out, "Until the upgrade") {
+	if strings.Contains(beforeReportsNote(out), "Until the upgrade") {
 		t.Errorf("--apply names a command to avoid; 0.2.22 reads them all:\n%s", out)
 	}
 	if hs.snapshots() != snaps {

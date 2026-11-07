@@ -19,7 +19,15 @@ func rollback0224State(t *testing.T) *hostSandbox {
 	return hs
 }
 
-// This release changed no stored file, so 0.2.24 reads everything: the dry run
+// beforeReportsNote is out up to the note every target ends with: the reports
+// in the users' homes stay and the commands of the limits (0.2.26) write a
+// key the older release refuses (rollbackReportLimitsNote).
+func beforeReportsNote(out string) string {
+	before, _, _ := strings.Cut(out, "The reports in the users' homes stay")
+	return before
+}
+
+// This release changed no stored file 0.2.24 reads but the limits of the stored reports, so 0.2.24 reads everything: the dry run
 // lists nothing to do and --apply converts nothing, even with an email address
 // in the store and the break-glass firewall set (0.2.24's own; the 0.2.23
 // target removes them), takes no snapshot and asks for no --yes.
@@ -54,7 +62,7 @@ func TestRollback0224ConvertsNothing(t *testing.T) {
 	if !strings.Contains(out, "tacctl upgrade --branch 0.2.24") {
 		t.Errorf("--apply lacks the upgrade:\n%s", out)
 	}
-	if strings.Contains(out, "holds the") || strings.Contains(out, "took first") || strings.Contains(out, "Until the upgrade") || strings.Contains(out, "firewall is removed") {
+	if out = beforeReportsNote(out); strings.Contains(out, "holds the") || strings.Contains(out, "took first") || strings.Contains(out, "Until the upgrade") || strings.Contains(out, "firewall is removed") {
 		t.Errorf("--apply speaks of a snapshot, a command to avoid or the firewall:\n%s", out)
 	}
 	if hs.snapshots() != snaps {

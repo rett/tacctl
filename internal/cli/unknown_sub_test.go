@@ -49,6 +49,7 @@ func TestUnknownSubcommandIsShort(t *testing.T) {
 		{[]string{"hash", "bogus"}, "[ERROR] Unknown subcommand: 'bogus'\nRun 'tacctl hash -h' for usage.\n"},
 		{[]string{"config", "snmp", "frob"}, "[ERROR] Unknown subcommand: 'frob'\nRun 'tacctl config snmp -h' for usage.\n"},
 		{[]string{"config", "devices", "frob"}, "[ERROR] Unknown subcommand: 'frob'\nRun 'tacctl config devices -h' for usage.\n"},
+		{[]string{"config", "reports", "frob"}, "[ERROR] Unknown subcommand: 'frob'\nRun 'tacctl config reports -h' for usage.\n"},
 		{[]string{"server", "metrics", "frob"}, "[ERROR] Unknown subcommand: 'frob'\nRun 'tacctl server metrics -h' for usage.\n"},
 		{[]string{"server", "addresses", "frob"}, "[ERROR] Unknown subcommand: 'frob'\nRun 'tacctl server addresses -h' for usage.\n"},
 		// 'config listen' and 'config metrics' are server verbs since 0.2.22 (no alias)

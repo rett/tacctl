@@ -250,9 +250,13 @@ func (inv *invocation) rollbackNextSteps(version string, snapshot bool) {
 	if lifecycle.RollbackUndoes(version, "0.2.22") {
 		defer inv.rollbackTimeoutScaleNote(version)
 	}
+	// every target keeps no limit of the stored reports (0.2.26)
+	if lifecycle.RollbackUndoes(version, "0.2.26") {
+		defer inv.rollbackReportLimitsNote(version)
+	}
 	switch version {
 	case lifecycle.RollbackTarget0224:
-		inv.rollbackNextSteps0224(version)
+		inv.rollbackNextSteps0224(version, snapshot)
 		return
 	case lifecycle.RollbackTarget0223:
 		inv.rollbackNextSteps0223(version, snapshot)
@@ -378,6 +382,15 @@ func (inv *invocation) rollbackSNMPPoolNote(version, snapID string, plan *lifecy
 	inv.echo("If one did, run 'tacctl rollback " + version + " --apply --yes' again (it writes version 1).")
 }
 
+// rollbackReportLimitsNote says, after a rollback to a release before 0.2.26,
+// that the reports stay where they are and what writes a limit again.
+func (inv *invocation) rollbackReportLimitsNote(version string) {
+	inv.echo("")
+	inv.echo("The reports in the users' homes stay: they are the users' own files, and " + version + " has no 'device reports' verbs to list or remove them.")
+	inv.echo("Until the upgrade, do not run 'tacctl config reports max-size' or 'max-count': they write a limit again, which " + version + " refuses.")
+	inv.echo("If one did, run 'tacctl rollback " + version + " --apply' again (it removes it).")
+}
+
 // rollbackTimeoutScaleNote says, after a rollback to a release before 0.2.22, that the commands of the
 // timing scale write what the older release refuses until it is installed.
 func (inv *invocation) rollbackTimeoutScaleNote(version string) {
@@ -387,14 +400,17 @@ func (inv *invocation) rollbackTimeoutScaleNote(version string) {
 }
 
 // rollbackNextSteps0224 is the next steps of the rollback to 0.2.24: the
-// upgrade of the tag. 0.2.24 reads every file this release writes, so the
-// rollback converted nothing, took no snapshot and leaves no command to avoid.
-func (inv *invocation) rollbackNextSteps0224(version string) {
+// upgrade of the tag. 0.2.24 reads every file this release writes but the
+// limits of the stored reports (rollbackReportLimitsNote), so the rollback
+// converted a file only when one was set; snapshot is whether it took the
+// snapshot then, and the note says why 0.2.24 cannot restore it.
+func (inv *invocation) rollbackNextSteps0224(version string, snapshot bool) {
 	inv.echo("")
 	inv.echo(ui.Bold + "Next steps" + ui.NC)
 	inv.echo("  1. Install " + version + " with the upgrade (see Upgrading in the README), which switches the clone in " + inv.app.Paths.Deploy + " to the tag, builds it and re-executes it:")
 	inv.echo("       tacctl upgrade --branch " + version)
 	inv.echo("  2. Check it: tacctl status; tacctl config validate")
+	inv.rollbackSnapshotNote(snapshot, "; "+version+"'s restore refuses a tacctl.yaml with a key it does not know.")
 }
 
 // rollbackNextSteps0223 is the next steps of the rollback to 0.2.23: the

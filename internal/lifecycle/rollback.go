@@ -809,7 +809,7 @@ func (p *RollbackPlan) confStep() RollbackStep {
 	}
 	var added, other []string
 	for _, k := range p.keys {
-		if conf.Added024Key(k) || conf.Added025Key(k) || conf.Added027Key(k) || conf.Added029Key(k) || conf.Added0210Key(k) || conf.Added0217Key(k) || conf.Added0220Key(k) || conf.Added0221Key(k) || conf.Added0222Key(k) || conf.Added0224Key(k) {
+		if conf.Added024Key(k) || conf.Added025Key(k) || conf.Added027Key(k) || conf.Added029Key(k) || conf.Added0210Key(k) || conf.Added0217Key(k) || conf.Added0220Key(k) || conf.Added0221Key(k) || conf.Added0222Key(k) || conf.Added0224Key(k) || conf.Added0226Key(k) {
 			added = append(added, k)
 		} else {
 			other = append(other, k)
@@ -821,7 +821,7 @@ func (p *RollbackPlan) confStep() RollbackStep {
 	for _, k := range other {
 		s.Lines = append(s.Lines, "remove "+k+"  (no release knows this key; 0.2.3 refuses a file that has it)")
 	}
-	s.Lines = append(s.Lines, "(the settings of 'device config pull' and 'plan', the Cisco source interface, the break-glass records, the list of configuration blocks in force and audit.strict are these; every other key is one 0.2.3 has and stays)")
+	s.Lines = append(s.Lines, "(the settings of 'device config pull' and 'plan', the Cisco source interface, the break-glass records, the list of configuration blocks in force, audit.strict and the limits of the stored reports are these; every other key is one 0.2.3 has and stays)")
 	return s
 }
 

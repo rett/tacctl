@@ -427,6 +427,7 @@ var auditTable = map[string]auditEntry{
 	"config branch":              mixed(),
 	"config cisco":               mixed(),
 	"config devices":             mixed(),
+	"config reports":             mixed(),
 	"config linux":               mixed(),
 	"config loglevel":            mixed(),
 	"config password-age":        mixed(),
