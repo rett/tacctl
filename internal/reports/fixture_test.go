@@ -20,13 +20,13 @@ func fixture() []Device {
 			Name: "web1", Address: "203.0.113.20", Vendor: "linux", Scope: "lab",
 			Model: "=SUM(A1)", Serial: "+SN000007", Release: "-1.0", Location: "@Rack 4, DC1",
 			Description: "uses\x1b[31m colour", Pulled: at(5, 8, 0), Applied: at(4, 7, 5),
-			ConfigState: "differs", GateState: "-held",
+			ConfigState: "differs",
 		},
 		{
 			Name: "sw1", Address: "192.0.2.11", Vendor: "cisco", Scope: "site-a",
 			Model: "WS-C3850-24T", Serial: "SN000004", Release: "16.12.4", Location: "Rack 4, DC1",
 			Description: "access stack", Pulled: at(6, 7, 45), Applied: at(1, 12, 0),
-			ConfigState: "ok", GateState: "ok",
+			ConfigState: "ok",
 			Members: []Member{
 				{ID: "2", Role: "member", Model: "WS-C3850-24T", Serial: "SN000005", Release: "16.12.4", Status: "Ready", Priority: 1},
 				{ID: "1", Role: "master", Model: "WS-C3850-24T", Serial: "SN000004", Release: "16.12.4", Status: "Ready", Priority: 15},
@@ -36,7 +36,7 @@ func fixture() []Device {
 			Name: "jsw1", Address: "192.0.2.10", Vendor: "junos", Scope: "site-a",
 			Model: "EX4300-48T", Serial: "SN000001", Release: "21.4R3-S5.4", Location: "Rack 4, DC1",
 			Description: "core virtual chassis", Pulled: at(6, 7, 30), Applied: at(2, 9, 0),
-			ConfigState: "ok", GateState: "held",
+			ConfigState: "ok",
 			Members: []Member{
 				{ID: "0", Role: "master", Model: "EX4300-48T", Serial: "SN000001", Release: "21.4R3-S5.4", Status: "Prsnt", Priority: 129},
 				{ID: "10", Role: "linecard", Model: "EX4300-48T", Serial: "SN000003", Release: "21.4R3-S5.4", Status: "Prsnt", Priority: 0},
@@ -46,7 +46,7 @@ func fixture() []Device {
 		{
 			Name: "rtr1", Address: "198.51.100.1", Vendor: "junos", Scope: "site-a",
 			Model: "MX204", Serial: "SN000006", Release: "22.2R1.9", Location: "Lab rack 2",
-			Pulled: at(3, 22, 10), ConfigState: "failed", GateState: "",
+			Pulled: at(3, 22, 10), ConfigState: "failed",
 		},
 		{
 			Name: "core1", Address: "198.51.100.2", Vendor: "wti", Scope: "lab",
@@ -59,7 +59,7 @@ func fixture() []Device {
 		{
 			Name: "ünï1", Address: "10.0.0.9", Vendor: "linux", Scope: "lab",
 			Model: "Model Ü", Serial: "SN000008", Release: "1.2", Description: "Zürich",
-			Pulled: at(4, 10, 0), ConfigState: "ok", GateState: "ok",
+			Pulled: at(4, 10, 0), ConfigState: "ok",
 		},
 	}
 }

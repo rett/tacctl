@@ -30,12 +30,18 @@ current behaviour; this file is where history lives.
    line as `user rename` writes), followed by a note to tell the people to log
    in with the new name: the name typed at a device's login changed. A name
    with a period never had a Linux account, so no account on the server or a
-   host is renamed; the new name gets its account at the next sync. When a new
-   name is taken (a user of that name, a second name that becomes the same, or
-   a break-glass local user of one of the user's scopes) nothing is renamed and
-   the upgrade stops before any change, naming each pair with the command that
-   frees the name (`tacctl user rename alice_smith <other-name>`); run it
-   again afterwards. A second upgrade does nothing.
+   host is renamed; the new name gets its account at the next sync. When the
+   new name is taken (a user of that name, a second name that becomes the same,
+   or a break-glass local user of one of the user's scopes) the user gets `_`
+   and four random lowercase letters or digits after it, drawn again until the
+   name is free of every user, every other new name and the break-glass users
+   of the user's scopes (`alice.smith` becomes `alice_smith_k3x9`; a name that
+   would be longer than a Linux account name is cut before the suffix), and the
+   line says why (`renamed user alice.smith to alice_smith_k3x9 (alice_smith
+   was taken)`); the first of two names that meet keeps the name without it.
+   Only a name that is not a user name even with the periods replaced (a space,
+   say) stops the upgrade before any change, naming the key to edit in the
+   store; run it again afterwards. A second upgrade does nothing.
 
 3. **A user name with a period is not accepted anywhere.** 0.2.22 to 0.2.25
    refused a period in a new user name but still read one that a store from
@@ -48,7 +54,7 @@ current behaviour; this file is where history lives.
    only letters, numbers, underscores and hyphens (a period cannot be part of a
    Linux account name).`, the store and `console.yaml` validate user names
    strictly, and `user rename` takes no old name with a period. A store that
-   still holds one (an upgrade that stopped for a name that is taken, or a
+   still holds one (an upgrade that stopped for a name that is not a user name, or a
    restored snapshot of 0.2.20 or 0.2.21) fails every write with `user
    'alice.smith': invalid name (a period cannot be part of a Linux account
    name; 'tacctl upgrade' renames such a user)`, and the upgrade is the way
@@ -73,8 +79,9 @@ current behaviour; this file is where history lives.
    members:` table under the data block (`ID`, `ROLE`, `MODEL`, `SERIAL`,
    `RELEASE`, `STATUS`, `PRIORITY`), and `device show --json` has a `members`
    list of the same fields; they are shown to the operator tier and up, as the
-   release, model and serial number are. They are also what the members report
-   of `tacctl device reports` is made of (item 5). An existing record has no
+   release, model and serial number are (the tier table's note for `device
+   show`, in the manual page too, names the table and `members`). They are also
+   what the members report of `tacctl device reports` is made of (item 5). An existing record has no
    members until its device is pulled again, and nothing else about the record
    changes: the key `members` is derived data that 0.2.25 ignores, so `tacctl
    rollback` leaves it.
@@ -94,11 +101,13 @@ current behaviour; this file is where history lives.
    its facts came from, and the heading gives the date of the oldest datum.
    `--format text|csv|json` (text is the default; a CSV cell that starts with
    `=`, `+`, `-` or `@` is quoted with a leading `'`, so that a spreadsheet does
-   not run it), `--scope` and `--vendor` narrow the report, `--name` names it,
-   `--stdout` prints it and stores nothing, and `--pull` reads the devices first
-   as `device config pull` does, with your own password (the engineer tier). A
-   report holds the devices of your scopes (a superuser's: all) and no secret,
-   hash or community string. It is the file
+   not run it; a JSON report is one object with `schema`, `type`, `generated`,
+   `oldest_data`, `filters` (`scope` and `vendor` as given, only those that
+   were, `{}` for none), `columns` and `rows`), `--scope` and `--vendor` narrow
+   the report, `--name` names it, `--stdout` prints it and stores nothing, and
+   `--pull` reads the devices first as `device config pull` does, with your own
+   password (the engineer tier). A report holds the devices of your scopes (a
+   superuser's: all) and no secret, hash or community string. It is the file
    `~/reports/devices/<type>-<yyyymmdd>.<txt|csv|json>` of your home (the
    directory 0700, the file 0600, made as you; a second report of a day is
    `-2`), with a `.meta` file beside it that records when, by whom, the command
@@ -137,8 +146,10 @@ current behaviour; this file is where history lives.
    generate` now refuses a report larger than `reports.max_size` (default 10
    MiB, which holds the inventory of about 20,000 devices) and a report that
    would make a user's reports more than `reports.max_count` (default 100),
-   names the setting and the way out (`device reports remove`, a narrower
-   `--scope`, or `--stdout`), and writes nothing. A superuser sets the two for
+   names the setting by its key in `tacctl.yaml` (`reports.max_size` or
+   `reports.max_count`) with the command a superuser changes it with
+   (`tacctl config reports max-size <bytes>`) and the way out (`device reports
+   remove`, a narrower `--scope`, or `--stdout`), and writes nothing. A superuser sets the two for
    the server with `tacctl config reports [show|max-size|max-count] [<value>]`
    (a size is bytes or a number with `Ki`, `Mi` or `Gi`, up to 1Gi; a count up
    to 100000; 0 is no cap; `tacctl.yaml` keys `reports.max_size` and

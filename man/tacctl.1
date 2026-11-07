@@ -246,12 +246,21 @@ user has a period. The command prints one line for each user
 and a note to tell the people to log in with the new name: the name typed at a
 device's login changed. A name with a period never had a Linux account, so no
 account on the server or a host is renamed; the new name gets its account at
-the next sync. When a new name is taken (a user of that name, a second name that
-becomes the same, or a break-glass local user of one of the user's scopes), the
-upgrade stops before anything is changed and names each pair with the command
-that frees the name, such as
-.BR "user rename alice_smith <other\-name>" ;
-run it again afterwards. When the release being upgraded has already replaced
+the next sync. When the new name is taken (a user of that name, a second name
+that becomes the same, or a break-glass local user of one of the user's scopes),
+the user gets \&'_' and four random lowercase letters or digits after it, drawn
+again until the name is free of every user, every other new name and the
+break-glass users of the user's scopes
+.RB ( alice_smith_k3x9 ;
+the line reads
+.BR "renamed user alice.smith to alice_smith_k3x9 (alice_smith was taken)" ).
+Of two names that meet the first in the store keeps the name without a suffix,
+and a name longer than a Linux account name (32 characters) is cut before the
+suffix. Only a name that is not a user name even with the periods replaced (one
+with a space, say) stops the upgrade before anything is changed: it names the
+key to edit under
+.B users:
+in the store; run it again afterwards. When the release being upgraded has already replaced
 tacctl and the tacquito build, the message says so (the store, the
 configuration and the services are not changed). A store that cannot be read
 does not hold it up.
@@ -5152,7 +5161,8 @@ default 10 MiB) and the most reports a user keeps
 .RB ( reports.max_count ,
 default 100), and whether each is set or the default. 0 is no cap. A
 .B "device reports generate"
-over either limit is refused with the setting named, and nothing deletes a
+over either limit is refused with the setting named (its key above) and the
+command a superuser changes it with, and nothing deletes a
 report by age but
 .BR "device reports prune" .
 A user's own limit
@@ -9606,7 +9616,7 @@ vendor tag and the registered vendor disagree.
 .\" BEGIN GENERATED: command device show
 .RS
 .PP
-Requires: \fBreadonly\fR. The Configuration, Release, Model and Serial rows (and config, release, model and serial of \-\-json) are the operator tier's; a read\-only user's output has none.
+Requires: \fBreadonly\fR. The Configuration, Release, Model and Serial rows, the Chassis members table (and config, release, model, serial and members of \-\-json) are the operator tier's; a read\-only user's output has none.
 .PP
 Options:
 .TP
@@ -13989,8 +13999,7 @@ release, status, priority and the date of the pull; a standalone device that
 has a model or a serial number is one row, with the id and the role
 .BR \- ),
 .B software
-(name, vendor, model, release, the reserved column gate, which is empty in this
-release, and the date of the pull) and
+(name, vendor, model, release and the date of the pull) and
 .B config
 (name, scope, the state
 .B "device config list"
@@ -14087,6 +14096,17 @@ and
 .BR type ,
 .BR generated ,
 .BR oldest_data ,
+.BR filters
+(the
+.B \-\-scope
+and
+.B \-\-vendor
+given, as the keys
+.B scope
+and
+.BR vendor ,
+.B {}
+for none),
 .B columns
 and
 .BR rows ;
@@ -14109,7 +14129,7 @@ says so, the report is made and the exit status is 1. With
 .B \-\-stdout
 the pull's output goes to standard error. A report over the largest size, or
 that would exceed the most reports a user keeps, is refused with the setting
-named and nothing written (see
+named (\fBreports.max_size\fR or \fBreports.max_count\fR) and nothing written (see
 .BR "config reports" ).
 .\" BEGIN GENERATED: command device reports generate
 .RS
@@ -14128,7 +14148,7 @@ Only the devices that scope answers. A scope that is not one of yours is refused
 Only the devices of that vendor.
 .TP
 \fB\-\-format\fR \fItext|csv|json\fR
-The format: text (aligned columns, the default), csv (RFC 4180, a header line, UTF\-8) or json (one object: schema, type, generated, filters, rows). It sets the extension of the file.
+The format: text (aligned columns, the default), csv (RFC 4180, a header line, UTF\-8) or json (one object: schema, type, generated, oldest_data, filters, columns, rows). It sets the extension of the file.
 .TP
 \fB\-\-name\fR \fI<name>\fR
 The name of the report, without the extension: letters, digits, '.', '_' and '\-', at most 64 bytes, no leading dot. The default is the type and the date (inventory\-20261106); a second report of the same day gets \-2. A name in use is refused, never overwritten.
@@ -16242,7 +16262,7 @@ Every tier may run list; ack and unack need the superuser tier.
 Every tier may generate (without \-\-pull), list, show, export, rename and remove its own reports, which hold the devices of its own scopes; generate \-\-pull needs the engineer tier; \-\-user, \-\-all\-users and <user>/<report> (the reports of other users, every access audited) need the superuser tier.
 .TP
 .B device show
-The Configuration, Release, Model and Serial rows (and config, release, model and serial of \-\-json) are the operator tier's; a read\-only user's output has none.
+The Configuration, Release, Model and Serial rows, the Chassis members table (and config, release, model, serial and members of \-\-json) are the operator tier's; a read\-only user's output has none.
 .TP
 .B device snmp
 An engineer may read the settings of a device of their own scope (show [\-\-reveal [<user>]], version, port, timeout, v3\-user list|default, clients list); every setter and clear needs the superuser tier.

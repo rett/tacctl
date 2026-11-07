@@ -7,8 +7,8 @@ import (
 	"time"
 )
 
-// The default limits (D326). The settings reports.max-size and
-// reports.max-count hold the values in use; 0 means no cap.
+// The default limits (D326). The settings reports.max_size and
+// reports.max_count hold the values in use; 0 means no cap.
 const (
 	DefaultMaxSize  int64 = 10 << 20
 	DefaultMaxCount       = 100

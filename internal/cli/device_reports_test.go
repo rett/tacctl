@@ -201,6 +201,40 @@ func TestReportsRowsOfEachType(t *testing.T) {
 	}
 }
 
+// A JSON report carries the filters of the command: the keys scope and vendor,
+// only those that were given, {} for none; the stored file has the same.
+func TestReportsJSONCarriesTheFilters(t *testing.T) {
+	b := newReportsBox(t)
+	filters := func(out string) map[string]string {
+		t.Helper()
+		var doc struct {
+			Filters map[string]string `json:"filters"`
+		}
+		if err := json.Unmarshal([]byte(out), &doc); err != nil || doc.Filters == nil {
+			t.Fatalf("%v %q", err, out)
+		}
+		return doc.Filters
+	}
+	if f := filters(b.as("alice", asSuper, "generate", "--type", "software", "--format", "json", "--stdout")); len(f) != 0 {
+		t.Errorf("no filters: %v", f)
+	}
+	if f := filters(b.as("alice", asSuper, "generate", "--type", "software", "--format", "json", "--stdout", "--scope", "lab")); len(f) != 1 || f["scope"] != "lab" {
+		t.Errorf("scope: %v", f)
+	}
+	f := filters(b.as("alice", asSuper, "generate", "--type", "software", "--format", "json", "--stdout", "--scope", "lab", "--vendor", "cisco"))
+	if len(f) != 2 || f["scope"] != "lab" || f["vendor"] != "cisco" {
+		t.Errorf("both: %v", f)
+	}
+	name := b.generate("alice", asSuper, "--type", "software", "--format", "json", "--vendor", "cisco")
+	body, err := os.ReadFile(filepath.Join(b.dir("alice"), name+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f := filters(string(body)); len(f) != 1 || f["vendor"] != "cisco" {
+		t.Errorf("stored: %v", f)
+	}
+}
+
 func TestReportsGenerateStoresTheFiles(t *testing.T) {
 	b := newReportsBox(t)
 	out := b.as("alice", asSuper, "generate", "--type", "inventory", "--format", "csv", "--scope", "lab", "--vendor", "cisco")
@@ -363,8 +397,8 @@ func TestReportsPullNeedsTheEngineerTier(t *testing.T) {
 func TestReportsLimitText(t *testing.T) {
 	size := reportLimitText(reports.CheckLimits(11<<20, 1, reports.DefaultMaxSize, reports.DefaultMaxCount))
 	count := reportLimitText(reports.CheckLimits(10, 101, reports.DefaultMaxSize, reports.DefaultMaxCount))
-	for _, c := range []struct{ got, setting string }{{size, "reports.max-size"}, {count, "reports.max-count"}} {
-		if !strings.Contains(c.got, "the setting "+c.setting+")") || !strings.Contains(c.got, "tacctl device reports remove <name>") {
+	for _, c := range []struct{ got, setting, verb string }{{size, "reports.max_size", "max-size <bytes>"}, {count, "reports.max_count", "max-count <n>"}} {
+		if !strings.Contains(c.got, "(the setting "+c.setting+"; a superuser changes it with: tacctl config reports "+c.verb+")") || !strings.Contains(c.got, "tacctl device reports remove <name>") {
 			t.Errorf("%q", c.got)
 		}
 	}
@@ -399,7 +433,7 @@ func TestReportsCountLimitIsEnforced(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.as("bob", asOperator, "generate", "--type", "software")
-	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "that would be 101 reports, over the count limit of 100 reports (the setting reports.max-count). Remove one with: tacctl device reports remove <name>") {
+	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "that would be 101 reports, over the count limit of 100 reports (the setting reports.max_count; a superuser changes it with: tacctl config reports max-count <n>). Remove one with: tacctl device reports remove <name>") {
 		t.Errorf("%d %q", b.sb.code, b.sb.stderr())
 	}
 	if ents, _ := os.ReadDir(dir); len(ents) != 2*reports.DefaultMaxCount+1 {
@@ -579,7 +613,7 @@ func TestReportsExtensionAmbiguity(t *testing.T) {
 	if out := b.as("alice", asSuper, "show", "fleet.json"); b.sb.code != 0 || !strings.Contains(out, "other (a file") {
 		t.Errorf("with the extension: %d %q", b.sb.code, out)
 	}
-	if out := b.as("alice", asSuper, "export", "fleet.csv"); b.sb.code != 0 || !strings.Contains(out, "name,vendor,model,release,gate,pulled") {
+	if out := b.as("alice", asSuper, "export", "fleet.csv"); b.sb.code != 0 || !strings.Contains(out, "name,vendor,model,release,pulled") {
 		t.Errorf("export: %d %q", b.sb.code, out)
 	}
 	// the name is taken in any extension
@@ -651,7 +685,7 @@ func TestReportsFollowTheConfiguredLimits(t *testing.T) {
 		t.Fatal("the first report was refused")
 	}
 	b.as("bob", asOperator, "generate", "--type", "software")
-	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "the setting reports.max-count") {
+	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "the setting reports.max_count") {
 		t.Errorf("global count: %d %q", b.sb.code, b.sb.stderr())
 	}
 	b.sb.asAlice("", "user", "reports-limit", "bob", "max-count", "0")
@@ -662,7 +696,7 @@ func TestReportsFollowTheConfiguredLimits(t *testing.T) {
 	b.sb.asAlice("", "user", "reports-limit", "bob", "max-size", "1")
 	b.sb.expect(0, "", "")
 	b.as("bob", asOperator, "generate", "--type", "inventory")
-	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "reports.max-size") {
+	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "reports.max_size") {
 		t.Errorf("own size: %d %q", b.sb.code, b.sb.stderr())
 	}
 }

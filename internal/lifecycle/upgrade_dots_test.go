@@ -176,11 +176,28 @@ func TestUpgradeWithoutDottedUsersTakesNoSnapshot(t *testing.T) {
 	}
 }
 
-// A new name that is taken stops the upgrade before anything is changed:
-// each clashing pair is named with the way to free the name, and neither the
-// users that could be renamed nor anything else is. A snapshot is not taken.
-// Once the name is free the upgrade goes through.
-func TestUpgradeDottedUserClashChangesNothing(t *testing.T) {
+// suffixes is the seam of the random suffix: the words in order, and a test
+// failure when more are drawn than were given.
+func suffixes(t *testing.T, words ...string) func() string {
+	t.Helper()
+	return func() string {
+		if len(words) == 0 {
+			t.Error("more suffixes were drawn than expected")
+			return "zzzz"
+		}
+		w := words[0]
+		words = words[1:]
+		return w
+	}
+}
+
+// A new name that is taken (a user of that name, a second name that becomes
+// the same, a break-glass local user of the user's scopes) does not stop the
+// upgrade: the user gets '_' and a random suffix, drawn again when the name
+// with it is taken too. The first of two names that meet keeps the name
+// without a suffix. The output says each pair and why; a second run does
+// nothing.
+func TestUpgradeDottedUserCollisionGetsASuffix(t *testing.T) {
 	const store = dottedStorePrefix + `users:
   alice.smith:
     group: operator
@@ -206,6 +223,30 @@ func TestUpgradeDottedUserClashChangesNothing(t *testing.T) {
     hash: null
     disabled: false
     password_changed: null
+  dave_x:
+    group: operator
+    scopes: []
+    hash: null
+    disabled: false
+    password_changed: null
+  dave_x_k3x9:
+    group: operator
+    scopes: []
+    hash: null
+    disabled: false
+    password_changed: null
+  a.b_c:
+    group: operator
+    scopes: []
+    hash: null
+    disabled: false
+    password_changed: null
+  a_b.c:
+    group: operator
+    scopes: []
+    hash: null
+    disabled: false
+    password_changed: null
 `
 	o := newOhost(t)
 	o.cloned()
@@ -214,23 +255,97 @@ func TestUpgradeDottedUserClashChangesNothing(t *testing.T) {
 	o.be.Conf.Reload()
 	o.write(o.p.LinuxUIDs, dottedLedger)
 	o.write(o.p.ConsoleFile, dottedConsole)
-	beforeOverrides := readFile(t, o.p.Overrides)
+	// alice.smith, carol.jones, dave.x (k3x9 is taken, then m2p7), a_b.c
+	o.nameSuffix = suffixes(t, "k3x9", "k3x9", "k3x9", "m2p7", "q8w1")
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	text := o.text()
+	for _, want := range []string{
+		"Renaming 5 users whose name has a period",
+		"renamed user alice.smith to alice_smith_k3x9 (UID 80001 carried, console settings moved, alice_smith was taken)",
+		"renamed user carol.jones to carol_jones_k3x9 (carol_jones was taken)",
+		"renamed user dave.x to dave_x_m2p7 (dave_x was taken)",
+		"renamed user a.b_c to a_b_c\n",
+		"renamed user a_b.c to a_b_c_q8w1 (a_b_c was taken)",
+		"Tell these users to log in with the new name",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("output lacks %q:\n%s", want, text)
+		}
+	}
+	st := readFile(t, o.p.StoreFile)
+	for _, want := range []string{"alice_smith_k3x9:", "carol_jones_k3x9:", "dave_x_m2p7:", "a_b_c:", "a_b_c_q8w1:", "alice_smith:", "dave_x:", "dave_x_k3x9:"} {
+		if !strings.Contains(st, want) {
+			t.Errorf("store lacks %q:\n%s", want, st)
+		}
+	}
+	for _, gone := range []string{"alice.smith:", "carol.jones:", "dave.x:", "a.b_c:", "a_b.c:"} {
+		if strings.Contains(st, gone) {
+			t.Errorf("store still holds %q:\n%s", gone, st)
+		}
+	}
+	if got := readFile(t, o.p.LinuxUIDs); got != "# UIDs\nalice_smith_k3x9:80001\nbob:80002\n" {
+		t.Errorf("ledger:\n%s", got)
+	}
+	if got := strings.Join(o.audit, "\n"); !strings.Contains(got, "user rename from=alice.smith to=alice_smith_k3x9 uid=carried") {
+		t.Errorf("audit lines:\n%s", got)
+	}
+
+	// idempotent: no period is left, no draw, no snapshot
+	ids := snapshotIDs(o)
+	o.nameSuffix = suffixes(t)
+	if code := upgrade(o); code != 0 {
+		t.Fatalf("second run: exit %d\n%s\n%s", code, o.stdout, o.stderr)
+	}
+	if got := snapshotIDs(o); !slices.Equal(got, ids) {
+		t.Errorf("snapshots after the second run: %v, before %v", got, ids)
+	}
+	if strings.Contains(o.text(), "renamed user") {
+		t.Errorf("second run:\n%s", o.text())
+	}
+}
+
+// A name that is not a user name even with the periods replaced stops the
+// upgrade before anything is changed, and no user that could be renamed is:
+// no command renames such a name, so the refusal names the key to edit. Once
+// it is edited the upgrade goes through.
+func TestUpgradeDottedUserInvalidNameChangesNothing(t *testing.T) {
+	const store = dottedStorePrefix + `users:
+  alice.smith:
+    group: operator
+    scopes: []
+    hash: null
+    disabled: false
+    password_changed: null
+  x y.z:
+    group: operator
+    scopes: []
+    hash: null
+    disabled: false
+    password_changed: null
+`
+	o := newOhost(t)
+	o.cloned()
+	o.write(o.p.StoreFile, store)
+	o.write(o.p.LinuxUIDs, dottedLedger)
+	o.write(o.p.ConsoleFile, dottedConsole)
+	o.nameSuffix = suffixes(t)
 	if code := upgrade(o); code != 1 {
 		t.Fatalf("exit %d, want 1\n%s\n%s", code, o.stdout, o.stderr)
 	}
 	errs := stripANSI(o.stderr.String())
 	for _, want := range []string{
-		"2 new names are not free:",
-		"  alice.smith -> alice_smith: a user of that name exists   (tacctl user rename alice_smith <other-name>, or tacctl user remove alice_smith)",
-		"  carol.jones -> carol_jones: a break-glass local user of scope 'site-a' (admin)   (tacctl scope breakglass site-a remove Carol_Jones)",
-		"No user was renamed. Free the names, then run the upgrade again.",
+		"1 user cannot be given a name:",
+		"  x y.z -> x y_z: not a name a user can have",
+		"No user was renamed. No command renames a name that is not a user name, so edit the key under 'users:' in " + o.p.StoreFile + ", then run the upgrade again.",
 		"Nothing was changed.",
 	} {
 		if !strings.Contains(errs, want) {
 			t.Errorf("stderr lacks %q:\n%s", want, errs)
 		}
 	}
-	if strings.Contains(errs, "dave.x") {
+	if strings.Contains(errs, "alice.smith") {
 		t.Errorf("a user that could be renamed is named:\n%s", errs)
 	}
 	for _, p := range o.phases {
@@ -247,16 +362,16 @@ func TestUpgradeDottedUserClashChangesNothing(t *testing.T) {
 	if got := readFile(t, o.p.StoreFile); got != store {
 		t.Errorf("the store changed:\n%s", got)
 	}
-	if readFile(t, o.p.Overrides) != beforeOverrides || readFile(t, o.p.LinuxUIDs) != dottedLedger || readFile(t, o.p.ConsoleFile) != dottedConsole {
+	if readFile(t, o.p.LinuxUIDs) != dottedLedger || readFile(t, o.p.ConsoleFile) != dottedConsole {
 		t.Error("a file changed")
 	}
 
-	// The names freed, the same state goes through.
-	o.write(o.p.StoreFile, strings.NewReplacer("  alice_smith:", "  alice_two:", "  carol.jones:", "  carol-jones:").Replace(store))
+	o.write(o.p.StoreFile, strings.ReplaceAll(store, "x y.z:", "x.z:"))
+	o.nameSuffix = suffixes(t)
 	if code := upgrade(o); code != 0 {
-		t.Fatalf("after freeing the names: exit %d\n%s\n%s", code, o.stdout, o.stderr)
+		t.Fatalf("after the edit: exit %d\n%s\n%s", code, o.stdout, o.stderr)
 	}
-	if !strings.Contains(o.text(), "renamed user alice.smith to alice_smith") || !strings.Contains(o.text(), "renamed user dave.x to dave_x") {
+	if !strings.Contains(o.text(), "renamed user alice.smith to alice_smith (") || !strings.Contains(o.text(), "renamed user x.z to x_z\n") {
 		t.Errorf("output:\n%s", o.text())
 	}
 }
@@ -265,8 +380,8 @@ func TestUpgradeDottedUserClashChangesNothing(t *testing.T) {
 // where the refusal comes in practice: the installed command and the tacquito
 // build are already replaced, so the refusal says that and does not say that
 // nothing was changed.
-func TestUpgradeDottedUserClashAfterTheReexec(t *testing.T) {
-	const store = dottedStorePrefix + "users:\n  alice.smith:\n    group: operator\n  alice_smith:\n    group: operator\n"
+func TestUpgradeDottedUserRefusalAfterTheReexec(t *testing.T) {
+	const store = dottedStorePrefix + "users:\n  x y.z:\n    group: operator\n"
 	o := newOhost(t)
 	o.cloned()
 	o.write(o.p.StoreFile, store)
@@ -276,8 +391,8 @@ func TestUpgradeDottedUserClashAfterTheReexec(t *testing.T) {
 	}
 	errs := stripANSI(o.stderr.String())
 	for _, want := range []string{
-		"1 new name is not free:",
-		"  alice.smith -> alice_smith: a user of that name exists",
+		"1 user cannot be given a name:",
+		"  x y.z -> x y_z: not a name a user can have",
 		"tacctl and the tacquito build were updated; the store, the configuration and the services were not.",
 	} {
 		if !strings.Contains(errs, want) {
@@ -328,25 +443,66 @@ func TestUpgradeUnreadableStoreIsNotHeldUp(t *testing.T) {
 	}
 }
 
-// The plan: a name that two names with periods become, a name that is not a
-// user name, and the order of the renames.
+// The plan: a name that two names with periods become (the first keeps it),
+// a name that is not a user name, and the order of the renames.
 func TestPlanDottedUsers(t *testing.T) {
 	users := []lifecycle.DottedUser{{Name: "b.c"}, {Name: "a.b_c"}, {Name: "a_b.c"}, {Name: "zed"}, {Name: "x y.z"}, {Name: "q.r"}}
-	plan := lifecycle.PlanDottedUsers(nil, users, "/etc/tacctl/store.yaml")
+	plan := lifecycle.PlanDottedUsers(nil, users, suffixes(t, "aaaa"))
 	var got []string
 	for _, r := range plan.Renames {
 		got = append(got, r.Old+">"+r.New)
 	}
-	if want := []string{"b.c>b_c", "a.b_c>a_b_c", "q.r>q_r"}; !slices.Equal(got, want) {
+	if want := []string{"b.c>b_c", "a.b_c>a_b_c", "a_b.c>a_b_c_aaaa", "q.r>q_r"}; !slices.Equal(got, want) {
 		t.Errorf("renames %v, want %v", got, want)
 	}
-	text := strings.Join(plan.Clashes, "\n")
-	for _, want := range []string{
-		"  a_b.c -> a_b_c: 'a.b_c' becomes the same name; no command renames a name with a period, so edit one of the two keys under 'users:' in /etc/tacctl/store.yaml",
-		"  x y.z -> x y_z: not a name a user can have",
-	} {
-		if !strings.Contains(text, want) {
-			t.Errorf("clashes lack %q:\n%s", want, text)
+	if len(plan.Clashes) != 1 || plan.Clashes[0] != "  x y.z -> x y_z: not a name a user can have" {
+		t.Errorf("clashes %q", plan.Clashes)
+	}
+}
+
+// A name too long for a Linux account with its suffix is cut before the
+// suffix; a suffix already taken, a user's own new name, or a name a later
+// user would get is drawn again.
+func TestPlanDottedUsersSuffixShape(t *testing.T) {
+	long := strings.Repeat("l", 30)
+	users := []lifecycle.DottedUser{{Name: long + "_m"}, {Name: long + ".m"}, {Name: "a.b"}, {Name: "a_b"}, {Name: "c.d"}, {Name: "c_d"}, {Name: "c_d.wxyz"}}
+	plan := lifecycle.PlanDottedUsers(nil, users, suffixes(t, "k3x9", "aaaa", "wxyz", "bbbb"))
+	got := map[string]string{}
+	for _, r := range plan.Renames {
+		got[r.Old] = r.New
+	}
+	if len(plan.Clashes) != 0 {
+		t.Fatalf("clashes %q", plan.Clashes)
+	}
+	if want := long[:27] + "_k3x9"; got[long+".m"] != want || len(want) != 32 {
+		t.Errorf("long name %q, want %q", got[long+".m"], want)
+	}
+	if got["a.b"] != "a_b_aaaa" || got["c.d"] != "c_d_bbbb" {
+		t.Errorf("renames %v", got)
+	}
+}
+
+// A source that always answers the same cannot loop for ever: the user is a
+// clash, and nothing is renamed.
+func TestPlanDottedUsersNoFreeSuffix(t *testing.T) {
+	users := []lifecycle.DottedUser{{Name: "a_b"}, {Name: "a_b_aaaa"}, {Name: "a.b"}}
+	plan := lifecycle.PlanDottedUsers(nil, users, func() string { return "aaaa" })
+	if len(plan.Clashes) != 1 || !strings.Contains(plan.Clashes[0], "a.b -> a_b: taken, and no free name with a suffix was found") {
+		t.Errorf("clashes %q", plan.Clashes)
+	}
+}
+
+// RandomSuffix is four lowercase letters or digits.
+func TestRandomSuffixShape(t *testing.T) {
+	seen := map[string]bool{}
+	for range 200 {
+		w := lifecycle.RandomSuffix()
+		if len(w) != 4 || strings.Trim(w, "abcdefghijklmnopqrstuvwxyz0123456789") != "" {
+			t.Fatalf("suffix %q", w)
 		}
+		seen[w] = true
+	}
+	if len(seen) < 100 {
+		t.Errorf("only %d different suffixes in 200 draws", len(seen))
 	}
 }

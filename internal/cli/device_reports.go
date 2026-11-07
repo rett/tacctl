@@ -34,7 +34,7 @@ var deviceReportsSpecs = map[string]Spec{
 			Long: "Only the devices that scope answers. A scope that is not one of yours is refused"},
 		{Names: []string{"--vendor"}, Value: true, Kind: KindVendors, Arg: "cisco|juniper|wti|other", Desc: "Only the devices of that vendor"},
 		{Names: []string{"--format"}, Value: true, Kind: "text|csv|json", Arg: "text|csv|json", Desc: "Write the report in this format (default text)",
-			Long: "The format: text (aligned columns, the default), csv (RFC 4180, a header line, UTF-8) or json (one object: schema, type, generated, filters, rows). It sets the extension of the file"},
+			Long: "The format: text (aligned columns, the default), csv (RFC 4180, a header line, UTF-8) or json (one object: schema, type, generated, oldest_data, filters, columns, rows). It sets the extension of the file"},
 		{Names: []string{"--name"}, Value: true, Arg: "<name>", Desc: "Name the report (default <type>-<yyyymmdd>)",
 			Long: "The name of the report, without the extension: letters, digits, '.', '_' and '-', at most 64 bytes, no leading dot. The default is the type and the date (inventory-20261106); a second report of the same day gets -2. A name in use is refused, never overwritten"},
 		{Names: []string{"--stdout"}, Desc: "Print the report and store nothing",
@@ -151,7 +151,7 @@ the report. A report is addressed by its name without the extension; when two
 files share a name, give the extension. A file you put in the directory is
 listed as 'other': 'rename' and 'remove' leave it alone.
 
-At most reports.max-count reports of reports.max-size bytes each are kept for
+At most reports.max_count reports of reports.max_size bytes each are kept for
 each user (a generate over either is refused). Nothing deletes a report by
 age unless you run 'prune --older-than <age>' (<n>h, <n>d or <n>w, no default):
 it lists the reports whose generated date is older, asks once (--yes does not,
@@ -284,6 +284,12 @@ func (inv *invocation) deviceReportsGenerate(args []string) error {
 	if err != nil {
 		return err
 	}
+	rep.Filters = map[string]string{}
+	for _, f := range []string{"--scope", "--vendor"} {
+		if p.Has(f) {
+			rep.Filters[strings.TrimPrefix(f, "--")] = p.Value(f)
+		}
+	}
 	var body bytes.Buffer
 	if err := reports.Render(&body, rep, format); err != nil {
 		return err
@@ -315,13 +321,8 @@ func (inv *invocation) deviceReportsGenerate(args []string) error {
 	}
 	file := name + reports.Ext(format)
 	meta := reports.Meta{Name: name, Type: typ, Format: format, User: user,
-		Command: "tacctl " + strings.Join(inv.app.Args, " "), Filters: map[string]string{},
+		Command: "tacctl " + strings.Join(inv.app.Args, " "), Filters: rep.Filters,
 		Generated: now, OldestData: rep.OldestData, Size: int64(body.Len()), Count: len(rep.Rows)}
-	for _, f := range []string{"--scope", "--vendor"} {
-		if p.Has(f) {
-			meta.Filters[strings.TrimPrefix(f, "--")] = p.Value(f)
-		}
-	}
 	mb, err := reports.MarshalMeta(meta)
 	if err != nil {
 		return err
@@ -344,9 +345,9 @@ func reportLimitText(err error) string {
 		return err.Error()
 	}
 	if le.Limit == "size" {
-		return "Cannot save the report: " + le.Error() + " (the setting reports.max-size). Narrow it with --scope or --vendor, print it with --stdout, or remove one you do not need with: tacctl device reports remove <name>"
+		return "Cannot save the report: " + le.Error() + " (the setting reports.max_size; a superuser changes it with: tacctl config reports max-size <bytes>). Narrow it with --scope or --vendor, print it with --stdout, or remove one you do not need with: tacctl device reports remove <name>"
 	}
-	return "Cannot save the report: " + le.Error() + " (the setting reports.max-count). Remove one with: tacctl device reports remove <name>"
+	return "Cannot save the report: " + le.Error() + " (the setting reports.max_count; a superuser changes it with: tacctl config reports max-count <n>). Remove one with: tacctl device reports remove <name>"
 }
 
 // reportSize is a size in bytes as the lists show it.
