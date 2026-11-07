@@ -7135,7 +7135,10 @@ console.yaml of such a snapshot is installed without the settings of those users
 override), since the console cannot read a name with a period and every user
 below the superuser would be held at the password change; the restore names each
 dropped setting, before the question and after, and the setting is set again
-once the upgrade has renamed the user. Every other setting is kept.
+once the upgrade has renamed the user. Every other setting is kept. The note
+says that
+.B upgrade
+also updates tacctl if its branch has a newer release.
 .\" BEGIN GENERATED: command backup restore
 .RS
 .PP

@@ -43,7 +43,7 @@ func restoreDotsNote(id string, users []string) string {
 	n := len(users)
 	return "Snapshot " + id + " holds " + strconv.Itoa(n) + " " + plural(n, "user", "users") + " whose name has a period (" + dottedUsersText(users) +
 		"), which a release before 0.2.22 allowed. It is restored, but nothing is rendered: a name with a period cannot be rendered, so the services keep the configuration they have. " +
-		"Run 'tacctl upgrade' to rename " + plural(n, "the user", "the users") + " (each period becomes '_') and render; until then the store can be read and every change to it is refused."
+		"Run 'tacctl upgrade' to rename " + plural(n, "the user", "the users") + " (each period becomes '_') and render; until then the store can be read and every change to it is refused. 'tacctl upgrade' also updates tacctl if its branch has a newer release."
 }
 
 // droppedConsoleLines say which settings of a user with a period the restore

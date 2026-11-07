@@ -101,7 +101,8 @@ current behaviour; this file is where history lives.
    the superuser would be held at the password change until the upgrade;
    it names each one (`dropped console setting of user alice.smith: system
    shell enable:operator`) and says to set it again after the upgrade has
-   renamed the user. Every other setting is kept.
+   renamed the user. Every other setting is kept. The restore's note also
+   says that `tacctl upgrade` updates tacctl if its branch has a newer release.
 
 4. **A good pull records the members of a Junos virtual chassis or a Cisco
    stack.** `tacctl device config pull` recorded one model and one serial number

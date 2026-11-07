@@ -38,7 +38,7 @@ func TestBackupRestoreReadsASnapshotWithADottedUser(t *testing.T) {
 		t.Error("a restore of a dotted user rendered")
 	}
 	// said before the question and after the restore, with the way on
-	for _, want := range []string{"holds 1 user whose name has a period (bob.smith)", "nothing is rendered", "Run 'tacctl upgrade' to rename the user"} {
+	for _, want := range []string{"holds 1 user whose name has a period (bob.smith)", "nothing is rendered", "Run 'tacctl upgrade' to rename the user", "also updates tacctl if its branch has a newer release"} {
 		if n := strings.Count(out, want); n != 2 {
 			t.Errorf("%q is said %d times, want 2 (before the question and after the restore):\n%s", want, n, out)
 		}
