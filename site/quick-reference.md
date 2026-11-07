@@ -48,6 +48,10 @@ usage. In the console and `tacctl shell`, `?` shows help.
 | Copy at a bench address, then move into place | `tacctl device clone <n> <new> --staging <ip>` · `device rename <new> <n> --replace` | E |
 | Re-pin key | `tacctl device hostkey <n> set SHA256:<fp>` | E |
 | Drift state | `tacctl device config list [--differs]` | O |
+| Saved report of your devices | `tacctl device reports generate --type inventory\|members\|software\|config [--format text\|csv\|json] [--stdout]` | R |
+| Look after your reports | `tacctl device reports list` · `show <report>` · `export <report>` · `rename` · `remove` · `prune --older-than 30d` | R |
+| Report after reading the devices | `tacctl device reports generate --type <type> --pull` | E |
+| Another user's reports | `tacctl device reports list --user <name>` · `--all-users` · `<user>/<report>` (audited) | S |
 | Read config | `tacctl device config pull <n>\|--scope s` | E |
 | Diff / plan | `tacctl device config diff <n>` · `device config plan <n>` | E |
 | Junos apply | `tacctl device config apply <n> [--check]` | E |
@@ -72,6 +76,8 @@ usage. In the console and `tacctl shell`, `?` shows help.
 | Change group | `tacctl user move <n> <group>` | S |
 | Suspend / restore | `tacctl user disable\|enable <n>` | S |
 | Remove | `tacctl user remove <n>` | S |
+| A user's own limits of the stored reports | `tacctl user reports-limit <n> [max-size\|max-count] [<value>\|clear]` | S |
+| Rename users whose name has a period | `tacctl upgrade` (also takes a snapshot first) | S |
 
 ## 4. Linux hosts
 
@@ -120,6 +126,7 @@ usage. In the console and `tacctl shell`, `?` shows help.
 | Change it | `tacctl server addresses replace <ip>` | S |
 | Name shown in the console | `tacctl server name [<label>\|unset]` | S |
 | Timing scale of every device | `tacctl config devices timeout-scale [<1-10>]` | S |
+| Largest report, most reports per user | `tacctl config reports [max-size\|max-count] [<value>]` | S |
 | Where a backend listens | `tacctl server listen [show]` | S |
 | Prometheus exporter | `tacctl server metrics [show]` | S |
 | Rebuild or repair the server's own login | `tacctl host enroll --local` | S |
@@ -137,6 +144,7 @@ usage. In the console and `tacctl shell`, `?` shows help.
 | Diff / restore | `tacctl backup diff [ts]` · `backup restore <ts>` | S |
 | Keep / unkeep a snapshot | `tacctl backup keep <ts>` · `backup unkeep <ts>` | S |
 | Put back email or SNMPv3 users after a rollback | `tacctl backup recover <ts> [--only email,snmp-users]` | S |
+| Prepare the release before this one (dry run) | `tacctl rollback 0.2.25` | S |
 | Audit trail | `journalctl -t tacctl -t tacctl-console` | — |
 
 ## 9. Exit codes

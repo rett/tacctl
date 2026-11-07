@@ -61,10 +61,10 @@ superuser**. Each tier can run everything the tiers below it can.
 
 | Tier | Adds |
 |---|---|
-| Read-only | Lists and shows of users, groups and devices, `scope list`, `ssh` to devices in your scopes, `status`, `passwd`, `device notice list`, `device client-config`, `man` |
+| Read-only | Lists and shows of users, groups and devices, `scope list`, `ssh` to devices in your scopes, `status`, `passwd`, `device notice list`, `device client-config`, `man`; `device reports` (generate without `--pull`, list, show, export, rename, remove and prune of their own reports) |
 | Operator | Logs, `config validate`, `device check`, `scan`, `discover`, `device config list`, `backup list`, `device export`; `console show` and the console's system-shell settings (read only); turning their own password cache on or off |
-| Engineer | For the devices of **your own scopes only**: registry changes, pull, diff, plan, Junos apply, enroll, onboard, host keys; listing break-glass holds; listing and showing hosts; `scope show`; reading the Junos management filter mode |
-| Superuser | Everything else: users, groups, scopes, secrets, hosts, lockdowns, break-glass holds, restores |
+| Engineer | For the devices of **your own scopes only**: registry changes, pull, diff, plan, Junos apply, enroll, onboard, host keys; `device reports generate --pull`; listing break-glass holds; listing and showing hosts; `scope show`; reading the Junos management filter mode |
+| Superuser | Everything else: users, groups, scopes, secrets, hosts, lockdowns, break-glass holds, restores, other users' device reports (audited) and the limits of the stored reports |
 
 On a device, an operator "changes nothing and interrupts nothing": `clear`,
 `configure` and similar commands are refused on purpose.
