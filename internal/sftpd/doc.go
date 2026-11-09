@@ -9,9 +9,13 @@
 // the reason "link". Such a name is still listed, and can be renamed or
 // removed, since that acts on the name and never on the data; so a name made
 // for the data of a key file in .ssh can be seen and removed, not read or
-// changed. The open is judged on the opened file; the setstat check is a look
-// at the entry followed by the change, so a name added by something outside
-// SFTP in between is not caught.
+// changed. The open is judged on the opened file; a setstat pins the entry
+// with an O_PATH descriptor (no link followed), judges the descriptor and
+// sets the mode and times through /proc/self/fd, so a name that is made to
+// mean another file between the check and the change (a rename) is not
+// followed. What is not caught is a name added to the pinned file by
+// something outside SFTP after the check. The change through /proc/self/fd
+// needs /proc mounted.
 //
 // A session has at most 256 handles open at once, files and directory
 // listings together (each holds a descriptor); an open past that fails with a

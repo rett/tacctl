@@ -400,7 +400,7 @@ func TestSetstat(t *testing.T) {
 	}
 }
 
-// The fallback of chmod for kernels without fchmodat2 is the same change.
+// The change of the mode goes through the pinned entry, which refuses a link.
 func TestChmodPinned(t *testing.T) {
 	dir := t.TempDir()
 	h, err := openHome(dir)
@@ -416,7 +416,12 @@ func TestChmodPinned(t *testing.T) {
 	}
 	tf, _ := h.resolve(vpath{"f"})
 	defer tf.close()
-	if err := tf.chmodPinned(0o600); err != nil {
+	pf, err := tf.pin("stat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pf.close()
+	if err := pf.chmod(0o600); err != nil {
 		t.Fatal(err)
 	}
 	if fi, _ := os.Stat(filepath.Join(dir, "f")); fi.Mode().Perm() != 0o600 {
@@ -424,8 +429,13 @@ func TestChmodPinned(t *testing.T) {
 	}
 	tl, _ := h.resolve(vpath{"l"})
 	defer tl.close()
-	if err := tl.chmodPinned(0o777); reasonOf(err) != reasonSymlink {
-		t.Errorf("chmod of a link: %v", err)
+	pl, err := tl.pin("stat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pl.close()
+	if pl.st.Mode&unix.S_IFMT != unix.S_IFLNK {
+		t.Errorf("the pin of a link is of type %o, want the link itself", pl.st.Mode&unix.S_IFMT)
 	}
 	if fi, _ := os.Stat(filepath.Join(dir, "f")); fi.Mode().Perm() != 0o600 {
 		t.Errorf("the link's target was changed: %v", fi.Mode())

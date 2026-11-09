@@ -22,7 +22,8 @@ type server struct {
 
 	handles handleCount // the open files and directory listings
 
-	beforeTruncate func() // a test's hook, see seams
+	beforeTruncate func() // a test's hooks, see seams
+	afterPin       func()
 }
 
 var (
@@ -343,15 +344,23 @@ func (s *server) setstat(r *sftp.Request) (err error) {
 		return err
 	}
 	defer t.close()
-	st, err := t.lstat()
+	// The entry is pinned, judged on the descriptor and changed through it:
+	// a name that is made to mean another file between the look and the change
+	// (a rename of a hard link of a key file over it) is not followed.
+	p, err := t.pin("stat")
 	if err != nil {
 		return err
 	}
+	defer p.close()
+	st := p.st
 	if st.Mode&unix.S_IFMT == unix.S_IFLNK {
 		return errSymlink()
 	}
 	if st.Mode&unix.S_IFMT == unix.S_IFREG && st.Nlink > 1 {
 		return errLink()
+	}
+	if s.afterPin != nil {
+		s.afterPin()
 	}
 	if fl.Permissions {
 		// A directory the owner cannot list or search is one the quota
@@ -359,12 +368,12 @@ func (s *server) setstat(r *sftp.Request) (err error) {
 		if st.Mode&unix.S_IFMT == unix.S_IFDIR && a.Mode&0o500 != 0o500 {
 			return errUnsupported("clearing the owner's read or search permission of a directory")
 		}
-		if err := t.chmod(a.Mode & 0o777); err != nil {
+		if err := p.chmod(a.Mode & 0o777); err != nil {
 			return err
 		}
 	}
 	if fl.Acmodtime {
-		if err := t.utimes(a.Atime, a.Mtime); err != nil {
+		if err := p.utimes(a.Atime, a.Mtime); err != nil {
 			return err
 		}
 	}
