@@ -58,6 +58,7 @@ type Scrubber struct {
 	learned map[string]string // lower(real) -> example, the values found by name
 	made    map[string]bool   // examples handed out
 	models  map[string]bool   // the model names the texts state: never taken for serial numbers
+	domains map[string]bool   // the learned domains, lower case: nothing under one is public
 	count   map[Kind]int
 	re      *regexp.Regexp // the combined pass, rebuilt when learned changes
 	dirty   bool
@@ -65,7 +66,7 @@ type Scrubber struct {
 
 // New returns an empty Scrubber.
 func New() *Scrubber {
-	return &Scrubber{byKey: map[string]string{}, learned: map[string]string{}, made: map[string]bool{}, models: map[string]bool{}, count: map[Kind]int{}, dirty: true}
+	return &Scrubber{byKey: map[string]string{}, learned: map[string]string{}, made: map[string]bool{}, models: map[string]bool{}, domains: map[string]bool{}, count: map[Kind]int{}, dirty: true}
 }
 
 // Pairs are the replacements made or learned so far, by kind and then real
@@ -161,6 +162,9 @@ func (s *Scrubber) Learn(k Kind, real string) string {
 		return ex
 	}
 	var ex string
+	if k == Domain {
+		s.domains[strings.ToLower(real)] = true
+	}
 	switch k {
 	case Host:
 		// a name with dots is a host and a domain: sw1.corp.net
@@ -220,12 +224,12 @@ var (
 	reLearnCurrent  = regexp.MustCompile(`Current user: '([^']*)' login: '([^']*)' class '([^']*)'`)
 	reLearnUptime   = regexp.MustCompile(`(?m)^(\S+) uptime is `)
 	reLearnLastBy   = regexp.MustCompile(`(?m)(?:last configuration change|nvram config last updated).* by (\S+)[ \t]*$`)
-	reLearnSerial   = regexp.MustCompile(`(?mi)\bserial(?: number| no\.?)?[ \t]*[:=][ \t]*([A-Za-z0-9]{4,32})\b`)
+	reLearnSerial   = regexp.MustCompile(`(?mi)\bserial(?: number| no\.?)?[ \t]*[:=][ \t]*([^\s,"]+)`)
 	reLearnDomain   = regexp.MustCompile(`(?mi)^[ \t]*ip domain[- ]name[ \t]+(?:vrf \S+[ \t]+)?(\S+)`)
 	// the model names a text states
-	reLearnPID      = regexp.MustCompile(`\bPID:[ \t]*([^,\n]*)`)
+	reLearnPID      = regexp.MustCompile(`(?m)\bPID:[ \t]*(.*?)(?:[ \t]{2,}|,|\bVID:|\bSN:|$)`)
 	reLearnModel    = regexp.MustCompile(`(?mi)^[ \t]*model(?: number)?[ \t]*[:=][ \t]*(\S+)`)
-	reLearnCisco    = regexp.MustCompile(`\b[Cc][Ii][Ss][Cc][Oo][ \t]+([A-Za-z0-9][A-Za-z0-9-]*)`)
+	reLearnCisco    = regexp.MustCompile(`(?mi)^[ \t]*cisco[ \t]+([A-Za-z0-9][A-Za-z0-9-]*)[ \t]+\([^)\n]*\)[ \t]+processor\b|\bCisco IOS(?: XE)? Software, ([A-Za-z0-9][A-Za-z0-9-]*) Software\b`)
 	reLearnLocation = regexp.MustCompile(`(?mi)^[ \t]*(?:snmp-server location|location|sysLocation(?:\.0)?[ \t]*[:=])[ \t]*(\S.*?)[ \t]*$`)
 	reLearnContact  = regexp.MustCompile(`(?mi)^[ \t]*(?:snmp-server contact|contact|sysContact(?:\.0)?[ \t]*[:=])[ \t]*(\S.*?)[ \t]*$`)
 
@@ -238,33 +242,63 @@ var (
 	reFQDN    = `\b(?:[A-Za-z0-9-]+\.)+(?:(?:co|com|org|net|ac|gov|edu)\.[a-z]{2}|net|com|org|edu|gov|mil|io|local|lan|corp|home|int|uk|de|fr|nl|se|no|ch|jp|cn|ca|au|ru|br|it|es|eu|us|in|pl|be|at|dk|fi|ie|nz|za|kr|sg|hk|mx)\b`
 	reExample = regexp.MustCompile(`(?i)(?:^|\.)example\.(?:net|org|com|edu|invalid|test)$`)
 
-	// what the serial-number shape never reads: the model and version of a
-	// 'show inventory' item, its quoted name and description, the Model line
-	// of Junos, the 'Cisco <model> (revision ...)' line of IOS
-	reKeepPIDVID   = regexp.MustCompile(`\b(?:PID|VID):[ \t]*([^,\n]*)`)
-	reKeepQuoted   = regexp.MustCompile(`\b(?:DESCR|NAME):[ \t]*"([^"\n]*)"`)
-	reKeepModel    = regexp.MustCompile(`(?mi)^[ \t]*model(?: number)?[ \t]*[:=].*$`)
-	reKeepRevision = regexp.MustCompile(`(?mi)^[ \t]*cisco[ \t].*\(revision\b.*$`)
+	// what the serial-number shape never reads: the model and the version of a
+	// 'show inventory' item, its quoted description, the model of the Model
+	// line of Junos, the model of the 'cisco <model> (...) processor' line of
+	// IOS; the value only, never the rest of the line
+	reKeepPID   = regexp.MustCompile(`(?m)\bPID:[ \t]*(.*?)(?:[ \t]{2,}|,|\bVID:|\bSN:|$)`)
+	reKeepVID   = regexp.MustCompile(`\bVID:[ \t]*([^\s,]*)`)
+	reKeepDescr = regexp.MustCompile(`\bDESCR:[ \t]*"([^"\n]*)"`)
+	reKeepModel = reLearnModel
+	reKeepCisco = reLearnCisco
 )
 
 // vendorDomains are the registered domains (the last two labels) of vendors
-// and standards bodies that texts name in a banner, a URL or a mail address:
-// they say nothing about the owner, so a name under one is kept.
+// and standards bodies that texts name in a banner or a URL: the bare domain
+// and a few public labels of it (publicLabels) say nothing about the owner,
+// so they are kept. A mail address never is: it names a person. A name any
+// deeper (acme-corp.hpe.com) is a customer's and is replaced.
 var vendorDomains = map[string]bool{
 	"cisco.com": true, "juniper.net": true, "hpe.com": true, "hp.com": true, "gnu.org": true,
 	"fsf.org": true, "openssl.org": true, "ietf.org": true, "kernel.org": true,
 }
 
-// isPublicName reports whether name (a host name or the domain of a mail
-// address) is under a registered domain of vendorDomains or is an example
-// name.
-func isPublicName(name string) bool {
+// publicLabels are the one label a vendor's public host name may have in
+// front of the registered domain: the labels of a download or a web server.
+var publicLabels = map[string]bool{"www": true, "tools": true, "ftp": true, "cdn": true, "software": true, "support": true}
+
+// underLearned reports whether name is a learned domain or under one: the
+// owner's own name, whatever else it looks like.
+func (s *Scrubber) underLearned(name string) bool {
+	for d := range s.domains {
+		if name == d || strings.HasSuffix(name, "."+d) {
+			return true
+		}
+	}
+	return false
+}
+
+// isPublicName reports whether name, a host name, is public: an example
+// name, the bare registered domain of a vendor, or one public label of it.
+// A name under a learned domain never is.
+func (s *Scrubber) isPublicName(name string) bool {
 	name = strings.ToLower(strings.TrimSuffix(name, "."))
-	labels := strings.Split(name, ".")
-	if len(labels) >= 2 && vendorDomains[strings.Join(labels[len(labels)-2:], ".")] {
+	if s.underLearned(name) {
+		return false
+	}
+	if reExample.MatchString(name) {
 		return true
 	}
-	return reExample.MatchString(name)
+	labels := strings.Split(name, ".")
+	n := len(labels)
+	return n >= 2 && vendorDomains[strings.Join(labels[n-2:], ".")] && (n == 2 || n == 3 && publicLabels[labels[0]])
+}
+
+// isExampleMail reports whether the domain of a mail address is an example
+// name that is not a learned domain: the only address left as it is.
+func (s *Scrubber) isExampleMail(domain string) bool {
+	domain = strings.ToLower(strings.TrimSuffix(domain, "."))
+	return !s.underLearned(domain) && reExample.MatchString(domain)
 }
 
 // A span is a stretch of a text, [start, end).
@@ -284,14 +318,13 @@ func covers(spans []span, start, end int) bool {
 // does not make a token one: model names and descriptions.
 func keepSpans(text string) []span {
 	var out []span
-	for _, re := range []*regexp.Regexp{reKeepPIDVID, reKeepQuoted} {
+	for _, re := range []*regexp.Regexp{reKeepPID, reKeepVID, reKeepDescr, reKeepModel, reKeepCisco} {
 		for _, m := range re.FindAllStringSubmatchIndex(text, -1) {
-			out = append(out, span{m[2], m[3]})
-		}
-	}
-	for _, re := range []*regexp.Regexp{reKeepModel, reKeepRevision} {
-		for _, m := range re.FindAllStringIndex(text, -1) {
-			out = append(out, span{m[0], m[1]})
+			for i := 2; i+1 < len(m); i += 2 {
+				if m[i] >= 0 {
+					out = append(out, span{m[i], m[i+1]})
+				}
+			}
 		}
 	}
 	return out
@@ -310,12 +343,17 @@ var reSerialFields = []*regexp.Regexp{
 
 // A serial column of a table is cut at the position its header gives: the
 // headers of 'show chassis hardware' and of Junos 'show virtual-chassis'.
-var serialTables = []struct {
+// The cell after the serial column is the one the exempt description starts
+// at; the rows of a table with a gap in them are counted from the right.
+type serialTable struct {
 	head           *regexp.Regexp
 	serial, follow string // the header words that start the serial column and the column after it
-}{
-	{regexp.MustCompile(`^\s*Item\s+Version\s+Part number\s+Serial number\s+Description\b`), "Serial number", "Description"},
-	{regexp.MustCompile(`^\s*Member ID\s+Status\s+Serial No\s+Model\b`), "Serial No", "Model"},
+	fromRight      bool   // a tab-separated row has cells missing before the serial: count them from its end
+}
+
+var serialTables = []serialTable{
+	{regexp.MustCompile(`^\s*Item\s+Version\s+Part number\s+Serial number\s+Description\b`), "Serial number", "Description", true},
+	{regexp.MustCompile(`^\s*Member ID\s+Status\s+Serial No\s+Model\b`), "Serial No", "Model", false},
 }
 
 var reNoSerial = regexp.MustCompile(`(?i)^(?:builtin|n/?a|none|unknown|unspecified|not[-_ ]?available|-+)$`)
@@ -328,10 +366,46 @@ func isSerialValue(v string) bool {
 
 var reExampleSerial = regexp.MustCompile(`^SN\d{6}$`)
 
-// serialSpans are the serial numbers a text states by field, and the rows of
-// the tables they are cut from (the other cells of those rows are model
-// names and part numbers).
-func serialSpans(text string) (cells, rows []span) {
+// isTableSerial reports whether v, a word in the serial column of a table, is
+// a number to learn: a serial value of the shape of one (four characters or
+// more, with a digit), not a status such as Prsnt.
+func isTableSerial(v string) bool {
+	return len(v) >= 4 && strings.ContainsAny(v, "0123456789") && isSerialValue(v)
+}
+
+// reCellSep separates the cells of a row that was cut at tabs, or at two
+// blanks or more, instead of at the columns of its header.
+var reCellSep = regexp.MustCompile(`\t+| {2,}`)
+
+// cellsAt are the cells of a line, trimmed, with their positions.
+func cellsAt(line string) []span {
+	var out []span
+	add := func(from, to int) {
+		for from < to && (line[from] == ' ' || line[from] == '\t') {
+			from++
+		}
+		for to > from && (line[to-1] == ' ' || line[to-1] == '\t') {
+			to--
+		}
+		if from < to {
+			out = append(out, span{from, to})
+		}
+	}
+	pos := 0
+	for _, sep := range reCellSep.FindAllStringIndex(line, -1) {
+		add(pos, sep[0])
+		pos = sep[1]
+	}
+	add(pos, len(line))
+	return out
+}
+
+// serialSpans are the serial numbers a text states by field, and the
+// Description columns of the tables they are cut from (the words there are
+// model names and descriptions, whatever their shape). A table ends at a
+// blank line, at a 'word:' line, and at the first line with nothing in or
+// after the serial column.
+func serialSpans(text string) (cells, descr []span) {
 	for _, re := range reSerialFields {
 		for _, m := range re.FindAllStringSubmatchIndex(text, -1) {
 			if isSerialValue(text[m[2]:m[3]]) {
@@ -340,38 +414,70 @@ func serialSpans(text string) (cells, rows []span) {
 		}
 	}
 	off := 0
-	var cols []int // serial column start and end, -1 outside a table
+	var (
+		tb       = -1 // the table of the header seen, -1 outside one
+		from, to int  // the serial column and the column after it
+		nh, si   int  // the cells of the header, and the one of the serial
+	)
 	for _, line := range strings.SplitAfter(text, "\n") {
 		body := strings.TrimRight(line, "\r\n")
 		switch {
 		case strings.TrimSpace(body) == "" || strings.HasSuffix(body, ":") && !strings.Contains(body, " "):
-			cols = nil
-		default:
-			found := false
-			for _, tb := range serialTables {
-				if !tb.head.MatchString(body) {
-					continue
-				}
-				from := strings.Index(body, tb.serial)
-				to := strings.Index(body, tb.follow)
-				if from >= 0 && to > from {
-					cols, found = []int{from, to}, true
-				}
+			tb = -1
+		case headerOf(body) >= 0:
+			tb = headerOf(body)
+			head := serialTables[tb]
+			from, to = strings.Index(body, head.serial), strings.Index(body, head.follow)
+			if from < 0 || to <= from {
+				tb = -1
 				break
 			}
-			if found || cols == nil {
+			hc := cellsAt(body)
+			nh, si = len(hc), slices.IndexFunc(hc, func(c span) bool { return body[c.start:c.end] == head.serial })
+		case tb >= 0 && strings.Contains(body, "\t"):
+			cs := cellsAt(body)
+			idx := si
+			if serialTables[tb].fromRight {
+				idx = len(cs) - (nh - si)
+			}
+			if len(cs) < 2 || si < 0 {
+				tb = -1
 				break
 			}
-			rows = append(rows, span{off, off + len(body)})
-			for _, f := range fieldsAt(body) {
-				if f.start >= cols[0] && f.start < cols[1] && isSerialValue(body[f.start:f.end]) {
+			if idx >= 0 && idx < len(cs) {
+				if v := body[cs[idx].start:cs[idx].end]; isTableSerial(v) && !strings.ContainsAny(v, " \t") {
+					cells = append(cells, span{off + cs[idx].start, off + cs[idx].end})
+				}
+			}
+			if idx >= 0 && idx+1 < len(cs) {
+				descr = append(descr, span{off + cs[idx+1].start, off + len(body)})
+			}
+		case tb >= 0:
+			fields := fieldsAt(body)
+			if !slices.ContainsFunc(fields, func(f span) bool { return f.start >= from }) {
+				tb = -1 // nothing in or after the serial column: not a row of the table
+				break
+			}
+			for _, f := range fields {
+				if f.start >= from && f.start < to && isTableSerial(body[f.start:f.end]) {
 					cells = append(cells, span{off + f.start, off + f.end})
 				}
+			}
+			if len(body) > to {
+				descr = append(descr, span{off + to, off + len(body)})
 			}
 		}
 		off += len(line)
 	}
-	return cells, rows
+	return cells, descr
+}
+
+// headerOf is the index in serialTables of the table whose header line is
+// body, or -1.
+func headerOf(body string) int {
+	return slices.IndexFunc(serialTables, func(t serialTable) bool {
+		return t.head.MatchString(body)
+	})
 }
 
 // fieldsAt are the blank-separated words of a line, with their positions.
@@ -392,7 +498,8 @@ func fieldsAt(line string) []span {
 }
 
 // learnModels records the model names a text states: the PID of an
-// inventory item, the Model line, the word after 'Cisco'.
+// inventory item, the Model line, the model of the 'cisco <model> (...)
+// processor' and 'Cisco IOS Software, <model> Software' lines.
 func (s *Scrubber) learnModels(text string) {
 	add := func(v string) {
 		for _, w := range strings.Fields(v) {
@@ -406,7 +513,7 @@ func (s *Scrubber) learnModels(text string) {
 		add(m[1])
 	}
 	for _, m := range reLearnCisco.FindAllStringSubmatch(text, -1) {
-		add(m[1])
+		add(m[1] + m[2])
 	}
 }
 
@@ -500,8 +607,8 @@ func (s *Scrubber) Apply(text string) string {
 	text = reTZName.ReplaceAllString(text, "UTC")
 	text = reClockTZ.ReplaceAllString(text, "${1}UTC 0")
 	s.compile()
-	cells, rows := serialSpans(text)
-	keep := append(keepSpans(text), rows...)
+	cells, descr := serialSpans(text)
+	keep := append(keepSpans(text), descr...)
 	type edit struct {
 		start, end int
 		rep        string
@@ -530,8 +637,8 @@ func (s *Scrubber) Apply(text string) string {
 				break
 			}
 		}
-		if which == "v4" && inDottedRun(text, start, end) {
-			continue // an object identifier or a version string, not an address
+		if which == "v4" && inObjectID(text, start, end) {
+			continue // an object identifier, not an address
 		}
 		if which == "serial" && (s.models[tok] || covers(keep, start, end)) {
 			continue
@@ -587,13 +694,21 @@ func keepWidth(text string, start, end int, rep string, cell bool) (string, int)
 	return rep, min(want-have, blanks-1)
 }
 
-// inDottedRun reports whether text[start:end], four groups of digits, is part
-// of a longer run of dotted numbers (1.3.6.1.4.1.2636): an object identifier
-// or a version string, never an address.
-func inDottedRun(text string, start, end int) bool {
-	isDigit := func(b byte) bool { return b >= '0' && b <= '9' }
-	return start >= 2 && text[start-1] == '.' && isDigit(text[start-2]) ||
-		end+1 < len(text) && text[end] == '.' && isDigit(text[end+1])
+// inObjectID reports whether text[start:end], four groups of digits, is part
+// of an object identifier: a dotted run of numbers that begins 1.3.6.1.
+// (with or without a leading dot). The run is what is left alone; the digits
+// around any other address (10.20.30.40.179, ipv4.10.20.30.40) do not make
+// it a version string.
+func inObjectID(text string, start, end int) bool {
+	isRun := func(b byte) bool { return b >= '0' && b <= '9' || b == '.' }
+	from, to := start, end
+	for from > 0 && isRun(text[from-1]) {
+		from--
+	}
+	for to < len(text) && isRun(text[to]) {
+		to++
+	}
+	return strings.HasPrefix(strings.TrimPrefix(text[from:to], "."), "1.3.6.1.")
 }
 
 // dropComments keeps the first line of a commit history entry and removes
@@ -618,7 +733,7 @@ func (s *Scrubber) replacement(which, tok string) (string, bool) {
 	case "learned":
 		return s.learned[strings.ToLower(tok)], true
 	case "mail":
-		if isPublicName(tok[strings.IndexByte(tok, '@')+1:]) {
+		if s.isExampleMail(tok[strings.IndexByte(tok, '@')+1:]) {
 			return "", false
 		}
 		return s.Learn(Mail, tok), true
@@ -646,7 +761,7 @@ func (s *Scrubber) replacement(which, tok string) (string, bool) {
 		}
 		return s.Learn(Addr6, strings.ToLower(tok)), true
 	case "fqdn":
-		if isPublicName(tok) {
+		if s.isPublicName(tok) {
 			return "", false
 		}
 		return s.Learn(Host, tok), true

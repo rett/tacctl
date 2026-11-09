@@ -287,6 +287,63 @@ func TestModelNamesAreNotSerialNumbers(t *testing.T) {
 	})
 }
 
+// The value of a serial field runs to the next blank, comma or quote, hyphens
+// and all.
+func TestASerialWithAHyphenIsReplacedWhole(t *testing.T) {
+	runScrubCases(t, []scrubCase{{
+		name: "serial number field",
+		in:   []string{"Serial Number : CN12AB-34567\nserial: ab-cd-1234, next\n"},
+		want: []string{"Serial Number : SN000001\n", "serial: SN000002, next\n"},
+		gone: []string{"CN12AB", "34567", "ab-cd"},
+	}})
+}
+
+// A model is exempt as itself, not as the line it is on, and only the lines
+// that state a model teach one.
+func TestOnlyTheModelTokenIsExempt(t *testing.T) {
+	runScrubCases(t, []scrubCase{
+		{
+			name: "the model line keeps its model and replaces the serial after it",
+			in:   []string{"Model number : WS-C3750X-48P-S FDO1234X5YZ\n"},
+			want: []string{"Model number : WS-C3750X-48P-S SN000001\n"},
+			gone: []string{"FDO1234X5YZ"},
+		},
+		{
+			name: "a PID stops at the VID and the serial after it is replaced",
+			in:   []string{"PID: WS-C2960 VID: V01 FDO1234X5YZ\nPID: CSR1000V  FDO1234X5YZ\n"},
+			want: []string{"PID: WS-C2960 VID: V01 SN000001\n", "PID: CSR1000V  SN000001\n"},
+			gone: []string{"FDO1234X5YZ"},
+		},
+		{
+			name: "a quoted name is not a model",
+			in:   []string{"NAME: \"FDO1234X5YZ\", DESCR: \"Cisco CSR1000V Chassis\"\n"},
+			want: []string{"DESCR: \"Cisco CSR1000V Chassis\""},
+			gone: []string{"FDO1234X5YZ"},
+		},
+		{
+			name: "the word after Cisco in prose is not a model",
+			in:   []string{"case opened with Cisco ABC12345XYZ today\nsee Cisco FDO1234X5YZ\n"},
+			gone: []string{"ABC12345XYZ", "FDO1234X5YZ"},
+		},
+		{
+			name: "the revision line keeps its model and not the rest",
+			in:   []string{"cisco WS3750X48P (PowerPC405) processor (revision A0) with 262144K bytes of memory. FDO1234X5YZ\n", "the WS3750X48P again\n"},
+			want: []string{"cisco WS3750X48P (PowerPC405)", "the WS3750X48P again"},
+			gone: []string{"FDO1234X5YZ"},
+		},
+		{
+			name: "a PID at the end of a line is a model",
+			in:   []string{"PID: ASR1001HX\nnext line\n", "the ASR1001HX again\n"},
+			want: []string{"the ASR1001HX again"},
+		},
+		{
+			name: "the software line teaches the model",
+			in:   []string{"Cisco IOS XE Software, ASR1001HX Software (X86_64)\n", "the ASR1001HX again\n"},
+			want: []string{"the ASR1001HX again"},
+		},
+	})
+}
+
 // A chassis hardware table and a virtual chassis table as Junos prints them,
 // with invented serial numbers of every shape.
 const (
@@ -369,8 +426,46 @@ func TestSerialNumbersAreReplacedByTheirField(t *testing.T) {
 	})
 }
 
-// A dotted run of five groups or more is an object identifier or a version,
-// never an address.
+// Only the Description column of a table is exempt from the serial-number
+// shape, and the table ends where its rows stop fitting the header.
+func TestATableExemptsItsDescriptionColumnOnly(t *testing.T) {
+	hdr := "Item             Version  Part number  Serial number     Description\n"
+	runScrubCases(t, []scrubCase{
+		{
+			name: "a serial-shaped word in another column of a table row is replaced",
+			in:   []string{hdr + "Chassis                                ABC0123456        Virtual Chassis\n" + "FPC 0            REV 11   ZZTOP2468AB  XYZ98765432       EX4400-48T\n"},
+			want: []string{"Virtual Chassis\n", "EX4400-48T\n"},
+			gone: []string{"ZZTOP2468AB", "XYZ98765432", "ABC0123456"},
+		},
+		{
+			name: "the description column keeps a model name",
+			in:   []string{hdr + "FPC 0            REV 11   650-114384   ABC0123456        EX4400-48T\n"},
+			want: []string{"EX4400-48T\n"},
+		},
+		{
+			name: "a line that does not fit the header ends the table",
+			in:   []string{hdr + "Chassis                                ABC0123456        Virtual Chassis\n{master:0}\n" + "WORD  here\nmore text HELLO123456 and ABCDEFGH12\n"},
+			gone: []string{"HELLO123456", "ABCDEFGH12", "ABC0123456"},
+		},
+		{
+			name: "a status in the serial column of a continuation line is not a serial",
+			in:   []string{hdr + "Chassis                                ABC0123456        Virtual Chassis\n" + "                                       Prsnt             continued\nPrsnt and Prsnt\n"},
+			want: []string{"Prsnt             continued\n", "Prsnt and Prsnt\n"},
+			gone: []string{"ABC0123456"},
+		},
+		{
+			name: "tab-separated rows have their serial replaced",
+			in: []string{hdr + "Chassis\t\t\tABC0123456\tVirtual Chassis\n" + "Power Supply 0\tREV 03\t740-000001\tabc1234\tJPSU-350-AC-AFO\n" +
+				"Fan Tray 0\t\t\t\tFan Module\nRouting Engine 0\tBUILTIN\tBUILTIN\tRE-EX4400-48T\n",
+				"Member ID  Status   Serial No    Model          prio  Role\n0 (FPC 0)\tPrsnt\t9876543210\tex4400-48t\t255\tMaster*\n"},
+			want: []string{"Virtual Chassis\n", "JPSU-350-AC-AFO\n", "Fan Tray 0", "BUILTIN\tBUILTIN", "ex4400-48t\t255\tMaster*"},
+			gone: []string{"ABC0123456", "abc1234", "9876543210"},
+		},
+	})
+}
+
+// A dotted run that begins 1.3.6.1 is an object identifier, never an address;
+// every other run is scanned for addresses.
 func TestObjectIdentifiersAndVersionsAreNotAddresses(t *testing.T) {
 	runScrubCases(t, []scrubCase{
 		{
@@ -384,9 +479,21 @@ func TestObjectIdentifiersAndVersionsAreNotAddresses(t *testing.T) {
 			want: []string{"sysObjectID.0: .1.3.6.1.4.1.2636.1.1.1.2.165\n", "sysObjectID.0: .1.3.6.1.4.1.9.1.516\n"},
 		},
 		{
-			name: "five groups",
-			in:   []string{"version 10.20.30.40.50 and 1.2.3.4.5.6\n"},
-			want: []string{"version 10.20.30.40.50 and 1.2.3.4.5.6\n"},
+			name: "an address with a port or an index after it is still an address",
+			in:   []string{"peer 10.20.30.40.179 and 10.20.30.41.50\nipv4.10.20.30.42 and version 10.20.30.45.6.7\n"},
+			want: []string{"peer 192.0.2.1.179 and 192.0.2.2.50\n", "ipv4.192.0.2.3 and version 192.0.2.4.6.7\n"},
+			gone: []string{"10.20.30"},
+		},
+		{
+			name: "an object identifier is left alone as a whole, not by the digits around it",
+			in:   []string{"x 1.3.6.1.2.1.4.20.1.1.10.20.30.43 y\nz 1.3.6.1.4.1.2636.3.1 10.20.30.44\n"},
+			want: []string{"x 1.3.6.1.2.1.4.20.1.1.10.20.30.43 y\n", "z 1.3.6.1.4.1.2636.3.1 192.0.2.1\n"},
+		},
+		{
+			name: "an address with a dot after it at the end of a line",
+			in:   []string{"gateway 192.168.1.1.\nnext 192.168.1.2.\n"},
+			want: []string{"gateway 192.0.2.1.\n", "next 192.0.2.2.\n"},
+			gone: []string{"192.168"},
 		},
 		{
 			name: "software versions",
@@ -443,13 +550,15 @@ func TestColumnsKeepTheirWidth(t *testing.T) {
 	})
 }
 
-// The names of vendors and of standards bodies are public, not the owner's.
+// The names of vendors and of standards bodies are public, not the owner's:
+// the bare registered domain and a few public labels of it, never a mail
+// address (a person's) and never a name under a learned domain.
 func TestVendorAddressesAreKept(t *testing.T) {
 	const at = "@" // the mail addresses are built, so that the lint for personal addresses has nothing to read
 	keep := "Technical Support: http://www.cisco.com/techsupport\n" +
 		"Importers: http://www.cisco.com/wwl/export/crypto/tool/stqrg.html\n" +
-		"mail export" + at + "cisco.com, see www.juniper.net or juniper.net, hpe.com and hp.com, ftp.gnu.org, www.fsf.org,\n" +
-		"www.openssl.org, tools.ietf.org, cdn.kernel.org, host.example.com, a.example.net\n"
+		"see www.juniper.net or juniper.net, hpe.com and hp.com, ftp.gnu.org, www.fsf.org, support.hpe.com, software.cisco.com,\n" +
+		"www.openssl.org, tools.ietf.org, cdn.kernel.org, host.example.com, a.example.net, info" + at + "example.net\n"
 	runScrubCases(t, []scrubCase{
 		{name: "public names", in: []string{keep}, want: []string{keep}},
 		{
@@ -457,6 +566,23 @@ func TestVendorAddressesAreKept(t *testing.T) {
 			in:   []string{keep + "ntp ntp1.corp.net and mail jdoe" + at + "corp.net\n"},
 			want: []string{keep},
 			gone: []string{"corp.net", "jdoe"},
+		},
+		{
+			name: "a vendor's mail address is a person's and is replaced",
+			in:   []string{"mailto alice.smith" + at + "hpe.com, bob" + at + "juniper.net or export" + at + "cisco.com\n"},
+			want: []string{"user1" + at + "example.net"},
+			gone: []string{"alice.smith", "bob" + at, "export" + at, "hpe.com", "juniper.net", "cisco.com"},
+		},
+		{
+			name: "a customer's name under a vendor's domain is replaced",
+			in:   []string{"peer acme-corp.hpe.com and acme.mail.juniper.net, lab.cisco.com\n"},
+			gone: []string{"acme", "mail.juniper", "lab.cisco"},
+		},
+		{
+			name: "a learned domain wins over the vendor list",
+			in:   []string{"ip domain-name hpe.com\nsee www.hpe.com and support.hpe.com, tools.ietf.org\n"},
+			want: []string{"tools.ietf.org"},
+			gone: []string{"hpe.com"},
 		},
 	})
 }

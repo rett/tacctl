@@ -43,23 +43,35 @@ first (see [Examples](../development/README.md#examples) for the values):
   locations and contacts become example values, the same real value always the same example;
 - serial numbers are replaced by their field, whatever their length, case or digits: the `SN:`
   value of `show inventory`, `Hw Serial#:` in a description, `Processor board ID`, `System serial
-  number`, the Junos `Serial ID` of a routing engine, the serial cell of every row of `show chassis
-  hardware` (transceiver, PIC and power supply rows included) and of Junos `show virtual-chassis`,
-  cut at the column its header gives, and any other token with the shape of a serial number (eight
-  to fourteen capitals and digits, with both); an empty or `BUILTIN` cell, the part number and the
-  description columns stay;
+  number`, the generic `Serial number:` field (its value runs to the next blank, comma or quote,
+  hyphens included), the Junos `Serial ID` of a routing engine, the serial cell of every row of
+  `show chassis hardware` (transceiver, PIC and power supply rows included) and of Junos `show
+  virtual-chassis`, cut at the column its header gives (a tab-separated row is cut at its tabs; a
+  word there is a serial only with the shape of one, four characters or more with a digit, so a
+  status such as `Prsnt` is not; a table ends at the first line with nothing in or after the
+  serial column), and any other token with the shape of a serial number (eight to fourteen
+  capitals and digits, with both). An empty or `BUILTIN` cell stays, and so do the tokens that
+  only have the shape: an example value (`SN0...`), an image name (`K9`), a model name the files
+  state, the text of a quoted `DESCR:` and the Description column of the two tables, the one
+  place of a table row where a model name stands;
 - time zones are `UTC`;
 - the free text of a commit comment is removed (tacctl's own comments stay);
 - anything that looks like a secret, a hash or a key is removed;
 - model names, release lines and the layout of every answer stay as the device printed them: the
-  values after `PID:` and `VID:`, the quoted `NAME:` and `DESCR:` strings, the `Model:` line of Junos,
-  the `Cisco <model> (revision ...)` line of IOS and every model name the files of the bundle
-  state, in all the files; a dotted run of five groups of digits or more (an object identifier such
-  as `1.3.6.1.4.1.2636`, a version) is not an address;
-- the names of vendors and standards bodies stay: a host name or mail address under cisco.com,
-  juniper.net, hpe.com, hp.com, gnu.org, fsf.org, openssl.org, ietf.org or kernel.org, and the
-  `example.*` names, so `Technical Support: http://www.cisco.com/techsupport` is as the device
-  printed it;
+  values after `PID:` (up to two blanks, a comma, `VID:` or `SN:`) and `VID:`, the quoted `DESCR:`
+  string, the model of the `Model:` line of Junos, the model of the `cisco <model> (...) processor`
+  line of IOS and of the `Cisco IOS Software, <model> Software` line, and every model name the files
+  of the bundle state, in all the files; only the model is kept, never the rest of its line (the
+  serial after `Model number : WS-C3750X-48P-S` is replaced, and so is a quoted `NAME:`); an object
+  identifier, a dotted run of numbers that begins `1.3.6.1.` (`1.3.6.1.4.1.2636`), is not an
+  address, and the digits around any other address (`10.20.30.40.179`) do not make it a version;
+- the host names of vendors and standards bodies stay when they say nothing about the owner: the
+  bare domain cisco.com, juniper.net, hpe.com, hp.com, gnu.org, fsf.org, openssl.org, ietf.org or
+  kernel.org, and one of the labels `www`, `tools`, `ftp`, `cdn`, `software` or `support` in front of
+  it, and the `example.*` names, so `Technical Support: http://www.cisco.com/techsupport` is as the
+  device printed it. A mail address is a person's and is replaced (only an `example.*` address
+  stays, so the support address of a vendor becomes an example address), and so is any other name under a vendor
+  domain (`acme-corp.hpe.com`) and any name under a domain the files state as the owner's;
 - when a replacement is shorter or longer than the text it replaces and blanks follow, blanks are
   added or taken away so that the columns after it stay where the device printed them (nothing is
   done at the end of a line);
