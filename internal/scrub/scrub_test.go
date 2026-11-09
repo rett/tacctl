@@ -715,3 +715,48 @@ func TestATableSurvivesRowsWithoutASerial(t *testing.T) {
 		},
 	})
 }
+
+// A tab-separated row that lacks a cell, or whose description holds two
+// blanks, has its serial found by the shape of the cell, not by its place
+// counted from the right; a part number or a model is never a serial.
+func TestTabRowsWithoutADescriptionOrWithAWideOne(t *testing.T) {
+	hdr := "Item             Version  Part number  Serial number     Description\n"
+	runScrubCases(t, []scrubCase{
+		{
+			name: "a row without a description has its serial replaced and its part number kept",
+			in:   []string{hdr + "FPC 0\tREV 11\t650-114384\tab0123456\n"},
+			want: []string{"FPC 0\tREV 11\t650-114384\tSN000001\n"},
+			gone: []string{"ab0123456"},
+		},
+		{
+			name: "a description of two words split at two blanks learns no model",
+			in: []string{hdr + "FPC 1\tREV 11\t650-114385\tcd0123456\tEX4300  48T\n" + "Chassis\t\t\tef0123456\tVirtual  Chassis\n",
+				"The model EX4300 and the part 650-114385\n"},
+			want: []string{"FPC 1\tREV 11\t650-114385\tSN000001\tEX4300  48T\n", "Chassis\t\t\tSN000002\tVirtual  Chassis\n", "The model EX4300 and the part 650-114385\n"},
+			gone: []string{"cd0123456", "ef0123456"},
+		},
+		{
+			name: "a transceiver row lacking its version",
+			in:   []string{hdr + "Xcvr 0\t\t\tNON-JNPR\tgh0123456\tSFP-LX10\n"},
+			want: []string{"Xcvr 0\t\t\tNON-JNPR\tSN000001\tSFP-LX10\n"},
+			gone: []string{"gh0123456"},
+		},
+		{
+			name: "a part number and a model are not serials, so they stay everywhere",
+			in: []string{hdr + "Fan Tray 1\tREV 01\t711-001234\tFAN-TRAY-48\n" + "Fan Tray 2\t711-001235\tFAN-TRAY-48\n",
+				"parts 711-001234 and 711-001235 and FAN-TRAY-48\n"},
+			want: []string{"Fan Tray 1\tREV 01\t711-001234\tFAN-TRAY-48\n", "Fan Tray 2\t711-001235\tFAN-TRAY-48\n", "parts 711-001234 and 711-001235 and FAN-TRAY-48\n"},
+		},
+		{
+			name: "a row with every cell keeps its place",
+			in:   []string{hdr + "PIC 1\tREV 11\t650-114384\tij0123456\t4x10G SFP+\n" + "PIC 2\tREV 11\t650-114384\tkl0123456\tEX4300\n"},
+			want: []string{"PIC 1\tREV 11\t650-114384\tSN000001\t4x10G SFP+\n", "PIC 2\tREV 11\t650-114384\tSN000002\tEX4300\n"},
+			gone: []string{"ij0123456", "kl0123456"},
+		},
+		{
+			name: "a row without a serial keeps a serial-shaped description",
+			in:   []string{hdr + "Power Supply 1\t\t\tPS ABCD12345678 AC\n"},
+			want: []string{"Power Supply 1\t\t\tPS ABCD12345678 AC\n"},
+		},
+	})
+}

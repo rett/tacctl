@@ -344,11 +344,12 @@ var reSerialFields = []*regexp.Regexp{
 // A serial column of a table is cut at the position its header gives: the
 // headers of 'show chassis hardware' and of Junos 'show virtual-chassis'.
 // The cell after the serial column is the one the exempt description starts
-// at; the rows of a table with a gap in them are counted from the right.
+// at; the tab-separated rows of a table with a gap in them are read by the
+// shape of their cells (tabRow).
 type serialTable struct {
 	head           *regexp.Regexp
 	serial, follow string // the header words that start the serial column and the column after it
-	fromRight      bool   // a tab-separated row has cells missing before the serial: count them from its end
+	fromRight      bool   // a tab-separated row may leave cells out before the serial: find it by shape
 }
 
 var serialTables = []serialTable{
@@ -379,11 +380,16 @@ func isTableSerial(v string) bool {
 }
 
 // reCellSep separates the cells of a row that was cut at tabs, or at two
-// blanks or more, instead of at the columns of its header.
-var reCellSep = regexp.MustCompile(`\t+| {2,}`)
+// blanks or more, instead of at the columns of its header; reTabSep the cells
+// of a row by its tabs alone.
+var (
+	reCellSep = regexp.MustCompile(`\t+| {2,}`)
+	reTabSep  = regexp.MustCompile(`\t+`)
+)
 
-// cellsAt are the cells of a line, trimmed, with their positions.
-func cellsAt(line string) []span {
+// cellsAt are the cells of a line, split at sep, trimmed, with their
+// positions.
+func cellsAt(line string, sep *regexp.Regexp) []span {
 	var out []span
 	add := func(from, to int) {
 		for from < to && (line[from] == ' ' || line[from] == '\t') {
@@ -397,12 +403,67 @@ func cellsAt(line string) []span {
 		}
 	}
 	pos := 0
-	for _, sep := range reCellSep.FindAllStringIndex(line, -1) {
-		add(pos, sep[0])
-		pos = sep[1]
+	for _, m := range sep.FindAllStringIndex(line, -1) {
+		add(pos, m[0])
+		pos = m[1]
 	}
 	add(pos, len(line))
 	return out
+}
+
+// tabRow finds the serial cell of a tab-separated row of a table, and where
+// the exempt description starts (-1 for none). Its place is the serial
+// column of the header (si of the nh cells of the header); a row of a table
+// that leaves cells out (byShape) with fewer cells than the header, or whose
+// description holds two blanks, has it by its shape instead: the one cell
+// with a digit that is a word, not a part number or a model (those have a
+// hyphen), or the one after the part number.
+func tabRow(body string, si, nh int, byShape bool) (serial span, found bool, descr int) {
+	ok := func(c span) bool {
+		v := body[c.start:c.end]
+		return !strings.ContainsAny(v, " \t-") && isTableSerial(v)
+	}
+	tc := cellsAt(body, reTabSep)
+	if si < len(tc) && (!byShape || len(tc) == nh) {
+		descr = -1
+		if si+1 < len(tc) {
+			descr = tc[si+1].start
+		}
+		if ok(tc[si]) {
+			return tc[si], true, descr
+		}
+		if !byShape {
+			return span{}, false, descr
+		}
+	}
+	if !byShape {
+		return span{}, false, -1
+	}
+	fc := cellsAt(body, reCellSep)
+	var cands []int
+	for i := 1; i < len(fc); i++ {
+		if ok(fc[i]) && strings.ContainsAny(body[fc[i].start:fc[i].end], "0123456789") {
+			cands = append(cands, i)
+		}
+	}
+	pick := -1
+	if len(cands) == 1 {
+		pick = cands[0]
+	}
+	for _, i := range cands {
+		if v := body[fc[i-1].start:fc[i-1].end]; pick < 0 && i >= 2 && (strings.Contains(v, "-") || reNoSerial.MatchString(v)) {
+			pick = i
+		}
+	}
+	switch {
+	case pick >= 0 && pick+1 < len(fc):
+		return fc[pick], true, fc[pick+1].start
+	case pick >= 0:
+		return fc[pick], true, -1
+	case len(cands) == 0 && len(fc) > 1:
+		return span{}, false, fc[1].start // no serial: all of it is the item and its description
+	}
+	return span{}, false, -1
 }
 
 // serialSpans are the serial numbers a text states by field, and the
@@ -438,25 +499,22 @@ func serialSpans(text string) (cells, descr []span) {
 				tb = -1
 				break
 			}
-			hc := cellsAt(body)
+			hc := cellsAt(body, reCellSep)
 			nh, si = len(hc), slices.IndexFunc(hc, func(c span) bool { return body[c.start:c.end] == head.serial })
 		case tb >= 0 && strings.Contains(body, "\t"):
-			cs := cellsAt(body)
-			idx := si
-			if serialTables[tb].fromRight {
-				idx = len(cs) - (nh - si)
-			}
-			if len(cs) < 2 || si < 0 {
+			if si < 0 {
 				tb = -1
 				break
 			}
-			if idx >= 0 && idx < len(cs) {
-				if v := body[cs[idx].start:cs[idx].end]; isTableSerial(v) && !strings.ContainsAny(v, " \t") {
-					cells = append(cells, span{off + cs[idx].start, off + cs[idx].end})
-				}
+			if len(cellsAt(body, reTabSep)) < 2 {
+				break // a bare item: an empty row
 			}
-			if idx >= 0 && idx+1 < len(cs) {
-				descr = append(descr, span{off + cs[idx+1].start, off + len(body)})
+			serial, found, d := tabRow(body, si, nh, serialTables[tb].fromRight)
+			if found {
+				cells = append(cells, span{off + serial.start, off + serial.end})
+			}
+			if d >= 0 {
+				descr = append(descr, span{off + d, off + len(body)})
 			}
 		case tb >= 0:
 			fields := fieldsAt(body)
