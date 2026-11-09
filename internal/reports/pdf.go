@@ -4,6 +4,7 @@ import (
 	"html"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -31,16 +32,30 @@ dd { margin: 0 }
 table { border-collapse: collapse; width: 100% }
 thead { display: table-header-group }
 th { text-align: left; background: #dde3ea; border-bottom: 1pt solid #666666; padding: 2pt 4pt }
-td { padding: 2pt 4pt; vertical-align: top; word-break: break-word; overflow-wrap: anywhere }
+td { padding: 2pt 4pt; vertical-align: top; word-break: break-word }
 tr { page-break-inside: avoid }
 tbody tr:nth-child(even) td { background: #f3f5f7 }
-.mono { font-family: "DejaVu Sans Mono", monospace }
+.mono { font-family: "DejaVu Sans Mono", monospace; white-space: nowrap }
 `
 
-// htmlText is s as the HTML document carries it: control, C1, bidirectional
-// and line-separator characters are dropped (a PDF has no terminal to move),
-// an invalid byte is a '?', and what is left is escaped for HTML.
-func htmlText(s string) string {
+// Long words. The tool does not break a word that is wider than its column
+// (word-break: break-word is not enough for it, and overflow-wrap: anywhere
+// makes it narrow every column and about four times slower), so a word longer
+// than wordMax characters gets a zero-width space after every wordMax
+// characters, where it may break; a value in the monospaced face that is
+// longer than monoMax is set in the plain face, so that it can wrap too (the
+// others do not wrap, which keeps an address or a date in one piece).
+const (
+	wordMax = 24
+	monoMax = 40
+	// zwsp is the zero-width space as the document writes it.
+	zwsp = "&#8203;"
+)
+
+// plainHTMLText is s with the characters a PDF has no use for dropped (control, C1,
+// bidirectional and line-separator characters) and an invalid byte shown as a
+// '?'; it is not escaped yet.
+func plainHTMLText(s string) string {
 	var b strings.Builder
 	for _, r := range s {
 		switch {
@@ -52,7 +67,27 @@ func htmlText(s string) string {
 			b.WriteRune(r)
 		}
 	}
-	return html.EscapeString(b.String())
+	return b.String()
+}
+
+// htmlText is s as the HTML document carries it: cleaned and escaped.
+func htmlText(s string) string { return html.EscapeString(plainHTMLText(s)) }
+
+// softHTMLText is htmlText with a break opportunity after every wordMax
+// characters of a word that holds no space.
+func softHTMLText(s string) string {
+	var b strings.Builder
+	run := 0
+	for _, r := range plainHTMLText(s) {
+		if unicode.IsSpace(r) {
+			run = 0
+		} else if run++; run > wordMax {
+			b.WriteString(zwsp)
+			run = 1
+		}
+		b.WriteString(html.EscapeString(string(r)))
+	}
+	return b.String()
 }
 
 // filtersText is the filters of the command in key order, "none" for none.
@@ -99,14 +134,14 @@ func RenderHTML(r Report) []byte {
 	for _, cells := range r.Rows {
 		b.WriteString("<tr>")
 		for i, c := range cells {
-			text := htmlText(c)
-			if text == "" {
-				text = "-"
+			clean := plainHTMLText(c)
+			if clean == "" {
+				clean = "-"
 			}
-			if i < len(r.Columns) && monoColumns[r.Columns[i]] {
-				b.WriteString("<td class=\"mono\">" + text + "</td>")
+			if i < len(r.Columns) && monoColumns[r.Columns[i]] && utf8.RuneCountInString(clean) <= monoMax {
+				b.WriteString("<td class=\"mono\">" + html.EscapeString(clean) + "</td>")
 			} else {
-				b.WriteString("<td>" + text + "</td>")
+				b.WriteString("<td>" + softHTMLText(clean) + "</td>")
 			}
 		}
 		b.WriteString("</tr>\n")

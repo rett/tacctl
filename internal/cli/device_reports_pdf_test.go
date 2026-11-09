@@ -407,3 +407,15 @@ func TestPDFCaptureStopsARealProgram(t *testing.T) {
 		t.Errorf("err %v after %v", err, time.Since(start))
 	}
 }
+
+// Tab offers the four formats, pdf included.
+func TestReportsPDFFormatIsCompleted(t *testing.T) {
+	got, _ := completeWords(t, liveNames, "device", "reports", "generate", "--type", "inventory", "--format", "")
+	if strings.Join(got, " ") != "text csv json pdf" {
+		t.Errorf("offered %q", got)
+	}
+	got, _ = completeWords(t, liveNames, "device", "reports", "generate", "--format", "p")
+	if strings.Join(got, " ") != "pdf" {
+		t.Errorf("offered %q for p", got)
+	}
+}

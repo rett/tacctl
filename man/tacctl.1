@@ -14262,7 +14262,8 @@ and
 (a letter landscape document made from the report: the type, the time, the
 filters and the date of the oldest datum, then a table in DejaVu Sans whose
 header row repeats on each page, with a page counter; text outside the Latin and
-common Unicode ranges of DejaVu shows as empty boxes;
+common Unicode ranges of DejaVu prints only if another font on the server has it, and
+otherwise shows as empty boxes;
 .BR .pdf ).
 The PDF is made by
 .BR weasyprint ,

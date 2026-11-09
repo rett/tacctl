@@ -44,7 +44,9 @@ alice() {
     [[ "${lines[0]}" == "%PDF-1.7" ]]
     assert_output --partial "<title>Device inventory report</title>"
     assert_output --partial "<td>lab-sw1</td>"
-    assert_output --partial "&lt;script&gt;alert(1)&lt;/script&gt; &amp; &#34;quotes&#34;"
+    # (a word of more than 24 characters has a break opportunity, &#8203;, after every 24)
+    assert_output --partial "&lt;script&gt;alert(1)&lt;/script"
+    assert_output --partial "&gt; &amp; &#34;quotes&#34;"
     refute_output --partial "<script"
     refute_output --partial "@import"
     refute_output --partial "url("

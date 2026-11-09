@@ -81,7 +81,8 @@ func onlyInCells(doc, word string) bool {
 }
 
 func TestRenderHTMLEscapesCells(t *testing.T) {
-	doc := string(RenderHTML(hostileReport(t, TypeInventory)))
+	// the break opportunities of a long word are not part of the escaping
+	doc := strings.ReplaceAll(string(RenderHTML(hostileReport(t, TypeInventory))), zwsp, "")
 	for _, want := range []string{
 		"&lt;script&gt;alert(1)&lt;/script&gt;",
 		"a&amp;b",
@@ -162,5 +163,41 @@ func TestRenderHTMLCarriesTheReport(t *testing.T) {
 func TestRenderHTMLEmptyCellIsADash(t *testing.T) {
 	if doc := string(RenderHTML(mustBuild(t, TypeInventory))); !strings.Contains(doc, "<td>-</td>") {
 		t.Errorf("no dash for an empty cell:\n%s", doc)
+	}
+}
+
+// A word wider than a column does not break by itself in the tool, so a long
+// word gets a break opportunity after every 24 characters, never inside an
+// escape; a short word, and a word with spaces, are left as they are, and a
+// long value of the monospaced face is set in the plain face so that it can
+// wrap.
+func TestRenderHTMLBreaksLongWords(t *testing.T) {
+	devs := []Device{{Name: "sw1", Address: "192.0.2.11", Vendor: "cisco", Scope: "site-a", Serial: "SN000001", Release: "16.12.4",
+		Location: strings.Repeat("&", 30), Description: strings.Repeat("x", 50) + " short words " + strings.Repeat("y", 24),
+		Model: "WS-C3850-24T"}}
+	r, err := Build(TypeInventory, devs, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := string(RenderHTML(r))
+	for _, want := range []string{
+		"<td>" + strings.Repeat("x", 24) + zwsp + strings.Repeat("x", 24) + zwsp + "xx short words " + strings.Repeat("y", 24) + "</td>",
+		"<td>" + strings.Repeat("&amp;", 24) + zwsp + strings.Repeat("&amp;", 6) + "</td>",
+		"<td>WS-C3850-24T</td>",
+		"<td class=\"mono\">192.0.2.11</td>",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("no %q in:\n%s", want, doc)
+		}
+	}
+	// a long identifier is not held in one piece: it is in the plain face and breaks
+	devs[0].Release = strings.Repeat("r", 60)
+	r, _ = Build(TypeInventory, devs, now)
+	doc = string(RenderHTML(r))
+	if !strings.Contains(doc, "<td>"+strings.Repeat("r", 24)+zwsp+strings.Repeat("r", 24)+zwsp+strings.Repeat("r", 12)+"</td>") {
+		t.Errorf("a long release:\n%s", doc)
+	}
+	if strings.Contains(doc, "class=\"mono\">"+strings.Repeat("r", 10)) {
+		t.Error("a long release in the monospaced face")
 	}
 }
