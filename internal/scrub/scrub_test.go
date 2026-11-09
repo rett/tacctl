@@ -489,3 +489,14 @@ func TestIOSSysDescrIsLeftAsPrinted(t *testing.T) {
 		}
 	}
 }
+
+// A host name is one example whether it is written bare or with its domain,
+// and its domain is one example in every line that names it.
+func TestAHostIsOneExampleBareOrWithItsDomain(t *testing.T) {
+	in := "Hostname: core-sw1.corp.net\nsysName.0: core-sw1.corp.net\nip domain-name corp.net\ncore-sw1 uptime is 1 day\nHostname: core-sw1\n"
+	out := New().ApplyAll([]string{in})[0]
+	want := "Hostname: sw1.example.net\nsysName.0: sw1.example.net\nip domain-name example.net\nsw1 uptime is 1 day\nHostname: sw1\n"
+	if out != want {
+		t.Errorf("got\n%s\nwant\n%s", out, want)
+	}
+}
