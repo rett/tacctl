@@ -3,6 +3,24 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.28 (unreleased)
+
+1. **A support bundle from a Cisco IOS device no longer starts the identity
+   lines with the tail of the command.** Item 9 of 0.2.27 dropped the echo
+   of a command longer than the terminal is wide, but only when the first
+   line of the answer was the start of the command. On a Cisco 2811 the
+   `show running-config | include ^(hostname|ip domain|clock
+   timezone|snmp-server location|snmp-server contact)` file began with the
+   line `$clock timezone|snmp-server location|snmp-server contact)` (the `$`
+   is where the device cut its display) and then the `hostname` line: the
+   start of the echo was not a line of its own, so only the tail reached
+   the check, which wanted the start. The tail is dropped as well now: a
+   first line of `$` and pieces of the command, the last of which ends the
+   command, is the echo, whether or not the start of the echo stands before it.
+   Nothing else is dropped: a line with text that is not in the command, a
+   tail that does not end the command, and an output line that begins with
+   `$` stay. `docs/devices/support-bundle.md` and the manual page say so.
+
 ## 0.2.27 (2026-11-09)
 
 1. **A read-only user's device reports no longer hold what `device show`

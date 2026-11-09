@@ -92,7 +92,8 @@ first (see [Examples](../development/README.md#examples) for the values):
   added or taken away so that the columns after it stay where the device printed them (nothing is
   done at the end of a line);
 - a Cisco device that echoes a command longer than its terminal is wide, in several lines, leaves
-  none of the echo in the file: it starts with the device's answer.
+  none of the echo in the file: it starts with the device's answer; when only the tail of the echo
+  reaches the session (a line of `$` and the rest of the command), that tail is dropped as well.
 
 A text that still holds a value the scrubber learned to replace is not written, and nothing is.
 
