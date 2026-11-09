@@ -33,15 +33,20 @@ type Config struct {
 	// Home is the directory that is "/" for the client.
 	Home string
 	// Quota is the size in bytes the files of the home may add up to; 0
-	// means no limit, and then the home is not measured.
+	// means no limit, and then the home is not measured. What it guarantees
+	// is in the package comment: a write is refused when it would take the
+	// usage the session measured over the limit, and no more than that.
 	Quota int64
 	// Rate is the bytes per second the session may move, reads and writes
 	// together, with a burst of one second; 0 means no limit.
 	Rate int64
 	// Audit, when set, is called once per upload, download, delete, rename,
-	// mkdir and setstat, and once per refusal. It is called from the
-	// goroutines that serve the requests, never with a lock held, and it
-	// must not block for long.
+	// mkdir and setstat (with Err set when it failed), and once per refusal.
+	// It is called from the goroutines that serve the requests. No lock of
+	// this package is held, but the library may hold one of its own: the
+	// upload and download events fire when a handle is closed, which the
+	// library does under the lock of its set of open handles. The callback
+	// must not block, and must not call into the session.
 	Audit func(Event)
 }
 
