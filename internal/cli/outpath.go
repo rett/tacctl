@@ -20,7 +20,7 @@ const outPathHint = "tacctl does not expand ~ or variables; name a path inside y
 
 // callerHome is the home directory of the person who ran sudo (SUDO_UID), else
 // of this process's own user, from the account database, with symbolic links
-// resolved. It is never $HOME. A test build's TACCTL_TEST_HOME replaces the
+// resolved; a home that is the root directory is refused. It is never $HOME. A test build's TACCTL_TEST_HOME replaces the
 // look-up (app.Knobs.Home), a test of this package replaces it with
 // hooks.homeOfUID.
 func (inv *invocation) callerHome() (string, error) {
@@ -39,6 +39,10 @@ func (inv *invocation) callerHome() (string, error) {
 	r, err := filepath.EvalSymlinks(filepath.Clean(home))
 	if err != nil {
 		return "", errors.New("your home directory " + home + " cannot be used: " + cfgErrno(err))
+	}
+	if r == "/" {
+		// every absolute path is inside it, so nothing would be refused
+		return "", errors.New("your home directory " + home + " cannot be used: it is the root of the file system, which holds every path")
 	}
 	return r, nil
 }
