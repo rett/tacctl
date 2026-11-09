@@ -22,7 +22,7 @@ package lifecycle
 // 0.2.25, having no 'device reports' verb, never opens. It takes a snapshot
 // only when a key or a field is removed (PendingFiles), and the per-tier
 // sudoers drop-in is rewritten with 0.2.25's text only when the text 0.2.26
-// and this release write differs from it (the rows of 'device reports',
+// and the releases after it write differs from it (the rows of 'device reports',
 // tier.Sudoers0225).
 
 import "github.com/rett/tacctl/internal/tier"

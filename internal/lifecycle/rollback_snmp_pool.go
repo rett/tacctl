@@ -8,7 +8,7 @@ package lifecycle
 // without an snmp: entry (snmpcred.Creds.Text chooses; a community and one
 // default user are saved in version 1). Every release before 0.2.23 reads
 // version 1 only, with one v3 user, and its strict parser refuses a version 2
-// file ("unsupported version"), so every target but 0.2.26, 0.2.25, 0.2.24 and 0.2.23 writes
+// file ("unsupported version"), so every target but 0.2.27, 0.2.26, 0.2.25, 0.2.24 and 0.2.23 writes
 // each version 2 file as version 1 again, after the snapshot --apply takes
 // first (rollback_additions.go). A state with version 1 files only has nothing to
 // convert: no step, no snapshot, no --yes.

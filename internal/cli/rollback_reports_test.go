@@ -37,7 +37,7 @@ func TestRollbackRemovesTheReportLimitsOfTheConfig(t *testing.T) {
 			hs.run(hs.runner(), "rollback", target, "--apply")
 			hs.expect(0, "tacctl upgrade --branch "+target, "")
 			out = hs.all()
-			for _, want := range []string{"holds the 0.2.27 state", "The reports in the users' homes stay", "'tacctl config reports max-size', 'config reports max-count' or 'tacctl user reports-limit'",
+			for _, want := range []string{"holds the 0.2.28 state", "The reports in the users' homes stay", "'tacctl config reports max-size', 'config reports max-count' or 'tacctl user reports-limit'",
 				target + " has no 'device reports' verbs"} {
 				if !strings.Contains(out, want) {
 					t.Errorf("--apply lacks %q:\n%s", want, out)
@@ -108,7 +108,7 @@ func TestRollbackRemovesTheUsersReportLimits(t *testing.T) {
 				"The own limits of the stored reports were removed from the store for 2 users; " + target + " does not know the keys:",
 				"  bob: max-size 20 MiB, max-count 50 reports", "  erin: max-count no cap",
 				"'tacctl user reports-limit <user> max-size|max-count <value>' sets them again",
-				"holds the 0.2.27 state", "The reports in the users' homes stay"} {
+				"holds the 0.2.28 state", "The reports in the users' homes stay"} {
 				if !strings.Contains(out, want) {
 					t.Errorf("--apply lacks %q:\n%s", want, out)
 				}
