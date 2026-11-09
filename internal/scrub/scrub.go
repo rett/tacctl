@@ -214,20 +214,20 @@ var (
 	reClockTZ       = regexp.MustCompile(`(?m)^(\s*clock timezone )\S+(?:\s+-?\d+(?:\s+\d+)?)?`)
 
 	// what the learn step finds by shape
-	reLearnHostname = regexp.MustCompile(`(?mi)^\s*(?:hostname|host-name)\s*[:=]?\s*(\S+)\s*$`)
-	reLearnJunosHN  = regexp.MustCompile(`(?m)^Hostname:\s*(\S+)\s*$`)
+	reLearnHostname = regexp.MustCompile(`(?mi)^[ \t]*(?:hostname|host-name)[ \t]*[:=]?[ \t]*(\S+)[ \t]*$`)
+	reLearnJunosHN  = regexp.MustCompile(`(?m)^Hostname:[ \t]*(\S+)[ \t]*$`)
 	reLearnBy       = regexp.MustCompile(`\bby (\S+) via\b`)
 	reLearnCurrent  = regexp.MustCompile(`Current user: '([^']*)' login: '([^']*)' class '([^']*)'`)
 	reLearnUptime   = regexp.MustCompile(`(?m)^(\S+) uptime is `)
 	reLearnLastBy   = regexp.MustCompile(`(?m)(?:last configuration change|nvram config last updated).* by (\S+)[ \t]*$`)
 	reLearnSerial   = regexp.MustCompile(`(?mi)\bserial(?: number| no\.?)?[ \t]*[:=][ \t]*([A-Za-z0-9]{4,32})\b`)
-	reLearnDomain   = regexp.MustCompile(`(?mi)^\s*ip domain[- ]name\s+(?:vrf \S+\s+)?(\S+)`)
+	reLearnDomain   = regexp.MustCompile(`(?mi)^[ \t]*ip domain[- ]name[ \t]+(?:vrf \S+[ \t]+)?(\S+)`)
 	// the model names a text states
 	reLearnPID      = regexp.MustCompile(`\bPID:[ \t]*([^,\n]*)`)
 	reLearnModel    = regexp.MustCompile(`(?mi)^[ \t]*model(?: number)?[ \t]*[:=][ \t]*(\S+)`)
 	reLearnCisco    = regexp.MustCompile(`\b[Cc][Ii][Ss][Cc][Oo][ \t]+([A-Za-z0-9][A-Za-z0-9-]*)`)
-	reLearnLocation = regexp.MustCompile(`(?mi)^\s*(?:snmp-server location|location|sysLocation(?:\.0)?\s*[:=])\s*(.+?)\s*$`)
-	reLearnContact  = regexp.MustCompile(`(?mi)^\s*(?:snmp-server contact|contact|sysContact(?:\.0)?\s*[:=])\s*(.+?)\s*$`)
+	reLearnLocation = regexp.MustCompile(`(?mi)^[ \t]*(?:snmp-server location|location|sysLocation(?:\.0)?[ \t]*[:=])[ \t]*(\S.*?)[ \t]*$`)
+	reLearnContact  = regexp.MustCompile(`(?mi)^[ \t]*(?:snmp-server contact|contact|sysContact(?:\.0)?[ \t]*[:=])[ \t]*(\S.*?)[ \t]*$`)
 
 	// the combined pass
 	reMail    = `[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}`
@@ -236,7 +236,7 @@ var (
 	reV6Cand  = `\b[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{0,4}){2,7}(?:\.\d{1,3}){0,3}|::[0-9A-Fa-f:]*`
 	reSerial  = `\b[A-Z0-9]{8,14}\b`
 	reFQDN    = `\b(?:[A-Za-z0-9-]+\.)+(?:(?:co|com|org|net|ac|gov|edu)\.[a-z]{2}|net|com|org|edu|gov|mil|io|local|lan|corp|home|int|uk|de|fr|nl|se|no|ch|jp|cn|ca|au|ru|br|it|es|eu|us|in|pl|be|at|dk|fi|ie|nz|za|kr|sg|hk|mx)\b`
-	reExample = regexp.MustCompile(`(?i)(?:^|\.)example\.(?:net|org|com)$`)
+	reExample = regexp.MustCompile(`(?i)(?:^|\.)example\.(?:net|org|com|edu|invalid|test)$`)
 
 	// what the serial-number shape never reads: the model and version of a
 	// 'show inventory' item, its quoted name and description, the Model line
@@ -246,6 +246,26 @@ var (
 	reKeepModel    = regexp.MustCompile(`(?mi)^[ \t]*model(?: number)?[ \t]*[:=].*$`)
 	reKeepRevision = regexp.MustCompile(`(?mi)^[ \t]*cisco[ \t].*\(revision\b.*$`)
 )
+
+// vendorDomains are the registered domains (the last two labels) of vendors
+// and standards bodies that texts name in a banner, a URL or a mail address:
+// they say nothing about the owner, so a name under one is kept.
+var vendorDomains = map[string]bool{
+	"cisco.com": true, "juniper.net": true, "hpe.com": true, "hp.com": true, "gnu.org": true,
+	"fsf.org": true, "openssl.org": true, "ietf.org": true, "kernel.org": true,
+}
+
+// isPublicName reports whether name (a host name or the domain of a mail
+// address) is under a registered domain of vendorDomains or is an example
+// name.
+func isPublicName(name string) bool {
+	name = strings.ToLower(strings.TrimSuffix(name, "."))
+	labels := strings.Split(name, ".")
+	if len(labels) >= 2 && vendorDomains[strings.Join(labels[len(labels)-2:], ".")] {
+		return true
+	}
+	return reExample.MatchString(name)
+}
 
 // A span is a stretch of a text, [start, end).
 type span struct{ start, end int }
@@ -598,7 +618,7 @@ func (s *Scrubber) replacement(which, tok string) (string, bool) {
 	case "learned":
 		return s.learned[strings.ToLower(tok)], true
 	case "mail":
-		if reExample.MatchString(tok[strings.IndexByte(tok, '@')+1:]) {
+		if isPublicName(tok[strings.IndexByte(tok, '@')+1:]) {
 			return "", false
 		}
 		return s.Learn(Mail, tok), true
@@ -626,7 +646,7 @@ func (s *Scrubber) replacement(which, tok string) (string, bool) {
 		}
 		return s.Learn(Addr6, strings.ToLower(tok)), true
 	case "fqdn":
-		if reExample.MatchString(tok) {
+		if isPublicName(tok) {
 			return "", false
 		}
 		return s.Learn(Host, tok), true

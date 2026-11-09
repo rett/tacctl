@@ -442,3 +442,50 @@ func TestColumnsKeepTheirWidth(t *testing.T) {
 		}
 	})
 }
+
+// The names of vendors and of standards bodies are public, not the owner's.
+func TestVendorAddressesAreKept(t *testing.T) {
+	keep := "Technical Support: http://www.cisco.com/techsupport\n" +
+		"Importers: http://www.cisco.com/wwl/export/crypto/tool/stqrg.html\n" +
+		"mail export@cisco.com, see www.juniper.net or juniper.net, hpe.com and hp.com, ftp.gnu.org, www.fsf.org,\n" +
+		"www.openssl.org, tools.ietf.org, cdn.kernel.org, host.example.com, a.example.net\n"
+	runScrubCases(t, []scrubCase{
+		{name: "public names", in: []string{keep}, want: []string{keep}},
+		{
+			name: "the owner's names around them are replaced",
+			in:   []string{keep + "ntp ntp1.corp.net and mail jdoe@corp.net\n"},
+			want: []string{keep},
+			gone: []string{"corp.net", "jdoe"},
+		},
+	})
+}
+
+// An IOS sysDescr as the SNMP system group prints it, its lines joined, is
+// left as printed apart from the real values in it.
+func TestIOSSysDescrIsLeftAsPrinted(t *testing.T) {
+	const descr = "Cisco IOS Software, C3745 Software (C3745-ADVENTERPRISEK9-M), Version 12.4(15)SW4, RELEASE SOFTWARE (fc1) | " +
+		"Technical Support: http://www.cisco.com/techsupport | Copyright (c) 1986-2008 by Cisco Systems, Inc. | " +
+		"Compiled Mon 10-Jun-08 21:04 by prod_rel_team"
+	in := []string{
+		"sysObjectID.0: 1.3.6.1.4.1.9.1.516\nsysLocation.0: \nsysDescr.0: " + descr + "\nsysContact.0:\nsysName.0: rtr9.corp.net\nsysLocation.0: Building 7\n",
+		"Cisco IOS Software, C3745 Software (C3745-ADVENTERPRISEK9-M), Version 12.4(15)SW4, RELEASE SOFTWARE (fc1)\n" +
+			"Technical Support: http://www.cisco.com/techsupport\nrtr9 uptime is 3 weeks\n",
+		"hostname rtr9\nip domain-name corp.net\nsnmp-server location Building 7\nsnmp-server contact\nsnmp-server location\nHostname:\nModel: C3745\n",
+	}
+	s := New()
+	s.Learn(Host, "rtr9")
+	out := s.ApplyAll(in)
+	for _, want := range []string{"sysObjectID.0: 1.3.6.1.4.1.9.1.516\n", "sysDescr.0: " + descr + "\n"} {
+		if !strings.Contains(out[0], want) {
+			t.Errorf("%q is not in the output:\n%s", want, out[0])
+		}
+	}
+	if !strings.HasPrefix(out[1], "Cisco IOS Software, C3745 Software (C3745-ADVENTERPRISEK9-M), Version 12.4(15)SW4, RELEASE SOFTWARE (fc1)\nTechnical Support: http://www.cisco.com/techsupport\nsw1 uptime") {
+		t.Errorf("garbled:\n%s", out[1])
+	}
+	for _, gone := range []string{"rtr9", "corp.net", "Building 7"} {
+		if strings.Contains(strings.Join(out, "\n"), gone) {
+			t.Errorf("%q is still in the output", gone)
+		}
+	}
+}
