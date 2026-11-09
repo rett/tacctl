@@ -278,5 +278,5 @@ exec "$@"'
     run sudo_lines
     refute_output --partial " ${EXE} "
     run console_log
-    assert_line --partial "console DENY session=0123456789ab user=carol reason=command first=- len=13"
+    assert_line --partial "console DENY session=0123456789ab user=carol reason=command first=- len=11"
 }

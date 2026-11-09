@@ -14,6 +14,8 @@ setup() {
     stub_cmd chown
     stub_cmd systemctl
     stub_cmd logger
+    # sshd -T: no sftp subsystem unless a test says so (never the machine's sshd)
+    stub_cmd sshd 'printf "port 22\nallowtcpforwarding no\nallowagentforwarding no\n"'
     load_fixture tacquito.minimal.yaml
     # alice (superuser), bob (operator), carol (readonly), all in scope lab.
     load_store_fixture store.multiscope.yaml
@@ -28,7 +30,7 @@ ft() { "$TACCTL_BIN_SCRIPT" console file-transfer "$@"; }
 @test "console file-transfer: off by default, the superuser tier always has it; a tier is switched, snapshotted, and written as a list" {
     run ft
     assert_success
-    assert_output $'readonly: disabled\noperator: disabled\nengineer: disabled\nsuperuser: enabled (always)'
+    assert_output $'readonly: disabled\noperator: disabled\nengineer: disabled\nsuperuser: enabled (always)\n\nsshd sftp subsystem: none'
     [[ ! -e "$CONSOLE" ]]
     run ft operator
     assert_output "disabled"
@@ -44,7 +46,7 @@ ft() { "$TACCTL_BIN_SCRIPT" console file-transfer "$@"; }
     run ft engineer enable
     assert_success
     run ft
-    assert_output $'readonly: disabled\noperator: enabled\nengineer: enabled\nsuperuser: enabled (always)'
+    assert_output --partial $'readonly: disabled\noperator: enabled\nengineer: enabled\nsuperuser: enabled (always)\n'
     run grep -c '^    tiers: \[operator, engineer, superuser\]$' "$CONSOLE"
     assert_output "1"
     run ft operator
@@ -304,4 +306,26 @@ LIST
     ft user carol enable
     SUDO_USER=carol run "$TACCTL_BIN_SCRIPT" _console-policy
     assert_output --partial " file_transfer=yes ft_quota=268435456 ft_rate=0"
+}
+
+@test "console file-transfer: the list form and console show say whether sshd defines an sftp subsystem, and warn when it is on and there is none" {
+    printf 'authsrv|local||lab|127.0.0.1|\n' > "${TACCTL_STATE_DIR}/linux-hosts"
+    stub_cmd sshd 'printf "port 22\nallowtcpforwarding no\nallowagentforwarding no\nsubsystem sftp /usr/lib/openssh/sftp-server\n"'
+    run ft
+    assert_success
+    assert_output --partial $'\nsshd sftp subsystem: /usr/lib/openssh/sftp-server'
+    refute_output --partial "WARNING"
+    # none, and only the superuser tier has it: said, quiet
+    stub_cmd sshd 'printf "port 22\nallowtcpforwarding no\nallowagentforwarding no\n"'
+    run ft
+    assert_output --partial $'\nsshd sftp subsystem: none'
+    refute_output --partial "WARNING"
+    # none, and a tier has it: warned
+    ft operator enable
+    run ft
+    output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output")
+    assert_output --partial $'\nsshd sftp subsystem: none\nWARNING: sshd defines no sftp subsystem: file transfer cannot start; add `Subsystem sftp ...` to sshd_config.'
+    run "$TACCTL_BIN_SCRIPT" console show
+    output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output")
+    assert_output --partial "WARNING: sshd defines no sftp subsystem"
 }
