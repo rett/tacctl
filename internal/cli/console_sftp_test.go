@@ -87,8 +87,18 @@ func startSFTP(t *testing.T, policy, line string) *sftpRig {
 
 func startSFTPCtx(t *testing.T, ctx context.Context, policy, line string) *sftpRig {
 	t.Helper()
+	return startSFTPSetup(t, ctx, policy, line, nil)
+}
+
+// startSFTPSetup is startSFTPCtx with a change to the harness (its fake
+// commands) before the console starts.
+func startSFTPSetup(t *testing.T, ctx context.Context, policy, line string, setup func(*harness)) *sftpRig {
+	t.Helper()
 	parallel(t)
 	h, _ := consoleHarness(t, "", "carol tac-users tac-readonly", policy, "-c", line)
+	if setup != nil {
+		setup(h)
+	}
 	r := &sftpRig{t: t, h: h, home: t.TempDir(), done: make(chan int, 1)}
 	r.dotenv = h.app.Env.Get("HOME")
 	h.hooks.homeOfUID = func(uid int) (string, error) {
@@ -245,6 +255,33 @@ func TestConsoleSFTPServes(t *testing.T) {
 		if !strings.Contains(log[frag.i], frag.text) {
 			t.Errorf("log[%d] = %q, want it to contain %q", frag.i, log[frag.i], frag.text)
 		}
+	}
+}
+
+// logger failing is not a reason to stop a transfer: the warning is on
+// standard error, standard output stays the protocol's, and the transfer
+// goes on unaudited (the same as for a command of the console).
+func TestConsoleSFTPLoggerDownKeepsStdoutTheProtocol(t *testing.T) {
+	r := startSFTPSetup(t, context.Background(), sftpPolicy(console.FileTransfer{Enabled: true}), "internal-sftp",
+		func(h *harness) { h.runner.Missing("logger") })
+	c := r.client()
+	if err := put(t, c, "up.txt", "hello"); err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	if got, err := get(t, c, "up.txt"); err != nil || got != "hello" {
+		t.Errorf("download: %q %v", got, err)
+	}
+	if status := r.finish(c); status != 0 {
+		t.Fatalf("status %d, stderr %q", status, r.h.err.String())
+	}
+	if b, err := os.ReadFile(filepath.Join(r.home, "up.txt")); err != nil || string(b) != "hello" {
+		t.Errorf("the uploaded file: %q %v", b, err)
+	}
+	if !wholePackets(r.tap.bytes()) {
+		t.Errorf("standard output holds more than SFTP packets: %q", r.tap.bytes())
+	}
+	if !strings.Contains(r.h.err.String(), "The audit line was not written (logger: not found); the command continues.") {
+		t.Errorf("stderr lacks the warning: %q", r.h.err.String())
 	}
 }
 
