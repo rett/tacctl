@@ -160,4 +160,17 @@ func TestOutPathHomeIsTheAccountsNotTheEnvironment(t *testing.T) {
 	if _, err := inv.outPath("--out", sb.homePath("x")); err == nil {
 		t.Error("a relative home was accepted")
 	}
+	// a home that is the root directory, given as it is or through a link, would
+	// make every path inside it: refused
+	link := filepath.Join(t.TempDir(), "rootlink")
+	if err := os.Symlink("/", link); err != nil {
+		t.Fatal(err)
+	}
+	for _, h := range []string{"/", "//", "/.", link} {
+		inv.hooks.homeOfUID = func(int) (string, error) { return h, nil }
+		got, err := inv.outPath("--out", "/etc/x")
+		if err == nil || got != "" || !strings.Contains(err.Error(), "your home directory "+h+" cannot be used") {
+			t.Errorf("home %q: %q, %v; want a refusal", h, got, err)
+		}
+	}
 }

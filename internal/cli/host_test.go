@@ -476,6 +476,26 @@ func TestConfigLinuxScriptAndUID(t *testing.T) {
 	if strings.Contains(hs.out.String(), "Wrote") {
 		t.Errorf("reported as written: %q", hs.out.String())
 	}
+	// An existing directory is not written inside: a refusal that names the
+	// directory, for the script and for the removal script, and nothing is
+	// left in it. A link to a directory is the same.
+	odir := filepath.Join(hs.dir, "outdir")
+	if err := os.Mkdir(odir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	olink := filepath.Join(hs.dir, "outlink")
+	if err := os.Symlink(odir, olink); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range []string{odir, olink} {
+		hs.run(nil, "config", "linux", "script", "--scope", "lab", "--server", "192.0.2.10", "-o", d)
+		hs.expect(1, "", "--output '"+d+"' names a directory, name a file.")
+		hs.run(nil, "config", "linux", "remove-script", "--output", d)
+		hs.expect(1, "", "--output '"+d+"' names a directory, name a file.")
+	}
+	if left, _ := os.ReadDir(odir); len(left) != 0 {
+		t.Errorf("a directory named as the output was written in: %v", left)
+	}
 	hs.run(nil, "config", "linux", "script", "--bogus")
 	hs.expect(1, "", "Unknown argument: '--bogus'")
 	hs.run(nil, "config", "linux", "script", "--scope")

@@ -4681,7 +4681,7 @@ the port, as they were).
 .B \-\-output
 names the file (default
 .B tacctl\-linux\-<scope>.sh
-in the current directory). The path may be relative to the current directory or absolute, but it must be inside the home of the person who ran \fBsudo\fR (else of the user running tacctl; taken from the account database, never from \fB$HOME\fR): tacctl does not expand \fB~\fR or variables, and refuses a path that leaves the home through \fB..\fR or a symbolic link.
+in the current directory). The path may be relative to the current directory or absolute, but it must be inside the home of the person who ran \fBsudo\fR (else of the user running tacctl; taken from the account database, never from \fB$HOME\fR): tacctl does not expand \fB~\fR or variables, and refuses a path that leaves the home through \fB..\fR or a symbolic link. The default name is not a path you named and is not checked. A file of the name you give is replaced; a directory, or a link to one, is refused and nothing is written in it. The file is made as root with mode 0600, and under \fBsudo\fR it is handed to the person who ran it.
 .\" BEGIN GENERATED: command config linux script
 .RS
 .PP
@@ -4699,7 +4699,7 @@ Options:
 (script) pam_tacplus, or the host's pam_radius_auth (default: host default\-method).
 .TP
 \fB\-\-output\fR, \fB\-o\fR \fI<file>\fR
-Where the script goes, in your home (default: tacctl\-linux\-<scope>.sh, remove\-script: tacctl\-linux\-remove.sh).
+Where the script goes: a file in your home (default, in the current directory: tacctl\-linux\-<scope>.sh, remove\-script: tacctl\-linux\-remove.sh).
 .RE
 .\" END GENERATED: command config linux script
 .TP
@@ -4841,7 +4841,7 @@ tac-* groups and installed packages are left in place.
 .B \-\-output
 names the file (default
 .B tacctl\-linux\-remove.sh
-in the current directory). The path may be relative to the current directory or absolute, but it must be inside the home of the person who ran \fBsudo\fR (else of the user running tacctl; taken from the account database, never from \fB$HOME\fR): tacctl does not expand \fB~\fR or variables, and refuses a path that leaves the home through \fB..\fR or a symbolic link.
+in the current directory). The path may be relative to the current directory or absolute, but it must be inside the home of the person who ran \fBsudo\fR (else of the user running tacctl; taken from the account database, never from \fB$HOME\fR): tacctl does not expand \fB~\fR or variables, and refuses a path that leaves the home through \fB..\fR or a symbolic link. The default name is not a path you named and is not checked. A file of the name you give is replaced; a directory, or a link to one, is refused and nothing is written in it. The file is made as root with mode 0644, and under \fBsudo\fR it is handed to the person who ran it.
 .\" BEGIN GENERATED: command config linux remove-script
 .RS
 .PP
@@ -4850,7 +4850,7 @@ Requires: \fBsuperuser\fR.
 Options:
 .TP
 \fB\-\-output\fR, \fB\-o\fR \fI<file>\fR
-Where the script goes, in your home (default: tacctl\-linux\-<scope>.sh, remove\-script: tacctl\-linux\-remove.sh).
+Where the script goes: a file in your home (default, in the current directory: tacctl\-linux\-<scope>.sh, remove\-script: tacctl\-linux\-remove.sh).
 .RE
 .\" END GENERATED: command config linux remove-script
 .TP
@@ -13268,7 +13268,8 @@ the server, accounting,
 .BR snmp )
 is not in the region, with one report line saying so. Every device is logged
 .RB ( "auth.info device config plan user= device= status= sections= converge= secrets= out=" ,
-never a value). The Cisco report states which output has been tested on a
+never a value; \fBout=\fR is the resolved absolute path of the file written, or
+\fB\-\fR when none). The Cisco report states which output has been tested on a
 device.
 .\" BEGIN GENERATED: command device config plan
 .RS
@@ -16773,7 +16774,7 @@ kind (community, v3\-user, clear, version, port, timeout, clients or contact), a
 kind, name. A secret was shown (kind scope, snmp, snmp\-device, snmp\-default, block, block\-adopt, store, config, snapshot or backup); written for every caller, a superuser's too.
 .TP
 .B "secret\-export"
-scope, file. config linux script wrote a file that holds the scope's secret.
+scope, file (the resolved absolute path). config linux script wrote a file that holds the scope's secret.
 .TP
 .B "config allow, config deny, config mgmt\-acl"
 op (add, remove, clear, cisco\-name or juniper\-name), value.

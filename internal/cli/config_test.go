@@ -582,6 +582,64 @@ func TestConfigRenderDryRun(t *testing.T) {
 	sb.expect(1, "", "store not initialised")
 }
 
+// A link planted in the directory of a dry run, after the emptiness check,
+// is never followed out of it: the copy goes through a root handle.
+func TestCfgCopyPrivateStaysInTheDirectory(t *testing.T) {
+	base := t.TempDir()
+	src := filepath.Join(base, "src")
+	if err := os.WriteFile(src, []byte("secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(base, "outside")
+	if err := os.Mkdir(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	victim := filepath.Join(outside, "victim")
+	if err := os.WriteFile(victim, []byte("keep\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(base, "out")
+	if err := os.Mkdir(out, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// a link at a directory, one at the file's own name, one with .. in it
+	for name, target := range map[string]string{"etc": outside, "linked": victim, "up": ".."} {
+		if err := os.Symlink(target, filepath.Join(out, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	root, err := os.OpenRoot(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	for _, live := range []string{"/etc/victim", "/linked", "/up/escaped"} {
+		if err := cfgCopyPrivate(root, src, live); err == nil {
+			t.Errorf("%s: written through a link", live)
+		}
+	}
+	if got, _ := os.ReadFile(victim); string(got) != "keep\n" {
+		t.Errorf("a file outside the directory was written: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(base, "escaped")); err == nil {
+		t.Errorf("a file was written beside the directory")
+	}
+	// a file and its directories below the root: 0600 and 0700
+	if err := cfgCopyPrivate(root, src, "/usr/lib/x/y.conf"); err != nil {
+		t.Fatal(err)
+	}
+	for p, want := range map[string]os.FileMode{"usr/lib/x": 0o700, "usr/lib/x/y.conf": 0o600} {
+		st, err := os.Stat(filepath.Join(out, p))
+		if err != nil || st.Mode().Perm() != want {
+			t.Errorf("%s: %v %v", p, st, err)
+		}
+	}
+	// a second copy replaces the first
+	if err := cfgCopyPrivate(root, src, "/usr/lib/x/y.conf"); err != nil {
+		t.Errorf("rewrite: %v", err)
+	}
+}
+
 func TestConfigShowAndValidate(t *testing.T) {
 	sb := newSandbox(t, true)
 	out := sb.cfgRun("", []string{"config", "show"}, func(r *fake.Runner) {

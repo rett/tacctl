@@ -275,6 +275,18 @@ _client_env() {
     [[ ! -e "${PWD}/~" ]]
 }
 
+@test "config linux script and remove-script: --output naming an existing directory is refused, nothing is written in it" {
+    local dir="${BATS_TEST_TMPDIR}/outdir"
+    mkdir "$dir"
+    for args in "script --scope lab --server 192.0.2.10 --output" "script --scope lab --server 192.0.2.10 -o" "remove-script --output"; do
+        # shellcheck disable=SC2086
+        run "$TACCTL_BIN_SCRIPT" config linux $args "$dir"
+        assert_failure 1
+        assert_output --partial "--output '${dir}' names a directory, name a file."
+    done
+    [[ -z "$(ls -A "$dir")" ]]
+}
+
 @test "config linux remove-script: carries no secret" {
     run "$TACCTL_BIN_SCRIPT" config linux remove-script --output "$BATS_TEST_TMPDIR/remove.sh"
     assert_success

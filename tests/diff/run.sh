@@ -264,6 +264,9 @@ STUB
 root_dirs=(etc state/backups/password-dates log bin systemd-dropin systemd sudoers.d raddb radius-log radius-bin radius-share logrotate.d linux tmp)
 
 # sandbox_env <root>: the TACCTL_* variables of one root, one per line.
+# TACCTL_TEST_HOME is the caller's home for the commands that write a path the
+# caller names (--out, --output): the root, where the corpus' relative paths land
+# (a binary without the test knobs, or older than 0.2.27, ignores it).
 sandbox_env() {
     local r="$1"
     cat <<ENV
@@ -284,6 +287,7 @@ TACCTL_LOGROTATE_DIR=${r}/logrotate.d
 TACCTL_LINUX_DIR=${r}/linux
 TACCTL_SETTLE_SECONDS=0
 TACCTL_SKIP_SUDO=1
+TACCTL_TEST_HOME=${r}
 TACCTL_TEST_NOW=${test_now}
 TACCTL_TEST_RANDOM=${test_random}
 TMPDIR=${r}/tmp

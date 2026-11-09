@@ -767,7 +767,19 @@ func (inv *invocation) chownToCaller(path string) {
 	if err1 != nil || err2 != nil {
 		return
 	}
-	_ = os.Chown(path, uid, gid)
+	// Lchown: the name was written as root a moment ago, and a link swapped
+	// in at it since must not be followed.
+	_ = os.Lchown(path, uid, gid)
+}
+
+// outputIsFile refuses an existing directory (or a link to one) as the file a
+// script is written to: it is not written inside it, and not handed to the
+// caller. A name that does not exist yet, or a file, passes.
+func (inv *invocation) outputIsFile(flag, path string) error {
+	if st, err := os.Stat(path); err == nil && st.IsDir() {
+		return inv.usageErr(flag + " '" + path + "' names a directory, name a file.")
+	}
+	return nil
 }
 
 // baseName is ${path##*/}.
@@ -807,6 +819,9 @@ func (inv *invocation) configLinuxScript(args []string) error {
 		out, err := inv.outPath("--output", output)
 		if err != nil {
 			return inv.usageErr(err.Error())
+		}
+		if err := inv.outputIsFile("--output", out); err != nil {
+			return err
 		}
 		output = out
 	}
@@ -934,6 +949,9 @@ func (inv *invocation) configLinuxRemoveScript(args []string) error {
 			out, err := inv.outPath("--output", output)
 			if err != nil {
 				return inv.usageErr(err.Error())
+			}
+			if err := inv.outputIsFile("--output", out); err != nil {
+				return err
 			}
 			output = out
 		}

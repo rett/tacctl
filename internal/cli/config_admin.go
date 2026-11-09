@@ -416,11 +416,20 @@ func (inv *invocation) configRenderDryRun(args []string) error {
 	if err := os.MkdirAll(out, 0o700); err != nil {
 		return inv.usageErr("Cannot create '" + out + "': " + cfgErrno(err))
 	}
+	// Everything below is written as root into a directory the caller owns
+	// or may write: through a root handle on it, so that a link planted in
+	// it between the emptiness check and the writes cannot lead a write
+	// out of it.
+	dirRoot, err := os.OpenRoot(out)
+	if err != nil {
+		return inv.usageErr("Cannot use '" + out + "': " + cfgErrno(err))
+	}
+	defer func() { _ = dirRoot.Close() }()
 	for _, s := range all {
 		var written []string
 		for _, f := range s.files {
 			dst := filepath.Join(out, f[1])
-			if err := cfgCopyPrivate(f[0], dst); err != nil {
+			if err := cfgCopyPrivate(dirRoot, f[0], f[1]); err != nil {
 				a.Out.Error("Cannot write " + dst + ": " + cfgErrno(err))
 				return exit(1)
 			}
@@ -475,18 +484,23 @@ func stagedArtifacts(id, dir string, artifacts []string) ([][2]string, error) {
 	return out, err
 }
 
-// cfgCopyPrivate copies src to dst (0600), creating dst's directories
-// (0700).
-func cfgCopyPrivate(src, dst string) error {
+// cfgCopyPrivate copies src to live (an absolute path, taken below root's
+// directory: 0600, with its directories made 0700). Every step goes through
+// root, which refuses a symbolic link that leads out of its directory.
+func cfgCopyPrivate(root *os.Root, src, live string) error {
 	data, err := os.ReadFile(src)
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+	rel := strings.TrimLeft(filepath.Clean(live), "/")
+	if rel == "" {
+		rel = "."
+	}
+	if err := root.MkdirAll(filepath.Dir(rel), 0o700); err != nil {
 		return err
 	}
-	if err := os.WriteFile(dst, data, 0o600); err != nil {
+	if err := root.WriteFile(rel, data, 0o600); err != nil {
 		return err
 	}
-	return os.Chmod(dst, 0o600)
+	return root.Chmod(rel, 0o600)
 }
