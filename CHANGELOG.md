@@ -191,7 +191,10 @@ current behaviour; this file is where history lives.
    as a PDF only by its name ending in `.pdf` (its metadata file saying `pdf`
    is not enough, the owner writes that too) and, for a superuser's
    `export <user>/<report>`, only if it also starts with `%PDF-`; anything else
-   is cleaned as text.
+   is cleaned as text. With `--stdout`, in every format, the notices `No
+   device matches: the report has no rows.` and `No device to read: ...` go to
+   standard error like the pull's output, so that standard output holds the
+   report only (they were printed before it).
 
    `tacctl upgrade` offers the tools, last, once the upgrade is done: on a
    Debian or Ubuntu system (`apt-get` and `dpkg-query` are there) where

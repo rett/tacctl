@@ -97,7 +97,7 @@ rtr1,site-a,failed,2026-11-03 22:10,-
 sw1,site-a,differs,2026-11-06 07:45,2026-11-01 12:00
 ```
 
-`--stdout` prints the report instead of storing it: no file and no metadata are made, no limit applies, no account is needed, and with `--pull` the pull's own output goes to standard error so that standard output holds the report only.
+`--stdout` prints the report instead of storing it: no file and no metadata are made, no limit applies, no account is needed, and with `--pull` the pull's own output goes to standard error so that standard output holds the report only. The notices (`No device matches: the report has no rows.`, `No device to read: ...`) go to standard error too, in every format.
 
 ### PDF reports
 
