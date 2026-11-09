@@ -22,7 +22,8 @@ func wantTooMany(t *testing.T, what string, err error) {
 	}
 	// Through the client the status is a code; called directly, the error
 	// still unwraps to it.
-	if !strings.Contains(err.Error(), "too many open files") || !(code(err) == fxFailure || errors.Is(err, sftp.ErrSSHFxFailure)) {
+	isFailure := code(err) == fxFailure || errors.Is(err, sftp.ErrSSHFxFailure)
+	if !strings.Contains(err.Error(), "too many open files") || !isFailure {
 		t.Errorf("%s: %v, want a failure status with too many open files", what, err)
 	}
 }
