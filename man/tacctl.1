@@ -197,6 +197,31 @@ Listener, log-level and metrics settings in
 .I tacctl.yaml
 survive.
 .IP
+The last step of a successful upgrade, on a system with
+.B apt\-get
+and
+.B dpkg\-query
+where
+.B weasyprint
+or
+.B fonts\-dejavu\-core
+is not installed, is the offer of the tools of the PDF device reports
+.RB ( "device reports generate \-\-format pdf" ).
+At a terminal it asks
+.B "tacctl can write device reports as PDF. Install weasyprint and fonts\-dejavu\-core now? [y/N]"
+once: \&'y' or \&'Y' installs the missing packages (a failure is a warning with
+the command, never a failed upgrade, and is asked again), anything else is no,
+which is remembered in the marker
+.I /var/lib/tacctl/pdf\-tools\-offered
+so that the next upgrades do not ask (delete the file to be asked again). Without
+a terminal nothing is asked or installed and the line
+.B "sudo apt\-get install \-y weasyprint fonts\-dejavu\-core"
+is printed. Nothing is offered when both are installed, and
+.B install
+never installs them. A rollback leaves the marker, and
+.B uninstall
+removes it.
+.IP
 The clone, the fetch and the pull of the tacctl repository in
 .I /opt/tacctl
 never wait for an answer, as the pull of the tacquito source
@@ -18852,6 +18877,20 @@ Do not edit.
 Gets the line
 .I /usr/local/bin/tacctl\-console
 with the drop-in, and loses it with it.
+.TP
+.I /var/lib/tacctl/pdf\-tools\-offered
+Marker that
+.B "tacctl upgrade"
+offered to install
+.B weasyprint
+and
+.B fonts\-dejavu\-core
+(the tools of
+.BR "device reports generate \-\-format pdf" )
+and the answer was no. It is written only for a no (mode 0600); delete it to be
+asked at the next upgrade.
+.B uninstall
+removes it.
 .TP
 .I /var/lib/tacctl/tier\-pinned
 Marker that

@@ -126,6 +126,20 @@ current behaviour; this file is where history lives.
    the access audit lines work on `.pdf` files as on the others. A file you
    put in the directory that ends in `.pdf` is binary as well.
 
+   `tacctl upgrade` offers the tools, last, once the upgrade is done: on a
+   Debian or Ubuntu system (`apt-get` and `dpkg-query` are there) where
+   `weasyprint` or `fonts-dejavu-core` is not installed, it asks at a terminal
+   `tacctl can write device reports as PDF. Install weasyprint and
+   fonts-dejavu-core now? [y/N]` (the default is no) and, on `y`, installs the
+   missing ones as the other packages are installed (noninteractive, with the
+   `apt-get update` retry); a failure is a warning with the command and never
+   fails the upgrade. A no is remembered in the marker
+   `/var/lib/tacctl/pdf-tools-offered`, so that it is not asked at every
+   upgrade; delete the file to be asked again. Without a terminal nothing is
+   asked or installed and the upgrade prints `sudo apt-get install -y
+   weasyprint fonts-dejavu-core`. `install` does not offer them, `uninstall`
+   removes the marker and a rollback leaves it.
+
 ## 0.2.26 (2026-11-06)
 
 1. **The break-glass firewall line of `tacctl upgrade` and `install` is one

@@ -107,7 +107,7 @@ sw1,site-a,differs,2026-11-06 07:45,2026-11-01 12:00
 sudo apt-get install -y weasyprint fonts-dejavu-core
 ```
 
-Without the tool `generate --format pdf` refuses at once, before it reads a device or writes a file, with exit status 1:
+`tacctl upgrade` offers to install them, once (see [Upgrading](../install/upgrading.md#pdf-reports)); `install` does not. Without the tool `generate --format pdf` refuses at once, before it reads a device or writes a file, with exit status 1:
 
 ```
 $ tacctl device reports generate --type inventory --format pdf

@@ -793,6 +793,39 @@ radius_uninstall() {
     [[ -z "$(head -n "$(( order[0] - 2 ))" <<< "$output" | tr -d '[:space:]')" ]]
 }
 
+# The optional tools of the PDF device reports are offered last. Without a
+# terminal nothing is asked or installed: the command is printed, after the
+# summary, and there is no marker; with the packages installed nothing is said.
+@test "upgrade: the PDF tools are offered last, and without a terminal only the command is printed" {
+    radius_up
+    pre_vendor_state
+    stub_cmd ln
+    local root="${BATS_TEST_TMPDIR}/hostroot"
+    mkdir -p "${root}/opt/tacctl/bin" "${root}/usr/local/go/bin" "${BATS_TEST_TMPDIR}/tacquito-src"
+    : > "${root}/opt/tacctl/bin/tacctl.sh"
+    printf '#!/bin/sh\n' > "${root}/usr/local/go/bin/go"
+    chmod 755 "${root}/usr/local/go/bin/go"
+    printf '#!/bin/sh\n' > "${TACCTL_BIN}/tacquito"
+    stub_cmd git 'case "$*" in *"rev-parse --short HEAD"*) echo abc1234 ;; *"rev-parse"*) echo abc1234abc1234 ;; esac'
+    stub_cmd dpkg-query 'case "$*" in *weasyprint*) exit 1 ;; *) echo "install ok installed" ;; esac'
+    stub_cmd apt-get
+    run env TACCTL_TEST_ROOT="$root" TACQUITO_SRC="${BATS_TEST_TMPDIR}/tacquito-src" "$TACCTL_BIN_SCRIPT" upgrade < /dev/null
+    assert_success
+    ! stub_called '^apt-get ' || { stub_calls; return 1; }
+    output=$(sed 's/\x1b\[[0-9;]*m//g' <<< "$output")
+    local offer summary
+    offer=$(grep -nF -- "tacctl can write device reports as PDF. To install what it needs: sudo apt-get install -y weasyprint fonts-dejavu-core" <<< "$output" | cut -d: -f1)
+    summary=$(grep -nF -- "Managed scripts:" <<< "$output" | head -1 | cut -d: -f1)
+    [[ -n "$offer" && -n "$summary" ]] && (( offer > summary )) || { echo "offer ${offer:-none}, summary ${summary:-none}"; echo "$output"; return 1; }
+    [[ "$(grep -c 'can write device reports as PDF' <<< "$output")" == 1 ]]
+    [[ ! -e "${TACCTL_VAR_LIB}/pdf-tools-offered" ]]
+    # both installed: nothing is said
+    stub_cmd dpkg-query 'echo "install ok installed"'
+    run env TACCTL_TEST_ROOT="$root" TACQUITO_SRC="${BATS_TEST_TMPDIR}/tacquito-src" "$TACCTL_BIN_SCRIPT" upgrade < /dev/null
+    assert_success
+    refute_output --partial "as PDF"
+}
+
 @test "upgrade: a disabled backend (no drop-in) is left alone" {
     radius_up
     tacctl backend disable radius --yes
