@@ -369,6 +369,44 @@ func TestSerialNumbersAreReplacedByTheirField(t *testing.T) {
 	})
 }
 
+// Only the Description column of a table is exempt from the serial-number
+// shape, and the table ends where its rows stop fitting the header.
+func TestATableExemptsItsDescriptionColumnOnly(t *testing.T) {
+	hdr := "Item             Version  Part number  Serial number     Description\n"
+	runScrubCases(t, []scrubCase{
+		{
+			name: "a serial-shaped word in another column of a table row is replaced",
+			in:   []string{hdr + "Chassis                                ABC0123456        Virtual Chassis\n" + "FPC 0            REV 11   ZZTOP2468AB  XYZ98765432       EX4400-48T\n"},
+			want: []string{"Virtual Chassis\n", "EX4400-48T\n"},
+			gone: []string{"ZZTOP2468AB", "XYZ98765432", "ABC0123456"},
+		},
+		{
+			name: "the description column keeps a model name",
+			in:   []string{hdr + "FPC 0            REV 11   650-114384   ABC0123456        EX4400-48T\n"},
+			want: []string{"EX4400-48T\n"},
+		},
+		{
+			name: "a line that does not fit the header ends the table",
+			in:   []string{hdr + "Chassis                                ABC0123456        Virtual Chassis\n{master:0}\n" + "WORD  here\nmore text HELLO123456 and ABCDEFGH12\n"},
+			gone: []string{"HELLO123456", "ABCDEFGH12", "ABC0123456"},
+		},
+		{
+			name: "a status in the serial column of a continuation line is not a serial",
+			in:   []string{hdr + "Chassis                                ABC0123456        Virtual Chassis\n" + "                                       Prsnt             continued\nPrsnt and Prsnt\n"},
+			want: []string{"Prsnt             continued\n", "Prsnt and Prsnt\n"},
+			gone: []string{"ABC0123456"},
+		},
+		{
+			name: "tab-separated rows have their serial replaced",
+			in: []string{hdr + "Chassis\t\t\tABC0123456\tVirtual Chassis\n" + "Power Supply 0\tREV 03\t740-000001\tabc1234\tJPSU-350-AC-AFO\n" +
+				"Fan Tray 0\t\t\t\tFan Module\nRouting Engine 0\tBUILTIN\tBUILTIN\tRE-EX4400-48T\n",
+				"Member ID  Status   Serial No    Model          prio  Role\n0 (FPC 0)\tPrsnt\t9876543210\tex4400-48t\t255\tMaster*\n"},
+			want: []string{"Virtual Chassis\n", "JPSU-350-AC-AFO\n", "Fan Tray 0", "BUILTIN\tBUILTIN", "ex4400-48t\t255\tMaster*"},
+			gone: []string{"ABC0123456", "abc1234", "9876543210"},
+		},
+	})
+}
+
 // A dotted run that begins 1.3.6.1 is an object identifier, never an address;
 // every other run is scanned for addresses.
 func TestObjectIdentifiersAndVersionsAreNotAddresses(t *testing.T) {

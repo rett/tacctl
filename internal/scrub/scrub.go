@@ -342,12 +342,17 @@ var reSerialFields = []*regexp.Regexp{
 
 // A serial column of a table is cut at the position its header gives: the
 // headers of 'show chassis hardware' and of Junos 'show virtual-chassis'.
-var serialTables = []struct {
+// The cell after the serial column is the one the exempt description starts
+// at; the rows of a table with a gap in them are counted from the right.
+type serialTable struct {
 	head           *regexp.Regexp
 	serial, follow string // the header words that start the serial column and the column after it
-}{
-	{regexp.MustCompile(`^\s*Item\s+Version\s+Part number\s+Serial number\s+Description\b`), "Serial number", "Description"},
-	{regexp.MustCompile(`^\s*Member ID\s+Status\s+Serial No\s+Model\b`), "Serial No", "Model"},
+	fromRight      bool   // a tab-separated row has cells missing before the serial: count them from its end
+}
+
+var serialTables = []serialTable{
+	{regexp.MustCompile(`^\s*Item\s+Version\s+Part number\s+Serial number\s+Description\b`), "Serial number", "Description", true},
+	{regexp.MustCompile(`^\s*Member ID\s+Status\s+Serial No\s+Model\b`), "Serial No", "Model", false},
 }
 
 var reNoSerial = regexp.MustCompile(`(?i)^(?:builtin|n/?a|none|unknown|unspecified|not[-_ ]?available|-+)$`)
@@ -360,10 +365,46 @@ func isSerialValue(v string) bool {
 
 var reExampleSerial = regexp.MustCompile(`^SN\d{6}$`)
 
-// serialSpans are the serial numbers a text states by field, and the rows of
-// the tables they are cut from (the other cells of those rows are model
-// names and part numbers).
-func serialSpans(text string) (cells, rows []span) {
+// isTableSerial reports whether v, a word in the serial column of a table, is
+// a number to learn: a serial value of the shape of one (four characters or
+// more, with a digit), not a status such as Prsnt.
+func isTableSerial(v string) bool {
+	return len(v) >= 4 && strings.ContainsAny(v, "0123456789") && isSerialValue(v)
+}
+
+// reCellSep separates the cells of a row that was cut at tabs, or at two
+// blanks or more, instead of at the columns of its header.
+var reCellSep = regexp.MustCompile(`\t+| {2,}`)
+
+// cellsAt are the cells of a line, trimmed, with their positions.
+func cellsAt(line string) []span {
+	var out []span
+	add := func(from, to int) {
+		for from < to && (line[from] == ' ' || line[from] == '\t') {
+			from++
+		}
+		for to > from && (line[to-1] == ' ' || line[to-1] == '\t') {
+			to--
+		}
+		if from < to {
+			out = append(out, span{from, to})
+		}
+	}
+	pos := 0
+	for _, sep := range reCellSep.FindAllStringIndex(line, -1) {
+		add(pos, sep[0])
+		pos = sep[1]
+	}
+	add(pos, len(line))
+	return out
+}
+
+// serialSpans are the serial numbers a text states by field, and the
+// Description columns of the tables they are cut from (the words there are
+// model names and descriptions, whatever their shape). A table ends at a
+// blank line, at a 'word:' line, and at the first line with nothing in or
+// after the serial column.
+func serialSpans(text string) (cells, descr []span) {
 	for _, re := range reSerialFields {
 		for _, m := range re.FindAllStringSubmatchIndex(text, -1) {
 			if isSerialValue(text[m[2]:m[3]]) {
@@ -372,38 +413,70 @@ func serialSpans(text string) (cells, rows []span) {
 		}
 	}
 	off := 0
-	var cols []int // serial column start and end, -1 outside a table
+	var (
+		tb       = -1 // the table of the header seen, -1 outside one
+		from, to int  // the serial column and the column after it
+		nh, si   int  // the cells of the header, and the one of the serial
+	)
 	for _, line := range strings.SplitAfter(text, "\n") {
 		body := strings.TrimRight(line, "\r\n")
 		switch {
 		case strings.TrimSpace(body) == "" || strings.HasSuffix(body, ":") && !strings.Contains(body, " "):
-			cols = nil
-		default:
-			found := false
-			for _, tb := range serialTables {
-				if !tb.head.MatchString(body) {
-					continue
-				}
-				from := strings.Index(body, tb.serial)
-				to := strings.Index(body, tb.follow)
-				if from >= 0 && to > from {
-					cols, found = []int{from, to}, true
-				}
+			tb = -1
+		case headerOf(body) >= 0:
+			tb = headerOf(body)
+			head := serialTables[tb]
+			from, to = strings.Index(body, head.serial), strings.Index(body, head.follow)
+			if from < 0 || to <= from {
+				tb = -1
 				break
 			}
-			if found || cols == nil {
+			hc := cellsAt(body)
+			nh, si = len(hc), slices.IndexFunc(hc, func(c span) bool { return body[c.start:c.end] == head.serial })
+		case tb >= 0 && strings.Contains(body, "\t"):
+			cs := cellsAt(body)
+			idx := si
+			if serialTables[tb].fromRight {
+				idx = len(cs) - (nh - si)
+			}
+			if len(cs) < 2 || si < 0 {
+				tb = -1
 				break
 			}
-			rows = append(rows, span{off, off + len(body)})
-			for _, f := range fieldsAt(body) {
-				if f.start >= cols[0] && f.start < cols[1] && isSerialValue(body[f.start:f.end]) {
+			if idx >= 0 && idx < len(cs) {
+				if v := body[cs[idx].start:cs[idx].end]; isTableSerial(v) && !strings.ContainsAny(v, " \t") {
+					cells = append(cells, span{off + cs[idx].start, off + cs[idx].end})
+				}
+			}
+			if idx >= 0 && idx+1 < len(cs) {
+				descr = append(descr, span{off + cs[idx+1].start, off + len(body)})
+			}
+		case tb >= 0:
+			fields := fieldsAt(body)
+			if !slices.ContainsFunc(fields, func(f span) bool { return f.start >= from }) {
+				tb = -1 // nothing in or after the serial column: not a row of the table
+				break
+			}
+			for _, f := range fields {
+				if f.start >= from && f.start < to && isTableSerial(body[f.start:f.end]) {
 					cells = append(cells, span{off + f.start, off + f.end})
 				}
+			}
+			if len(body) > to {
+				descr = append(descr, span{off + to, off + len(body)})
 			}
 		}
 		off += len(line)
 	}
-	return cells, rows
+	return cells, descr
+}
+
+// headerOf is the index in serialTables of the table whose header line is
+// body, or -1.
+func headerOf(body string) int {
+	return slices.IndexFunc(serialTables, func(t serialTable) bool {
+		return t.head.MatchString(body)
+	})
 }
 
 // fieldsAt are the blank-separated words of a line, with their positions.
@@ -532,8 +605,8 @@ func (s *Scrubber) Apply(text string) string {
 	text = reTZName.ReplaceAllString(text, "UTC")
 	text = reClockTZ.ReplaceAllString(text, "${1}UTC 0")
 	s.compile()
-	cells, rows := serialSpans(text)
-	keep := append(keepSpans(text), rows...)
+	cells, descr := serialSpans(text)
+	keep := append(keepSpans(text), descr...)
 	type edit struct {
 		start, end int
 		rep        string
