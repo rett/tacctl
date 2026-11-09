@@ -214,6 +214,44 @@ func TestStripEchoOfAWrappedCommand(t *testing.T) {
 	}
 }
 
+// A device that scrolled the echo of a long command leaves a body that starts
+// at the tail of it, the '$' and the rest of the command: the start of the
+// echo is not a line of its own (IOS redraws the line in place, or the
+// display is cut), and the tail is dropped as well. Nothing else is.
+func TestStripEchoOfTheTailOfAWrappedCommand(t *testing.T) {
+	t.Parallel()
+	const cmd = "show running-config | include ^(hostname|ip domain|clock timezone|snmp-server location|snmp-server contact)"
+	const out = "hostname sw1.example.net\nip domain-name example.net\n"
+	tail := "$" + cmd[60:]
+	for name, c := range map[string]struct{ body, want string }{
+		"tail only":        {tail + "\n" + out, out},
+		"tail, no output":  {tail + "\n", ""},
+		"tail of pieces":   {"$" + cmd[40:60] + "$" + cmd[60:] + "\n" + out, out},
+		"tail, backspaces": {"$" + cmd[60:] + "x\b \b\n" + out, out},
+		"tail, escape":     {"$" + cmd[60:] + "\x1b[K\n" + out, out},
+		"tail in two":      {"$" + cmd[50:80] + "\n$" + cmd[80:] + "\n" + out, out},
+		"collapsed line":   {cmd[:64] + strings.Repeat("\b", 64) + "$" + cmd[60:] + strings.Repeat(" ", 64-len(tail)) + "\n" + out, out},
+		// not an echo: a piece that is not in the command, an end that is not the end of it,
+		// a line that is only like a piece, or a tail that is not the first line
+		"foreign piece":          {"$" + cmd[60:] + "$ other text\n" + out, "$" + cmd[60:] + "$ other text\n" + out},
+		"foreign tail":           {"$clock timezone|snmp-server location|snmp-server contact) extra\n" + out, "$clock timezone|snmp-server location|snmp-server contact) extra\n" + out},
+		"not the end":            {"$" + cmd[60:90] + "\n" + out, "$" + cmd[60:90] + "\n" + out},
+		"not the end, two":       {"$" + cmd[40:60] + "\n$" + cmd[60:90] + "\n" + out, "$" + cmd[40:60] + "\n$" + cmd[60:90] + "\n" + out},
+		"output with $":          {"$ something\n" + out, "$ something\n" + out},
+		"output with $, a piece": {"$ snmp-server\n" + out, "$ snmp-server\n" + out},
+		"no $, a piece":          {cmd[60:] + "\n" + out, cmd[60:] + "\n" + out},
+		"after output":           {out + tail + "\n", out + tail + "\n"},
+	} {
+		if got := stripEcho(c.body, cmd); got != c.want {
+			t.Errorf("%s: stripEcho = %q, want %q", name, got, c.want)
+		}
+	}
+	// A short command never looks for pieces.
+	if got := stripEcho("$clock\nx\n", "show clock"); got != "$clock\nx\n" {
+		t.Errorf("short command: %q", got)
+	}
+}
+
 func TestStripEcho(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct{ body, cmd, want string }{

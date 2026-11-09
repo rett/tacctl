@@ -1142,8 +1142,10 @@ const minWrappedCmd = 40
 // carriage returns (dropped by normalise) in between. The echo is the lines
 // at the start of body that, cleaned of control characters, are pieces of cmd
 // (a '$' marks where the display was cut), up to the line whose last piece
-// ends cmd, when the first line is the start of cmd. Anything else is output and body is
-// left as it is (ok false).
+// ends cmd. The first line is either the start of cmd, or, when the device
+// redrew the line in place or the start of the echo is not in body, a '$' and
+// the rest of cmd (the tail). Anything else is output and body is left as it
+// is (ok false).
 func wrappedEcho(body, cmd string) (string, bool) {
 	if len(cmd) < minWrappedCmd {
 		return body, false
@@ -1151,8 +1153,9 @@ func wrappedEcho(body, cmd string) (string, bool) {
 	lines := strings.SplitAfter(body, "\n")
 	n, ended := 0, false
 	for i, l := range lines {
-		pieces := echoPieces(strings.TrimRight(l, "\n"), cmd)
-		if len(pieces) == 0 || i == 0 && (len(pieces[0]) < 8 || !strings.HasPrefix(cmd, pieces[0])) {
+		l = strings.TrimRight(l, "\n")
+		pieces := echoPieces(l, cmd)
+		if len(pieces) == 0 || i == 0 && !echoStart(l, pieces, cmd) {
 			break
 		}
 		n = i + 1
@@ -1165,6 +1168,16 @@ func wrappedEcho(body, cmd string) (string, bool) {
 		return body, false
 	}
 	return strings.Join(lines[n:], ""), true
+}
+
+// echoStart reports whether line, the first line of body and made of pieces
+// of cmd, can start the echo: it is the start of cmd (8 characters or more),
+// or it is a tail, a line the terminal shows as a '$' and the rest of cmd.
+func echoStart(line string, pieces []string, cmd string) bool {
+	if len(pieces[0]) >= 8 && strings.HasPrefix(cmd, pieces[0]) {
+		return true
+	}
+	return strings.HasPrefix(strings.TrimSpace(cleanTerminal(line)), "$")
 }
 
 // echoPieces are the pieces of cmd a line of its echo holds, none when the
