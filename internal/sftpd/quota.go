@@ -1,6 +1,7 @@
 package sftpd
 
 import (
+	"errors"
 	"math"
 	"os"
 	"sync"
@@ -16,8 +17,8 @@ const remeasureAfter = 5 * time.Second
 
 // maxMeasureDepth bounds the walk of the home. A path is at most maxPath
 // bytes, so a tree made of paths has at most maxPath/2 levels; a tree that
-// was made deeper by moving subtrees under each other is not counted below
-// this depth.
+// was made deeper by moving subtrees under each other is not walked below
+// this depth, and the walk then says it was not complete.
 const maxMeasureDepth = maxPath
 
 // quota keeps the usage of the home: the sum of the sizes of its regular
@@ -27,6 +28,13 @@ const maxMeasureDepth = maxPath
 // what the session does itself (writes, deletes, truncations and renames).
 // The overshoot between two sessions that write at once is accepted.
 //
+// A walk that could not see all of the home (a directory it may not list or
+// search, a failed open, no descriptor left, the depth cap) is incomplete,
+// and then the home counts as full: the usage is taken as at least the
+// limit, so that nothing that makes the home bigger is accepted, until a later
+// walk is complete. Reading, deleting and writes that do not grow the home
+// go on.
+//
 // One lock covers the usage and, for a write, the check and the write that
 // follows it, so that two writes of the same session cannot both fit in the
 // room of one.
@@ -34,22 +42,39 @@ type quota struct {
 	limit int64
 	home  *home
 	now   func() time.Time
+	depth int // the depth the walk goes to
 
 	mu         sync.Mutex
 	used       int64
+	incomplete bool // the last walk did not see all of the home
 	measuredAt time.Time
 }
 
-func newQuota(h *home, limit int64, now func() time.Time) *quota {
-	q := &quota{limit: limit, home: h, now: now}
+// newQuota measures the home; depth is how far the walk goes (0 is
+// maxMeasureDepth).
+func newQuota(h *home, limit int64, now func() time.Time, depth int) *quota {
+	if depth <= 0 {
+		depth = maxMeasureDepth
+	}
+	q := &quota{limit: limit, home: h, now: now, depth: depth}
 	q.remeasure()
 	return q
 }
 
 // remeasure walks the home. The caller holds q.mu (or is the constructor).
 func (q *quota) remeasure() {
-	q.used = measure(q.home)
+	used, complete := measure(q.home, q.depth)
+	q.used, q.incomplete = used, !complete
 	q.measuredAt = q.now()
+}
+
+// usedLocked is the usage the checks go by: the limit at least when the
+// measure was incomplete. The caller holds q.mu.
+func (q *quota) usedLocked() int64 {
+	if q.incomplete {
+		return max(q.used, q.limit)
+	}
+	return q.used
 }
 
 // refresh measures the home again when the last measure is stale. It is
@@ -66,7 +91,7 @@ func (q *quota) refresh() {
 func (q *quota) usage() int64 {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	return q.used
+	return q.usedLocked()
 }
 
 // release takes the size of a file that went away (or was cut) off the
@@ -81,8 +106,8 @@ func (q *quota) release(n int64) {
 }
 
 // write does the write w with the check that it fits: a write that would take
-// the usage over the limit is refused whole, so nothing is written past the
-// limit. w writes at the offset (or at the end, for a file open with
+// the measured usage over the limit is refused whole (see doc.go for what that
+// does and does not guarantee). w writes at the offset (or at the end, for a file open with
 // O_APPEND) and returns the count.
 func (q *quota) write(f *os.File, n int, off int64, appending bool, w func() (int, error)) (int, error) {
 	q.mu.Lock()
@@ -105,7 +130,7 @@ func (q *quota) write(f *os.File, n int, off int64, appending bool, w func() (in
 	case off+int64(n) > before:
 		grow = off + int64(n) - before
 	}
-	if grow > 0 && grow > q.limit-q.used {
+	if grow > 0 && grow > q.limit-q.usedLocked() {
 		return 0, errQuota()
 	}
 	wn, werr := w()
@@ -117,42 +142,66 @@ func (q *quota) write(f *os.File, n int, off int64, appending bool, w func() (in
 	return wn, werr
 }
 
-// measure sums the sizes of the regular files below the home. It lists the
+// measure sums the sizes of the regular files below the home and says
+// whether it saw all of them: false when a directory could not be listed,
+// searched or opened (a mode the client set, a descriptor limit), or lies
+// deeper than depth, and then the sum is a lower bound only. It lists the
 // home through a descriptor of its own: a directory read moves the offset
 // of the open file, and the home's descriptor is shared.
-func measure(h *home) int64 {
+func measure(h *home, depth int) (int64, bool) {
 	fd, err := unix.Openat(h.fd, ".", dirFlags, 0)
 	if err != nil {
-		return 0
+		return 0, false
 	}
-	return measureDir(fd, 0, map[[2]uint64]bool{})
+	w := &walk{depth: depth, seen: map[[2]uint64]bool{}, complete: true}
+	return w.dir(fd, 0), w.complete
 }
 
-// measureDir sums the directory fd and below, and closes fd.
-func measureDir(fd, depth int, seen map[[2]uint64]bool) int64 {
+// walk is one measure: the inodes seen, and whether anything escaped it.
+type walk struct {
+	depth    int
+	seen     map[[2]uint64]bool
+	complete bool
+}
+
+// dir sums the directory fd and below, and closes fd. An entry that is gone
+// since the listing (ENOENT) is not a failure; any other error is.
+func (w *walk) dir(fd, depth int) int64 {
 	f := os.NewFile(uintptr(fd), "")
 	defer func() { _ = f.Close() }()
-	names, _ := f.Readdirnames(-1)
+	names, err := f.Readdirnames(-1)
+	if err != nil {
+		w.complete = false
+	}
 	var total int64
 	for _, n := range names {
 		var st unix.Stat_t
-		if unix.Fstatat(fd, n, &st, unix.AT_SYMLINK_NOFOLLOW) != nil {
+		if err := unix.Fstatat(fd, n, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+			if !errors.Is(err, unix.ENOENT) {
+				w.complete = false
+			}
 			continue
 		}
 		switch st.Mode & unix.S_IFMT {
 		case unix.S_IFREG:
 			key := [2]uint64{u64(st.Dev), u64(st.Ino)}
-			if !seen[key] {
-				seen[key] = true
+			if !w.seen[key] {
+				w.seen[key] = true
 				total += st.Size
 			}
 		case unix.S_IFDIR:
-			if depth >= maxMeasureDepth {
+			if depth >= w.depth {
+				w.complete = false
 				continue
 			}
-			if sub, err := unix.Openat(fd, n, dirFlags, 0); err == nil {
-				total += measureDir(sub, depth+1, seen)
+			sub, err := unix.Openat(fd, n, dirFlags, 0)
+			if err != nil {
+				if !errors.Is(err, unix.ENOENT) {
+					w.complete = false
+				}
+				continue
 			}
+			total += w.dir(sub, depth+1)
 		}
 	}
 	return total

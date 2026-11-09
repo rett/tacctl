@@ -381,6 +381,11 @@ func (s *server) setstat(r *sftp.Request) (err error) {
 		return errSymlink()
 	}
 	if fl.Permissions {
+		// A directory the owner cannot list or search is one the quota
+		// cannot measure and the client cannot list: not a mode to set.
+		if st.Mode&unix.S_IFMT == unix.S_IFDIR && a.Mode&0o500 != 0o500 {
+			return errUnsupported("clearing the owner's read or search permission of a directory")
+		}
 		if err := t.chmod(a.Mode & 0o777); err != nil {
 			return err
 		}

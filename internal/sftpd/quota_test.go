@@ -243,8 +243,8 @@ func TestQuotaMeasureAtStart(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := mustHome(t, e.home)
-	if got := measure(h); got != 60 {
-		t.Errorf("measure = %d, want 60 (30 + 20 + 10, the hard link once, no link followed)", got)
+	if got, ok := measure(h, maxMeasureDepth); got != 60 || !ok {
+		t.Errorf("measure = %d, %v, want 60, true (30 + 20 + 10, the hard link once, no link followed)", got, ok)
 	}
 	// And the same through a session: 60 used of 100 leaves 40.
 	e.start(Config{Home: e.home, Quota: 100})
@@ -409,5 +409,162 @@ func TestStatVFSWithoutQuotaIsTheFileSystem(t *testing.T) {
 	}
 	if v.Blocks == 0 || v.Frsize == 0 {
 		t.Errorf("statvfs = %+v", v)
+	}
+}
+
+// A walk that could not see the whole home must not make the usage smaller:
+// the quota then counts the home as full until a later walk is complete.
+
+// unmeasurable are the ways a directory can hide its content from the walk:
+// no read (cannot be listed), no search (the entries cannot be stat'ed), and
+// neither.
+var unmeasurable = []os.FileMode{0o100, 0o400, 0o000}
+
+func TestQuotaUnmeasurableDirectoryCountsAsFull(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads every directory")
+	}
+	for _, mode := range unmeasurable {
+		for _, nested := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%04o/nested=%v", mode, nested), func(t *testing.T) {
+				clk := newClock()
+				e := newEnvSeams(t, func(c *Config) { c.Quota = 100 }, seams{now: clk.now})
+				dir, file := "hide", "hide/F"
+				if nested {
+					dir, file = "top/hide", "top/hide/F"
+				}
+				e.write(file, bytesOf(100))
+				e.write("small", "x")
+				if err := os.Chmod(filepath.Join(e.home, dir), mode); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = os.Chmod(filepath.Join(e.home, dir), 0o755) })
+				clk.advance(6 * time.Second) // the open for writing measures again
+				wantQuotaRefusal(t, "growing upload while a directory cannot be measured", putFile(e.client, "g", "x"))
+				// What does not make the home bigger keeps working.
+				if got, err := e.get("small"); err != nil || got != "x" {
+					t.Errorf("download while incomplete: %q, %v", got, err)
+				}
+				e.put("empty", "")
+				// A write in place that stays within the file's size (an upload
+				// that truncates first looks like growth, and is refused).
+				h, err := e.client.OpenFile("small", os.O_WRONLY)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := h.Write([]byte("y")); err != nil {
+					t.Errorf("write in place while incomplete: %v", err)
+				}
+				_ = h.Close()
+				if e.read("small") != "y" {
+					t.Error("the write in place did not happen")
+				}
+				if err := e.client.Remove("empty"); err != nil {
+					t.Errorf("delete while incomplete: %v", err)
+				}
+				wantQuotaRefusal(t, "growing upload after a delete", putFile(e.client, "g", "x"))
+				// The directory readable again and a later walk: the real usage
+				// (100, the limit) decides, and then the file removed gives room.
+				if err := os.Chmod(filepath.Join(e.home, dir), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				clk.advance(6 * time.Second)
+				wantQuotaRefusal(t, "upload over the real usage", putFile(e.client, "g", "x"))
+				if err := os.Remove(filepath.Join(e.home, file)); err != nil {
+					t.Fatal(err)
+				}
+				clk.advance(6 * time.Second)
+				e.put("g", bytesOf(98)) // 98 + the 1 of small
+			})
+		}
+	}
+}
+
+func TestQuotaDepthCapCountsAsFull(t *testing.T) {
+	clk := newClock()
+	e := newEnvSeams(t, func(c *Config) { c.Quota = 100 }, seams{now: clk.now, measureDepth: 3})
+	e.write("a/b/c/d/F", bytesOf(10)) // four levels below the home
+	clk.advance(6 * time.Second)
+	// The 10 bytes are far from the 100 of the quota, but the walk did not
+	// see them: the home counts as full.
+	wantQuotaRefusal(t, "upload with files below the walk's depth", putFile(e.client, "g", "x"))
+	// Within the depth the walk is complete and counts what is there.
+	e2 := newEnvSeams(t, func(c *Config) { c.Quota = 100 }, seams{now: clk.now, measureDepth: 3})
+	e2.write("a/b/F", bytesOf(60))
+	clk.advance(6 * time.Second)
+	e2.put("g", bytesOf(40))
+	wantQuotaRefusal(t, "one byte over", putFile(e2.client, "h", "x"))
+}
+
+func TestMeasureReportsWhetherItWasComplete(t *testing.T) {
+	e := newEnv(t, nil)
+	e.write("a/b/F", bytesOf(7))
+	if err := e.stop(); err != nil {
+		t.Fatal(err)
+	}
+	h := mustHome(t, e.home)
+	if n, ok := measure(h, 8); n != 7 || !ok {
+		t.Errorf("measure = %d, %v, want 7, true", n, ok)
+	}
+	if _, ok := measure(h, 1); ok {
+		t.Error("a walk cut at depth 1 says it was complete")
+	}
+}
+
+func TestQuotaStatVFSOfAnIncompleteMeasureIsFull(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads every directory")
+	}
+	e := quotaEnv(t, 8192)
+	e.write("hide/F", "x")
+	if err := os.Chmod(filepath.Join(e.home, "hide"), 0o100); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(filepath.Join(e.home, "hide"), 0o755) })
+	if err := e.stop(); err != nil {
+		t.Fatal(err)
+	}
+	e.start(Config{Home: e.home, Quota: 8192})
+	sv, err := e.client.StatVFS("/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sv.Bfree != 0 {
+		t.Errorf("free blocks = %d, want 0 while the home cannot be measured", sv.Bfree)
+	}
+}
+
+// A client may not make its own tree unmeasurable and unlistable.
+func TestSetstatRefusesClearingTheOwnersReadOrSearchOfADirectory(t *testing.T) {
+	e := quotaEnv(t, 100)
+	if err := e.client.Mkdir("d"); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []os.FileMode{0o100, 0o400, 0o000, 0o277, 0o077} {
+		err := e.client.Chmod("d", mode)
+		if code(err) != fxOpUnsupported {
+			t.Errorf("chmod %04o of a directory: %v, want unsupported", mode, err)
+		}
+		if fi, _ := os.Stat(filepath.Join(e.home, "d")); fi.Mode().Perm() != 0o755 {
+			t.Errorf("mode after the refused chmod %04o = %v", mode, fi.Mode())
+		}
+	}
+	if got := refusals(e.rec.all()); len(got) != 5 || got[0] != "unsupported" {
+		t.Errorf("refusals = %v, want 5 unsupported", got)
+	}
+	// What keeps the owner's r and x is fine, and so is any mode of a file.
+	if err := e.client.Chmod("d", 0o500); err != nil {
+		t.Errorf("chmod 0500 of a directory: %v", err)
+	}
+	if err := e.client.Chmod("d", 0o700); err != nil {
+		t.Errorf("chmod 0700 of a directory: %v", err)
+	}
+	e.write("f", "x")
+	if err := e.client.Chmod("f", 0o000); err != nil {
+		t.Errorf("chmod 0000 of a file: %v", err)
+	}
+	// Times only, on a directory.
+	if err := e.client.Chtimes("d", time.Unix(1e9, 0), time.Unix(1e9, 0)); err != nil {
+		t.Errorf("chtimes of a directory: %v", err)
 	}
 }

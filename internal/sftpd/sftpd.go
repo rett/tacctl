@@ -55,6 +55,8 @@ func Serve(rw io.ReadWriteCloser, cfg Config) error {
 type seams struct {
 	now   func() time.Time
 	sleep func(time.Duration)
+
+	measureDepth int // the depth of the quota walk, 0 for the default
 }
 
 func serve(rw io.ReadWriteCloser, cfg Config, sm seams) error {
@@ -86,7 +88,7 @@ func serve(rw io.ReadWriteCloser, cfg Config, sm seams) error {
 func newServer(h *home, cfg Config, sm seams) *server {
 	s := &server{home: h, cfg: cfg}
 	if cfg.Quota > 0 {
-		s.quota = newQuota(h, cfg.Quota, sm.now)
+		s.quota = newQuota(h, cfg.Quota, sm.now, sm.measureDepth)
 	}
 	s.rate = newBucket(cfg.Rate, sm.now, sm.sleep)
 	return s
