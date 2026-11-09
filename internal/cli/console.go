@@ -1136,10 +1136,13 @@ func (inv *invocation) consolePolicyLine([]string) error {
 	if n := a.Conf().ServerName(); n != "" {
 		serverName = " name=" + n
 	}
+	// File transfer (0.2.28): what the settings give the caller, for the
+	// console's transfers; off unless the line says it is on.
+	transfer := console.FileTransferFields(pol.FileTransfer(inv.callerStoreUser(), t))
 	inv.echo("shell=" + shell + " idle=" + strconv.Itoa(pol.File.Idle) + " system_shell=" + yesNo(sys) +
 		" system_shell_path=" + path + " ssh_escape=" + yesNo(pol.SSHEscape()) + " agent=" + yesNo(pol.AgentForwarding()) +
 		" forward=" + yesNo(pol.Forwarding(t)) + " tier=" + string(t) + gateField + " list_max=" + strconv.Itoa(pol.ListMax()) +
-		" space_completion=" + yesNo(pol.SpaceCompletion()) + " color=" + pol.Color() + cache + change + serverName)
+		" space_completion=" + yesNo(pol.SpaceCompletion()) + " color=" + pol.Color() + cache + change + serverName + transfer)
 	return nil
 }
 

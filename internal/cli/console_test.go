@@ -445,7 +445,7 @@ func TestConsolePolicyLinePerTier(t *testing.T) {
 	}
 	const tail = " ssh_escape=no agent=no"
 	for _, c := range []struct{ user, group, want string }{
-		{"alice", "superuser", "shell=console idle=30 system_shell=yes system_shell_path=/bin/bash" + tail + " forward=yes tier=superuser list_max=40 space_completion=yes color=auto"},
+		{"alice", "superuser", "shell=console idle=30 system_shell=yes system_shell_path=/bin/bash" + tail + " forward=yes tier=superuser list_max=40 space_completion=yes color=auto file_transfer=yes ft_quota=0 ft_rate=0"},
 		{"bob", "operator", "shell=console idle=30 system_shell=no system_shell_path=/bin/bash" + tail + " forward=no tier=operator list_max=40 space_completion=yes color=auto"},
 		{"carol", "readonly", "shell=console idle=30 system_shell=no system_shell_path=/bin/bash" + tail + " forward=no tier=readonly list_max=40 space_completion=yes color=auto"},
 	} {
@@ -495,14 +495,14 @@ func TestConsolePolicyLinePerTier(t *testing.T) {
 		t.Errorf("bob after carol's setting: %q", got)
 	}
 	sb.con("space-completion", "off")
-	if got := policy("alice", "superuser"); !strings.HasSuffix(got, " list_max=40 space_completion=no color=auto") {
+	if got := policy("alice", "superuser"); !strings.HasSuffix(got, " list_max=40 space_completion=no color=auto file_transfer=yes ft_quota=0 ft_rate=0") {
 		t.Errorf("after space-completion off: %q", got)
 	}
 	sb.con("space-completion", "on")
 	// The colour and the list threshold of 0.2.20 are in the line.
 	sb.con("color", "on")
 	sb.con("list-max", "-3")
-	if got := policy("alice", "superuser"); !strings.HasSuffix(got, " list_max=-1 space_completion=yes color=on") {
+	if got := policy("alice", "superuser"); !strings.HasSuffix(got, " list_max=-1 space_completion=yes color=on file_transfer=yes ft_quota=0 ft_rate=0") {
 		t.Errorf("after color on and list-max -3: %q", got)
 	}
 	sb.con("color", "auto")

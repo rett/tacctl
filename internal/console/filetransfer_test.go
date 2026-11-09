@@ -493,3 +493,53 @@ settings:
 		t.Errorf("the text keeps the name:\n%s", text)
 	}
 }
+
+// The console's own process reads the file transfer fields of the answer: a
+// transfer is off unless the answer says it is on, a damaged number is left
+// out (no limit, off), and the line the root side writes is read back to the
+// same settings.
+func TestParseRemoteFileTransfer(t *testing.T) {
+	r, ok := ParseRemote("shell=console tier=operator file_transfer=yes ft_quota=268435456 ft_rate=1048576")
+	if !ok || r.FileTransfer != (FileTransfer{Enabled: true, Quota: 256 << 20, Rate: 1 << 20}) || r.FileTransferSettings() != r.FileTransfer {
+		t.Errorf("on: %+v %v", r.FileTransfer, ok)
+	}
+	r, _ = ParseRemote("shell=console tier=superuser file_transfer=yes ft_quota=0 ft_rate=0")
+	if got := r.FileTransferSettings(); got != (FileTransfer{Enabled: true}) {
+		t.Errorf("unlimited: %+v", got)
+	}
+	for _, line := range []string{
+		"shell=console tier=operator file_transfer=no",
+		"shell=console tier=operator",
+		"shell=console tier=operator file_transfer=maybe ft_quota=5",
+		"shell=console tier=operator ft_quota=5 ft_rate=5", // numbers without the switch
+		"shell=console tier=operator file_transfer=no ft_quota=5 ft_rate=5",
+	} {
+		r, ok := ParseRemote(line)
+		if !ok || r.FileTransferSettings().Enabled || (r.FileTransferSettings() != FileTransfer{}) {
+			t.Errorf("%q: %+v %v", line, r.FileTransferSettings(), ok)
+		}
+	}
+	// a damaged number is left out
+	r, _ = ParseRemote("shell=console tier=operator file_transfer=yes ft_quota=-1 ft_rate=x")
+	if got := r.FileTransferSettings(); got != (FileTransfer{Enabled: true}) {
+		t.Errorf("damaged: %+v", got)
+	}
+	r, _ = ParseRemote("shell=console tier=operator file_transfer=yes ft_quota=2199023255553 ft_rate=99999999999999999999")
+	if got := r.FileTransferSettings(); got != (FileTransfer{Enabled: true}) {
+		t.Errorf("out of range: %+v", got)
+	}
+	// no answer: no file transfer
+	if r, ok := ParseRemote(""); ok || r.FileTransferSettings() != (FileTransfer{}) || DefaultRemote().FileTransfer != (FileTransfer{}) {
+		t.Errorf("no answer: %+v %v", r.FileTransfer, ok)
+	}
+	// what the root side writes is what the console reads
+	for _, ft := range []FileTransfer{{}, {Enabled: true}, {Enabled: true, Quota: 5 << 30, Rate: 64 << 10}, {Enabled: true, Quota: MaxFileTransferSize, Rate: MaxFileTransferSize}} {
+		r, ok := ParseRemote("shell=console tier=readonly" + FileTransferFields(ft))
+		if !ok || r.FileTransferSettings() != ft {
+			t.Errorf("%+v -> %q -> %+v", ft, FileTransferFields(ft), r.FileTransferSettings())
+		}
+	}
+	if FileTransferFields(FileTransfer{Quota: 5, Rate: 5}) != "" {
+		t.Error("a disabled transfer writes its limits")
+	}
+}

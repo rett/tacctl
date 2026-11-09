@@ -53,6 +53,12 @@ type Remote struct {
 	// a superuser, who is never locked out by a read error. An answer that
 	// names no such field is a release before 0.2.20, which flags nobody.
 	PasswordChangeUnknown bool
+	// FileTransfer is what the caller's file transfer settings give them
+	// (Policy.FileTransfer): the fields file_transfer (yes|no), ft_quota
+	// and ft_rate (bytes, bytes a second; 0: unlimited, off) of the answer.
+	// The zero value, no file transfer, is the default of an answer that
+	// does not name it: it is off unless the root side says it is on.
+	FileTransfer FileTransfer
 	// Name is the name of this server the console shows in its prompt and
 	// notices (0.2.22, server.name); "" when the answer has none: the host
 	// name is shown.
@@ -66,7 +72,7 @@ type Remote struct {
 }
 
 // DefaultRemote is the policy without an answer: idle 30 minutes, no
-// system shell, no ssh escape, the default list threshold.
+// system shell, no file transfer, no ssh escape, the default list threshold.
 func DefaultRemote() Remote {
 	return Remote{
 		Idle:            DefaultIdle * time.Minute,
@@ -155,6 +161,22 @@ func ParseRemote(out string) (r Remote, ok bool) {
 			if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= MaxPasswordCacheMax {
 				r.PCMax, ok = time.Duration(n)*time.Hour, true
 			}
+		case "file_transfer":
+			if b, good := yesNoValue(v); good {
+				r.FileTransfer.Enabled, ok = b, true
+			}
+		case "ft_quota", "ft_rate":
+			// bytes; a value out of range is left out, which is no limit for
+			// the quota and off for the rate, and the settings never write
+			// one, so it is a damaged answer
+			if n, err := strconv.ParseInt(v, 10, 64); err == nil && n >= 0 && n <= MaxFileTransferSize {
+				if k == "ft_quota" {
+					r.FileTransfer.Quota = n
+				} else {
+					r.FileTransfer.Rate = n
+				}
+				ok = true
+			}
 		case "name":
 			// not a policy field: a line with a name and nothing else is no answer
 			if names.ServerNameProblem(v) == "" {
@@ -224,4 +246,29 @@ func yesNoValue(v string) (bool, bool) {
 		return false, true
 	}
 	return false, false
+}
+
+// FileTransferSettings is what the caller's file transfer settings give them,
+// as the root side's answer said: the one call the console's file transfer
+// makes on the policy it fetched with 'tacctl _console-policy' (the cli's
+// consoleRemotePolicy, which gives the defaults when there is no answer). No
+// answer, an answer that does not name file transfer and an answer of an
+// unknown caller are no file transfer: the zero value.
+func (r Remote) FileTransferSettings() FileTransfer {
+	if !r.Known || !r.FileTransfer.Enabled {
+		return FileTransfer{}
+	}
+	return r.FileTransfer
+}
+
+// FileTransferFields are the fields of the _console-policy line that carry
+// the file transfer settings: " file_transfer=yes ft_quota=<bytes>
+// ft_rate=<bytes>" when it is on, and nothing when it is off (a line without
+// the field reads as off, and the quota and the rate then mean nothing). The
+// console's process reads them back with ParseRemote.
+func FileTransferFields(ft FileTransfer) string {
+	if !ft.Enabled {
+		return ""
+	}
+	return " file_transfer=yes ft_quota=" + strconv.FormatInt(ft.Quota, 10) + " ft_rate=" + strconv.FormatInt(ft.Rate, 10)
 }
