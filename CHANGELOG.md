@@ -168,6 +168,9 @@ current behaviour; this file is where history lives.
    turned into a PDF by `weasyprint` (`sudo apt-get install -y weasyprint
    fonts-dejavu-core`). The tool is found in `/usr/bin`, `/usr/local/bin` or
    `/opt/weasyprint/bin` and nowhere else (not in the caller's `PATH`), and
+   only if it, what a link of it leads to and every directory above are owned
+   by root and not writable by the group or by others (otherwise `weasyprint at
+   <path> is not owned by root or is writable by others: not used`), and
    when tacctl runs as root through `sudo` it runs the tool as the person who
    ran `sudo` (as root only in a root session that has no `sudo` caller, with
    the home of root), with an environment of `PATH`, `LANG`, `HOME`,

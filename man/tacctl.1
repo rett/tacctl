@@ -14297,6 +14297,8 @@ and
 .BR /opt/weasyprint/bin ,
 never in the caller's
 .BR PATH ,
+and only if it, what a link of it leads to and every directory above are owned by root and not writable by group or others (otherwise it is not used, and the error says
+.BR "weasyprint at <path> is not owned by root or is writable by others: not used" ),
 and run as the user who ran sudo (as root only in a root session that has no sudo caller, with root's own home), with a minimal environment, at
 most 120 seconds and at most 64 MiB of output (one that runs over is stopped with the processes it started). Without it, or at a terminal
 with

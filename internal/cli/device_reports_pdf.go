@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -73,17 +74,31 @@ func (h *hooks) pdfLimits() (time.Duration, int64) {
 }
 
 // pdfTool finds the tool: the path a test build's knob names, else the first
-// regular, executable file called weasyprint in the fixed directories.
-func (inv *invocation) pdfTool() (string, bool) {
+// regular, executable file called weasyprint in the fixed directories that
+// root owns, as every directory above it, none of them writable by group or
+// others (as the secure_path of sudo is held to). A tool that is there and
+// does not meet that is not used; rejected says so, for the error of a search
+// that finds nothing else.
+func (inv *invocation) pdfTool() (path string, ok bool, rejected string) {
 	if p := inv.app.Knobs.PDFTool(); p != "" {
-		return p, isExecutable(p)
+		// the knob's stub is the test's own: no rule about its owner
+		return p, isExecutable(p), ""
 	}
 	for _, d := range inv.hooks.pdfDirs() {
-		if p := filepath.Join(d, pdfToolName); isExecutable(p) {
-			return p, true
+		p := filepath.Join(d, pdfToolName)
+		real, err := filepath.EvalSymlinks(p)
+		if err != nil || !isExecutable(real) {
+			continue
 		}
+		if !inv.hooks.pdfTrusted(p) || !inv.hooks.pdfTrusted(real) {
+			if rejected == "" {
+				rejected = pdfToolName + " at " + p + " is not owned by root or is writable by others: not used"
+			}
+			continue
+		}
+		return p, true, ""
 	}
-	return "", false
+	return "", false, rejected
 }
 
 // isExecutable says whether path is, after links, a regular file somebody may
@@ -93,6 +108,37 @@ func isExecutable(path string) bool {
 	return err == nil && st.Mode().IsRegular() && st.Mode().Perm()&0o111 != 0
 }
 
+// pdfStatOf is the owner and the permission bits of a file or directory, links
+// followed (nil: the system's).
+func (h *hooks) pdfStatOf(path string) (uint32, fs.FileMode, error) {
+	if h != nil && h.pdfStat != nil {
+		return h.pdfStat(path)
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		return 0, 0, err
+	}
+	sys, ok := st.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, 0, errors.New("no owner to be read")
+	}
+	return sys.Uid, st.Mode().Perm(), nil
+}
+
+// pdfTrusted says whether path and every directory above it up to / is owned
+// by root and cannot be written by its group or by others.
+func (h *hooks) pdfTrusted(path string) bool {
+	for p := path; ; p = filepath.Dir(p) {
+		uid, perm, err := h.pdfStatOf(p)
+		if err != nil || uid != 0 || perm&0o022 != 0 {
+			return false
+		}
+		if p == "/" || filepath.Dir(p) == p {
+			return true
+		}
+	}
+}
+
 // pdfRequire is the check that comes before any report data is read or
 // anything is written: the tool is there, and a PDF for standard output has
 // somewhere to go that is no terminal.
@@ -100,8 +146,11 @@ func (inv *invocation) pdfRequire(stdout bool) (string, error) {
 	if stdout && inv.hooks.terminalWriter(inv.app.Out.Stdout) {
 		return "", inv.usageErr("A PDF is binary: redirect --stdout to a file, or leave it out to store the report.")
 	}
-	tool, ok := inv.pdfTool()
+	tool, ok, rejected := inv.pdfTool()
 	if !ok {
+		if rejected != "" {
+			return "", inv.usageErr(rejected)
+		}
 		return "", inv.usageErr(pdfMissingText)
 	}
 	return tool, nil
