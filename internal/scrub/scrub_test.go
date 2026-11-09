@@ -760,3 +760,28 @@ func TestTabRowsWithoutADescriptionOrWithAWideOne(t *testing.T) {
 		},
 	})
 }
+
+// A public label (www, tools, ftp, cdn, software, support) of a host that is
+// replaced is not a word to hunt for everywhere: the host is replaced as a
+// whole, its domain is learned, and the label is not.
+func TestAPublicLabelIsNotLearnedByName(t *testing.T) {
+	s := New()
+	in := "Hostname: www.acme.corp\nTechnical Support: see http://www.cisco.com/techsupport and www.acme.corp\nwww docs, tools and the support desk\n"
+	out := s.ApplyAll([]string{in})[0]
+	want := "Hostname: sw1.example.net\nTechnical Support: see http://www.cisco.com/techsupport and sw1.example.net\nwww docs, tools and the support desk\n"
+	if out != want {
+		t.Errorf("got\n%s\nwant\n%s", out, want)
+	}
+	if l := s.Leaks(out); len(l) != 0 {
+		t.Errorf("leaks %v", l)
+	}
+	if ex, ok := s.learned["www"]; ok {
+		t.Errorf("www is learned by name: %s", ex)
+	}
+	// a host that is called www is a thing to hunt for
+	s2 := New()
+	out = s2.ApplyAll([]string{"Hostname: www.acme.corp\n", "hostname www\nwww is up\n"})[1]
+	if strings.Contains(out, "www") {
+		t.Errorf("the host www is still in the output:\n%s", out)
+	}
+}

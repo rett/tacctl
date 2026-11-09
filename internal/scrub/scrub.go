@@ -159,6 +159,12 @@ func (s *Scrubber) Learn(k Kind, real string) string {
 	}
 	key := string(k) + "\x00" + strings.ToLower(real)
 	if ex, ok := s.byKey[key]; ok {
+		if k == Host && publicLabels[strings.ToLower(real)] {
+			// the host is called so: it is a thing to hunt for, which the
+			// label of a longer name (www.acme.corp) is not
+			s.learned[strings.ToLower(real)] = ex
+			s.dirty = true
+		}
 		return ex
 	}
 	var ex string
@@ -170,7 +176,12 @@ func (s *Scrubber) Learn(k Kind, real string) string {
 		// a name with dots is a host and a domain: sw1.corp.net
 		if label, dom, ok := strings.Cut(real, "."); ok && label != "" && dom != "" {
 			exDom := s.Learn(Domain, dom)
-			exLabel := s.Learn(Host, label)
+			var exLabel string
+			if publicLabels[strings.ToLower(label)] {
+				exLabel = s.hostLabel(label)
+			} else {
+				exLabel = s.Learn(Host, label)
+			}
 			ex = exLabel + "." + exDom
 			s.record(k, real, ex, key, true)
 			return ex
@@ -183,6 +194,19 @@ func (s *Scrubber) Learn(k Kind, real string) string {
 	}
 	byName := k != Addr4 && k != Addr6 && k != MAC && k != Serial && k != Mail
 	s.record(k, real, ex, key, byName)
+	return ex
+}
+
+// hostLabel is the example of a public label (www) in front of a host that is
+// replaced: made once and kept, without making the word one to replace
+// wherever it stands, as Learn does for the label of any other host.
+func (s *Scrubber) hostLabel(label string) string {
+	key := string(Host) + "\x00" + strings.ToLower(label)
+	if ex, ok := s.byKey[key]; ok {
+		return ex
+	}
+	ex := s.example(Host, label)
+	s.record(Host, label, ex, key, false)
 	return ex
 }
 
