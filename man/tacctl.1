@@ -14458,7 +14458,9 @@ List the reports of every user tacctl knows, one audit line for the whole listin
 Print the facts of a report: the file, the type, when it was made, by whom, the
 command line, the filters, the date of the oldest datum, the format, the rows,
 the size and the command that fetches it
-.RB ( "scp user@server:reports/devices/<file> ." ).
+.RB ( "scp user@server:reports/devices/<file> ." ;
+the console serves it only if file transfer is enabled for the user, see
+.BR "console file\-transfer" ).
 .B \-\-content
 adds the first 200 lines of the report, read from the start of the file and no
 further than 256 KiB (a file with more says that, and counts the lines only when it
@@ -15622,7 +15624,8 @@ The settings, and for each user of the scope of the host enrolled with
 .B \-\-local
 the tier, the effective shell
 .RB ( console )
-and why. Then the state of the server's pieces: the
+and why, the system shell and the file transfer of the user (state, quota and
+rate, with the reason). Then the state of the server's pieces: the
 .I /usr/local/bin/tacctl\-console
 symlink, the
 .I /etc/shells
@@ -15633,9 +15636,15 @@ reports for a console user
 .RB ( allowtcpforwarding ,
 .BR allowagentforwarding ,
 .BR forcecommand ,
-.BR pubkeyauthentication ).
+.BR pubkeyauthentication ),
+and whether sshd defines an sftp subsystem
+.RB ( "sshd sftp subsystem: " \fIprogram\fR
+or
+.BR none ).
 A red warning appears when the drop-in is missing, sshd does not force the
-console, still allows forwarding, or allows key logins. A server not enrolled
+console, still allows forwarding, or allows key logins, and another when file
+transfer is on for a tier other than the superuser tier, or for a user, and
+sshd defines no sftp subsystem. A server not enrolled
 with
 .B \-\-local
 says so and lists no users.
@@ -16061,14 +16070,28 @@ It must be an absolute path to an executable file listed in
 .TP
 .BI "console file\-transfer " "[ " tier " { enable | disable } ]"
 Show or set who may transfer files to and from their home through the console.
-It is off for every tier but the superuser tier by default. With no argument it
-lists each tier
+The console serves SFTP only
+.RB ( sftp
+and the
+.B scp
+of OpenSSH 9 or later; see
+.BR "Console sessions" ),
+for the accounts that have it. It is off for every tier but the superuser tier
+by default. With no argument it lists each tier
 .RB ( readonly ", " operator ", " engineer ", " superuser )
 as
 .B enabled
 or
 .BR disabled ,
-then the users that have a switch of their own, with their tier. The superuser
+then the users that have a switch of their own, with their tier, and whether
+sshd defines an sftp subsystem
+.RB ( "sshd sftp subsystem:" ):
+sshd starts the subsystem only if its configuration has
+.BR "Subsystem sftp ..." ,
+which a
+.B Match
+block cannot define, so a red warning follows when file transfer is on for a
+tier other than the superuser tier, or for a user, and there is none. The superuser
 tier is
 .B "enabled (always)"
 and cannot be disabled. Unlike the system shell, the engineer tier can be
@@ -16076,9 +16099,7 @@ given it: a transfer reaches the user's home only, where a shell or a
 forwarded port would reach the server. A tier name alone prints that tier's
 state. Setting a tier writes
 .BR settings.file_transfer.tiers .
-The settings only decide: the console's file transfer, which a later change of
-this release turns on, reads them, and until it does they change nothing a user
-can do. Every form of this command, the reads included, is the
+Every form of this command, the reads included, is the
 superuser\(aqs and is refused for the lower tiers (logged as a tier denial);
 each user\(aqs state, quota and rate are in
 .BR "console show" ,
@@ -16195,7 +16216,9 @@ for the members of
 .B "ForceCommand /usr/local/bin/tacctl\-console"
 (every login, remote command and subsystem, sftp included, reaches the
 console, which reads the client's command from
-.BR SSH_ORIGINAL_COMMAND ),
+.BR SSH_ORIGINAL_COMMAND ;
+it serves one tacctl line, or the sftp subsystem for an account that has file
+transfer),
 .B "DisableForwarding yes"
 (left out, with
 .BR "AllowAgentForwarding yes" ,
@@ -16369,15 +16392,23 @@ not while a line runs).
 .BI "\-c " line
 (the remote command sshd passes:
 .BR "ssh " "\fIserver\fR " "'user list'" )
-runs one tacctl line, with the connection as its standard input. A string
+runs one tacctl line, with the connection as its standard input, or serves
+the sftp subsystem (the command is the program of sshd's
+.B Subsystem sftp
+line, such as
+.IR /usr/lib/openssh/sftp-server
+or
+.IR internal\-sftp ,
+which ForceCommand hands over in
+.BR SSH_ORIGINAL_COMMAND ),
+described below. A string
 that is not one line beginning with a tacctl command or
 .B help
 \(em
-.BR scp ,
-.BR sftp ,
+.BR "scp \-O" ,
 .BR rsync ,
 any program, the shell's own words, an empty string \(em is refused with
-.I "the tacctl\~console does not run programs; file transfer is not available"
+.I "the tacctl\~console does not run programs or shell commands; file transfer is SFTP only (sftp, scp of OpenSSH 9 or later)"
 and exit status 126, and nothing runs. Any other argument is refused the same
 way
 .RI ( "the tacctl\~console takes no options" ).
@@ -16391,6 +16422,34 @@ A word that starts with an underscore at the prompt or in a batch
 .BR _console\-policy ,
 the entry points of the scripts, the key and the console itself) is not a
 command there: it is answered as any word that is no command, and nothing runs.
+.PP
+The sftp subsystem is served by the console itself, on its standard input and
+output, as the logged-in user (no change of privilege), rooted in the home
+directory the account database names (never
+.BR $HOME ):
+.B /
+is the home, a relative path starts there and
+.B ..
+does not leave it,
+.B .ssh
+is not listed and every request for it is refused, no symbolic link is followed
+or made, and hard links are not supported. The quota
+.RB ( "console file\-transfer quota" )
+is the bytes the whole home may hold, reports and support bundles included; a
+write over it is refused. The rate
+.RB ( "console file\-transfer rate" )
+is the bytes a second the session may move, reads and writes together. The
+subsystem is refused with status 126 and
+.I "file transfer is not enabled for this account; an administrator can switch it on (tacctl console file\-transfer)"
+when the account does not have file transfer (and with a text of its own when a
+password change is required or the policy cannot be read). The idle timeout
+does not apply: the session lasts as long as the connection and ends with
+status 0 when the client closes it; a protocol error ends it with status 1 and
+one line on standard error. Nothing but protocol is written to standard output.
+sshd starts the subsystem only if its configuration defines
+.BR "Subsystem sftp ..." ;
+see
+.BR "console file\-transfer" .
 .PP
 A user who must change the password
 .RB ( "user require\-password\-change" ;
@@ -16467,8 +16526,8 @@ it is refused with status 126.
 .PP
 Syslog (tag
 .BR tacctl\-console ):
-.BI "console start session=" id " user=" user " from=" address " tty=" tty " mode=" interactive|command|batch\fR,
-.BI "console end session=" id " user=" user " reason=" exit|eof|idle|hangup|signal|command|failed|locked " lines=" n " status=" n\fR,
+.BI "console start session=" id " user=" user " from=" address " tty=" tty " mode=" interactive|command|batch|sftp\fR,
+.BI "console end session=" id " user=" user " reason=" exit|eof|idle|hangup|signal|command|failed|locked|sftp " lines=" n " status=" n\fR,
 .BI "console DENY session=" id " user=" user " reason=command first=" verb|\- " [len=" n ]
 (auth.warning; the word is the first word of the refused string when it is a
 verb of tacctl or one of the console's own words, else
@@ -16477,6 +16536,19 @@ and
 .B len=
 is the length of the string, so a password typed at the prompt is never in the
 log),
+.BI "console DENY session=" id " user=" user " reason=file\-transfer|password\-change|policy|home subsystem=sftp"
+(the sftp subsystem refused),
+.BI "console sftp start session=" id " user=" user " tier=" tier " from=" address " home=" \(dqpath\(dq " quota=" size|unlimited " rate=" size|off\fR,
+.BI "console sftp " "upload|download|delete|rename|mkdir|setstat" " session=" id " user=" user " path=" \(dqpath\(dq " [to=" \(dqpath\(dq "] [bytes=" n "] [error=" \(dqtext\(dq ]
+(one line for each request),
+.BI "console sftp DENY session=" id " user=" user " path=" \(dqpath\(dq " reason=" .ssh|outside\-the\-home|symlink|quota|unsupported|bad\-path
+(auth.warning; a request the server refused) and
+.BI "console sftp end session=" id " user=" user " up=" n " down=" n " ops=" n " refused=" n\fR.
+A path is a file name, so unlike a refused string it is logged, but as a quoted
+string in which a control character, a quote, a backslash and a byte that is not
+UTF-8 are escapes, cut at 200 bytes (a cut name ends with
+.B ...
+after the closing quote).
 .BI "console system\-shell start" \fR,
 .B end
 .RB ( status= ", " duration= )

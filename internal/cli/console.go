@@ -123,7 +123,8 @@ shells and sshd's drop-in follow it when this server's accounts are synced
 ('tacctl host sync <name of this server>'); idle-timeout, ssh-escape,
 space-completion, color, list-max, system-shell and file-transfer are read by each
 console session when it starts. sshd's drop-in makes the console the only program a console user's login
-runs (no scp, sftp or remote programs), closes every forwarding but X11 and TCP
+runs (no remote programs, and SFTP only for the accounts that have file
+transfer), closes every forwarding but X11 and TCP
 ports for the tiers of 'forwarding tiers' (superusers by default: 'ssh -X', -L,
 -R, -D and -J through this server, and 'ssh -X|-L|-R|-D <device>' in the
 console), and turns key logins off.

@@ -44,8 +44,9 @@ The keys: `settings.idle_timeout` (`console idle-timeout`), `settings.agent_forw
 ```
 console show
 
-    Settings, each user of this server's scope with its effective shell and why, and the server's
-    pieces (operator tier and up)
+    Settings, each user of this server's scope with its effective shell, system shell and file
+    transfer (state, quota and rate) and why, and the server's pieces, sshd's sftp subsystem
+    included (operator tier and up)
 
 console idle-timeout [<min>]
 
@@ -209,15 +210,29 @@ console check
     both lists (operator tier and up)
 ```
 
-`console show` lists the users of the scope of the host enrolled with `--local` with their effective shell (the console) and why, then the server's pieces: the `/usr/local/bin/tacctl-console` symlink, the `/etc/shells` line, sshd's drop-in and what `sshd -T -C user=<user>` reports for a console user (`allowtcpforwarding`, `allowagentforwarding`, `forcecommand`, `pubkeyauthentication`). It warns in red when the drop-in is missing, sshd does not force the console, still allows forwarding, or allows key logins, because a console user could then forward ports past the device registry, run programs or sftp, or log in without TACACS+. A server that is not enrolled with `--local` says so.
+`console show` lists the users of the scope of the host enrolled with `--local` with their effective shell (the console) and why, then the server's pieces: the `/usr/local/bin/tacctl-console` symlink, the `/etc/shells` line, sshd's drop-in and what `sshd -T -C user=<user>` reports for a console user (`allowtcpforwarding`, `allowagentforwarding`, `forcecommand`, `pubkeyauthentication`). It warns in red when the drop-in is missing, sshd does not force the console, still allows forwarding, or allows key logins, because a console user could then forward ports past the device registry, run programs or sftp, or log in without TACACS+. The table has each user's file transfer (state, quota and rate, with the reason) next to the system shell's, and the server section says whether sshd defines an sftp subsystem (`sshd sftp subsystem: /usr/lib/openssh/sftp-server`, or `none`), with a red warning when file transfer is on for someone and sshd defines none (see File transfer). A server that is not enrolled with `--local` says so.
 
 ## File transfer — `console file-transfer`
 
-File transfer through the console is off for every tier but the superuser tier, which always has it, until a superuser opens it for a tier (`tacctl console file-transfer operator enable`) or for one user (`tacctl console file-transfer user alice enable`). It is settled like the system shell: a user's own setting wins over the tier's, in both directions; an enable lasts only while the user stays in the tier they had when it was set; and `console show` lists each tier's state and each user's access with the reason. Unlike the system shell and forwarding, the engineer tier is not closed to it: a transfer reaches the user's home only, where a shell or a forwarded port would reach the server's secrets. A caller with no tier is never given it. Every form of `console file-transfer` is the superuser's, the reads included (`console file-transfer`, `... <tier>`, `... user <name>`, `... quota`, `... rate`): the verb has no row for the lower tiers. What each user has, the state, the quota and the rate, is in `console show`, which the operator tier and up can run; the read-only tier cannot.
+The console serves one kind of file transfer, SFTP, to the accounts that have it. It is off for every tier but the superuser tier, which always has it, until a superuser opens it for a tier (`tacctl console file-transfer operator enable`) or for one user (`tacctl console file-transfer user alice enable`). It is settled like the system shell: a user's own setting wins over the tier's, in both directions; an enable lasts only while the user stays in the tier they had when it was set; and `console show` lists each tier's state and each user's access with the reason (and the quota and rate). Unlike the system shell and forwarding, the engineer tier is not closed to it: a transfer reaches the user's home only, where a shell or a forwarded port would reach the server's secrets. A caller with no tier is never given it.
+
+Every form of `console file-transfer` is the superuser's, the reads included (`console file-transfer`, `... <tier>`, `... user <name>`, `... quota`, `... rate`): the verb has no row for the lower tiers. What each user has, the state, the quota and the rate, is in `console show`, which the operator tier and up can run; the read-only tier cannot.
+
+**What a user can do.** `sftp alice@tacacs.example.net` and the `scp` of OpenSSH 9 or later (which speaks SFTP unless it is given `-O`) work for an account that has file transfer. `scp -O` (the old protocol), `rsync`, any program and the shell's words are refused, as before, with `the tacctl console does not run programs or shell commands; file transfer is SFTP only (sftp, scp of OpenSSH 9 or later)` (exit 126). For an account that does not have file transfer the subsystem is refused with `file transfer is not enabled for this account; an administrator can switch it on (tacctl console file-transfer)` (exit 126), and so is the subsystem of a user held to a required password change. The console serves the protocol as the logged-in user, with no change of privilege, so the file system's permissions apply as they do in the user's shell.
+
+**The root is the home.** The user's home directory, as the account database names it and never `$HOME`, is `/` for the client: a relative path starts there, and `..` does not climb out of it. `.ssh` is invisible (a listing does not show it) and every request for it, by any spelling, is refused; so is the request that would change the home directory itself. A symbolic link is never followed and none can be made, and hard links are not supported. The reports (`device reports`) and the support bundles of the user are in the home, so a user can fetch them with `scp alice@tacacs.example.net:reports/devices/inventory-20261106.csv .`.
+
+**The quota and the rate.** The quota is the bytes the whole home may hold, and it counts everything in it: the reports and support bundles tacctl wrote there, `.ssh` and the files the user uploads. A write that would go over it is refused (`disk quota exceeded`) and audited. The rate is the bytes a second one session may move, reads and writes together, with a burst of one second; a transfer at its rate waits, it is not refused. Both are read when the session starts.
+
+**The audit.** A transfer is in the console's own log, under the tag `tacctl-console`: the session's start (`mode=sftp`), `console sftp start` (the tier, the home, the quota and the rate in effect), one line for each upload, download, delete, rename, mkdir and setstat (`console sftp upload ... path="/reports/a.csv" bytes=431`), `console sftp DENY` for each refused request (`.ssh`, outside the home, a symbolic link, the quota, an unsupported request, a bad path), `console sftp end` (the bytes up and down, the requests, the refusals) and the session's end. A refused subsystem is `console DENY ... reason=file-transfer subsystem=sftp`. The paths are file names and are logged, but escaped like a Go string in double quotes (a newline or an escape sequence in a name is `\n` or `\x1b`, never itself) and cut at 200 bytes (a name that was cut ends with `...` after the closing quote). See [Audit logging](../security/audit.md).
+
+**Ending.** The console's idle timeout does not apply to a transfer: the session lasts as long as the connection, as an sshd subsystem does, and ends with status 0 when the client closes it. A protocol error ends it with status 1 and one line on standard error (`tacctl-console: sftp: ...`). Nothing but protocol is written to standard output.
+
+**sshd must start the subsystem.** sshd starts the sftp subsystem only if its configuration defines `Subsystem sftp ...` (the stock `sshd_config` of Debian and Ubuntu has `Subsystem sftp /usr/lib/openssh/sftp-server`), and a `Match` block cannot define one: the line is global, and tacctl adds nothing global (the console's drop-in forces the console for every login and subsystem, which then hands the subsystem's command to it). `console file-transfer` with no argument and `console show` print `sshd sftp subsystem: <program>` or `none`, read from `sshd -T`, and warn in red when file transfer is on for a tier other than the superuser tier, or for a user, and sshd defines none: ``sshd defines no sftp subsystem: file transfer cannot start; add `Subsystem sftp ...` to sshd_config``.
 
 The quota is the bytes the whole home may hold. Nothing set means 256M for the readonly, operator and engineer tiers and unlimited for the superuser tier; a tier is set with `console file-transfer quota <tier> <size>|unlimited|default` and one user with `quota user <name> <size>|unlimited|clear`. The rate is the bytes a second a transfer may go at, off (no limit) by default: `rate <tier> <size>|off` and `rate user <name> <size>|off|clear`. A size is a number of bytes or a number with `K`, `M`, `G` or `T` (powers of 1024), such as `512K`, `256M` or `2G`, and is printed back in the largest unit that holds it exactly. Zero, a negative number, a fraction, a number that overflows and more than `1T` are refused. A user's quota or rate wins over the tier's, `unlimited` and `off` included; `clear` returns the user to the tier's value.
 
-The settings are kept in `settings.file_transfer` of `console.yaml` (`tiers`, `users`, `quota`, `quota_users`, `rate`, `rate_users`), written only when something in it is not the built-in setting. They apply from the next console login, are logged as `console set key=file-transfer item=<tier>|user:<name>|quota:<tier>|quota-user:<name>|rate:<tier>|rate-user:<name>` at `auth.notice`, and reach the console through `tacctl _console-policy`, which carries `file_transfer=yes ft_quota=<bytes> ft_rate=<bytes>` for a caller who has it. They only decide: the console's file transfer, which a later change of this release turns on, reads them, and until it does they change nothing a user can do.
+The settings are kept in `settings.file_transfer` of `console.yaml` (`tiers`, `users`, `quota`, `quota_users`, `rate`, `rate_users`), written only when something in it is not the built-in setting. They apply from the next console login, are logged as `console set key=file-transfer item=<tier>|user:<name>|quota:<tier>|quota-user:<name>|rate:<tier>|rate-user:<name>` at `auth.notice`, and reach the console through `tacctl _console-policy`, which carries `file_transfer=yes ft_quota=<bytes> ft_rate=<bytes>` for a caller who has it. The console fails closed: a policy it cannot read, or one that does not name file transfer, is no file transfer.
 
 ```bash
 tacctl console file-transfer operator enable
@@ -226,6 +241,13 @@ tacctl console file-transfer rate operator 1M
 tacctl console file-transfer user alice enable
 tacctl console file-transfer quota user alice unlimited
 tacctl console file-transfer user alice clear
+```
+
+From a client:
+
+```bash
+sftp alice@tacacs.example.net
+scp alice@tacacs.example.net:reports/devices/inventory-20261106.csv .
 ```
 
 
@@ -247,7 +269,7 @@ ssh carol@authsrv < lines.txt
     The lines as a batch; stops at the first failure
 ```
 
-`-c` accepts one line that starts with a tacctl command or `help`. Everything else — `scp`, `sftp`, `rsync`, any program, the shell's own words, an empty string — is refused with `the tacctl console does not run programs; file transfer is not available` (exit 126) and nothing runs; so is any other argument (`the tacctl console takes no options`).
+`-c` accepts one line that starts with a tacctl command or `help`, and the sftp subsystem (`/usr/lib/openssh/sftp-server`, `internal-sftp`, which sshd's `ForceCommand` hands over in `SSH_ORIGINAL_COMMAND`) for the accounts that have file transfer (see File transfer): it is refused with `file transfer is not enabled for this account; an administrator can switch it on (tacctl console file-transfer)` for the others. Everything else — `scp -O`, `rsync`, any program, the shell's own words, an empty string — is refused with `the tacctl console does not run programs or shell commands; file transfer is SFTP only (sftp, scp of OpenSSH 9 or later)` (exit 126) and nothing runs; so is any other argument (`the tacctl console takes no options`).
 
 A word that starts with an underscore (`__help`, `__complete`, `_console-policy`: the entry points of the scripts, the key and the console itself) is no command at the prompt or in a batch: it is answered as any word that is no command (`Unknown command: '__help'`), and nothing runs.
 
