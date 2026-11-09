@@ -102,7 +102,7 @@ func TestConsoleLineArgv(t *testing.T) {
 
 func TestConsoleGuardRefusals(t *testing.T) {
 	for _, line := range []string{
-		"scp -t .", "scp -f /etc/passwd", "/usr/lib/openssh/sftp-server", "internal-sftp", "rsync --server -e.LsfxC . .",
+		"scp -t .", "scp -f /etc/passwd", "scp -O -f x", "rsync --server -e.LsfxC . .",
 		"bash", "sh -c id", "system-shell", "exit", "quit", "history", "", "_console-policy", "user list\nbash",
 		"env", "/bin/sh", "user 'list",
 	} {
@@ -365,14 +365,23 @@ func TestConsoleMainForcedCommand(t *testing.T) {
 			t.Errorf("env %q: execs %+v", c.env, ex)
 		}
 	}
-	// After the re-exec (a clean environment) a forced sftp is refused.
+	// After the re-exec (a clean environment) a forced sftp is the subsystem:
+	// refused here, where the root side gives no answer (console_sftp_test.go
+	// serves it), and with its own text, not the one of a program.
 	r := &fake.Runner{}
 	errb.Reset()
 	clean := []string{"USER=carol", "PATH=" + console.ConsolePath, "SHELL=" + paths.ConsoleCommand}
 	if code := consoleMain(context.Background(), []string{"tacctl-console", "-c", "internal-sftp"}, clean, stdio, BuildInfo{}, testExe, 1000, r); code != console.RefusedStatus {
 		t.Errorf("sftp: status %d", code)
 	}
+	if strings.Contains(errb.String(), console.RefusedText) || errb.Len() == 0 || out.Len() != 0 {
+		t.Errorf("sftp: stderr %q stdout %q", errb.String(), out.String())
+	}
+	errb.Reset()
+	if code := consoleMain(context.Background(), []string{"tacctl-console", "-c", "scp -f x"}, clean, stdio, BuildInfo{}, testExe, 1000, &fake.Runner{}); code != console.RefusedStatus {
+		t.Errorf("scp -f: status %d", code)
+	}
 	if !strings.Contains(errb.String(), console.RefusedText) {
-		t.Errorf("sftp: %q", errb.String())
+		t.Errorf("scp -f: %q", errb.String())
 	}
 }
