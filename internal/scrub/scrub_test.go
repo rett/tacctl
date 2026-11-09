@@ -287,6 +287,17 @@ func TestModelNamesAreNotSerialNumbers(t *testing.T) {
 	})
 }
 
+// The value of a serial field runs to the next blank, comma or quote, hyphens
+// and all.
+func TestASerialWithAHyphenIsReplacedWhole(t *testing.T) {
+	runScrubCases(t, []scrubCase{{
+		name: "serial number field",
+		in:   []string{"Serial Number : CN12AB-34567\nserial: ab-cd-1234, next\n"},
+		want: []string{"Serial Number : SN000001\n", "serial: SN000002, next\n"},
+		gone: []string{"CN12AB", "34567", "ab-cd"},
+	}})
+}
+
 // A model is exempt as itself, not as the line it is on, and only the lines
 // that state a model teach one.
 func TestOnlyTheModelTokenIsExempt(t *testing.T) {
