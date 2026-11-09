@@ -287,6 +287,52 @@ func TestModelNamesAreNotSerialNumbers(t *testing.T) {
 	})
 }
 
+// A model is exempt as itself, not as the line it is on, and only the lines
+// that state a model teach one.
+func TestOnlyTheModelTokenIsExempt(t *testing.T) {
+	runScrubCases(t, []scrubCase{
+		{
+			name: "the model line keeps its model and replaces the serial after it",
+			in:   []string{"Model number : WS-C3750X-48P-S FDO1234X5YZ\n"},
+			want: []string{"Model number : WS-C3750X-48P-S SN000001\n"},
+			gone: []string{"FDO1234X5YZ"},
+		},
+		{
+			name: "a PID stops at the VID and the serial after it is replaced",
+			in:   []string{"PID: WS-C2960 VID: V01 FDO1234X5YZ\nPID: CSR1000V  FDO1234X5YZ\n"},
+			want: []string{"PID: WS-C2960 VID: V01 SN000001\n", "PID: CSR1000V  SN000001\n"},
+			gone: []string{"FDO1234X5YZ"},
+		},
+		{
+			name: "a quoted name is not a model",
+			in:   []string{"NAME: \"FDO1234X5YZ\", DESCR: \"Cisco CSR1000V Chassis\"\n"},
+			want: []string{"DESCR: \"Cisco CSR1000V Chassis\""},
+			gone: []string{"FDO1234X5YZ"},
+		},
+		{
+			name: "the word after Cisco in prose is not a model",
+			in:   []string{"case opened with Cisco ABC12345XYZ today\nsee Cisco FDO1234X5YZ\n"},
+			gone: []string{"ABC12345XYZ", "FDO1234X5YZ"},
+		},
+		{
+			name: "the revision line keeps its model and not the rest",
+			in:   []string{"cisco WS3750X48P (PowerPC405) processor (revision A0) with 262144K bytes of memory. FDO1234X5YZ\n", "the WS3750X48P again\n"},
+			want: []string{"cisco WS3750X48P (PowerPC405)", "the WS3750X48P again"},
+			gone: []string{"FDO1234X5YZ"},
+		},
+		{
+			name: "a PID at the end of a line is a model",
+			in:   []string{"PID: ASR1001HX\nnext line\n", "the ASR1001HX again\n"},
+			want: []string{"the ASR1001HX again"},
+		},
+		{
+			name: "the software line teaches the model",
+			in:   []string{"Cisco IOS XE Software, ASR1001HX Software (X86_64)\n", "the ASR1001HX again\n"},
+			want: []string{"the ASR1001HX again"},
+		},
+	})
+}
+
 // A chassis hardware table and a virtual chassis table as Junos prints them,
 // with invented serial numbers of every shape.
 const (

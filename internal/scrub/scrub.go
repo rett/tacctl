@@ -227,9 +227,9 @@ var (
 	reLearnSerial   = regexp.MustCompile(`(?mi)\bserial(?: number| no\.?)?[ \t]*[:=][ \t]*([A-Za-z0-9]{4,32})\b`)
 	reLearnDomain   = regexp.MustCompile(`(?mi)^[ \t]*ip domain[- ]name[ \t]+(?:vrf \S+[ \t]+)?(\S+)`)
 	// the model names a text states
-	reLearnPID      = regexp.MustCompile(`\bPID:[ \t]*([^,\n]*)`)
+	reLearnPID      = regexp.MustCompile(`(?m)\bPID:[ \t]*(.*?)(?:[ \t]{2,}|,|\bVID:|\bSN:|$)`)
 	reLearnModel    = regexp.MustCompile(`(?mi)^[ \t]*model(?: number)?[ \t]*[:=][ \t]*(\S+)`)
-	reLearnCisco    = regexp.MustCompile(`\b[Cc][Ii][Ss][Cc][Oo][ \t]+([A-Za-z0-9][A-Za-z0-9-]*)`)
+	reLearnCisco    = regexp.MustCompile(`(?mi)^[ \t]*cisco[ \t]+([A-Za-z0-9][A-Za-z0-9-]*)[ \t]+\([^)\n]*\)[ \t]+processor\b|\bCisco IOS(?: XE)? Software, ([A-Za-z0-9][A-Za-z0-9-]*) Software\b`)
 	reLearnLocation = regexp.MustCompile(`(?mi)^[ \t]*(?:snmp-server location|location|sysLocation(?:\.0)?[ \t]*[:=])[ \t]*(\S.*?)[ \t]*$`)
 	reLearnContact  = regexp.MustCompile(`(?mi)^[ \t]*(?:snmp-server contact|contact|sysContact(?:\.0)?[ \t]*[:=])[ \t]*(\S.*?)[ \t]*$`)
 
@@ -242,13 +242,15 @@ var (
 	reFQDN    = `\b(?:[A-Za-z0-9-]+\.)+(?:(?:co|com|org|net|ac|gov|edu)\.[a-z]{2}|net|com|org|edu|gov|mil|io|local|lan|corp|home|int|uk|de|fr|nl|se|no|ch|jp|cn|ca|au|ru|br|it|es|eu|us|in|pl|be|at|dk|fi|ie|nz|za|kr|sg|hk|mx)\b`
 	reExample = regexp.MustCompile(`(?i)(?:^|\.)example\.(?:net|org|com|edu|invalid|test)$`)
 
-	// what the serial-number shape never reads: the model and version of a
-	// 'show inventory' item, its quoted name and description, the Model line
-	// of Junos, the 'Cisco <model> (revision ...)' line of IOS
-	reKeepPIDVID   = regexp.MustCompile(`\b(?:PID|VID):[ \t]*([^,\n]*)`)
-	reKeepQuoted   = regexp.MustCompile(`\b(?:DESCR|NAME):[ \t]*"([^"\n]*)"`)
-	reKeepModel    = regexp.MustCompile(`(?mi)^[ \t]*model(?: number)?[ \t]*[:=].*$`)
-	reKeepRevision = regexp.MustCompile(`(?mi)^[ \t]*cisco[ \t].*\(revision\b.*$`)
+	// what the serial-number shape never reads: the model and the version of a
+	// 'show inventory' item, its quoted description, the model of the Model
+	// line of Junos, the model of the 'cisco <model> (...) processor' line of
+	// IOS; the value only, never the rest of the line
+	reKeepPID   = regexp.MustCompile(`(?m)\bPID:[ \t]*(.*?)(?:[ \t]{2,}|,|\bVID:|\bSN:|$)`)
+	reKeepVID   = regexp.MustCompile(`\bVID:[ \t]*([^\s,]*)`)
+	reKeepDescr = regexp.MustCompile(`\bDESCR:[ \t]*"([^"\n]*)"`)
+	reKeepModel = reLearnModel
+	reKeepCisco = reLearnCisco
 )
 
 // vendorDomains are the registered domains (the last two labels) of vendors
@@ -316,14 +318,13 @@ func covers(spans []span, start, end int) bool {
 // does not make a token one: model names and descriptions.
 func keepSpans(text string) []span {
 	var out []span
-	for _, re := range []*regexp.Regexp{reKeepPIDVID, reKeepQuoted} {
+	for _, re := range []*regexp.Regexp{reKeepPID, reKeepVID, reKeepDescr, reKeepModel, reKeepCisco} {
 		for _, m := range re.FindAllStringSubmatchIndex(text, -1) {
-			out = append(out, span{m[2], m[3]})
-		}
-	}
-	for _, re := range []*regexp.Regexp{reKeepModel, reKeepRevision} {
-		for _, m := range re.FindAllStringIndex(text, -1) {
-			out = append(out, span{m[0], m[1]})
+			for i := 2; i+1 < len(m); i += 2 {
+				if m[i] >= 0 {
+					out = append(out, span{m[i], m[i+1]})
+				}
+			}
 		}
 	}
 	return out
@@ -497,7 +498,8 @@ func fieldsAt(line string) []span {
 }
 
 // learnModels records the model names a text states: the PID of an
-// inventory item, the Model line, the word after 'Cisco'.
+// inventory item, the Model line, the model of the 'cisco <model> (...)
+// processor' and 'Cisco IOS Software, <model> Software' lines.
 func (s *Scrubber) learnModels(text string) {
 	add := func(v string) {
 		for _, w := range strings.Fields(v) {
@@ -511,7 +513,7 @@ func (s *Scrubber) learnModels(text string) {
 		add(m[1])
 	}
 	for _, m := range reLearnCisco.FindAllStringSubmatch(text, -1) {
-		add(m[1])
+		add(m[1] + m[2])
 	}
 }
 
