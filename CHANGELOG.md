@@ -195,7 +195,10 @@ current behaviour; this file is where history lives.
    export` in place of the first 200 lines, and `list`, `rename`, `remove`,
    `prune`, the per-user and superuser listings, the completion of names and
    the access audit lines work on `.pdf` files as on the others. A file you
-   put in the directory that ends in `.pdf` is binary as well. A file counts
+   put in the directory that ends in `.pdf` is binary as well. A long
+   unbroken value (a word of more than 24 characters) gets a zero-width space
+   (U+200B) after every 24 characters so that it can wrap, so copying such a
+   value out of the PDF can carry invisible characters. A file counts
    as a PDF only by its name ending in `.pdf` (its metadata file saying `pdf`
    is not enough, the owner writes that too) and, for a superuser's
    `export <user>/<report>`, only if it also starts with `%PDF-`; anything else
