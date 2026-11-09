@@ -118,6 +118,9 @@ func TestReportsGenerateTypesAndFormats(t *testing.T) {
 	b := newReportsBox(t)
 	for _, typ := range reports.Types() {
 		for _, format := range reports.Formats() {
+			if format == reports.FormatPDF {
+				continue // made by an external tool: device_reports_pdf_test.go
+			}
 			t.Run(typ+"-"+format, func(t *testing.T) {
 				out := b.as("alice", asSuper, "generate", "--type", typ, "--format", format, "--stdout")
 				if b.sb.code != 0 {
@@ -305,7 +308,7 @@ func TestReportsGenerateArguments(t *testing.T) {
 	}{
 		{"--type is required", []string{"generate"}},
 		{"Unknown report type 'devices'", []string{"generate", "--type", "devices"}},
-		{"Unknown report format 'pdf'", []string{"generate", "--type", "inventory", "--format", "pdf"}},
+		{"Unknown report format 'docx' (valid formats: text, csv, json, pdf)", []string{"generate", "--type", "inventory", "--format", "docx"}},
 		{"Invalid report name: a report name does not start with a dot", []string{"generate", "--type", "inventory", "--name", ".hidden"}},
 		{"Invalid report name: a report name holds only letters", []string{"generate", "--type", "inventory", "--name", "a/b"}},
 		{"at most 64 bytes", []string{"generate", "--type", "inventory", "--name", strings.Repeat("x", 65)}},

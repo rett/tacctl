@@ -58,7 +58,7 @@ func DefaultName(typ string, now time.Time, taken func(string) bool) string {
 }
 
 // FileName is the name of the report file: the name plus the extension of the
-// format (.txt, .csv or .json).
+// format (.txt, .csv, .json or .pdf).
 func FileName(name, format string) (string, error) {
 	if err := ValidName(name); err != nil {
 		return "", err

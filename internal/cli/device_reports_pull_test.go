@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"github.com/rett/tacctl/internal/execx/fake"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,5 +50,54 @@ func TestReportsGeneratePullReadsTheDevicesFirst(t *testing.T) {
 	body, err := os.ReadFile(filepath.Join(home, "alice", "reports", "devices", "after-pull.txt"))
 	if err != nil || !strings.Contains(string(body), "SN000001") {
 		t.Errorf("%v\n%s", err, body)
+	}
+}
+
+// With --stdout the report is the only thing on standard output: the notices
+// of an empty report and of a pull that has nothing to read go to standard
+// error, whatever the format.
+func TestReportsStdoutHoldsTheReportAlone(t *testing.T) {
+	// no device matches: a warning
+	b := newReportsBox(t)
+	tool := b.pdfTool()
+	out := b.asWith(pdfStub(tool), nil, "alice", asSuper, "generate", "--type", "inventory", "--format", "pdf", "--vendor", "wti", "--stdout")
+	if b.sb.code != 0 || !strings.HasPrefix(out, "%PDF-1.7\n") || strings.Contains(out, "[WARN]") || !strings.Contains(b.sb.stderr(), "[WARN] No device matches: the report has no rows.") {
+		t.Errorf("pdf: exit %d out %.60q err %q", b.sb.code, out, b.sb.stderr())
+	}
+	for _, format := range []string{"json", "csv", "text"} {
+		out = b.as("alice", asSuper, "generate", "--type", "inventory", "--format", format, "--vendor", "wti", "--stdout")
+		if b.sb.code != 0 || strings.Contains(out, "[WARN]") || !strings.Contains(b.sb.stderr(), "[WARN] No device matches: the report has no rows.") {
+			t.Errorf("%s: exit %d out %.60q err %q", format, b.sb.code, out, b.sb.stderr())
+		}
+	}
+	if out = b.as("alice", asSuper, "generate", "--type", "inventory", "--format", "json", "--vendor", "wti", "--stdout"); !strings.HasPrefix(out, "{") {
+		t.Errorf("json does not start the output: %.60q", out)
+	}
+	// stored, the warning stays on standard output with the other lines
+	if out = b.as("alice", asSuper, "generate", "--type", "inventory", "--vendor", "wti"); !strings.Contains(out, "[WARN] No device matches") {
+		t.Errorf("stored: %q", out)
+	}
+
+	// --pull with no device the pull reads: an information line
+	p := newPullBox(t)
+	p.devices([3]string{"ap1", "192.168.1.30", "other"})
+	home := filepath.Join(p.sb.dir, "home")
+	p.sb.hooks.sshAccountOf = func(name string) (sshAccount, error) {
+		return sshAccount{UID: 1000, GID: 1000, Home: filepath.Join(home, name)}, nil
+	}
+	out = p.run("device", "reports", "generate", "--type", "inventory", "--format", "json", "--stdout", "--pull")
+	if p.sb.code != 0 || !strings.HasPrefix(out, "{") || strings.Contains(out, "[INFO]") || !strings.Contains(p.sb.stderr(), "[INFO] No device to read") {
+		t.Errorf("--pull json: exit %d out %.60q err %q", p.sb.code, out, p.sb.stderr())
+	}
+	dir := t.TempDir()
+	tool = filepath.Join(dir, "weasyprint")
+	if err := os.WriteFile(tool, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p.sb.hooks.pdfToolDirs = []string{dir}
+	out = plain(p.sb.cfgRun("", []string{"device", "reports", "generate", "--type", "inventory", "--format", "pdf", "--stdout", "--pull"},
+		func(r *fake.Runner) { route(r); pdfStub(tool)(r) }, "SUDO_USER=alice"))
+	if p.sb.code != 0 || !strings.HasPrefix(out, "%PDF-1.7\n") || strings.Contains(out, "[INFO]") || !strings.Contains(p.sb.stderr(), "[INFO] No device to read") {
+		t.Errorf("--pull pdf: exit %d out %.60q err %q", p.sb.code, out, p.sb.stderr())
 	}
 }

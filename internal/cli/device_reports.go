@@ -33,8 +33,8 @@ var deviceReportsSpecs = map[string]Spec{
 		{Names: []string{"--scope"}, Value: true, Kind: KindScopes, Arg: "<scope>", Desc: "Only the devices that scope answers",
 			Long: "Only the devices that scope answers. A scope that is not one of yours is refused"},
 		{Names: []string{"--vendor"}, Value: true, Kind: KindVendors, Arg: "cisco|juniper|wti|other", Desc: "Only the devices of that vendor"},
-		{Names: []string{"--format"}, Value: true, Kind: "text|csv|json", Arg: "text|csv|json", Desc: "Write the report in this format (default text)",
-			Long: "The format: text (aligned columns, the default), csv (RFC 4180, a header line, UTF-8) or json (one object: schema, type, generated, oldest_data, filters, columns, rows). It sets the extension of the file"},
+		{Names: []string{"--format"}, Value: true, Kind: "text|csv|json|pdf", Arg: "text|csv|json|pdf", Desc: "Write the report in this format (default text)",
+			Long: "The format: text (aligned columns, the default), csv (RFC 4180, a header line, UTF-8), json (one object: schema, type, generated, oldest_data, filters, columns, rows) or pdf (a letter landscape document with the header row repeated on each page, made by weasyprint, which must be installed: sudo apt-get install -y weasyprint fonts-dejavu-core). It sets the extension of the file. A PDF is binary: with --stdout it is refused at a terminal"},
 		{Names: []string{"--name"}, Value: true, Arg: "<name>", Desc: "Name the report (default <type>-<yyyymmdd>)",
 			Long: "The name of the report, without the extension: letters, digits, '.', '_' and '-', at most 64 bytes, no leading dot. The default is the type and the date (inventory-20261106); a second report of the same day gets -2. A name in use is refused, never overwritten"},
 		{Names: []string{"--stdout"}, Desc: "Print the report and store nothing",
@@ -50,10 +50,10 @@ var deviceReportsSpecs = map[string]Spec{
 			Long: "List the reports of every user tacctl knows, one audit line for the whole listing. It is the superuser's"}}},
 	"show": {MinArgs: 1, MaxArgs: 1, Args: []string{KindReports}, Flags: []Flag{
 		{Names: []string{"--content"}, Desc: "Print the first 200 lines of the report as well",
-			Long: "Print the report itself under the facts, its first 200 lines ('export' prints all of it)"}}},
+			Long: "Print the report itself under the facts, its first 200 lines ('export' prints all of it); a PDF is binary and prints its size and 'use export' instead"}}},
 	"export": {MinArgs: 1, MaxArgs: 1, Args: []string{KindReports}, Flags: []Flag{
 		{Names: []string{"--out"}, Value: true, Kind: KindFile, Arg: "<file>", Desc: "Write to a file in your home instead of standard output",
-			Long: "Write the copy to this file, mode 0600, made as you, inside your home (tacctl does not expand ~ or variables); a file that exists is refused unless --force"},
+			Long: "Write the copy to this file, mode 0600, made as you, inside your home (tacctl does not expand ~ or variables); a file that exists is refused unless --force. A PDF report is binary: without --out it is refused at a terminal and written to standard output when that is redirected"},
 		{Names: []string{"--force"}, Desc: "Replace the file --out names",
 			Long: "Replace the file --out names, if there is one"}}},
 	"rename": {MinArgs: 2, MaxArgs: 2, Args: []string{KindReports, ""}},
@@ -146,7 +146,7 @@ out the model, serial number, release and chassis members (and the state and
 the apply date of 'config') for a user below the operator tier. No secret is
 in any report.
 
-A report is the file ~/reports/devices/<name>.<txt|csv|json> of your home,
+A report is the file ~/reports/devices/<name>.<txt|csv|json|pdf> of your home,
 mode 0600 in a directory of mode 0700, made as you, with <name>.<ext>.meta
 beside it (when, by whom, the command line, the filters, the oldest datum).
 'show' prints that and the line to copy it with scp; 'export' prints or copies
@@ -240,6 +240,14 @@ func (inv *invocation) deviceReportsGenerate(args []string) error {
 			return inv.argErr("Invalid report name: "+err.Error()+".", usage)
 		}
 	}
+	// A PDF report needs the tool, and a PDF for standard output a place to
+	// go: both are checked before a report is read or anything is written.
+	pdfTool := ""
+	if format == reports.FormatPDF {
+		if pdfTool, err = inv.pdfRequire(p.Has("--stdout")); err != nil {
+			return err
+		}
+	}
 	if p.Has("--pull") {
 		if t, ok := inv.deviceConfigPermits("pull"); !ok {
 			return inv.deniedUsage(reasonSuperuser, "--pull runs 'tacctl device config pull', which is not permitted for the "+string(t)+" tier.")
@@ -294,14 +302,31 @@ func (inv *invocation) deviceReportsGenerate(args []string) error {
 		}
 	}
 	var body bytes.Buffer
-	if err := reports.Render(&body, rep, format); err != nil {
+	if format == reports.FormatPDF {
+		pdf, err := inv.renderPDF(pdfTool, reports.RenderHTML(rep))
+		if err != nil {
+			return inv.usageErr("Cannot make the PDF: "+err.Error()+".", "Nothing was written.")
+		}
+		body.Write(pdf)
+	} else if err := reports.Render(&body, rep, format); err != nil {
 		return err
 	}
 	if len(entries) == 0 {
-		inv.app.Out.Warn("No device matches: the report has no rows.")
+		// with --stdout the report is the only thing on standard output
+		notice := inv.app.Out
+		if p.Has("--stdout") {
+			notice.Stdout = notice.Stderr
+		}
+		notice.Warn("No device matches: the report has no rows.")
 	}
 	if p.Has("--stdout") {
-		inv.write(body.String())
+		if format == reports.FormatPDF {
+			if err := inv.writeRaw(body.Bytes()); err != nil {
+				return inv.rawWriteErr(err)
+			}
+		} else {
+			inv.write(body.String())
+		}
 		return pullErr
 	}
 
@@ -370,6 +395,11 @@ func reportSize(n int64) string {
 // scope) is left as it is. With stdout the pull's output goes to standard
 // error, so that the report is the only thing on standard output.
 func (inv *invocation) reportsPull(entries []devreg.Entry, stdout bool) error {
+	if stdout {
+		out := inv.app.Out.Stdout
+		inv.app.Out.Stdout = inv.app.Out.Stderr
+		defer func() { inv.app.Out.Stdout = out }()
+	}
 	var names []string
 	for _, e := range entries {
 		if e.Configured && slices.Contains(sortedVendors(), e.Vendor) {
@@ -379,11 +409,6 @@ func (inv *invocation) reportsPull(entries []devreg.Entry, stdout bool) error {
 	if len(names) == 0 {
 		inv.app.Out.Info("No device to read: none of the devices has a vendor the pull reads and a scope that covers it.")
 		return nil
-	}
-	if stdout {
-		out := inv.app.Out.Stdout
-		inv.app.Out.Stdout = inv.app.Out.Stderr
-		defer func() { inv.app.Out.Stdout = out }()
 	}
 	err := inv.deviceConfigPull([]string{strings.Join(names, ",")})
 	if err != nil && exitStatus(err) == 1 {

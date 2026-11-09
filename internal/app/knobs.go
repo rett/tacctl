@@ -54,6 +54,10 @@ import (
 //	                             write to a path the caller names (--out,
 //	                             --output), in place of the home the account
 //	                             database gives; an absolute path
+//	TACCTL_TEST_PDF_TOOL=<path>  the program that stands for weasyprint in
+//	                             'device reports generate --format pdf'
+//	                             (a stub), in place of the fixed
+//	                             directories the tool is looked for in
 //
 // They are read from the environment only by a binary built with
 // -tags testknobs ('make build', which the bats harness and the differential
@@ -90,6 +94,9 @@ type Knobs struct {
 	dial    string        // "": every device at its own address
 	devPass string        // "": the password comes from the terminal or the cache
 	quiet   time.Duration // 0: devssh's own quiet period
+	// pdfTool is the program that stands for the PDF tool ("": look for
+	// weasyprint in the fixed directories).
+	pdfTool string
 	// localPass is the local account's password ('--login', 'device
 	// onboard'): "" asks on the terminal.
 	localPass string
@@ -133,6 +140,11 @@ func (k Knobs) DeviceQuiet() time.Duration { return k.quiet }
 // DevicePassword is the password a test build logs in to devices with ("":
 // ask).
 func (k Knobs) DevicePassword() string { return k.devPass }
+
+// PDFTool is the path a test build runs as the PDF tool ("" in a production
+// build, and when the knob is unset: the tool is looked for in the fixed
+// directories).
+func (k Knobs) PDFTool() string { return k.pdfTool }
 
 // LocalPassword is the password of the local account a test build logs in
 // with for '--login' and 'device onboard' ("": ask on the terminal).

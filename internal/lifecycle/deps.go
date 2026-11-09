@@ -27,6 +27,11 @@ var (
 	// firewall). Failing to get it only warns: a hold then stands without the
 	// table, and every report of a hold says so.
 	DepsFirewall = []string{"nftables"}
+	// DepsPDF are the packages of the PDF device reports (0.2.27): weasyprint
+	// turns the report's HTML into the PDF and fonts-dejavu-core is the face
+	// it is set in. They are optional: 'tacctl upgrade' offers them
+	// (pdf_offer.go) and nothing else installs them.
+	DepsPDF = []string{"weasyprint", "fonts-dejavu-core"}
 	// BashReleaseDeps are what a bash release (0.1.x) needs before its first
 	// line runs; 'upgrade --branch <bash release>' installs them before it
 	// hands over (docs/plans/go-rewrite.md 3.9 item 32).

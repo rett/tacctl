@@ -7,7 +7,7 @@ A report is a saved, dated document about the registered devices, made on demand
 ```
 tacctl device reports generate --type inventory|members|software|config
                                [--scope <scope>] [--vendor <vendor>]
-                               [--format text|csv|json] [--name <name>] [--stdout] [--pull]
+                               [--format text|csv|json|pdf] [--name <name>] [--stdout] [--pull]
 tacctl device reports list [--json] [--user <name> | --all-users]
 tacctl device reports show <report> [--content]
 tacctl device reports export <report> [--out <file> [--force]]
@@ -43,13 +43,15 @@ $ tacctl device reports generate --type inventory --format csv
 
 ### Formats
 
-`--format` is `text` (the default), `csv` or `json`, and sets the extension of the file (`.txt`, `.csv`, `.json`).
+`--format` is `text` (the default), `csv`, `json` or `pdf`, and sets the extension of the file (`.txt`, `.csv`, `.json`, `.pdf`).
 
 - **text** is aligned columns under a heading that gives the type, when the report was made (UTC), the date of the oldest datum and the number of devices; an empty cell is `-`.
 - **csv** follows RFC 4180: a header line with the column names, UTF-8, `\n` line ends, a cell with a comma or a quote in quotes. A cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return gets a leading `'`, so that a spreadsheet shows it and does not run it; the lone `-` that stands for nothing is left as it is.
 - **json** is one object: `schema` (1), `type`, `generated`, `oldest_data`, `filters`, `columns` and `rows`, an object for each row keyed by the column (the member id of the `members` report is `id`; dates are RFC 3339 UTC, `null` for a device never pulled or applied; `members` in the `inventory` report is a count). `filters` holds the `--scope` and `--vendor` of the command as an object with the keys `scope` and `vendor`, each only when it was given (`{}` for none). Each row of the `members` report also has `components`, an empty list in this release.
 
-Text that came from a device or an operator (model, serial number, release, member fields, location and description) is printed as the record keeps it, with control, bidirectional and C1 characters replaced by `?`.
+- **pdf** is a letter landscape document made from the same report by an external tool (see [PDF reports](#pdf-reports)): a title block with the type, when the report was made (UTC), the filters and the date of the oldest datum, then the table of the report in 8 pt DejaVu Sans (numbers, dates, addresses and identifiers in DejaVu Sans Mono) with the header row repeated at the top of each page, light grey stripes, no row split across two pages, and `page / pages` at the bottom. An empty cell is `-`.
+
+Text that came from a device or an operator (model, serial number, release, member fields, location and description) is printed as the record keeps it, with control, bidirectional and C1 characters replaced by `?` (in the PDF they are left out).
 
 ```
 $ tacctl device reports generate --type inventory --stdout
@@ -95,7 +97,29 @@ rtr1,site-a,failed,2026-11-03 22:10,-
 sw1,site-a,differs,2026-11-06 07:45,2026-11-01 12:00
 ```
 
-`--stdout` prints the report instead of storing it: no file and no metadata are made, no limit applies, no account is needed, and with `--pull` the pull's own output goes to standard error so that standard output holds the report only.
+`--stdout` prints the report instead of storing it: no file and no metadata are made, no limit applies, no account is needed, and with `--pull` the pull's own output goes to standard error so that standard output holds the report only. The notices (`No device matches: the report has no rows.`, `No device to read: ...`) go to standard error too, in every format.
+
+### PDF reports
+
+`--format pdf` needs `weasyprint` and the DejaVu fonts. On Debian and Ubuntu:
+
+```
+sudo apt-get install -y weasyprint fonts-dejavu-core
+```
+
+`tacctl upgrade` offers to install them, once (see [Upgrading](../install/upgrading.md#pdf-reports)); `install` does not. Without the tool `generate --format pdf` refuses at once, before it reads a device or writes a file, with exit status 1:
+
+```
+$ tacctl device reports generate --type inventory --format pdf
+[ERROR] PDF reports need weasyprint, which is not installed here. Install it:
+    sudo apt-get install -y weasyprint fonts-dejavu-core
+```
+
+- **The document.** tacctl builds one HTML document from the report (never from the text file) and gives it to `weasyprint --quiet - -` on standard input; the PDF comes back on standard output. Every cell is escaped, control and direction characters are left out, and the document has no link, image, script, style sheet or font reference, so the tool has nothing to fetch.
+- **How the tool is run.** It is found in `/usr/bin`, `/usr/local/bin` or `/opt/weasyprint/bin`, in that order, and nowhere else: not in the `PATH` of the caller and not in the current directory. Links are followed, and the tool, what a link leads to and every directory above them must be owned by root and not writable by the group or by others (the rule that `sudo` holds its `secure_path` to); a `weasyprint` that is there and does not meet it is not used, and when none is found the error says so (`weasyprint at /usr/local/bin/weasyprint is not owned by root or is writable by others: not used`, exit 1). When tacctl runs as root through `sudo` it runs the tool as the person who ran `sudo` (their user and group, no supplementary groups, their home), not as root; only a root session with no `sudo` caller (no usable `SUDO_UID`) runs it as root, with the home of root from the account database, or `/`, and never the home of the account `SUDO_USER` names. The environment is `PATH`, `LANG=C.UTF-8`, `HOME`, `XDG_CACHE_HOME` (`~/.cache`) and `PYTHONNOUSERSITE=1` (no code from a user site directory runs) and nothing else. The tool has 120 seconds and may write 64 MiB of PDF; one that runs over is stopped, together with every process it started (it runs in a process group of its own, which is killed).
+- **When the tool fails** (a non-zero exit, no PDF on its output, a time or size limit), `generate` says so with the first five lines of the tool's error (a line that holds markup is left out, since the tool can quote the document), exits 1 and writes nothing: no file, no `.meta`, no partial PDF.
+- **Binary on a terminal.** A PDF is never written to a terminal: `generate --format pdf --stdout` refuses when standard output is a terminal and writes the bytes when it is redirected (`> inventory.pdf`), and `export` does the same (see [Looking after reports](#looking-after-reports)).
+- **Limits.** The page is set in DejaVu Sans, so Latin text and the common Unicode ranges of the font print; a character the font lacks (CJK, for example) prints only when another font on the server has it, and otherwise shows as an empty box. A very wide table wraps its cells instead of running off the page: a word longer than 24 characters may break after every 24 (tacctl puts a zero-width space, U+200B, after every 24 characters of such a value, so copying one out of the PDF can carry invisible characters; the text, CSV and JSON reports have none), and an address, a serial number, a release or a date is kept in one piece (a value of more than 40 characters is set in the plain face and wraps). The tool takes about three seconds for 90 rows and has 120 seconds, so a report of several thousand rows can run over it and is refused (narrow it with `--scope` or `--vendor`). The size limit of the report counts the PDF's bytes.
 
 ## Where reports are kept
 
@@ -128,8 +152,8 @@ Report inventory-20261106
 ## Looking after reports
 
 - **`list`** prints your reports, newest first, with the name, the type, the format, the size and when each was made (UTC), and the total; `--json` prints a list of objects with the same facts and the command line, the filters and the dates (a file that is not a report has `other: true` and the file, the name, the owner and the size only). A file tacctl did not make has the type `other`. The JSON list cleans every string as the text list does (a control or direction character in a file name or a metadata field is a `?`).
-- **`show <report>`** prints the facts above; `--content` adds the first 200 lines of the report, read from the start of the file and no further than 256 KiB (a file with more says `... more` and, when it read all of the file, how many more lines there are); `export` prints all of it.
-- **`export <report>`** prints the report on standard output, as it is stored. `--out <file>` writes it there instead, made as you with mode 0600, and refuses a file that exists unless `--force` is given. The file must be inside your home (the home of the person who ran `sudo`, never `$HOME`): tacctl does not expand `~` or variables, and a path outside the home, through `..` or through a link, is refused before the report is read. `export` reads at most the size limit in force for the report's owner (`reports.max_size`, or a larger size the report's own metadata records, 1 GiB at the most) and refuses a file over it. To fetch a report from the server use the `scp` line of `show`.
+- **`show <report>`** prints the facts above; `--content` adds the first 200 lines of the report, read from the start of the file and no further than 256 KiB (a file with more says `... more` and, when it read all of the file, how many more lines there are); `export` prints all of it. A PDF is binary and `--content` prints none of it: `binary PDF, 2409 bytes: use export`.
+- **`export <report>`** prints the report on standard output, as it is stored. `--out <file>` writes it there instead, made as you with mode 0600, and refuses a file that exists unless `--force` is given. The file must be inside your home (the home of the person who ran `sudo`, never `$HOME`): tacctl does not expand `~` or variables, and a path outside the home, through `..` or through a link, is refused before the report is read. `export` reads at most the size limit in force for the report's owner (`reports.max_size`, or a larger size the report's own metadata records, 1 GiB at the most) and refuses a file over it. A PDF report (and a file of the directory that ends in `.pdf`) is never printed to a terminal: without `--out`, `export` refuses with `PDF is binary: use --out FILE or redirect`, and when standard output is a file or a pipe it writes the bytes as they are (`tacctl device reports export inventory-20261106 > inventory.pdf`). To fetch a report from the server use the `scp` line of `show`.
 
 `show --content` and `export` open the file without following a link and without waiting, and read a regular file only: a link, a FIFO or a device node in the directory (or put there after the listing) is refused with its name, and read by nobody. The same goes for the `.meta` file.
 - **`rename <report> <new>`** gives a report and its metadata file a new name; the extension stays. It never overwrites: a name that a report or a file has already is refused, and nothing is changed.
@@ -162,7 +186,7 @@ Reports are made from stored data, so the read-only tier and up may make, list, 
 
 A report holds the devices of the scopes of the user who made it, a superuser's every device. A report follows the rule of `device show` and `device list` (see [Tiers](../security/tiers.md)): what the last pull read of a device (its model, serial number, release and chassis members) and the configuration state and the date of the last apply are shown from the operator tier up, so a report of a read-only user does not hold them. In an `inventory` report the `model`, `serial` and `release` of every row are empty (`-` in text, an empty cell in CSV, `""` in JSON) and `members` is `-` (`0` in JSON); in a `software` report `model` and `release` are empty the same way; the `members` report has no rows, because a device with no model, no serial number and no members is not in it; in the `config` report `state` and `applied` are `-` in text and CSV and `null` in JSON. The rest of a row stays: the name, address, vendor, scope, location, description and the `pulled` date, as `device show` shows them to every tier.
 
-**A superuser reaches the reports of other users.** `list --user <name>` and `list --all-users` (which add a USER column), `show <user>/<report>`, `export <user>/<report>`, `rename <user>/<report> <new>`, `remove <user>/<report>` and `prune --user <name>` or `--all-users`. A report is readable whatever devices it holds: a superuser is not held to a user's scopes. What another user wrote is not trusted with your terminal, and a metadata file does not vouch for it (the owner makes that file too): `export <user>/<report>` to the standard output cleans every line as `show --content` does (control and formatting characters, escape sequences and line separators print as `?`), for a report and for a file with no valid metadata file (`other`) alike; `export <user>/<report> --out <file>` copies the bytes as they are, and your own files print as stored. `export` copies the report to the standard output or to the path given, made as the superuser, and nothing writes a report into another user's home: a user makes their own reports, and a superuser already makes a report of every scope, so there is no `generate --as`. Anyone else who names another user's report or asks for another user's list is refused (`... is the superuser's: you reach your own reports only. Nothing was done.`).
+**A superuser reaches the reports of other users.** `list --user <name>` and `list --all-users` (which add a USER column), `show <user>/<report>`, `export <user>/<report>`, `rename <user>/<report> <new>`, `remove <user>/<report>` and `prune --user <name>` or `--all-users`. A report is readable whatever devices it holds: a superuser is not held to a user's scopes. What another user wrote is not trusted with your terminal, and a metadata file does not vouch for it (the owner makes that file too): `export <user>/<report>` to the standard output cleans every line as `show --content` does (control and formatting characters, escape sequences and line separators print as `?`), for a report and for a file with no valid metadata file (`other`) alike; `export <user>/<report> --out <file>` copies the bytes as they are, and your own files print as stored. A PDF is not text and is not cleaned: it is refused at a terminal, as above, and goes to a file or a pipe as it is. It counts as a PDF only if its name ends in `.pdf` and, for another user's file, its content starts with `%PDF-`; a file that ends in `.pdf` and is no PDF, or whose metadata file says `pdf` but whose name does not end in `.pdf`, is cleaned as text. `export` copies the report to the standard output or to the path given, made as the superuser, and nothing writes a report into another user's home: a user makes their own reports, and a superuser already makes a report of every scope, so there is no `generate --as`. Anyone else who names another user's report or asks for another user's list is refused (`... is the superuser's: you reach your own reports only. Nothing was done.`).
 
 ```
 $ tacctl device reports list --all-users
@@ -228,4 +252,4 @@ A release before 0.2.26 has no `device reports` verb. `tacctl rollback` to 0.2.2
 
 ## Exit status
 
-0 on success; 1 when a request was refused (a name in use, a user with no account, no such report, a scope that is not yours, a limit) or when `generate --pull` could not read some device; 2 for wrong arguments (no `--type`, an unknown type or format, a bad name or age, `--name` with `--stdout`).
+0 on success; 1 when a request was refused (a name in use, a user with no account, no such report, a scope that is not yours, a limit), when `generate --pull` could not read some device, or when a PDF cannot be written to standard output (a full disk, a closed pipe: the error says so, and a cut-off file is never a success); 2 for wrong arguments (no `--type`, an unknown type or format, a bad name or age, `--name` with `--stdout`).

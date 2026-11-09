@@ -2,6 +2,7 @@ package cli
 
 import (
 	"io"
+	"io/fs"
 	"os"
 	"os/user"
 	"strconv"
@@ -98,6 +99,15 @@ type hooks struct {
 	isTerminalWriter func(w io.Writer) bool
 	// editEuid is the identity this process has.
 	editEuid func() int
+	// pdfToolDirs replaces the directories the PDF tool is looked for in
+	// (nil: the fixed ones); pdfTimeout and pdfMaxOutput replace the time
+	// and the output limit the tool is held to (0: 120 s, 64 MiB).
+	pdfToolDirs  []string
+	pdfTimeout   time.Duration
+	pdfMaxOutput int64
+	// pdfStat reads the owner and the permission bits of a file or directory
+	// on the way to the PDF tool (nil: the system's).
+	pdfStat func(path string) (uid uint32, perm fs.FileMode, err error)
 	// sshAccountOf looks an account up in the local account database.
 	sshAccountOf func(name string) (sshAccount, error)
 	// homeOfUID looks the home directory of an account up by its id in the
