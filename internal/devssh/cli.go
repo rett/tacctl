@@ -1117,11 +1117,101 @@ func (o *outBuf) afterPrompt(line string) (string, bool) {
 	return line, found
 }
 
-// stripEcho drops the first line when it is the command the device echoed.
+// stripEcho drops the echo of cmd from the start of body: the first line
+// when it is the command, or, for a command longer than the terminal is
+// wide, the lines the device wrote it in (see wrappedEcho).
 func stripEcho(body, cmd string) string {
 	first, rest, _ := strings.Cut(body, "\n")
 	if strings.TrimSpace(first) == strings.TrimSpace(cmd) {
 		return rest
 	}
+	if rest, ok := wrappedEcho(body, strings.TrimSpace(cmd)); ok {
+		return rest
+	}
 	return body
+}
+
+// minWrappedCmd is the shortest command whose echo is looked for in pieces:
+// a terminal is 80 columns wide, less the prompt.
+const minWrappedCmd = 40
+
+// wrappedEcho drops from the start of body the echo of a command that was
+// longer than the terminal is wide. A device (IOS) scrolls such a line as it
+// echoes it: the first lines are the start of the command, cut where the
+// line ran out, and then a '$' and the rest of it, with backspaces and
+// carriage returns (dropped by normalise) in between. The echo is the lines
+// at the start of body that, cleaned of control characters, are pieces of cmd
+// (a '$' marks where the display was cut), up to the line whose last piece
+// ends cmd, when the first line is the start of cmd. Anything else is output and body is
+// left as it is (ok false).
+func wrappedEcho(body, cmd string) (string, bool) {
+	if len(cmd) < minWrappedCmd {
+		return body, false
+	}
+	lines := strings.SplitAfter(body, "\n")
+	n, ended := 0, false
+	for i, l := range lines {
+		pieces := echoPieces(strings.TrimRight(l, "\n"), cmd)
+		if len(pieces) == 0 || i == 0 && (len(pieces[0]) < 8 || !strings.HasPrefix(cmd, pieces[0])) {
+			break
+		}
+		n = i + 1
+		if p := pieces[len(pieces)-1]; len(p) >= 3 && strings.HasSuffix(cmd, p) {
+			ended = true // the last piece ends the command: what follows is output
+			break
+		}
+	}
+	if n == 0 || !ended {
+		return body, false
+	}
+	return strings.Join(lines[n:], ""), true
+}
+
+// echoPieces are the pieces of cmd a line of its echo holds, none when the
+// line is not made only of pieces of cmd.
+func echoPieces(line, cmd string) []string {
+	t := strings.TrimSpace(cleanTerminal(line))
+	if t == "" {
+		return nil
+	}
+	if strings.Contains(cmd, t) {
+		return []string{t}
+	}
+	var out []string
+	for _, p := range strings.Split(t, "$") {
+		if p = strings.TrimSpace(p); p == "" {
+			continue
+		}
+		if !strings.Contains(cmd, p) {
+			return nil
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+var reEscape = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
+
+// cleanTerminal is the text a terminal would show for line: a backspace moves
+// the cursor back and the next character overwrites, the other control
+// characters and the escape sequences are dropped.
+func cleanTerminal(line string) string {
+	var row []rune
+	cur := 0
+	for _, r := range reEscape.ReplaceAllString(line, "") {
+		switch {
+		case r == '\b':
+			cur = max(cur-1, 0)
+		case r == '\r':
+			cur = 0
+		case unicode.IsControl(r):
+		case cur < len(row):
+			row[cur] = r
+			cur++
+		default:
+			row = append(row, r)
+			cur++
+		}
+	}
+	return string(row)
 }

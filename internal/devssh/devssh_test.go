@@ -295,6 +295,27 @@ func TestShellWithoutEchoAndWithPTY(t *testing.T) {
 	}
 }
 
+// A device that scrolls the echo of a long command over several lines leaves
+// none of it in the output.
+func TestShellDropsAWrappedEcho(t *testing.T) {
+	t.Parallel()
+	const cmd = "show running-config | include ^(hostname|ip domain|clock timezone|snmp-server location|snmp-server contact)"
+	dir := transcript(t, map[string]string{"prompt": "rtr1#", cmd + ".out": "hostname sw1\nip domain-name example.net\n"})
+	srv := serve(t, dir, fakedev.WithWrappedEcho(72))
+	s, err := dial(t, target(t, srv, nil)).CLI(devssh.VendorCisco, devssh.WithPTY())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 { // the second command starts from the state the first left
+		if got, err := s.Run(bg(), cmd); err != nil || got != "hostname sw1\nip domain-name example.net\n" {
+			t.Fatalf("got %q, %v", got, err)
+		}
+	}
+	if got, err := s.Run(bg(), "show version"); err != nil || strings.Contains(got, "$") {
+		t.Fatalf("short command: %q, %v", got, err)
+	}
+}
+
 func TestExecCLI(t *testing.T) {
 	t.Parallel()
 	dir := transcript(t, map[string]string{

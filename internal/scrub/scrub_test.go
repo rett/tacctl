@@ -216,3 +216,288 @@ func TestTheTemplateUserOfTheLoginLineIsAUserNotAClass(t *testing.T) {
 		t.Errorf("%v", kinds)
 	}
 }
+
+// scrubCase is a bundle of texts and what must be in the scrubbed texts
+// (joined) and what must not.
+type scrubCase struct {
+	name string
+	in   []string
+	want []string // each is in the output
+	gone []string // none is in the output
+}
+
+func runScrubCases(t *testing.T, cases []scrubCase) {
+	t.Helper()
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			out := strings.Join(New().ApplyAll(c.in), "\n==\n")
+			for _, w := range c.want {
+				if !strings.Contains(out, w) {
+					t.Errorf("%q is gone from the output:\n%s", w, out)
+				}
+			}
+			for _, g := range c.gone {
+				if strings.Contains(out, g) {
+					t.Errorf("%q is still in the output:\n%s", g, out)
+				}
+			}
+		})
+	}
+}
+
+// A model name has the shape of a serial number and is not one.
+func TestModelNamesAreNotSerialNumbers(t *testing.T) {
+	runScrubCases(t, []scrubCase{
+		{
+			name: "csr1000v inventory",
+			in: []string{"NAME: \"Chassis\", DESCR: \"Cisco CSR1000V Chassis\"\n" +
+				"PID: CSR1000V        , VID: V00  , SN: 9ABCDEFGHIJ\n"},
+			want: []string{"DESCR: \"Cisco CSR1000V Chassis\"", "PID: CSR1000V        , VID: V00  , SN: "},
+			gone: []string{"9ABCDEFGHIJ"},
+		},
+		{
+			name: "7206 inventory",
+			in: []string{"NAME: \"chassis\", DESCR: \"CISCO7206VXR chassis, Hw Serial#: 1234567890, Hw Revision: 1.0\"\n" +
+				"PID: CISCO7206VXR     , VID:    , SN: 1234567890\n"},
+			want: []string{"DESCR: \"CISCO7206VXR chassis, Hw Serial#: ", "PID: CISCO7206VXR     , VID:    , SN: "},
+		},
+		{
+			name: "a model stated in one file is kept in the others",
+			in: []string{"PID: ASR1001HX         , VID: V01  , SN: FOC0000AAAA\n",
+				"Cisco IOS XE Software, ASR1001HX Software (X86_64_LINUX_IOSD-UNIVERSALK9-M)\n"},
+			want: []string{"PID: ASR1001HX ", "ASR1001HX Software (X86_64"},
+			gone: []string{"FOC0000AAAA"},
+		},
+		{
+			name: "junos model line",
+			in:   []string{"Hostname: sw9\nModel: QFX10002\nJunos: 21.4R3-S2.4\n", "Chassis  QFX10002\n"},
+			want: []string{"Model: QFX10002", "Chassis  QFX10002"},
+		},
+		{
+			name: "ios show version model and revision line",
+			in:   []string{"cisco WS3750X48P (PowerPC405) processor (revision A0) with 262144K bytes of memory.\n", "the WS3750X48P again\n"},
+			want: []string{"cisco WS3750X48P (PowerPC405)", "the WS3750X48P again"},
+		},
+		{
+			name: "a real serial is still replaced",
+			in:   []string{"PID: CSR1000V , VID: V00 , SN: 9ABCDEFGHIJ\nsomething FOC0000AAAA else\n"},
+			want: []string{"PID: CSR1000V , VID: V00 , SN: SN00000"},
+			gone: []string{"9ABCDEFGHIJ", "FOC0000AAAA"},
+		},
+	})
+}
+
+// A chassis hardware table and a virtual chassis table as Junos prints them,
+// with invented serial numbers of every shape.
+const (
+	junosHardware = "Hardware inventory:\n" +
+		"Item             Version  Part number  Serial number     Description\n" +
+		"Chassis                                ABC0123456        Virtual Chassis\n" +
+		"Routing Engine 0          BUILTIN      BUILTIN           RE-EX4400-48T\n" +
+		"FPC 0            REV 11   650-114384   ABC0123456        EX4400-48T\n" +
+		"  CPU                     BUILTIN      BUILTIN           FPC CPU\n" +
+		"  PIC 0          REV 11   BUILTIN      BUILTIN           48x10M/100M/1G Base-T\n" +
+		"  PIC 1          REV 11   650-114384   1234567           4x10G SFP+\n" +
+		"Power Supply 0   REV 03   740-000001   abc1234           JPSU-350-AC-AFO\n" +
+		"Fan Tray 0                                               Fan Module\n" +
+		"    Xcvr 0                NON-JNPR     9317670227        SFP-LX10\n" +
+		"    Xcvr 4       REV 02   740-013111   L437599           SFP-T\n" +
+		"\n"
+	junosVC = "Virtual Chassis ID: 0000.5e00.5301\n" +
+		"                                                Mstr           Mixed Route Neighbor List\n" +
+		"Member ID  Status   Serial No    Model          prio  Role      Mode  Mode ID  Interface\n" +
+		"0 (FPC 0)  Prsnt    ABC0123456   ex4400-48t     255   Master*      N  VC   1  vcp-255/1/0\n" +
+		"1 (FPC 1)  Prsnt    9876543210   ex4400-48t     255   Backup       N  VC   0  vcp-255/1/0\n" +
+		"\n"
+)
+
+// A serial number is replaced by its field, whatever its shape, and the same
+// real value is the same example in every file.
+func TestSerialNumbersAreReplacedByTheirField(t *testing.T) {
+	runScrubCases(t, []scrubCase{
+		{
+			name: "inventory fields",
+			in: []string{"NAME: \"chassis\", DESCR: \"CISCO7206VXR chassis, Hw Serial#: 1234567890, Hw Revision: 1.0\"\n" +
+				"PID: CISCO7206VXR     , VID:    , SN: 1234567890\n" +
+				"PID: IOSv              , VID: 1.0, SN: 9L17A1TZNHPW4X9XZBG30\n" +
+				"PID: PWR-7200-AC       , VID:    , SN: abc1234\n" +
+				"PID: PWR-7200-AC       , VID:    , SN:            \n"},
+			want: []string{"Hw Serial#: SN000001, Hw Revision: 1.0", "VID:    , SN: SN000001\n", "VID: 1.0, SN: SN000002\n", "SN: SN000003\n", "PID: IOSv "},
+			gone: []string{"1234567890", "9L17A1TZNHPW4X9XZBG30", "abc1234"},
+		},
+		{
+			name: "show version fields",
+			in:   []string{"Processor board ID 1234567\nSystem serial number : 7654321\nSerial ID  xyz9876\n"},
+			want: []string{"Processor board ID SN000001\n", "System serial number : SN000002\n", "Serial ID  SN000003\n"},
+			gone: []string{"1234567", "7654321", "xyz9876"},
+		},
+		{
+			name: "the same value in two files",
+			in:   []string{"PID: X , VID: V , SN: 9999999999\n", "Processor board ID 9999999999\n"},
+			want: []string{"SN: SN000001\n", "Processor board ID SN000001\n"},
+			gone: []string{"9999999999"},
+		},
+		{
+			name: "chassis hardware, every row",
+			in:   []string{junosHardware},
+			want: []string{
+				"Chassis                                SN000001  ",
+				"FPC 0            REV 11   650-114384   SN000001  ",
+				"  PIC 1          REV 11   650-114384   SN000002  ",
+				"Power Supply 0   REV 03   740-000001   SN000003  ",
+				"    Xcvr 0                NON-JNPR     SN000004  ",
+				"    Xcvr 4       REV 02   740-013111   SN000005  ",
+				"Routing Engine 0          BUILTIN      BUILTIN           RE-EX4400-48T\n",
+				"  CPU                     BUILTIN      BUILTIN           FPC CPU\n",
+				"Fan Tray 0                                               Fan Module\n",
+				"NON-JNPR", "740-013111", "650-114384", "EX4400-48T", "SFP-LX10", "SFP-T",
+			},
+			gone: []string{"ABC0123456", "1234567", "abc1234", "9317670227", "L437599"},
+		},
+		{
+			name: "virtual chassis table",
+			in:   []string{junosVC},
+			want: []string{"0 (FPC 0)  Prsnt    SN000001", "1 (FPC 1)  Prsnt    SN000002", "ex4400-48t", "255   Master*"},
+			gone: []string{"ABC0123456", "9876543210"},
+		},
+		{
+			name: "table and table share the examples",
+			in:   []string{junosHardware, junosVC},
+			want: []string{"Chassis                                SN000001", "0 (FPC 0)  Prsnt    SN000001"},
+			gone: []string{"ABC0123456"},
+		},
+	})
+}
+
+// A dotted run of five groups or more is an object identifier or a version,
+// never an address.
+func TestObjectIdentifiersAndVersionsAreNotAddresses(t *testing.T) {
+	runScrubCases(t, []scrubCase{
+		{
+			name: "juniper sysObjectID",
+			in:   []string{"sysObjectID.0: 1.3.6.1.4.1.2636.1.1.1.2.165\n"},
+			want: []string{"sysObjectID.0: 1.3.6.1.4.1.2636.1.1.1.2.165\n"},
+		},
+		{
+			name: "a leading dot",
+			in:   []string{"sysObjectID.0: .1.3.6.1.4.1.2636.1.1.1.2.165\nsysObjectID.0: .1.3.6.1.4.1.9.1.516\n"},
+			want: []string{"sysObjectID.0: .1.3.6.1.4.1.2636.1.1.1.2.165\n", "sysObjectID.0: .1.3.6.1.4.1.9.1.516\n"},
+		},
+		{
+			name: "five groups",
+			in:   []string{"version 10.20.30.40.50 and 1.2.3.4.5.6\n"},
+			want: []string{"version 10.20.30.40.50 and 1.2.3.4.5.6\n"},
+		},
+		{
+			name: "software versions",
+			in:   []string{"Version 12.4(15)SW4, 16.07.01, 15.0(2)SE11, 24.2R2.18, 17.3.4a\n"},
+			want: []string{"Version 12.4(15)SW4, 16.07.01, 15.0(2)SE11, 24.2R2.18, 17.3.4a\n"},
+		},
+		{
+			name: "an address at the end of a sentence is still an address",
+			in:   []string{"The gateway is 10.20.30.1. The peer 10.20.30.2, ok\n"},
+			want: []string{"The gateway is 192.0.2.1. The peer 192.0.2.2, ok\n"},
+			gone: []string{"10.20.30"},
+		},
+	})
+}
+
+// The columns after a replacement stay where the device printed them.
+func TestColumnsKeepTheirWidth(t *testing.T) {
+	cols := func(t *testing.T, in []string, marks ...string) {
+		t.Helper()
+		out := New().ApplyAll(in)
+		for i := range in {
+			inLines, outLines := strings.Split(in[i], "\n"), strings.Split(out[i], "\n")
+			if len(inLines) != len(outLines) {
+				t.Fatalf("the line count changed:\n%s", out[i])
+			}
+			for n := range inLines {
+				for _, m := range marks {
+					if a, b := strings.Index(inLines[n], m), strings.Index(outLines[n], m); a != b {
+						t.Errorf("%q is at column %d, was at %d:\n%s\n%s", m, b, a, inLines[n], outLines[n])
+					}
+				}
+			}
+		}
+	}
+	t.Run("virtual chassis row", func(t *testing.T) {
+		cols(t, []string{junosVC}, "ex4400-48t", "255", "Master*", "vcp-255")
+	})
+	t.Run("chassis hardware", func(t *testing.T) {
+		cols(t, []string{junosHardware}, "Virtual Chassis", "EX4400-48T", "4x10G", "JPSU", "SFP-LX10", "SFP-T", "NON-JNPR", "740-013111")
+	})
+	t.Run("shorter and longer", func(t *testing.T) {
+		in := "10.20.30.40       up    eth0\n10.1.1.1          up    eth1\nuser jsmith       ok    here\nuser jo           ok    there\n"
+		cols(t, []string{in}, "up", "ok", "eth", "here", "there")
+	})
+	t.Run("host and mac columns", func(t *testing.T) {
+		in := "Hostname: core-sw1.corp.net\ncore-sw1.corp.net   00:1b:63:84:45:e6   Gi1/0/1\nsw1                 00:1b:63:84:45:e7   Gi1/0/2\nhost ab    00:1b:63:84:45:e8   Gi1/0/3\nHostname: ab\n"
+		cols(t, []string{in}, "Gi1", "00:")
+	})
+	t.Run("end of line and single blanks", func(t *testing.T) {
+		out := New().ApplyAll([]string{"Mgmt 10.20.30.40    \nip address 192.168.100.100 255.255.255.0\n"})[0]
+		if want := "Mgmt 192.0.2.1    \nip address 192.0.2.2 255.255.255.0\n"; out != want {
+			t.Errorf("got %q, want %q", out, want)
+		}
+	})
+}
+
+// The names of vendors and of standards bodies are public, not the owner's.
+func TestVendorAddressesAreKept(t *testing.T) {
+	const at = "@" // the mail addresses are built, so that the lint for personal addresses has nothing to read
+	keep := "Technical Support: http://www.cisco.com/techsupport\n" +
+		"Importers: http://www.cisco.com/wwl/export/crypto/tool/stqrg.html\n" +
+		"mail export" + at + "cisco.com, see www.juniper.net or juniper.net, hpe.com and hp.com, ftp.gnu.org, www.fsf.org,\n" +
+		"www.openssl.org, tools.ietf.org, cdn.kernel.org, host.example.com, a.example.net\n"
+	runScrubCases(t, []scrubCase{
+		{name: "public names", in: []string{keep}, want: []string{keep}},
+		{
+			name: "the owner's names around them are replaced",
+			in:   []string{keep + "ntp ntp1.corp.net and mail jdoe" + at + "corp.net\n"},
+			want: []string{keep},
+			gone: []string{"corp.net", "jdoe"},
+		},
+	})
+}
+
+// An IOS sysDescr as the SNMP system group prints it, its lines joined, is
+// left as printed apart from the real values in it.
+func TestIOSSysDescrIsLeftAsPrinted(t *testing.T) {
+	const descr = "Cisco IOS Software, C3745 Software (C3745-ADVENTERPRISEK9-M), Version 12.4(15)SW4, RELEASE SOFTWARE (fc1) | " +
+		"Technical Support: http://www.cisco.com/techsupport | Copyright (c) 1986-2008 by Cisco Systems, Inc. | " +
+		"Compiled Mon 10-Jun-08 21:04 by prod_rel_team"
+	in := []string{
+		"sysObjectID.0: 1.3.6.1.4.1.9.1.516\nsysLocation.0: \nsysDescr.0: " + descr + "\nsysContact.0:\nsysName.0: rtr9.corp.net\nsysLocation.0: Building 7\n",
+		"Cisco IOS Software, C3745 Software (C3745-ADVENTERPRISEK9-M), Version 12.4(15)SW4, RELEASE SOFTWARE (fc1)\n" +
+			"Technical Support: http://www.cisco.com/techsupport\nrtr9 uptime is 3 weeks\n",
+		"hostname rtr9\nip domain-name corp.net\nsnmp-server location Building 7\nsnmp-server contact\nsnmp-server location\nHostname:\nModel: C3745\n",
+	}
+	s := New()
+	s.Learn(Host, "rtr9")
+	out := s.ApplyAll(in)
+	for _, want := range []string{"sysObjectID.0: 1.3.6.1.4.1.9.1.516\n", "sysDescr.0: " + descr + "\n"} {
+		if !strings.Contains(out[0], want) {
+			t.Errorf("%q is not in the output:\n%s", want, out[0])
+		}
+	}
+	if !strings.HasPrefix(out[1], "Cisco IOS Software, C3745 Software (C3745-ADVENTERPRISEK9-M), Version 12.4(15)SW4, RELEASE SOFTWARE (fc1)\nTechnical Support: http://www.cisco.com/techsupport\nsw1 uptime") {
+		t.Errorf("garbled:\n%s", out[1])
+	}
+	for _, gone := range []string{"rtr9", "corp.net", "Building 7"} {
+		if strings.Contains(strings.Join(out, "\n"), gone) {
+			t.Errorf("%q is still in the output", gone)
+		}
+	}
+}
+
+// A host name is one example whether it is written bare or with its domain,
+// and its domain is one example in every line that names it.
+func TestAHostIsOneExampleBareOrWithItsDomain(t *testing.T) {
+	in := "Hostname: core-sw1.corp.net\nsysName.0: core-sw1.corp.net\nip domain-name corp.net\ncore-sw1 uptime is 1 day\nHostname: core-sw1\n"
+	out := New().ApplyAll([]string{in})[0]
+	want := "Hostname: sw1.example.net\nsysName.0: sw1.example.net\nip domain-name example.net\nsw1 uptime is 1 day\nHostname: sw1\n"
+	if out != want {
+		t.Errorf("got\n%s\nwant\n%s", out, want)
+	}
+}

@@ -41,10 +41,30 @@ first (see [Examples](../development/README.md#examples) for the values):
 
 - host names, domains, users, login classes, IPv4 and IPv6 and MAC addresses, serial numbers,
   locations and contacts become example values, the same real value always the same example;
+- serial numbers are replaced by their field, whatever their length, case or digits: the `SN:`
+  value of `show inventory`, `Hw Serial#:` in a description, `Processor board ID`, `System serial
+  number`, the Junos `Serial ID` of a routing engine, the serial cell of every row of `show chassis
+  hardware` (transceiver, PIC and power supply rows included) and of Junos `show virtual-chassis`,
+  cut at the column its header gives, and any other token with the shape of a serial number (eight
+  to fourteen capitals and digits, with both); an empty or `BUILTIN` cell, the part number and the
+  description columns stay;
 - time zones are `UTC`;
 - the free text of a commit comment is removed (tacctl's own comments stay);
 - anything that looks like a secret, a hash or a key is removed;
-- model names, release lines and the layout of every answer stay as the device printed them.
+- model names, release lines and the layout of every answer stay as the device printed them: the
+  values after `PID:` and `VID:`, the quoted `NAME:` and `DESCR:` strings, the `Model:` line of Junos,
+  the `Cisco <model> (revision ...)` line of IOS and every model name the files of the bundle
+  state, in all the files; a dotted run of five groups of digits or more (an object identifier such
+  as `1.3.6.1.4.1.2636`, a version) is not an address;
+- the names of vendors and standards bodies stay: a host name or mail address under cisco.com,
+  juniper.net, hpe.com, hp.com, gnu.org, fsf.org, openssl.org, ietf.org or kernel.org, and the
+  `example.*` names, so `Technical Support: http://www.cisco.com/techsupport` is as the device
+  printed it;
+- when a replacement is shorter or longer than the text it replaces and blanks follow, blanks are
+  added or taken away so that the columns after it stay where the device printed them (nothing is
+  done at the end of a line);
+- a Cisco device that echoes a command longer than its terminal is wide, in several lines, leaves
+  none of the echo in the file: it starts with the device's answer.
 
 A text that still holds a value the scrubber learned to replace is not written, and nothing is.
 

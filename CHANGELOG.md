@@ -157,6 +157,44 @@ current behaviour; this file is where history lives.
    every command, the conventions page, the manual page, the help and
    `tests/README.md` (the `TACCTL_TEST_HOME` knob of the bats suite) say so.
 
+9. **`device support-bundle` keeps model names, object identifiers, vendor
+   addresses and the layout of every answer, and replaces every serial
+   number.** Captures of real devices showed what the scrubber got wrong. It
+   took model names for serial numbers (`PID: CSR1000V` lost its model and
+   `DESCR: "Cisco CSR1000V Chassis"` became `Cisco SN000001 Chassis`), it
+   missed serial numbers that have no serial shape, it rewrote
+   `sysObjectID.0: 1.3.6.1.4.1.2636.1.1.1.2.165` as pieces of example IPv4
+   addresses, it replaced the vendors' own addresses, it moved the columns of a
+   table, a sysDescr came out garbled, and a command the IOS terminal echoed in
+   several lines left them at the top of its file (`07-identity-lines.txt`).
+   Now: the values after `PID:` and `VID:`, the quoted `NAME:` and `DESCR:`
+   strings of `show inventory`, the `Model:` line of Junos, the `Cisco <model>
+   (revision ...)` line of IOS `show version` and every model name the files of
+   the bundle state are kept, in all the files; the serial numbers are replaced
+   by their field, whatever their length, case or digits, and the same real
+   serial is the same example in every file: the `SN:` value of `show
+   inventory`, `Hw Serial#:` in a description, `Processor board ID`, `System
+   serial number`, the Junos `Serial ID` of a routing engine, and the serial
+   cell of every row of `show chassis hardware` (the transceiver, PIC and power
+   supply rows included) and of Junos `show virtual-chassis`, cut at the column
+   its header gives (an empty or `BUILTIN` cell, the part number and the
+   description stay); a run of five groups of digits or more separated by dots
+   (an object identifier, a version) is never an address; a host name or mail
+   address under cisco.com, juniper.net, hpe.com, hp.com, gnu.org, fsf.org,
+   openssl.org, ietf.org or kernel.org, and the example.* names, is kept; and
+   when a replacement is shorter or longer than the text it replaces and blanks
+   follow, the blanks are added or taken away so the columns after it stay
+   where the device printed them. The sysDescr garble was the learn step: an
+   empty `sysLocation.0:`, `sysContact.0:` or `snmp-server contact` line took
+   the next line as its value and replaced all of it by an example; the
+   patterns for the hostname, domain, location and contact lines stay on their
+   line now. A Cisco session also drops the echo of a command longer than the
+   terminal is wide (the device scrolls it over lines that start with `$`), so
+   the `show running-config | include ^(hostname|...)` file starts with the
+   device's answer. Release strings such as `12.4(15)SW4` and `16.07.01` were
+   never read as addresses and still are not. `docs/devices/support-bundle.md`
+   and the manual page say what is replaced and what stays.
+
 ## 0.2.26 (2026-11-06)
 
 1. **The break-glass firewall line of `tacctl upgrade` and `install` is one
