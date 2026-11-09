@@ -753,11 +753,11 @@ device config forget <name>[,<name>...] | --all
     administrators
 
 device reports generate --type inventory|members|software|config [--scope <scope>]
-                        [--vendor cisco|juniper|wti|other] [--format text|csv|json]
+                        [--vendor cisco|juniper|wti|other] [--format text|csv|json|pdf]
                         [--name <name>] [--stdout] [--pull]
 
     Make a dated report of the registered devices from what is stored (no device is contacted) and
-    keep it as `~/reports/devices/<name>.<txt|csv|json>` of your home, mode 0600, with a `.meta`
+    keep it as `~/reports/devices/<name>.<txt|csv|json|pdf>` of your home, mode 0600, with a `.meta`
     file beside it; the name is `<type>-<yyyymmdd>` (`-2`, `-3` for a second one the same day) or
     `--name`. `inventory` has a row per device (address, vendor, scope, model, serial number,
     release, number of chassis members, location, description, date of the pull), `members` one per
@@ -767,9 +767,11 @@ device reports generate --type inventory|members|software|config [--scope <scope
     devices that have a model or a serial number. Below the operator tier the model, serial number,
     release and chassis members are left out as `device show` leaves them (`members` has no rows).
     The report holds the devices of your scopes (a superuser's: all); `--scope` and `--vendor`
-    narrow it. `--stdout` prints it and
-    stores nothing. `--pull` reads the devices first as `device config pull` does, with your own
-    password (engineer tier); a device that fails keeps its last facts and the exit status is 1. A
+    narrow it. `--format pdf` makes a letter landscape PDF with `weasyprint` (`sudo apt-get install
+    -y weasyprint fonts-dejavu-core`; without it the command refuses before it reads anything) and,
+    being binary, is not printed to a terminal. `--stdout` prints it and stores nothing.
+    `--pull` reads the devices first as `device config pull` does, with your own password (engineer
+    tier); a device that fails keeps its last facts and the exit status is 1. A
     report over the size or the count limit is refused (see `config reports`). See
     [Device reports](../devices/reports.md)
 
@@ -781,14 +783,14 @@ device reports list [--json] [--user <name> | --all-users]
 device reports show <report> [--content]
 
     When, by whom and with what command the report was made, its filters, the date of its oldest
-    datum, its size and the `scp` line that fetches it; `--content` adds its first 200 lines. A
-    report is its name, or its file name when two files share a name; a superuser names another
-    user's as `<user>/<report>` (audited)
+    datum, its size and the `scp` line that fetches it; `--content` adds its first 200 lines (a PDF
+    is binary: it says `binary PDF, <n> bytes: use export`). A report is its name, or its file name
+    when two files share a name; a superuser names another user's as `<user>/<report>` (audited)
 
 device reports export <report> [--out <file>] [--force]
 
     Print the report, or write it to a file (made as you, mode 0600; an existing file needs
-    `--force`)
+    `--force`). A PDF is never printed to a terminal: use `--out` or redirect
 
 device reports rename <report> <new>
 

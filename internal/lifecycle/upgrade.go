@@ -297,6 +297,9 @@ func Upgrade(ctx context.Context, h *Host, args []string) error {
 	h.operatorNotice()
 	h.wtiPlainNotice()
 	h.rootMembersNotice(ctx)
+	// Last: the optional tools of the PDF device reports (never fails the
+	// upgrade, which is done by now).
+	h.pdfOffer(ctx)
 	return nil
 }
 

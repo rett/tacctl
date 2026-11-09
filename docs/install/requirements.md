@@ -4,6 +4,8 @@
 
 A server needs `git` and `wget`; everything else is installed by tacctl. tacctl is a single Go binary, `/usr/local/bin/tacctl`, **built on the server** from the clone in `/opt/tacctl`: the dependencies are vendored in the clone, so building needs no network and no module proxy. `/opt/tacctl/bin/tacctl.sh` is the bootstrap: it installs the Go toolchain (`/usr/local/go`) when it is missing, after verifying the download against its published SHA-256, builds the binary when it is missing or out of date, and runs it. The first build compiles the standard library and the dependencies (about 15 seconds on an eight-core machine, about 130 MB in root's Go build cache, `/root/.cache/go-build`); later builds reuse the cache. `tacctl version` prints the installed version; `--long` adds the commit, build date and Go version:
 
+One package is optional: `weasyprint`, with `fonts-dejavu-core`, makes `tacctl device reports generate --format pdf` work (`sudo apt-get install -y weasyprint fonts-dejavu-core`; see [PDF reports](../devices/reports.md#pdf-reports)). `tacctl install` does not install it, and `tacctl upgrade` offers it once (see [PDF reports](upgrading.md#pdf-reports)).
+
 ```bash
 tacctl version          # tacctl <version>
 tacctl version --long   # adds the commit, the build date, the Go version and "test knobs: off"

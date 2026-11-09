@@ -46,5 +46,7 @@ func (inv *invocation) lifecycleHost() *lifecycle.Host {
 		Audit:      func(event string, kv ...audit.KV) { inv.detail(event, kv...) },
 		// This machine's own login: the enrolment's machinery (own_login.go).
 		OwnLogin: inv.ownLogin,
+		// The questions of an upgrade are asked at a terminal only.
+		Terminal: inv.terminal,
 	}
 }

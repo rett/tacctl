@@ -197,6 +197,31 @@ Listener, log-level and metrics settings in
 .I tacctl.yaml
 survive.
 .IP
+The last step of a successful upgrade, on a system with
+.B apt\-get
+and
+.B dpkg\-query
+where
+.B weasyprint
+or
+.B fonts\-dejavu\-core
+is not installed, is the offer of the tools of the PDF device reports
+.RB ( "device reports generate \-\-format pdf" ).
+At a terminal it asks
+.B "tacctl can write device reports as PDF. Install weasyprint and fonts\-dejavu\-core now? [y/N]"
+once: \&'y' or \&'Y' installs the missing packages (a failure is a warning with
+the command, never a failed upgrade, and is asked again), anything else is no,
+which is remembered in the marker
+.I /var/lib/tacctl/pdf\-tools\-offered
+so that the next upgrades do not ask (delete the file to be asked again). Without
+a terminal nothing is asked or installed and the line
+.B "sudo apt\-get install \-y weasyprint fonts\-dejavu\-core"
+is printed. Nothing is offered when both are installed, and
+.B install
+never installs them. A rollback leaves the marker, and
+.B uninstall
+removes it.
+.IP
 The clone, the fetch and the pull of the tacctl repository in
 .I /opt/tacctl
 never wait for an answer, as the pull of the tacquito source
@@ -14164,7 +14189,7 @@ lines (type, name, format, rows, new name, number removed). There is no
 .B "generate \-\-as"
 and no verb writes a report into another user's home.
 .TP
-.BI "device reports generate " "\-\-type inventory|members|software|config " "[ \-\-scope " scope " ] [ \-\-vendor cisco|juniper|wti|other ] [ \-\-format text|csv|json ] [ \-\-name " name " ] [ \-\-stdout ] [ \-\-pull ]"
+.BI "device reports generate " "\-\-type inventory|members|software|config " "[ \-\-scope " scope " ] [ \-\-vendor cisco|juniper|wti|other ] [ \-\-format text|csv|json|pdf ] [ \-\-name " name " ] [ \-\-stdout ] [ \-\-pull ]"
 Make a report. It is written to
 .IR ~/reports/devices/<name>.<ext> ,
 the directory of mode 0700 and the file of mode 0600, by tacctl as the user
@@ -14206,8 +14231,7 @@ or a tab or a carriage return gets a leading
 so a spreadsheet does not run it, and a lone
 .B \-
 is left as it is;
-.BR .csv )
-and
+.BR .csv ),
 .B json
 (one object with
 .BR schema ,
@@ -14232,7 +14256,37 @@ dates in RFC 3339 UTC, null for a device never pulled; every row of the
 members report has a
 .B components
 list that is empty in this release;
-.BR .json ).
+.BR .json )
+and
+.B pdf
+(a letter landscape document made from the report: the type, the time, the
+filters and the date of the oldest datum, then a table in DejaVu Sans whose
+header row repeats on each page, with a page counter; text outside the Latin and
+common Unicode ranges of DejaVu prints only if another font on the server has it, and
+otherwise shows as empty boxes;
+.BR .pdf ).
+The PDF is made by
+.BR weasyprint ,
+which must be installed
+.RB ( "sudo apt\-get install \-y weasyprint fonts\-dejavu\-core" ):
+it is looked for in
+.BR /usr/bin ,
+.B /usr/local/bin
+and
+.BR /opt/weasyprint/bin ,
+never in the caller's
+.BR PATH ,
+and run as the user who ran sudo, never as root, with a minimal environment, at
+most 120 seconds and at most 64 MiB of output. Without it, or at a terminal
+with
+.BR \-\-stdout ,
+.B generate
+refuses (exit 1) before it reads any report data, with
+.B "PDF reports need weasyprint, which is not installed here. Install it: sudo apt\-get install \-y weasyprint fonts\-dejavu\-core"
+or
+.BR "A PDF is binary: redirect \-\-stdout to a file, or leave it out to store the report" ;
+a tool that fails, makes no PDF or does not finish in time is reported with the
+first lines of its error, and nothing is written.
 The state and applied columns of the config report are the configuration state
 that
 .B "device list"
@@ -14273,8 +14327,8 @@ Only the devices that scope answers. A scope that is not one of yours is refused
 \fB\-\-vendor\fR \fIcisco|juniper|wti|other\fR
 Only the devices of that vendor.
 .TP
-\fB\-\-format\fR \fItext|csv|json\fR
-The format: text (aligned columns, the default), csv (RFC 4180, a header line, UTF\-8) or json (one object: schema, type, generated, oldest_data, filters, columns, rows). It sets the extension of the file.
+\fB\-\-format\fR \fItext|csv|json|pdf\fR
+The format: text (aligned columns, the default), csv (RFC 4180, a header line, UTF\-8), json (one object: schema, type, generated, oldest_data, filters, columns, rows) or pdf (a letter landscape document with the header row repeated on each page, made by weasyprint, which must be installed: sudo apt\-get install \-y weasyprint fonts\-dejavu\-core). It sets the extension of the file. A PDF is binary: with \-\-stdout it is refused at a terminal.
 .TP
 \fB\-\-name\fR \fI<name>\fR
 The name of the report, without the extension: letters, digits, '.', '_' and '\-', at most 64 bytes, no leading dot. The default is the type and the date (inventory\-20261106); a second report of the same day gets \-2. A name in use is refused, never overwritten.
@@ -14326,7 +14380,11 @@ the size and the command that fetches it
 .B \-\-content
 adds the first 200 lines of the report, read from the start of the file and no
 further than 256 KiB (a file with more says that, and counts the lines only when it
-read all of it). A report is addressed by its name or by
+read all of it); a PDF is binary, so
+.B \-\-content
+prints
+.B "binary PDF, <n> bytes: use export"
+instead. A report is addressed by its name or by
 its file name; when two files share a name (only a file the user put there can)
 the extension is needed. A superuser names another user's report as
 .IR user/report .
@@ -14338,7 +14396,7 @@ Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show
 Options:
 .TP
 \fB\-\-content\fR
-Print the report itself under the facts, its first 200 lines ('export' prints all of it).
+Print the report itself under the facts, its first 200 lines ('export' prints all of it); a PDF is binary and prints its size and 'use export' instead.
 .RE
 .\" END GENERATED: command device reports show
 .TP
@@ -14358,7 +14416,13 @@ the report's owner
 or the larger size the report's metadata records, 1 GiB at the most) and refuses a
 file over it. Both verbs open the file without following a link and without
 waiting, and read a regular file only: a link, a FIFO or a device node is refused,
-the metadata file too. A superuser exports another user's report as
+the metadata file too. A PDF report (or any file of the directory that ends in
+.BR .pdf )
+is binary and is never printed to a terminal: without
+.B \-\-out
+it is refused with
+.B "PDF is binary: use --out FILE or redirect"
+and, when the standard output is redirected, written as it is stored. A superuser exports another user's report as
 .IR user/report ;
 it is audited. What another user wrote is not trusted with the superuser's
 terminal, and the metadata file does not vouch for it (its owner makes it too):
@@ -14369,7 +14433,9 @@ as
 does (control and formatting characters, escape sequences and line separators
 print as \&'?'), whether the file has a valid metadata file or not; with
 .B \-\-out
-the bytes are copied as they are, and a user's own file prints as stored.
+the bytes are copied as they are, and a user's own file prints as stored. A PDF
+goes to a redirected standard output as it is, for the superuser too: nothing
+can move a terminal, which it never reaches.
 .\" BEGIN GENERATED: command device reports export
 .RS
 .PP
@@ -14378,7 +14444,7 @@ Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show
 Options:
 .TP
 \fB\-\-out\fR \fI<file>\fR
-Write the copy to this file, mode 0600, made as you; a file that exists is refused unless \-\-force.
+Write the copy to this file, mode 0600, made as you; a file that exists is refused unless \-\-force. A PDF report is binary: without \-\-out it is refused at a terminal and written to standard output when that is redirected.
 .TP
 \fB\-\-force\fR
 Replace the file \-\-out names, if there is one.
@@ -18812,6 +18878,20 @@ Do not edit.
 Gets the line
 .I /usr/local/bin/tacctl\-console
 with the drop-in, and loses it with it.
+.TP
+.I /var/lib/tacctl/pdf\-tools\-offered
+Marker that
+.B "tacctl upgrade"
+offered to install
+.B weasyprint
+and
+.B fonts\-dejavu\-core
+(the tools of
+.BR "device reports generate \-\-format pdf" )
+and the answer was no. It is written only for a no (mode 0600); delete it to be
+asked at the next upgrade.
+.B uninstall
+removes it.
 .TP
 .I /var/lib/tacctl/tier\-pinned
 Marker that

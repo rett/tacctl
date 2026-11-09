@@ -96,6 +96,12 @@ type hooks struct {
 	isTerminalWriter func(w io.Writer) bool
 	// editEuid is the identity this process has.
 	editEuid func() int
+	// pdfToolDirs replaces the directories the PDF tool is looked for in
+	// (nil: the fixed ones); pdfTimeout and pdfMaxOutput replace the time
+	// and the output limit the tool is held to (0: 120 s, 64 MiB).
+	pdfToolDirs  []string
+	pdfTimeout   time.Duration
+	pdfMaxOutput int64
 	// sshAccountOf looks an account up in the local account database.
 	sshAccountOf func(name string) (sshAccount, error)
 	// sshTerminal reports whether stdin is a terminal.

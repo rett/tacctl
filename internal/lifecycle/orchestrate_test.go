@@ -121,6 +121,8 @@ type ohost struct {
 	// audit are the detail lines the command wrote (Host.Audit), as 'event
 	// k=v ...'.
 	audit []string
+	// terminal, when set, is the Host's Terminal hook.
+	terminal func() bool
 	// ownLogin, when set, is the Host's OwnLogin hook.
 	ownLogin func(context.Context, lifecycle.OwnLoginOptions)
 	// nameSuffix, when set, is the Host's NameSuffix hook.
@@ -229,7 +231,7 @@ func (o *ohost) host() *lifecycle.Host {
 	env := lifecycle.NewEnv(o.be, bytes.NewReader(bytes.Repeat([]byte{0xab}, 64)), false)
 	env.Chown = func(string) {}
 	return &lifecycle.Host{Env: env, Environ: paths.NewEnv(o.environ), Commit: o.commit, Completion: testCompletion,
-		OwnLogin: o.ownLogin, NameSuffix: o.nameSuffix, AfterStoreRename: o.afterStoreRename, RemoveFile: o.removeFile,
+		OwnLogin: o.ownLogin, Terminal: o.terminal, NameSuffix: o.nameSuffix, AfterStoreRename: o.afterStoreRename, RemoveFile: o.removeFile,
 		Audit: func(event string, kv ...audit.KV) {
 			var b strings.Builder
 			b.WriteString(event)
@@ -1219,6 +1221,7 @@ func TestUninstallYes(t *testing.T) {
 	o.rad.SetInstalled(true)
 	o.write(o.p.KnownHosts, "# generated\n")
 	o.write(o.p.TierPinMarker, "migrated\n")
+	o.write(o.p.PDFOfferMarker, "declined\n")
 	if code := uninstall(o, "--yes"); code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", code, o.stdout, o.stderr)
 	}
@@ -1237,7 +1240,7 @@ func TestUninstallYes(t *testing.T) {
 		"[INFO] Removing management repo...", "PHASE tacacs uninstall account", "  Uninstall Complete",
 		"  Not removed:\n    - Go installation (/usr/local/go)\n    - tacquito source (/opt/tacquito-src)\n    - Go build cache (/root/.cache/go-build)\n")
 	for _, f := range []string{o.p.Command, o.p.Completion, o.p.ManPage, o.p.SudoersFile, o.p.TierSudoersFile, o.p.LinuxDir,
-		filepath.Dir(o.p.LinuxDir), o.p.StateDir, o.p.Deploy, o.p.KnownHosts, o.p.TierPinMarker, o.p.VarLib} {
+		filepath.Dir(o.p.LinuxDir), o.p.StateDir, o.p.Deploy, o.p.KnownHosts, o.p.TierPinMarker, o.p.PDFOfferMarker, o.p.VarLib} {
 		if _, err := os.Lstat(f); err == nil {
 			t.Errorf("%s left", f)
 		}
