@@ -410,11 +410,21 @@ func (s *server) StatVFS(r *sftp.Request) (v *sftp.StatVFS, err error) {
 	return v, nil
 }
 
+// failedOpen audits an open that failed in the kernel as the transfer it
+// was meant to be, with the error. A refusal is audited as one by guard, with
+// its reason, and not here.
+func (s *server) failedOpen(r *sftp.Request, op string, err error) {
+	if reasonOf(err) == "" {
+		s.audit(Event{Op: op, Path: display(r.Filepath), Err: err})
+	}
+}
+
 // Fileread opens a file for download.
 func (s *server) Fileread(r *sftp.Request) (ra io.ReaderAt, err error) {
 	defer s.guard(&err, r)
 	f, err := s.openFile(r, false)
 	if err != nil {
+		s.failedOpen(r, "download", err)
 		return nil, err
 	}
 	return f, nil
@@ -425,6 +435,7 @@ func (s *server) Filewrite(r *sftp.Request) (wa io.WriterAt, err error) {
 	defer s.guard(&err, r)
 	f, err := s.openFile(r, true)
 	if err != nil {
+		s.failedOpen(r, "upload", err)
 		return nil, err
 	}
 	return f, nil
@@ -435,6 +446,7 @@ func (s *server) OpenFile(r *sftp.Request) (rw sftp.WriterAtReaderAt, err error)
 	defer s.guard(&err, r)
 	f, err := s.openFile(r, true)
 	if err != nil {
+		s.failedOpen(r, "upload", err)
 		return nil, err
 	}
 	return f, nil

@@ -14,7 +14,8 @@ import (
 // paths the client used, cleaned (the home is "/"); they hold what the
 // client sent, so the caller sanitises them before it logs them.
 type Event struct {
-	// Op is "upload" or "download" (at close, Bytes the total moved),
+	// Op is "upload" or "download" (at close, Bytes the total moved; an open
+	// that failed in the kernel gives the same Op at once, with Err set),
 	// "delete", "rename", "mkdir", "setstat", or "refused".
 	Op string
 	// Path is the file the Op is about; To is the new name of a rename.

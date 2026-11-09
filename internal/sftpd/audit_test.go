@@ -383,3 +383,58 @@ func TestIsSubsystemCommand(t *testing.T) {
 		}
 	}
 }
+
+// Every request that fails in the kernel is audited with its operation and
+// the error; one that is refused is audited as a refusal with its reason.
+func TestAuditFailedOperations(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes to a read-only file")
+	}
+	e := newEnv(t, nil)
+	e.write("ro", "x")
+	e.write("d/f", "x")
+	if err := os.Chmod(e.home+"/ro", 0o444); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name string
+		do   func() error
+		want string // the operation of the event (the first one), "" for a refusal
+		path string
+	}{
+		{"upload over a read-only file", func() error { return putFile(e.client, "ro", "y") }, "upload", "/ro"},
+		{"upload into a missing directory", func() error { return putFile(e.client, "nodir/f", "y") }, "upload", "/nodir/f"},
+		{"read-write open of a read-only file", func() error {
+			_, err := e.client.OpenFile("ro", os.O_RDWR)
+			return err
+		}, "upload", "/ro"},
+		{"download of a missing file", func() error { _, err := e.client.Open("missing"); return err }, "download", "/missing"},
+		{"download of a directory", func() error { _, err := e.client.Open("d"); return err }, "download", "/d"},
+		{"delete of a missing file", func() error { return e.client.Remove("missing") }, "delete", "/missing"},
+		{"rmdir of a directory with content", func() error { return e.client.RemoveDirectory("d") }, "delete", "/d"},
+		{"rename of a missing file", func() error { return e.client.Rename("missing", "x") }, "rename", "/missing"},
+		{"rename onto an existing file", func() error { return e.client.Rename("ro", "d/f") }, "rename", "/ro"},
+		{"mkdir over an existing directory", func() error { return e.client.Mkdir("d") }, "mkdir", "/d"},
+		{"mkdir below a missing directory", func() error { return e.client.Mkdir("a/b") }, "mkdir", "/a/b"},
+		{"setstat of a missing file", func() error { return e.client.Chmod("missing", 0o600) }, "setstat", "/missing"},
+		{"a refused request", func() error { _, err := e.client.Open(".ssh/k"); return err }, "refused", "/.ssh/k"},
+	}
+	for _, c := range cases {
+		e.rec.reset()
+		if err := c.do(); err == nil {
+			t.Errorf("%s succeeded", c.name)
+			continue
+		}
+		ev := e.rec.all()
+		if len(ev) == 0 {
+			t.Errorf("%s: no event", c.name)
+			continue
+		}
+		if ev[0].Op != c.want || ev[0].Path != c.path || ev[0].Err == nil {
+			t.Errorf("%s: first event %+v, want op %s on %s with an error", c.name, ev[0], c.want, c.path)
+		}
+	}
+	if e.read("ro") != "x" {
+		t.Error("a failed upload changed the file")
+	}
+}
