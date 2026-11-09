@@ -172,3 +172,72 @@ func TestRollback0227IsTheReleaseBeforeThisOne(t *testing.T) {
 	hs.run(hs.runner(), "rollback", "v0.2.27")
 	hs.expect(0, "Roll back to 0.2.27 (dry run)", "")
 }
+
+// The one thing this release writes that 0.2.27 refuses is the console's file
+// transfer settings (its console.yaml reader answers "settings: unknown key"):
+// the dry run lists the key, --apply takes a snapshot, removes it and nothing
+// else of console.yaml, says what to avoid until the upgrade and why the
+// snapshot cannot be restored by 0.2.27, and a second run converts nothing.
+// With the settings unset nothing of this is said (TestRollback0227ConvertsNothing).
+func TestRollback0227RemovesTheFileTransferSettings(t *testing.T) {
+	hs := rollback0227State(t)
+	hs.step("", "console", "idle-timeout", "12")
+	hs.step("", "console", "file-transfer", "operator", "enable")
+	hs.step("", "console", "file-transfer", "quota", "operator", "1G")
+	hs.step("", "console", "file-transfer", "user", "bob", "disable")
+	if y := hs.read("state/console.yaml"); !strings.Contains(y, "file_transfer:") || !strings.Contains(y, "idle_timeout: 12") {
+		t.Fatalf("console.yaml:\n%s", y)
+	}
+	before := tree(t, hs.dir)
+	hs.run(hs.runner(), "rollback", "0.2.27")
+	hs.expect(0, "This was a dry run: nothing was changed.", "")
+	out := hs.all()
+	for _, want := range []string{"--apply takes a snapshot of the state first", "console.yaml: take out the settings 0.2.27 does not know   [does]",
+		"remove settings.file_transfer: tiers operator,superuser, 1 user switch, 1 quota", "0.2.27's parser rejects the file transfer settings 0.2.28 added to console.yaml; everything else is kept"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the dry run lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "Warnings") || strings.Contains(out, "--yes") {
+		t.Errorf("the dry run asks for --yes:\n%s", out)
+	}
+	if got := changedFiles(before, tree(t, hs.dir)); len(got) != 0 {
+		t.Errorf("the dry run changed %q", got)
+	}
+	snaps := hs.snapshots()
+	hs.run(hs.runner(), "rollback", "0.2.27", "--apply")
+	hs.expect(0, "", "")
+	out = hs.all()
+	for _, want := range []string{"console.yaml: removed settings.file_transfer", "tacctl upgrade --branch 0.2.27",
+		"Restore it with 0.2.28 only", "0.2.27's restore puts back a console.yaml with a setting it does not know",
+		"Until the upgrade, do not run 'tacctl console file-transfer' with a tier, a user, a quota or a rate to set"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("--apply lacks %q:\n%s", want, out)
+		}
+	}
+	if hs.snapshots() != snaps+1 {
+		t.Errorf("snapshots: %d, was %d", hs.snapshots(), snaps)
+	}
+	y := hs.read("state/console.yaml")
+	if strings.Contains(y, "file_transfer") || !strings.Contains(y, "idle_timeout: 12") {
+		t.Errorf("console.yaml after --apply:\n%s", y)
+	}
+	if got := hs.read("sudoers.d/tacctl-tiers"); got != tier.Sudoers() {
+		t.Error("the tiers drop-in changed")
+	}
+	// a second run has nothing to convert and takes no snapshot
+	snaps = hs.snapshots()
+	hs.run(hs.runner(), "rollback", "0.2.27", "--apply")
+	hs.expect(0, "Nothing to convert: every file is one 0.2.27 can read.", "")
+	if strings.Contains(hs.all(), "Until the upgrade") || hs.snapshots() != snaps {
+		t.Errorf("the second run:\n%s", hs.all())
+	}
+	// the 0.2.26 target does the same, and it names its own version
+	hs.step("", "console", "file-transfer", "readonly", "enable")
+	hs.run(hs.runner(), "rollback", "0.2.26", "--apply")
+	hs.expect(0, "", "")
+	if out = hs.all(); !strings.Contains(out, "console.yaml: removed settings.file_transfer") || !strings.Contains(out, "0.2.26's restore puts back a console.yaml") ||
+		!strings.Contains(out, "Until the upgrade, do not run 'tacctl console file-transfer'") || !strings.Contains(out, "run 'tacctl rollback 0.2.26 --apply' again") {
+		t.Errorf("0.2.26:\n%s", out)
+	}
+}

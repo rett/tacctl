@@ -2,7 +2,7 @@
 
 [Documentation](../README.md) › [CLI reference](README.md)
 
-The login console is the login shell of every tacctl user, of every tier, on the tacctl server: tacctl commands and ssh to registered devices, nothing else. There is no switch for it, and local accounts that are not tacctl users are never touched. Its settings are in `/etc/tacctl/console.yaml` (0600, snapshotted, in `backup diff` and `restore`; absent means the defaults). The settings commands change that file only (after a snapshot); they never change an account or sshd. The accounts' login shells and sshd's drop-in follow the sync of this server's accounts (`tacctl host sync <name of the host enrolled with --local>`), which every change to agent forwarding or the forwarding settings prints. The idle timeout, the ssh escape, the space completion, the colour, the list threshold and the system shell are read by each console session when it starts.
+The login console is the login shell of every tacctl user, of every tier, on the tacctl server: tacctl commands and ssh to registered devices, nothing else. There is no switch for it, and local accounts that are not tacctl users are never touched. Its settings are in `/etc/tacctl/console.yaml` (0600, snapshotted, in `backup diff` and `restore`; absent means the defaults). The settings commands change that file only (after a snapshot); they never change an account or sshd. The accounts' login shells and sshd's drop-in follow the sync of this server's accounts (`tacctl host sync <name of the host enrolled with --local>`), which every change to agent forwarding or the forwarding settings prints. The idle timeout, the ssh escape, the space completion, the colour, the list threshold, the system shell and the file transfer settings are read by each console session when it starts.
 
 ```yaml
 version: 1
@@ -23,6 +23,13 @@ settings:
   # system_shell_users:           # written only when a user has a setting of their own
   #   jdoe: true                  # true gives the system shell, false takes it (console
                                   system-shell user)
+  # file_transfer:                # written only when something is set (see File transfer)
+  #   tiers: [superuser]          # the tiers that have it; superuser always
+  #   users: {alice: 'enable:operator', bob: disable}
+  #   quota: {operator: 1G}       # bytes the whole home may hold; unlimited = no limit
+  #   quota_users: {alice: unlimited}
+  #   rate: {operator: 1M}        # bytes a second; a tier with none has no limit
+  #   rate_users: {bob: 'off'}
   # password_cache_users:         # written only when a user turned the cache on (see
   #                               Password cache); a map of user name to true
   #   jdoe: true
@@ -32,7 +39,7 @@ settings:
   #   max: 8                      # hours
 ```
 
-The keys: `settings.idle_timeout` (`console idle-timeout`), `settings.agent_forwarding` (`console agent-forwarding`), `settings.ssh_escape` (`console ssh-escape`), `settings.system_shell` (`console system-shell path`), `settings.system_shell_tiers` (`console system-shell <tier> enable|disable`; always holds `superuser`, never `engineer`), `settings.system_shell_users` (`console system-shell user`; written only when a user has a setting), `settings.forwarding_tiers` and `settings.gateway_ports` (`console forwarding tiers|gateway-ports`; the tiers are never `engineer`), `settings.list_max` (`console list-max`; 1 to 1000, or -1 to never ask), `settings.space_completion` (`console space-completion`; written only when off), `settings.color` (`console color`; written only when `on` or `off`) `settings.password_cache` (`console password-cache tiers|idle|max`; written only when set) and `settings.password_cache_users` (`console password-cache on|off` by each user, `console password-cache user`; written only when a user has turned it on).
+The keys: `settings.idle_timeout` (`console idle-timeout`), `settings.agent_forwarding` (`console agent-forwarding`), `settings.ssh_escape` (`console ssh-escape`), `settings.system_shell` (`console system-shell path`), `settings.system_shell_tiers` (`console system-shell <tier> enable|disable`; always holds `superuser`, never `engineer`), `settings.system_shell_users` (`console system-shell user`; written only when a user has a setting), `settings.file_transfer` (`console file-transfer`; written only when something in it is not the built-in setting), `settings.forwarding_tiers` and `settings.gateway_ports` (`console forwarding tiers|gateway-ports`; the tiers are never `engineer`), `settings.list_max` (`console list-max`; 1 to 1000, or -1 to never ask), `settings.space_completion` (`console space-completion`; written only when off), `settings.color` (`console color`; written only when `on` or `off`) `settings.password_cache` (`console password-cache tiers|idle|max`; written only when set) and `settings.password_cache_users` (`console password-cache on|off` by each user, `console password-cache user`; written only when a user has turned it on).
 
 ```
 console show
@@ -145,6 +152,44 @@ console system-shell path [<path>]
     The system shell (default /bin/bash; absolute, executable, listed in /etc/shells); showing it is
     open to the operator tier and up, setting it is the superuser's
 
+console file-transfer [<tier> enable|disable]
+
+    Without arguments, whether each tier has file transfer and the users with a setting of their
+    own, with their tier. A tier alone prints its state; with enable or disable it sets it
+    (superuser only). Off for every tier by default; the superuser tier always has it and cannot be
+    disabled; the engineer tier can be given it (see File transfer)
+
+console file-transfer user <name> [enable|disable|clear]
+
+    Show or set file transfer for one user, over the tier's setting in both directions (clear: the
+    tier decides; without a word it prints the user's access and why). Disabling a superuser is
+    refused and enabling one stores nothing. An enable is for the tier the user has when it is
+    set: after a move to another tier it does nothing and is listed as "stale: set for operator,
+    now readonly" until it is set again. A disable holds in any tier. `user rename` moves the
+    user's settings (the switch, the quota and the rate) to the new name and `user remove` drops
+    them; an entry for a name that is no user is not honoured and is listed as "no such user"
+
+console file-transfer quota [<tier> <size>|unlimited|default]
+
+    Without arguments, the quota of each tier (the bytes the whole home may hold) and the users
+    with one of their own; a tier alone prints its quota; with a size, unlimited or default it sets
+    it (superuser only; default returns the tier to the built-in value)
+
+console file-transfer quota user <name> [<size>|unlimited|clear]
+
+    Show or set the quota of one user, over the tier's (clear: the tier decides)
+
+console file-transfer rate [<tier> <size>|off]
+
+    Without arguments, the rate of each tier (the bytes a second a transfer may go at) and the
+    users with one of their own; a tier alone prints its rate; with a size or off it sets it
+    (superuser only)
+
+console file-transfer rate user <name> [<size>|off|clear]
+
+    Show or set the rate of one user, over the tier's (off: no limit whatever their tier has;
+    clear: the tier decides)
+
 console install
 
     Put the /etc/shells line and sshd's drop-ins (console users, engineers) in place (host sync of
@@ -165,6 +210,24 @@ console check
 ```
 
 `console show` lists the users of the scope of the host enrolled with `--local` with their effective shell (the console) and why, then the server's pieces: the `/usr/local/bin/tacctl-console` symlink, the `/etc/shells` line, sshd's drop-in and what `sshd -T -C user=<user>` reports for a console user (`allowtcpforwarding`, `allowagentforwarding`, `forcecommand`, `pubkeyauthentication`). It warns in red when the drop-in is missing, sshd does not force the console, still allows forwarding, or allows key logins, because a console user could then forward ports past the device registry, run programs or sftp, or log in without TACACS+. A server that is not enrolled with `--local` says so.
+
+## File transfer — `console file-transfer`
+
+File transfer through the console is off for every tier but the superuser tier, which always has it, until a superuser opens it for a tier (`tacctl console file-transfer operator enable`) or for one user (`tacctl console file-transfer user alice enable`). It is settled like the system shell: a user's own setting wins over the tier's, in both directions; an enable lasts only while the user stays in the tier they had when it was set; and `console show` lists each tier's state and each user's access with the reason. Unlike the system shell and forwarding, the engineer tier is not closed to it: a transfer reaches the user's home only, where a shell or a forwarded port would reach the server's secrets. A caller with no tier is never given it. Setting any of it is the superuser's; the operator tier and up read each form (`console file-transfer`, `... <tier>`, `... user <name>`, `... quota`, `... rate`).
+
+The quota is the bytes the whole home may hold. Nothing set means 256M for the readonly, operator and engineer tiers and unlimited for the superuser tier; a tier is set with `console file-transfer quota <tier> <size>|unlimited|default` and one user with `quota user <name> <size>|unlimited|clear`. The rate is the bytes a second a transfer may go at, off (no limit) by default: `rate <tier> <size>|off` and `rate user <name> <size>|off|clear`. A size is a number of bytes or a number with `K`, `M`, `G` or `T` (powers of 1024), such as `512K`, `256M` or `2G`, and is printed back in the largest unit that holds it exactly. Zero, a negative number, a fraction, a number that overflows and more than `1T` are refused. A user's quota or rate wins over the tier's, `unlimited` and `off` included; `clear` returns the user to the tier's value.
+
+The settings are kept in `settings.file_transfer` of `console.yaml` (`tiers`, `users`, `quota`, `quota_users`, `rate`, `rate_users`), written only when something in it is not the built-in setting. They apply from the next console login, are logged as `console set key=file-transfer item=<tier>|user:<name>|quota:<tier>|quota-user:<name>|rate:<tier>|rate-user:<name>` at `auth.notice`, and reach the console through `tacctl _console-policy`, which carries `file_transfer=yes ft_quota=<bytes> ft_rate=<bytes>` for a caller who has it. They only decide: the console's file transfer, which a later change of this release turns on, reads them, and until it does they change nothing a user can do.
+
+```bash
+tacctl console file-transfer operator enable
+tacctl console file-transfer quota operator 1G
+tacctl console file-transfer rate operator 1M
+tacctl console file-transfer user alice enable
+tacctl console file-transfer quota user alice unlimited
+tacctl console file-transfer user alice clear
+```
+
 
 ## The console session — `tacctl-console`
 

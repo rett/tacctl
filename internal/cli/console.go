@@ -41,6 +41,11 @@ var consoleSpecs = map[string]Spec{
 	"list-max":         {MaxArgs: 1, Args: []string{""}},
 	"system-shell": {MaxArgs: 3, Args: []string{"readonly|operator|engineer|superuser|user|path",
 		Cond("path", KindFile, Cond("user", KindUsers, "enable|disable")), After("user", "enable|disable|clear")}},
+	"file-transfer": {MaxArgs: 4, Args: []string{"readonly|operator|engineer|superuser|user|quota|rate",
+		Cond("user", KindUsers, Cond("quota", fileTransferTiers, Cond("rate", fileTransferTiers, "enable|disable"))),
+		Both("quota", "user", KindUsers, Both("rate", "user", KindUsers,
+			Cond("quota", "unlimited|default", Cond("rate", "off", After("user", "enable|disable|clear"))))),
+		Both("quota", "user", "unlimited|clear", Both("rate", "user", "off|clear", ""))}},
 	"forwarding":     {MinArgs: 1, MaxArgs: 2, Args: []string{"tiers|gateway-ports", After("gateway-ports", "enable|disable")}},
 	"password-cache": {MaxArgs: 3, Args: []string{"tiers|idle|max|on|off|user", Cond("user", KindUsers, ""), After("user", "clear")}},
 	"forget":         {MaxArgs: 0},
@@ -48,6 +53,9 @@ var consoleSpecs = map[string]Spec{
 	"remove":         {MaxArgs: 0},
 	"check":          {MaxArgs: 0},
 }
+
+// fileTransferTiers are the words after 'file-transfer quota' and 'rate'.
+const fileTransferTiers = "readonly|operator|engineer|superuser|user"
 
 // consoleVerbs are the verbs ({Use, Short}), in usage order.
 var consoleVerbs = [][2]string{
@@ -63,6 +71,12 @@ var consoleVerbs = [][2]string{
 	{"system-shell [<tier> enable|disable]", "Show or set the system shell for a tier (superuser always has it, engineer never; default superuser only)"},
 	{"system-shell user <name> [enable|disable|clear]", "Show or set the system shell for one user, over the tier's setting (clear: the tier decides)"},
 	{"system-shell path [<path>]", "Show or set the system shell (default /bin/bash; must be listed in /etc/shells)"},
+	{"file-transfer [<tier> enable|disable]", "Show or set file transfer through the console for a tier (default off)"},
+	{"file-transfer user <name> [enable|disable|clear]", "Show or set file transfer for one user, over the tier's setting (clear: the tier decides)"},
+	{"file-transfer quota [<tier> <size>|unlimited|default]", "Show or set the bytes a home may hold (default 256M; unlimited for superusers)"},
+	{"file-transfer quota user <name> [<size>|unlimited|clear]", "Show or set the quota of one user, over the tier's (clear: the tier decides)"},
+	{"file-transfer rate [<tier> <size>|off]", "Show or set the bytes a second a transfer may go at (default off)"},
+	{"file-transfer rate user <name> [<size>|off|clear]", "Show or set the rate of one user, over the tier's (clear: the tier decides)"},
 	{"password-cache [on|off]", "Show or set whether your sessions keep your password in memory"},
 	{"password-cache user [<name>]", "Show the users who turned the password cache on"},
 	{"password-cache user <name> clear", "Clear the password cache setting of a user (back to off)"},
@@ -107,8 +121,8 @@ never touched.
 The settings commands change /etc/tacctl/console.yaml only. The accounts' login
 shells and sshd's drop-in follow it when this server's accounts are synced
 ('tacctl host sync <name of this server>'); idle-timeout, ssh-escape,
-space-completion, color, list-max and system-shell are read by each console
-session when it starts. sshd's drop-in makes the console the only program a console user's login
+space-completion, color, list-max, system-shell and file-transfer are read by each
+console session when it starts. sshd's drop-in makes the console the only program a console user's login
 runs (no scp, sftp or remote programs), closes every forwarding but X11 and TCP
 ports for the tiers of 'forwarding tiers' (superusers by default: 'ssh -X', -L,
 -R, -D and -J through this server, and 'ssh -X|-L|-R|-D <device>' in the
@@ -123,6 +137,22 @@ the operator tier and up can read it ('system-shell' alone lists the state). Tho
 from the console ('scope block ... edit|adopt', 'device block ... edit|adopt': an
 editor can start a shell). Neither it nor forwarding is ever open to the engineer
 tier: a shell or a forwarded port on this server would reach its secrets.
+
+'file-transfer' sets who may transfer files to and from their home through the
+console. It is off for every tier but the superuser tier, which always has it,
+until a superuser opens it ('file-transfer <tier> enable|disable') or gives it to
+one user ('file-transfer user <name> enable|disable|clear'; a user's setting wins
+over the tier's, and clear returns the user to the tier's). Unlike the system
+shell it can be opened to the engineer tier: a transfer reaches the home only.
+'file-transfer quota' is the bytes the whole home may hold (256M for every tier
+but the superuser tier, which has no limit; a size such as 512K, 256M or 2G, at
+most 1T, or unlimited; 'default' returns a tier to the built-in value) and
+'file-transfer rate' the bytes a second a transfer may go at (a size, or off, the
+default); each can be set for a tier or for one user, whose own value wins
+('quota user <name> <size>|unlimited|clear'). Only a superuser can set them; the
+operator tier and up can read them ('file-transfer', 'quota' and 'rate' alone
+list the state). The settings apply to the file transfer of the console, not to
+anything else.
 
 'password-cache' lets a tier's shell and console sessions keep the user's network
 password in memory for the session, so a device pull or an ssh to a device asks
@@ -141,6 +171,8 @@ Examples:
   tacctl console show
   tacctl console system-shell operator enable
   tacctl console system-shell user jdoe enable
+  tacctl console file-transfer operator enable
+  tacctl console file-transfer quota operator 1G
   tacctl console idle-timeout 15
 
 `)
@@ -157,6 +189,7 @@ func (inv *invocation) console(args []string) error {
 	run := map[string]func([]string) error{
 		"show":         inv.consoleShow,
 		"idle-timeout": inv.consoleIdle, "system-shell": inv.consoleSystemShell, "forwarding": inv.consoleForwarding,
+		"file-transfer":    inv.consoleFileTransfer,
 		"agent-forwarding": inv.consoleSwitch("agent-forwarding"), "ssh-escape": inv.consoleSwitch("ssh-escape"),
 		"space-completion": inv.consoleSpace, "color": inv.consoleColor, "list-max": inv.consoleListMax,
 		"password-cache": inv.consolePasswordCache, "forget": inv.consoleForget,
@@ -1103,10 +1136,13 @@ func (inv *invocation) consolePolicyLine([]string) error {
 	if n := a.Conf().ServerName(); n != "" {
 		serverName = " name=" + n
 	}
+	// File transfer (0.2.28): what the settings give the caller, for the
+	// console's transfers; off unless the line says it is on.
+	transfer := console.FileTransferFields(pol.FileTransfer(inv.callerStoreUser(), t))
 	inv.echo("shell=" + shell + " idle=" + strconv.Itoa(pol.File.Idle) + " system_shell=" + yesNo(sys) +
 		" system_shell_path=" + path + " ssh_escape=" + yesNo(pol.SSHEscape()) + " agent=" + yesNo(pol.AgentForwarding()) +
 		" forward=" + yesNo(pol.Forwarding(t)) + " tier=" + string(t) + gateField + " list_max=" + strconv.Itoa(pol.ListMax()) +
-		" space_completion=" + yesNo(pol.SpaceCompletion()) + " color=" + pol.Color() + cache + change + serverName)
+		" space_completion=" + yesNo(pol.SpaceCompletion()) + " color=" + pol.Color() + cache + change + serverName + transfer)
 	return nil
 }
 
@@ -1129,6 +1165,7 @@ func (inv *invocation) userSettingsMoved(m console.UserSettingsMove, oldname, ne
 		// of the user is not known.
 		out.Error("console.yaml could not be read or written (" + cutErr(m.Err) + "), so the console settings of '" + oldname + "' were not " + verb +
 			". The user is changed already. After repairing the file, check them: tacctl console system-shell user " + oldname +
+			", tacctl console file-transfer user " + oldname + ", tacctl console file-transfer quota user " + oldname + ", tacctl console file-transfer rate user " + oldname +
 			", and tacctl console password-cache user " + oldname + " (each followed by clear to drop it)" +
 			map[bool]string{true: "; a renamed user's settings are set again under '" + newname + "' by a superuser, and the user turns the password cache on again themselves", false: ""}[newname != ""] + ".")
 		return exit(1)
@@ -1143,6 +1180,9 @@ func (inv *invocation) userSettingsMoved(m console.UserSettingsMove, oldname, ne
 			if newname != "" {
 				fix = append(fix, "tacctl console system-shell user "+newname+" "+onOff(m.ShellOn))
 			}
+		}
+		if m.FileHad {
+			fix = append(fix, "tacctl console file-transfer user "+oldname+" clear (and the same with quota user and rate user; it was "+m.FileWhat+")")
 		}
 		if m.CacheHad {
 			fix = append(fix, "tacctl console password-cache user "+oldname+" clear")
@@ -1163,6 +1203,9 @@ func (inv *invocation) userSettingsMoved(m console.UserSettingsMove, oldname, ne
 	if m.ShellHad {
 		report("system-shell", "system-shell", onOff(m.ShellOn))
 	}
+	if m.FileHad {
+		report("file-transfer", "file-transfer", m.FileWhat)
+	}
 	if m.CacheHad {
 		report("password-cache", "password-cache", "on")
 	}
@@ -1182,7 +1225,7 @@ func cutErr(err error) string {
 
 // consoleSettingsReadable is checked by 'user add', 'user remove' and 'user
 // rename' before they change the store: console.yaml holds settings of users
-// (the system shell, the password cache) that follow the user or are dropped
+// (the system shell, file transfer, the password cache) that follow the user or are dropped
 // with them, and they cannot be dropped or moved from a file that cannot be
 // read. The store change is made only after the file is known to be readable
 // (an absent file is fine): the other order, the store first, leaves the user
@@ -1192,7 +1235,7 @@ func cutErr(err error) string {
 func (inv *invocation) consoleSettingsReadable() error {
 	if _, err := console.Load(inv.app.Paths.ConsoleFile); err != nil {
 		return inv.usageErr("console.yaml could not be read: "+cutErr(err)+".",
-			"It holds settings of users (the system shell, the password cache) that this command drops or moves with the user, so that the next user of the name does not inherit them; nothing was changed. Repair the file, then run the command again.")
+			"It holds settings of users (the system shell, file transfer, the password cache) that this command drops or moves with the user, so that the next user of the name does not inherit them; nothing was changed. Repair the file, then run the command again.")
 	}
 	return nil
 }

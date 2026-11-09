@@ -95,13 +95,19 @@ func After(word, kind string) string { return "@" + word + ":" + kind }
 // where the other verbs name a block).
 func Cond(word, a, b string) string { return "?" + word + ":" + a + ":" + b }
 
+// Both is the kind of a positional that completion takes from kind a when
+// both words are among the positionals typed before it, and from kind b
+// when they are not ('console file-transfer quota user <name>' names a user
+// where 'quota <tier>' names a value).
+func Both(w1, w2, a, b string) string { return "&" + w1 + ":" + w2 + ":" + a + ":" + b }
+
 // Either is the kind of a positional that completion takes from each of
 // kinds, in order ('notice list|<device>' offers the word and the names).
 func Either(kinds ...string) string { return strings.Join(kinds, "+") }
 
 // resolveKind is the kind a positional has, given the positional words typed
-// before it: After and Cond are decided by them, and may nest in their last
-// place ('console system-shell': a file after path, a user after user, else
+// before it: After, Cond and Both are decided by them, and may nest in their
+// last place ('console system-shell': a file after path, a user after user, else
 // enable|disable).
 func resolveKind(kind string, words []string) string {
 	for {
@@ -110,6 +116,17 @@ func resolveKind(kind string, words []string) string {
 			kind = ""
 			if slices.Contains(words, word) {
 				kind = k
+			}
+			continue
+		}
+		if rest, ok := strings.CutPrefix(kind, "&"); ok {
+			parts := strings.SplitN(rest, ":", 4)
+			kind = ""
+			if len(parts) == 4 {
+				kind = parts[3]
+				if slices.Contains(words, parts[0]) && slices.Contains(words, parts[1]) {
+					kind = parts[2]
+				}
 			}
 			continue
 		}

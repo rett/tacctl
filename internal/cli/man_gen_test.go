@@ -680,6 +680,7 @@ var manConsoleDocs = map[string]struct{ typ, verb, desc string }{
 	"settings.system_shell":       {"absolute path", setWith("console system-shell path"), "The program the console's system-shell word starts."},
 	"settings.system_shell_tiers": {"list of tiers (not engineer)", setWith("console system-shell"), "The tiers that may start the system shell. The superuser tier always may, and is written into the list; engineer never."},
 	"settings.system_shell_users": {"mapping of user name to disable or enable:<tier>", setWith("console system-shell user"), "The users with a system-shell setting of their own, which wins over their tier's: enable:<tier> gives it to a user of a tier that has none, for as long as the user is in that tier (readonly or operator), and disable takes it from a user of a tier that has it. Written to the file only when a user has one."},
+	"settings.file_transfer":      {"mapping (tiers, users, quota, quota_users, rate, rate_users)", setWith("console file-transfer"), "The console's file transfer: the tiers that have it (tiers, the superuser tier always among them), the users with a switch of their own (users, a mapping of user name to disable or enable:<tier>), the quota of the home in bytes (quota per tier and quota_users per user: a size such as 256M, or unlimited) and the rate in bytes per second (rate and rate_users: a size, and off for a user). Off for every tier but the superuser tier by default; a user's own value wins over the tier's. Written only when something in it is not the built-in setting."},
 	"settings.forwarding_tiers":   {"list of tiers (not engineer)", setWith("console forwarding tiers"), "The tiers whose console logins may forward X11 and TCP ports."},
 	"settings.gateway_ports":      {"true or false", setWith("console forwarding gateway-ports"), "Whether those tiers may bind forwarded ports to an address other than loopback."},
 	"settings.list_max":           {"integer, 1 to " + strconv.Itoa(console.MaxListMax) + ", or " + strconv.Itoa(console.ListMaxNever) + " (never ask)", setWith("console list-max"), "The number of completions the console's shell lists without asking \"Show all N?\"."},
@@ -708,6 +709,9 @@ func manConsoleKeyRows(t *testing.T) []manKeyRow {
 	full.SpaceCompletion = false
 	full.Color = console.ColorOn
 	full.SetSystemShellUser("jdoe", true, tier.Operator)
+	if err := full.SetFileTransfer(tier.Operator, true); err != nil {
+		t.Fatal(err)
+	}
 	all, def := load(full), load(console.Defaults())
 	var rows []manKeyRow
 	add := func(key, defText string) {
@@ -734,6 +738,11 @@ func manConsoleKeyRows(t *testing.T) []manKeyRow {
 				if sk == "system_shell_users" {
 					// A mapping, written only when a user has a setting.
 					add("settings."+sk, "absent (no user has one)")
+					continue
+				}
+				if sk == "file_transfer" {
+					// A mapping, written only when something in it is set.
+					add("settings."+sk, "absent (nothing set)")
 					continue
 				}
 				if x, ok := dm.Get(sk); ok {

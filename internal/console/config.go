@@ -14,6 +14,7 @@ import (
 	"bytes"
 	"errors"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -165,6 +166,31 @@ type File struct {
 	// rejects the key, and 'tacctl rollback 0.2.3' (Text023) removes it.
 	PasswordCacheTiers                  []tier.Tier
 	PasswordCacheIdle, PasswordCacheMax int
+
+	// The file transfer settings (settings.file_transfer, a mapping written
+	// only when something in it is not the built-in setting; an older release
+	// rejects the key, and the rollback removes it, Keys0228). They are the
+	// system shell's, with a quota and a rate besides, and without Closed
+	// tiers (filetransfer.go).
+	//
+	// FileTransferTiers are the tiers with it enabled; the superuser tier
+	// always has it, whatever the list says (the setter writes it in). Off for
+	// the others by default.
+	FileTransferTiers []tier.Tier
+	// FileTransferUsers are the users with a switch of their own (true:
+	// enabled, false: disabled); an enable is valid for the tier it was set
+	// for (FileTransferUserTiers), as the system shell's is.
+	FileTransferUsers     map[string]bool
+	FileTransferUserTiers map[string]tier.Tier
+	// FileTransferQuota and FileTransferRate are the tiers' own values, in
+	// bytes (quota 0: unlimited; a tier with no entry has the built-in
+	// default, DefaultTierQuota, and no rate limit); the two *Users maps
+	// are the users' own values, which win over the tier's (quota 0:
+	// unlimited, rate 0: no limit).
+	FileTransferQuota      map[tier.Tier]int64
+	FileTransferRate       map[tier.Tier]int64
+	FileTransferQuotaUsers map[string]int64
+	FileTransferRateUsers  map[string]int64
 }
 
 // Defaults is the file that is not there.
@@ -179,9 +205,18 @@ func Defaults() *File {
 		SystemShellUserTiers: map[string]tier.Tier{},
 		PasswordCacheUsers:   map[string]bool{},
 		ForwardingTiers:      []tier.Tier{tier.Superuser},
-		ListMax:              DefaultListMax,
-		SpaceCompletion:      true,
-		Color:                ColorAuto,
+
+		FileTransferTiers:      []tier.Tier{tier.Superuser},
+		FileTransferUsers:      map[string]bool{},
+		FileTransferUserTiers:  map[string]tier.Tier{},
+		FileTransferQuota:      map[tier.Tier]int64{},
+		FileTransferRate:       map[tier.Tier]int64{},
+		FileTransferQuotaUsers: map[string]int64{},
+		FileTransferRateUsers:  map[string]int64{},
+
+		ListMax:         DefaultListMax,
+		SpaceCompletion: true,
+		Color:           ColorAuto,
 
 		PasswordCacheIdle: DefaultPasswordCacheIdle,
 		PasswordCacheMax:  DefaultPasswordCacheMax,
@@ -214,6 +249,13 @@ func (f *File) Clone() *File {
 	}
 	c.ForwardingTiers = slices.Clone(f.ForwardingTiers)
 	c.PasswordCacheTiers = slices.Clone(f.PasswordCacheTiers)
+	c.FileTransferTiers = slices.Clone(f.FileTransferTiers)
+	c.FileTransferUsers = maps.Clone(f.FileTransferUsers)
+	c.FileTransferUserTiers = maps.Clone(f.FileTransferUserTiers)
+	c.FileTransferQuota = maps.Clone(f.FileTransferQuota)
+	c.FileTransferRate = maps.Clone(f.FileTransferRate)
+	c.FileTransferQuotaUsers = maps.Clone(f.FileTransferQuotaUsers)
+	c.FileTransferRateUsers = maps.Clone(f.FileTransferRateUsers)
 	return &c
 }
 
@@ -420,6 +462,9 @@ func (f *File) check(userName func(string) bool) error {
 			return fail("settings.system_shell_users: '" + u + "' must be disable or enable:readonly|operator.")
 		}
 	}
+	if err := f.checkFileTransfer(userName); err != nil {
+		return err
+	}
 	for u := range f.PasswordCacheUsers {
 		if !userName(u) {
 			return fail("settings.password_cache_users: invalid user name '" + u + "'.")
@@ -604,6 +649,14 @@ func parseSettings(f *File, m *yamlpy.Map) error {
 				return bad
 			}
 			f.SystemShell = s
+		case "file_transfer":
+			m, ok := v.(*yamlpy.Map)
+			if !ok {
+				return fail("settings.file_transfer must be a mapping (tiers, users, quota, quota_users, rate, rate_users).")
+			}
+			if err := parseFileTransfer(f, m); err != nil {
+				return err
+			}
 		case "system_shell_users":
 			switch x := v.(type) {
 			case nil:
@@ -768,6 +821,11 @@ func (f *File) doc() *yamlpy.Map {
 			users.Set(u, true)
 		}
 		settings.Set("password_cache_users", users)
+	}
+	if !f.fileTransferDefault() {
+		// Only when something is not the built-in setting, so a file that
+		// never touched file transfer is read by every release.
+		settings.Set("file_transfer", f.fileTransferDoc())
 	}
 	doc := yamlpy.NewMap("version", Version)
 	if len(f.IgnoredTiers) > 0 {
