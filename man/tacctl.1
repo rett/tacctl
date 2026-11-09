@@ -16078,9 +16078,11 @@ state. Setting a tier writes
 .BR settings.file_transfer.tiers .
 The settings only decide: the console's file transfer, which a later change of
 this release turns on, reads them, and until it does they change nothing a user
-can do. Only a superuser sets it; an operator and an engineer may
-read each form, and every form that sets something is refused for them
-(logged as a tier denial). The change is logged as
+can do. Every form of this command, the reads included, is the
+superuser\(aqs and is refused for the lower tiers (logged as a tier denial);
+each user\(aqs state, quota and rate are in
+.BR "console show" ,
+which the operator tier and up can run. The change is logged as
 .BR "console set key=file\-transfer item=" \fItier\fR
 at
 .BR auth.notice .

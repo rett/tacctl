@@ -5,8 +5,13 @@ package cli
 // rate), per tier and per user. The settings are the system shell's in shape
 // (console/filetransfer.go): the user's own setting wins over the tier's, an
 // enable ends when the user moves to another tier, the superuser tier always
-// has it, and the engineer tier is not closed to it. Reading is open to the
-// operator tier and up, setting is the superuser's (fileTransferWrites).
+// has it, and the engineer tier is not closed to it. Unlike the system
+// shell's, the verb has no row in the tier table (internal/tier), so the gate
+// holds every form of it, the reads included, to the superuser tier (adding a
+// row would change the sudoers text that the 0.2.27 rollback target freezes).
+// What every user has is in 'console show', which the operator tier and up
+// run. fileTransferWrites is the verb's own second check of the forms that
+// set something.
 
 import (
 	"slices"

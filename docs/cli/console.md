@@ -155,9 +155,10 @@ console system-shell path [<path>]
 console file-transfer [<tier> enable|disable]
 
     Without arguments, whether each tier has file transfer and the users with a setting of their
-    own, with their tier. A tier alone prints its state; with enable or disable it sets it
-    (superuser only). Off for every tier by default; the superuser tier always has it and cannot be
-    disabled; the engineer tier can be given it (see File transfer)
+    own, with their tier. A tier alone prints its state; with enable or disable it sets it. Every
+    form of the verb is the superuser's, the reads included (`console show` has the state of every
+    user, for the operator tier and up). Off for every tier by default; the superuser tier always
+    has it and cannot be disabled; the engineer tier can be given it (see File transfer)
 
 console file-transfer user <name> [enable|disable|clear]
 
@@ -173,7 +174,7 @@ console file-transfer quota [<tier> <size>|unlimited|default]
 
     Without arguments, the quota of each tier (the bytes the whole home may hold) and the users
     with one of their own; a tier alone prints its quota; with a size, unlimited or default it sets
-    it (superuser only; default returns the tier to the built-in value)
+    it (default returns the tier to the built-in value)
 
 console file-transfer quota user <name> [<size>|unlimited|clear]
 
@@ -183,7 +184,6 @@ console file-transfer rate [<tier> <size>|off]
 
     Without arguments, the rate of each tier (the bytes a second a transfer may go at) and the
     users with one of their own; a tier alone prints its rate; with a size or off it sets it
-    (superuser only)
 
 console file-transfer rate user <name> [<size>|off|clear]
 
@@ -213,7 +213,7 @@ console check
 
 ## File transfer — `console file-transfer`
 
-File transfer through the console is off for every tier but the superuser tier, which always has it, until a superuser opens it for a tier (`tacctl console file-transfer operator enable`) or for one user (`tacctl console file-transfer user alice enable`). It is settled like the system shell: a user's own setting wins over the tier's, in both directions; an enable lasts only while the user stays in the tier they had when it was set; and `console show` lists each tier's state and each user's access with the reason. Unlike the system shell and forwarding, the engineer tier is not closed to it: a transfer reaches the user's home only, where a shell or a forwarded port would reach the server's secrets. A caller with no tier is never given it. Setting any of it is the superuser's; the operator tier and up read each form (`console file-transfer`, `... <tier>`, `... user <name>`, `... quota`, `... rate`).
+File transfer through the console is off for every tier but the superuser tier, which always has it, until a superuser opens it for a tier (`tacctl console file-transfer operator enable`) or for one user (`tacctl console file-transfer user alice enable`). It is settled like the system shell: a user's own setting wins over the tier's, in both directions; an enable lasts only while the user stays in the tier they had when it was set; and `console show` lists each tier's state and each user's access with the reason. Unlike the system shell and forwarding, the engineer tier is not closed to it: a transfer reaches the user's home only, where a shell or a forwarded port would reach the server's secrets. A caller with no tier is never given it. Every form of `console file-transfer` is the superuser's, the reads included (`console file-transfer`, `... <tier>`, `... user <name>`, `... quota`, `... rate`): the verb has no row for the lower tiers. What each user has, the state, the quota and the rate, is in `console show`, which the operator tier and up can run; the read-only tier cannot.
 
 The quota is the bytes the whole home may hold. Nothing set means 256M for the readonly, operator and engineer tiers and unlimited for the superuser tier; a tier is set with `console file-transfer quota <tier> <size>|unlimited|default` and one user with `quota user <name> <size>|unlimited|clear`. The rate is the bytes a second a transfer may go at, off (no limit) by default: `rate <tier> <size>|off` and `rate user <name> <size>|off|clear`. A size is a number of bytes or a number with `K`, `M`, `G` or `T` (powers of 1024), such as `512K`, `256M` or `2G`, and is printed back in the largest unit that holds it exactly. Zero, a negative number, a fraction, a number that overflows and more than `1T` are refused. A user's quota or rate wins over the tier's, `unlimited` and `off` included; `clear` returns the user to the tier's value.
 

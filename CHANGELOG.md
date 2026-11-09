@@ -83,7 +83,10 @@ current behaviour; this file is where history lives.
    ft_rate=` for a caller who has it). The settings only decide: the console's
    file transfer, which a later change of this release turns on, reads them,
    and until it does they change nothing a user can do. Setting them is the
-   superuser's; the read forms are the operator tier's and up. 0.2.27 and
+   superuser's, and so are the read forms: the verb has no row in the tier
+   table, so every form of `console file-transfer` is refused below the
+   superuser tier, while `console show`, which the operator tier and up can
+   run, lists every user's state, quota and rate. 0.2.27 and
    every older release reject the key (their reader answers `settings:
    unknown key 'file_transfer'`, the console falls back to its defaults and
    writes fail), so every `tacctl rollback` target removes it with the

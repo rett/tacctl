@@ -149,10 +149,11 @@ but the superuser tier, which has no limit; a size such as 512K, 256M or 2G, at
 most 1T, or unlimited; 'default' returns a tier to the built-in value) and
 'file-transfer rate' the bytes a second a transfer may go at (a size, or off, the
 default); each can be set for a tier or for one user, whose own value wins
-('quota user <name> <size>|unlimited|clear'). Only a superuser can set them; the
-operator tier and up can read them ('file-transfer', 'quota' and 'rate' alone
-list the state). The settings apply to the file transfer of the console, not to
-anything else.
+('quota user <name> <size>|unlimited|clear'). Only a superuser can read or set
+them ('file-transfer', 'quota' and 'rate', alone or with words); every user's
+own state, quota and rate are in 'show', which the operator tier and up can
+run. The settings apply to the file transfer of the console, not to anything
+else.
 
 'password-cache' lets a tier's shell and console sessions keep the user's network
 password in memory for the session, so a device pull or an ssh to a device asks
