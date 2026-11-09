@@ -446,3 +446,62 @@ func TestOtherRequestsAreRefused(t *testing.T) {
 		t.Error("readlink succeeded")
 	}
 }
+
+// The library hands a READ request on a handle opened only for writing to the
+// writer, as a write of zeros; the server refuses it.
+func TestReadOnWriteOnlyHandleWritesNothing(t *testing.T) {
+	for _, quota := range []int64{0, 1000} {
+		for _, fl := range []int{os.O_WRONLY, os.O_WRONLY | os.O_APPEND, os.O_WRONLY | os.O_TRUNC | os.O_CREATE} {
+			e := newEnv(t, func(c *Config) { c.Quota = quota })
+			e.write("f", "hello world")
+			h, err := e.client.OpenFile("f", fl)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := e.read("f") // an open with O_TRUNC emptied it
+			b := make([]byte, 5)
+			for _, off := range []int64{0, 3, 100} {
+				if _, err := h.ReadAt(b, off); code(err) != fxOpUnsupported {
+					t.Errorf("quota %d flags %#x: read at %d on a write-only handle: %v, want unsupported", quota, fl, off, err)
+				}
+			}
+			if got := e.read("f"); got != want {
+				t.Errorf("quota %d flags %#x: a read request changed the file from %q to %q", quota, fl, want, got)
+			}
+			// The handle still writes.
+			if _, err := h.Write([]byte("HE")); err != nil {
+				t.Errorf("quota %d flags %#x: write after the refused reads: %v", quota, fl, err)
+			}
+			if err := h.Close(); err != nil {
+				t.Errorf("close: %v", err)
+			}
+			if got := e.read("f"); !strings.Contains(got, "HE") {
+				t.Errorf("quota %d flags %#x: the write did not happen: %q", quota, fl, got)
+			}
+			if got := refusals(e.rec.all()); len(got) != 1 || got[0] != "unsupported" {
+				t.Errorf("refusals = %v, want one unsupported for the handle", got)
+			}
+		}
+	}
+}
+
+// A handle opened to read and write is not affected.
+func TestReadWriteHandleStillReadsAndWrites(t *testing.T) {
+	e := newEnv(t, nil)
+	e.write("f", "hello world")
+	h, err := e.client.OpenFile("f", os.O_RDWR)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := make([]byte, 5)
+	if n, err := h.ReadAt(b, 6); n != 5 || err != nil || string(b) != "world" {
+		t.Errorf("read: %d, %v, %q", n, err, b)
+	}
+	if _, err := h.WriteAt([]byte("J"), 0); err != nil {
+		t.Error(err)
+	}
+	_ = h.Close()
+	if e.read("f") != "Jello world" {
+		t.Errorf("file = %q", e.read("f"))
+	}
+}
