@@ -873,12 +873,16 @@ func (s *Scrubber) ApplyAll(texts []string) []string {
 	for _, t := range texts {
 		s.LearnFrom(t)
 	}
-	for _, t := range texts { // learns the values found by shape
-		s.Apply(t)
-	}
+	// Apply learns the values it recognises, and a name it learns in a later
+	// text (acme-lab.vendor.com) makes its domain the owner's in all of them:
+	// the texts are applied until a look learns nothing, and the last look is
+	// what is returned.
 	out := make([]string, len(texts))
-	for i, t := range texts {
-		out[i] = s.Apply(t)
+	for n := -1; n != len(s.pairs); {
+		n = len(s.pairs)
+		for i, t := range texts {
+			out[i] = s.Apply(t)
+		}
 	}
 	return out
 }

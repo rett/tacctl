@@ -785,3 +785,29 @@ func TestAPublicLabelIsNotLearnedByName(t *testing.T) {
 		t.Errorf("the host www is still in the output:\n%s", out)
 	}
 }
+
+// A vendor's name kept in the first look at the texts is not replaced in the
+// last one: the texts are looked at until nothing new is learned, and the
+// last look is what is returned.
+func TestTheLastLookIsTheOneReturned(t *testing.T) {
+	s := New()
+	in := []string{
+		"Junos docs at www.juniper.net\nTechnical Support: http://www.cisco.com/techsupport\n",
+		"Call home to acme-lab.cisco.com\n",
+	}
+	out := s.ApplyAll(in)
+	if want := "Junos docs at www.juniper.net\nTechnical Support: http://sw2.example.net/techsupport\n"; out[0] != want {
+		t.Errorf("got\n%s\nwant\n%s", out[0], want)
+	}
+	for i, o := range out {
+		if l := s.Leaks(o); len(l) != 0 {
+			t.Errorf("text %d leaks %v:\n%s", i, l, o)
+		}
+		if strings.Contains(o, "cisco") {
+			t.Errorf("text %d still names cisco:\n%s", i, o)
+		}
+	}
+	if again := s.ApplyAll(in); again[0] != out[0] || again[1] != out[1] {
+		t.Errorf("a second run differs:\n%q\n%q", again, out)
+	}
+}
