@@ -62,10 +62,11 @@ user reports-limit <name> clear
 
 user remove <name>
 
-    Remove a user (with confirmation); the user's `console system-shell user` and `console
-    password-cache` settings, if any, are dropped and the command says so. Refused, with nothing
-    changed, while console.yaml cannot be read (so that no setting is left for the next user of the
-    name); the same holds for `user add` and `user rename`
+    Remove a user (with confirmation); the user's `console system-shell user`, `console
+    file-transfer` (the switch, the quota and the rate) and `console password-cache` settings, if
+    any, are dropped and the command says so. Refused, with nothing changed, while console.yaml
+    cannot be read (so that no setting is left for the next user of the name); the same holds for
+    `user add` and `user rename`
 
 user passwd <name>
 
@@ -102,8 +103,9 @@ user enable <name>
 user rename <old> <new>
 
     Rename a user; the new name is lower case and follows the rules of `user add`. The user's
-    `console system-shell user` setting moves to the new name, and the command says so. Changing
-    only the spelling (`user rename Alice alice`) fixes a name from before. Devices match the
+    `console system-shell user` setting and its `console file-transfer` settings (the switch, the
+    quota and the rate) move to the new name, and the command says so. Changing only the spelling
+    (`user rename Alice alice`) fixes a name from before. Devices match the
     typed login name exactly, so the rename changes what the person types at the device. The user
     keeps the Linux UID: the line of the old name in `linux-uids` becomes the new name's, in
     place, and the command says `UID <uid> follows the rename (linux-uids).` With enrolled hosts

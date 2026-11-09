@@ -95,7 +95,7 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `group privilege` | `name` `op=add\|remove\|seed` `count` |
 | `group preset` | `name` `preset=roles` `changes`; one line per group changed |
 | `config sudoers`, `config sudoers tiers` | `op=install\|remove` `file`, and `group` for the first |
-| `console set` | `key` `item` `from` `to`: `key` is the setting (`system-shell`, `forwarding`, `agent-forwarding`, `ssh-escape`, `password-cache`, `idle-timeout`, `space-completion`, `color`, `list-max`) and `item` the tier, the user (`user:<name>` for a system-shell setting of one user) or part of it; `auth.notice` for `system-shell` |
+| `console set` | `key` `item` `from` `to`: `key` is the setting (`system-shell`, `file-transfer`, `forwarding`, `agent-forwarding`, `ssh-escape`, `password-cache`, `idle-timeout`, `space-completion`, `color`, `list-max`) and `item` the tier, the user (`user:<name>` for a system-shell setting of one user; `quota:<tier>`, `quota-user:<name>`, `rate:<tier>` and `rate-user:<name>` for the limits of file transfer) or part of it; `auth.notice` for `system-shell` and `file-transfer` |
 | `backup restore` | `id` `pre` (the snapshot taken first) `keep-uids` `legacy`; `auth.notice` |
 | `backup keep` | `id` `note=yes\|no` `already=yes\|no`; the note is never written |
 | `backup unkeep` | `id` `only-copy=yes\|no` |

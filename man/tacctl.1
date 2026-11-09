@@ -685,11 +685,34 @@ again (with
 .B \-\-yes
 while a user has a limit of their own).
 .IP
+Every target removes the file transfer settings of the console,
+.B settings.file_transfer
+in
+.I console.yaml
+.RB ( "console file\-transfer" ),
+the target
+.B 0.2.27
+included: no release before 0.2.28 reads the key (its reader answers
+.BR "settings: unknown key" ,
+the console falls back to its defaults and the commands that write the file
+fail). It goes after the snapshot, with the other settings of the file the
+target does not know, every other setting stays, and the dry run lists the key
+with what it held (the tiers, and how many user switches, quotas and rates).
+It needs no
+.BR \-\-yes .
+When it was removed the command ends with a note: until the older release is
+installed, run no
+.B "console file\-transfer"
+that sets something, which writes the key again (run the rollback again if one
+was run), and the snapshot may be restored with this release only.
+.IP
 .B "rollback 0.2.27"
-converts nothing: this release changed no stored file 0.2.27 reads strictly (how
+converts only the file transfer settings of
+.IR console.yaml :
+this release changed no other stored file 0.2.27 reads strictly (how
 the answer of a Cisco IOS device to a long command is read, and the
-documentation, are all that moved), so 0.2.27 reads every file this release
-writes. It removes no key and no field (the limits of the stored reports, the
+documentation, are all that moved), so 0.2.27 reads every other file this release
+writes. It removes no other key and no field (the limits of the stored reports, the
 settings
 .B reports.max_size
 and
@@ -706,23 +729,28 @@ has the format and reads them), and the marker
 .B weasyprint
 and
 .B fonts\-dejavu\-core
-stay installed), takes no snapshot and needs no
+stay installed), takes the snapshot of
+.B \-\-apply
+only when the file transfer settings are set (otherwise it takes none) and needs no
 .BR \-\-yes .
 It is refused only while a device's apply is not settled.
 .B \-\-hosts
 is accepted and does nothing. The command ends with the next step,
 .BR "tacctl upgrade \-\-branch 0.2.27" ,
-with no note to follow: the limits and the reports are 0.2.27's own.
+with no note to follow but the one above when the settings were removed: the
+limits and the reports are 0.2.27's own.
 .IP
 .B "rollback 0.2.26"
-converts nothing: 0.2.27 and this release changed no stored file 0.2.26 reads strictly (what
+converts only the file transfer settings of
+.IR console.yaml :
+0.2.27 and this release changed no other stored file 0.2.26 reads strictly (what
 the
 .B "show switch"
 reader accepts, what the reports of a user below the operator tier hold, the audit
 line of a prune of other users' reports, the PDF format of the reports and the offer
 of its tools, how the answer of a Cisco IOS device to a long command is read, the wording of two notes and the
 documentation are all that moved), so 0.2.26 reads every file 0.2.27 and this release
-write. It removes no key and no field (the limits of the stored reports, the
+write. It removes no other key and no field (the limits of the stored reports, the
 settings
 .B reports.max_size
 and
@@ -732,18 +760,18 @@ email addresses, the SNMP credential files, the covered staging entries, the
 server name, the timing scale, the server address, the users' login to this
 server and an emergency lockdown, with or without enrolled hosts), leaves the
 per\-tier sudoers drop\-in (0.2.26, 0.2.27 and this release write the same text), the
-pull records and every report in the users' homes (0.2.26 reads them; a PDF one as text, see Rolling back in the upgrading page), takes no
-snapshot and needs no
+pull records and every report in the users' homes (0.2.26 reads them; a PDF one as text, see Rolling back in the upgrading page), takes the snapshot
+only when the file transfer settings are set and needs no
 .BR \-\-yes .
 It is refused only while a device's apply is not settled.
 .B \-\-hosts
 is accepted and does nothing. The command ends with the next step,
 .BR "tacctl upgrade \-\-branch 0.2.26" ,
-with no note to follow: the limits and the reports are 0.2.26's own.
+with no note to follow but the one above when the settings were removed: the limits and the reports are 0.2.26's own.
 .IP
 .B "rollback 0.2.25"
 removes the limits of the stored reports of 0.2.26, 0.2.27 and this release and converts nothing
-else: 0.2.25 reads every other file 0.2.26, 0.2.27 and this release write (the break\-glass
+else but the file transfer settings of the console: 0.2.25 reads every other file 0.2.26, 0.2.27 and this release write (the break\-glass
 firewall and its setting, the email addresses, the SNMP credential files, the
 covered staging entries, the server name, the timing scale, the server address,
 the users' login to this server and an emergency lockdown, with or without
@@ -16048,8 +16076,9 @@ given it: a transfer reaches the user's home only, where a shell or a
 forwarded port would reach the server. A tier name alone prints that tier's
 state. Setting a tier writes
 .BR settings.file_transfer.tiers .
-The settings take effect for the file transfer that the console offers, and
-for nothing else. Only a superuser sets it; an operator and an engineer may
+The settings only decide: the console's file transfer, which a later change of
+this release turns on, reads them, and until it does they change nothing a user
+can do. Only a superuser sets it; an operator and an engineer may
 read each form, and every form that sets something is refused for them
 (logged as a tier denial). The change is logged as
 .BR "console set key=file\-transfer item=" \fItier\fR

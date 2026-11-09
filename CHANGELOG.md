@@ -22,11 +22,12 @@ current behaviour; this file is where history lives.
    `$` stay. `docs/devices/support-bundle.md` and the manual page say so.
 
 2. **`tacctl rollback 0.2.27`, the release before this one, is a target.** It
-   converts nothing. This release changed no stored file 0.2.27 reads strictly
-   (how the answer of a Cisco IOS device to a long command is read, and the
-   documentation, are all that moved), so 0.2.27 reads everything it writes:
-   the rollback removes no key and no field, takes no snapshot and needs no
-   `--yes`. The limits of the stored reports (`reports.max_size` and
+   converts nothing but the file transfer settings of `console.yaml` (item 3).
+   This release changed no other stored file 0.2.27 reads strictly (how the
+   answer of a Cisco IOS device to a long command is read, and the
+   documentation, are all that moved), so 0.2.27 reads everything else it
+   writes: with those settings unset the rollback removes no key and no field,
+   takes no snapshot and needs no `--yes`. The limits of the stored reports (`reports.max_size` and
    `reports.max_count` in `tacctl.yaml`, and a user's own `reports_max_size`
    and `reports_max_count` in `store.yaml`) stay, 0.2.27 has them, and so do
    the chassis `members` of the pull records and every report in the users'
@@ -38,7 +39,8 @@ current behaviour; this file is where history lives.
    name, the timing scale and an emergency lockdown with enrolled hosts,
    which the older targets drop or refuse, stay as well. It is refused only
    while a device's apply is not settled. The command ends with `tacctl
-   upgrade --branch 0.2.27` and, having nothing to avoid, has no closing note.
+   upgrade --branch 0.2.27` and, having nothing to avoid, has no closing note
+   unless it removed the file transfer settings (item 3).
    `rollback 0.2.26` and older behave as before, and the lists of "every target
    but" in the rollback pages and the manual page now include 0.2.27. The
    top-level help, `docs/cli/conventions.md`, `docs/install/upgrading.md`
@@ -47,6 +49,49 @@ current behaviour; this file is where history lives.
    targets. The note that follows a rollback that took a snapshot names this
    release, 0.2.28, as the state the snapshot holds ("Restore it with 0.2.28
    only").
+
+3. **File transfer through the console: its settings, off by default.** The
+   console is to get a built-in file transfer, and a superuser decides who
+   has it. `tacctl console file-transfer <tier> enable|disable` opens it to a
+   tier and `tacctl console file-transfer user <name> enable|disable|clear`
+   to one user, over the tier's setting in both directions, as `console
+   system-shell` does: an enable lasts only while the user stays in the tier
+   it was set for (a move to another tier leaves it listed as stale), a
+   disable holds in any tier, `clear` returns the user to the tier's setting,
+   and `user rename` and `user remove` move or drop a user's settings. It is
+   off for every tier but the superuser tier, which always has it and cannot
+   be disabled; unlike the system shell and forwarding the engineer tier is
+   not closed to it, because a transfer reaches the user's home only, and a
+   caller with no tier never has it. `console file-transfer quota` is the
+   bytes the whole home may hold, 256M for the readonly, operator and
+   engineer tiers and none for the superuser tier until it is set
+   (`quota <tier> <size>|unlimited|default`, `quota user <name>
+   <size>|unlimited|clear`), and `console file-transfer rate` is the bytes a
+   second a transfer may go at, off by default (`rate <tier> <size>|off`,
+   `rate user <name> <size>|off|clear`). A size is a number of bytes or a
+   number with `K`, `M`, `G` or `T` (powers of 1024, `512K`, `256M`, `2G`),
+   printed back in the largest unit that holds it exactly; zero, a negative
+   number, a fraction, an overflow and more than `1T` are refused, and a
+   user's value wins over the tier's. With no argument, `console
+   file-transfer`, `quota` and `rate` list the tiers and the users with a
+   setting of their own, and `console show` lists each tier's state, quota and
+   rate and each user's next to the system shell. The settings are
+   `settings.file_transfer` in `console.yaml` (written only when something in
+   it is not the built-in setting), apply from the next console login, are
+   logged as `console set key=file-transfer` at `auth.notice`, and reach the
+   console through `tacctl _console-policy` (`file_transfer=yes ft_quota=
+   ft_rate=` for a caller who has it). The settings only decide: the console's
+   file transfer, which a later change of this release turns on, reads them,
+   and until it does they change nothing a user can do. Setting them is the
+   superuser's; the read forms are the operator tier's and up. 0.2.27 and
+   every older release reject the key (their reader answers `settings:
+   unknown key 'file_transfer'`, the console falls back to its defaults and
+   writes fail), so every `tacctl rollback` target removes it with the
+   snapshot of `--apply`, keeps every other setting, needs no `--yes` and
+   ends with a note on what to avoid until the older release is installed.
+   `docs/cli/console.md`, `docs/security/login-console.md`, `docs/cli/user.md`,
+   `docs/security/audit.md`, `docs/install/upgrading.md` (Rolling back, To
+   0.2.27) and the manual page say so.
 
 ## 0.2.27 (2026-11-09)
 
