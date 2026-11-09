@@ -7,6 +7,7 @@ go 1.27.0
 ignore ./tests/fixtures
 
 require (
+	github.com/pkg/sftp v1.13.12
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/crypto v0.57.0
 	golang.org/x/sys v0.48.0
@@ -16,5 +17,6 @@ require (
 
 require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/kr/fs v0.1.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 )
