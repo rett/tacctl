@@ -368,3 +368,36 @@ func TestSerialNumbersAreReplacedByTheirField(t *testing.T) {
 		},
 	})
 }
+
+// A dotted run of five groups or more is an object identifier or a version,
+// never an address.
+func TestObjectIdentifiersAndVersionsAreNotAddresses(t *testing.T) {
+	runScrubCases(t, []scrubCase{
+		{
+			name: "juniper sysObjectID",
+			in:   []string{"sysObjectID.0: 1.3.6.1.4.1.2636.1.1.1.2.165\n"},
+			want: []string{"sysObjectID.0: 1.3.6.1.4.1.2636.1.1.1.2.165\n"},
+		},
+		{
+			name: "a leading dot",
+			in:   []string{"sysObjectID.0: .1.3.6.1.4.1.2636.1.1.1.2.165\nsysObjectID.0: .1.3.6.1.4.1.9.1.516\n"},
+			want: []string{"sysObjectID.0: .1.3.6.1.4.1.2636.1.1.1.2.165\n", "sysObjectID.0: .1.3.6.1.4.1.9.1.516\n"},
+		},
+		{
+			name: "five groups",
+			in:   []string{"version 10.20.30.40.50 and 1.2.3.4.5.6\n"},
+			want: []string{"version 10.20.30.40.50 and 1.2.3.4.5.6\n"},
+		},
+		{
+			name: "software versions",
+			in:   []string{"Version 12.4(15)SW4, 16.07.01, 15.0(2)SE11, 24.2R2.18, 17.3.4a\n"},
+			want: []string{"Version 12.4(15)SW4, 16.07.01, 15.0(2)SE11, 24.2R2.18, 17.3.4a\n"},
+		},
+		{
+			name: "an address at the end of a sentence is still an address",
+			in:   []string{"The gateway is 10.20.30.1. The peer 10.20.30.2, ok\n"},
+			want: []string{"The gateway is 192.0.2.1. The peer 192.0.2.2, ok\n"},
+			gone: []string{"10.20.30"},
+		},
+	})
+}

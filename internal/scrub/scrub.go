@@ -508,6 +508,9 @@ func (s *Scrubber) Apply(text string) string {
 				break
 			}
 		}
+		if which == "v4" && inDottedRun(text, start, end) {
+			continue // an object identifier or a version string, not an address
+		}
 		if which == "serial" && (s.models[tok] || covers(keep, start, end)) {
 			continue
 		}
@@ -530,6 +533,15 @@ func (s *Scrubber) Apply(text string) string {
 	}
 	b.WriteString(text[last:])
 	return b.String()
+}
+
+// inDottedRun reports whether text[start:end], four groups of digits, is part
+// of a longer run of dotted numbers (1.3.6.1.4.1.2636): an object identifier
+// or a version string, never an address.
+func inDottedRun(text string, start, end int) bool {
+	isDigit := func(b byte) bool { return b >= '0' && b <= '9' }
+	return start >= 2 && text[start-1] == '.' && isDigit(text[start-2]) ||
+		end+1 < len(text) && text[end] == '.' && isDigit(text[end+1])
 }
 
 // dropComments keeps the first line of a commit history entry and removes
