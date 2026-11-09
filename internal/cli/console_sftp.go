@@ -72,7 +72,11 @@ func (cs *consoleSession) serveSFTP(exe string) error {
 	stop := context.AfterFunc(inv.ctx, func() { _ = conn.Close() })
 	defer stop()
 
-	err = sftpd.Serve(conn, sftpd.Config{Home: home, Quota: ft.Quota, Rate: ft.Rate})
+	au := cs.newSFTPAudit()
+	cs.log("auth.info", cs.sess.SFTPStartLine(string(cs.tier), home, ft.Quota, ft.Rate))
+	err = sftpd.Serve(conn, sftpd.Config{Home: home, Quota: ft.Quota, Rate: ft.Rate, Audit: au.event})
+	t := au.finish()
+	cs.log("auth.info", cs.sess.SFTPEndLine(t.up, t.down, t.ops, t.refused))
 	status := 0
 	if err != nil && inv.ctx.Err() == nil {
 		// the one short line of what went wrong; stdout is the protocol's and
@@ -80,7 +84,7 @@ func (cs *consoleSession) serveSFTP(exe string) error {
 		_, _ = io.WriteString(a.Out.Stderr, "tacctl-console: sftp: "+oneLine(err.Error())+"\n")
 		status = console.SFTPStatus
 	}
-	cs.log("auth.info", cs.sess.EndLine(console.ReasonSFTP, 0, status))
+	cs.log("auth.info", cs.sess.EndLine(console.ReasonSFTP, t.ops, status))
 	if status != 0 {
 		return exit(status)
 	}
@@ -140,4 +144,59 @@ func (c *sftpConn) Close() error {
 		}
 	})
 	return err
+}
+
+// sftpTotals are what the audit of a session counted.
+type sftpTotals struct {
+	up, down     int64
+	ops, refused int
+}
+
+// sftpAudit turns the events of the server into log lines, in order, off the
+// goroutines that serve the requests (each line is a 'logger' process).
+type sftpAudit struct {
+	cs   *consoleSession
+	ch   chan sftpd.Event
+	done chan struct{}
+	t    sftpTotals
+}
+
+func (cs *consoleSession) newSFTPAudit() *sftpAudit {
+	au := &sftpAudit{cs: cs, ch: make(chan sftpd.Event, 256), done: make(chan struct{})}
+	go au.run()
+	return au
+}
+
+// event queues one event for the log.
+func (au *sftpAudit) event(e sftpd.Event) { au.ch <- e }
+
+// finish waits for the lines queued and gives the totals; no event follows.
+func (au *sftpAudit) finish() sftpTotals {
+	close(au.ch)
+	<-au.done
+	return au.t
+}
+
+func (au *sftpAudit) run() {
+	defer close(au.done)
+	for e := range au.ch {
+		priority, line := au.cs.sess.SFTPEventLine(e.Op, e.Path, e.To, e.Bytes, errText(e.Err))
+		au.cs.log(priority, line)
+		au.t.ops++
+		switch e.Op {
+		case "refused":
+			au.t.refused++
+		case "upload":
+			au.t.up += e.Bytes
+		case "download":
+			au.t.down += e.Bytes
+		}
+	}
+}
+
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }

@@ -206,13 +206,46 @@ func TestConsoleSFTPServes(t *testing.T) {
 		t.Errorf("sudo ran %d times, want the policy question only: %q", n, r.h.runner.Argvs())
 	}
 	log := consoleLog(r.h.runner)
-	if len(log) != 2 || !strings.HasSuffix(log[0], "user=carol from=192.0.2.9 tty=- mode=sftp") ||
-		!strings.HasSuffix(log[1], "user=carol reason=sftp lines=0 status=0") {
-		t.Errorf("log:\n%s", strings.Join(log, "\n"))
+	want := []string{
+		"auth.info console start session=",
+		"auth.info console sftp start session=",
+		"auth.info console sftp upload session=",
+		"auth.info console sftp download session=",
+		"auth.info console sftp mkdir session=",
+		"auth.info console sftp rename session=",
+		"auth.info console sftp delete session=",
+		"auth.info console sftp end session=",
+		"auth.info console end session=",
+	}
+	if len(log) != len(want) {
+		t.Fatalf("log:\n%s", strings.Join(log, "\n"))
+	}
+	for i, w := range want {
+		if !strings.HasPrefix(log[i], w) {
+			t.Errorf("log[%d] = %q, want it to start with %q", i, log[i], w)
+		}
+	}
+	for _, frag := range []struct {
+		i    int
+		text string
+	}{
+		{0, "mode=sftp"},
+		{1, " user=carol tier=readonly from=192.0.2.9 home=" + `"` + r.home + `"` + " quota=unlimited rate=off"},
+		{2, ` path="/up.txt" bytes=5`},
+		{3, ` path="/existing.txt" bytes=3`},
+		{4, ` path="/d"`},
+		{5, ` path="/up.txt" to="/d/moved.txt"`},
+		{6, ` path="/existing.txt"`},
+		{7, " up=5 down=3 ops=5 refused=0"},
+		{8, " user=carol reason=sftp lines=5 status=0"},
+	} {
+		if !strings.Contains(log[frag.i], frag.text) {
+			t.Errorf("log[%d] = %q, want it to contain %q", frag.i, log[frag.i], frag.text)
+		}
 	}
 }
 
-func TestConsoleSFTPQuota(t *testing.T) {
+func TestConsoleSFTPQuotaRateAndTheStartLine(t *testing.T) {
 	r := startSFTP(t, sftpPolicy(console.FileTransfer{Enabled: true, Quota: 100, Rate: 1 << 30}), "internal-sftp")
 	c := r.client()
 	if err := put(t, c, "ok", strings.Repeat("a", 100)); err != nil {
@@ -225,9 +258,22 @@ func TestConsoleSFTPQuota(t *testing.T) {
 	if status := r.finish(c); status != 0 {
 		t.Fatalf("status %d", status)
 	}
+	log := strings.Join(consoleLog(r.h.runner), "\n")
+	for _, want := range []string{
+		" quota=100 rate=1G",
+		"auth.warning console sftp DENY session=",
+		` path="/over"`, " reason=quota",
+	} {
+		if !strings.Contains(log, want) {
+			t.Errorf("log lacks %q:\n%s", want, log)
+		}
+	}
+	if !strings.Contains(log, "refused=1") {
+		t.Errorf("the end line counts no refusal:\n%s", log)
+	}
 }
 
-func TestConsoleSFTPRefusesSSH(t *testing.T) {
+func TestConsoleSFTPRefusesSSHAndAudits(t *testing.T) {
 	r := startSFTP(t, sftpPolicy(console.FileTransfer{Enabled: true}), "sftp-server")
 	if err := os.Mkdir(filepath.Join(r.home, ".ssh"), 0o700); err != nil {
 		t.Fatal(err)
@@ -256,6 +302,47 @@ func TestConsoleSFTPRefusesSSH(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(filepath.Join(r.home, ".ssh", "authorized_keys")); string(b) != "key" {
 		t.Errorf("authorized_keys is %q", b)
+	}
+	log := strings.Join(consoleLog(r.h.runner), "\n")
+	if !strings.Contains(log, `auth.warning console sftp DENY session=`) || !strings.Contains(log, `path="/.ssh/authorized_keys"`) ||
+		!strings.Contains(log, "reason=.ssh") {
+		t.Errorf("the refusals are not audited:\n%s", log)
+	}
+}
+
+func TestConsoleSFTPAuditSanitisesNames(t *testing.T) {
+	r := startSFTP(t, sftpPolicy(console.FileTransfer{Enabled: true}), "internal-sftp")
+	c := r.client()
+	evil := "a\nconsole sftp DENY session=forged\x1b[31m\"x"
+	if err := put(t, c, evil, "x"); err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	long := strings.Repeat("n", 230)
+	if err := c.Mkdir(long); err != nil {
+		t.Fatalf("mkdir of a long name: %v", err)
+	}
+	if status := r.finish(c); status != 0 {
+		t.Fatalf("status %d", status)
+	}
+	var upload, mkdir string
+	for _, l := range consoleLog(r.h.runner) {
+		switch {
+		case strings.Contains(l, "console sftp upload"):
+			upload = l
+		case strings.Contains(l, "console sftp mkdir"):
+			mkdir = l
+		}
+	}
+	if !strings.Contains(upload, ` path="/a\nconsole sftp DENY session=forged\x1b[31m\"x" bytes=1`) {
+		t.Errorf("the upload line is not escaped: %q", upload)
+	}
+	for _, l := range consoleLog(r.h.runner) {
+		if strings.ContainsAny(l, "\n\r\x1b") {
+			t.Errorf("a control character reached the log: %q", l)
+		}
+	}
+	if !strings.Contains(mkdir, ` path="/`+strings.Repeat("n", console.NameMax-1)+`"... `) && !strings.HasSuffix(mkdir, ` path="/`+strings.Repeat("n", console.NameMax-1)+`"...`) {
+		t.Errorf("the long name is not cut: %q", mkdir)
 	}
 }
 
@@ -365,7 +452,7 @@ func TestConsoleSFTPEnds(t *testing.T) {
 		if status := r.finish(r.client()); status != 0 {
 			t.Errorf("status %d, stderr %q", status, r.h.err.String())
 		}
-		if log := consoleLog(r.h.runner); len(log) != 2 || !strings.HasSuffix(log[1], "reason=sftp lines=0 status=0") {
+		if log := consoleLog(r.h.runner); len(log) != 4 || !strings.HasSuffix(log[2], " up=0 down=0 ops=0 refused=0") {
 			t.Errorf("log %q", log)
 		}
 	})

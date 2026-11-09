@@ -4,6 +4,12 @@ package console
 // sftp subsystem is told apart in the log (internal/sftpd serves the
 // protocol, internal/cli/console_sftp.go wires it).
 
+import (
+	"strconv"
+	"strings"
+	"unicode/utf8"
+)
+
 // ModeSFTP is the mode of a session that serves the sftp subsystem (the
 // 'mode=' of its start line, next to interactive, command and batch).
 const ModeSFTP = "sftp"
@@ -26,3 +32,80 @@ func (s Session) SFTPDenyLine(why string) string {
 // failed after the protocol started (a protocol error, the stream cut
 // mid-packet).
 const SFTPStatus = 1
+
+// NameMax is the most bytes of a file name (a path) one log line carries.
+const NameMax = 200
+
+// QuoteName is a path a client sent, made safe for one field of a log line.
+// The audit never logs a typed word that is not a verb, because it could be a
+// password; a path is a file name and is logged, but as a Go string literal
+// in double quotes: a control character (a newline, an escape sequence), a
+// quote, a backslash, a byte that is not UTF-8 and a character that does not
+// print (a bidirectional override) become escapes, so that no name can end
+// the field or the line, forge a field or move a terminal that reads the
+// log. At most NameMax bytes are kept; a name that was cut ends with '...'
+// after the closing quote.
+func QuoteName(s string) string {
+	cut := false
+	if len(s) > NameMax {
+		i := NameMax
+		for i > 0 && !utf8.RuneStart(s[i]) {
+			i--
+		}
+		s, cut = s[:i], true
+	}
+	q := strconv.Quote(s)
+	if cut {
+		q += "..."
+	}
+	return q
+}
+
+// SFTPStartLine is the log line of a file transfer opened: the tier of the
+// caller, the home directory that is "/" for the client, and the quota and
+// the rate in effect (the words of 'console file-transfer': 256M, unlimited,
+// off).
+func (s Session) SFTPStartLine(tier, home string, quota, rate int64) string {
+	return "console sftp start session=" + s.ID + " user=" + LogValue(s.User) + " tier=" + LogValue(tier) +
+		" from=" + LogValue(s.From) + " home=" + QuoteName(home) + " quota=" + QuotaWord(quota) + " rate=" + RateWord(rate)
+}
+
+// SFTPEndLine is the log line of a file transfer closed: the bytes uploaded
+// and downloaded, the requests audited (ops) and those of them that were
+// refused.
+func (s Session) SFTPEndLine(up, down int64, ops, refused int) string {
+	return "console sftp end session=" + s.ID + " user=" + LogValue(s.User) + " up=" + strconv.FormatInt(up, 10) +
+		" down=" + strconv.FormatInt(down, 10) + " ops=" + strconv.Itoa(ops) + " refused=" + strconv.Itoa(refused)
+}
+
+// SFTPEventLine is the log line, and its syslog priority, of one thing a
+// client did (sftpd.Event): op is upload, download, delete, rename, mkdir,
+// setstat or refused. A request the server refused (.ssh, outside the home, a
+// symbolic link, the quota, an unsupported request, a bad path) is
+// 'console sftp DENY ... reason=<why>' at auth.warning, like a refused command;
+// the rest are info lines with the path (and the new name of a rename), the
+// bytes moved by an upload or a download, and the error text of one that
+// failed. errText is sanitised like a path.
+func (s Session) SFTPEventLine(op, path, to string, bytes int64, errText string) (priority, line string) {
+	head := "console sftp " + op
+	priority = "auth.info"
+	if op == "refused" {
+		head = "console sftp DENY"
+		priority = "auth.warning"
+	}
+	line = head + " session=" + s.ID + " user=" + LogValue(s.User) + " path=" + QuoteName(path)
+	if to != "" {
+		line += " to=" + QuoteName(to)
+	}
+	switch op {
+	case "upload", "download":
+		line += " bytes=" + strconv.FormatInt(bytes, 10)
+	}
+	switch {
+	case op == "refused":
+		line += " reason=" + LogValue(strings.ReplaceAll(errText, " ", "-"))
+	case errText != "":
+		line += " error=" + QuoteName(errText)
+	}
+	return priority, line
+}
