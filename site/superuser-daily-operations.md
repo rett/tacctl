@@ -9,7 +9,7 @@ doctype: how-to
 
 # Superuser Daily Operations
 
-*Day-to-day operations for tacctl superusers · Checked against tacctl 0.2.27*
+*Day-to-day operations for tacctl superusers · Checked against tacctl 0.2.28*
 
 [Printable PDF](../pdf/tacctl-superuser-daily-operations.pdf){: .pdf-link }
 

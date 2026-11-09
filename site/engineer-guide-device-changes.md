@@ -9,7 +9,7 @@ doctype: how-to
 
 # Engineer Guide: Device Changes
 
-*Register, compare, plan and apply device AAA configuration · Checked against tacctl 0.2.27*
+*Register, compare, plan and apply device AAA configuration · Checked against tacctl 0.2.28*
 
 [Printable PDF](../pdf/tacctl-engineer-guide-device-changes.pdf){: .pdf-link }
 

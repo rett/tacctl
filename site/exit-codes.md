@@ -9,7 +9,7 @@ doctype: reference
 
 # Exit Codes
 
-*What each tacctl exit status means on shift and in scripts · Checked against tacctl 0.2.27*
+*What each tacctl exit status means on shift and in scripts · Checked against tacctl 0.2.28*
 
 [Printable PDF](../pdf/tacctl-exit-codes.pdf){: .pdf-link }
 

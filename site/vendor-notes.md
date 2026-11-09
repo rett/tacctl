@@ -9,7 +9,7 @@ doctype: explanation
 
 # Vendor Notes
 
-*What differs between Cisco, Junos and WTI for operations staff · Checked against tacctl 0.2.27*
+*What differs between Cisco, Junos and WTI for operations staff · Checked against tacctl 0.2.28*
 
 [Printable PDF](../pdf/tacctl-vendor-notes.pdf){: .pdf-link }
 

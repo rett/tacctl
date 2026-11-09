@@ -9,7 +9,7 @@ doctype: how-to
 
 # Audit and Compliance
 
-*Audit trail, evidence and periodic reviews · Checked against tacctl 0.2.27*
+*Audit trail, evidence and periodic reviews · Checked against tacctl 0.2.28*
 
 [Printable PDF](../pdf/tacctl-audit-and-compliance.pdf){: .pdf-link }
 

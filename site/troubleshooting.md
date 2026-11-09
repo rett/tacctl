@@ -9,7 +9,7 @@ doctype: how-to
 
 # Troubleshooting
 
-*Symptom-first fixes for login and device problems · Checked against tacctl 0.2.27*
+*Symptom-first fixes for login and device problems · Checked against tacctl 0.2.28*
 
 [Printable PDF](../pdf/tacctl-troubleshooting.pdf){: .pdf-link }
 

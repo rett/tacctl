@@ -9,7 +9,7 @@ doctype: how-to
 
 # Backups and Undo
 
-*Snapshots, comparing them, and restoring tacctl's configuration · Checked against tacctl 0.2.27*
+*Snapshots, comparing them, and restoring tacctl's configuration · Checked against tacctl 0.2.28*
 
 [Printable PDF](../pdf/tacctl-backups-and-undo.pdf){: .pdf-link }
 
