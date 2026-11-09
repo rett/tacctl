@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -296,10 +297,21 @@ func (s *pdfStderr) lines() []string {
 // writeRaw writes bytes to standard output as they are. The stream tacctl
 // holds for a pipe or a file takes terminal colour sequences out, which a PDF
 // may contain by chance, so the file behind it is written when there is one.
-func (inv *invocation) writeRaw(b []byte) {
+// A write that fails or falls short is an error: a cut-off PDF is no success.
+func (inv *invocation) writeRaw(b []byte) error {
 	w := inv.app.Out.Stdout
 	if f, ok := ui.File(w); ok {
 		w = f
 	}
-	_, _ = w.Write(b)
+	n, err := w.Write(b)
+	if err == nil && n < len(b) {
+		err = io.ErrShortWrite
+	}
+	return err
+}
+
+// rawWriteErr is the failure of a PDF that could not be written to standard
+// output: exit 1.
+func (inv *invocation) rawWriteErr(err error) error {
+	return inv.usageErr("Cannot write the PDF to standard output: " + cleanLine(err.Error()) + ".")
 }

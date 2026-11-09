@@ -285,7 +285,9 @@ func (inv *invocation) deviceReportsExport(args []string) error {
 		if t.f.isPDF() && (!t.cross || bytes.HasPrefix(b, []byte("%PDF-"))) {
 			// not a terminal (checked above), so nothing here can move one;
 			// the bytes go out as they are, past the colour filter
-			inv.writeRaw(b)
+			if err := inv.writeRaw(b); err != nil {
+				return inv.rawWriteErr(err)
+			}
 			return nil
 		}
 		if t.cross {

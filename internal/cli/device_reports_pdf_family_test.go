@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"github.com/rett/tacctl/internal/app"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
+	"github.com/rett/tacctl/internal/paths"
 	"github.com/rett/tacctl/internal/reports"
 	"github.com/rett/tacctl/internal/ui"
 )
@@ -278,7 +280,9 @@ func TestWriteRawBypassesTheColourFilter(t *testing.T) {
 	plainOut := ui.Plain(f)
 	inv := &invocation{app: &app.App{Out: ui.Output{Stdout: plainOut, Stderr: io.Discard}}}
 	data := []byte("%PDF-1.7\n\x1b[31mred\x1b[0m\x00\xff")
-	inv.writeRaw(data)
+	if err := inv.writeRaw(data); err != nil {
+		t.Fatal(err)
+	}
 	_ = plainOut.Close()
 	if got, err := os.ReadFile(f.Name()); err != nil || !bytes.Equal(got, data) {
 		t.Errorf("%q %v", got, err)
@@ -340,5 +344,76 @@ func TestReportsIsPDFNeedsTheExtension(t *testing.T) {
 		if got := c.f.isPDF(); got != c.want {
 			t.Errorf("%+v: isPDF %v, want %v", c.f, got, c.want)
 		}
+	}
+}
+
+// failingWriter takes at most room bytes and then fails (a full disk, a closed
+// pipe).
+type failingWriter struct{ room int }
+
+func (w *failingWriter) Write(p []byte) (int, error) {
+	n := min(len(p), w.room)
+	w.room -= n
+	if n < len(p) {
+		return n, errors.New("no space left on device")
+	}
+	return n, nil
+}
+
+// runTo is cfgRun with the standard output given, for a user of a group.
+func (b *reportsBox) runTo(stdout io.Writer, script func(*fake.Runner), user, groups string, args ...string) int {
+	b.t.Helper()
+	sb := b.sb
+	sb.err.Reset()
+	sb.runner = &fake.Runner{}
+	sb.runner.On([]string{"systemctl"}, execx.Result{})
+	sb.runner.On([]string{"logger"}, execx.Result{})
+	fakePasswd(sb.runner)
+	idAs(user, "tac-users "+groups)(sb.runner)
+	script(sb.runner)
+	a := app.New(append([]string{"device", "reports"}, args...), paths.NewEnv(append(append([]string(nil), sb.env...), "SUDO_USER="+user)), "/opt/x/dist/tacctl", 1000,
+		app.Stdio{Stdin: strings.NewReader(""), Stdout: stdout, Stderr: &sb.err}, sb.runner)
+	a.SNMP = sb.snmp
+	a.Resolve = sb.resolve
+	a.Paths.ConsoleCommand = sb.consoleCommand()
+	a.Paths.EditDir = sb.editDir()
+	sb.code = exitCode(runWith(sb.runCtx(), a, BuildInfo{Version: "0.2.0-test", Commit: "c", Date: "d"}, sb.hooks), a.Out)
+	return sb.code
+}
+
+// A PDF that cannot be written to standard output (a full disk, a closed pipe)
+// is a failure: the exit status is 1 and the error says so, not a truncated
+// file with exit status 0.
+func TestWriteRawReportsAFailedWrite(t *testing.T) {
+	inv := &invocation{app: &app.App{Out: ui.Output{Stdout: &failingWriter{room: 4}, Stderr: io.Discard}}}
+	if err := inv.writeRaw([]byte("%PDF-1.7\n")); err == nil || !strings.Contains(err.Error(), "no space left") {
+		t.Errorf("a failing writer: %v", err)
+	}
+	var ok bytes.Buffer
+	inv.app.Out.Stdout = &ok
+	if err := inv.writeRaw([]byte("%PDF-1.7\n")); err != nil || ok.String() != "%PDF-1.7\n" {
+		t.Errorf("a writer that works: %v %q", err, ok.String())
+	}
+
+	b := newReportsBox(t)
+	tool := b.pdfTool()
+	// generate --stdout
+	code := b.runTo(&failingWriter{room: 10}, pdfStub(tool), "alice", asSuper, "generate", "--type", "inventory", "--format", "pdf", "--stdout")
+	if code != 1 || !strings.Contains(b.sb.stderr(), "[ERROR] Cannot write the PDF to standard output: no space left on device") {
+		t.Errorf("generate --stdout: exit %d %q", code, b.sb.stderr())
+	}
+	// export of a stored report, own and another user's
+	_, _ = b.genPDF(tool, "alice", asSuper, "--type", "inventory", "--name", "mine")
+	_, _ = b.genPDF(tool, "bob", asOperator, "--type", "inventory", "--name", "his")
+	for _, ref := range []string{"mine", "bob/his"} {
+		code = b.runTo(&failingWriter{room: 10}, func(*fake.Runner) {}, "alice", asSuper, "export", ref)
+		if code != 1 || !strings.Contains(b.sb.stderr(), "[ERROR] Cannot write the PDF to standard output: no space left on device") {
+			t.Errorf("export %s: exit %d %q", ref, code, b.sb.stderr())
+		}
+	}
+	// and it still works when the writer does
+	var good bytes.Buffer
+	if code = b.runTo(&good, func(*fake.Runner) {}, "alice", asSuper, "export", "mine"); code != 0 || !strings.HasPrefix(good.String(), "%PDF-1.7\n") {
+		t.Errorf("export: exit %d %.40q %q", code, good.String(), b.sb.stderr())
 	}
 }

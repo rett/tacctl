@@ -252,4 +252,4 @@ A release before 0.2.26 has no `device reports` verb. `tacctl rollback` to 0.2.2
 
 ## Exit status
 
-0 on success; 1 when a request was refused (a name in use, a user with no account, no such report, a scope that is not yours, a limit) or when `generate --pull` could not read some device; 2 for wrong arguments (no `--type`, an unknown type or format, a bad name or age, `--name` with `--stdout`).
+0 on success; 1 when a request was refused (a name in use, a user with no account, no such report, a scope that is not yours, a limit), when `generate --pull` could not read some device, or when a PDF cannot be written to standard output (a full disk, a closed pipe: the error says so, and a cut-off file is never a success); 2 for wrong arguments (no `--type`, an unknown type or format, a bad name or age, `--name` with `--stdout`).

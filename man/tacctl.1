@@ -14309,7 +14309,7 @@ refuses (exit 1) before it reads any report data, with
 or
 .BR "A PDF is binary: redirect \-\-stdout to a file, or leave it out to store the report" ;
 a tool that fails, makes no PDF or does not finish in time is reported with the
-first lines of its error, and nothing is written.
+first lines of its error, and nothing is written. A PDF that cannot be written to the standard output (a full disk, a closed pipe) is an error with exit status 1, not a cut-off file with exit status 0.
 The state and applied columns of the config report are the configuration state
 that
 .B "device list"

@@ -321,7 +321,9 @@ func (inv *invocation) deviceReportsGenerate(args []string) error {
 	}
 	if p.Has("--stdout") {
 		if format == reports.FormatPDF {
-			inv.writeRaw(body.Bytes())
+			if err := inv.writeRaw(body.Bytes()); err != nil {
+				return inv.rawWriteErr(err)
+			}
 		} else {
 			inv.write(body.String())
 		}
