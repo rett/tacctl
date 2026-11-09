@@ -335,8 +335,12 @@ func TestDirectorySwappedForLinkIsNotFollowed(t *testing.T) {
 			}
 		}
 	}()
-	var opened, leaked int
-	for i := 0; i < 400; i++ {
+	// The reads go on until enough of them found the directory in place (the
+	// swap runs at the same time, so some find the link): a run in which none
+	// did would prove nothing about the race, and fails.
+	const wantOpened, maxReads = 20, 20000
+	var opened, leaked, reads int
+	for reads = 0; reads < maxReads && opened < wantOpened; reads++ {
 		got, err := e.get("real/f")
 		if err == nil {
 			opened++
@@ -350,7 +354,10 @@ func TestDirectorySwappedForLinkIsNotFollowed(t *testing.T) {
 	if leaked != 0 {
 		t.Fatalf("%d of %d reads returned the content of .ssh/f through a swapped link", leaked, opened)
 	}
-	t.Logf("%d of 400 reads found the directory in place, the others the link", opened)
+	if opened < wantOpened {
+		t.Fatalf("only %d of %d reads found the directory in place: the race was not exercised", opened, reads)
+	}
+	t.Logf("%d of %d reads found the directory in place, the others the link", opened, reads)
 }
 
 // A regular file with more than one name is not served: a name for the

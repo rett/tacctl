@@ -6,10 +6,12 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/pkg/sftp"
+	"golang.org/x/sys/unix"
 )
 
 // 6. The audit events.
@@ -305,13 +307,31 @@ func mustHome(t *testing.T, dir string) *home {
 }
 
 func TestServeWritesNothingToStdoutOrStderr(t *testing.T) {
-	// Not parallel: it swaps the process's os.Stdout and os.Stderr.
+	// Not parallel: it points the process's descriptors 1 and 2 (what a
+	// write to os.Stdout, os.Stderr or the C library's stdio reaches) at a
+	// pipe for the length of a session.
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldOut, oldErr := os.Stdout, os.Stderr
-	os.Stdout, os.Stderr = w, w
+	saved := [2]int{}
+	for i, fd := range []int{1, 2} {
+		if saved[i], err = unix.Dup(fd); err != nil {
+			t.Fatal(err)
+		}
+	}
+	restore := sync.OnceFunc(func() {
+		for i, fd := range []int{1, 2} {
+			_ = unix.Dup3(saved[i], fd, 0)
+			_ = unix.Close(saved[i])
+		}
+	})
+	defer restore()
+	for _, fd := range []int{1, 2} {
+		if err := unix.Dup3(int(w.Fd()), fd, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
 	e := newEnv(t, nil)
 	e.write(".ssh/k", "x")
 	e.put("f", "x")
@@ -319,8 +339,10 @@ func TestServeWritesNothingToStdoutOrStderr(t *testing.T) {
 	_, _ = e.client.Stat(".ssh/k")
 	_ = e.client.Symlink("f", "l")
 	_, _ = e.client.Open("a\x00b")
+	_ = e.client.Mkdir("f")
+	_, _ = e.client.ReadDir("/")
 	_ = e.stop()
-	os.Stdout, os.Stderr = oldOut, oldErr
+	restore()
 	_ = w.Close()
 	b, _ := io.ReadAll(r)
 	if len(b) != 0 {

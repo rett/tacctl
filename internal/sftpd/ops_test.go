@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // 1. The home is "/".
@@ -503,5 +505,41 @@ func TestReadWriteHandleStillReadsAndWrites(t *testing.T) {
 	_ = h.Close()
 	if e.read("f") != "Jello world" {
 		t.Errorf("file = %q", e.read("f"))
+	}
+}
+
+// A FIFO in the home must neither block the session nor be opened: the open
+// does not wait for a peer, and the type is refused before anything is read
+// or written.
+func TestFIFOIsNotOpenedAndDoesNotHang(t *testing.T) {
+	e := newEnvSeams(t, nil, seams{maxHandles: 2})
+	if err := unix.Mkfifo(filepath.Join(e.home, "p"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 5; i++ { // more than the handle limit: nothing is kept
+			if _, err := e.client.Open("p"); code(err) != fxOpUnsupported {
+				t.Errorf("open of a FIFO to read: %v, want unsupported", err)
+			}
+			for _, fl := range []int{os.O_WRONLY, os.O_RDWR, os.O_WRONLY | os.O_TRUNC, os.O_RDWR | os.O_APPEND} {
+				if _, err := e.client.OpenFile("p", fl); err == nil {
+					t.Errorf("open of a FIFO with flags %#x succeeded", fl)
+				}
+			}
+		}
+	}()
+	// A real 10 s deadline: it only passes if the code is wrong, and then the
+	// test fails instead of hanging (an open of a FIFO blocks for a peer).
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the session wedged on a FIFO")
+	}
+	// The session works, and no handle was left behind.
+	e.put("f", "x")
+	if fi, err := e.client.Stat("p"); err != nil || fi.Mode()&os.ModeNamedPipe == 0 {
+		t.Errorf("stat of the FIFO: %v, %v", fi, err)
 	}
 }
