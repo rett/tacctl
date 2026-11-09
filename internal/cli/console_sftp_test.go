@@ -10,12 +10,15 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 
 	"github.com/pkg/sftp"
@@ -343,6 +346,58 @@ func TestConsoleSFTPAuditSanitisesNames(t *testing.T) {
 	}
 	if !strings.Contains(mkdir, ` path="/`+strings.Repeat("n", console.NameMax-1)+`"... `) && !strings.HasSuffix(mkdir, ` path="/`+strings.Repeat("n", console.NameMax-1)+`"...`) {
 		t.Errorf("the long name is not cut: %q", mkdir)
+	}
+}
+
+// A failed request on a hostile long name is one line that keeps its
+// trailing fields (logger cuts a line at 1 KiB), and the error text does not
+// repeat the path.
+func TestConsoleSFTPAuditLineOfAFailedLongNameFits(t *testing.T) {
+	r := startSFTP(t, sftpPolicy(console.FileTransfer{Enabled: true}), "internal-sftp")
+	c := r.client()
+	hostile := "/" + strings.Repeat("\x01", 100) + strings.Repeat("n", 100)
+	if err := c.Remove(hostile); err == nil {
+		t.Fatal("removing a file that is not there worked")
+	}
+	if err := c.Rename(hostile, hostile+"2"); err == nil {
+		t.Fatal("renaming a file that is not there worked")
+	}
+	if status := r.finish(c); status != 0 {
+		t.Fatalf("status %d", status)
+	}
+	seen := 0
+	for _, l := range consoleLog(r.h.runner) {
+		if !strings.Contains(l, "console sftp delete") && !strings.Contains(l, "console sftp rename") {
+			continue
+		}
+		seen++
+		if len(l) >= 1000 {
+			t.Errorf("%d bytes: %s", len(l), l)
+		}
+		_, errField, ok := strings.Cut(l, " error=")
+		if !ok || strings.Contains(errField, `\x01`) || strings.Contains(errField, "nnnn") {
+			t.Errorf("the error repeats the path, or is lost: %s", l)
+		}
+	}
+	if seen < 2 {
+		t.Errorf("%d event lines, want at least 2", seen)
+	}
+}
+
+func TestErrTextDropsThePath(t *testing.T) {
+	for _, c := range []struct {
+		err  error
+		want string
+	}{
+		{nil, ""},
+		{errors.New("plain"), "plain"},
+		{&fs.PathError{Op: "open", Path: "/home/user/x", Err: syscall.ENOENT}, "open: no such file or directory"},
+		{&os.LinkError{Op: "rename", Old: "/a", New: "/b", Err: syscall.EEXIST}, "rename: file exists"},
+		{fmt.Errorf("wrapped: %w", &fs.PathError{Op: "unlink", Path: "/x", Err: syscall.EACCES}), "unlink: permission denied"},
+	} {
+		if got := errText(c.err); got != c.want {
+			t.Errorf("errText(%v) = %q, want %q", c.err, got, c.want)
+		}
 	}
 }
 
