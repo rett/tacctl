@@ -216,3 +216,73 @@ func TestTheTemplateUserOfTheLoginLineIsAUserNotAClass(t *testing.T) {
 		t.Errorf("%v", kinds)
 	}
 }
+
+// scrubCase is a bundle of texts and what must be in the scrubbed texts
+// (joined) and what must not.
+type scrubCase struct {
+	name string
+	in   []string
+	want []string // each is in the output
+	gone []string // none is in the output
+}
+
+func runScrubCases(t *testing.T, cases []scrubCase) {
+	t.Helper()
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			out := strings.Join(New().ApplyAll(c.in), "\n==\n")
+			for _, w := range c.want {
+				if !strings.Contains(out, w) {
+					t.Errorf("%q is gone from the output:\n%s", w, out)
+				}
+			}
+			for _, g := range c.gone {
+				if strings.Contains(out, g) {
+					t.Errorf("%q is still in the output:\n%s", g, out)
+				}
+			}
+		})
+	}
+}
+
+// A model name has the shape of a serial number and is not one.
+func TestModelNamesAreNotSerialNumbers(t *testing.T) {
+	runScrubCases(t, []scrubCase{
+		{
+			name: "csr1000v inventory",
+			in: []string{"NAME: \"Chassis\", DESCR: \"Cisco CSR1000V Chassis\"\n" +
+				"PID: CSR1000V        , VID: V00  , SN: 9ABCDEFGHIJ\n"},
+			want: []string{"DESCR: \"Cisco CSR1000V Chassis\"", "PID: CSR1000V        , VID: V00  , SN: "},
+			gone: []string{"9ABCDEFGHIJ"},
+		},
+		{
+			name: "7206 inventory",
+			in: []string{"NAME: \"chassis\", DESCR: \"CISCO7206VXR chassis, Hw Serial#: 1234567890, Hw Revision: 1.0\"\n" +
+				"PID: CISCO7206VXR     , VID:    , SN: 1234567890\n"},
+			want: []string{"DESCR: \"CISCO7206VXR chassis, Hw Serial#: ", "PID: CISCO7206VXR     , VID:    , SN: "},
+		},
+		{
+			name: "a model stated in one file is kept in the others",
+			in: []string{"PID: ASR1001HX         , VID: V01  , SN: FOC0000AAAA\n",
+				"Cisco IOS XE Software, ASR1001HX Software (X86_64_LINUX_IOSD-UNIVERSALK9-M)\n"},
+			want: []string{"PID: ASR1001HX ", "ASR1001HX Software (X86_64"},
+			gone: []string{"FOC0000AAAA"},
+		},
+		{
+			name: "junos model line",
+			in:   []string{"Hostname: sw9\nModel: QFX10002\nJunos: 21.4R3-S2.4\n", "Chassis  QFX10002\n"},
+			want: []string{"Model: QFX10002", "Chassis  QFX10002"},
+		},
+		{
+			name: "ios show version model and revision line",
+			in:   []string{"cisco WS3750X48P (PowerPC405) processor (revision A0) with 262144K bytes of memory.\n", "the WS3750X48P again\n"},
+			want: []string{"cisco WS3750X48P (PowerPC405)", "the WS3750X48P again"},
+		},
+		{
+			name: "a real serial is still replaced",
+			in:   []string{"PID: CSR1000V , VID: V00 , SN: 9ABCDEFGHIJ\nsomething FOC0000AAAA else\n"},
+			want: []string{"PID: CSR1000V , VID: V00 , SN: SN00000"},
+			gone: []string{"9ABCDEFGHIJ", "FOC0000AAAA"},
+		},
+	})
+}

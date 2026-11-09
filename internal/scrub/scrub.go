@@ -55,6 +55,7 @@ type Scrubber struct {
 	byKey   map[string]string // kind+"\x00"+lower(real) -> example
 	learned map[string]string // lower(real) -> example, the values found by name
 	made    map[string]bool   // examples handed out
+	models  map[string]bool   // the model names the texts state: never taken for serial numbers
 	count   map[Kind]int
 	re      *regexp.Regexp // the combined pass, rebuilt when learned changes
 	dirty   bool
@@ -62,7 +63,7 @@ type Scrubber struct {
 
 // New returns an empty Scrubber.
 func New() *Scrubber {
-	return &Scrubber{byKey: map[string]string{}, learned: map[string]string{}, made: map[string]bool{}, count: map[Kind]int{}, dirty: true}
+	return &Scrubber{byKey: map[string]string{}, learned: map[string]string{}, made: map[string]bool{}, models: map[string]bool{}, count: map[Kind]int{}, dirty: true}
 }
 
 // Pairs are the replacements made or learned so far, by kind and then real
@@ -219,6 +220,10 @@ var (
 	reLearnLastBy   = regexp.MustCompile(`(?m)(?:last configuration change|nvram config last updated).* by (\S+)[ \t]*$`)
 	reLearnSerial   = regexp.MustCompile(`(?mi)\bserial(?: number| no\.?)?[ \t]*[:=][ \t]*([A-Za-z0-9]{4,32})\b`)
 	reLearnDomain   = regexp.MustCompile(`(?mi)^\s*ip domain[- ]name\s+(?:vrf \S+\s+)?(\S+)`)
+	// the model names a text states
+	reLearnPID      = regexp.MustCompile(`\bPID:[ \t]*([^,\n]*)`)
+	reLearnModel    = regexp.MustCompile(`(?mi)^[ \t]*model(?: number)?[ \t]*[:=][ \t]*(\S+)`)
+	reLearnCisco    = regexp.MustCompile(`\b[Cc][Ii][Ss][Cc][Oo][ \t]+([A-Za-z0-9][A-Za-z0-9-]*)`)
 	reLearnLocation = regexp.MustCompile(`(?mi)^\s*(?:snmp-server location|location|sysLocation(?:\.0)?\s*[:=])\s*(.+?)\s*$`)
 	reLearnContact  = regexp.MustCompile(`(?mi)^\s*(?:snmp-server contact|contact|sysContact(?:\.0)?\s*[:=])\s*(.+?)\s*$`)
 
@@ -230,12 +235,70 @@ var (
 	reSerial  = `\b[A-Z0-9]{8,14}\b`
 	reFQDN    = `\b(?:[A-Za-z0-9-]+\.)+(?:(?:co|com|org|net|ac|gov|edu)\.[a-z]{2}|net|com|org|edu|gov|mil|io|local|lan|corp|home|int|uk|de|fr|nl|se|no|ch|jp|cn|ca|au|ru|br|it|es|eu|us|in|pl|be|at|dk|fi|ie|nz|za|kr|sg|hk|mx)\b`
 	reExample = regexp.MustCompile(`(?i)(?:^|\.)example\.(?:net|org|com)$`)
+
+	// what the serial-number shape never reads: the model and version of a
+	// 'show inventory' item, its quoted name and description, the Model line
+	// of Junos, the 'Cisco <model> (revision ...)' line of IOS
+	reKeepPIDVID   = regexp.MustCompile(`\b(?:PID|VID):[ \t]*([^,\n]*)`)
+	reKeepQuoted   = regexp.MustCompile(`\b(?:DESCR|NAME):[ \t]*"([^"\n]*)"`)
+	reKeepModel    = regexp.MustCompile(`(?mi)^[ \t]*model(?: number)?[ \t]*[:=].*$`)
+	reKeepRevision = regexp.MustCompile(`(?mi)^[ \t]*cisco[ \t].*\(revision\b.*$`)
 )
+
+// A span is a stretch of a text, [start, end).
+type span struct{ start, end int }
+
+// covers reports whether some span holds [start, end).
+func covers(spans []span, start, end int) bool {
+	for _, sp := range spans {
+		if sp.start <= start && end <= sp.end {
+			return true
+		}
+	}
+	return false
+}
+
+// keepSpans are the stretches of text where the shape of a serial number
+// does not make a token one: model names and descriptions.
+func keepSpans(text string) []span {
+	var out []span
+	for _, re := range []*regexp.Regexp{reKeepPIDVID, reKeepQuoted} {
+		for _, m := range re.FindAllStringSubmatchIndex(text, -1) {
+			out = append(out, span{m[2], m[3]})
+		}
+	}
+	for _, re := range []*regexp.Regexp{reKeepModel, reKeepRevision} {
+		for _, m := range re.FindAllStringIndex(text, -1) {
+			out = append(out, span{m[0], m[1]})
+		}
+	}
+	return out
+}
+
+// learnModels records the model names a text states: the PID of an
+// inventory item, the Model line, the word after 'Cisco'.
+func (s *Scrubber) learnModels(text string) {
+	add := func(v string) {
+		for _, w := range strings.Fields(v) {
+			s.models[strings.Trim(w, `",;:()`)] = true
+		}
+	}
+	for _, m := range reLearnPID.FindAllStringSubmatch(text, -1) {
+		add(m[1])
+	}
+	for _, m := range reLearnModel.FindAllStringSubmatch(text, -1) {
+		add(m[1])
+	}
+	for _, m := range reLearnCisco.FindAllStringSubmatch(text, -1) {
+		add(m[1])
+	}
+}
 
 // LearnFrom learns the names a text holds by their shape: the hostname lines,
 // the users and classes of the login and the history, the domain, location
 // and contact lines.
 func (s *Scrubber) LearnFrom(text string) {
+	s.learnModels(text)
 	for _, m := range reLearnJunosHN.FindAllStringSubmatch(text, -1) {
 		s.Learn(Host, m[1])
 	}
@@ -316,6 +379,7 @@ func (s *Scrubber) Apply(text string) string {
 	text = reTZName.ReplaceAllString(text, "UTC")
 	text = reClockTZ.ReplaceAllString(text, "${1}UTC 0")
 	s.compile()
+	keep := keepSpans(text)
 	names := s.re.SubexpNames()
 	var b strings.Builder
 	last := 0
@@ -331,6 +395,9 @@ func (s *Scrubber) Apply(text string) string {
 				which = names[i]
 				break
 			}
+		}
+		if which == "serial" && (s.models[tok] || covers(keep, start, end)) {
+			continue
 		}
 		rep, ok := s.replacement(which, tok)
 		if !ok {
