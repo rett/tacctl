@@ -86,8 +86,8 @@ func TestReportsPDFStdoutForEveryType(t *testing.T) {
 		// the whole document is what the tool reads, and the tool is run as
 		// documented: HTML on standard input, the PDF on standard output
 		c := calls[0].Cmd
-		if got := strings.Join(c.Args, " "); got != "--quiet - -" || c.Dir != "/" || c.Credential != nil {
-			t.Errorf("%s: args %q dir %q credential %v", typ, got, c.Dir, c.Credential)
+		if got := strings.Join(c.Args, " "); got != "--quiet - -" || c.Dir != "/" || c.Credential != nil || !c.KillGroup {
+			t.Errorf("%s: args %q dir %q credential %v kill-group %v", typ, got, c.Dir, c.Credential, c.KillGroup)
 		}
 	}
 	// --stdout stores nothing

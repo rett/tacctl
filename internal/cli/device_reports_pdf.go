@@ -153,7 +153,7 @@ func (inv *invocation) renderPDF(tool string, doc []byte) ([]byte, error) {
 	out := &pdfCapture{max: maxOut, cancel: cancel}
 	errOut := &pdfStderr{}
 	res, err := inv.app.Runner.Run(ctx, execx.Cmd{Name: tool, Args: []string{"--quiet", "-", "-"},
-		Stdin: bytes.NewReader(doc), Env: pdfEnv(home), Dir: "/", Credential: cred, Stdout: out, Stderr: errOut})
+		Stdin: bytes.NewReader(doc), Env: pdfEnv(home), Dir: "/", Credential: cred, Stdout: out, Stderr: errOut, KillGroup: true})
 	stderr := errOut.lines()
 	switch {
 	case out.over:
