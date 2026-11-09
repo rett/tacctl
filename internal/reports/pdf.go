@@ -26,9 +26,8 @@ const pdfCSS = `@page { size: letter landscape; margin: 14mm; @bottom-center { c
 html { font: 8pt "DejaVu Sans", sans-serif; color: #111111 }
 body { margin: 0 }
 h1 { font-size: 14pt; margin: 0 0 4pt 0 }
-dl { margin: 0 0 10pt 0; display: grid; grid-template-columns: max-content 1fr; column-gap: 8pt }
-dt { font-weight: bold }
-dd { margin: 0 }
+.facts { margin: 0 0 10pt 0 }
+.k { display: inline-block; width: 64pt; font-weight: bold }
 table { border-collapse: collapse; width: 100% }
 thead { display: table-header-group }
 th { text-align: left; background: #dde3ea; border-bottom: 1pt solid #666666; padding: 2pt 4pt }
@@ -115,8 +114,8 @@ func RenderHTML(r Report) []byte {
 	title := "Device " + htmlText(r.Type) + " report"
 	b.WriteString("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>" + title + "</title>\n<style>\n")
 	b.WriteString(pdfCSS)
-	b.WriteString("</style>\n</head>\n<body>\n<h1>" + title + "</h1>\n<dl>\n")
-	row := func(k, v string) { b.WriteString("<dt>" + k + "</dt><dd>" + htmlText(v) + "</dd>\n") }
+	b.WriteString("</style>\n</head>\n<body>\n<h1>" + title + "</h1>\n<div class=\"facts\">\n")
+	row := func(k, v string) { b.WriteString("<div><span class=\"k\">" + k + "</span>" + htmlText(v) + "</div>\n") }
 	row("Generated", r.Generated.UTC().Format(DateFormat)+" UTC")
 	row("Filters", filtersText(r.Filters))
 	if r.OldestData.IsZero() {
@@ -126,7 +125,7 @@ func RenderHTML(r Report) []byte {
 	}
 	row("Devices", strconv.Itoa(r.Devices))
 	row("Rows", strconv.Itoa(len(r.Rows)))
-	b.WriteString("</dl>\n<table>\n<thead>\n<tr>")
+	b.WriteString("</div>\n<table>\n<thead>\n<tr>")
 	for _, c := range r.Columns {
 		b.WriteString("<th>" + htmlText(c) + "</th>")
 	}

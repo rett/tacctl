@@ -49,7 +49,7 @@ func TestRenderHTMLHasNoExternalReference(t *testing.T) {
 		// no element but the document's own
 		for _, m := range tags.FindAllStringSubmatch(doc, -1) {
 			switch m[1] {
-			case "!DOCTYPE", "html", "head", "meta", "title", "style", "body", "h1", "dl", "dt", "dd", "table", "thead", "tbody", "tr", "th", "td":
+			case "!DOCTYPE", "html", "head", "meta", "title", "style", "body", "h1", "div", "span", "table", "thead", "tbody", "tr", "th", "td":
 			default:
 				t.Errorf("%s: unexpected element <%s>", typ, m[1])
 			}
@@ -88,7 +88,7 @@ func TestRenderHTMLEscapesCells(t *testing.T) {
 		"a&amp;b",
 		"&#34;&gt;&lt;img src=http://example.net/x.png&gt;",
 		"SN?000002", // the invalid byte is a '?'
-		"<dd>scope=site-a&#34;&gt;&lt;b&gt;, vendor=cisco</dd>",
+		"<span class=\"k\">Filters</span>scope=site-a&#34;&gt;&lt;b&gt;, vendor=cisco</div>",
 	} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("no %q in:\n%s", want, doc)
@@ -131,9 +131,9 @@ func TestRenderHTMLCarriesTheReport(t *testing.T) {
 	for _, want := range []string{
 		"<title>Device members report</title>",
 		"<h1>Device members report</h1>",
-		"<dt>Generated</dt><dd>2026-11-06 09:30 UTC</dd>",
-		"<dt>Filters</dt><dd>scope=site-a, vendor=juniper</dd>",
-		"<dt>Oldest data</dt><dd>2026-11-03 22:10 UTC</dd>",
+		"<div><span class=\"k\">Generated</span>2026-11-06 09:30 UTC</div>",
+		"<div><span class=\"k\">Filters</span>scope=site-a, vendor=juniper</div>",
+		"<div><span class=\"k\">Oldest data</span>2026-11-03 22:10 UTC</div>",
 		"<th>device</th><th>member</th><th>role</th><th>model</th><th>serial</th><th>release</th><th>status</th><th>priority</th><th>pulled</th>",
 	} {
 		if !strings.Contains(doc, want) {
@@ -153,7 +153,7 @@ func TestRenderHTMLCarriesTheReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	empty := string(RenderHTML(e))
-	for _, want := range []string{"<dt>Filters</dt><dd>none</dd>", "<dd>none (no device was pulled)</dd>", "<dt>Rows</dt><dd>0</dd>", "<tbody>\n</tbody>"} {
+	for _, want := range []string{"<span class=\"k\">Filters</span>none</div>", "<span class=\"k\">Oldest data</span>none (no device was pulled)</div>", "<span class=\"k\">Rows</span>0</div>", "<tbody>\n</tbody>"} {
 		if !strings.Contains(empty, want) {
 			t.Errorf("no %q in:\n%s", want, empty)
 		}

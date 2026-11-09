@@ -70,7 +70,7 @@ alice() {
     done
     TACCTL_TEST_PDF_TOOL="$PDF_STUB" alice device reports generate --type software --vendor cisco --format pdf --stdout
     assert_success
-    assert_output --partial "<dt>Filters</dt><dd>vendor=cisco</dd>"
+    assert_output --partial "<span class=\"k\">Filters</span>vendor=cisco</div>"
     assert_output --partial "<td>lab-sw1</td>"
     refute_output --partial "lab-sw2"
 }
