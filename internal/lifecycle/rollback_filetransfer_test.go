@@ -44,8 +44,7 @@ func TestRollbackTakesOutTheFileTransferSettings(t *testing.T) {
 		if !p.PendingFiles() || !p.Pending() {
 			t.Errorf("%s: the console.yaml change is not a file to back up", target)
 		}
-		if !strings.Contains(st, "remove settings.file_transfer: tiers operator,superuser, 2 user switchs, 2 quotas, 1 rate") &&
-			!strings.Contains(st, "remove settings.file_transfer: tiers operator,superuser, 2 user switches, 2 quotas, 1 rate") {
+		if !strings.Contains(st, "remove settings.file_transfer: tiers operator,superuser, 2 user switches, 2 quotas, 1 rate") {
 			t.Errorf("%s: steps do not name the file transfer settings:\n%s", target, st)
 		}
 		if target != RollbackTarget {

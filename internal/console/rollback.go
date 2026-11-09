@@ -212,17 +212,17 @@ func fileTransferWord(f *File) string {
 	}
 	out := "tiers " + tiers
 	for _, c := range []struct {
-		n    int
-		what string
+		n            int
+		one, several string
 	}{
-		{len(f.FileTransferUsers), "user switch"}, {len(f.FileTransferQuota) + len(f.FileTransferQuotaUsers), "quota"},
-		{len(f.FileTransferRate) + len(f.FileTransferRateUsers), "rate"},
+		{len(f.FileTransferUsers), "user switch", "user switches"}, {len(f.FileTransferQuota) + len(f.FileTransferQuotaUsers), "quota", "quotas"},
+		{len(f.FileTransferRate) + len(f.FileTransferRateUsers), "rate", "rates"},
 	} {
-		if c.n > 0 {
-			out += ", " + strconv.Itoa(c.n) + " " + c.what
-			if c.n > 1 {
-				out += "s"
-			}
+		switch {
+		case c.n == 1:
+			out += ", 1 " + c.one
+		case c.n > 1:
+			out += ", " + strconv.Itoa(c.n) + " " + c.several
 		}
 	}
 	return out
