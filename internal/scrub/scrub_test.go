@@ -443,13 +443,15 @@ func TestColumnsKeepTheirWidth(t *testing.T) {
 	})
 }
 
-// The names of vendors and of standards bodies are public, not the owner's.
+// The names of vendors and of standards bodies are public, not the owner's:
+// the bare registered domain and a few public labels of it, never a mail
+// address (a person's) and never a name under a learned domain.
 func TestVendorAddressesAreKept(t *testing.T) {
 	const at = "@" // the mail addresses are built, so that the lint for personal addresses has nothing to read
 	keep := "Technical Support: http://www.cisco.com/techsupport\n" +
 		"Importers: http://www.cisco.com/wwl/export/crypto/tool/stqrg.html\n" +
-		"mail export" + at + "cisco.com, see www.juniper.net or juniper.net, hpe.com and hp.com, ftp.gnu.org, www.fsf.org,\n" +
-		"www.openssl.org, tools.ietf.org, cdn.kernel.org, host.example.com, a.example.net\n"
+		"see www.juniper.net or juniper.net, hpe.com and hp.com, ftp.gnu.org, www.fsf.org, support.hpe.com, software.cisco.com,\n" +
+		"www.openssl.org, tools.ietf.org, cdn.kernel.org, host.example.com, a.example.net, info" + at + "example.net\n"
 	runScrubCases(t, []scrubCase{
 		{name: "public names", in: []string{keep}, want: []string{keep}},
 		{
@@ -457,6 +459,23 @@ func TestVendorAddressesAreKept(t *testing.T) {
 			in:   []string{keep + "ntp ntp1.corp.net and mail jdoe" + at + "corp.net\n"},
 			want: []string{keep},
 			gone: []string{"corp.net", "jdoe"},
+		},
+		{
+			name: "a vendor's mail address is a person's and is replaced",
+			in:   []string{"mailto alice.smith" + at + "hpe.com, bob" + at + "juniper.net or export" + at + "cisco.com\n"},
+			want: []string{"user1" + at + "example.net"},
+			gone: []string{"alice.smith", "bob" + at, "export" + at, "hpe.com", "juniper.net", "cisco.com"},
+		},
+		{
+			name: "a customer's name under a vendor's domain is replaced",
+			in:   []string{"peer acme-corp.hpe.com and acme.mail.juniper.net, lab.cisco.com\n"},
+			gone: []string{"acme", "mail.juniper", "lab.cisco"},
+		},
+		{
+			name: "a learned domain wins over the vendor list",
+			in:   []string{"ip domain-name hpe.com\nsee www.hpe.com and support.hpe.com, tools.ietf.org\n"},
+			want: []string{"tools.ietf.org"},
+			gone: []string{"hpe.com"},
 		},
 	})
 }

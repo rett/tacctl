@@ -58,6 +58,7 @@ type Scrubber struct {
 	learned map[string]string // lower(real) -> example, the values found by name
 	made    map[string]bool   // examples handed out
 	models  map[string]bool   // the model names the texts state: never taken for serial numbers
+	domains map[string]bool   // the learned domains, lower case: nothing under one is public
 	count   map[Kind]int
 	re      *regexp.Regexp // the combined pass, rebuilt when learned changes
 	dirty   bool
@@ -65,7 +66,7 @@ type Scrubber struct {
 
 // New returns an empty Scrubber.
 func New() *Scrubber {
-	return &Scrubber{byKey: map[string]string{}, learned: map[string]string{}, made: map[string]bool{}, models: map[string]bool{}, count: map[Kind]int{}, dirty: true}
+	return &Scrubber{byKey: map[string]string{}, learned: map[string]string{}, made: map[string]bool{}, models: map[string]bool{}, domains: map[string]bool{}, count: map[Kind]int{}, dirty: true}
 }
 
 // Pairs are the replacements made or learned so far, by kind and then real
@@ -161,6 +162,9 @@ func (s *Scrubber) Learn(k Kind, real string) string {
 		return ex
 	}
 	var ex string
+	if k == Domain {
+		s.domains[strings.ToLower(real)] = true
+	}
 	switch k {
 	case Host:
 		// a name with dots is a host and a domain: sw1.corp.net
@@ -248,23 +252,51 @@ var (
 )
 
 // vendorDomains are the registered domains (the last two labels) of vendors
-// and standards bodies that texts name in a banner, a URL or a mail address:
-// they say nothing about the owner, so a name under one is kept.
+// and standards bodies that texts name in a banner or a URL: the bare domain
+// and a few public labels of it (publicLabels) say nothing about the owner,
+// so they are kept. A mail address never is: it names a person. A name any
+// deeper (acme-corp.hpe.com) is a customer's and is replaced.
 var vendorDomains = map[string]bool{
 	"cisco.com": true, "juniper.net": true, "hpe.com": true, "hp.com": true, "gnu.org": true,
 	"fsf.org": true, "openssl.org": true, "ietf.org": true, "kernel.org": true,
 }
 
-// isPublicName reports whether name (a host name or the domain of a mail
-// address) is under a registered domain of vendorDomains or is an example
-// name.
-func isPublicName(name string) bool {
+// publicLabels are the one label a vendor's public host name may have in
+// front of the registered domain: the labels of a download or a web server.
+var publicLabels = map[string]bool{"www": true, "tools": true, "ftp": true, "cdn": true, "software": true, "support": true}
+
+// underLearned reports whether name is a learned domain or under one: the
+// owner's own name, whatever else it looks like.
+func (s *Scrubber) underLearned(name string) bool {
+	for d := range s.domains {
+		if name == d || strings.HasSuffix(name, "."+d) {
+			return true
+		}
+	}
+	return false
+}
+
+// isPublicName reports whether name, a host name, is public: an example
+// name, the bare registered domain of a vendor, or one public label of it.
+// A name under a learned domain never is.
+func (s *Scrubber) isPublicName(name string) bool {
 	name = strings.ToLower(strings.TrimSuffix(name, "."))
-	labels := strings.Split(name, ".")
-	if len(labels) >= 2 && vendorDomains[strings.Join(labels[len(labels)-2:], ".")] {
+	if s.underLearned(name) {
+		return false
+	}
+	if reExample.MatchString(name) {
 		return true
 	}
-	return reExample.MatchString(name)
+	labels := strings.Split(name, ".")
+	n := len(labels)
+	return n >= 2 && vendorDomains[strings.Join(labels[n-2:], ".")] && (n == 2 || n == 3 && publicLabels[labels[0]])
+}
+
+// isExampleMail reports whether the domain of a mail address is an example
+// name that is not a learned domain: the only address left as it is.
+func (s *Scrubber) isExampleMail(domain string) bool {
+	domain = strings.ToLower(strings.TrimSuffix(domain, "."))
+	return !s.underLearned(domain) && reExample.MatchString(domain)
 }
 
 // A span is a stretch of a text, [start, end).
@@ -618,7 +650,7 @@ func (s *Scrubber) replacement(which, tok string) (string, bool) {
 	case "learned":
 		return s.learned[strings.ToLower(tok)], true
 	case "mail":
-		if isPublicName(tok[strings.IndexByte(tok, '@')+1:]) {
+		if s.isExampleMail(tok[strings.IndexByte(tok, '@')+1:]) {
 			return "", false
 		}
 		return s.Learn(Mail, tok), true
@@ -646,7 +678,7 @@ func (s *Scrubber) replacement(which, tok string) (string, bool) {
 		}
 		return s.Learn(Addr6, strings.ToLower(tok)), true
 	case "fqdn":
-		if isPublicName(tok) {
+		if s.isPublicName(tok) {
 			return "", false
 		}
 		return s.Learn(Host, tok), true
