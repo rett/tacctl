@@ -94,8 +94,8 @@ func TestRollback0222IsToldApartFromTheOlderTargets(t *testing.T) {
 	if !strings.Contains(hs.all(), "Until the upgrade, do not run 'tacctl device timeout-scale'") {
 		t.Errorf("0.2.21 lacks the note:\n%s", hs.all())
 	}
-	hs.run(hs.runner(), "rollback", "0.2.27")
-	hs.expect(1, "", "prepares the state for 0.2.26 (the release before this one), 0.2.25, 0.2.24, 0.2.23, 0.2.22, 0.2.21")
+	hs.run(hs.runner(), "rollback", "0.2.28")
+	hs.expect(1, "", "prepares the state for 0.2.27 (the release before this one), 0.2.26, 0.2.25, 0.2.24, 0.2.23, 0.2.22, 0.2.21")
 }
 
 // The snapshot is announced, and its state named, only when the apply takes
@@ -120,7 +120,7 @@ func TestRollbackSnapshotIsSpokenOfOnlyWhenTaken(t *testing.T) {
 	if hs.snapshots() == snaps {
 		t.Error("no snapshot was taken")
 	}
-	for _, want := range []string{"--apply takes a snapshot of the state first", "holds the 0.2.27 state. Restore it with 0.2.27 only"} {
+	for _, want := range []string{"--apply takes a snapshot of the state first", "holds the 0.2.28 state. Restore it with 0.2.28 only"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("0.2.21 with a file to convert lacks %q:\n%s", want, out)
 		}

@@ -9,7 +9,7 @@ import (
 	"github.com/rett/tacctl/internal/tier"
 )
 
-// 'tacctl rollback 0.2.26', the release before this one, on the host sandbox
+// 'tacctl rollback 0.2.26' on the host sandbox
 // with this server enrolled. The plan's own cases are internal/lifecycle's.
 
 // rollback0226State is rollback0221State with this release's per-tier sudoers
@@ -150,12 +150,10 @@ func TestRollback0226LeavesTheDropIn(t *testing.T) {
 	hs.expect(0, "put back the per-tier sudoers drop-in 0.2.25 writes", "")
 }
 
-// 0.2.26 is the release before this one; this release is not a target, and
-// the refusal names 0.2.26 first.
-func TestRollback0226IsTheReleaseBeforeThisOne(t *testing.T) {
+// 0.2.26 is a target, with or without the "v"; it is no longer the release
+// before this one (0.2.27 is, rollback_target0227_test.go).
+func TestRollback0226IsATarget(t *testing.T) {
 	hs := rollback0226State(t)
-	hs.run(hs.runner(), "rollback", "0.2.27")
-	hs.expect(1, "", "prepares the state for 0.2.26 (the release before this one), 0.2.25, 0.2.24, 0.2.23")
 	hs.run(hs.runner(), "rollback", "v0.2.26")
 	hs.expect(0, "Roll back to 0.2.26 (dry run)", "")
 }

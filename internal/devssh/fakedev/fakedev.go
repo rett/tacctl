@@ -243,6 +243,22 @@ func WithEcho(on bool) Option { return func(s *Server) { s.echo = on } }
 // '$', each at most width-1 characters.
 func WithWrappedEcho(width int) Option { return func(s *Server) { s.wrap = width } }
 
+// WithTailEcho is WithWrappedEcho for a device whose echo of the start of
+// the command is not seen: only the lines that start with '$', the tail of
+// the command, are written (the shape a real IOS 12.4 session left in a
+// support bundle, 0.2.27).
+func WithTailEcho(width int) Option {
+	return func(s *Server) { s.wrap, s.wrapStyle = width, wrapTail }
+}
+
+// WithRedrawnEcho is WithWrappedEcho for a device that redraws the line in
+// place instead of starting another: the first width characters, backspaces
+// back over them and the '$' and the rest of the command over those, blanks
+// to the end, all on one line, so the line a terminal shows is the tail.
+func WithRedrawnEcho(width int) Option {
+	return func(s *Server) { s.wrap, s.wrapStyle = width, wrapRedrawn }
+}
+
 // WithHang stops the server answering at stage, for the timeout tests; the
 // connections are held until Stop.
 func WithHang(st Stage) Option { return func(s *Server) { s.hang, s.hangSet = st, true } }
@@ -262,6 +278,7 @@ type Server struct {
 	framing   Framing
 	echo      bool
 	wrap      int // WithWrappedEcho
+	wrapStyle int // wrapLines, wrapTail or wrapRedrawn
 
 	menuScreens string
 
@@ -728,18 +745,36 @@ func (s *Server) shell(ch ssh.Channel) {
 	}
 }
 
+// The ways a wrapped echo (WithWrappedEcho) is written.
+const (
+	wrapLines   = iota // the start of the command on a line, the tail on lines of their own
+	wrapTail           // the tail lines only
+	wrapRedrawn        // one line, redrawn in place
+)
+
 // echoOf is what the session writes back for the command typed.
 func (s *Server) echoOf(cmd string) string {
 	if s.wrap <= 0 || len(cmd) <= s.wrap {
 		return cmd + "\r\n"
 	}
-	out := cmd[:s.wrap] + "\r\n"
+	var tail []string
 	for rest := cmd[s.wrap:]; rest != ""; {
 		n := min(s.wrap-1, len(rest))
-		out += "$" + rest[:n] + "\r\n"
+		tail = append(tail, "$"+rest[:n])
 		rest = rest[n:]
 	}
-	return out
+	switch s.wrapStyle {
+	case wrapTail:
+		return strings.Join(tail, "\r\n") + "\r\n"
+	case wrapRedrawn:
+		// Each tail line is drawn over the one before it, blanks and all.
+		out := cmd[:s.wrap]
+		for _, t := range tail {
+			out += strings.Repeat("\b", s.wrap) + t + strings.Repeat(" ", max(s.wrap-len(t), 0))
+		}
+		return out + "\r\n"
+	}
+	return cmd[:s.wrap] + "\r\n" + strings.Join(tail, "\r\n") + "\r\n"
 }
 
 // page writes out, stopping after every pageLen lines for a key when

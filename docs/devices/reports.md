@@ -149,6 +149,8 @@ Report inventory-20261106
   Download:     scp alice@tacacs.example.net:reports/devices/inventory-20261106.csv .
 ```
 
+The console serves that `scp` (OpenSSH 9 or later, which uses SFTP) and `sftp` only if file transfer is enabled for you: it is off for every tier but the superuser tier until a superuser switches it on ([File transfer](../cli/console.md#file-transfer--console-file-transfer)). Without it the console refuses with `file transfer is not enabled for this account`.
+
 ## Looking after reports
 
 - **`list`** prints your reports, newest first, with the name, the type, the format, the size and when each was made (UTC), and the total; `--json` prints a list of objects with the same facts and the command line, the filters and the dates (a file that is not a report has `other: true` and the file, the name, the owner and the size only). A file tacctl did not make has the type `other`. The JSON list cleans every string as the text list does (a control or direction character in a file name or a metadata field is a `?`).
@@ -248,7 +250,7 @@ A report that is too large can be made smaller (`--scope`, `--vendor`), printed 
 
 ## Older releases
 
-A release before 0.2.26 has no `device reports` verb. `tacctl rollback` to 0.2.25 or older (see [Rolling back](../install/upgrading.md#rolling-back)) leaves the reports and their metadata files where they are, because they are the users' own files, and says so; it removes the limits of this page (the two settings and the users' own limits, after a snapshot, and `--yes` while a user has one), and puts back the per-tier sudoers drop-in without the `device reports` rows. The `members` of the pull records stay too: an older release ignores them. `tacctl rollback 0.2.26` converts nothing: 0.2.26 has the verbs, the limits and the reports, and reads them as they are.
+A release before 0.2.26 has no `device reports` verb. `tacctl rollback` to 0.2.25 or older (see [Rolling back](../install/upgrading.md#rolling-back)) leaves the reports and their metadata files where they are, because they are the users' own files, and says so; it removes the limits of this page (the two settings and the users' own limits, after a snapshot, and `--yes` while a user has one), and puts back the per-tier sudoers drop-in without the `device reports` rows. The `members` of the pull records stay too: an older release ignores them. `tacctl rollback 0.2.26` and `tacctl rollback 0.2.27` convert nothing: both have the verbs, the limits and the reports, and read them as they are (0.2.26 has no PDF format and shows a PDF report as text; 0.2.27 reads it as it is).
 
 ## Exit status
 

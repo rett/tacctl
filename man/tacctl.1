@@ -1,6 +1,6 @@
 .\" Manual page for tacctl, the management CLI for pluggable network-device AAA.
 .\" Render locally with: groff -man -Tascii man/tacctl.1 | less
-.TH TACCTL 1 "2026-11-09" "tacctl 0.2.27" "tacctl Manual"
+.TH TACCTL 1 "2026-11-09" "tacctl 0.2.28" "tacctl Manual"
 .\" The body margin is 7n on every groff: 1.24 narrowed its default (BP) to 5n, which moves the
 .\" columns that `tacctl man` searches for.
 .nr BP 7n
@@ -418,8 +418,9 @@ The tacctl repo branch to install or upgrade from (default: the current one).
 Prepare tacctl's state for the release before this one; run on the newer
 release, before the older one is installed. A dry run by default: it lists
 every step and every warning and changes nothing. The versions it takes are
-.B 0.2.26
+.B 0.2.27
 (the release before this one),
+.BR 0.2.26 ,
 .BR 0.2.25 ,
 .BR 0.2.24 ,
 .BR 0.2.23 ,
@@ -440,12 +441,12 @@ and older are refused, with the way there (one release at a time: this
 rollback,
 .BR "tacctl upgrade \-\-branch 0.2.9" ,
 then the rollback of that release), and so is any other word (0.2.10 to
-0.2.15 included: the refusal names the targets). Every target but 0.2.26, 0.2.25, 0.2.24, 0.2.23, 0.2.22, 0.2.21, 0.2.20
+0.2.15 included: the refusal names the targets). Every target but 0.2.27, 0.2.26, 0.2.25, 0.2.24, 0.2.23, 0.2.22, 0.2.21, 0.2.20
 and 0.2.19 is refused while an emergency lockdown locks a group (the refusal lists each
 one and
 .B "emergency lockdown <scope> disable"
 lifts it; a release before 0.2.19 would render the locked users back into the
-scope; 0.2.19 has the record and keeps it), every target but 0.2.26, 0.2.25, 0.2.24 and 0.2.23 is refused while an emergency lockdown stands on a scope that has enrolled hosts, or a lifted one still waits for a host to drop sshd's lockdown drop\-in (older releases cannot lift it on a host; lift it and sync the hosts first), and every target is refused while a device's record says a confirmed commit of
+scope; 0.2.19 has the record and keeps it), every target but 0.2.27, 0.2.26, 0.2.25, 0.2.24 and 0.2.23 is refused while an emergency lockdown stands on a scope that has enrolled hosts, or a lifted one still waits for a host to drop sshd's lockdown drop\-in (older releases cannot lift it on a host; lift it and sync the hosts first), and every target is refused while a device's record says a confirmed commit of
 .B "device config apply"
 is
 .B pending
@@ -460,7 +461,7 @@ settles it). The
 and
 .B users
 mappings of console.yaml that this release ignores stay in the file, and a
-release before 0.2.20 (the targets 0.2.19 and older; 0.2.26 to 0.2.20 ignore
+release before 0.2.20 (the targets 0.2.19 and older; 0.2.27 to 0.2.20 ignore
 them too, and their rollback says nothing of it) reads them as it always did: a user or a tier
 switched off there gets a plain shell again, and the password cache is on again
 for every user of a tier that is allowed it, so the plan lists each user who
@@ -468,7 +469,7 @@ would gain a system shell or the cache, with the reason, as a warning that
 .B \-\-apply
 refuses without
 .BR \-\-yes .
-Every target before 0.2.20 (0.2.19 and older; 0.2.26 to 0.2.20 read them and leave them) also takes out of
+Every target before 0.2.20 (0.2.19 and older; 0.2.27 to 0.2.20 read them and leave them) also takes out of
 .I console.yaml
 the settings of 0.2.20 that no release before it reads:
 .BR settings.color ,
@@ -484,7 +485,7 @@ stay, for the releases that have them) are removed and a
 of \-1 (never ask) is written as 1000, with every other setting kept and a
 snapshot first.
 .IP
-Every target but 0.2.26, 0.2.25, 0.2.24, 0.2.23, 0.2.22 and 0.2.21, which have it themselves, keeps every user's
+Every target but 0.2.27, 0.2.26, 0.2.25, 0.2.24, 0.2.23, 0.2.22 and 0.2.21, which have it themselves, keeps every user's
 login to this server: an older release answers
 it only for the users that have the server's scope
 .RB ( tacctl )
@@ -493,16 +494,16 @@ to the server and lacks it (it counts and names them; a warning, so
 .B \-\-apply
 needs
 .BR \-\-yes ),
-after a snapshot. Every target but 0.2.26, 0.2.25, 0.2.24, 0.2.23 and 0.2.22 removes
+after a snapshot. Every target but 0.2.27, 0.2.26, 0.2.25, 0.2.24, 0.2.23 and 0.2.22 removes
 .B server.name
 (the name of
 .BR "server name" ),
-and every target but 0.2.26, 0.2.25, 0.2.24, 0.2.23, 0.2.22 and 0.2.21
+and every target but 0.2.27, 0.2.26, 0.2.25, 0.2.24, 0.2.23, 0.2.22 and 0.2.21
 .B server.addresses
 as well, from
 .IR tacctl.yaml ,
 which no older release knows; the host registry keeps the address in this
-server's entry. Every target but 0.2.26, 0.2.25, 0.2.24, 0.2.23 and 0.2.22 also removes the timing scale:
+server's entry. Every target but 0.2.27, 0.2.26, 0.2.25, 0.2.24, 0.2.23 and 0.2.22 also removes the timing scale:
 .B device.timeout_scale
 and
 .B timeout_scale_scope.\fIscope\fR
@@ -517,7 +518,7 @@ key it does not know). It is a note in the plan, not a warning: the older
 release connects to every device with its fixed timings again, which a slow or
 distant device may not meet, and the values stay in the snapshot.
 .IP
-Every target but 0.2.26, 0.2.25, 0.2.24 and 0.2.23 removes the users' email addresses
+Every target but 0.2.27, 0.2.26, 0.2.25, 0.2.24 and 0.2.23 removes the users' email addresses
 .RB ( "user email" ,
 .BR "user add \-\-email" )
 from
@@ -545,7 +546,7 @@ snapshot and the users. A store that cannot be read
 refuses every target. Until the older release is installed, the two verbs that
 set an address write the key again, and the command says so.
 .IP
-Every target but 0.2.26, 0.2.25, 0.2.24 and 0.2.23 writes the SNMP credential files
+Every target but 0.2.27, 0.2.26, 0.2.25, 0.2.24 and 0.2.23 writes the SNMP credential files
 .RI ( snmp.yaml ,
 .IR snmp/ scope .yaml ,
 .IR snmp/devices/ name .yaml )
@@ -574,7 +575,7 @@ the audit line adds
 and the apply names
 .BR "tacctl backup recover <snapshot> \-\-only snmp\-users" .
 .IP
-Every target but 0.2.26, 0.2.25, 0.2.24 and 0.2.23 drops from
+Every target but 0.2.27, 0.2.26, 0.2.25, 0.2.24 and 0.2.23 drops from
 .I state/staging
 the entries marked
 .B covered
@@ -588,7 +589,7 @@ A clone that still waits for its
 .B "device rename \-\-replace"
 loses its entry, and after a re-upgrade the verb refuses it as not staged: remove the clone and clone again from the original, or restore the snapshot. Every other entry stays.
 .IP
-Every target but 0.2.26, 0.2.25 and 0.2.24 removes the break\-glass firewall: the key
+Every target but 0.2.27, 0.2.26, 0.2.25 and 0.2.24 removes the break\-glass firewall: the key
 .B breakglass.firewall
 (when set; every older release refuses it, so it is removed after the snapshot
 like the other keys they do not know), the nftables table
@@ -634,7 +635,7 @@ and
 then
 .BR "systemctl daemon\-reload" .
 .IP
-Every target before 0.2.26 (0.2.25 and older; 0.2.26 reads the limits and keeps them) removes the limits of the stored reports of
+Every target before 0.2.26 (0.2.25 and older; 0.2.26 and 0.2.27 read the limits and keep them) removes the limits of the stored reports of
 .BR "device reports" :
 the settings
 .B reports.max_size
@@ -684,14 +685,72 @@ again (with
 .B \-\-yes
 while a user has a limit of their own).
 .IP
+Every target removes the file transfer settings of the console,
+.B settings.file_transfer
+in
+.I console.yaml
+.RB ( "console file\-transfer" ),
+the target
+.B 0.2.27
+included: no release before 0.2.28 reads the key (its reader answers
+.BR "settings: unknown key" ,
+the console falls back to its defaults and the commands that write the file
+fail). It goes after the snapshot, with the other settings of the file the
+target does not know, every other setting stays, and the dry run lists the key
+with what it held (the tiers, and how many user switches, quotas and rates).
+It needs no
+.BR \-\-yes .
+When it was removed the command ends with a note: until the older release is
+installed, run no
+.B "console file\-transfer"
+that sets something, which writes the key again (run the rollback again if one
+was run), and the snapshot may be restored with this release only.
+.IP
+.B "rollback 0.2.27"
+converts only the file transfer settings of
+.IR console.yaml :
+this release changed no other stored file 0.2.27 reads strictly (how
+the answer of a Cisco IOS device to a long command is read, and the
+documentation, are all that moved), so 0.2.27 reads every other file this release
+writes. It removes no other key and no field (the limits of the stored reports, the
+settings
+.B reports.max_size
+and
+.B reports.max_count
+and a user's own limits, stay: 0.2.27 has them, and so do the break\-glass firewall and its setting, the
+email addresses, the SNMP credential files, the covered staging entries, the
+server name, the timing scale, the server address, the users' login to this
+server and an emergency lockdown, with or without enrolled hosts), leaves the
+per\-tier sudoers drop\-in (0.2.27 and this release write the same text), the
+pull records, every report in the users' homes, the PDF ones included (0.2.27
+has the format and reads them), and the marker
+.I /var/lib/tacctl/pdf\-tools\-offered
+(the packages
+.B weasyprint
+and
+.B fonts\-dejavu\-core
+stay installed), takes the snapshot of
+.B \-\-apply
+only when the file transfer settings are set (otherwise it takes none) and needs no
+.BR \-\-yes .
+It is refused only while a device's apply is not settled.
+.B \-\-hosts
+is accepted and does nothing. The command ends with the next step,
+.BR "tacctl upgrade \-\-branch 0.2.27" ,
+with no note to follow but the one above when the settings were removed: the
+limits and the reports are 0.2.27's own.
+.IP
 .B "rollback 0.2.26"
-converts nothing: this release changed no stored file 0.2.26 reads strictly (what
+converts only the file transfer settings of
+.IR console.yaml :
+0.2.27 and this release changed no other stored file 0.2.26 reads strictly (what
 the
 .B "show switch"
 reader accepts, what the reports of a user below the operator tier hold, the audit
-line of a prune of other users' reports, the wording of two notes and the
-documentation are all that moved), so 0.2.26 reads every file this release
-writes. It removes no key and no field (the limits of the stored reports, the
+line of a prune of other users' reports, the PDF format of the reports and the offer
+of its tools, how the answer of a Cisco IOS device to a long command is read, the wording of two notes and the
+documentation are all that moved), so 0.2.26 reads every file 0.2.27 and this release
+write. It removes no other key and no field (the limits of the stored reports, the
 settings
 .B reports.max_size
 and
@@ -700,19 +759,19 @@ and a user's own limits, stay: 0.2.26 has them, and so do the break\-glass firew
 email addresses, the SNMP credential files, the covered staging entries, the
 server name, the timing scale, the server address, the users' login to this
 server and an emergency lockdown, with or without enrolled hosts), leaves the
-per\-tier sudoers drop\-in (0.2.26 and this release write the same text), the
-pull records and every report in the users' homes (0.2.26 reads them), takes no
-snapshot and needs no
+per\-tier sudoers drop\-in (0.2.26, 0.2.27 and this release write the same text), the
+pull records and every report in the users' homes (0.2.26 reads them; a PDF one as text, see Rolling back in the upgrading page), takes the snapshot
+only when the file transfer settings are set and needs no
 .BR \-\-yes .
 It is refused only while a device's apply is not settled.
 .B \-\-hosts
 is accepted and does nothing. The command ends with the next step,
 .BR "tacctl upgrade \-\-branch 0.2.26" ,
-with no note to follow: the limits and the reports are 0.2.26's own.
+with no note to follow but the one above when the settings were removed: the limits and the reports are 0.2.26's own.
 .IP
 .B "rollback 0.2.25"
-removes the limits of the stored reports of 0.2.26 and this release and converts nothing
-else: 0.2.25 reads every other file 0.2.26 and this release write (the break\-glass
+removes the limits of the stored reports of 0.2.26, 0.2.27 and this release and converts nothing
+else but the file transfer settings of the console: 0.2.25 reads every other file 0.2.26, 0.2.27 and this release write (the break\-glass
 firewall and its setting, the email addresses, the SNMP credential files, the
 covered staging entries, the server name, the timing scale, the server address,
 the users' login to this server and an emergency lockdown, with or without
@@ -739,7 +798,7 @@ refuses without
 naming each user and the values (see below). The per\-tier sudoers drop\-in is
 rewritten, after
 .BR "visudo \-cf" ,
-with the text 0.2.25 wrote, the text of 0.2.26 and this release without the rows of
+with the text 0.2.25 wrote, the text of 0.2.26, 0.2.27 and this release without the rows of
 .BR "device reports" ,
 when the file is exactly that text (no snapshot holds it; a file tacctl
 did not write is left). The
@@ -748,7 +807,7 @@ of the pull records are left (0.2.25's decoder ignores the key), and so is every
 report in the users' homes: they are the users' own files, and 0.2.25 has no
 .B "device reports"
 verb to list or remove them. When the snapshot was taken, the next steps say
-that it holds the 0.2.27 state and is to be restored with 0.2.27 only, and what
+that it holds the 0.2.28 state and is to be restored with 0.2.28 only, and what
 0.2.25's restore refuses: a tacctl.yaml with a key it does not know when a
 setting was removed, a store.yaml with a field it does not know when only a
 user's own limit was, both when both were. The command ends
@@ -786,19 +845,19 @@ is accepted and does nothing. The command ends with the next step,
 .B "rollback 0.2.23"
 converts no file but the key
 .B breakglass.firewall
-(0.2.24's) and the limits of the stored reports (0.2.26's; when either is set the snapshot is taken): 0.2.24 to 0.2.26 and this release changed no other stored file, so 0.2.23 reads every file they
+(0.2.24's) and the limits of the stored reports (0.2.26's; when either is set the snapshot is taken): 0.2.24 to 0.2.27 and this release changed no other stored file, so 0.2.23 reads every file they
 write (the email addresses, the SNMP credential files, the covered staging
 entries, the server name, the timing scale, the server address, the users' login
 to this server and an emergency lockdown, with or without enrolled hosts, all
 stay), the per\-tier sudoers drop\-in is put back as 0.2.23 wrote it
 (without the operator's
 .BR "log failures *" ;
-when it is exactly the text of 0.2.24 and 0.2.25, or the one 0.2.26 and this release write, it is rewritten, after
+when it is exactly the text of 0.2.24 and 0.2.25, or the one 0.2.26, 0.2.27 and this release write, it is rewritten, after
 .BR "visudo \-cf" ,
 and any other file is left), no snapshot is taken for them and
 .B \-\-yes
 is never needed unless a user has an own limit of the stored reports. When the key was set the snapshot was taken, and the next steps
-say that it holds the 0.2.27 state and is to be restored with 0.2.27 only
+say that it holds the 0.2.28 state and is to be restored with 0.2.28 only
 (0.2.23's restore refuses its tacctl.yaml, which has the key). It is refused only while a device's apply is not settled.
 Every older target that rewrites that drop\-in recognises this release's text,
 0.2.25's and 0.2.23's as tacctl's own and puts back its own.
@@ -831,7 +890,7 @@ converts nothing but the email addresses, the SNMP credential files, the covered
 with 0.2.22's: the engineer's rule of
 .B "device clone"
 is taken out; an edited drop\-in is left): 0.2.22
-reads every other file 0.2.23 to 0.2.26 and this release write, so the server name, the timing
+reads every other file 0.2.23 to 0.2.27 and this release write, so the server name, the timing
 scale, the server address, the users' login to this server and an emergency
 lockdown (of scopes with no enrolled host) stay. With no
 address in the store, no SNMP
@@ -956,7 +1015,7 @@ An older release lints such a block as an error and plans nothing for the
 devices it reaches. The block files are not rewritten; take the statements
 out before the upgrade.
 .IP
-Every target before 0.2.20 (0.2.19 and older; 0.2.26 to 0.2.20 read it and leave it) removes the management filter mode of the scopes
+Every target before 0.2.20 (0.2.19 and older; 0.2.27 to 0.2.20 read it and leave it) removes the management filter mode of the scopes
 .RB ( scope_mgmt_acl.mode.\fIscope\fR ,
 only
 .B strict
@@ -978,7 +1037,7 @@ or
 would put that filter back on a device that holds the strict one, without
 saying so. The rollback is not refused, and no device is contacted.
 .IP
-Every target but 0.2.26 to 0.2.20 (which read it) removes the required password change
+Every target but 0.2.27 to 0.2.20 (which read it) removes the required password change
 .RB ( password_change_required
 of a user in
 .IR store.yaml ,
@@ -10518,7 +10577,7 @@ Logs in once to a registered device and collects what a developer needs to make 
 .B "show cli authorization"\c
 ), the commit history and the difference to rollback 0; IOS, the version, the inventory, the switch stack, the modules, the clock, the privilege level and the lines of the running configuration that name the device; a WTI unit, the screens its pull reads, without the user directory. For all three, the SNMP system group is added when SNMP is set up. The configuration itself is not collected: the Junos difference to rollback 0 is the candidate's changes only, and the IOS lines are those that name the device.
 .IP
-The text is scrubbed before it is written: host names, domains, users, classes, addresses, MAC addresses, serial numbers, locations, contacts and time zones become the standard example values (the same real value always the same example), the free text of a commit comment is removed (tacctl's own comments stay), and anything that looks like a secret, a hash or a key is removed. Serial numbers are replaced by their field, whatever their length, case or digits: the SN: value of the inventory, Hw Serial# (also inside a quoted DESCR:), Processor board ID, System serial number, the generic Serial number: field and the Junos Serial ID of a routing engine; the value runs to the next blank, comma or quote and ends at its last letter or digit, so the punctuation after it stays. So is the serial cell of every row of the chassis hardware and virtual chassis tables, cut at the column its header gives: any word there with a letter or digit is a serial, except the status words (Prsnt, NotPrsnt, Unprvsnd, Absent, Present, Inactive, Online, Offline, Master, Backup, Linecard, Spare, Empty, in any case). A table ends at a blank line, a line of one word and a colon, or a prompt line that begins with a brace; a row with nothing in or after the serial column stays inside it. A tab\-separated row is cut at its tabs: with as many cells as the header it has its serial at the header\(aqs column, with fewer it has it by shape (the one cell that is a word with a digit, or the one after the part number), and a cell with a hyphen (a part number, a model) is never a serial. An empty or BUILTIN cell stays, and so does the Description column. Any other token with the shape of a serial number (eight to fourteen capitals and digits, with both) is replaced too, except an example value, an image name (K9), a model name and the quoted DESCR: text. Model names stay as the device printed them: the values after PID: and VID:, the quoted DESCR: string, the model of the Model: line, of the \(lqcisco <model> (...) processor\(rq line (the \(lqCisco <model> (revision ...)\(rq line of IOS) and of the \(lqCisco IOS Software, <model> Software\(rq line, and every model name the files of the bundle state, in all the files; only the model is kept, never the rest of its line. An object identifier (a dotted run that begins 1.3.6.1.) is not an address; the digits around any other address do not make it one. The host names of vendors and standards bodies stay when they are the bare domain (cisco.com, juniper.net, hpe.com, hp.com, gnu.org, fsf.org, openssl.org, ietf.org, kernel.org) or have one of the labels www, tools, ftp, cdn, software or support in front of it; a mail address, any other name under those domains and any name under a domain the files state as the owner\(aqs are replaced (only the example.* names stay). The parent domain of every host name that is replaced is the owner\(aqs too, so after acme\-corp.hpe.com is replaced, hpe.com and www.hpe.com are replaced in every file of the bundle; a public label is never replaced as a word of its own. The columns after a replacement keep their place. A Cisco session also drops the echo of a command longer than the terminal is wide, so the first file line is the device\(aqs answer. A text that still holds a value the scrubber learned to replace is not written. What was replaced is kept in a private file beside the directory, \fIname\fR\fB.map\fR (mode 0600, the real values), never in it; read the files before sharing them.
+The text is scrubbed before it is written: host names, domains, users, classes, addresses, MAC addresses, serial numbers, locations, contacts and time zones become the standard example values (the same real value always the same example), the free text of a commit comment is removed (tacctl's own comments stay), and anything that looks like a secret, a hash or a key is removed. Serial numbers are replaced by their field, whatever their length, case or digits: the SN: value of the inventory, Hw Serial# (also inside a quoted DESCR:), Processor board ID, System serial number, the generic Serial number: field and the Junos Serial ID of a routing engine; the value runs to the next blank, comma or quote and ends at its last letter or digit, so the punctuation after it stays. So is the serial cell of every row of the chassis hardware and virtual chassis tables, cut at the column its header gives: any word there with a letter or digit is a serial, except the status words (Prsnt, NotPrsnt, Unprvsnd, Absent, Present, Inactive, Online, Offline, Master, Backup, Linecard, Spare, Empty, in any case). A table ends at a blank line, a line of one word and a colon, or a prompt line that begins with a brace; a row with nothing in or after the serial column stays inside it. A tab\-separated row is cut at its tabs: with as many cells as the header it has its serial at the header\(aqs column, with fewer it has it by shape (the one cell that is a word with a digit, or the one after the part number), and a cell with a hyphen (a part number, a model) is never a serial. An empty or BUILTIN cell stays, and so does the Description column. Any other token with the shape of a serial number (eight to fourteen capitals and digits, with both) is replaced too, except an example value, an image name (K9), a model name and the quoted DESCR: text. Model names stay as the device printed them: the values after PID: and VID:, the quoted DESCR: string, the model of the Model: line, of the \(lqcisco <model> (...) processor\(rq line (the \(lqCisco <model> (revision ...)\(rq line of IOS) and of the \(lqCisco IOS Software, <model> Software\(rq line, and every model name the files of the bundle state, in all the files; only the model is kept, never the rest of its line. An object identifier (a dotted run that begins 1.3.6.1.) is not an address; the digits around any other address do not make it one. The host names of vendors and standards bodies stay when they are the bare domain (cisco.com, juniper.net, hpe.com, hp.com, gnu.org, fsf.org, openssl.org, ietf.org, kernel.org) or have one of the labels www, tools, ftp, cdn, software or support in front of it; a mail address, any other name under those domains and any name under a domain the files state as the owner\(aqs are replaced (only the example.* names stay). The parent domain of every host name that is replaced is the owner\(aqs too, so after acme\-corp.hpe.com is replaced, hpe.com and www.hpe.com are replaced in every file of the bundle; a public label is never replaced as a word of its own. The columns after a replacement keep their place. A Cisco session also drops the echo of a command longer than the terminal is wide, so the first file line is the device\(aqs answer; when only the tail of that echo reaches the session (a line of \fB$\fR and the rest of the command), the tail is dropped as well. A text that still holds a value the scrubber learned to replace is not written. What was replaced is kept in a private file beside the directory, \fIname\fR\fB.map\fR (mode 0600, the real values), never in it; read the files before sharing them.
 .IP
 The login is the one of
 .BR "device config pull" :
@@ -14399,7 +14458,9 @@ List the reports of every user tacctl knows, one audit line for the whole listin
 Print the facts of a report: the file, the type, when it was made, by whom, the
 command line, the filters, the date of the oldest datum, the format, the rows,
 the size and the command that fetches it
-.RB ( "scp user@server:reports/devices/<file> ." ).
+.RB ( "scp user@server:reports/devices/<file> ." ;
+the console serves it only if file transfer is enabled for the user, see
+.BR "console file\-transfer" ).
 .B \-\-content
 adds the first 200 lines of the report, read from the start of the file and no
 further than 256 KiB (a file with more says that, and counts the lines only when it
@@ -15563,7 +15624,8 @@ The settings, and for each user of the scope of the host enrolled with
 .B \-\-local
 the tier, the effective shell
 .RB ( console )
-and why. Then the state of the server's pieces: the
+and why, the system shell and the file transfer of the user (state, quota and
+rate, with the reason). Then the state of the server's pieces: the
 .I /usr/local/bin/tacctl\-console
 symlink, the
 .I /etc/shells
@@ -15574,9 +15636,15 @@ reports for a console user
 .RB ( allowtcpforwarding ,
 .BR allowagentforwarding ,
 .BR forcecommand ,
-.BR pubkeyauthentication ).
+.BR pubkeyauthentication ),
+and whether sshd defines an sftp subsystem
+.RB ( "sshd sftp subsystem: " \fIprogram\fR
+or
+.BR none ).
 A red warning appears when the drop-in is missing, sshd does not force the
-console, still allows forwarding, or allows key logins. A server not enrolled
+console, still allows forwarding, or allows key logins, and another when file
+transfer is on for a tier other than the superuser tier, or for a user, and
+sshd defines no sftp subsystem. A server not enrolled
 with
 .B \-\-local
 says so and lists no users.
@@ -16000,6 +16068,138 @@ The system shell, default
 It must be an absolute path to an executable file listed in
 .IR /etc/shells .
 .TP
+.BI "console file\-transfer " "[ " tier " { enable | disable } ]"
+Show or set who may transfer files to and from their home through the console.
+The console serves SFTP only
+.RB ( sftp
+and the
+.B scp
+of OpenSSH 9 or later; see
+.BR "Console sessions" ),
+for the accounts that have it. It is off for every tier but the superuser tier
+by default. With no argument it lists each tier
+.RB ( readonly ", " operator ", " engineer ", " superuser )
+as
+.B enabled
+or
+.BR disabled ,
+then the users that have a switch of their own, with their tier, and whether
+sshd defines an sftp subsystem
+.RB ( "sshd sftp subsystem:" ):
+sshd starts the subsystem only if its configuration has
+.BR "Subsystem sftp ..." ,
+which a
+.B Match
+block cannot define, so a red warning follows when file transfer is on for a
+tier other than the superuser tier, or for a user, and there is none. The superuser
+tier is
+.B "enabled (always)"
+and cannot be disabled. Unlike the system shell, the engineer tier can be
+given it: a transfer reaches the user's home only, where a shell or a
+forwarded port would reach the server. A tier name alone prints that tier's
+state. Setting a tier writes
+.BR settings.file_transfer.tiers .
+Every form of this command, the reads included, is the
+superuser\(aqs and is refused for the lower tiers (logged as a tier denial);
+each user\(aqs state, quota and rate are in
+.BR "console show" ,
+which the operator tier and up can run. The change is logged as
+.BR "console set key=file\-transfer item=" \fItier\fR
+at
+.BR auth.notice .
+It applies from the next console login.
+.\" BEGIN GENERATED: command console file-transfer
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command console file-transfer
+.TP
+.BI "console file\-transfer user " "name " "[ { enable | disable | clear } ]"
+Show or set file transfer for one user, over the tier's setting in both
+directions: enabled, it gives a user of a tier that has none file transfer;
+disabled, it takes it from a user of a tier that has it. Without a value it
+prints the user's effective state and why
+.RB ( "user setting" ", " "tier operator" ", " always ).
+.B clear
+removes the user's setting, and the tier decides again. The user must exist.
+An enable is for the tier the user has when it is set
+.RB ( readonly ,
+.B operator
+or
+.BR engineer ):
+after a move to another tier it gives nothing and is listed as
+.BR "stale: set for" " \fItier\fR" ", now " \fItier\fR
+until it is set again; a disable holds in any tier. A superuser always has
+file transfer: disabling it is refused, and enabling it stores nothing. The
+settings are kept in
+.B settings.file_transfer.users
+and are logged as
+.BR "console set key=file\-transfer item=user:" \fIname\fR.
+.B "user rename"
+moves the setting, the quota and the rate of the user to the new name and
+.B "user remove"
+drops them (both say so and are logged as
+.BR "console set" ),
+so a user created later under the name does not inherit them. An entry for a
+name that is no user is listed with
+.BR "no such user" ,
+and
+.B clear
+removes it.
+.TP
+.BI "console file\-transfer quota " "[ " tier " { " size " | unlimited | default } ]"
+Show or set the quota: the bytes the whole home of a user may hold. With no
+argument it lists the quota of each tier and the users that have one of their
+own; a tier alone prints that tier's. Nothing set is the built-in default,
+256M for the readonly, operator and engineer tiers and
+.B unlimited
+for the superuser tier. A size is a number of bytes, or a number with
+.BR K ,
+.BR M ,
+.B G
+or
+.B T
+(powers of 1024), such as
+.BR 512K ,
+.B 256M
+or
+.BR 2G ;
+it is printed back in the largest unit that holds it exactly. Zero, a negative
+number, a fraction, a number that overflows and more than 1T are refused;
+.B unlimited
+is no limit and, for a tier,
+.B default
+returns it to the built-in value. A tier's quota is stored in
+.BR settings.file_transfer.quota .
+.TP
+.BI "console file\-transfer quota user " "name " "[ { " size " | unlimited | clear } ]"
+Show or set the quota of one user, which wins over the tier's. Without a value
+it prints the effective quota and where it comes from
+.RB ( "user setting" ", " "set for the operator tier" ", " default ).
+.B clear
+removes the user's own quota, and the tier decides again. The user must exist
+to be given one. It is stored in
+.BR settings.file_transfer.quota_users .
+.TP
+.BI "console file\-transfer rate " "[ " tier " { " size " | off } ]"
+Show or set the rate: the bytes a second a transfer may go at. It is off, no
+limit, for every tier by default. Sizes are those of
+.BR quota ;
+.B off
+removes the limit of a tier. With no argument it lists the rate of each tier
+and the users that have one of their own. A tier's rate is stored in
+.BR settings.file_transfer.rate .
+.TP
+.BI "console file\-transfer rate user " "name " "[ { " size " | off | clear } ]"
+Show or set the rate of one user, which wins over the tier's:
+.B off
+gives the user no limit whatever their tier has,
+.B clear
+returns them to the tier's. It is stored in
+.BR settings.file_transfer.rate_users ,
+and follows the user like the quota.
+.TP
 .B console install
 Puts the server's pieces in place, as
 .B host sync
@@ -16016,7 +16216,9 @@ for the members of
 .B "ForceCommand /usr/local/bin/tacctl\-console"
 (every login, remote command and subsystem, sftp included, reaches the
 console, which reads the client's command from
-.BR SSH_ORIGINAL_COMMAND ),
+.BR SSH_ORIGINAL_COMMAND ;
+it serves one tacctl line, or the sftp subsystem for an account that has file
+transfer),
 .B "DisableForwarding yes"
 (left out, with
 .BR "AllowAgentForwarding yes" ,
@@ -16190,15 +16392,23 @@ not while a line runs).
 .BI "\-c " line
 (the remote command sshd passes:
 .BR "ssh " "\fIserver\fR " "'user list'" )
-runs one tacctl line, with the connection as its standard input. A string
+runs one tacctl line, with the connection as its standard input, or serves
+the sftp subsystem (the command is the program of sshd's
+.B Subsystem sftp
+line, such as
+.IR /usr/lib/openssh/sftp-server
+or
+.IR internal\-sftp ,
+which ForceCommand hands over in
+.BR SSH_ORIGINAL_COMMAND ),
+described below. A string
 that is not one line beginning with a tacctl command or
 .B help
 \(em
-.BR scp ,
-.BR sftp ,
+.BR "scp \-O" ,
 .BR rsync ,
 any program, the shell's own words, an empty string \(em is refused with
-.I "the tacctl\~console does not run programs; file transfer is not available"
+.I "the tacctl\~console does not run programs or shell commands; file transfer is SFTP only (sftp, scp of OpenSSH 9 or later)"
 and exit status 126, and nothing runs. Any other argument is refused the same
 way
 .RI ( "the tacctl\~console takes no options" ).
@@ -16212,6 +16422,94 @@ A word that starts with an underscore at the prompt or in a batch
 .BR _console\-policy ,
 the entry points of the scripts, the key and the console itself) is not a
 command there: it is answered as any word that is no command, and nothing runs.
+.PP
+The sftp subsystem is served by the console itself, on its standard input and
+output, as the logged-in user (no change of privilege), rooted in the home
+directory the account database names (never
+.BR $HOME ):
+.B /
+is the home, a relative path starts there and
+.B ..
+does not leave it,
+.B .ssh
+is not listed and every request for it is refused, no symbolic link is followed,
+and neither a symbolic link nor a hard link can be created through the console.
+A file that already has more than one name (a hard link made outside SFTP)
+cannot be opened, downloaded or written, and its mode and times cannot be
+changed (refused, reason
+.BR link ):
+it can still be listed, renamed and removed. Setting the mode of a directory
+without the owner's read and search bits is refused. The size of a regular file
+can be set (cut, or extended with zeros), which is what
+.B scp
+does after an upload to give the file its final size; it counts against the quota
+like a write. The owner cannot be changed, and a request that asks for it is
+refused whole. A new directory gets the mode the client asks for and a new file
+0644, both reduced by the umask of the console, 077; the set\-user\-ID,
+set\-group\-ID and sticky bits are ignored, and a client that wants another mode
+sets it afterwards, which is applied as given. Changing the mode or the times of
+a file goes through
+.BR /proc/self/fd ,
+so file transfer needs
+.B /proc
+mounted on the server. A listing is in the order
+of the file system, not sorted (the OpenSSH
+.B sftp
+client sorts what its
+.B ls
+prints). A session has at most 256 files and listings open at once (reason
+.BR too\-many\-open\-files ).
+The quota
+.RB ( "console file\-transfer quota" )
+is the bytes the home may hold: the sizes of its regular files, each inode once
+(not directories, links or inodes), reports, support bundles and
+.B .ssh
+included; a write over it is refused whole
+.RB ( "disk quota exceeded" ),
+and so is a size that would grow a file over it; a smaller size gives the room back.
+An upload that is refused part way leaves what was written before the refusal in the
+home (the client does not remove it), and the
+.B sftp
+and
+.B scp
+of OpenSSH show only
+.B Failure
+for it: the reason,
+.BR reason=quota ,
+is in the console's audit log.
+It is measured per session, so N sessions at once can reach about N times the
+quota; a file deleted while a handle still holds it stays counted until the
+handle is closed; and a directory in the home that the session cannot read or
+search (for example one owned by root with mode 0700) makes the home count as
+full, so that every upload that grows it is refused with
+.B disk quota exceeded
+until the directory is readable. The rate
+.RB ( "console file\-transfer rate" )
+is the bytes a second the session may move, reads and writes together. The
+subsystem is refused with status 126 and
+.I "file transfer is not enabled for this account; an administrator can switch it on (tacctl console file\-transfer)"
+when the account does not have file transfer (and with a text of its own when a
+password change is required or the policy cannot be read); the OpenSSH
+.B sftp
+and
+.B scp
+show only
+.B Connection closed
+then, since sshd does not show the error text of a subsystem, and the reason,
+.BR reason=file\-transfer ,
+is in the audit log. The idle timeout
+does not apply: the session lasts as long as the connection and ends with
+status 0 when the client closes it; a protocol error ends it with status 1 and
+one line on standard error. Nothing but protocol is written to standard output;
+if
+.B logger
+cannot write an audit line, the warning
+.B The audit line was not written (logger: reason); the command continues.
+can appear on standard error and the transfer goes on, unaudited.
+sshd starts the subsystem only if its configuration defines
+.BR "Subsystem sftp ..." ;
+see
+.BR "console file\-transfer" .
 .PP
 A user who must change the password
 .RB ( "user require\-password\-change" ;
@@ -16288,8 +16586,8 @@ it is refused with status 126.
 .PP
 Syslog (tag
 .BR tacctl\-console ):
-.BI "console start session=" id " user=" user " from=" address " tty=" tty " mode=" interactive|command|batch\fR,
-.BI "console end session=" id " user=" user " reason=" exit|eof|idle|hangup|signal|command|failed|locked " lines=" n " status=" n\fR,
+.BI "console start session=" id " user=" user " from=" address " tty=" tty " mode=" interactive|command|batch|sftp\fR,
+.BI "console end session=" id " user=" user " reason=" exit|eof|idle|hangup|signal|command|failed|locked|sftp " lines=" n " status=" n\fR,
 .BI "console DENY session=" id " user=" user " reason=command first=" verb|\- " [len=" n ]
 (auth.warning; the word is the first word of the refused string when it is a
 verb of tacctl or one of the console's own words, else
@@ -16298,6 +16596,22 @@ and
 .B len=
 is the length of the string, so a password typed at the prompt is never in the
 log),
+.BI "console DENY session=" id " user=" user " reason=file\-transfer|password\-change|policy|home|stream subsystem=sftp"
+(the sftp subsystem refused),
+.BI "console sftp start session=" id " user=" user " tier=" tier " from=" address " home=" \(dqpath\(dq " quota=" size|unlimited " rate=" size|off\fR,
+.BI "console sftp " "upload|download|delete|rename|mkdir|setstat" " session=" id " user=" user " tier=" tier " path=" \(dqpath\(dq " [to=" \(dqpath\(dq "] [bytes=" n "] [error=" \(dqtext\(dq ]
+(one line for each upload, download and change),
+.BI "console sftp DENY session=" id " user=" user " tier=" tier " path=" \(dqpath\(dq " reason=" .ssh|outside\-the\-home|symlink|link|quota|unsupported|bad\-path|too\-many\-open\-files
+(auth.warning; a request the server refused, of any kind, a refused readlink or
+realpath included; a successful stat, listing, readlink or realpath is not
+logged) and
+.BI "console sftp end session=" id " user=" user " up=" n " down=" n " ops=" n " refused=" n\fR.
+A path is a file name, so unlike a refused string it is logged, but as a quoted
+string in which a control character, a quote, a backslash and a byte that is not
+UTF-8 are escapes, cut at 200 bytes of the escaped text (a cut name ends with
+.B ...
+after the closing quote); the error text is cut the same way and does not
+repeat the path, so a line stays short enough for logger to keep it whole.
 .BI "console system\-shell start" \fR,
 .B end
 .RB ( status= ", " duration= )
@@ -16624,7 +16938,7 @@ user email, user reports\-limit, user scope
 .TP
 .B "mixed, auth.notice"
 config audit\-strict, config breakglass\-firewall, config sudoers,
-console system\-shell, rollback, store import
+console file\-transfer, console system\-shell, rollback, store import
 .\" END GENERATED: audit-classes
 .PP
 The fields, in the order written:
@@ -18298,6 +18612,10 @@ Whether the console's lists are in colour: true (on) or false (off). Written to 
 .B settings.system_shell_users
 mapping of user name to disable or enable:<tier>. Default: absent (no user has one).
 The users with a system-shell setting of their own, which wins over their tier's: enable:<tier> gives it to a user of a tier that has none, for as long as the user is in that tier (readonly or operator), and disable takes it from a user of a tier that has it. Written to the file only when a user has one. Set with \fBtacctl console system\-shell user\fR.
+.TP
+.B settings.file_transfer
+mapping (tiers, users, quota, quota_users, rate, rate_users). Default: absent (nothing set).
+The console's file transfer: the tiers that have it (tiers, the superuser tier always among them), the users with a switch of their own (users, a mapping of user name to disable or enable:<tier>), the quota of the home in bytes (quota per tier and quota_users per user: a size such as 256M, or unlimited) and the rate in bytes per second (rate and rate_users: a size, and off for a user). Off for every tier but the superuser tier by default; a user's own value wins over the tier's. Written only when something in it is not the built-in setting. Set with \fBtacctl console file\-transfer\fR.
 .\" END GENERATED: console-keys
 .PP
 A mapping

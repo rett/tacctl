@@ -149,6 +149,107 @@ func (p *Policy) SystemShellWhy(user string, t tier.Tier) (on bool, why string) 
 	return p.SystemShell(t), "tier " + string(t) + stale
 }
 
+// FileTransferTier reports whether file transfer is open to tier t by the
+// tier's own setting: the superuser tier always has it, a caller with no
+// tier (none) or no tier restriction (unrestricted, who has no console
+// account) never, and the others when the tier is in settings.file_transfer.
+// No tier is closed to it, the engineer tier included: a transfer reaches
+// the user's home only.
+func (p *Policy) FileTransferTier(t tier.Tier) bool {
+	switch t {
+	case tier.Superuser:
+		return true
+	case tier.Readonly, tier.Operator, tier.Engineer:
+		return slices.Contains(p.File.FileTransferTiers, t)
+	}
+	return false
+}
+
+// FileTransferStale reports whether user has an enable of file transfer that
+// was set for another tier than t, the tier they have now, and which tier
+// that was.
+func (p *Policy) FileTransferStale(user string, t tier.Tier) (was tier.Tier, stale bool) {
+	if on, ok := p.File.FileTransferUsers[user]; ok && on && p.File.FileTransferUserTiers[user] != t {
+		return p.File.FileTransferUserTiers[user], true
+	}
+	return "", false
+}
+
+// FileTransferFor reports whether user, at tier t, may transfer files: the
+// user's own setting wins over the tier's, in both directions, but for the
+// superuser tier (always) and a caller with no tier (never), which no setting
+// changes. A disable holds at any tier; an enable only at the tier it was
+// set for (FileTransferStale), as the system shell's does.
+func (p *Policy) FileTransferFor(user string, t tier.Tier) bool {
+	if t != tier.Readonly && t != tier.Operator && t != tier.Engineer {
+		return p.FileTransferTier(t)
+	}
+	if on, ok := p.File.FileTransferUsers[user]; ok && (!on || p.File.FileTransferUserTiers[user] == t) {
+		return on
+	}
+	return p.FileTransferTier(t)
+}
+
+// FileTransferWhy is the state of user's file transfer and the reason, for
+// the listings: "always" (superuser), "no tier", "user setting", or "tier
+// <t>", with "; stale: set for <tier>, now <tier>" when an enable of the user
+// is for another tier than they have now.
+func (p *Policy) FileTransferWhy(user string, t tier.Tier) (on bool, why string) {
+	stale := ""
+	if was, ok := p.FileTransferStale(user, t); ok {
+		stale = "; stale: set for " + string(was) + ", now " + string(t)
+	}
+	switch {
+	case t == tier.Superuser:
+		return true, "always" + stale
+	case t != tier.Readonly && t != tier.Operator && t != tier.Engineer:
+		return false, "no tier" + stale
+	}
+	if _, ok := p.File.FileTransferUsers[user]; ok && stale == "" {
+		return p.FileTransferFor(user, t), "user setting"
+	}
+	return p.FileTransferTier(t), "tier " + string(t) + stale
+}
+
+// FileTransferQuota is the quota of the home of user, at tier t, in bytes
+// (0: unlimited), and where it comes from: "user setting", "tier setting" or
+// "default". The user's own value wins over the tier's, and the tier's over
+// the built-in default (DefaultQuota; none for the superuser tier).
+func (p *Policy) FileTransferQuota(user string, t tier.Tier) (n int64, from string) {
+	if n, ok := p.File.FileTransferQuotaUsers[user]; ok && user != "" {
+		return n, "user setting"
+	}
+	if n, ok := p.File.FileTransferQuota[t]; ok {
+		return n, "tier setting"
+	}
+	return DefaultTierQuota(t), "default"
+}
+
+// FileTransferRate is the rate limit of user, at tier t, in bytes per second
+// (0: none), and where it comes from, as FileTransferQuota says; off by
+// default.
+func (p *Policy) FileTransferRate(user string, t tier.Tier) (n int64, from string) {
+	if n, ok := p.File.FileTransferRateUsers[user]; ok && user != "" {
+		return n, "user setting"
+	}
+	if n, ok := p.File.FileTransferRate[t]; ok {
+		return n, "tier setting"
+	}
+	return 0, "default"
+}
+
+// FileTransfer is what the settings give user at tier t: the one answer the
+// console's file transfer needs. A user who may not transfer has the zero
+// value.
+func (p *Policy) FileTransfer(user string, t tier.Tier) FileTransfer {
+	if !p.FileTransferFor(user, t) {
+		return FileTransfer{}
+	}
+	q, _ := p.FileTransferQuota(user, t)
+	r, _ := p.FileTransferRate(user, t)
+	return FileTransfer{Enabled: true, Quota: q, Rate: r}
+}
+
 // Forwarding reports whether tier t's console logins may forward X11 and
 // TCP ports (settings.forwarding_tiers). A caller with no tier restriction
 // may; none and the Closed tiers may not.

@@ -62,10 +62,11 @@ user reports-limit <name> clear
 
 user remove <name>
 
-    Remove a user (with confirmation); the user's `console system-shell user` and `console
-    password-cache` settings, if any, are dropped and the command says so. Refused, with nothing
-    changed, while console.yaml cannot be read (so that no setting is left for the next user of the
-    name); the same holds for `user add` and `user rename`
+    Remove a user (with confirmation); the user's `console system-shell user`, `console
+    file-transfer` (the switch, the quota and the rate) and `console password-cache` settings, if
+    any, are dropped and the command says so. Refused, with nothing changed, while console.yaml
+    cannot be read (so that no setting is left for the next user of the name); the same holds for
+    `user add` and `user rename`
 
 user passwd <name>
 
@@ -102,8 +103,9 @@ user enable <name>
 user rename <old> <new>
 
     Rename a user; the new name is lower case and follows the rules of `user add`. The user's
-    `console system-shell user` setting moves to the new name, and the command says so. Changing
-    only the spelling (`user rename Alice alice`) fixes a name from before. Devices match the
+    `console system-shell user` setting and its `console file-transfer` settings (the switch, the
+    quota and the rate) move to the new name, and the command says so. Changing only the spelling
+    (`user rename Alice alice`) fixes a name from before. Devices match the
     typed login name exactly, so the rename changes what the person types at the device. The user
     keeps the Linux UID: the line of the old name in `linux-uids` becomes the new name's, in
     place, and the command says `UID <uid> follows the rename (linux-uids).` With enrolled hosts
@@ -169,7 +171,7 @@ max-count:` line for a user who has an own limit, to every tier that can run `us
 accounting sink takes none. Setting a limit renders and restarts nothing and takes a snapshot, like
 any change of the store, and writes the detail line `user reports-limit name= key=max-size|max-count
 op=set|clear value=`. A release before 0.2.26 refuses the fields, so every `tacctl rollback` target before 0.2.26
-(0.2.25 and older; `rollback 0.2.26` keeps them) removes them after a snapshot, needs `--yes` while a user has one and names the users (see
+(0.2.25 and older; `rollback 0.2.26` and `rollback 0.2.27` keep them) removes them after a snapshot, needs `--yes` while a user has one and names the users (see
 [Rolling back](../install/upgrading.md#rolling-back)).
 
 ```
@@ -211,7 +213,7 @@ only when set, so a store without one is unchanged. No mail is sent to it.
   in any other `user` verb, and `…(redacted)` in place of the rest. Like any
   word on a command line it is in sudo's own log.
 - *Older releases.* A release before 0.2.23 refuses the key, so every `tacctl
-  rollback` target but 0.2.26, 0.2.25, 0.2.24 and 0.2.23 (which read it) removes it after a
+  rollback` target but 0.2.27, 0.2.26, 0.2.25, 0.2.24 and 0.2.23 (which read it) removes it after a
   snapshot that it keeps, and names the users; `backup recover` puts the addresses back (see
   [Rolling back](../install/upgrading.md#rolling-back)).
 
@@ -343,7 +345,7 @@ only when set.
   the reason in `user show`), and one whom devices of a shared scope still accept `flagged, devices in
   a scope shared with the server still accept the password`; `status` names both groups.
 - *Older releases.* A release before 0.2.20 refuses the key, so every `tacctl rollback` target
-  but 0.2.26 to 0.2.20 (which read it) removes it after a snapshot and warns which users get their device access back (see
+  but 0.2.27 to 0.2.20 (which read it) removes it after a snapshot and warns which users get their device access back (see
   [Rolling back](../install/upgrading.md#rolling-back)).
 
 **A hash kept off the command line.** `--hash -` reads the hash from one line

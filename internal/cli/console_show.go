@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -44,6 +45,13 @@ func (inv *invocation) consoleShow(args []string) error {
 		inv.echo("  " + string(t) + ": " + systemShellState(pol, t))
 	}
 	inv.echo("")
+	inv.echo("File transfer (off by default; a user's own setting wins over the tier's):")
+	for _, t := range console.Tiers {
+		q, qFrom := pol.FileTransferQuota("", t)
+		r, rFrom := pol.FileTransferRate("", t)
+		inv.echo("  " + string(t) + ": " + fileTransferState(pol, t) + ", quota " + console.QuotaWord(q) + fromDefault(qFrom) + ", rate " + console.RateWord(r) + fromDefault(rFrom))
+	}
+	inv.echo("")
 
 	consoleUsers, listed, err := inv.consoleUsersTable(pol)
 	if err != nil {
@@ -53,6 +61,14 @@ func (inv *invocation) consoleShow(args []string) error {
 		inv.echo("")
 	}
 	return inv.consoleServerSection(pol, consoleUsers)
+}
+
+// fromDefault marks a value that is the built-in one.
+func fromDefault(from string) string {
+	if from == "default" {
+		return " (default)"
+	}
+	return ""
 }
 
 // listMaxWord is the list-max setting as 'console show' prints it.
@@ -89,7 +105,7 @@ func (inv *invocation) consoleUsersTable(pol *console.Policy) (users []string, l
 		return nil, false, err
 	}
 	title := "Users of " + e.Name + " (scope " + e.Scope + ")"
-	tb := ui.NewTable(title, ui.Left("USERNAME"), ui.Left("TIER"), ui.Left("SHELL"), ui.Left("WHY"), ui.Left("SYSTEM SHELL"))
+	tb := ui.NewTable(title, ui.Left("USERNAME"), ui.Left("TIER"), ui.Left("SHELL"), ui.Left("WHY"), ui.Left("SYSTEM SHELL"), ui.Left("FILE TRANSFER"), ui.Left("QUOTA"), ui.Left("RATE"))
 	seen := map[string]bool{}
 	rows := m.LinuxUsers(e.Scope)
 	for _, r := range rows {
@@ -103,7 +119,14 @@ func (inv *invocation) consoleUsersTable(pol *console.Policy) (users []string, l
 		}
 		seen[name] = true
 		on, sysWhy := pol.SystemShellWhy(name, tr)
-		tb.Add(name, string(tr), shell, d.Why, map[bool]string{true: "enabled", false: "disabled"}[on]+" ("+sysWhy+")")
+		ft := pol.FileTransfer(name, tr)
+		ftOn, ftWhy := pol.FileTransferWhy(name, tr)
+		quota, rate := "-", "-"
+		if ft.Enabled {
+			quota, rate = console.QuotaWord(ft.Quota), console.RateWord(ft.Rate)
+		}
+		tb.Add(name, string(tr), shell, d.Why, map[bool]string{true: "enabled", false: "disabled"}[on]+" ("+sysWhy+")",
+			map[bool]string{true: "enabled", false: "disabled"}[ftOn]+" ("+ftWhy+")", quota, rate)
 	}
 	if tb.Len() == 0 {
 		inv.echoE(ui.Bold + title + ui.NC)
@@ -120,6 +143,15 @@ func (inv *invocation) consoleUsersTable(pol *console.Policy) (users []string, l
 	}
 	if len(stray) > 0 {
 		inv.echo("System-shell settings of users that have no account here: " + strings.Join(stray, ", "))
+	}
+	stray = nil
+	for _, u := range fileTransferSettingUsers(pol.File) {
+		if !seen[u] {
+			stray = append(stray, u)
+		}
+	}
+	if len(stray) > 0 {
+		inv.echo("File transfer settings of users that have no account here: " + strings.Join(stray, ", "))
 	}
 	return users, true, nil
 }
@@ -151,15 +183,24 @@ func (inv *invocation) consoleServerSection(pol *console.Policy, consoleUsers []
 		problems = append(problems, "sshd's drop-in "+p.SSHDDropIn+" is missing")
 	}
 	probe := inv.consoleProbeUsers(pol, consoleUsers)
+	sftpChecked, sftpCmd := false, ""
 	for _, u := range probe {
 		st, err := console.SSHDCheck(inv.ctx, inv.app.Runner, u)
 		if err != nil {
 			inv.echo("  sshd for " + u + ": could not be checked: " + strings.Join(msgs(err), " "))
 			continue
 		}
+		if !sftpChecked {
+			// sshd's subsystems are global (a Match block cannot define one),
+			// so the first answer is every user's
+			sftpChecked, sftpCmd = true, st.SFTP
+		}
 		inv.echo("  sshd for " + u + ": allowtcpforwarding " + st.TCPForwarding + ", allowagentforwarding " + st.AgentForwarding +
 			", forcecommand " + dash(st.ForceCommand) + ", pubkeyauthentication " + dash(st.PubkeyAuth) + sshdGatewayPorts(st))
 		problems = append(problems, st.Problems(inv.userAgent(pol, u), inv.userForwards(pol, u), pol.GatewayPorts(), inv.app.Paths.ConsoleCommand)...)
+	}
+	if sftpChecked {
+		inv.sftpSubsystemNotice(pol, sftpCmd, nil)
 	}
 	problems = append(problems, inv.consoleFirstValueHint(pol, probe, problems)...)
 	if len(problems) > 0 {
@@ -179,4 +220,19 @@ func userCSV(l []string) string {
 		return "none"
 	}
 	return strings.Join(l, ", ")
+}
+
+// fileTransferSettingUsers are the users with any file transfer setting of
+// their own (the switch, a quota or a rate), sorted.
+func fileTransferSettingUsers(f *console.File) []string {
+	var out []string
+	for _, l := range [][]string{f.FileTransferUserNames(), f.FileTransferQuotaUserNames(), f.FileTransferRateUserNames()} {
+		for _, u := range l {
+			if !slices.Contains(out, u) {
+				out = append(out, u)
+			}
+		}
+	}
+	slices.Sort(out)
+	return out
 }
