@@ -44,6 +44,9 @@ snapshot_count() { find "${TACCTL_STATE_DIR}/backups" -mindepth 1 -maxdepth 1 -n
         assert_output --partial "Usage: tacctl console <subcommand>"
         assert_output --partial "system-shell [<tier> enable|disable]"
         assert_output --partial "system-shell user <name> [enable|disable|clear]"
+        assert_output --partial "file-transfer [<tier> enable|disable]"
+        assert_output --partial "file-transfer quota user <name> [<size>|unlimited|clear]"
+        assert_output --partial "file-transfer rate user <name> [<size>|off|clear]"
         assert_output --partial "forwarding tiers [<csv>|none]"
         refute_output --partial "  tiers [<tier>"
         refute_output --partial "  user <name> [enable|disable|clear]"
@@ -56,6 +59,7 @@ snapshot_count() { find "${TACCTL_STATE_DIR}/backups" -mindepth 1 -maxdepth 1 -n
         plain
         assert_line --index 0 "Possible completions:"
         assert_line --regexp "^  system-shell +Show or set the system shell for a tier "
+        assert_line --regexp "^  file-transfer +Show or set file transfer through the console for a tier "
         assert_line --regexp "^  forwarding +Show or set the tiers that may forward X11 and TCP ports "
         refute_output --partial "  tiers "
         refute_output --partial "  user <name>"
@@ -447,7 +451,7 @@ LIST
     # A tier user: the id stub puts the caller in tac-users and its tier group.
     stub_cmd id 'echo "$3 tac-users"'
     SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" _console-policy
-    assert_output "shell=console idle=30 system_shell=yes system_shell_path=/bin/bash ssh_escape=no agent=no forward=yes tier=superuser list_max=40 space_completion=yes color=auto"
+    assert_output "shell=console idle=30 system_shell=yes system_shell_path=/bin/bash ssh_escape=no agent=no forward=yes tier=superuser list_max=40 space_completion=yes color=auto file_transfer=yes ft_quota=0 ft_rate=0"
     SUDO_USER=bob TACCTL_CONSOLE=0123456789ab run "$TACCTL_BIN_SCRIPT" _console-policy
     assert_output "shell=console idle=30 system_shell=no system_shell_path=/bin/bash ssh_escape=no agent=no forward=no tier=operator list_max=40 space_completion=yes color=auto"
     stub_called '^logger -t tacctl -p auth.info console policy user=bob tier=operator system_shell=no session=0123456789ab sid=[a-z0-9]{8}$'

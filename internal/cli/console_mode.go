@@ -10,7 +10,9 @@ package cli
 //
 // and one word of its own, system-shell. sshd starts it with '-c
 // <command>' for a remote command, scp, sftp and rsync: one tacctl line
-// passes (console.Guard), everything else is refused with exit 126.
+// passes (console.Guard), the sftp subsystem is served for the accounts that
+// have file transfer (console_sftp.go), everything else is refused with exit
+// 126.
 // Sessions, refusals and system shells are logged (syslog tag
 // tacctl-console).
 
@@ -29,6 +31,7 @@ import (
 	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/paths"
+	"github.com/rett/tacctl/internal/sftpd"
 	"github.com/rett/tacctl/internal/tier"
 )
 
@@ -113,7 +116,12 @@ func (inv *invocation) runConsoleSession(args []string) error {
 	}
 	f, isFile := a.Stdin.(*os.File)
 	mode := console.ModeBatch
+	// The one -c string the console serves besides a tacctl line: the sftp
+	// subsystem (console_sftp.go).
+	isSFTP := cmdMode && sftpd.IsSubsystemCommand(line)
 	switch {
+	case isSFTP:
+		mode = console.ModeSFTP
 	case cmdMode:
 		mode = console.ModeCommand
 	case isFile && term.IsTerminal(int(f.Fd())):
@@ -125,6 +133,9 @@ func (inv *invocation) runConsoleSession(args []string) error {
 	}}
 	cs.log("auth.info", cs.sess.StartLine())
 
+	if isSFTP {
+		return cs.serveSFTP(exe)
+	}
 	if cmdMode {
 		root := newRoot(inv)
 		first, ok := console.Guard(line, consoleRootCommand(root))

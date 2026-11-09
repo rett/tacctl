@@ -15,15 +15,72 @@ import (
 
 // UserSettingsMove is what a move did to a user's own settings in the file:
 // the system shell (settings.system_shell_users: ShellHad, with value
-// ShellOn) and the password cache (settings.password_cache_users: CacheHad,
-// always on). Err says the file could not be read or written.
+// ShellOn), the password cache (settings.password_cache_users: CacheHad,
+// always on) and the file transfer settings (settings.file_transfer: FileHad,
+// with FileWhat saying what they were, such as "enable:operator, quota 1G").
+// Err says the file could not be read or written.
 type UserSettingsMove struct {
 	ShellHad, ShellOn, CacheHad bool
+	FileHad                     bool
+	FileWhat                    string
 	Err                         error
 }
 
 // Had reports whether the user had any of them.
-func (m UserSettingsMove) Had() bool { return m.ShellHad || m.CacheHad }
+func (m UserSettingsMove) Had() bool { return m.ShellHad || m.CacheHad || m.FileHad }
+
+// fileTransferOf says what the user's own file transfer settings are
+// ("enable:operator, quota 1G, rate 1M"), "" when there are none.
+func (f *File) fileTransferOf(user string) string {
+	var w []string
+	if on, ok := f.FileTransferUsers[user]; ok {
+		w = append(w, word(on))
+		if on {
+			w[0] += ":" + string(f.FileTransferUserTiers[user])
+		}
+	}
+	if n, ok := f.FileTransferQuotaUsers[user]; ok {
+		w = append(w, "quota "+QuotaWord(n))
+	}
+	if n, ok := f.FileTransferRateUsers[user]; ok {
+		w = append(w, "rate "+RateWord(n))
+	}
+	return strings.Join(w, ", ")
+}
+
+// moveFileTransfer carries the file transfer settings of oldname to newname
+// (newname "": drops them) and says what they were.
+func (f *File) moveFileTransfer(oldname, newname string) string {
+	what := f.fileTransferOf(oldname)
+	if what == "" {
+		return ""
+	}
+	on, hasOn := f.FileTransferUsers[oldname]
+	was := f.FileTransferUserTiers[oldname]
+	q, hasQ := f.FileTransferQuotaUsers[oldname]
+	r, hasR := f.FileTransferRateUsers[oldname]
+	f.dropFileTransferOf(oldname)
+	if newname != "" {
+		f.dropFileTransferOf(newname)
+		if hasOn {
+			f.SetFileTransferUser(newname, on, was)
+		}
+		if hasQ {
+			f.FileTransferQuotaUsers[newname] = q
+		}
+		if hasR {
+			f.FileTransferRateUsers[newname] = r
+		}
+	}
+	return what
+}
+
+// dropFileTransferOf removes every file transfer setting of the user.
+func (f *File) dropFileTransferOf(user string) {
+	f.DropFileTransferUser(user)
+	delete(f.FileTransferQuotaUsers, user)
+	delete(f.FileTransferRateUsers, user)
+}
 
 // moveUser carries the settings of oldname to newname (newname "": drops
 // them) in f and says what it moved. An entry already under newname
@@ -35,6 +92,8 @@ func (f *File) moveUser(oldname, newname string) UserSettingsMove {
 	m := UserSettingsMove{ShellHad: shellHad, ShellOn: on, CacheHad: cacheHad}
 	f.DropSystemShellUser(oldname)
 	delete(f.PasswordCacheUsers, oldname)
+	m.FileWhat = f.moveFileTransfer(oldname, newname)
+	m.FileHad = m.FileWhat != ""
 	if newname != "" {
 		if shellHad {
 			f.SetSystemShellUser(newname, on, was)
@@ -58,7 +117,7 @@ func MoveUserSettings(path, oldname, newname string) UserSettingsMove {
 	if err != nil {
 		return UserSettingsMove{Err: err}
 	}
-	if _, shell := f.SystemShellUsers[oldname]; !shell && !f.PasswordCacheUsers[oldname] {
+	if _, shell := f.SystemShellUsers[oldname]; !shell && !f.PasswordCacheUsers[oldname] && f.fileTransferOf(oldname) == "" {
 		return UserSettingsMove{}
 	}
 	// What is carried is read under the file's lock, in the same step that
@@ -167,19 +226,20 @@ func renamedText(path string, renames []UserRename) (data, text []byte, res User
 	return data, text, res, nil
 }
 
-// dropDotted removes every per-user key that has a period from the three
-// mappings and returns the names, sorted.
+// dropDotted removes every per-user key that has a period from the
+// per-user mappings and returns the names, sorted.
 func (f *File) dropDotted() []string {
 	out := f.dottedUsers()
 	for _, u := range out {
 		f.DropSystemShellUser(u)
 		delete(f.PasswordCacheUsers, u)
 		delete(f.IgnoredUsers, u)
+		f.dropFileTransferOf(u)
 	}
 	return out
 }
 
-// dottedUsers are the names with a period in the three per-user mappings,
+// dottedUsers are the names with a period in the per-user mappings,
 // sorted.
 func (f *File) dottedUsers() []string {
 	seen := map[string]bool{}
@@ -190,6 +250,15 @@ func (f *File) dottedUsers() []string {
 		seen[u] = true
 	}
 	for u := range f.IgnoredUsers {
+		seen[u] = true
+	}
+	for u := range f.FileTransferUsers {
+		seen[u] = true
+	}
+	for u := range f.FileTransferQuotaUsers {
+		seen[u] = true
+	}
+	for u := range f.FileTransferRateUsers {
 		seen[u] = true
 	}
 	var out []string
@@ -239,6 +308,9 @@ func DropDottedUserKeys(path string) (text []byte, dropped []DroppedSetting, err
 		}
 		if on, ok := f.IgnoredUsers[u]; ok {
 			dropped = append(dropped, DroppedSetting{u, "'users' override " + word(on)})
+		}
+		if what := f.fileTransferOf(u); what != "" {
+			dropped = append(dropped, DroppedSetting{u, "file transfer " + what})
 		}
 	}
 	if len(dropped) == 0 {

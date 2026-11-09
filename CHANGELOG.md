@@ -22,11 +22,12 @@ current behaviour; this file is where history lives.
    `$` stay. `docs/devices/support-bundle.md` and the manual page say so.
 
 2. **`tacctl rollback 0.2.27`, the release before this one, is a target.** It
-   converts nothing. This release changed no stored file 0.2.27 reads strictly
-   (how the answer of a Cisco IOS device to a long command is read, and the
-   documentation, are all that moved), so 0.2.27 reads everything it writes:
-   the rollback removes no key and no field, takes no snapshot and needs no
-   `--yes`. The limits of the stored reports (`reports.max_size` and
+   converts nothing but the file transfer settings of `console.yaml` (item 3).
+   This release changed no other stored file 0.2.27 reads strictly (how the
+   answer of a Cisco IOS device to a long command is read, and the
+   documentation, are all that moved), so 0.2.27 reads everything else it
+   writes: with those settings unset the rollback removes no key and no field,
+   takes no snapshot and needs no `--yes`. The limits of the stored reports (`reports.max_size` and
    `reports.max_count` in `tacctl.yaml`, and a user's own `reports_max_size`
    and `reports_max_count` in `store.yaml`) stay, 0.2.27 has them, and so do
    the chassis `members` of the pull records and every report in the users'
@@ -38,7 +39,8 @@ current behaviour; this file is where history lives.
    name, the timing scale and an emergency lockdown with enrolled hosts,
    which the older targets drop or refuse, stay as well. It is refused only
    while a device's apply is not settled. The command ends with `tacctl
-   upgrade --branch 0.2.27` and, having nothing to avoid, has no closing note.
+   upgrade --branch 0.2.27` and, having nothing to avoid, has no closing note
+   unless it removed the file transfer settings (item 3).
    `rollback 0.2.26` and older behave as before, and the lists of "every target
    but" in the rollback pages and the manual page now include 0.2.27. The
    top-level help, `docs/cli/conventions.md`, `docs/install/upgrading.md`
@@ -47,6 +49,122 @@ current behaviour; this file is where history lives.
    targets. The note that follows a rollback that took a snapshot names this
    release, 0.2.28, as the state the snapshot holds ("Restore it with 0.2.28
    only").
+
+3. **File transfer through the console: its settings, off by default.** The
+   console is to get a built-in file transfer, and a superuser decides who
+   has it. `tacctl console file-transfer <tier> enable|disable` opens it to a
+   tier and `tacctl console file-transfer user <name> enable|disable|clear`
+   to one user, over the tier's setting in both directions, as `console
+   system-shell` does: an enable lasts only while the user stays in the tier
+   it was set for (a move to another tier leaves it listed as stale), a
+   disable holds in any tier, `clear` returns the user to the tier's setting,
+   and `user rename` and `user remove` move or drop a user's settings. It is
+   off for every tier but the superuser tier, which always has it and cannot
+   be disabled; unlike the system shell and forwarding the engineer tier is
+   not closed to it, because a transfer reaches the user's home only, and a
+   caller with no tier never has it. `console file-transfer quota` is the
+   bytes the whole home may hold, 256M for the readonly, operator and
+   engineer tiers and none for the superuser tier until it is set
+   (`quota <tier> <size>|unlimited|default`, `quota user <name>
+   <size>|unlimited|clear`), and `console file-transfer rate` is the bytes a
+   second a transfer may go at, off by default (`rate <tier> <size>|off`,
+   `rate user <name> <size>|off|clear`). A size is a number of bytes or a
+   number with `K`, `M`, `G` or `T` (powers of 1024, `512K`, `256M`, `2G`),
+   printed back in the largest unit that holds it exactly; zero, a negative
+   number, a fraction, an overflow and more than `1T` are refused, and a
+   user's value wins over the tier's. With no argument, `console
+   file-transfer`, `quota` and `rate` list the tiers and the users with a
+   setting of their own, and `console show` lists each tier's state, quota and
+   rate and each user's next to the system shell. The settings are
+   `settings.file_transfer` in `console.yaml` (written only when something in
+   it is not the built-in setting), apply from the next console login, are
+   logged as `console set key=file-transfer` at `auth.notice`, and reach the
+   console through `tacctl _console-policy` (`file_transfer=yes ft_quota=
+   ft_rate=` for a caller who has it). The settings decide who may transfer
+   files, and the console's file transfer (item 4) reads them. Setting them is the
+   superuser's, and so are the read forms: the verb has no row in the tier
+   table, so every form of `console file-transfer` is refused below the
+   superuser tier, while `console show`, which the operator tier and up can
+   run, lists every user's state, quota and rate. 0.2.27 and
+   every older release reject the key (their reader answers `settings:
+   unknown key 'file_transfer'`, the console falls back to its defaults and
+   writes fail), so every `tacctl rollback` target removes it with the
+   snapshot of `--apply`, keeps every other setting, needs no `--yes` and
+   ends with a note on what to avoid until the older release is installed.
+   `docs/cli/console.md`, `docs/security/login-console.md`, `docs/cli/user.md`,
+   `docs/security/audit.md`, `docs/install/upgrading.md` (Rolling back, To
+   0.2.27) and the manual page say so.
+
+4. **The console serves SFTP to the accounts that have file transfer.** The
+   sftp subsystem, which sshd's `ForceCommand` hands to the console as the
+   `-c` string `/usr/lib/openssh/sftp-server` or `internal-sftp`, is no longer
+   refused for everyone: for an account that item 3's settings give file
+   transfer, the console serves the protocol itself on standard input and
+   output, as the logged-in user (no change of privilege). The user's home
+   directory, as the account database names it and never `$HOME`, is the root:
+   `/` is the home, `..` does not leave it, `.ssh` is not listed and every
+   request for it is refused, no symbolic link is followed, and neither a
+   symbolic link nor a hard link can be created through the console. A file
+   that already has more than one name (a hard link made outside SFTP)
+   cannot be opened, downloaded or written, and its mode and times cannot be
+   changed (refused, reason `link`); it can still be listed, renamed and
+   removed. Setting the mode of a directory without the owner's read and
+   search bits is refused. A listing comes in the order of the file system,
+   not sorted (the OpenSSH `sftp` client sorts what its `ls` prints itself),
+   and a session has at most 256 files and listings open at once (reason
+   `too-many-open-files`). `sftp` and the `scp` of OpenSSH 9 or later (which
+   uses SFTP) work; `scp -O`, `rsync`, programs and shell words stay refused,
+   with a text that no longer says file transfer is unavailable: `the tacctl
+   console does not run programs or shell commands; file transfer is SFTP only
+   (sftp, scp of OpenSSH 9 or later)`. The quota (the bytes the home may hold:
+   the sizes of its regular files, each inode once, never directories, links
+   or inodes; the reports and support bundles of the user are included)
+   refuses a write that would go over it. It is measured per session, so N
+   sessions at once can reach about N times the quota; a deleted file that a
+   handle still holds stays counted until the handle is closed; and a
+   directory of the home that the session cannot read or search (for example
+   one owned by root with mode 0700) makes the home count as full, so every
+   upload that grows it is refused with `disk quota exceeded` until the
+   directory is readable. The rate (bytes a second, reads and writes
+   together, a burst of one second) slows the session. For an account without
+   file transfer the subsystem is refused with status 126 and `file transfer is
+   not enabled for this account; an administrator can switch it on (tacctl
+   console file-transfer)`; a session held to a required password change, or
+   one whose policy cannot be read (a user who is no superuser), and a missing
+   home are refused with a text of their own. The console's idle timeout does
+   not apply to a transfer: it lasts as long as the connection, ends with
+   status 0 when the client closes it, and a protocol error ends it with
+   status 1 and one line on standard error; nothing but protocol is written
+   to standard output. A transfer is in the console's own log under the tag
+   `tacctl-console`: `console sftp start` (the tier, the home, the quota and the
+   rate in effect), `console sftp upload|download|delete|rename|mkdir|setstat`
+   (each with `tier=`, like the refusals), `console sftp DENY ... reason=` for a
+   refused request of any kind (`.ssh`, `outside-the-home`, `symlink`, `link`,
+   `quota`, `unsupported`, `bad-path`, `too-many-open-files`; a refused
+   `readlink` or `realpath` too) at `auth.warning`, `console sftp end` (the
+   bytes up and down, the requests, the refusals), and `mode=sftp` and
+   `reason=sftp` on the session's start and end lines; the successful `stat`,
+   listing, `readlink` and `realpath` are not logged. The subsystem refused is
+   `console DENY ... reason=file-transfer|password-change|policy|home|stream
+   subsystem=sftp`. A path is a file name, so unlike a refused command it is
+   logged, but as a double-quoted string with control characters, quotes,
+   backslashes and bytes that are not UTF-8 escaped, cut at 200 bytes of the
+   escaped text, so that no name forges a field or a line and `logger` keeps
+   the whole line (the error text does not repeat the path). If `logger`
+   cannot write a line, the warning `The audit line was not written (logger:
+   <reason>); the command continues.` can appear on standard error during a
+   transfer and the transfer goes on, unaudited. sshd starts the subsystem only if its configuration defines
+   `Subsystem sftp ...`, which a `Match` block cannot: `console file-transfer`
+   with no argument and the server section of `console show` now print `sshd
+   sftp subsystem: <program>` or `none` (from `sshd -T`) and warn in red when
+   file transfer is on for a tier other than the superuser tier, or for a user,
+   and sshd defines none. The reading of `console file-transfer` is the
+   superuser's only (item 3 said the operator tier and up could read it: the
+   verb has no row for them in the tier table); every user's state, quota and
+   rate are in `console show`, which the operator tier and up can run.
+   `docs/cli/console.md` (File transfer), `docs/security/login-console.md`,
+   `docs/security/audit.md`, `docs/devices/reports.md`, `docs/cli/device.md`
+   and the manual page say so.
 
 ## 0.2.27 (2026-11-09)
 

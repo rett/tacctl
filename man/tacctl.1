@@ -685,11 +685,34 @@ again (with
 .B \-\-yes
 while a user has a limit of their own).
 .IP
+Every target removes the file transfer settings of the console,
+.B settings.file_transfer
+in
+.I console.yaml
+.RB ( "console file\-transfer" ),
+the target
+.B 0.2.27
+included: no release before 0.2.28 reads the key (its reader answers
+.BR "settings: unknown key" ,
+the console falls back to its defaults and the commands that write the file
+fail). It goes after the snapshot, with the other settings of the file the
+target does not know, every other setting stays, and the dry run lists the key
+with what it held (the tiers, and how many user switches, quotas and rates).
+It needs no
+.BR \-\-yes .
+When it was removed the command ends with a note: until the older release is
+installed, run no
+.B "console file\-transfer"
+that sets something, which writes the key again (run the rollback again if one
+was run), and the snapshot may be restored with this release only.
+.IP
 .B "rollback 0.2.27"
-converts nothing: this release changed no stored file 0.2.27 reads strictly (how
+converts only the file transfer settings of
+.IR console.yaml :
+this release changed no other stored file 0.2.27 reads strictly (how
 the answer of a Cisco IOS device to a long command is read, and the
-documentation, are all that moved), so 0.2.27 reads every file this release
-writes. It removes no key and no field (the limits of the stored reports, the
+documentation, are all that moved), so 0.2.27 reads every other file this release
+writes. It removes no other key and no field (the limits of the stored reports, the
 settings
 .B reports.max_size
 and
@@ -706,23 +729,28 @@ has the format and reads them), and the marker
 .B weasyprint
 and
 .B fonts\-dejavu\-core
-stay installed), takes no snapshot and needs no
+stay installed), takes the snapshot of
+.B \-\-apply
+only when the file transfer settings are set (otherwise it takes none) and needs no
 .BR \-\-yes .
 It is refused only while a device's apply is not settled.
 .B \-\-hosts
 is accepted and does nothing. The command ends with the next step,
 .BR "tacctl upgrade \-\-branch 0.2.27" ,
-with no note to follow: the limits and the reports are 0.2.27's own.
+with no note to follow but the one above when the settings were removed: the
+limits and the reports are 0.2.27's own.
 .IP
 .B "rollback 0.2.26"
-converts nothing: 0.2.27 and this release changed no stored file 0.2.26 reads strictly (what
+converts only the file transfer settings of
+.IR console.yaml :
+0.2.27 and this release changed no other stored file 0.2.26 reads strictly (what
 the
 .B "show switch"
 reader accepts, what the reports of a user below the operator tier hold, the audit
 line of a prune of other users' reports, the PDF format of the reports and the offer
 of its tools, how the answer of a Cisco IOS device to a long command is read, the wording of two notes and the
 documentation are all that moved), so 0.2.26 reads every file 0.2.27 and this release
-write. It removes no key and no field (the limits of the stored reports, the
+write. It removes no other key and no field (the limits of the stored reports, the
 settings
 .B reports.max_size
 and
@@ -732,18 +760,18 @@ email addresses, the SNMP credential files, the covered staging entries, the
 server name, the timing scale, the server address, the users' login to this
 server and an emergency lockdown, with or without enrolled hosts), leaves the
 per\-tier sudoers drop\-in (0.2.26, 0.2.27 and this release write the same text), the
-pull records and every report in the users' homes (0.2.26 reads them; a PDF one as text, see Rolling back in the upgrading page), takes no
-snapshot and needs no
+pull records and every report in the users' homes (0.2.26 reads them; a PDF one as text, see Rolling back in the upgrading page), takes the snapshot
+only when the file transfer settings are set and needs no
 .BR \-\-yes .
 It is refused only while a device's apply is not settled.
 .B \-\-hosts
 is accepted and does nothing. The command ends with the next step,
 .BR "tacctl upgrade \-\-branch 0.2.26" ,
-with no note to follow: the limits and the reports are 0.2.26's own.
+with no note to follow but the one above when the settings were removed: the limits and the reports are 0.2.26's own.
 .IP
 .B "rollback 0.2.25"
 removes the limits of the stored reports of 0.2.26, 0.2.27 and this release and converts nothing
-else: 0.2.25 reads every other file 0.2.26, 0.2.27 and this release write (the break\-glass
+else but the file transfer settings of the console: 0.2.25 reads every other file 0.2.26, 0.2.27 and this release write (the break\-glass
 firewall and its setting, the email addresses, the SNMP credential files, the
 covered staging entries, the server name, the timing scale, the server address,
 the users' login to this server and an emergency lockdown, with or without
@@ -14430,7 +14458,9 @@ List the reports of every user tacctl knows, one audit line for the whole listin
 Print the facts of a report: the file, the type, when it was made, by whom, the
 command line, the filters, the date of the oldest datum, the format, the rows,
 the size and the command that fetches it
-.RB ( "scp user@server:reports/devices/<file> ." ).
+.RB ( "scp user@server:reports/devices/<file> ." ;
+the console serves it only if file transfer is enabled for the user, see
+.BR "console file\-transfer" ).
 .B \-\-content
 adds the first 200 lines of the report, read from the start of the file and no
 further than 256 KiB (a file with more says that, and counts the lines only when it
@@ -15594,7 +15624,8 @@ The settings, and for each user of the scope of the host enrolled with
 .B \-\-local
 the tier, the effective shell
 .RB ( console )
-and why. Then the state of the server's pieces: the
+and why, the system shell and the file transfer of the user (state, quota and
+rate, with the reason). Then the state of the server's pieces: the
 .I /usr/local/bin/tacctl\-console
 symlink, the
 .I /etc/shells
@@ -15605,9 +15636,15 @@ reports for a console user
 .RB ( allowtcpforwarding ,
 .BR allowagentforwarding ,
 .BR forcecommand ,
-.BR pubkeyauthentication ).
+.BR pubkeyauthentication ),
+and whether sshd defines an sftp subsystem
+.RB ( "sshd sftp subsystem: " \fIprogram\fR
+or
+.BR none ).
 A red warning appears when the drop-in is missing, sshd does not force the
-console, still allows forwarding, or allows key logins. A server not enrolled
+console, still allows forwarding, or allows key logins, and another when file
+transfer is on for a tier other than the superuser tier, or for a user, and
+sshd defines no sftp subsystem. A server not enrolled
 with
 .B \-\-local
 says so and lists no users.
@@ -16031,6 +16068,138 @@ The system shell, default
 It must be an absolute path to an executable file listed in
 .IR /etc/shells .
 .TP
+.BI "console file\-transfer " "[ " tier " { enable | disable } ]"
+Show or set who may transfer files to and from their home through the console.
+The console serves SFTP only
+.RB ( sftp
+and the
+.B scp
+of OpenSSH 9 or later; see
+.BR "Console sessions" ),
+for the accounts that have it. It is off for every tier but the superuser tier
+by default. With no argument it lists each tier
+.RB ( readonly ", " operator ", " engineer ", " superuser )
+as
+.B enabled
+or
+.BR disabled ,
+then the users that have a switch of their own, with their tier, and whether
+sshd defines an sftp subsystem
+.RB ( "sshd sftp subsystem:" ):
+sshd starts the subsystem only if its configuration has
+.BR "Subsystem sftp ..." ,
+which a
+.B Match
+block cannot define, so a red warning follows when file transfer is on for a
+tier other than the superuser tier, or for a user, and there is none. The superuser
+tier is
+.B "enabled (always)"
+and cannot be disabled. Unlike the system shell, the engineer tier can be
+given it: a transfer reaches the user's home only, where a shell or a
+forwarded port would reach the server. A tier name alone prints that tier's
+state. Setting a tier writes
+.BR settings.file_transfer.tiers .
+Every form of this command, the reads included, is the
+superuser\(aqs and is refused for the lower tiers (logged as a tier denial);
+each user\(aqs state, quota and rate are in
+.BR "console show" ,
+which the operator tier and up can run. The change is logged as
+.BR "console set key=file\-transfer item=" \fItier\fR
+at
+.BR auth.notice .
+It applies from the next console login.
+.\" BEGIN GENERATED: command console file-transfer
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command console file-transfer
+.TP
+.BI "console file\-transfer user " "name " "[ { enable | disable | clear } ]"
+Show or set file transfer for one user, over the tier's setting in both
+directions: enabled, it gives a user of a tier that has none file transfer;
+disabled, it takes it from a user of a tier that has it. Without a value it
+prints the user's effective state and why
+.RB ( "user setting" ", " "tier operator" ", " always ).
+.B clear
+removes the user's setting, and the tier decides again. The user must exist.
+An enable is for the tier the user has when it is set
+.RB ( readonly ,
+.B operator
+or
+.BR engineer ):
+after a move to another tier it gives nothing and is listed as
+.BR "stale: set for" " \fItier\fR" ", now " \fItier\fR
+until it is set again; a disable holds in any tier. A superuser always has
+file transfer: disabling it is refused, and enabling it stores nothing. The
+settings are kept in
+.B settings.file_transfer.users
+and are logged as
+.BR "console set key=file\-transfer item=user:" \fIname\fR.
+.B "user rename"
+moves the setting, the quota and the rate of the user to the new name and
+.B "user remove"
+drops them (both say so and are logged as
+.BR "console set" ),
+so a user created later under the name does not inherit them. An entry for a
+name that is no user is listed with
+.BR "no such user" ,
+and
+.B clear
+removes it.
+.TP
+.BI "console file\-transfer quota " "[ " tier " { " size " | unlimited | default } ]"
+Show or set the quota: the bytes the whole home of a user may hold. With no
+argument it lists the quota of each tier and the users that have one of their
+own; a tier alone prints that tier's. Nothing set is the built-in default,
+256M for the readonly, operator and engineer tiers and
+.B unlimited
+for the superuser tier. A size is a number of bytes, or a number with
+.BR K ,
+.BR M ,
+.B G
+or
+.B T
+(powers of 1024), such as
+.BR 512K ,
+.B 256M
+or
+.BR 2G ;
+it is printed back in the largest unit that holds it exactly. Zero, a negative
+number, a fraction, a number that overflows and more than 1T are refused;
+.B unlimited
+is no limit and, for a tier,
+.B default
+returns it to the built-in value. A tier's quota is stored in
+.BR settings.file_transfer.quota .
+.TP
+.BI "console file\-transfer quota user " "name " "[ { " size " | unlimited | clear } ]"
+Show or set the quota of one user, which wins over the tier's. Without a value
+it prints the effective quota and where it comes from
+.RB ( "user setting" ", " "set for the operator tier" ", " default ).
+.B clear
+removes the user's own quota, and the tier decides again. The user must exist
+to be given one. It is stored in
+.BR settings.file_transfer.quota_users .
+.TP
+.BI "console file\-transfer rate " "[ " tier " { " size " | off } ]"
+Show or set the rate: the bytes a second a transfer may go at. It is off, no
+limit, for every tier by default. Sizes are those of
+.BR quota ;
+.B off
+removes the limit of a tier. With no argument it lists the rate of each tier
+and the users that have one of their own. A tier's rate is stored in
+.BR settings.file_transfer.rate .
+.TP
+.BI "console file\-transfer rate user " "name " "[ { " size " | off | clear } ]"
+Show or set the rate of one user, which wins over the tier's:
+.B off
+gives the user no limit whatever their tier has,
+.B clear
+returns them to the tier's. It is stored in
+.BR settings.file_transfer.rate_users ,
+and follows the user like the quota.
+.TP
 .B console install
 Puts the server's pieces in place, as
 .B host sync
@@ -16047,7 +16216,9 @@ for the members of
 .B "ForceCommand /usr/local/bin/tacctl\-console"
 (every login, remote command and subsystem, sftp included, reaches the
 console, which reads the client's command from
-.BR SSH_ORIGINAL_COMMAND ),
+.BR SSH_ORIGINAL_COMMAND ;
+it serves one tacctl line, or the sftp subsystem for an account that has file
+transfer),
 .B "DisableForwarding yes"
 (left out, with
 .BR "AllowAgentForwarding yes" ,
@@ -16221,15 +16392,23 @@ not while a line runs).
 .BI "\-c " line
 (the remote command sshd passes:
 .BR "ssh " "\fIserver\fR " "'user list'" )
-runs one tacctl line, with the connection as its standard input. A string
+runs one tacctl line, with the connection as its standard input, or serves
+the sftp subsystem (the command is the program of sshd's
+.B Subsystem sftp
+line, such as
+.IR /usr/lib/openssh/sftp-server
+or
+.IR internal\-sftp ,
+which ForceCommand hands over in
+.BR SSH_ORIGINAL_COMMAND ),
+described below. A string
 that is not one line beginning with a tacctl command or
 .B help
 \(em
-.BR scp ,
-.BR sftp ,
+.BR "scp \-O" ,
 .BR rsync ,
 any program, the shell's own words, an empty string \(em is refused with
-.I "the tacctl\~console does not run programs; file transfer is not available"
+.I "the tacctl\~console does not run programs or shell commands; file transfer is SFTP only (sftp, scp of OpenSSH 9 or later)"
 and exit status 126, and nothing runs. Any other argument is refused the same
 way
 .RI ( "the tacctl\~console takes no options" ).
@@ -16243,6 +16422,62 @@ A word that starts with an underscore at the prompt or in a batch
 .BR _console\-policy ,
 the entry points of the scripts, the key and the console itself) is not a
 command there: it is answered as any word that is no command, and nothing runs.
+.PP
+The sftp subsystem is served by the console itself, on its standard input and
+output, as the logged-in user (no change of privilege), rooted in the home
+directory the account database names (never
+.BR $HOME ):
+.B /
+is the home, a relative path starts there and
+.B ..
+does not leave it,
+.B .ssh
+is not listed and every request for it is refused, no symbolic link is followed,
+and neither a symbolic link nor a hard link can be created through the console.
+A file that already has more than one name (a hard link made outside SFTP)
+cannot be opened, downloaded or written, and its mode and times cannot be
+changed (refused, reason
+.BR link ):
+it can still be listed, renamed and removed. Setting the mode of a directory
+without the owner's read and search bits is refused. A listing is in the order
+of the file system, not sorted (the OpenSSH
+.B sftp
+client sorts what its
+.B ls
+prints). A session has at most 256 files and listings open at once (reason
+.BR too\-many\-open\-files ).
+The quota
+.RB ( "console file\-transfer quota" )
+is the bytes the home may hold: the sizes of its regular files, each inode once
+(not directories, links or inodes), reports, support bundles and
+.B .ssh
+included; a write over it is refused whole
+.RB ( "disk quota exceeded" ).
+It is measured per session, so N sessions at once can reach about N times the
+quota; a file deleted while a handle still holds it stays counted until the
+handle is closed; and a directory in the home that the session cannot read or
+search (for example one owned by root with mode 0700) makes the home count as
+full, so that every upload that grows it is refused with
+.B disk quota exceeded
+until the directory is readable. The rate
+.RB ( "console file\-transfer rate" )
+is the bytes a second the session may move, reads and writes together. The
+subsystem is refused with status 126 and
+.I "file transfer is not enabled for this account; an administrator can switch it on (tacctl console file\-transfer)"
+when the account does not have file transfer (and with a text of its own when a
+password change is required or the policy cannot be read). The idle timeout
+does not apply: the session lasts as long as the connection and ends with
+status 0 when the client closes it; a protocol error ends it with status 1 and
+one line on standard error. Nothing but protocol is written to standard output;
+if
+.B logger
+cannot write an audit line, the warning
+.B The audit line was not written (logger: reason); the command continues.
+can appear on standard error and the transfer goes on, unaudited.
+sshd starts the subsystem only if its configuration defines
+.BR "Subsystem sftp ..." ;
+see
+.BR "console file\-transfer" .
 .PP
 A user who must change the password
 .RB ( "user require\-password\-change" ;
@@ -16319,8 +16554,8 @@ it is refused with status 126.
 .PP
 Syslog (tag
 .BR tacctl\-console ):
-.BI "console start session=" id " user=" user " from=" address " tty=" tty " mode=" interactive|command|batch\fR,
-.BI "console end session=" id " user=" user " reason=" exit|eof|idle|hangup|signal|command|failed|locked " lines=" n " status=" n\fR,
+.BI "console start session=" id " user=" user " from=" address " tty=" tty " mode=" interactive|command|batch|sftp\fR,
+.BI "console end session=" id " user=" user " reason=" exit|eof|idle|hangup|signal|command|failed|locked|sftp " lines=" n " status=" n\fR,
 .BI "console DENY session=" id " user=" user " reason=command first=" verb|\- " [len=" n ]
 (auth.warning; the word is the first word of the refused string when it is a
 verb of tacctl or one of the console's own words, else
@@ -16329,6 +16564,22 @@ and
 .B len=
 is the length of the string, so a password typed at the prompt is never in the
 log),
+.BI "console DENY session=" id " user=" user " reason=file\-transfer|password\-change|policy|home|stream subsystem=sftp"
+(the sftp subsystem refused),
+.BI "console sftp start session=" id " user=" user " tier=" tier " from=" address " home=" \(dqpath\(dq " quota=" size|unlimited " rate=" size|off\fR,
+.BI "console sftp " "upload|download|delete|rename|mkdir|setstat" " session=" id " user=" user " tier=" tier " path=" \(dqpath\(dq " [to=" \(dqpath\(dq "] [bytes=" n "] [error=" \(dqtext\(dq ]
+(one line for each upload, download and change),
+.BI "console sftp DENY session=" id " user=" user " tier=" tier " path=" \(dqpath\(dq " reason=" .ssh|outside\-the\-home|symlink|link|quota|unsupported|bad\-path|too\-many\-open\-files
+(auth.warning; a request the server refused, of any kind, a refused readlink or
+realpath included; a successful stat, listing, readlink or realpath is not
+logged) and
+.BI "console sftp end session=" id " user=" user " up=" n " down=" n " ops=" n " refused=" n\fR.
+A path is a file name, so unlike a refused string it is logged, but as a quoted
+string in which a control character, a quote, a backslash and a byte that is not
+UTF-8 are escapes, cut at 200 bytes of the escaped text (a cut name ends with
+.B ...
+after the closing quote); the error text is cut the same way and does not
+repeat the path, so a line stays short enough for logger to keep it whole.
 .BI "console system\-shell start" \fR,
 .B end
 .RB ( status= ", " duration= )
@@ -16655,7 +16906,7 @@ user email, user reports\-limit, user scope
 .TP
 .B "mixed, auth.notice"
 config audit\-strict, config breakglass\-firewall, config sudoers,
-console system\-shell, rollback, store import
+console file\-transfer, console system\-shell, rollback, store import
 .\" END GENERATED: audit-classes
 .PP
 The fields, in the order written:
@@ -18329,6 +18580,10 @@ Whether the console's lists are in colour: true (on) or false (off). Written to 
 .B settings.system_shell_users
 mapping of user name to disable or enable:<tier>. Default: absent (no user has one).
 The users with a system-shell setting of their own, which wins over their tier's: enable:<tier> gives it to a user of a tier that has none, for as long as the user is in that tier (readonly or operator), and disable takes it from a user of a tier that has it. Written to the file only when a user has one. Set with \fBtacctl console system\-shell user\fR.
+.TP
+.B settings.file_transfer
+mapping (tiers, users, quota, quota_users, rate, rate_users). Default: absent (nothing set).
+The console's file transfer: the tiers that have it (tiers, the superuser tier always among them), the users with a switch of their own (users, a mapping of user name to disable or enable:<tier>), the quota of the home in bytes (quota per tier and quota_users per user: a size such as 256M, or unlimited) and the rate in bytes per second (rate and rate_users: a size, and off for a user). Off for every tier but the superuser tier by default; a user's own value wins over the tier's. Written only when something in it is not the built-in setting. Set with \fBtacctl console file\-transfer\fR.
 .\" END GENERATED: console-keys
 .PP
 A mapping
