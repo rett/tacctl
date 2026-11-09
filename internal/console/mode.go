@@ -6,7 +6,8 @@ package console
 // 'tacctl-console -c <command>' for a remote command, scp, sftp and rsync
 // (with the console's sshd drop-in, ForceCommand, always as the latter:
 // Forced); the -c guard lets one tacctl line through and refuses
-// everything else.
+// everything else, but the sftp subsystem, which the console serves itself
+// for the accounts that have file transfer (internal/sftpd).
 
 import (
 	"path/filepath"
@@ -22,8 +23,12 @@ const Name = "tacctl-console"
 // The console's refusals, each with exit status RefusedStatus.
 const (
 	// RefusedText is the answer to a -c string that is not one tacctl line
-	// (scp, sftp, rsync, a program, a shell word).
-	RefusedText = "the tacctl console does not run programs; file transfer is not available"
+	// (scp -O, rsync, a program, a shell word). The console serves one thing
+	// besides tacctl lines, the SFTP subsystem (SFTPOffText).
+	RefusedText = "the tacctl console does not run programs or shell commands; file transfer is SFTP only (sftp, scp of OpenSSH 9 or later)"
+	// SFTPOffText is the answer to the sftp subsystem when file transfer is
+	// not enabled for the caller (console file-transfer).
+	SFTPOffText = "file transfer is not enabled for this account; an administrator can switch it on (tacctl console file-transfer)"
 	// NoOptionsText is the answer to any arguments but '-c <line>'.
 	NoOptionsText = "the tacctl console takes no options"
 	// RefusedStatus is the exit status of a refusal (the shell's "cannot

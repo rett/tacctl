@@ -594,7 +594,7 @@ func TestSSHDCheck(t *testing.T) {
 	}
 	const fc = "forcecommand /usr/local/bin/tacctl-console\npubkeyauthentication no\n"
 	s, r, err := run(execx.Result{Stdout: []byte("port 22\nallowtcpforwarding no\nallowagentforwarding no\nx11forwarding no\n" + fc)})
-	if err != nil || s != (SSHD{"no", "no", "/usr/local/bin/tacctl-console", "no", "no", "", ""}) || !r.Called("sshd", "-T", "-C", "user=jdoe,host=localhost,addr=127.0.0.1") {
+	if err != nil || s != (SSHD{"no", "no", "/usr/local/bin/tacctl-console", "no", "no", "", "", ""}) || !r.Called("sshd", "-T", "-C", "user=jdoe,host=localhost,addr=127.0.0.1") {
 		t.Errorf("closed: %+v %v %q", s, err, r.Argvs())
 	}
 	if p := s.Problems(false, false, false, testConsole); len(p) != 0 {
@@ -1018,5 +1018,48 @@ func TestShellWithoutTheConsole(t *testing.T) {
 		if got := p.ShellWithoutConsole(c.user, c.t); got != c.want {
 			t.Errorf("%s at %s: %q, want %q", c.user, c.t, got, c.want)
 		}
+	}
+}
+
+func TestSSHDSubsystem(t *testing.T) {
+	ctx := context.Background()
+	const base = "port 22\nallowtcpforwarding no\nallowagentforwarding no\nforcecommand /usr/local/bin/tacctl-console\npubkeyauthentication no\n"
+	for _, c := range []struct {
+		name, out, want string
+	}{
+		{"openssh server", base + "subsystem sftp /usr/lib/openssh/sftp-server\n", "/usr/lib/openssh/sftp-server"},
+		{"internal", base + "subsystem sftp internal-sftp\n", "internal-sftp"},
+		{"with arguments", base + "subsystem sftp /usr/lib/openssh/sftp-server -l INFO\n", "/usr/lib/openssh/sftp-server -l INFO"},
+		{"another subsystem only", base + "subsystem netconf /usr/bin/netconf\n", ""},
+		{"none", base + "subsystem sftp none\n", ""},
+		{"no line", base, ""},
+		{"a name with a prefix", base + "subsystem sftpx internal-sftp\n", ""},
+	} {
+		r := &fake.Runner{}
+		r.On([]string{"sshd"}, execx.Result{Stdout: []byte(c.out)})
+		got, err := SFTPSubsystem(ctx, r)
+		if err != nil || got != c.want {
+			t.Errorf("%s: %q %v, want %q", c.name, got, err, c.want)
+		}
+		if !r.Called("sshd", "-T", "-C", "user=root,host=localhost,addr=127.0.0.1") {
+			t.Errorf("%s: ran %q", c.name, r.Argvs())
+		}
+	}
+	// SSHDCheck carries it too.
+	r := &fake.Runner{}
+	r.On([]string{"sshd"}, execx.Result{Stdout: []byte(base + "subsystem sftp internal-sftp\n")})
+	if s, err := SSHDCheck(ctx, r, "jdoe"); err != nil || s.SFTP != "internal-sftp" {
+		t.Errorf("SSHDCheck: %+v %v", s, err)
+	}
+	// A check that cannot be made is an error, not 'none'.
+	r = &fake.Runner{}
+	r.On([]string{"sshd"}, execx.Result{Code: 255, Stderr: []byte("no hostkeys available\n")})
+	if got, err := SFTPSubsystem(ctx, r); err == nil || got != "" {
+		t.Errorf("failure: %q %v", got, err)
+	}
+	m := &fake.Runner{}
+	m.Missing("sshd")
+	if _, err := SFTPSubsystem(ctx, m); err == nil {
+		t.Error("missing sshd: no error")
 	}
 }

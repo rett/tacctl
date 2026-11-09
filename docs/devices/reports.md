@@ -149,6 +149,8 @@ Report inventory-20261106
   Download:     scp alice@tacacs.example.net:reports/devices/inventory-20261106.csv .
 ```
 
+The console serves that `scp` (OpenSSH 9 or later, which uses SFTP) and `sftp` only if file transfer is enabled for you: it is off for every tier but the superuser tier until a superuser switches it on ([File transfer](../cli/console.md#file-transfer--console-file-transfer)). Without it the console refuses with `file transfer is not enabled for this account`.
+
 ## Looking after reports
 
 - **`list`** prints your reports, newest first, with the name, the type, the format, the size and when each was made (UTC), and the total; `--json` prints a list of objects with the same facts and the command line, the filters and the dates (a file that is not a report has `other: true` and the file, the name, the owner and the size only). A file tacctl did not make has the type `other`. The JSON list cleans every string as the text list does (a control or direction character in a file name or a metadata field is a `?`).

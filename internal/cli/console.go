@@ -123,7 +123,8 @@ shells and sshd's drop-in follow it when this server's accounts are synced
 ('tacctl host sync <name of this server>'); idle-timeout, ssh-escape,
 space-completion, color, list-max, system-shell and file-transfer are read by each
 console session when it starts. sshd's drop-in makes the console the only program a console user's login
-runs (no scp, sftp or remote programs), closes every forwarding but X11 and TCP
+runs (no remote programs, and SFTP only for the accounts that have file
+transfer), closes every forwarding but X11 and TCP
 ports for the tiers of 'forwarding tiers' (superusers by default: 'ssh -X', -L,
 -R, -D and -J through this server, and 'ssh -X|-L|-R|-D <device>' in the
 console), and turns key logins off.
@@ -149,10 +150,11 @@ but the superuser tier, which has no limit; a size such as 512K, 256M or 2G, at
 most 1T, or unlimited; 'default' returns a tier to the built-in value) and
 'file-transfer rate' the bytes a second a transfer may go at (a size, or off, the
 default); each can be set for a tier or for one user, whose own value wins
-('quota user <name> <size>|unlimited|clear'). Only a superuser can set them; the
-operator tier and up can read them ('file-transfer', 'quota' and 'rate' alone
-list the state). The settings apply to the file transfer of the console, not to
-anything else.
+('quota user <name> <size>|unlimited|clear'). Only a superuser can read or set
+them ('file-transfer', 'quota' and 'rate', alone or with words); every user's
+own state, quota and rate are in 'show', which the operator tier and up can
+run. The settings apply to the file transfer of the console, not to anything
+else.
 
 'password-cache' lets a tier's shell and console sessions keep the user's network
 password in memory for the session, so a device pull or an ssh to a device asks

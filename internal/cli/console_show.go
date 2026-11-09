@@ -183,15 +183,24 @@ func (inv *invocation) consoleServerSection(pol *console.Policy, consoleUsers []
 		problems = append(problems, "sshd's drop-in "+p.SSHDDropIn+" is missing")
 	}
 	probe := inv.consoleProbeUsers(pol, consoleUsers)
+	sftpChecked, sftpCmd := false, ""
 	for _, u := range probe {
 		st, err := console.SSHDCheck(inv.ctx, inv.app.Runner, u)
 		if err != nil {
 			inv.echo("  sshd for " + u + ": could not be checked: " + strings.Join(msgs(err), " "))
 			continue
 		}
+		if !sftpChecked {
+			// sshd's subsystems are global (a Match block cannot define one),
+			// so the first answer is every user's
+			sftpChecked, sftpCmd = true, st.SFTP
+		}
 		inv.echo("  sshd for " + u + ": allowtcpforwarding " + st.TCPForwarding + ", allowagentforwarding " + st.AgentForwarding +
 			", forcecommand " + dash(st.ForceCommand) + ", pubkeyauthentication " + dash(st.PubkeyAuth) + sshdGatewayPorts(st))
 		problems = append(problems, st.Problems(inv.userAgent(pol, u), inv.userForwards(pol, u), pol.GatewayPorts(), inv.app.Paths.ConsoleCommand)...)
+	}
+	if sftpChecked {
+		inv.sftpSubsystemNotice(pol, sftpCmd, nil)
 	}
 	problems = append(problems, inv.consoleFirstValueHint(pol, probe, problems)...)
 	if len(problems) > 0 {

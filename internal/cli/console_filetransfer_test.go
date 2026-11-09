@@ -12,6 +12,13 @@ import (
 // 'console file-transfer' end to end, on the sandbox of console_test.go
 // (alice superuser, bob operator, carol readonly).
 
+// listing is the output of the list form without the line about sshd's sftp
+// subsystem (console_filetransfer_subsystem_test.go).
+func listing(out string) string {
+	head, _, _ := strings.Cut(out, "\nsshd sftp subsystem:")
+	return strings.TrimSpace(head)
+}
+
 // With no argument the command lists each tier (the superuser tier always on,
 // the others off by default), '<tier>' prints one, '<tier> enable|disable'
 // sets it, the engineer tier is not closed, and the file holds the tiers
@@ -19,7 +26,7 @@ import (
 func TestConsoleFileTransferPerTier(t *testing.T) {
 	sb := consoleSandbox(t)
 	const defaults = "readonly: disabled\noperator: disabled\nengineer: disabled\nsuperuser: enabled (always)"
-	if got := strings.TrimSpace(sb.con("file-transfer")); got != defaults {
+	if got := listing(sb.con("file-transfer")); got != defaults {
 		t.Errorf("defaults:\n%s", got)
 	}
 	if sb.consoleYAML() != "" {
@@ -37,7 +44,7 @@ func TestConsoleFileTransferPerTier(t *testing.T) {
 		t.Errorf("enable engineer: %d %q", sb.code, out)
 	}
 	want := "readonly: disabled\noperator: enabled\nengineer: enabled\nsuperuser: enabled (always)"
-	if got := strings.TrimSpace(sb.con("file-transfer")); got != want {
+	if got := listing(sb.con("file-transfer")); got != want {
 		t.Errorf("both:\n%s", got)
 	}
 	if y := sb.consoleYAML(); !strings.Contains(y, "\n  file_transfer:\n    tiers: [operator, engineer, superuser]\n") {
@@ -468,4 +475,58 @@ func TestConsoleFileTransferCompletionKinds(t *testing.T) {
 			t.Errorf("after %v: %q, want %q", c.words, got, c.want)
 		}
 	}
+}
+
+// Every form of 'console file-transfer', the reads included, is the
+// superuser's: the verb has no row in the tier table, which the sudoers text
+// of the rollback target 0.2.27 freezes. What every user has (the state, the
+// quota and the rate) is in 'console show', which the operator tier and up
+// can run and the readonly tier cannot.
+func TestConsoleFileTransferTierGate(t *testing.T) {
+	for _, c := range []struct {
+		t    tier.Tier
+		sub  string
+		want bool
+	}{
+		{tier.Readonly, "file-transfer", false},
+		{tier.Operator, "file-transfer", false},
+		{tier.Engineer, "file-transfer", false},
+		{tier.Superuser, "file-transfer", true},
+		{tier.Readonly, "show", false},
+		{tier.Operator, "show", true},
+		{tier.Engineer, "show", true},
+	} {
+		if got := tier.Permits(c.t, "console", c.sub); got != c.want {
+			t.Errorf("Permits(%s, console %s) = %v, want %v", c.t, c.sub, got, c.want)
+		}
+	}
+	sb := consoleSandbox(t)
+	as := func(user, group string, args ...string) {
+		sb.t.Helper()
+		sb.cfgRun("", args, func(r *fake.Runner) {
+			r.On([]string{"id", "-nG", "--", user}, execx.Result{Stdout: []byte(user + " tac-users tac-" + group + "\n")})
+		}, "SUDO_USER="+user, "SUDO_UID="+uidOf(user))
+	}
+	for _, args := range [][]string{
+		{"console", "file-transfer"}, {"console", "file-transfer", "operator"}, {"console", "file-transfer", "user", "carol"},
+		{"console", "file-transfer", "quota"}, {"console", "file-transfer", "rate", "user", "carol"},
+		{"console", "file-transfer", "operator", "enable"}, {"console", "file-transfer", "quota", "operator", "1G"},
+	} {
+		as("bob", "operator", args...)
+		sb.expect(1, "", "'tacctl console file-transfer' is not permitted for the operator tier.")
+	}
+	as("alice", "superuser", "console", "file-transfer", "user", "carol")
+	sb.expect(0, "disabled (tier readonly)", "")
+	// the operator's view of every user's state, quota and rate
+	as("bob", "operator", "console", "show")
+	sb.expect(0, "FILE TRANSFER", "")
+	out := plain(sb.out.String())
+	for _, want := range []string{"File transfer (off by default; a user's own setting wins over the tier's):", "  QUOTA", "  RATE",
+		"carol     readonly   console  managed user  disabled (tier readonly)  disabled (tier readonly)  -"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("console show for the operator lacks %q:\n%s", want, out)
+		}
+	}
+	as("carol", "readonly", "console", "show")
+	sb.expect(1, "", "'tacctl console show' is not permitted for the readonly tier.")
 }

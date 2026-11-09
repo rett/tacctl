@@ -83,7 +83,10 @@ current behaviour; this file is where history lives.
    ft_rate=` for a caller who has it). The settings only decide: the console's
    file transfer, which a later change of this release turns on, reads them,
    and until it does they change nothing a user can do. Setting them is the
-   superuser's; the read forms are the operator tier's and up. 0.2.27 and
+   superuser's, and so are the read forms: the verb has no row in the tier
+   table, so every form of `console file-transfer` is refused below the
+   superuser tier, while `console show`, which the operator tier and up can
+   run, lists every user's state, quota and rate. 0.2.27 and
    every older release reject the key (their reader answers `settings:
    unknown key 'file_transfer'`, the console falls back to its defaults and
    writes fail), so every `tacctl rollback` target removes it with the
@@ -92,6 +95,55 @@ current behaviour; this file is where history lives.
    `docs/cli/console.md`, `docs/security/login-console.md`, `docs/cli/user.md`,
    `docs/security/audit.md`, `docs/install/upgrading.md` (Rolling back, To
    0.2.27) and the manual page say so.
+
+4. **The console serves SFTP to the accounts that have file transfer.** The
+   sftp subsystem, which sshd's `ForceCommand` hands to the console as the
+   `-c` string `/usr/lib/openssh/sftp-server` or `internal-sftp`, is no longer
+   refused for everyone: for an account that item 3's settings give file
+   transfer, the console serves the protocol itself on standard input and
+   output, as the logged-in user (no change of privilege). The user's home
+   directory, as the account database names it and never `$HOME`, is the root:
+   `/` is the home, `..` does not leave it, `.ssh` is not listed and every
+   request for it is refused, no symbolic link is followed or made, and hard
+   links are not supported. `sftp` and the `scp` of OpenSSH 9 or later (which
+   uses SFTP) work; `scp -O`, `rsync`, programs and shell words stay refused,
+   with a text that no longer says file transfer is unavailable: `the tacctl
+   console does not run programs or shell commands; file transfer is SFTP only
+   (sftp, scp of OpenSSH 9 or later)`. The quota (the bytes the whole home may
+   hold, the reports and support bundles of the user included) refuses a write
+   that would go over it, and the rate (bytes a second, reads and writes
+   together, a burst of one second) slows the session. For an account without
+   file transfer the subsystem is refused with status 126 and `file transfer is
+   not enabled for this account; an administrator can switch it on (tacctl
+   console file-transfer)`; a session held to a required password change, or
+   one whose policy cannot be read (a user who is no superuser), and a missing
+   home are refused with a text of their own. The console's idle timeout does
+   not apply to a transfer: it lasts as long as the connection, ends with
+   status 0 when the client closes it, and a protocol error ends it with
+   status 1 and one line on standard error; nothing but protocol is written
+   to standard output. Every request is in the console's own log under the tag
+   `tacctl-console`: `console sftp start` (the tier, the home, the quota and the
+   rate in effect), `console sftp upload|download|delete|rename|mkdir|setstat`,
+   `console sftp DENY ... reason=` for a refused request (`.ssh`, outside the
+   home, a symbolic link, the quota, unsupported, bad path) at `auth.warning`,
+   `console sftp end` (the bytes up and down, the requests, the refusals), and
+   `mode=sftp` and `reason=sftp` on the session's start and end lines; the
+   subsystem refused is `console DENY ... reason=file-transfer subsystem=sftp`.
+   A path is a file name, so unlike a refused command it is logged, but as a
+   double-quoted string with control characters, quotes, backslashes and bytes
+   that are not UTF-8 escaped, cut at 200 bytes, so that no name forges a
+   field or a line. sshd starts the subsystem only if its configuration defines
+   `Subsystem sftp ...`, which a `Match` block cannot: `console file-transfer`
+   with no argument and the server section of `console show` now print `sshd
+   sftp subsystem: <program>` or `none` (from `sshd -T`) and warn in red when
+   file transfer is on for a tier other than the superuser tier, or for a user,
+   and sshd defines none. The reading of `console file-transfer` is the
+   superuser's only (item 3 said the operator tier and up could read it: the
+   verb has no row for them in the tier table); every user's state, quota and
+   rate are in `console show`, which the operator tier and up can run.
+   `docs/cli/console.md` (File transfer), `docs/security/login-console.md`,
+   `docs/security/audit.md`, `docs/devices/reports.md`, `docs/cli/device.md`
+   and the manual page say so.
 
 ## 0.2.27 (2026-11-09)
 

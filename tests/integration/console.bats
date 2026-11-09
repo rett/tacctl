@@ -88,13 +88,13 @@ console_log() { grep '^logger -t tacctl-console ' "$CALLS_LOG" | sed 's/^logger 
     assert_line --index 1 "sudo -n TACCTL_CONSOLE=0123456789ab ${EXE} user list"
 }
 
-@test "console -c: scp, sftp, rsync, programs and the shell's own words are refused, exit 126, nothing run" {
+@test "console -c: scp -O, rsync, programs and the shell's own words are refused, exit 126, nothing run" {
     local line
     while IFS= read -r line; do
         : > "$CALLS_LOG"
         run "$CONSOLE_BIN" -c "$line"
         assert_failure 126
-        assert_output "the tacctl console does not run programs; file transfer is not available"
+        assert_output "the tacctl console does not run programs or shell commands; file transfer is SFTP only (sftp, scp of OpenSSH 9 or later)"
         run sudo_lines
         assert_output ""
         run console_log
@@ -104,7 +104,7 @@ console_log() { grep '^logger -t tacctl-console ' "$CALLS_LOG" | sed 's/^logger 
     done <<'LIST'
 scp -t .
 scp -f /etc/passwd
-/usr/lib/openssh/sftp-server
+scp -O -f x
 rsync --server -vlogDtpre.iLsfxC . /tmp
 bash
 sh -c id
@@ -146,7 +146,7 @@ LIST
 @test "console < file: the lines run in order as a batch; system-shell is refused there" {
     run bash -c 'printf "user list\nsystem-shell\nuser list\n" | "$0"' "$CONSOLE_BIN"
     assert_failure 126
-    assert_output --partial "the tacctl console does not run programs; file transfer is not available"
+    assert_output --partial "the tacctl console does not run programs or shell commands; file transfer is SFTP only (sftp, scp of OpenSSH 9 or later)"
     run sudo_lines
     assert_line --index 1 "sudo -n TACCTL_CONSOLE=0123456789ab ${EXE} user list"
     [ "${#lines[@]}" -eq 2 ]
@@ -256,7 +256,7 @@ exec "$@"'
     assert_output --partial "session=0123456789ab"
 }
 
-@test "console under sshd's ForceCommand: the client's command comes from SSH_ORIGINAL_COMMAND; sftp is refused" {
+@test "console under sshd's ForceCommand: the client's command comes from SSH_ORIGINAL_COMMAND; the subsystem is refused while file transfer is off" {
     # sshd runs '<shell> -c <ForceCommand>' with the client's command aside.
     SSH_ORIGINAL_COMMAND="user list" run "$CONSOLE_BIN" -c "$CONSOLE_BIN"
     assert_success
@@ -264,13 +264,19 @@ exec "$@"'
     run sudo_lines
     assert_line --index 1 "sudo -n TACCTL_CONSOLE=0123456789ab ${EXE} user list"
     : > "$CALLS_LOG"
-    for sub in internal-sftp /usr/lib/openssh/sftp-server "scp -t /tmp"; do
+    for sub in internal-sftp /usr/lib/openssh/sftp-server; do
         SSH_ORIGINAL_COMMAND="$sub" run "$CONSOLE_BIN" -c "$CONSOLE_BIN"
         assert_failure 126
-        assert_output --partial "the tacctl console does not run programs; file transfer is not available"
+        assert_output "file transfer is not enabled for this account; an administrator can switch it on (tacctl console file-transfer)"
     done
+    run console_log
+    assert_line --partial "console DENY session=0123456789ab user=carol reason=file-transfer subsystem=sftp"
+    : > "$CALLS_LOG"
+    SSH_ORIGINAL_COMMAND="scp -t /tmp" run "$CONSOLE_BIN" -c "$CONSOLE_BIN"
+    assert_failure 126
+    assert_output "the tacctl console does not run programs or shell commands; file transfer is SFTP only (sftp, scp of OpenSSH 9 or later)"
     run sudo_lines
     refute_output --partial " ${EXE} "
     run console_log
-    assert_line --partial "console DENY session=0123456789ab user=carol reason=command first=- len=13"
+    assert_line --partial "console DENY session=0123456789ab user=carol reason=command first=- len=11"
 }
