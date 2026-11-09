@@ -627,3 +627,35 @@ func TestAHostIsOneExampleBareOrWithItsDomain(t *testing.T) {
 		t.Errorf("got\n%s\nwant\n%s", out, want)
 	}
 }
+
+// The value of a serial field ends at its last letter or digit: the
+// punctuation after it is not part of the serial number, and stays.
+func TestASerialFieldValueEndsAtItsLastLetterOrDigit(t *testing.T) {
+	runScrubCases(t, []scrubCase{
+		{
+			name: "a closing parenthesis, a full stop and a semicolon",
+			in: []string{
+				"(serial: abc12345) and later abc12345\n",
+				"Serial number: ab12cd34. Seen ab12cd34 again\n",
+				"serial=xy99zz88; and xy99zz88\n",
+			},
+			want: []string{"(serial: SN000001) and later SN000001\n", "Serial number: SN000002. Seen SN000002 again\n", "serial=SN000003; and SN000003\n"},
+			gone: []string{"abc12345", "ab12cd34", "xy99zz88"},
+		},
+		{
+			name: "the other fields",
+			in: []string{
+				"PID: X , VID: V , SN: qq11rr22).\nHw Serial#: ww33ee44; Processor board ID tt55yy66.\n",
+				"System serial number: uu77ii88)\nSerial ID  oo99pp00;\nlater qq11rr22 ww33ee44 tt55yy66 uu77ii88 oo99pp00\n",
+			},
+			want: []string{"SN: SN000001).", "Hw Serial#: SN000002;", "Processor board ID SN000003.", "number: SN000004)", "Serial ID  SN000005;"},
+			gone: []string{"qq11rr22", "ww33ee44", "tt55yy66", "uu77ii88", "oo99pp00"},
+		},
+		{
+			name: "hyphens and dots inside the value stay part of it",
+			in:   []string{"Serial number: AB-12.cd-34\nlater AB-12.cd-34\n"},
+			want: []string{"Serial number: SN000001\n", "later SN000001\n"},
+			gone: []string{"AB-12"},
+		},
+	})
+}

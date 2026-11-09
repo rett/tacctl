@@ -224,7 +224,7 @@ var (
 	reLearnCurrent  = regexp.MustCompile(`Current user: '([^']*)' login: '([^']*)' class '([^']*)'`)
 	reLearnUptime   = regexp.MustCompile(`(?m)^(\S+) uptime is `)
 	reLearnLastBy   = regexp.MustCompile(`(?m)(?:last configuration change|nvram config last updated).* by (\S+)[ \t]*$`)
-	reLearnSerial   = regexp.MustCompile(`(?mi)\bserial(?: number| no\.?)?[ \t]*[:=][ \t]*([^\s,"]+)`)
+	reLearnSerial   = regexp.MustCompile(`(?mi)\bserial(?: number| no\.?)?[ \t]*[:=][ \t]*([^\s,"]*[A-Za-z0-9])`)
 	reLearnDomain   = regexp.MustCompile(`(?mi)^[ \t]*ip domain[- ]name[ \t]+(?:vrf \S+[ \t]+)?(\S+)`)
 	// the model names a text states
 	reLearnPID      = regexp.MustCompile(`(?m)\bPID:[ \t]*(.*?)(?:[ \t]{2,}|,|\bVID:|\bSN:|$)`)
@@ -333,11 +333,11 @@ func keepSpans(text string) []span {
 // The serial numbers a text states by their field, whatever their shape: the
 // value is group 1.
 var reSerialFields = []*regexp.Regexp{
-	regexp.MustCompile(`\bSN:[ \t]*([^\s,"]+)`),
-	regexp.MustCompile(`\bHw Serial#:[ \t]*([^\s,"]+)`),
-	regexp.MustCompile(`\bProcessor board ID[ \t]+([^\s,"]+)`),
-	regexp.MustCompile(`(?i)\bSystem serial number[ \t]*:[ \t]*([^\s,"]+)`),
-	regexp.MustCompile(`\bSerial ID[ \t]+([^\s,"]+)`),
+	regexp.MustCompile(`\bSN:[ \t]*([^\s,"]*[A-Za-z0-9])`),
+	regexp.MustCompile(`\bHw Serial#:[ \t]*([^\s,"]*[A-Za-z0-9])`),
+	regexp.MustCompile(`\bProcessor board ID[ \t]+([^\s,"]*[A-Za-z0-9])`),
+	regexp.MustCompile(`(?i)\bSystem serial number[ \t]*:[ \t]*([^\s,"]*[A-Za-z0-9])`),
+	regexp.MustCompile(`\bSerial ID[ \t]+([^\s,"]*[A-Za-z0-9])`),
 	reLearnSerial,
 }
 
