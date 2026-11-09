@@ -12,6 +12,13 @@ import (
 // 'console file-transfer' end to end, on the sandbox of console_test.go
 // (alice superuser, bob operator, carol readonly).
 
+// listing is the output of the list form without the line about sshd's sftp
+// subsystem (console_filetransfer_subsystem_test.go).
+func listing(out string) string {
+	head, _, _ := strings.Cut(out, "\nsshd sftp subsystem:")
+	return strings.TrimSpace(head)
+}
+
 // With no argument the command lists each tier (the superuser tier always on,
 // the others off by default), '<tier>' prints one, '<tier> enable|disable'
 // sets it, the engineer tier is not closed, and the file holds the tiers
@@ -19,7 +26,7 @@ import (
 func TestConsoleFileTransferPerTier(t *testing.T) {
 	sb := consoleSandbox(t)
 	const defaults = "readonly: disabled\noperator: disabled\nengineer: disabled\nsuperuser: enabled (always)"
-	if got := strings.TrimSpace(sb.con("file-transfer")); got != defaults {
+	if got := listing(sb.con("file-transfer")); got != defaults {
 		t.Errorf("defaults:\n%s", got)
 	}
 	if sb.consoleYAML() != "" {
@@ -37,7 +44,7 @@ func TestConsoleFileTransferPerTier(t *testing.T) {
 		t.Errorf("enable engineer: %d %q", sb.code, out)
 	}
 	want := "readonly: disabled\noperator: enabled\nengineer: enabled\nsuperuser: enabled (always)"
-	if got := strings.TrimSpace(sb.con("file-transfer")); got != want {
+	if got := listing(sb.con("file-transfer")); got != want {
 		t.Errorf("both:\n%s", got)
 	}
 	if y := sb.consoleYAML(); !strings.Contains(y, "\n  file_transfer:\n    tiers: [operator, engineer, superuser]\n") {

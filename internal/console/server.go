@@ -57,6 +57,11 @@ type SSHD struct {
 	// GatewayPorts is gatewayports: no, yes or clientspecified ("" when
 	// sshd did not print it).
 	GatewayPorts string
+	// SFTP is the program of the sftp subsystem (subsystem sftp <program>:
+	// sftp-server, internal-sftp ...); "" when sshd defines none, and then it
+	// never starts the subsystem, whatever the console allows. A Match block
+	// cannot define a subsystem, so the value is the same for every user.
+	SFTP string
 }
 
 // SSHDCheck runs 'sshd -T -C user=<user>,host=localhost,addr=127.0.0.1'
@@ -64,6 +69,18 @@ type SSHD struct {
 // through the runner. An error is a check that could not be made (no sshd,
 // no such user, a configuration sshd refuses); its text is for the person.
 func SSHDCheck(ctx context.Context, r execx.Runner, user string) (SSHD, error) {
+	s, err := sshdConfig(ctx, r, user)
+	if err != nil {
+		return SSHD{}, err
+	}
+	if s.TCPForwarding == "" || s.AgentForwarding == "" {
+		return SSHD{}, fail("sshd -T printed no forwarding settings.")
+	}
+	return s, nil
+}
+
+// sshdConfig runs 'sshd -T' for user and reads the settings it prints.
+func sshdConfig(ctx context.Context, r execx.Runner, user string) (SSHD, error) {
 	res, err := r.Run(ctx, execx.Cmd{Name: "sshd", Args: []string{"-T", "-C", "user=" + user + ",host=localhost,addr=127.0.0.1"}})
 	if err != nil {
 		return SSHD{}, fail("sshd could not be run: " + err.Error())
@@ -93,12 +110,24 @@ func SSHDCheck(ctx context.Context, r execx.Runner, user string) (SSHD, error) {
 			s.DisableForwarding = v
 		case "gatewayports":
 			s.GatewayPorts = v
+		case "subsystem":
+			if name, prog, _ := strings.Cut(v, " "); name == "sftp" && strings.TrimSpace(prog) != "" && strings.TrimSpace(prog) != "none" {
+				s.SFTP = strings.TrimSpace(prog)
+			}
 		}
 	}
-	if s.TCPForwarding == "" || s.AgentForwarding == "" {
-		return SSHD{}, fail("sshd -T printed no forwarding settings.")
-	}
 	return s, nil
+}
+
+// SFTPSubsystem is the program of the sftp subsystem sshd would start, as
+// 'sshd -T' says ("" when it defines none): the question file transfer
+// depends on, since the console serves the subsystem only when sshd starts
+// it. It asks for the configuration as SSHDCheck does, for the user root,
+// whose Match blocks cannot change the answer. An error is a check that could
+// not be made, as SSHDCheck's.
+func SFTPSubsystem(ctx context.Context, r execx.Runner) (string, error) {
+	s, err := sshdConfig(ctx, r, "root")
+	return s.SFTP, err
 }
 
 // Problems are the ways the connection could still do more than the console

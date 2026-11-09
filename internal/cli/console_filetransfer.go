@@ -14,6 +14,7 @@ import (
 
 	"github.com/rett/tacctl/internal/console"
 	"github.com/rett/tacctl/internal/tier"
+	"github.com/rett/tacctl/internal/ui"
 )
 
 // fileTransferState is the state of a tier's file transfer as the listings
@@ -41,6 +42,63 @@ func (inv *invocation) fileTransferUserLine(pol *console.Policy, tiers map[strin
 	}
 	return name + ": " + word + " (" + string(t) + ")"
 }
+
+// fileTransferOpened reports whether file transfer is on for anyone but the
+// superuser tier, which always has it: a tier that was opened to it, or a
+// user who was given it and still is in the tier it was set for. The notice
+// about sshd's subsystem warns for these; a server nobody opened it on has
+// only the line.
+func (inv *invocation) fileTransferOpened(pol *console.Policy) bool {
+	for _, t := range []tier.Tier{tier.Readonly, tier.Operator, tier.Engineer} {
+		if pol.FileTransferTier(t) {
+			return true
+		}
+	}
+	var tiers map[string]tier.Tier
+	for _, n := range pol.File.FileTransferUserNames() {
+		if !pol.File.FileTransferUsers[n] {
+			continue
+		}
+		if tiers == nil {
+			var err error
+			if tiers, err = inv.systemShellTiers(); err != nil {
+				// the tiers cannot be read: warn rather than stay quiet
+				return true
+			}
+		}
+		if t, ok := tiers[n]; ok {
+			if _, stale := pol.FileTransferStale(n, t); !stale && pol.FileTransferFor(n, t) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// sftpSubsystemNotice prints whether sshd defines an sftp subsystem (cmd, the
+// result of console.SFTPSubsystem or SSHD.SFTP; err: the check could not be
+// made) and, when file transfer is on for someone and it does not, the
+// warning that the console cannot serve anyone: sshd never starts the
+// subsystem, and a Match block cannot define it, so the line must be in
+// sshd_config itself (tacctl adds nothing global).
+func (inv *invocation) sftpSubsystemNotice(pol *console.Policy, cmd string, err error) {
+	switch {
+	case err != nil:
+		inv.echo("sshd sftp subsystem: could not be checked: " + strings.Join(msgs(err), " "))
+		return
+	case cmd == "":
+		inv.echo("sshd sftp subsystem: none")
+	default:
+		inv.echo("sshd sftp subsystem: " + cmd)
+	}
+	if cmd == "" && inv.fileTransferOpened(pol) {
+		inv.echoE(ui.Red + sftpSubsystemWarning + ui.NC)
+	}
+}
+
+// sftpSubsystemWarning is the warning for a server whose sshd starts no sftp
+// subsystem while file transfer is on.
+const sftpSubsystemWarning = "WARNING: sshd defines no sftp subsystem: file transfer cannot start; add `Subsystem sftp ...` to sshd_config."
 
 // fileTransferWrites reports whether the arguments of 'console
 // file-transfer' set something. The reads are no argument, a tier alone,
@@ -100,6 +158,9 @@ func (inv *invocation) consoleFileTransfer(args []string) error {
 				inv.echo("  " + inv.fileTransferUserLine(pol, tiers, n))
 			}
 		}
+		inv.echo("")
+		cmd, err := console.SFTPSubsystem(inv.ctx, inv.app.Runner)
+		inv.sftpSubsystemNotice(pol, cmd, err)
 		return nil
 	}
 	switch p.Args[0] {
