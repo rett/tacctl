@@ -7,10 +7,10 @@ package lifecycle
 // virtual chassis's commit answers and the cleaning of a device's text are
 // code only), so 0.2.24 reads the same files as 0.2.25 and the plan of the
 // target is the one of 0.2.25 (planRollbackAfter0224): it removes the limits
-// of the stored reports of 0.2.26 and this release (the two keys of
+// of the stored reports of 0.2.26 and the releases after it (the two keys of
 // tacctl.yaml, and the users' own limits through a step of
 // rollbackAdditions), puts back the per-tier sudoers drop-in of 0.2.24 and
-// 0.2.25 (the same text) when the text 0.2.26 and this release write differs,
+// 0.2.25 (the same text) when the text 0.2.26 and the releases after it write differs,
 // and leaves every other file alone. No other step of
 // rollbackAdditions fires for it: they undo what 0.2.24 and older releases
 // changed, for the targets older than the release that made the change, so

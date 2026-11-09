@@ -211,10 +211,21 @@ func TestSupportBundleFolderThatLeavesTheHome(t *testing.T) {
 }
 
 // An IOS device that scrolls the echo of the long identity-lines command
-// leaves none of it in the file, and the model names and serial numbers of
+// (on lines, as the tail only, or redrawn in place) leaves none of it in the
+// file, and the model names and serial numbers of
 // the inventory are told apart.
 func TestSupportBundleIOSHasNoEchoOfTheCommandAndKeepsModels(t *testing.T) {
-	b := newPullBox(t, fakedev.WithWrappedEcho(72))
+	for name, opt := range map[string]fakedev.Option{
+		"lines":   fakedev.WithWrappedEcho(72),
+		"tail":    fakedev.WithTailEcho(72),
+		"redrawn": fakedev.WithRedrawnEcho(72),
+	} {
+		t.Run(name, func(t *testing.T) { iosEchoBundle(t, opt) })
+	}
+}
+
+func iosEchoBundle(t *testing.T, opt fakedev.Option) {
+	b := newPullBox(t, opt)
 	if err := os.WriteFile(filepath.Join(b.dir, "prompt"), []byte("lab-c#"), 0o644); err != nil {
 		t.Fatal(err)
 	}

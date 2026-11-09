@@ -316,6 +316,40 @@ func TestShellDropsAWrappedEcho(t *testing.T) {
 	}
 }
 
+// A device whose echo of a long command reaches the reader as the tail only
+// (the start of it is not a line of its own, or the line is redrawn in place
+// and shows the tail) leaves none of it in the output either, and a line of
+// the answer that is like the tail stays.
+func TestShellDropsTheTailOfAWrappedEcho(t *testing.T) {
+	t.Parallel()
+	const cmd = "show running-config | include ^(hostname|ip domain|clock timezone|snmp-server location|snmp-server contact)"
+	const out = "hostname sw1.example.net\nip domain-name example.net\n$ snmp-server contact)\n"
+	for name, opt := range map[string]fakedev.Option{
+		"tail lines":     fakedev.WithTailEcho(72),
+		"narrow tail":    fakedev.WithTailEcho(48), // the tail over two lines
+		"redrawn":        fakedev.WithRedrawnEcho(72),
+		"redrawn narrow": fakedev.WithRedrawnEcho(48),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			dir := transcript(t, map[string]string{"prompt": "rtr1#", cmd + ".out": out})
+			srv := serve(t, dir, opt)
+			s, err := dial(t, target(t, srv, nil)).CLI(devssh.VendorCisco, devssh.WithPTY())
+			if err != nil {
+				t.Fatal(err)
+			}
+			for range 2 { // the second command starts from the state the first left
+				if got, err := s.Run(bg(), cmd); err != nil || got != out {
+					t.Fatalf("got %q, %v", got, err)
+				}
+			}
+			if got, err := s.Run(bg(), "show version"); err != nil || strings.Contains(got, "$") {
+				t.Fatalf("short command: %q, %v", got, err)
+			}
+		})
+	}
+}
+
 func TestExecCLI(t *testing.T) {
 	t.Parallel()
 	dir := transcript(t, map[string]string{

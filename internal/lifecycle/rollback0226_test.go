@@ -12,7 +12,7 @@ import (
 )
 
 // The rollback to 0.2.26 on the sandbox of rollback_test.go: this release
-// changed no stored file 0.2.26 reads strictly, so the plan converts nothing,
+// and 0.2.27 changed no stored file 0.2.26 reads strictly, so the plan converts nothing,
 // whatever 0.2.26 itself added to the state (the limits of the stored reports
 // and the break-glass firewall included).
 
