@@ -84,6 +84,12 @@ func (s *server) openFile(r *sftp.Request, write bool) (*file, error) {
 	}
 	switch st.Mode & unix.S_IFMT {
 	case unix.S_IFREG:
+		// Judged on the open file, so that nothing between a look and the
+		// open can change what it is. Nothing has been truncated yet.
+		if st.Nlink > 1 {
+			_ = unix.Close(fd)
+			return nil, errLink()
+		}
 	case unix.S_IFDIR:
 		_ = unix.Close(fd)
 		return nil, &os.PathError{Op: "open", Path: v.String(), Err: unix.EISDIR}

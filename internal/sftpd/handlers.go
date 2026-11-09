@@ -357,6 +357,9 @@ func (s *server) setstat(r *sftp.Request) (err error) {
 	if st.Mode&unix.S_IFMT == unix.S_IFLNK {
 		return errSymlink()
 	}
+	if st.Mode&unix.S_IFMT == unix.S_IFREG && st.Nlink > 1 {
+		return errLink()
+	}
 	if fl.Permissions {
 		// A directory the owner cannot list or search is one the quota
 		// cannot measure and the client cannot list: not a mode to set.

@@ -21,8 +21,8 @@ type Event struct {
 	// Bytes is the size of a transfer.
 	Bytes int64
 	// Err is why an Op failed. For Op "refused" it names the reason the
-	// request was refused: ".ssh", "outside the home", "symlink", "quota",
-	// "unsupported" or "bad path".
+	// request was refused: ".ssh", "outside the home", "symlink", "link",
+	// "quota", "unsupported" or "bad path".
 	Err error
 }
 

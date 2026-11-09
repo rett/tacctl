@@ -12,6 +12,7 @@ const (
 	reasonSSH         = ".ssh"
 	reasonOutside     = "outside the home"
 	reasonSymlink     = "symlink"
+	reasonLink        = "link"
 	reasonQuota       = "quota"
 	reasonUnsupported = "unsupported"
 	reasonBadPath     = "bad path"
@@ -40,6 +41,10 @@ func errSSH() error {
 
 func errSymlink() error {
 	return refuse(reasonSymlink, "permission denied: symbolic links are not followed")
+}
+
+func errLink() error {
+	return refuse(reasonLink, "permission denied: a file with more than one name is not served")
 }
 
 func errOutside() error {
