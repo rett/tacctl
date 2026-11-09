@@ -14458,7 +14458,12 @@ print as \&'?'), whether the file has a valid metadata file or not; with
 .B \-\-out
 the bytes are copied as they are, and a user's own file prints as stored. A PDF
 goes to a redirected standard output as it is, for the superuser too: nothing
-can move a terminal, which it never reaches.
+can move a terminal, which it never reaches. It is a PDF only if its name ends in
+.BR .pdf ,
+its metadata file, if any, says pdf and, for another user's file, its content
+starts with
+.BR %PDF\- ;
+anything else is cleaned as text.
 .\" BEGIN GENERATED: command device reports export
 .RS
 .PP

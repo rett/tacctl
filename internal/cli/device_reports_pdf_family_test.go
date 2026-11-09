@@ -292,3 +292,53 @@ func TestWriteRawBypassesTheColourFilter(t *testing.T) {
 		t.Error("the filter keeps colour sequences: writeRaw has no reason to bypass it")
 	}
 }
+
+// What another user wrote is not trusted with the superuser's terminal,
+// whatever their metadata file says: a text file whose metadata says pdf, or a
+// .pdf file that holds no PDF, is cleaned line by line as any other text.
+func TestReportsPDFMetaDoesNotUnlockTheTerminalForASuperuser(t *testing.T) {
+	b := newReportsBox(t)
+	dir := b.dir("bob")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	evil := "hello \x1b[31mred\x1b]0;title\x07 end\n"
+	for _, file := range []string{"fake.txt", "fake2.pdf"} {
+		name := strings.TrimSuffix(file, filepath.Ext(file))
+		mb, err := reports.MarshalMeta(reports.Meta{Name: name, Type: "inventory", Format: reports.FormatPDF, User: "bob",
+			Command: "tacctl device reports generate --type inventory --format pdf", Generated: time.Now().UTC(), Size: int64(len(evil)), Count: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := filepath.Join(dir, file)
+		if err := os.WriteFile(p, []byte(evil), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p+".meta", mb, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		out := b.as("alice", asSuper, "export", "bob/"+file)
+		if b.sb.code != 0 || out != "hello ?[31mred?]0;title? end\n" {
+			t.Errorf("%s: exit %d %q %q", file, b.sb.code, out, b.sb.stderr())
+		}
+	}
+}
+
+// A file whose extension is not .pdf is not a PDF, whatever its metadata says.
+func TestReportsIsPDFNeedsTheExtension(t *testing.T) {
+	for _, c := range []struct {
+		f    reportFile
+		want bool
+	}{
+		{reportFile{File: "a.pdf"}, true},
+		{reportFile{File: "a.PDF"}, true},
+		{reportFile{File: "a.pdf", Meta: &reports.Meta{Format: reports.FormatPDF}}, true},
+		{reportFile{File: "a.pdf", Meta: &reports.Meta{Format: reports.FormatText}}, false},
+		{reportFile{File: "a.txt", Meta: &reports.Meta{Format: reports.FormatPDF}}, false},
+		{reportFile{File: "a.txt"}, false},
+	} {
+		if got := c.f.isPDF(); got != c.want {
+			t.Errorf("%+v: isPDF %v, want %v", c.f, got, c.want)
+		}
+	}
+}
