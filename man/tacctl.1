@@ -16439,7 +16439,20 @@ cannot be opened, downloaded or written, and its mode and times cannot be
 changed (refused, reason
 .BR link ):
 it can still be listed, renamed and removed. Setting the mode of a directory
-without the owner's read and search bits is refused. A listing is in the order
+without the owner's read and search bits is refused. The size of a regular file
+can be set (cut, or extended with zeros), which is what
+.B scp
+does after an upload to give the file its final size; it counts against the quota
+like a write. The owner cannot be changed, and a request that asks for it is
+refused whole. A new directory gets the mode the client asks for and a new file
+0644, both reduced by the umask of the console, 077; the set\-user\-ID,
+set\-group\-ID and sticky bits are ignored, and a client that wants another mode
+sets it afterwards, which is applied as given. Changing the mode or the times of
+a file goes through
+.BR /proc/self/fd ,
+so file transfer needs
+.B /proc
+mounted on the server. A listing is in the order
 of the file system, not sorted (the OpenSSH
 .B sftp
 client sorts what its
@@ -16452,7 +16465,18 @@ is the bytes the home may hold: the sizes of its regular files, each inode once
 (not directories, links or inodes), reports, support bundles and
 .B .ssh
 included; a write over it is refused whole
-.RB ( "disk quota exceeded" ).
+.RB ( "disk quota exceeded" ),
+and so is a size that would grow a file over it; a smaller size gives the room back.
+An upload that is refused part way leaves what was written before the refusal in the
+home (the client does not remove it), and the
+.B sftp
+and
+.B scp
+of OpenSSH show only
+.B Failure
+for it: the reason,
+.BR reason=quota ,
+is in the console's audit log.
 It is measured per session, so N sessions at once can reach about N times the
 quota; a file deleted while a handle still holds it stays counted until the
 handle is closed; and a directory in the home that the session cannot read or
@@ -16465,7 +16489,15 @@ is the bytes a second the session may move, reads and writes together. The
 subsystem is refused with status 126 and
 .I "file transfer is not enabled for this account; an administrator can switch it on (tacctl console file\-transfer)"
 when the account does not have file transfer (and with a text of its own when a
-password change is required or the policy cannot be read). The idle timeout
+password change is required or the policy cannot be read); the OpenSSH
+.B sftp
+and
+.B scp
+show only
+.B Connection closed
+then, since sshd does not show the error text of a subsystem, and the reason,
+.BR reason=file\-transfer ,
+is in the audit log. The idle timeout
 does not apply: the session lasts as long as the connection and ends with
 status 0 when the client closes it; a protocol error ends it with status 1 and
 one line on standard error. Nothing but protocol is written to standard output;
