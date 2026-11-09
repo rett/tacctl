@@ -783,14 +783,14 @@ device reports list [--json] [--user <name> | --all-users]
 device reports show <report> [--content]
 
     When, by whom and with what command the report was made, its filters, the date of its oldest
-    datum, its size and the `scp` line that fetches it; `--content` adds its first 200 lines. A
-    report is its name, or its file name when two files share a name; a superuser names another
-    user's as `<user>/<report>` (audited)
+    datum, its size and the `scp` line that fetches it; `--content` adds its first 200 lines (a PDF
+    is binary: it says `binary PDF, <n> bytes: use export`). A report is its name, or its file name
+    when two files share a name; a superuser names another user's as `<user>/<report>` (audited)
 
 device reports export <report> [--out <file>] [--force]
 
     Print the report, or write it to a file (made as you, mode 0600; an existing file needs
-    `--force`)
+    `--force`). A PDF is never printed to a terminal: use `--out` or redirect
 
 device reports rename <report> <new>
 

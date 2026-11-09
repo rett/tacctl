@@ -48,6 +48,9 @@ var pdfToolDirs = []string{"/usr/bin", "/usr/local/bin", "/opt/weasyprint/bin"}
 // pdfMissingText is the refusal of a PDF report when the tool is not there.
 const pdfMissingText = "PDF reports need weasyprint, which is not installed here. Install it: " + pdfInstallLine
 
+// pdfBinaryExport is the refusal to print a PDF report to a terminal.
+const pdfBinaryExport = "PDF is binary: use --out FILE or redirect"
+
 // pdfDirs are the directories to look in.
 func (h *hooks) pdfDirs() []string {
 	if h != nil && h.pdfToolDirs != nil {

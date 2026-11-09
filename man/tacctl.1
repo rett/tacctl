@@ -14354,7 +14354,11 @@ the size and the command that fetches it
 .B \-\-content
 adds the first 200 lines of the report, read from the start of the file and no
 further than 256 KiB (a file with more says that, and counts the lines only when it
-read all of it). A report is addressed by its name or by
+read all of it); a PDF is binary, so
+.B \-\-content
+prints
+.B "binary PDF, <n> bytes: use export"
+instead. A report is addressed by its name or by
 its file name; when two files share a name (only a file the user put there can)
 the extension is needed. A superuser names another user's report as
 .IR user/report .
@@ -14366,7 +14370,7 @@ Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show
 Options:
 .TP
 \fB\-\-content\fR
-Print the report itself under the facts, its first 200 lines ('export' prints all of it).
+Print the report itself under the facts, its first 200 lines ('export' prints all of it); a PDF is binary and prints its size and 'use export' instead.
 .RE
 .\" END GENERATED: command device reports show
 .TP
@@ -14386,7 +14390,13 @@ the report's owner
 or the larger size the report's metadata records, 1 GiB at the most) and refuses a
 file over it. Both verbs open the file without following a link and without
 waiting, and read a regular file only: a link, a FIFO or a device node is refused,
-the metadata file too. A superuser exports another user's report as
+the metadata file too. A PDF report (or any file of the directory that ends in
+.BR .pdf )
+is binary and is never printed to a terminal: without
+.B \-\-out
+it is refused with
+.B "PDF is binary: use --out FILE or redirect"
+and, when the standard output is redirected, written as it is stored. A superuser exports another user's report as
 .IR user/report ;
 it is audited. What another user wrote is not trusted with the superuser's
 terminal, and the metadata file does not vouch for it (its owner makes it too):
@@ -14397,7 +14407,9 @@ as
 does (control and formatting characters, escape sequences and line separators
 print as \&'?'), whether the file has a valid metadata file or not; with
 .B \-\-out
-the bytes are copied as they are, and a user's own file prints as stored.
+the bytes are copied as they are, and a user's own file prints as stored. A PDF
+goes to a redirected standard output as it is, for the superuser too: nothing
+can move a terminal, which it never reaches.
 .\" BEGIN GENERATED: command device reports export
 .RS
 .PP
@@ -14406,7 +14418,7 @@ Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show
 Options:
 .TP
 \fB\-\-out\fR \fI<file>\fR
-Write the copy to this file, mode 0600, made as you; a file that exists is refused unless \-\-force.
+Write the copy to this file, mode 0600, made as you; a file that exists is refused unless \-\-force. A PDF report is binary: without \-\-out it is refused at a terminal and written to standard output when that is redirected.
 .TP
 \fB\-\-force\fR
 Replace the file \-\-out names, if there is one.

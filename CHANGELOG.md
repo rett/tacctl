@@ -114,7 +114,17 @@ current behaviour; this file is where history lives.
    fails, makes no PDF or runs over a limit gives an error with the first five
    lines of its own, and nothing is written. A PDF is binary: `--stdout` refuses
    at a terminal and writes the bytes when it is redirected. The `.meta` file is
-   JSON as before and says `"format": "pdf"`.
+   JSON as before and says `"format": "pdf"`. The other verbs treat a PDF like
+   any report, by the extension its metadata names, and never print binary to
+   a terminal: `export` to standard output refuses at a terminal (`PDF is
+   binary: use --out FILE or redirect`) and writes the bytes as they are when
+   it is redirected (for a superuser's `export <user>/<report>` too, which
+   cleans the lines of a text report but not the bytes of a PDF that never
+   reach a terminal), `show --content` prints `binary PDF, <n> bytes: use
+   export` in place of the first 200 lines, and `list`, `rename`, `remove`,
+   `prune`, the per-user and superuser listings, the completion of names and
+   the access audit lines work on `.pdf` files as on the others. A file you
+   put in the directory that ends in `.pdf` is binary as well.
 
 ## 0.2.26 (2026-11-06)
 
