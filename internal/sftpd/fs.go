@@ -3,7 +3,6 @@ package sftpd
 import (
 	"errors"
 	"os"
-	"sort"
 	"strconv"
 	"syscall"
 	"time"
@@ -182,35 +181,6 @@ func modeOf(m uint32) os.FileMode {
 		fm |= os.ModeSticky
 	}
 	return fm
-}
-
-// readDir lists the directory t, each entry lstat'ed through the open
-// directory (a link is listed as a link). In the home, the entry named
-// .ssh is left out.
-func (h *home) readDir(t *target) ([]os.FileInfo, error) {
-	fd, err := t.openDir()
-	if err != nil {
-		return nil, err
-	}
-	f := os.NewFile(uintptr(fd), t.v.String())
-	defer func() { _ = f.Close() }()
-	names, err := f.Readdirnames(-1)
-	if err != nil {
-		return nil, &os.PathError{Op: "readdir", Path: t.v.String(), Err: err}
-	}
-	sort.Strings(names)
-	out := make([]os.FileInfo, 0, len(names))
-	for _, n := range names {
-		if t.v.isRoot() && n == sshDir {
-			continue
-		}
-		fi := &fileInfo{name: n}
-		if err := unix.Fstatat(fd, n, &fi.st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
-			continue // gone since the listing was read
-		}
-		out = append(out, fi)
-	}
-	return out, nil
 }
 
 // chmod sets the permission bits of the entry without following a link. The

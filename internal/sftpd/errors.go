@@ -16,6 +16,7 @@ const (
 	reasonQuota       = "quota"
 	reasonUnsupported = "unsupported"
 	reasonBadPath     = "bad path"
+	reasonTooMany     = "too many open files"
 )
 
 // statusError is an error that carries its SFTP status: the code the
@@ -57,6 +58,10 @@ func errUnsupported(what string) error {
 
 func errBadPath(msg string) error {
 	return &statusError{reason: reasonBadPath, code: sftp.ErrSSHFxFailure, msg: msg}
+}
+
+func errTooMany() error {
+	return &statusError{reason: reasonTooMany, code: sftp.ErrSSHFxFailure, msg: "too many open files"}
 }
 
 func errQuota() error {

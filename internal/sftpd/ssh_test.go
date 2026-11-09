@@ -3,6 +3,7 @@ package sftpd
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -106,6 +107,7 @@ func TestSSHHiddenFromListing(t *testing.T) {
 	for _, fi := range ents {
 		names = append(names, fi.Name())
 	}
+	sort.Strings(names) // a listing comes in the order of the file system
 	if len(names) != 2 || names[0] != "a" || names[1] != "plain" {
 		t.Errorf("listing of / = %v, want [a plain]", names)
 	}

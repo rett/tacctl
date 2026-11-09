@@ -35,6 +35,15 @@ type file struct {
 // openFile opens the file of r. write says the open is for an upload (the
 // handle can write); otherwise it is a download.
 func (s *server) openFile(r *sftp.Request, write bool) (*file, error) {
+	if err := s.handles.acquire(); err != nil {
+		return nil, err
+	}
+	opened := false
+	defer func() {
+		if !opened {
+			s.handles.release() // an open that failed (or panicked) holds no place
+		}
+	}()
 	v, err := s.path(r.Filepath)
 	if err != nil {
 		return nil, err
@@ -121,6 +130,7 @@ func (s *server) openFile(r *sftp.Request, write bool) (*file, error) {
 	if f.quota != nil {
 		f.quota.hold(f)
 	}
+	opened = true
 	return f, nil
 }
 
@@ -174,6 +184,7 @@ func (f *file) Close() error {
 			f.quota.unhold(f) // while the descriptor is still open
 		}
 		cerr = f.f.Close()
+		f.s.handles.release()
 		f.mu.Lock()
 		err := f.xferr
 		f.mu.Unlock()

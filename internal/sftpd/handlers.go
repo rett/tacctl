@@ -19,6 +19,8 @@ type server struct {
 	cfg   Config
 	quota *quota  // nil when the session has no quota
 	rate  *bucket // nil when the session has no rate limit
+
+	handles handleCount // the open files and directory listings
 }
 
 var (
@@ -112,7 +114,7 @@ func (s *server) Readlink(string) (string, error) {
 	return "", errSymlink()
 }
 
-// listerAt serves a snapshot of entries to the library.
+// listerAt serves a few entries held in memory (a stat) to the library.
 type listerAt []os.FileInfo
 
 func (l listerAt) ListAt(ls []os.FileInfo, off int64) (int, error) {
@@ -131,7 +133,7 @@ func (s *server) Filelist(r *sftp.Request) (la sftp.ListerAt, err error) {
 	defer s.guard(&err, r)
 	switch r.Method {
 	case "List":
-		return s.list(r)
+		return s.listRequest(r)
 	case "Stat":
 		return s.stat(r, true)
 	default:
@@ -145,21 +147,16 @@ func (s *server) Lstat(r *sftp.Request) (la sftp.ListerAt, err error) {
 	return s.stat(r, false)
 }
 
-func (s *server) list(r *sftp.Request) (sftp.ListerAt, error) {
+func (s *server) listRequest(r *sftp.Request) (sftp.ListerAt, error) {
 	v, err := s.path(r.Filepath)
 	if err != nil {
 		return nil, err
 	}
-	t, err := s.home.resolve(v)
+	l, err := s.list(v)
 	if err != nil {
 		return nil, err
 	}
-	defer t.close()
-	infos, err := s.home.readDir(t)
-	if err != nil {
-		return nil, err
-	}
-	return listerAt(infos), nil
+	return l, nil
 }
 
 // stat answers stat (follow) and lstat. A link is lstat'ed as a link; stat

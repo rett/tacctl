@@ -1,6 +1,7 @@
 package sftpd
 
 import (
+	"cmp"
 	"errors"
 	"io"
 	"strings"
@@ -22,7 +23,7 @@ type Event struct {
 	Bytes int64
 	// Err is why an Op failed. For Op "refused" it names the reason the
 	// request was refused: ".ssh", "outside the home", "symlink", "link",
-	// "quota", "unsupported" or "bad path".
+	// "quota", "unsupported", "bad path" or "too many open files".
 	Err error
 }
 
@@ -57,6 +58,7 @@ type seams struct {
 	sleep func(time.Duration)
 
 	measureDepth int // the depth of the quota walk, 0 for the default
+	maxHandles   int // the open handles a session may have, 0 for the default
 }
 
 func serve(rw io.ReadWriteCloser, cfg Config, sm seams) error {
@@ -86,7 +88,7 @@ func serve(rw io.ReadWriteCloser, cfg Config, sm seams) error {
 // newServer builds the state of one session. The home is measured here when
 // there is a quota, and not at all when there is none.
 func newServer(h *home, cfg Config, sm seams) *server {
-	s := &server{home: h, cfg: cfg}
+	s := &server{home: h, cfg: cfg, handles: handleCount{max: cmp.Or(sm.maxHandles, maxHandles)}}
 	if cfg.Quota > 0 {
 		s.quota = newQuota(h, cfg.Quota, sm.now, sm.measureDepth)
 	}

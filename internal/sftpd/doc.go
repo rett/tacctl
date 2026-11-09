@@ -13,6 +13,12 @@
 // at the entry followed by the change, so a name added by something outside
 // SFTP in between is not caught.
 //
+// A session has at most 256 handles open at once, files and directory
+// listings together (each holds a descriptor); an open past that fails with a
+// failure status and is audited as a refusal ("too many open files"). A
+// listing reads the directory as the client asks for the entries, a batch at
+// a time, and is not sorted: it comes in the order of the file system.
+//
 // It adds no command and prints nothing: a caller (the console) hands it the
 // stream of the sftp subsystem and the home directory, and gets a status
 // back when the client ends the session.
