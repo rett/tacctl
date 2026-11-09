@@ -41,6 +41,12 @@ func TestParseSize(t *testing.T) {
 	if _, err := ParseSize("9223372036854775808"); err == nil || !strings.Contains(err.Error(), "too large") {
 		t.Errorf("overflow: %v", err)
 	}
+	// A unit with no number is a malformed size, not a large one.
+	for _, in := range []string{"K", "k", "M", "G", "T"} {
+		if _, err := ParseSize(in); err == nil || !strings.Contains(err.Error(), "Invalid size '"+in+"'") || strings.Contains(err.Error(), "too large") {
+			t.Errorf("%s: %v", in, err)
+		}
+	}
 }
 
 func TestFormatSize(t *testing.T) {
@@ -339,6 +345,21 @@ func TestFileTransferRateUnquotedOff(t *testing.T) {
 	}
 }
 
+// A tier's rate of off (quoted or not) is the built-in setting, as it is for
+// a user: it is read, and nothing is stored for the tier.
+func TestFileTransferTierRateOff(t *testing.T) {
+	for _, body := range []string{"rate: {operator: 'off', engineer: 1M}", "rate: {operator: off, engineer: 1M}"} {
+		p := write(t, t.TempDir(), "console.yaml", "version: 1\nsettings:\n  file_transfer:\n    tiers: [superuser]\n    "+body+"\n", 0o600)
+		f, err := Load(p)
+		if err != nil {
+			t.Fatalf("%s: %v", body, err)
+		}
+		if _, ok := f.FileTransferRate[tier.Operator]; ok || f.FileTransferRate[tier.Engineer] != 1<<20 {
+			t.Errorf("%s: %v", body, f.FileTransferRate)
+		}
+	}
+}
+
 func TestFileTransferInvalidFiles(t *testing.T) {
 	for _, c := range []struct{ name, body, want string }{
 		{"not a mapping", "file_transfer: yes\n", "must be a mapping"},
@@ -361,7 +382,6 @@ func TestFileTransferInvalidFiles(t *testing.T) {
 		{"quota fraction", "file_transfer: {quota: {operator: 1.5G}}\n", "must be a size or unlimited"},
 		{"quota off", "file_transfer: {quota: {operator: 'off'}}\n", "must be a size or unlimited"},
 		{"rate unlimited", "file_transfer: {rate: {operator: unlimited}}\n", "must be a size"},
-		{"rate off for a tier", "file_transfer: {rate: {operator: 'off'}}\n", "must be a size"},
 		{"rate list", "file_transfer: {rate_users: {bob: [1]}}\n", "must be a size or off"},
 		{"quota users list", "file_transfer: {quota_users: [bob]}\n", "must be a mapping"},
 	} {
