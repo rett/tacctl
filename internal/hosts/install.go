@@ -28,10 +28,13 @@ func replaceFile(path string, data []byte, mode os.FileMode) error {
 		_ = f.Close()
 		return err
 	}
-	if err := f.Close(); err != nil {
+	// the mode is set on the open file, not on the name: a link swapped in at
+	// the name since the create is not followed
+	if err := f.Chmod(mode); err != nil {
+		_ = f.Close()
 		return err
 	}
-	return os.Chmod(path, mode)
+	return f.Close()
 }
 
 // InstallError is a failed 'install' of a file the operator named: Msg is
