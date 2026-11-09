@@ -94,6 +94,27 @@ current behaviour; this file is where history lives.
    took a snapshot names this release, 0.2.27, as the state the snapshot holds
    ("Restore it with 0.2.27 only").
 
+7. **`device support-bundle --out` names a bundle, not a path, and it is
+   written in your home.** `tacctl device support-bundle sw1 --out ~/x` made a
+   directory literally named `~` in the current directory when the `~` reached
+   tacctl unexpanded (a quoted argument, a script), because tacctl took the
+   path as given. `--out` is now a name: a letter or digit, then letters,
+   digits, `.`, `_` or `-`, at most 64 characters; anything else (a `/`, `..`,
+   a leading dot, `~`, `$`) is refused with exit status 2 and a sentence that
+   says the rule, before anything is asked or written. The bundle is
+   `support-bundles/<name>` and its private map `support-bundles/<name>.map`,
+   in the home of the person who ran `sudo` (else of the user running tacctl),
+   taken from the account database and never from `$HOME`; the
+   `support-bundles` folder is created with mode 0700 when it is missing, and
+   one that is a link leading out of the home is refused. Without `--out` the
+   name is `<device>-<UTC YYYYMMDD-HHMMSS>` (it was `support-bundle-<UTC
+   time>` in the current directory). A name that exists, or whose `.map`
+   exists, is refused as before, the files are still written as the caller and
+   never replace anything, and the success lines print the full paths. The
+   audit line is unchanged. tacctl never expands `~` or variables in a path.
+   `docs/devices/support-bundle.md`, `docs/cli/device.md`, the manual page and
+   the help say so.
+
 ## 0.2.26 (2026-11-06)
 
 1. **The break-glass firewall line of `tacctl upgrade` and `install` is one

@@ -166,13 +166,16 @@ device sync <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> [--
     refused; see Filling the registry from the records (devices/planning.md, "Filling the registry
     from the records")
 
-device support-bundle <name> [--vendor cisco|juniper|wti] [--login <local-user>] [--out <dir>]
+device support-bundle <name> [--vendor cisco|juniper|wti] [--login <local-user>] [--out <name>]
 
     Engineers: log in once to a registered device and collect what a developer needs to make tacctl
     read that kind of device (fixed, read-only commands; no configuration), scrubbed and written as
     a directory of text files: names, users, classes, addresses, serial numbers, locations,
     contacts and time zones become the standard example values, comments and secrets are removed.
-    What was replaced is kept in `<dir>.map` (mode 0600), beside the directory, never in it.
+    `--out` is the bundle's name, not a path (default `<device>-<UTC time>`): the bundle is
+    `support-bundles/<name>` in your home, created with mode 0700 when the folder is missing, and
+    tacctl does not expand `~` or variables. What was replaced is kept in
+    `support-bundles/<name>.map` (mode 0600), beside the directory, never in it.
     `--vendor` reads the device as another vendor for this run only; `--login` is a Junos local
     account's one-shot password, as for a pull; see Support bundles (devices/support-bundle.md)
 
