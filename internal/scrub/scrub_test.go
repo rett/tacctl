@@ -439,13 +439,22 @@ func TestATableExemptsItsDescriptionColumnOnly(t *testing.T) {
 			gone: []string{"ZZTOP2468AB", "XYZ98765432", "ABC0123456"},
 		},
 		{
-			name: "the description column keeps a model name",
-			in:   []string{hdr + "FPC 0            REV 11   650-114384   ABC0123456        EX4400-48T\n"},
-			want: []string{"EX4400-48T\n"},
+			name: "the description column keeps a serial-shaped model",
+			in:   []string{hdr + fmt.Sprintf("%-17s%-9s%-13s%-18s%s\n", "Power Supply 0", "REV 03", "740-000001", "ABC0123456", "PS ABCD12345678 AC")},
+			want: []string{"PS ABCD12345678 AC\n", "SN000001"},
+			gone: []string{"ABC0123456"},
 		},
 		{
-			name: "a line that does not fit the header ends the table",
-			in:   []string{hdr + "Chassis                                ABC0123456        Virtual Chassis\n{master:0}\n" + "WORD  here\nmore text HELLO123456 and ABCDEFGH12\n"},
+			name: "the same word in the column before the description is a serial",
+			in:   []string{hdr + fmt.Sprintf("%-17s%-9s%-13s%-18s%s\n", "Power Supply 0", "REV 03", "740-000001", "ABCD12345678", "PS AC")},
+			want: []string{"PS AC\n", "SN000001"},
+			gone: []string{"ABCD12345678"},
+		},
+		{
+			name: "a row after the end of the table is plain text",
+			in: []string{hdr + "Chassis                                ABC0123456        Virtual Chassis\n{master:0}\n" +
+				fmt.Sprintf("%-39s%-18s%s\n", "some words", "", "HELLO123456") + "more text HELLO123456 and ABCDEFGH12\n"},
+			want: []string{"{master:0}\n", "some words"},
 			gone: []string{"HELLO123456", "ABCDEFGH12", "ABC0123456"},
 		},
 		{
@@ -809,5 +818,10 @@ func TestTheLastLookIsTheOneReturned(t *testing.T) {
 	}
 	if again := s.ApplyAll(in); again[0] != out[0] || again[1] != out[1] {
 		t.Errorf("a second run differs:\n%q\n%q", again, out)
+	}
+	for i, o := range out { // nothing is left to learn: one more look changes nothing
+		if got := s.Apply(in[i]); got != o {
+			t.Errorf("text %d: a look more gives\n%s\nnot\n%s", i, got, o)
+		}
 	}
 }
