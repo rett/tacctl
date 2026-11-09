@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"sync"
+	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -48,7 +49,11 @@ type quota struct {
 	used       int64
 	incomplete bool // the last walk did not see all of the home
 	measuredAt time.Time
+	held       map[inode]map[*file]struct{} // the files this session has open, by inode
 }
+
+// inode names a file on its device.
+type inode [2]uint64
 
 // newQuota measures the home; depth is how far the walk goes (0 is
 // maxMeasureDepth).
@@ -56,7 +61,7 @@ func newQuota(h *home, limit int64, now func() time.Time, depth int) *quota {
 	if depth <= 0 {
 		depth = maxMeasureDepth
 	}
-	q := &quota{limit: limit, home: h, now: now, depth: depth}
+	q := &quota{limit: limit, home: h, now: now, depth: depth, held: map[inode]map[*file]struct{}{}}
 	q.remeasure()
 	return q
 }
@@ -64,8 +69,26 @@ func newQuota(h *home, limit int64, now func() time.Time, depth int) *quota {
 // remeasure walks the home. The caller holds q.mu (or is the constructor).
 func (q *quota) remeasure() {
 	used, complete := measure(q.home, q.depth)
+	// A file whose last name is gone while a handle of this session is open
+	// still holds its data: it is not in the walk, and it counts.
+	for _, set := range q.held {
+		for f := range set {
+			if fi, err := f.f.Stat(); err == nil && nlinkOf(fi) == 0 {
+				used += fi.Size()
+			}
+			break // the files of one inode have one size
+		}
+	}
 	q.used, q.incomplete = used, !complete
 	q.measuredAt = q.now()
+}
+
+// nlinkOf is the link count of a stat result (1 when it cannot be told).
+func nlinkOf(fi os.FileInfo) uint64 {
+	if st, ok := fi.Sys().(*syscall.Stat_t); ok {
+		return u64(st.Nlink)
+	}
+	return 1
 }
 
 // usedLocked is the usage the checks go by: the limit at least when the
@@ -103,6 +126,62 @@ func (q *quota) release(n int64) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.used = max(0, q.used-n)
+}
+
+// hold notes that f is open. A file that lost its last name between its
+// open and now (a remove that did not know of the handle) took its room off
+// the usage: it is put back.
+func (q *quota) hold(f *file) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	set := q.held[f.key]
+	if set == nil {
+		set = map[*file]struct{}{}
+		q.held[f.key] = set
+		if fi, err := f.f.Stat(); err == nil && nlinkOf(fi) == 0 {
+			q.used += fi.Size()
+		}
+	}
+	set[f] = struct{}{}
+}
+
+// unhold notes that f is about to be closed. The last handle on a file with
+// no name left gives its room back: its data goes with the handle.
+func (q *quota) unhold(f *file) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	set := q.held[f.key]
+	delete(set, f)
+	if len(set) > 0 {
+		return
+	}
+	delete(q.held, f.key)
+	if fi, err := f.f.Stat(); err == nil && nlinkOf(fi) == 0 {
+		q.used = max(0, q.used-fi.Size())
+	}
+}
+
+// unlinking runs op, which removes the entry t names or replaces it, and
+// takes the size of the file off the usage when this was its last name and no
+// handle of the session is open on it (else the data stays until the last
+// handle closes). The look at the entry, op and the accounting are one step
+// under the lock, so a handle opened meanwhile is either seen here or finds
+// the name gone in hold.
+func (q *quota) unlinking(t *target, op func() error) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	var freed int64
+	var st unix.Stat_t
+	if unix.Fstatat(t.dir, t.name, &st, unix.AT_SYMLINK_NOFOLLOW) == nil &&
+		st.Mode&unix.S_IFMT == unix.S_IFREG && st.Nlink <= 1 &&
+		len(q.held[inode{u64(st.Dev), u64(st.Ino)}]) == 0 {
+		freed = st.Size
+	}
+	if err := op(); err != nil {
+		return err
+	}
+	q.used = max(0, q.used-freed)
+	return nil
 }
 
 // write does the write w with the check that it fits: a write that would take

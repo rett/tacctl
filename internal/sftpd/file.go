@@ -16,6 +16,7 @@ import (
 type file struct {
 	s      *server
 	f      *os.File
+	key    inode // the file on the disk, for the quota's book of open files
 	v      vpath
 	write  bool // opened for upload
 	append bool
@@ -101,15 +102,20 @@ func (s *server) openFile(r *sftp.Request, write bool) (*file, error) {
 		}
 		s.quotaRelease(st.Size)
 	}
-	return &file{
+	f := &file{
 		s:      s,
 		f:      os.NewFile(uintptr(fd), v.String()),
+		key:    inode{u64(st.Dev), u64(st.Ino)},
 		v:      v,
 		write:  write,
 		append: write && pf.Append,
 		quota:  s.quota,
 		rate:   s.rate,
-	}, nil
+	}
+	if f.quota != nil {
+		f.quota.hold(f)
+	}
+	return f, nil
 }
 
 func (f *file) ReadAt(p []byte, off int64) (int, error) {
@@ -158,6 +164,9 @@ func (f *file) TransferError(err error) {
 func (f *file) Close() error {
 	var cerr error
 	f.closed.Do(func() {
+		if f.quota != nil {
+			f.quota.unhold(f) // while the descriptor is still open
+		}
 		cerr = f.f.Close()
 		f.mu.Lock()
 		err := f.xferr

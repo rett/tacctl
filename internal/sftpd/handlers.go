@@ -256,30 +256,11 @@ func (s *server) remove(r *sftp.Request, dir bool) (err error) {
 		flags = unix.AT_REMOVEDIR
 		op = "rmdir"
 	}
-	freed := s.freedBy(t) // looked at before it is gone
-	if err := unix.Unlinkat(t.dir, t.name, flags); err != nil {
-		return t.pathErr(op, err)
+	unlink := func() error { return t.pathErr(op, unix.Unlinkat(t.dir, t.name, flags)) }
+	if s.quota != nil {
+		return s.quota.unlinking(t, unlink)
 	}
-	s.quotaRelease(freed)
-	return nil
-}
-
-// freedBy is the room that removing the entry gives back: the size of a
-// regular file whose last name it is (a file that has other names keeps
-// its inode, which is counted once). Nothing is asked of the file system
-// when there is no quota.
-func (s *server) freedBy(t *target) int64 {
-	if s.quota == nil {
-		return 0
-	}
-	var st unix.Stat_t
-	if unix.Fstatat(t.dir, t.name, &st, unix.AT_SYMLINK_NOFOLLOW) != nil {
-		return 0
-	}
-	if st.Mode&unix.S_IFMT != unix.S_IFREG || st.Nlink > 1 {
-		return 0
-	}
-	return st.Size
+	return unlink()
 }
 
 func (s *server) quotaRelease(n int64) {
@@ -311,17 +292,13 @@ func (s *server) rename(r *sftp.Request, replace bool) (err error) {
 		return err
 	}
 	defer td.close()
+	move := func() error { return ts.pathErr("rename", renameat(ts, td, replace)) }
 	// A rename that replaces a file frees that file's room, unless source and
 	// target are the same inode (then it does nothing).
-	var freed int64
 	if replace && s.quota != nil && !sameEntry(ts, td) {
-		freed = s.freedBy(td)
+		return s.quota.unlinking(td, move)
 	}
-	if err := renameat(ts, td, replace); err != nil {
-		return ts.pathErr("rename", err)
-	}
-	s.quotaRelease(freed)
-	return nil
+	return move()
 }
 
 // sameEntry reports whether two targets name the same inode.

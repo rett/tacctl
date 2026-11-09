@@ -568,3 +568,105 @@ func TestSetstatRefusesClearingTheOwnersReadOrSearchOfADirectory(t *testing.T) {
 		t.Errorf("chtimes of a directory: %v", err)
 	}
 }
+
+// A file that was removed (or replaced) while a handle on it is open keeps
+// its data, so it keeps its room until the last handle on it closes.
+
+func TestQuotaRemovedFileWithAnOpenHandleKeepsItsRoom(t *testing.T) {
+	clk := newClock()
+	e := newEnvSeams(t, func(c *Config) { c.Quota = 100 }, seams{now: clk.now})
+	var held []interface{ Close() error }
+	for i := 0; i < 5; i++ {
+		name := fmt.Sprintf("f%d", i)
+		h, err := e.client.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC)
+		if err != nil {
+			t.Fatal(err)
+		}
+		held = append(held, h)
+		if _, err := h.Write([]byte(bytesOf(100))); err != nil {
+			if i == 0 {
+				t.Fatalf("the first write: %v", err)
+			}
+			wantQuotaRefusal(t, fmt.Sprintf("write %d while the removed files are held", i), err)
+			break
+		}
+		if i > 0 {
+			t.Errorf("write %d of 100 bytes succeeded under a quota of 100 with %d removed files held", i, i)
+		}
+		if err := e.client.Remove(name); err != nil {
+			t.Fatal(err)
+		}
+		clk.advance(6 * time.Second) // and the next open for writing measures the home again
+	}
+	// The data the handles hold is on the disk, outside the home's names.
+	for _, h := range held {
+		_ = h.Close()
+	}
+	// The last close gives the room back.
+	e.put("fresh", bytesOf(100))
+}
+
+func TestQuotaRoomIsGivenBackWithTheLastHandle(t *testing.T) {
+	e := quotaEnv(t, 100)
+	h1, err := e.client.OpenFile("a", os.O_RDWR|os.O_CREATE|os.O_TRUNC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h1.Write([]byte(bytesOf(100))); err != nil {
+		t.Fatal(err)
+	}
+	h2, err := e.client.OpenFile("a", os.O_RDWR)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.client.Remove("a"); err != nil {
+		t.Fatal(err)
+	}
+	wantQuotaRefusal(t, "upload with two handles on a removed file", putFile(e.client, "b", "x"))
+	_ = h1.Close()
+	wantQuotaRefusal(t, "upload with one handle left", putFile(e.client, "b", "x"))
+	_ = h2.Close()
+	e.put("b", bytesOf(100))
+}
+
+func TestQuotaFileReplacedByRenameWhileOpenKeepsItsRoom(t *testing.T) {
+	e := quotaEnv(t, 150)
+	h, err := e.client.OpenFile("a", os.O_RDWR|os.O_CREATE|os.O_TRUNC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Write([]byte(bytesOf(100))); err != nil {
+		t.Fatal(err)
+	}
+	e.put("b", bytesOf(10))
+	if err := e.client.PosixRename("b", "a"); err != nil {
+		t.Fatal(err)
+	}
+	// 10 bytes under the name a, and the 100 the handle holds.
+	wantQuotaRefusal(t, "41 bytes with 110 in use", putFile(e.client, "c", bytesOf(41)))
+	e.put("c", bytesOf(40))
+	_ = h.Close()
+	if err := e.client.Remove("c"); err != nil {
+		t.Fatal(err)
+	}
+	e.put("d", bytesOf(140))
+}
+
+// A held file that is written after its name is gone is counted as it grows.
+func TestQuotaHeldRemovedFileStillGrowsTheUsage(t *testing.T) {
+	e := quotaEnv(t, 100)
+	h, err := e.client.OpenFile("a", os.O_RDWR|os.O_CREATE|os.O_TRUNC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.client.Remove("a"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Write([]byte(bytesOf(60))); err != nil {
+		t.Fatal(err)
+	}
+	wantQuotaRefusal(t, "41 bytes beside 60 held", putFile(e.client, "b", bytesOf(41)))
+	_, err = h.Write([]byte(bytesOf(41)))
+	wantQuotaRefusal(t, "growing the removed file past the quota", err)
+	_ = h.Close()
+}
