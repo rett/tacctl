@@ -100,10 +100,10 @@ func TestConsoleShowDefaults(t *testing.T) {
 		"System shell (the console's own word, for the tiers and users that have it):\n" +
 			"  readonly: disabled\n  operator: disabled\n  engineer: disabled (never)\n  superuser: enabled (always)\n",
 		"Users of authsrv (scope lab)\n",
-		"  USERNAME  TIER       SHELL    WHY           SYSTEM SHELL\n",
-		"  alice     superuser  console  managed user  enabled (always)\n",
-		"  bob       operator   console  managed user  disabled (tier operator)\n",
-		"  carol     readonly   console  managed user  disabled (tier readonly)\n",
+		"  USERNAME  TIER       SHELL    WHY           SYSTEM SHELL",
+		"  alice     superuser  console  managed user  enabled (always)",
+		"  bob       operator   console  managed user  disabled (tier operator)",
+		"  carol     readonly   console  managed user  disabled (tier readonly)",
 		sb.consoleCommand() + ": missing", "does not list the console", "sshd drop-in " + sb.path("sshd_config.d", "tacctl-console.conf") + ": missing",
 	} {
 		if !strings.Contains(out, want) {
@@ -237,9 +237,9 @@ func TestConsoleIgnoresStoredSwitches(t *testing.T) {
 	sb.write("state/console.yaml", old, 0o600)
 	out := sb.con("show")
 	for _, w := range []string{
-		"  alice     superuser  console  managed user  enabled (always)\n",
-		"  bob       operator   console  managed user  disabled (tier operator)\n",
-		"  carol     readonly   console  managed user  disabled (tier readonly)\n",
+		"  alice     superuser  console  managed user  enabled (always)",
+		"  bob       operator   console  managed user  disabled (tier operator)",
+		"  carol     readonly   console  managed user  disabled (tier readonly)",
 	} {
 		if !strings.Contains(out, w) {
 			t.Errorf("show lacks %q:\n%s", w, out)
@@ -563,7 +563,7 @@ func TestConsoleEngineerHasTheConsole(t *testing.T) {
 	sb.write("state/tacctl.yaml", "tier:\n  operator: engineer\n", 0o600)
 	sb.write("state/console.yaml", "version: 1\ntiers: {readonly: enable, operator: enable, engineer: disable, superuser: enable}\nusers: {bob: disable}\n", 0o600)
 	out := sb.con("show")
-	if w := "  bob       engineer   console  managed user  disabled (never)\n"; !strings.Contains(out, w) {
+	if w := "  bob       engineer   console  managed user  disabled (never)"; !strings.Contains(out, w) {
 		t.Errorf("show lacks %q:\n%s", w, out)
 	}
 	out = plain(sb.cfgRun("", []string{"_console-policy"}, func(r *fake.Runner) {
@@ -754,9 +754,9 @@ func TestConsoleSystemShellPerUser(t *testing.T) {
 	}
 	show := sb.con("show")
 	for _, w := range []string{
-		"  alice     superuser  console  managed user  enabled (always)\n",
-		"  bob       operator   console  managed user  disabled (user setting)\n",
-		"  carol     readonly   console  managed user  enabled (user setting)\n",
+		"  alice     superuser  console  managed user  enabled (always)",
+		"  bob       operator   console  managed user  disabled (user setting)",
+		"  carol     readonly   console  managed user  enabled (user setting)",
 	} {
 		if !strings.Contains(show, w) {
 			t.Errorf("show lacks %q:\n%s", w, show)
@@ -1027,7 +1027,7 @@ func TestSystemShellEnableIsForTheTierItWasSetFor(t *testing.T) {
 	if out := sb.con("system-shell"); !strings.Contains(out, "  bob: enabled ("+stale+")\n") {
 		t.Errorf("listing:\n%s", out)
 	}
-	if out := sb.con("show"); !strings.Contains(out, "  bob       readonly   console  managed user  disabled (tier readonly; "+stale+")\n") {
+	if out := sb.con("show"); !strings.Contains(out, "  bob       readonly   console  managed user  disabled (tier readonly; "+stale+")") {
 		t.Errorf("show:\n%s", out)
 	}
 	if got := strings.TrimSpace(sb.con("system-shell", "user", "bob")); got != "disabled (tier readonly; "+stale+")" {

@@ -16031,6 +16031,123 @@ The system shell, default
 It must be an absolute path to an executable file listed in
 .IR /etc/shells .
 .TP
+.BI "console file\-transfer " "[ " tier " { enable | disable } ]"
+Show or set who may transfer files to and from their home through the console.
+It is off for every tier but the superuser tier by default. With no argument it
+lists each tier
+.RB ( readonly ", " operator ", " engineer ", " superuser )
+as
+.B enabled
+or
+.BR disabled ,
+then the users that have a switch of their own, with their tier. The superuser
+tier is
+.B "enabled (always)"
+and cannot be disabled. Unlike the system shell, the engineer tier can be
+given it: a transfer reaches the user's home only, where a shell or a
+forwarded port would reach the server. A tier name alone prints that tier's
+state. Setting a tier writes
+.BR settings.file_transfer.tiers .
+The settings take effect for the file transfer that the console offers, and
+for nothing else. Only a superuser sets it; an operator and an engineer may
+read each form, and every form that sets something is refused for them
+(logged as a tier denial). The change is logged as
+.BR "console set key=file\-transfer item=" \fItier\fR
+at
+.BR auth.notice .
+It applies from the next console login.
+.\" BEGIN GENERATED: command console file-transfer
+.RS
+.PP
+Requires: \fBsuperuser\fR.
+.RE
+.\" END GENERATED: command console file-transfer
+.TP
+.BI "console file\-transfer user " "name " "[ { enable | disable | clear } ]"
+Show or set file transfer for one user, over the tier's setting in both
+directions: enabled, it gives a user of a tier that has none file transfer;
+disabled, it takes it from a user of a tier that has it. Without a value it
+prints the user's effective state and why
+.RB ( "user setting" ", " "tier operator" ", " always ).
+.B clear
+removes the user's setting, and the tier decides again. The user must exist.
+An enable is for the tier the user has when it is set
+.RB ( readonly ,
+.B operator
+or
+.BR engineer ):
+after a move to another tier it gives nothing and is listed as
+.BR "stale: set for" " \fItier\fR" ", now " \fItier\fR
+until it is set again; a disable holds in any tier. A superuser always has
+file transfer: disabling it is refused, and enabling it stores nothing. The
+settings are kept in
+.B settings.file_transfer.users
+and are logged as
+.BR "console set key=file\-transfer item=user:" \fIname\fR.
+.B "user rename"
+moves the setting, the quota and the rate of the user to the new name and
+.B "user remove"
+drops them (both say so and are logged as
+.BR "console set" ),
+so a user created later under the name does not inherit them. An entry for a
+name that is no user is listed with
+.BR "no such user" ,
+and
+.B clear
+removes it.
+.TP
+.BI "console file\-transfer quota " "[ " tier " { " size " | unlimited | default } ]"
+Show or set the quota: the bytes the whole home of a user may hold. With no
+argument it lists the quota of each tier and the users that have one of their
+own; a tier alone prints that tier's. Nothing set is the built-in default,
+256M for the readonly, operator and engineer tiers and
+.B unlimited
+for the superuser tier. A size is a number of bytes, or a number with
+.BR K ,
+.BR M ,
+.B G
+or
+.B T
+(powers of 1024), such as
+.BR 512K ,
+.B 256M
+or
+.BR 2G ;
+it is printed back in the largest unit that holds it exactly. Zero, a negative
+number, a fraction, a number that overflows and more than 1T are refused;
+.B unlimited
+is no limit and, for a tier,
+.B default
+returns it to the built-in value. A tier's quota is stored in
+.BR settings.file_transfer.quota .
+.TP
+.BI "console file\-transfer quota user " "name " "[ { " size " | unlimited | clear } ]"
+Show or set the quota of one user, which wins over the tier's. Without a value
+it prints the effective quota and where it comes from
+.RB ( "user setting" ", " "set for the operator tier" ", " default ).
+.B clear
+removes the user's own quota, and the tier decides again. The user must exist
+to be given one. It is stored in
+.BR settings.file_transfer.quota_users .
+.TP
+.BI "console file\-transfer rate " "[ " tier " { " size " | off } ]"
+Show or set the rate: the bytes a second a transfer may go at. It is off, no
+limit, for every tier by default. Sizes are those of
+.BR quota ;
+.B off
+removes the limit of a tier. With no argument it lists the rate of each tier
+and the users that have one of their own. A tier's rate is stored in
+.BR settings.file_transfer.rate .
+.TP
+.BI "console file\-transfer rate user " "name " "[ { " size " | off | clear } ]"
+Show or set the rate of one user, which wins over the tier's:
+.B off
+gives the user no limit whatever their tier has,
+.B clear
+returns them to the tier's. It is stored in
+.BR settings.file_transfer.rate_users ,
+and follows the user like the quota.
+.TP
 .B console install
 Puts the server's pieces in place, as
 .B host sync
@@ -16655,7 +16772,7 @@ user email, user reports\-limit, user scope
 .TP
 .B "mixed, auth.notice"
 config audit\-strict, config breakglass\-firewall, config sudoers,
-console system\-shell, rollback, store import
+console file\-transfer, console system\-shell, rollback, store import
 .\" END GENERATED: audit-classes
 .PP
 The fields, in the order written:
@@ -18329,6 +18446,10 @@ Whether the console's lists are in colour: true (on) or false (off). Written to 
 .B settings.system_shell_users
 mapping of user name to disable or enable:<tier>. Default: absent (no user has one).
 The users with a system-shell setting of their own, which wins over their tier's: enable:<tier> gives it to a user of a tier that has none, for as long as the user is in that tier (readonly or operator), and disable takes it from a user of a tier that has it. Written to the file only when a user has one. Set with \fBtacctl console system\-shell user\fR.
+.TP
+.B settings.file_transfer
+mapping (tiers, users, quota, quota_users, rate, rate_users). Default: absent (nothing set).
+The console's file transfer: the tiers that have it (tiers, the superuser tier always among them), the users with a switch of their own (users, a mapping of user name to disable or enable:<tier>), the quota of the home in bytes (quota per tier and quota_users per user: a size such as 256M, or unlimited) and the rate in bytes per second (rate and rate_users: a size, and off for a user). Off for every tier but the superuser tier by default; a user's own value wins over the tier's. Written only when something in it is not the built-in setting. Set with \fBtacctl console file\-transfer\fR.
 .\" END GENERATED: console-keys
 .PP
 A mapping
