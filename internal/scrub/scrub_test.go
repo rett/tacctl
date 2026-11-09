@@ -369,8 +369,8 @@ func TestSerialNumbersAreReplacedByTheirField(t *testing.T) {
 	})
 }
 
-// A dotted run of five groups or more is an object identifier or a version,
-// never an address.
+// A dotted run that begins 1.3.6.1 is an object identifier, never an address;
+// every other run is scanned for addresses.
 func TestObjectIdentifiersAndVersionsAreNotAddresses(t *testing.T) {
 	runScrubCases(t, []scrubCase{
 		{
@@ -384,9 +384,21 @@ func TestObjectIdentifiersAndVersionsAreNotAddresses(t *testing.T) {
 			want: []string{"sysObjectID.0: .1.3.6.1.4.1.2636.1.1.1.2.165\n", "sysObjectID.0: .1.3.6.1.4.1.9.1.516\n"},
 		},
 		{
-			name: "five groups",
-			in:   []string{"version 10.20.30.40.50 and 1.2.3.4.5.6\n"},
-			want: []string{"version 10.20.30.40.50 and 1.2.3.4.5.6\n"},
+			name: "an address with a port or an index after it is still an address",
+			in:   []string{"peer 10.20.30.40.179 and 10.20.30.41.50\nipv4.10.20.30.42 and version 10.20.30.45.6.7\n"},
+			want: []string{"peer 192.0.2.1.179 and 192.0.2.2.50\n", "ipv4.192.0.2.3 and version 192.0.2.4.6.7\n"},
+			gone: []string{"10.20.30"},
+		},
+		{
+			name: "an object identifier is left alone as a whole, not by the digits around it",
+			in:   []string{"x 1.3.6.1.2.1.4.20.1.1.10.20.30.43 y\nz 1.3.6.1.4.1.2636.3.1 10.20.30.44\n"},
+			want: []string{"x 1.3.6.1.2.1.4.20.1.1.10.20.30.43 y\n", "z 1.3.6.1.4.1.2636.3.1 192.0.2.1\n"},
+		},
+		{
+			name: "an address with a dot after it at the end of a line",
+			in:   []string{"gateway 192.168.1.1.\nnext 192.168.1.2.\n"},
+			want: []string{"gateway 192.0.2.1.\n", "next 192.0.2.2.\n"},
+			gone: []string{"192.168"},
 		},
 		{
 			name: "software versions",

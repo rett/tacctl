@@ -562,8 +562,8 @@ func (s *Scrubber) Apply(text string) string {
 				break
 			}
 		}
-		if which == "v4" && inDottedRun(text, start, end) {
-			continue // an object identifier or a version string, not an address
+		if which == "v4" && inObjectID(text, start, end) {
+			continue // an object identifier, not an address
 		}
 		if which == "serial" && (s.models[tok] || covers(keep, start, end)) {
 			continue
@@ -619,13 +619,21 @@ func keepWidth(text string, start, end int, rep string, cell bool) (string, int)
 	return rep, min(want-have, blanks-1)
 }
 
-// inDottedRun reports whether text[start:end], four groups of digits, is part
-// of a longer run of dotted numbers (1.3.6.1.4.1.2636): an object identifier
-// or a version string, never an address.
-func inDottedRun(text string, start, end int) bool {
-	isDigit := func(b byte) bool { return b >= '0' && b <= '9' }
-	return start >= 2 && text[start-1] == '.' && isDigit(text[start-2]) ||
-		end+1 < len(text) && text[end] == '.' && isDigit(text[end+1])
+// inObjectID reports whether text[start:end], four groups of digits, is part
+// of an object identifier: a dotted run of numbers that begins 1.3.6.1.
+// (with or without a leading dot). The run is what is left alone; the digits
+// around any other address (10.20.30.40.179, ipv4.10.20.30.40) do not make
+// it a version string.
+func inObjectID(text string, start, end int) bool {
+	isRun := func(b byte) bool { return b >= '0' && b <= '9' || b == '.' }
+	from, to := start, end
+	for from > 0 && isRun(text[from-1]) {
+		from--
+	}
+	for to < len(text) && isRun(text[to]) {
+		to++
+	}
+	return strings.HasPrefix(strings.TrimPrefix(text[from:to], "."), "1.3.6.1.")
 }
 
 // dropComments keeps the first line of a commit history entry and removes
