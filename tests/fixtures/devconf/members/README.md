@@ -8,8 +8,7 @@ the device printed it).
 The `real-ex4400-vc-2-*`, `real-ex4600-ex4300-vc-4-*` and
 `real-ex4300-vc-enabled-1-*` files are captures of Junos virtual chassis, each
 as three files, the answers of `show virtual-chassis status` (`-status`),
-`show chassis hardware` (`-hardware`) and `show version invoke-on all-routing-engines`
-(`-version`): a two-member EX4400-48T virtual chassis (Junos 24.2R2.18); a
+`show chassis hardware` (`-hardware`) and `show version` (`-version`, one `fpcN:` block per member): a two-member EX4400-48T virtual chassis (Junos 24.2R2.18); a
 preprovisioned, mixed-mode chassis of two EX4600-40F members and two EX4300-48T
 linecards (Junos 21.4R3-S2.4); and one EX4300-48T with virtual chassis enabled
 and no other member (Junos 20.2R3.9), which is no chassis. They are trimmed to
