@@ -14164,7 +14164,7 @@ lines (type, name, format, rows, new name, number removed). There is no
 .B "generate \-\-as"
 and no verb writes a report into another user's home.
 .TP
-.BI "device reports generate " "\-\-type inventory|members|software|config " "[ \-\-scope " scope " ] [ \-\-vendor cisco|juniper|wti|other ] [ \-\-format text|csv|json ] [ \-\-name " name " ] [ \-\-stdout ] [ \-\-pull ]"
+.BI "device reports generate " "\-\-type inventory|members|software|config " "[ \-\-scope " scope " ] [ \-\-vendor cisco|juniper|wti|other ] [ \-\-format text|csv|json|pdf ] [ \-\-name " name " ] [ \-\-stdout ] [ \-\-pull ]"
 Make a report. It is written to
 .IR ~/reports/devices/<name>.<ext> ,
 the directory of mode 0700 and the file of mode 0600, by tacctl as the user
@@ -14206,8 +14206,7 @@ or a tab or a carriage return gets a leading
 so a spreadsheet does not run it, and a lone
 .B \-
 is left as it is;
-.BR .csv )
-and
+.BR .csv ),
 .B json
 (one object with
 .BR schema ,
@@ -14232,7 +14231,36 @@ dates in RFC 3339 UTC, null for a device never pulled; every row of the
 members report has a
 .B components
 list that is empty in this release;
-.BR .json ).
+.BR .json )
+and
+.B pdf
+(a letter landscape document made from the report: the type, the time, the
+filters and the date of the oldest datum, then a table in DejaVu Sans whose
+header row repeats on each page, with a page counter; text outside the Latin and
+common Unicode ranges of DejaVu shows as empty boxes;
+.BR .pdf ).
+The PDF is made by
+.BR weasyprint ,
+which must be installed
+.RB ( "sudo apt\-get install \-y weasyprint fonts\-dejavu\-core" ):
+it is looked for in
+.BR /usr/bin ,
+.B /usr/local/bin
+and
+.BR /opt/weasyprint/bin ,
+never in the caller's
+.BR PATH ,
+and run as the user who ran sudo, never as root, with a minimal environment, at
+most 120 seconds and at most 64 MiB of output. Without it, or at a terminal
+with
+.BR \-\-stdout ,
+.B generate
+refuses (exit 1) before it reads any report data, with
+.B "PDF reports need weasyprint, which is not installed here. Install it: sudo apt\-get install \-y weasyprint fonts\-dejavu\-core"
+or
+.BR "A PDF is binary: redirect \-\-stdout to a file, or leave it out to store the report" ;
+a tool that fails, makes no PDF or does not finish in time is reported with the
+first lines of its error, and nothing is written.
 The state and applied columns of the config report are the configuration state
 that
 .B "device list"
@@ -14273,8 +14301,8 @@ Only the devices that scope answers. A scope that is not one of yours is refused
 \fB\-\-vendor\fR \fIcisco|juniper|wti|other\fR
 Only the devices of that vendor.
 .TP
-\fB\-\-format\fR \fItext|csv|json\fR
-The format: text (aligned columns, the default), csv (RFC 4180, a header line, UTF\-8) or json (one object: schema, type, generated, oldest_data, filters, columns, rows). It sets the extension of the file.
+\fB\-\-format\fR \fItext|csv|json|pdf\fR
+The format: text (aligned columns, the default), csv (RFC 4180, a header line, UTF\-8), json (one object: schema, type, generated, oldest_data, filters, columns, rows) or pdf (a letter landscape document with the header row repeated on each page, made by weasyprint, which must be installed: sudo apt\-get install \-y weasyprint fonts\-dejavu\-core). It sets the extension of the file. A PDF is binary: with \-\-stdout it is refused at a terminal.
 .TP
 \fB\-\-name\fR \fI<name>\fR
 The name of the report, without the extension: letters, digits, '.', '_' and '\-', at most 64 bytes, no leading dot. The default is the type and the date (inventory\-20261106); a second report of the same day gets \-2. A name in use is refused, never overwritten.

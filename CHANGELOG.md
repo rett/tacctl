@@ -94,6 +94,28 @@ current behaviour; this file is where history lives.
    took a snapshot names this release, 0.2.27, as the state the snapshot holds
    ("Restore it with 0.2.27 only").
 
+8. **`tacctl device reports generate --format pdf` writes the report as a PDF.**
+   The format sits beside `text`, `csv` and `json` and sets the extension
+   `.pdf`. The document is letter landscape: a title block (the type, when the
+   report was made, the filters, the date of the oldest datum), then the table
+   in 8 pt DejaVu Sans with the header row repeated on each page, light
+   stripes, no row split across two pages and a page counter. It is made from
+   the report itself (not from the text file) as one HTML document with every
+   cell escaped and no link, image, script, style sheet or font reference, and
+   turned into a PDF by `weasyprint` (`sudo apt-get install -y weasyprint
+   fonts-dejavu-core`). The tool is found in `/usr/bin`, `/usr/local/bin` or
+   `/opt/weasyprint/bin` and nowhere else (not in the caller's `PATH`), and
+   when tacctl runs as root through `sudo` it runs the tool as the person who
+   ran `sudo`, never as root, with an environment of `PATH`, `LANG`, `HOME` and
+   `XDG_CACHE_HOME` only, 120 seconds and 64 MiB of output at the most. Without
+   the tool the command refuses first, before it reads a device or writes a
+   file (`PDF reports need weasyprint, which is not installed here. Install it:
+   sudo apt-get install -y weasyprint fonts-dejavu-core`, exit 1); a tool that
+   fails, makes no PDF or runs over a limit gives an error with the first five
+   lines of its own, and nothing is written. A PDF is binary: `--stdout` refuses
+   at a terminal and writes the bytes when it is redirected. The `.meta` file is
+   JSON as before and says `"format": "pdf"`.
+
 ## 0.2.26 (2026-11-06)
 
 1. **The break-glass firewall line of `tacctl upgrade` and `install` is one

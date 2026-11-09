@@ -753,11 +753,11 @@ device config forget <name>[,<name>...] | --all
     administrators
 
 device reports generate --type inventory|members|software|config [--scope <scope>]
-                        [--vendor cisco|juniper|wti|other] [--format text|csv|json]
+                        [--vendor cisco|juniper|wti|other] [--format text|csv|json|pdf]
                         [--name <name>] [--stdout] [--pull]
 
     Make a dated report of the registered devices from what is stored (no device is contacted) and
-    keep it as `~/reports/devices/<name>.<txt|csv|json>` of your home, mode 0600, with a `.meta`
+    keep it as `~/reports/devices/<name>.<txt|csv|json|pdf>` of your home, mode 0600, with a `.meta`
     file beside it; the name is `<type>-<yyyymmdd>` (`-2`, `-3` for a second one the same day) or
     `--name`. `inventory` has a row per device (address, vendor, scope, model, serial number,
     release, number of chassis members, location, description, date of the pull), `members` one per
@@ -767,9 +767,11 @@ device reports generate --type inventory|members|software|config [--scope <scope
     devices that have a model or a serial number. Below the operator tier the model, serial number,
     release and chassis members are left out as `device show` leaves them (`members` has no rows).
     The report holds the devices of your scopes (a superuser's: all); `--scope` and `--vendor`
-    narrow it. `--stdout` prints it and
-    stores nothing. `--pull` reads the devices first as `device config pull` does, with your own
-    password (engineer tier); a device that fails keeps its last facts and the exit status is 1. A
+    narrow it. `--format pdf` makes a letter landscape PDF with `weasyprint` (`sudo apt-get install
+    -y weasyprint fonts-dejavu-core`; without it the command refuses before it reads anything) and,
+    being binary, is not printed to a terminal. `--stdout` prints it and stores nothing.
+    `--pull` reads the devices first as `device config pull` does, with your own password (engineer
+    tier); a device that fails keeps its last facts and the exit status is 1. A
     report over the size or the count limit is refused (see `config reports`). See
     [Device reports](../devices/reports.md)
 

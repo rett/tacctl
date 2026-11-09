@@ -17,7 +17,7 @@ func hostile() []Device {
 			Description: "@import 'x.css'; <link rel=stylesheet href=//example.net/a.css>",
 			Pulled:      at(6, 7, 45), ConfigState: "ok"},
 		{Name: "jsw1", Address: "192.0.2.10", Vendor: "juniper", Scope: "site-a",
-			Model: "a&b\x1b[31m\x07‮", Serial: "SN\xff000002", Release: "21.4R3-S5.4",
+			Model: "a&b\x1b[31m\x07\u202e", Serial: "SN\xff000002", Release: "21.4R3-S5.4",
 			Location: "<style>*{background:url(http://example.net/b.png)}</style>", Pulled: at(6, 7, 30), ConfigState: "ok"},
 	}
 }
@@ -93,7 +93,7 @@ func TestRenderHTMLEscapesCells(t *testing.T) {
 			t.Errorf("no %q in:\n%s", want, doc)
 		}
 	}
-	for _, ch := range []string{"\x1b", "\x07", "‮", "\xff"} {
+	for _, ch := range []string{"\x1b", "\x07", "\u202e", "\xff"} {
 		if strings.Contains(doc, ch) {
 			t.Errorf("the document holds %q", ch)
 		}

@@ -27,6 +27,8 @@ func newTestHooks() *hooks {
 			}
 		},
 		terminalLine: func() string { return "" },
+		// no PDF tool unless a test installs one: the machine's own is never run
+		pdfToolDirs: []string{},
 	}
 }
 

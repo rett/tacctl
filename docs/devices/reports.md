@@ -7,7 +7,7 @@ A report is a saved, dated document about the registered devices, made on demand
 ```
 tacctl device reports generate --type inventory|members|software|config
                                [--scope <scope>] [--vendor <vendor>]
-                               [--format text|csv|json] [--name <name>] [--stdout] [--pull]
+                               [--format text|csv|json|pdf] [--name <name>] [--stdout] [--pull]
 tacctl device reports list [--json] [--user <name> | --all-users]
 tacctl device reports show <report> [--content]
 tacctl device reports export <report> [--out <file> [--force]]
@@ -43,13 +43,15 @@ $ tacctl device reports generate --type inventory --format csv
 
 ### Formats
 
-`--format` is `text` (the default), `csv` or `json`, and sets the extension of the file (`.txt`, `.csv`, `.json`).
+`--format` is `text` (the default), `csv`, `json` or `pdf`, and sets the extension of the file (`.txt`, `.csv`, `.json`, `.pdf`).
 
 - **text** is aligned columns under a heading that gives the type, when the report was made (UTC), the date of the oldest datum and the number of devices; an empty cell is `-`.
 - **csv** follows RFC 4180: a header line with the column names, UTF-8, `\n` line ends, a cell with a comma or a quote in quotes. A cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return gets a leading `'`, so that a spreadsheet shows it and does not run it; the lone `-` that stands for nothing is left as it is.
 - **json** is one object: `schema` (1), `type`, `generated`, `oldest_data`, `filters`, `columns` and `rows`, an object for each row keyed by the column (the member id of the `members` report is `id`; dates are RFC 3339 UTC, `null` for a device never pulled or applied; `members` in the `inventory` report is a count). `filters` holds the `--scope` and `--vendor` of the command as an object with the keys `scope` and `vendor`, each only when it was given (`{}` for none). Each row of the `members` report also has `components`, an empty list in this release.
 
-Text that came from a device or an operator (model, serial number, release, member fields, location and description) is printed as the record keeps it, with control, bidirectional and C1 characters replaced by `?`.
+- **pdf** is a letter landscape document made from the same report by an external tool (see [PDF reports](#pdf-reports)): a title block with the type, when the report was made (UTC), the filters and the date of the oldest datum, then the table of the report in 8 pt DejaVu Sans (numbers, dates, addresses and identifiers in DejaVu Sans Mono) with the header row repeated at the top of each page, light grey stripes, no row split across two pages, and `page / pages` at the bottom. An empty cell is `-`.
+
+Text that came from a device or an operator (model, serial number, release, member fields, location and description) is printed as the record keeps it, with control, bidirectional and C1 characters replaced by `?` (in the PDF they are left out).
 
 ```
 $ tacctl device reports generate --type inventory --stdout
@@ -96,6 +98,28 @@ sw1,site-a,differs,2026-11-06 07:45,2026-11-01 12:00
 ```
 
 `--stdout` prints the report instead of storing it: no file and no metadata are made, no limit applies, no account is needed, and with `--pull` the pull's own output goes to standard error so that standard output holds the report only.
+
+### PDF reports
+
+`--format pdf` needs `weasyprint` and the DejaVu fonts. On Debian and Ubuntu:
+
+```
+sudo apt-get install -y weasyprint fonts-dejavu-core
+```
+
+Without the tool `generate --format pdf` refuses at once, before it reads a device or writes a file, with exit status 1:
+
+```
+$ tacctl device reports generate --type inventory --format pdf
+[ERROR] PDF reports need weasyprint, which is not installed here. Install it:
+    sudo apt-get install -y weasyprint fonts-dejavu-core
+```
+
+- **The document.** tacctl builds one HTML document from the report (never from the text file) and gives it to `weasyprint --quiet - -` on standard input; the PDF comes back on standard output. Every cell is escaped, control and direction characters are left out, and the document has no link, image, script, style sheet or font reference, so the tool has nothing to fetch.
+- **How the tool is run.** It is found in `/usr/bin`, `/usr/local/bin` or `/opt/weasyprint/bin`, in that order, and nowhere else: not in the `PATH` of the caller and not in the current directory. When tacctl runs as root through `sudo` it runs the tool as the person who ran `sudo` (their user and group, no supplementary groups, their home), never as root. The environment is `PATH`, `LANG=C.UTF-8`, `HOME` and `XDG_CACHE_HOME` and nothing else. The tool has 120 seconds and may write 64 MiB of PDF; one that runs over is stopped.
+- **When the tool fails** (a non-zero exit, no PDF on its output, a time or size limit), `generate` says so with the first five lines of the tool's error (a line that holds markup is left out, since the tool can quote the document), exits 1 and writes nothing: no file, no `.meta`, no partial PDF.
+- **Binary on a terminal.** A PDF is never written to a terminal: `generate --format pdf --stdout` refuses when standard output is a terminal and writes the bytes when it is redirected (`> inventory.pdf`), and `export` does the same (see [Looking after reports](#looking-after-reports)).
+- **Limits.** The page is set in DejaVu Sans, so Latin text and the common Unicode ranges of the font print; a character the font lacks (CJK, for example) shows as an empty box. A very wide table wraps its cells instead of running off the page. The size limit of the report counts the PDF's bytes.
 
 ## Where reports are kept
 
