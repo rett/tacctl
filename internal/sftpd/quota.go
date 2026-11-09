@@ -117,15 +117,20 @@ func (q *quota) usage() int64 {
 	return q.usedLocked()
 }
 
-// release takes the size of a file that went away (or was cut) off the
-// usage.
-func (q *quota) release(n int64) {
-	if n <= 0 {
-		return
-	}
+// truncating runs cut, which empties a file and returns the size the file
+// had when it did, and takes that size off the usage. The size is read by cut
+// under the lock, not before it: a write of the session holds the lock from its
+// check to the end of its write, so none can fill the file between the size and
+// the cut.
+func (q *quota) truncating(cut func() (int64, error)) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	n, err := cut()
+	if err != nil {
+		return err
+	}
 	q.used = max(0, q.used-n)
+	return nil
 }
 
 // hold notes that f is open. A file that lost its last name between its

@@ -21,6 +21,8 @@ type server struct {
 	rate  *bucket // nil when the session has no rate limit
 
 	handles handleCount // the open files and directory listings
+
+	beforeTruncate func() // a test's hook, see seams
 }
 
 var (
@@ -258,12 +260,6 @@ func (s *server) remove(r *sftp.Request, dir bool) (err error) {
 		return s.quota.unlinking(t, unlink)
 	}
 	return unlink()
-}
-
-func (s *server) quotaRelease(n int64) {
-	if s.quota != nil {
-		s.quota.release(n)
-	}
 }
 
 // rename moves an entry; a link is moved as the link it is. Plain rename
