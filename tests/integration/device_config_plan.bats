@@ -168,6 +168,28 @@ print("fine")' <<< "$output"
     stub_called 'logger -t tacctl -p auth.info device config plan user=alice device=lab-j status=needs-change sections=aaa converge=no secrets=none out='"${out}"
 }
 
+@test "plan: --out and --out-dir are written inside the home only; ~ and variables are not expanded" {
+    drift
+    outside="$(mktemp -d -p "${BATS_RUN_TMPDIR}")"
+    for flag in --out --out-dir; do
+        alice device config plan lab-j "$flag" "${outside}/p.txt"
+        assert_failure 2
+        assert_output --partial "${flag} '${outside}/p.txt' is not inside your home"
+        alice device config plan lab-j "$flag" '~/p.txt'
+        assert_failure 2
+        assert_output --partial "tacctl does not expand ~ or variables; name a path inside your home, relative to the current directory."
+        alice device config plan lab-j "$flag" '$HOME/p.txt'
+        assert_failure 2
+    done
+    [[ -z "$(ls -A "$outside")" ]]
+    [[ ! -e "${PWD}/~" ]]
+    # a relative path is taken from the current directory, here inside the home
+    cd "$BATS_TEST_TMPDIR"
+    alice device config plan lab-j --out rel.txt
+    assert_success
+    [[ -s "${BATS_TEST_TMPDIR}/rel.txt" ]]
+}
+
 @test "plan: --out-dir holds a file per device, the cover and the back-outs, 0600 in a 0700 directory" {
     fakedev_register lab-j 192.168.1.20 juniper lab-j2 192.168.1.21 juniper
     alice device config pull --all

@@ -618,7 +618,8 @@ device config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vend
         `--pull`)
     --out <file>, --out-dir <dir>, --force
         Write one device's output, or one file per device with `COVER.txt` and each back-out (0600,
-        0700 directory); replace what exists
+        0700 directory), inside your home (tacctl does not expand `~` or variables; a path outside
+        the home is refused); replace what exists
     --from <address>, --exit-code
         The address you are logged in from (the cleanup keeps it; a Junos management filter that the
         device applies to `lo0` must permit it, or its section is refused, in either filter mode);
@@ -790,7 +791,8 @@ device reports show <report> [--content]
 
 device reports export <report> [--out <file>] [--force]
 
-    Print the report, or write it to a file (made as you, mode 0600; an existing file needs
+    Print the report, or write it to a file (made as you, mode 0600, inside your home: tacctl does
+    not expand `~` or variables and refuses a path outside the home; an existing file needs
     `--force`)
 
 device reports rename <report> <new>

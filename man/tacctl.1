@@ -3246,7 +3246,7 @@ and so on) instead of installing them. Nothing live is touched: no artifact,
 no render record, no service. A hand edit does not stop a dry run.
 .I dir
 must be new or empty and is private to root (the artifacts hold secrets and
-password hashes).
+password hashes). The path may be relative to the current directory or absolute, but it must be inside the home of the person who ran \fBsudo\fR (else of the user running tacctl; taken from the account database, never from \fB$HOME\fR): tacctl does not expand \fB~\fR or variables, and refuses a path that leaves the home through \fB..\fR or a symbolic link.
 .\" BEGIN GENERATED: command config render
 .RS
 .PP
@@ -3261,7 +3261,7 @@ Overwrite a generated file that was edited by hand.
 Render into the directory named by \-\-out; nothing live is written.
 .TP
 \fB\-\-out\fR \fI<dir>\fR
-The new, empty directory a \-\-dry\-run render writes to, at the live paths.
+The new, empty directory a \-\-dry\-run render writes to, at the live paths, inside your home.
 .RE
 .\" END GENERATED: command config render
 .TP
@@ -4678,6 +4678,10 @@ for the accounting port); 49, 1812 and 1813 by default. Re-run it with
 .B \-\-accounts\-only
 to sync users after changes on the server (this leaves the PAM files, and so
 the port, as they were).
+.B \-\-output
+names the file (default
+.B tacctl\-linux\-<scope>.sh
+in the current directory). The path may be relative to the current directory or absolute, but it must be inside the home of the person who ran \fBsudo\fR (else of the user running tacctl; taken from the account database, never from \fB$HOME\fR): tacctl does not expand \fB~\fR or variables, and refuses a path that leaves the home through \fB..\fR or a symbolic link.
 .\" BEGIN GENERATED: command config linux script
 .RS
 .PP
@@ -4695,7 +4699,7 @@ Options:
 (script) pam_tacplus, or the host's pam_radius_auth (default: host default\-method).
 .TP
 \fB\-\-output\fR, \fB\-o\fR \fI<file>\fR
-Where the script goes (default: tacctl\-linux\-<scope>.sh, remove\-script: tacctl\-linux\-remove.sh).
+Where the script goes, in your home (default: tacctl\-linux\-<scope>.sh, remove\-script: tacctl\-linux\-remove.sh).
 .RE
 .\" END GENERATED: command config linux script
 .TP
@@ -4834,6 +4838,10 @@ secret, the module, the SELinux module, the sudoers drop-in and sshd's
 lockdown drop-in (sshd is reloaded), and reports accounts left with no way to
 log in. Local accounts, home directories, the
 tac-* groups and installed packages are left in place.
+.B \-\-output
+names the file (default
+.B tacctl\-linux\-remove.sh
+in the current directory). The path may be relative to the current directory or absolute, but it must be inside the home of the person who ran \fBsudo\fR (else of the user running tacctl; taken from the account database, never from \fB$HOME\fR): tacctl does not expand \fB~\fR or variables, and refuses a path that leaves the home through \fB..\fR or a symbolic link.
 .\" BEGIN GENERATED: command config linux remove-script
 .RS
 .PP
@@ -4842,7 +4850,7 @@ Requires: \fBsuperuser\fR.
 Options:
 .TP
 \fB\-\-output\fR, \fB\-o\fR \fI<file>\fR
-Where the script goes (default: tacctl\-linux\-<scope>.sh, remove\-script: tacctl\-linux\-remove.sh).
+Where the script goes, in your home (default: tacctl\-linux\-<scope>.sh, remove\-script: tacctl\-linux\-remove.sh).
 .RE
 .\" END GENERATED: command config linux remove-script
 .TP
@@ -13207,7 +13215,8 @@ are 0600 and written as the user who ran sudo;
 .B \-\-out\-dir
 makes its directory with mode 0700 (an existing directory open to others is
 refused, and so is one that only a supplementary
-group of that user may write); an existing file is refused, all of them before
+group of that user may write). The path may be relative to the current directory or absolute, but it must be inside the home of the person who ran \fBsudo\fR (else of the user running tacctl; taken from the account database, never from \fB$HOME\fR): tacctl does not expand \fB~\fR or variables, and refuses a path that leaves the home through \fB..\fR or a symbolic link.
+An existing file is refused, all of them before
 any is written, unless
 .BR \-\-force .
 A device that cannot be planned gets no
@@ -13338,10 +13347,10 @@ Only the back\-out region (what puts the pulled lines back; the one kept from th
 One object per device: the findings, the region, the cleanup and the back\-out; values elided.
 .TP
 \fB\-\-out\fR \fI<file>\fR
-Write one device's output to a file (0600).
+Write one device's output to a file in your home (0600).
 .TP
 \fB\-\-out\-dir\fR \fI<dir>\fR
-One file per device (<name>.txt, .set with \-\-plain, .json with \-\-json; each plan's .backout.txt) and COVER.txt, 0600 in a 0700 directory.
+One file per device (<name>.txt, .set with \-\-plain, .json with \-\-json; each plan's .backout.txt) and COVER.txt, 0600 in a 0700 directory in your home.
 .TP
 \fB\-\-force\fR
 Replace files \-\-out or \-\-out\-dir would write.
@@ -14356,8 +14365,10 @@ Print the report itself under the facts, its first 200 lines ('export' prints al
 .BI "device reports export " "report " "[ \-\-out " file " [ \-\-force ] ]"
 Print a report as it is stored, or with
 .B \-\-out
-write it to a file, made as the caller with mode 0600; a file that exists is
-refused unless
+write it to a file, made as the caller with mode 0600 inside the home of the
+person who ran \fBsudo\fR (else of the user running tacctl; never \fB$HOME\fR: tacctl does not
+expand \fB~\fR or variables, and refuses a path that leaves the home through \fB..\fR or
+a symbolic link); a file that exists is refused unless
 .B \-\-force
 is given. tacctl sends a report nowhere itself: the
 .B scp
@@ -14389,7 +14400,7 @@ Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show
 Options:
 .TP
 \fB\-\-out\fR \fI<file>\fR
-Write the copy to this file, mode 0600, made as you; a file that exists is refused unless \-\-force.
+Write the copy to this file, mode 0600, made as you, inside your home (tacctl does not expand ~ or variables); a file that exists is refused unless \-\-force.
 .TP
 \fB\-\-force\fR
 Replace the file \-\-out names, if there is one.

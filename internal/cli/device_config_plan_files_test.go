@@ -139,7 +139,7 @@ func TestWithFSIdentity(t *testing.T) {
 func TestPlanPlainOutWritesNothingForADeviceThatCannotBePlanned(t *testing.T) {
 	b := newPullBox(t)
 	b.devices([3]string{"new-j", "192.168.1.21", "juniper"})
-	dir := t.TempDir()
+	dir := b.sb.homePath("")
 	f := filepath.Join(dir, "new-j.set")
 	b.run("device", "config", "plan", "new-j", "--plain", "--out", f)
 	if b.sb.code != 1 {
@@ -171,7 +171,7 @@ func TestPlanCleanupFileNameIsReserved(t *testing.T) {
 	if b.sb.code != 0 {
 		t.Fatalf("pull: %d %s", b.sb.code, b.sb.stderr())
 	}
-	dir := filepath.Join(t.TempDir(), "sets")
+	dir := filepath.Join(b.sb.homePath(""), "sets")
 	for _, force := range []bool{false, true} {
 		args := []string{"device", "config", "plan", "--all", "--plain", "--converge", "--out-dir", dir}
 		if force {
@@ -194,7 +194,7 @@ func TestPlanCoverNameIsReservedOnlyForACover(t *testing.T) {
 	b.devices([3]string{"COVER", "192.168.1.20", "juniper"}, [3]string{"other", "192.168.1.28", "juniper"})
 	b.serve("juniper", b.expected("COVER"))
 	b.run("device", "config", "pull", "--all")
-	dir := filepath.Join(t.TempDir(), "out")
+	dir := filepath.Join(b.sb.homePath(""), "out")
 	b.run("device", "config", "plan", "COVER", "--out-dir", dir)
 	if b.sb.code != 0 {
 		t.Fatalf("one device named COVER: %d %q", b.sb.code, b.sb.stderr())
@@ -203,7 +203,7 @@ func TestPlanCoverNameIsReservedOnlyForACover(t *testing.T) {
 		t.Errorf("its file: %v", err)
 	}
 	// with two devices the cover takes the name
-	b.run("device", "config", "plan", "--all", "--out-dir", filepath.Join(t.TempDir(), "two"))
+	b.run("device", "config", "plan", "--all", "--out-dir", filepath.Join(b.sb.homePath(""), "two"))
 	if b.sb.code != 2 || !strings.Contains(b.sb.stderr(), "COVER.txt") {
 		t.Errorf("two devices: %d %q", b.sb.code, b.sb.stderr())
 	}
@@ -214,7 +214,7 @@ func TestPlanCoverNameIsReservedOnlyForACover(t *testing.T) {
 func TestPlanAuditQuotesAPathWithSpaces(t *testing.T) {
 	b := planBoxJunos(t)
 	b.run("device", "config", "pull", "lab-j")
-	dir := filepath.Join(t.TempDir(), "with space")
+	dir := filepath.Join(b.sb.homePath(""), "with space")
 	if err := os.Mkdir(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -246,5 +246,41 @@ func TestPlanIgnoresAPlainViewOfAnotherPull(t *testing.T) {
 	out = b.run("device", "config", "plan", "lab-j")
 	if !strings.Contains(unwrapPlan(out), "The pull has no plain view") {
 		t.Errorf("a plain view of another pull was used:\n%s", out)
+	}
+}
+
+// --out and --out-dir write inside the caller's home only, and ~ and
+// variables are not expanded: a refused path is an argument error (exit 2)
+// before any device is read, and nothing is written.
+func TestPlanOutIsInsideTheHome(t *testing.T) {
+	b := newPullBox(t)
+	b.devices([3]string{"lab-j", "192.168.1.20", "juniper"})
+	outside := t.TempDir()
+	if err := os.Symlink(outside, b.sb.homePath("leak")); err != nil {
+		t.Fatal(err)
+	}
+	for _, flag := range []string{"--out", "--out-dir"} {
+		for path, want := range map[string]string{
+			filepath.Join(outside, "p.txt"): "is not inside your home",
+			b.sb.homePath("leak/p.txt"):     "is not inside your home",
+			b.sb.homePath("../p.txt"):       "is not inside your home",
+			"~/p.txt":                       "starts with '~'",
+			"$HOME/p.txt":                   "'$'",
+		} {
+			b.run("device", "config", "plan", "lab-j", flag, path)
+			if b.sb.code != 2 || !strings.Contains(b.sb.stderr(), flag+" '"+path+"'") || !strings.Contains(b.sb.stderr(), want) ||
+				!strings.Contains(b.sb.stderr(), "tacctl does not expand ~ or variables; name a path inside your home, relative to the current directory.") {
+				t.Errorf("%s %s: exit %d %q", flag, path, b.sb.code, b.sb.stderr())
+			}
+		}
+	}
+	if ents, _ := os.ReadDir(outside); len(ents) != 0 {
+		t.Errorf("written outside the home: %v", ents)
+	}
+	// inside the home it still works
+	f := b.sb.homePath("ok.txt")
+	b.run("device", "config", "plan", "lab-j", "--out", f)
+	if _, err := os.Stat(f); err != nil {
+		t.Errorf("exit %d %q: %v", b.sb.code, b.sb.stderr(), err)
 	}
 }

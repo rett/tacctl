@@ -563,7 +563,11 @@ func TestConfigRenderDryRun(t *testing.T) {
 		{[]string{"config", "render", "--dry-run", "--out"}, "Usage: tacctl config render --dry-run --out <dir>"},
 		{[]string{"config", "render", "--dry-run", "--out", out2, "x"}, "Usage: tacctl config render --dry-run --out <dir>"},
 		{[]string{"config", "render", "--dry-run", "--out", out}, "is not empty"},
-		{[]string{"config", "render", "--dry-run", "--out", "/"}, "is not empty"},
+		// a directory the caller names is inside their home, and ~ is not expanded
+		{[]string{"config", "render", "--dry-run", "--out", "/"}, "is not inside your home"},
+		{[]string{"config", "render", "--dry-run", "--out", t.TempDir()}, "is not inside your home"},
+		{[]string{"config", "render", "--dry-run", "--out", "~/render"}, "tacctl does not expand ~ or variables"},
+		{[]string{"config", "render", "--dry-run", "--out", "$HOME/render"}, "tacctl does not expand ~ or variables"},
 		{[]string{"config", "render", "--out", out}, "Usage: tacctl config render [--force]"},
 	} {
 		sb.run("", c.args)

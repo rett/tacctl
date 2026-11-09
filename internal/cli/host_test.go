@@ -756,3 +756,27 @@ func TestHostEnrollScopeMustCoverTheHost(t *testing.T) {
 		t.Errorf("repaired twice: %q", hs.out.String())
 	}
 }
+
+// 'config linux script|remove-script --output' writes inside the caller's
+// home only; ~ and variables are not expanded, and nothing is written (the
+// script holds the scope's secret, so not even the audit line of its export).
+func TestConfigLinuxScriptOutputIsInsideTheHome(t *testing.T) {
+	hs := newHostSandbox(t)
+	outside := t.TempDir()
+	for _, path := range []string{filepath.Join(outside, "x.sh"), "~/x.sh", "$HOME/x.sh", "", filepath.Join(hs.dir, "..", "x.sh")} {
+		for _, args := range [][]string{
+			{"config", "linux", "script", "--scope", "lab", "--server", "192.0.2.10", "--output", path},
+			{"config", "linux", "script", "--scope", "lab", "--server", "192.0.2.10", "-o", path},
+			{"config", "linux", "remove-script", "--output", path},
+		} {
+			hs.run(nil, args...)
+			hs.expect(1, "", "--output ")
+			if !strings.Contains(hs.err.String(), "tacctl does not expand ~ or variables; name a path inside your home, relative to the current directory.") {
+				t.Errorf("%v: %q", args, hs.err.String())
+			}
+		}
+	}
+	if ents, _ := os.ReadDir(outside); len(ents) != 0 {
+		t.Errorf("written outside the home: %v", ents)
+	}
+}

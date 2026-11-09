@@ -81,9 +81,12 @@ func newSandbox(t *testing.T, withStore bool) *sandbox {
 	parallel(t)
 	w := t.TempDir()
 	sb := &sandbox{t: t, dir: w, hooks: newTestHooks()}
-	sb.home = filepath.Join(w, "home")
+	// the sandbox is the caller's home: the files a test names for --out and
+	// --output are below it, like its state; a test of the refusals names
+	// a directory of its own
+	sb.home = w
 	sb.hooks.homeOfUID = func(int) (string, error) { return sb.home, nil }
-	for _, d := range []string{"etc", "state", "log", "bin", "systemd", "tmp", "home"} {
+	for _, d := range []string{"etc", "state", "log", "bin", "systemd", "tmp"} {
 		if err := os.MkdirAll(filepath.Join(w, d), 0o700); err != nil {
 			t.Fatal(err)
 		}

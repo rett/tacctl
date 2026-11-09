@@ -359,9 +359,10 @@ func (inv *invocation) configRenderDryRun(args []string) error {
 	if err != nil || p.Value("--out") == "" {
 		return inv.usageErr(usage)
 	}
-	out, err := filepath.Abs(p.Value("--out"))
+	// a directory the caller names is made inside their home only
+	out, err := inv.outPath("--out", p.Value("--out"))
 	if err != nil {
-		return err
+		return inv.usageErr(err.Error())
 	}
 	if entries, err := os.ReadDir(out); err == nil && len(entries) > 0 {
 		return inv.usageErr("'" + out + "' is not empty: a dry run writes into a new or empty directory.")

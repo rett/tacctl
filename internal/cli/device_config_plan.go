@@ -125,6 +125,20 @@ func (inv *invocation) parsePlanOptions(p Parsed) (planOptions, error) {
 	case o.force && o.out == "" && o.outDir == "":
 		return bad("--force replaces files that --out or --out-dir would write.")
 	}
+	// the files are written inside the caller's home only
+	for _, f := range []struct {
+		flag string
+		path *string
+	}{{"--out", &o.out}, {"--out-dir", &o.outDir}} {
+		if *f.path == "" {
+			continue
+		}
+		path, err := inv.outPath(f.flag, *f.path)
+		if err != nil {
+			return bad(err.Error())
+		}
+		*f.path = path
+	}
 	if p.Has("--section") {
 		for _, s := range strings.Split(p.Value("--section"), ",") {
 			s = strings.TrimSpace(s)

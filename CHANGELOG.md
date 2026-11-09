@@ -94,8 +94,9 @@ current behaviour; this file is where history lives.
    took a snapshot names this release, 0.2.27, as the state the snapshot holds
    ("Restore it with 0.2.27 only").
 
-7. **`device support-bundle --out` names a bundle, not a path, and it is
-   written in your home.** `tacctl device support-bundle sw1 --out ~/x` made a
+7. **The files tacctl writes at a path you name go inside your home only, and
+   `device support-bundle --out` names a bundle, not a path.**
+   `tacctl device support-bundle sw1 --out ~/x` made a
    directory literally named `~` in the current directory when the `~` reached
    tacctl unexpanded (a quoted argument, a script), because tacctl took the
    path as given. `--out` is now a name: a letter or digit, then letters,
@@ -111,9 +112,30 @@ current behaviour; this file is where history lives.
    time>` in the current directory). A name that exists, or whose `.map`
    exists, is refused as before, the files are still written as the caller and
    never replace anything, and the success lines print the full paths. The
-   audit line is unchanged. tacctl never expands `~` or variables in a path.
-   `docs/devices/support-bundle.md`, `docs/cli/device.md`, the manual page and
-   the help say so.
+   audit line is unchanged.
+
+   The other options that name a file or directory to write follow one rule:
+   `device config plan --out` and `--out-dir`, `device reports export --out`,
+   `config render --dry-run --out`, and `config linux script` and
+   `remove-script --output` (`-o`). tacctl never expands `~` or variables, and
+   the path must be inside the home of the person who ran `sudo` (else of the
+   user running tacctl, from the account database, never `$HOME`). An empty
+   path, a NUL, a first component that starts with `~`, a `$` or a backtick,
+   the home itself, and a path that after `..` and the symbolic links of its
+   existing part is not strictly inside the home are refused with one
+   sentence (`tacctl does not expand ~ or variables; name a path inside your
+   home, relative to the current directory`), before a device is read, a
+   report is opened or a script is made, and nothing is written; `plan` and
+   `reports export` end with exit status 2, the others with 1. Before, these
+   options took any path the caller could write, `~` included, and so
+   `--output /dev/stdout` and a directory outside the home such as `/var/tmp`
+   are refused now (the default file name of the two scripts, in the current
+   directory, is not a path you named and is unchanged). Relative paths are
+   taken from the current directory. The files keep their protections: made as
+   the caller, new files only, a link never followed, replaced only by
+   `--force` where it exists. The pages of every command, the conventions
+   page, the manual page, the help and `tests/README.md` (the
+   `TACCTL_TEST_HOME` knob of the bats suite) say so.
 
 ## 0.2.26 (2026-11-06)
 

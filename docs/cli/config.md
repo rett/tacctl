@@ -64,7 +64,8 @@ config render [--force]
 config render --dry-run --out <dir>
 
     Render every enabled backend into a new, empty directory at the live paths; nothing live is
-    written, no restart
+    written, no restart. The directory must be inside your home (tacctl does not expand `~` or
+    variables; a path outside the home is refused)
 
 config validate [--json | --fix-names [--yes]]
 
@@ -115,11 +116,14 @@ config linux script [--scope <name>] [--server <address>] [--method tacplus|radi
 
     Write the install script for hosts in a scope (contains the secret). --server is the address
     the hosts use for this server: the recorded one (server.addresses) when not given, else the
-    source address of the route to the Internet
+    source address of the route to the Internet. --output (-o) names the file, which must be
+    inside your home (tacctl does not expand `~` or variables; a path outside the home is
+    refused)
 
 config linux remove-script [--output <file>]
 
-    Write the removal script (no secrets; removes either method and sshd's lockdown drop-in)
+    Write the removal script (no secrets; removes either method and sshd's lockdown drop-in).
+    --output is inside your home, as for `script`
 
 config linux uid [<user> [<uid>]]
 
