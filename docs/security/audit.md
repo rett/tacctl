@@ -116,7 +116,7 @@ config loglevel from=info to=debug by=alice sid=k3x9a0bq
 | `scope secret set` | `scope` `source=set\|generate` |
 | `snmp set` | `kind=community\|v3-user\|clear\|version\|port\|timeout\|clients\|contact`, and `scope` or `device`; `from` `to` for `config snmp port\|timeout` |
 | `secret-read` | `kind` `name` and `user` (the SNMPv3 user whose passphrases are shown): a secret shown (`scope`, `snmp`, `snmp-device`, `snmp-default`, `block`, `block-adopt`, `store`, `config`, `snapshot`, `backup`); written for every caller, a superuser's too |
-| `secret-export` | `scope` `file`: `config linux script` writes a file that holds the scope's secret (the line comes before the file) |
+| `secret-export` | `scope` `file` (the resolved absolute path): `config linux script` writes a file that holds the scope's secret (the line comes before the file) |
 | `config allow`, `config deny`, `config mgmt-acl` | `op=add\|remove\|clear\|cisco-name\|juniper-name` `value` |
 | `config password-age`, `config bcrypt-cost`, `config password-min-length`, `config secret-min-length`, `config loglevel`, `server metrics`, `server name`, `config branch` | `from` `to` |
 | `server listen` | `backend` `listener` `from` `to` |

@@ -11,7 +11,8 @@
 #   in, checked with 'radiusd -C' and served by 'radiusd -n tacctl-radius'
 #   started by hand; then cases.sh.
 #
-# Nothing on this machine is touched outside podman and a temp directory.
+# Nothing on this machine is touched outside podman and a temporary directory
+# in your home (removed on exit).
 # Images are built once (tacctl-radius-check:<distro>) and kept; the
 # container is removed unless --keep is given. Needs Go in /usr/local/go (the
 # binary is built here from this checkout) and python3-bcrypt (make-store.py).
@@ -22,7 +23,10 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "${HERE}/../../.." && pwd)"
 NAME="tacctl-radius-check-${DISTRO}"
 IMAGE="localhost/tacctl-radius-check:${DISTRO}"
-WORK=$(mktemp -d)
+# The work directory is inside the invoking user's home: 'config render
+# --dry-run --out' writes only there (the account database's home, not $HOME).
+HOME_DIR=$(getent passwd "${SUDO_UID:-$(id -u)}" | cut -d: -f6)
+WORK=$(mktemp -d -p "${HOME_DIR:?no home directory in the account database}" tacctl-radius-check.XXXXXX)
 cleanup() {
     [[ "$KEEP" == "--keep" ]] || podman rm -f -t 0 "$NAME" > /dev/null 2>&1 || true
     rm -rf "$WORK"

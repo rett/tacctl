@@ -195,7 +195,7 @@ func TestPlanForceRemovesTheFilesOfAnEarlierPlan(t *testing.T) {
 	b.serve("juniper", settled)
 	b.servePlain(settled)
 	b.run("device", "config", "pull", "lab-j")
-	dir := filepath.Join(t.TempDir(), "sets")
+	dir := filepath.Join(b.sb.homePath(""), "sets")
 	plain := []string{"device", "config", "plan", "lab-j", "--plain", "--converge", "--out-dir", dir}
 	b.run(plain...)
 	if b.sb.code != 0 {
@@ -233,7 +233,7 @@ func TestPlanForceRemovesTheFilesOfAnEarlierPlan(t *testing.T) {
 	}
 
 	// --out: the file beside it
-	f := filepath.Join(t.TempDir(), "x.set")
+	f := filepath.Join(b.sb.homePath(""), "x.set")
 	b.serve("juniper", settled)
 	b.servePlain(settled)
 	b.run("device", "config", "pull", "lab-j")
@@ -251,7 +251,7 @@ func TestPlanForceRemovesTheFilesOfAnEarlierPlan(t *testing.T) {
 	}
 
 	// a text plan: the back-out of the earlier plan goes when this one has none
-	txt := filepath.Join(t.TempDir(), "txt")
+	txt := filepath.Join(b.sb.homePath(""), "txt")
 	b.serve("juniper", changed)
 	b.servePlain(changed)
 	b.run("device", "config", "pull", "lab-j")
@@ -279,7 +279,7 @@ func TestPlanForceRemovesTheFilesOfAnEarlierPlan(t *testing.T) {
 func TestPlanPlainConvergeSaysWhyThereIsNoCleanupFile(t *testing.T) {
 	b := planBoxJunos(t)
 	b.run("device", "config", "pull", "lab-j")
-	f := filepath.Join(t.TempDir(), "p.set")
+	f := filepath.Join(b.sb.homePath(""), "p.set")
 	b.run("device", "config", "plan", "lab-j", "--plain", "--converge", "--out", f)
 	if b.sb.code != 0 || !strings.Contains(b.sb.stderr(), "lab-j: no cleanup file: cleanup comes after this region is pasted and verified") {
 		t.Errorf("deferred: %d %q", b.sb.code, b.sb.stderr())

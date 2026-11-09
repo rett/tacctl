@@ -476,6 +476,26 @@ func TestConfigLinuxScriptAndUID(t *testing.T) {
 	if strings.Contains(hs.out.String(), "Wrote") {
 		t.Errorf("reported as written: %q", hs.out.String())
 	}
+	// An existing directory is not written inside: a refusal that names the
+	// directory, for the script and for the removal script, and nothing is
+	// left in it. A link to a directory is the same.
+	odir := filepath.Join(hs.dir, "outdir")
+	if err := os.Mkdir(odir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	olink := filepath.Join(hs.dir, "outlink")
+	if err := os.Symlink(odir, olink); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range []string{odir, olink} {
+		hs.run(nil, "config", "linux", "script", "--scope", "lab", "--server", "192.0.2.10", "-o", d)
+		hs.expect(1, "", "--output '"+d+"' names a directory, name a file.")
+		hs.run(nil, "config", "linux", "remove-script", "--output", d)
+		hs.expect(1, "", "--output '"+d+"' names a directory, name a file.")
+	}
+	if left, _ := os.ReadDir(odir); len(left) != 0 {
+		t.Errorf("a directory named as the output was written in: %v", left)
+	}
 	hs.run(nil, "config", "linux", "script", "--bogus")
 	hs.expect(1, "", "Unknown argument: '--bogus'")
 	hs.run(nil, "config", "linux", "script", "--scope")
@@ -754,5 +774,29 @@ func TestHostEnrollScopeMustCoverTheHost(t *testing.T) {
 	hs.run(nil, "host", "sync", "authsrv")
 	if strings.Contains(hs.out.String(), "Repaired") {
 		t.Errorf("repaired twice: %q", hs.out.String())
+	}
+}
+
+// 'config linux script|remove-script --output' writes inside the caller's
+// home only; ~ and variables are not expanded, and nothing is written (the
+// script holds the scope's secret, so not even the audit line of its export).
+func TestConfigLinuxScriptOutputIsInsideTheHome(t *testing.T) {
+	hs := newHostSandbox(t)
+	outside := t.TempDir()
+	for _, path := range []string{filepath.Join(outside, "x.sh"), "~/x.sh", "$HOME/x.sh", "", filepath.Join(hs.dir, "..", "x.sh")} {
+		for _, args := range [][]string{
+			{"config", "linux", "script", "--scope", "lab", "--server", "192.0.2.10", "--output", path},
+			{"config", "linux", "script", "--scope", "lab", "--server", "192.0.2.10", "-o", path},
+			{"config", "linux", "remove-script", "--output", path},
+		} {
+			hs.run(nil, args...)
+			hs.expect(1, "", "--output ")
+			if !strings.Contains(hs.err.String(), "tacctl does not expand ~ or variables; name a path inside your home, relative to the current directory.") {
+				t.Errorf("%v: %q", args, hs.err.String())
+			}
+		}
+	}
+	if ents, _ := os.ReadDir(outside); len(ents) != 0 {
+		t.Errorf("written outside the home: %v", ents)
 	}
 }

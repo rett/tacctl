@@ -305,7 +305,10 @@ func TestPlanFormatsAndFiles(t *testing.T) {
 	}
 
 	// --out: one file, 0600, refused when it exists
-	dir := t.TempDir()
+	dir := b.sb.homePath("one")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	f := filepath.Join(dir, "lab-j.txt")
 	b.run("device", "config", "plan", "lab-j", "--out", f)
 	if b.sb.code != 0 || !strings.Contains(b.sb.out.String(), "Wrote "+f) {
@@ -360,7 +363,7 @@ func TestPlanSeveralDevicesCoverAndOutDir(t *testing.T) {
 	if b.sb.code != 2 || !strings.Contains(b.sb.stderr(), "--plain is the statements of one device") {
 		t.Errorf("plain of two: %d %q", b.sb.code, b.sb.stderr())
 	}
-	b.run("device", "config", "plan", "--all", "--out", filepath.Join(t.TempDir(), "x"))
+	b.run("device", "config", "plan", "--all", "--out", filepath.Join(b.sb.homePath(""), "x"))
 	if b.sb.code != 2 || !strings.Contains(b.sb.stderr(), "--out is one file for one device") {
 		t.Errorf("out of two: %d %q", b.sb.code, b.sb.stderr())
 	}
@@ -386,7 +389,7 @@ func TestPlanSeveralDevicesCoverAndOutDir(t *testing.T) {
 	}
 
 	// --out-dir: a file per device, COVER.txt, the back-out beside the plan
-	dir := filepath.Join(t.TempDir(), "plans")
+	dir := filepath.Join(b.sb.homePath(""), "plans")
 	out = b.run("device", "config", "plan", "--all", "--out-dir", dir)
 	if b.sb.code != 0 {
 		t.Fatalf("out-dir: %d %q %q", b.sb.code, out, b.sb.stderr())
@@ -424,7 +427,7 @@ func TestPlanSeveralDevicesCoverAndOutDir(t *testing.T) {
 		t.Errorf("force: %d %q", b.sb.code, b.sb.stderr())
 	}
 	// --plain with --out-dir: one .set file each
-	pdir := filepath.Join(t.TempDir(), "sets")
+	pdir := filepath.Join(b.sb.homePath(""), "sets")
 	b.run("device", "config", "plan", "--all", "--plain", "--out-dir", pdir)
 	if set, err := os.ReadFile(filepath.Join(pdir, "lab-j.set")); err != nil || string(set) != "set system authentication-order tacplus\n" {
 		t.Errorf("set file: %q %v", set, err)
@@ -436,7 +439,7 @@ func TestPlanSeveralDevicesCoverAndOutDir(t *testing.T) {
 		t.Error("a back-out file beside a plain plan")
 	}
 	// a directory that is open to others is refused: the files hold secrets
-	open := filepath.Join(t.TempDir(), "open")
+	open := filepath.Join(b.sb.homePath(""), "open")
 	if err := os.Mkdir(open, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -451,7 +454,7 @@ func TestPlanSeveralDevicesCoverAndOutDir(t *testing.T) {
 		t.Errorf("json: %v\n%s", err, js)
 	}
 	// the name of a file: --out-dir with --json
-	jdir := filepath.Join(t.TempDir(), "json")
+	jdir := filepath.Join(b.sb.homePath(""), "json")
 	b.run("device", "config", "plan", "--all", "--json", "--out-dir", jdir)
 	if _, err := os.Stat(filepath.Join(jdir, "lab-j.json")); err != nil {
 		t.Error(err)
@@ -486,7 +489,7 @@ func TestPlanConvergeCleanupAndFrom(t *testing.T) {
 	}
 	planGolden(t, "junos-converge.out", out)
 	// --plain --converge with a first region: its file, and no cleanup file
-	dir := t.TempDir()
+	dir := b.sb.homePath("")
 	f := filepath.Join(dir, "lab-j.set")
 	b.run("device", "config", "plan", "lab-j", "--plain", "--converge", "--out", f)
 	if b.sb.code != 0 {
