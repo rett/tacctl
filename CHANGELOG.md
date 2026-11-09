@@ -109,7 +109,14 @@ current behaviour; this file is where history lives.
    cannot be opened, downloaded or written, and its mode and times cannot be
    changed (refused, reason `link`); it can still be listed, renamed and
    removed. Setting the mode of a directory without the owner's read and
-   search bits is refused. A listing comes in the order of the file system,
+   search bits is refused. The size of a regular file can be set (cut, or
+   extended with zeros), which is what `scp` does after an upload to give the
+   file its final size; it counts against the quota like a write, and a request
+   that also asks for a new owner is refused whole. A new directory gets the
+   mode the client asks for and a new file 0644, both reduced by the console's
+   umask, 077; the set-user-ID, set-group-ID and sticky bits are ignored.
+   Changing a mode or times goes through `/proc/self/fd`, so file transfer
+   needs `/proc` mounted. A listing comes in the order of the file system,
    not sorted (the OpenSSH `sftp` client sorts what its `ls` prints itself),
    and a session has at most 256 files and listings open at once (reason
    `too-many-open-files`). `sftp` and the `scp` of OpenSSH 9 or later (which
@@ -119,7 +126,10 @@ current behaviour; this file is where history lives.
    (sftp, scp of OpenSSH 9 or later)`. The quota (the bytes the home may hold:
    the sizes of its regular files, each inode once, never directories, links
    or inodes; the reports and support bundles of the user are included)
-   refuses a write that would go over it. It is measured per session, so N
+   refuses a write that would go over it; an upload refused part way leaves
+   what was written before in the home (the client does not remove it), and
+   the OpenSSH `sftp` and `scp` show only `Failure` for it, the reason
+   (`reason=quota`) being in the console's audit log. It is measured per session, so N
    sessions at once can reach about N times the quota; a deleted file that a
    handle still holds stays counted until the handle is closed; and a
    directory of the home that the session cannot read or search (for example
@@ -129,7 +139,9 @@ current behaviour; this file is where history lives.
    together, a burst of one second) slows the session. For an account without
    file transfer the subsystem is refused with status 126 and `file transfer is
    not enabled for this account; an administrator can switch it on (tacctl
-   console file-transfer)`; a session held to a required password change, or
+   console file-transfer)`, which `sftp` and `scp` show only as `Connection
+   closed` (sshd shows no error text of a subsystem; the audit log has
+   `reason=file-transfer`); a session held to a required password change, or
    one whose policy cannot be read (a user who is no superuser), and a missing
    home are refused with a text of their own. The console's idle timeout does
    not apply to a transfer: it lasts as long as the connection, ends with
