@@ -118,12 +118,17 @@ config linux script [--scope <name>] [--server <address>] [--method tacplus|radi
     the hosts use for this server: the recorded one (server.addresses) when not given, else the
     source address of the route to the Internet. --output (-o) names the file, which must be
     inside your home (tacctl does not expand `~` or variables; a path outside the home is
-    refused)
+    refused). Without it the script is tacctl-linux-<scope>.sh in the current directory, a name
+    that is not checked. The file is made as root (0600) and, under sudo, handed to the person
+    who ran it; a file of that name is replaced, a directory (or a link to one) is refused and
+    nothing is written in it
 
 config linux remove-script [--output <file>]
 
     Write the removal script (no secrets; removes either method and sshd's lockdown drop-in).
-    --output is inside your home, as for `script`
+    --output is inside your home, as for `script`; without it the file is
+    tacctl-linux-remove.sh in the current directory. It is made as root (0644), handed to the
+    person who ran sudo, replaces a file of that name, and a directory is refused
 
 config linux uid [<user> [<uid>]]
 

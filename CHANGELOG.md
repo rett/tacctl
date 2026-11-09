@@ -131,11 +131,31 @@ current behaviour; this file is where history lives.
    `--output /dev/stdout` and a directory outside the home such as `/var/tmp`
    are refused now (the default file name of the two scripts, in the current
    directory, is not a path you named and is unchanged). Relative paths are
-   taken from the current directory. The files keep their protections: made as
-   the caller, new files only, a link never followed, replaced only by
-   `--force` where it exists. The pages of every command, the conventions
-   page, the manual page, the help and `tests/README.md` (the
-   `TACCTL_TEST_HOME` knob of the bats suite) say so.
+   taken from the current directory. A home directory of `/` (an account
+   whose home is the root directory) is refused, since every path is inside it.
+   The files keep the protections they had, which differ by command.
+   `device config plan`, `device reports export` and `device support-bundle`
+   write as the caller: new files only, a link never followed, replaced only by
+   `--force` where that option exists. `config render --dry-run` writes as
+   root, as before: the new or empty directory it names and everything in it
+   are root-owned (0700, 0600), and the files are now written through a handle
+   on that directory, so a link planted in it after the emptiness check cannot
+   send a root write elsewhere. `config linux script` and `remove-script` make
+   the file as root (0600; 0644 for the removal script) and hand it to the
+   person who ran `sudo`, and, as before, replace a file of that name without
+   `--force`; after the write they no longer follow a link swapped in at the
+   name (`lchown`, and the mode set on the open file). `--output` naming an
+   existing directory, or a link to one, is refused (`--output '<path>' names a
+   directory, name a file.`) and nothing is written: it used to write the
+   script inside it as `tmp.XXXXXXXXXX` (the removal script as
+   `client-remove.sh`) and hand the directory itself to the caller. Without
+   `--output` the two scripts are `tacctl-linux-<scope>.sh` and
+   `tacctl-linux-remove.sh` in the current directory, a name that is not
+   checked (the help said "in your home"). The audit fields `out=` of
+   `device config plan` and `file=` of the `secret-export` record of the script
+   now hold the resolved absolute path, not the path as typed. The pages of
+   every command, the conventions page, the manual page, the help and
+   `tests/README.md` (the `TACCTL_TEST_HOME` knob of the bats suite) say so.
 
 ## 0.2.26 (2026-11-06)
 
