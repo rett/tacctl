@@ -464,6 +464,10 @@ type RollbackPlan struct {
 	in      RollbackInput
 	keys    []string
 	console console.RollbackPlan
+	// consoleSince0228: console.yaml was planned by the addition of 0.2.28
+	// (rollback_filetransfer.go) and not by the target's own plan, so only
+	// the file transfer settings go and the write is console.RollbackSince0228.
+	consoleSince0228 bool
 	// managedUsers are the users the scope of this server's own login is
 	// added to (rollback_managed.go): every target.
 	managedUsers []string
@@ -889,7 +893,11 @@ func (p *RollbackPlan) addConsoleStep() {
 	}
 	cf := p.in.Paths.ConsoleFile
 	s := RollbackStep{Title: cf + ": take out the settings " + p.target() + " does not know", Todo: true}
-	s.Lines = append(p.consoleChangeLines(), "("+p.target()+"'s parser rejects what 0.2.20 added to console.yaml (the colour setting, the system shell and the password cache of single users, a list_max of -1); everything else is kept)")
+	why := "what 0.2.20 added to console.yaml (the colour setting, the system shell and the password cache of single users, a list_max of -1) and the file transfer settings of 0.2.28"
+	if p.consoleSince0228 {
+		why = "the file transfer settings 0.2.28 added to console.yaml"
+	}
+	s.Lines = append(p.consoleChangeLines(), "("+p.target()+"'s parser rejects "+why+"; everything else is kept)")
 	at := len(p.Steps)
 	for i := range p.Steps {
 		if p.Steps[i].Title == "leave every other file untouched" {
@@ -1248,7 +1256,10 @@ func ApplyRollback(p *RollbackPlan) ([]string, error) {
 	}
 	if p.console.Text != nil {
 		write := console.RollbackSince0220
-		if p.target() == RollbackTarget {
+		switch {
+		case p.consoleSince0228:
+			write = console.RollbackSince0228
+		case p.target() == RollbackTarget:
 			write = console.Rollback
 		}
 		changed, err := write(pt.ConsoleFile, nil)

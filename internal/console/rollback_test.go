@@ -1,14 +1,19 @@
 package console
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/rett/tacctl/internal/execx"
+	"github.com/rett/tacctl/internal/pyyaml"
 	"github.com/rett/tacctl/internal/tier"
+	"github.com/rett/tacctl/internal/yamlpy"
 )
 
 // A console.yaml as 0.2.4 writes it with every setting changed, the password
@@ -216,5 +221,222 @@ func TestRollbackSnapshotsFirst(t *testing.T) {
 	})
 	if err != nil || !changed || len(order) != 1 || !strings.HasSuffix(order[0], "yes") {
 		t.Errorf("order %q %v %v", order, changed, err)
+	}
+}
+
+// accepts0227 is the part of 0.2.27's console.yaml parser that matters for a
+// rollback to it, as a fixture (parse, parseSettings and parsePasswordCache of
+// internal/console/config.go at the 0.2.27 tag, which
+// TestTheFixtureOf0227IsThe0227Parser reads back): any key of its lists is
+// known, any other
+// makes it answer "settings: unknown key", and the console falls back to
+// the defaults.
+func accepts0227(text []byte) error {
+	v, err := pyyaml.LoadBytes(text)
+	if err != nil {
+		return err
+	}
+	root := v.(*yamlpy.Map)
+	for k := range root.All() {
+		if !slices.Contains([]string{"version", "tiers", "users", "settings"}, k) {
+			return errors.New("unknown key '" + k + "'")
+		}
+	}
+	settings, ok := root.Get("settings")
+	if !ok {
+		return nil
+	}
+	for k, sv := range settings.(*yamlpy.Map).All() {
+		switch k {
+		case "idle_timeout", "list_max", "agent_forwarding", "ssh_escape", "gateway_ports", "space_completion", "color",
+			"system_shell", "system_shell_users", "password_cache_users", "system_shell_tiers", "forwarding_tiers":
+		case "password_cache":
+			for pk := range sv.(*yamlpy.Map).All() {
+				if !slices.Contains([]string{"tiers", "idle", "max"}, pk) {
+					return errors.New("settings.password_cache: unknown key '" + pk + "'")
+				}
+			}
+		default:
+			return errors.New("settings: unknown key '" + k + "'")
+		}
+	}
+	return nil
+}
+
+// The fixture of 0.2.27's parser holds what the tag holds: its source reports
+// an unknown settings key, has none of the file transfer keys and has every
+// settings key the fixture lists. Skipped where git or the tag is absent.
+func TestTheFixtureOf0227IsThe0227Parser(t *testing.T) {
+	r := execx.Real{}
+	if _, err := r.LookPath("git"); err != nil {
+		t.Skip("git is not installed, so the 0.2.27 tag cannot be read")
+	}
+	if res, err := r.Run(context.Background(), execx.Cmd{Name: "git", Args: []string{"rev-parse", "-q", "--verify", "0.2.27^{commit}"}}); err != nil || res.Code != 0 {
+		t.Skip("the 0.2.27 tag is not in this repository (CI must fetch tags: git fetch --tags)")
+	}
+	res, err := r.Run(context.Background(), execx.Cmd{Name: "git", Args: []string{"show", "0.2.27:internal/console/config.go"}})
+	if err != nil || res.Code != 0 {
+		t.Fatalf("cannot read the 0.2.27 tag's config.go: %v %s", err, res.Stderr)
+	}
+	src := string(res.Stdout)
+	for _, w := range []string{`fail("settings: unknown key '" + k + "'.")`, `fail("unknown key '" + k + "'.")`, `case "system_shell_users":`, `case "password_cache_users":`, `case "color"`} {
+		if !strings.Contains(src, w) {
+			t.Errorf("0.2.27's config.go lacks %q: the fixture accepts0227 is out of date", w)
+		}
+	}
+	if strings.Contains(src, "file_transfer") {
+		t.Error("0.2.27's config.go knows file_transfer: the rollback needs no step for it")
+	}
+	// the keys of the fixture are the cases of the tag's parseSettings
+	for _, k := range []string{"idle_timeout", "list_max", "agent_forwarding", "ssh_escape", "gateway_ports", "space_completion", "color",
+		"system_shell", "system_shell_users", "password_cache_users", "system_shell_tiers", "forwarding_tiers", "password_cache"} {
+		if !strings.Contains(src, `"`+k+`"`) {
+			t.Errorf("0.2.27's config.go has no key %q", k)
+		}
+	}
+	// and the file this release writes with every setting is rejected by it
+	if err := accepts0227(fileTransferFixture(t)); err == nil || !strings.Contains(err.Error(), "settings: unknown key 'file_transfer'") {
+		t.Errorf("the fixture of 0.2.27 reads the file transfer settings: %v", err)
+	}
+}
+
+// fileTransferFixture is a console.yaml of this release with the file
+// transfer settings and every older setting changed.
+func fileTransferFixture(t *testing.T) []byte {
+	t.Helper()
+	f := Defaults()
+	f.Idle = 12
+	f.AgentForwarding = true
+	f.ListMax = ListMaxNever
+	f.Color = ColorOn
+	f.SpaceCompletion = false
+	f.SystemShellTiers = []tier.Tier{tier.Operator, tier.Superuser}
+	f.SetSystemShellUser("bob", true, tier.Readonly)
+	f.PasswordCacheTiers = []tier.Tier{tier.Engineer, tier.Superuser}
+	f.PasswordCacheIdle, f.PasswordCacheMax = 30, 4
+	f.PasswordCacheUsers["carol"] = true
+	if err := f.SetFileTransfer(tier.Operator, true); err != nil {
+		t.Fatal(err)
+	}
+	f.SetFileTransferUser("bob", true, tier.Readonly)
+	f.SetFileTransferQuota(tier.Operator, 1<<30, false)
+	f.FileTransferRateUsers["carol"] = 1 << 20
+	text, err := f.Text()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return text
+}
+
+// The file written for 0.2.27 is accepted by the fixture of its parser, keeps
+// every other setting (0.2.27 has them all: the colour, a list_max that never
+// asks, the users' system shell, the password cache and its users), and is
+// the file a plan for any older release also gives, as far as the file
+// transfer goes.
+func TestRollbackTextIsReadBy0227(t *testing.T) {
+	orig := fileTransferFixture(t)
+	if err := accepts0227(orig); err == nil {
+		t.Fatal("the fixture of this release's file is accepted by the 0.2.27 parser")
+	}
+	p := write(t, t.TempDir(), "console.yaml", string(orig), 0o600)
+	plan, err := PlanRollbackSince0228(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"settings.file_transfer: tiers operator,superuser, 1 user switch, 1 quota, 1 rate"}
+	if !plan.Exists || plan.Text == nil || !reflect.DeepEqual(plan.Remove, want) || len(plan.Set) != 0 {
+		t.Fatalf("plan %+v, want remove %q", plan, want)
+	}
+	if err := accepts0227(plan.Text); err != nil {
+		t.Errorf("0.2.27 rejects the converted file: %v\n%s", err, plan.Text)
+	}
+	if plan.Summary() != "removed settings.file_transfer" {
+		t.Errorf("summary %q", plan.Summary())
+	}
+	// every other setting is as it was, and this release reads the file with
+	// the file transfer at its built-in settings
+	f, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.FileTransferTiers = Defaults().FileTransferTiers
+	f.FileTransferUsers, f.FileTransferUserTiers = map[string]bool{}, map[string]tier.Tier{}
+	f.FileTransferQuota, f.FileTransferRateUsers = map[tier.Tier]int64{}, map[string]int64{}
+	wantText, err := f.Text()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(plan.Text) != string(wantText) {
+		t.Errorf("the converted file:\n%s\nwant:\n%s", plan.Text, wantText)
+	}
+	g, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text, err := g.Text0227(); err != nil || string(text) != string(plan.Text) {
+		t.Errorf("Text0227: %v\n%s", err, text)
+	}
+	changed, err := RollbackSince0228(p, nil)
+	if err != nil || !changed {
+		t.Fatalf("RollbackSince0228: %v %v", changed, err)
+	}
+	if got, _ := os.ReadFile(p); string(got) != string(plan.Text) {
+		t.Errorf("the file after the rollback:\n%s", got)
+	}
+	// done: nothing is left to take out, and a second run changes nothing
+	if again, err := PlanRollbackSince0228(p); err != nil || again.Text != nil || len(again.Remove) != 0 {
+		t.Errorf("second plan: %+v %v", again, err)
+	}
+	if changed, err := RollbackSince0228(p, nil); err != nil || changed {
+		t.Errorf("second RollbackSince0228: %v %v", changed, err)
+	}
+	// the plans for the older releases take the key out as well, and the
+	// other settings 0.2.27 reads go where they must: the colour and the
+	// users' settings for the releases before 0.2.20, the password cache for
+	// 0.2.3
+	for _, c := range []struct {
+		name string
+		plan func(string) (RollbackPlan, error)
+		gone []string
+		kept []string
+	}{
+		{"0.2.19", PlanRollbackSince0220, []string{"file_transfer", "color:", "system_shell_users", "password_cache_users"}, []string{"password_cache:", "space_completion", "list_max: 1000"}},
+		{"0.2.3", PlanRollback, []string{"file_transfer", "color:", "system_shell_users", "password_cache_users", "password_cache:"}, []string{"space_completion", "list_max: 1000"}},
+	} {
+		q := write(t, t.TempDir(), "console.yaml", string(orig), 0o600)
+		pl, err := c.plan(q)
+		if err != nil || pl.Text == nil {
+			t.Fatalf("%s: %+v %v", c.name, pl, err)
+		}
+		if !slices.ContainsFunc(pl.Remove, func(r string) bool { return strings.HasPrefix(r, "settings.file_transfer: ") }) {
+			t.Errorf("%s: the plan does not remove the file transfer: %q", c.name, pl.Remove)
+		}
+		for _, w := range c.gone {
+			if strings.Contains(string(pl.Text), w) {
+				t.Errorf("%s: the text keeps %q:\n%s", c.name, w, pl.Text)
+			}
+		}
+		for _, w := range c.kept {
+			if !strings.Contains(string(pl.Text), w) {
+				t.Errorf("%s: the text lost %q:\n%s", c.name, w, pl.Text)
+			}
+		}
+	}
+	// a file without the key is not rewritten, and a missing one is no error
+	plain, err := Defaults().Text()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := write(t, t.TempDir(), "console.yaml", string(plain), 0o600)
+	if pl, err := PlanRollbackSince0228(r); err != nil || pl.Text != nil || len(pl.Remove) != 0 {
+		t.Errorf("a file without the key: %+v %v", pl, err)
+	}
+	if pl, err := PlanRollbackSince0228(filepath.Join(t.TempDir(), "none.yaml")); err != nil || pl.Exists || pl.Text != nil {
+		t.Errorf("a missing file: %+v %v", pl, err)
+	}
+	// a file this release cannot read refuses the plan
+	bad := write(t, t.TempDir(), "console.yaml", "version: 1\nsettings: {file_transfer: {quota: {operator: 0}}}\n", 0o600)
+	if _, err := PlanRollbackSince0228(bad); err == nil {
+		t.Error("an unreadable file is planned")
 	}
 }

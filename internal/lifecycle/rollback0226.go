@@ -16,10 +16,13 @@ package lifecycle
 // included (0.2.26, 0.2.27 and this release write the same text), removes no
 // key (the limits of the stored reports, reports.max_size and
 // reports.max_count in tacctl.yaml and a user's own limits in the store, stay:
-// 0.2.26 has them) and takes no snapshot. The reports in the users' homes
+// 0.2.26 has them) and takes no snapshot but for the file below. The reports in the users' homes
 // stay too: 0.2.26 reads them (a PDF one as text, which is why the upgrade
-// pages say to fetch it with the scp line of 'show'). No step of
-// rollbackAdditions fires for it either: they undo what 0.2.26 and older
+// pages say to fetch it with the scp line of 'show'). The one file it does
+// not read as this release writes it is console.yaml with the file transfer
+// settings of 0.2.28 (settings.file_transfer, an unknown key to its reader),
+// which an entry of rollbackAdditions removes (rollback_filetransfer.go). No
+// other step of rollbackAdditions fires for it either: they undo what 0.2.26 and older
 // releases changed, for the targets older than the release that made the
 // change.
 //

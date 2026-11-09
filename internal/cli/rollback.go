@@ -191,6 +191,9 @@ func (inv *invocation) rollback(args []string) error {
 	a.Conf().Reload()
 
 	inv.rollbackNextSteps(version, plan.PendingFiles(), len(plan.Keys()) > 0, len(plan.ReportLimitUserNames()) > 0)
+	if plan.FileTransferRemoved() {
+		inv.rollbackFileTransferNote(version)
+	}
 	if plan.FirewallTodo() {
 		inv.rollbackFirewallNote(version, plan)
 	}
@@ -267,10 +270,10 @@ func (inv *invocation) rollbackNextSteps(version string, snapshot, keys, fields 
 	}
 	switch version {
 	case lifecycle.RollbackTarget0227:
-		inv.rollbackNextSteps0227(version)
+		inv.rollbackNextSteps0227(version, snapshot)
 		return
 	case lifecycle.RollbackTarget0226:
-		inv.rollbackNextSteps0226(version)
+		inv.rollbackNextSteps0226(version, snapshot)
 		return
 	case lifecycle.RollbackTarget0225:
 		inv.rollbackNextSteps0225(version, snapshot, keys, fields)
@@ -433,24 +436,36 @@ func (inv *invocation) rollbackTimeoutScaleNote(version string) {
 	inv.echo("If one did, run 'tacctl rollback " + version + " --apply' again (it removes it).")
 }
 
+// rollbackFileTransferNote says, after a rollback that removed the console's
+// file transfer settings (0.2.28), that the commands that set them write what
+// the older release refuses until it is installed.
+func (inv *invocation) rollbackFileTransferNote(version string) {
+	inv.echo("")
+	inv.echo("Until the upgrade, do not run 'tacctl console file-transfer' with a tier, a user, a quota or a rate to set: it writes the file transfer settings again, which " + version + " refuses (its console falls back to the defaults and 'console' commands that write fail).")
+	inv.echo("If one did, run 'tacctl rollback " + version + " --apply' again (it removes them).")
+}
+
 // rollbackNextSteps0227 is the next steps of the rollback to 0.2.27: the
-// upgrade of the tag. 0.2.27 reads every file this release writes, so the
-// rollback converted nothing, took no snapshot and leaves no command to avoid:
-// the limits of the stored reports and the reports in the users' homes (the
-// PDF ones too) stay, 0.2.27 has them.
-func (inv *invocation) rollbackNextSteps0227(version string) {
+// upgrade of the tag. 0.2.27 reads every file this release writes but the
+// file transfer settings of console.yaml, so the rollback converted nothing
+// else and leaves no other command to avoid: the limits of the stored reports
+// and the reports in the users' homes (the PDF ones too) stay, 0.2.27 has
+// them. snapshot is whether it took the snapshot, which it does only for those
+// settings; the note says why 0.2.27 cannot restore it.
+func (inv *invocation) rollbackNextSteps0227(version string, snapshot bool) {
 	inv.echo("")
 	inv.echo(ui.Bold + "Next steps" + ui.NC)
 	inv.echo("  1. Install " + version + " with the upgrade (see Upgrading in the README), which switches the clone in " + inv.app.Paths.Deploy + " to the tag, builds it and re-executes it:")
 	inv.echo("       tacctl upgrade --branch " + version)
 	inv.echo("  2. Check it: tacctl status; tacctl config validate")
+	inv.rollbackSnapshotNote(snapshot, "; "+version+"'s restore puts back a console.yaml with a setting it does not know.")
 }
 
 // rollbackNextSteps0226 is the next steps of the rollback to 0.2.26: those of
 // 0.2.27, which reads the same files (0.2.26 reads every file 0.2.27 and this
-// release write).
-func (inv *invocation) rollbackNextSteps0226(version string) {
-	inv.rollbackNextSteps0227(version)
+// release write but the file transfer settings).
+func (inv *invocation) rollbackNextSteps0226(version string, snapshot bool) {
+	inv.rollbackNextSteps0227(version, snapshot)
 }
 
 // rollbackNextSteps0225 is the next steps of the rollback to 0.2.25: the

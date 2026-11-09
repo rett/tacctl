@@ -1,23 +1,34 @@
 package lifecycle
 
 // The rollback to 0.2.27, the release before this one. This release changed
-// no stored file 0.2.27 reads strictly: what it changed is the code that
-// reads the answer of a Cisco IOS device to a long command (the tail of the
-// echo that the device cuts and redraws is dropped as well, so a support
-// bundle no longer starts its identity lines with it), and the documentation.
-// The stored state files, the per-tier sudoers text, the keys of tacctl.yaml,
-// the fields of the store, the format of the pull records and of the reports
-// in the users' homes are all as 0.2.27 reads them. So 0.2.27 reads every
-// file this one writes and the plan of the target converts nothing: it leaves
-// every file alone, the per-tier sudoers drop-in included (0.2.27 and this
-// release write the same text), removes no key (the limits of the stored
-// reports, reports.max_size and reports.max_count in tacctl.yaml and a user's
-// own limits in the store, stay: 0.2.27 has them) and takes no snapshot. The
-// reports in the users' homes stay too, the PDF ones included (0.2.27 reads
-// them), and so does the marker /var/lib/tacctl/pdf-tools-offered, which this
-// release and 0.2.27 write alike. No step of rollbackAdditions fires for it
-// either: they undo what 0.2.26 and older releases changed, for the targets
-// older than the release that made the change.
+// one stored file 0.2.27 reads strictly: console.yaml, which gained
+// settings.file_transfer (the console's file transfer, off by default, per
+// tier and per user, with a quota and a rate), a key 0.2.27's reader answers
+// with "settings: unknown key 'file_transfer'" (the console then falls back to
+// its defaults and every 'console' command that writes the file fails). So
+// when the key is there the plan removes it, after the snapshot --apply takes
+// first, and keeps every other setting; rollback_filetransfer.go is that step,
+// an entry of rollbackAdditions that every older target has too. With the
+// settings unset the plan converts nothing, as the rest of this release's
+// changes need no conversion.
+//
+// What else this release changed is the code that reads the answer of a
+// Cisco IOS device to a long command (the tail of the echo that the device
+// cuts and redraws is dropped as well, so a support bundle no longer starts
+// its identity lines with it), and the documentation. The stored state files,
+// the per-tier sudoers text, the keys of tacctl.yaml, the fields of the store,
+// the format of the pull records and of the reports in the users' homes are
+// all as 0.2.27 reads them. So 0.2.27 reads every other file this one writes
+// and the plan of the target leaves them alone, the per-tier sudoers drop-in
+// included (0.2.27 and this release write the same text), removes no key of
+// tacctl.yaml (the limits of the stored reports, reports.max_size and
+// reports.max_count in tacctl.yaml and a user's own limits in the store, stay:
+// 0.2.27 has them) and takes a snapshot only for the file transfer settings.
+// The reports in the users' homes stay too, the PDF ones included (0.2.27
+// reads them), and so does the marker /var/lib/tacctl/pdf-tools-offered, which
+// this release and 0.2.27 write alike. No other step of rollbackAdditions
+// fires for it either: they undo what 0.2.26 and older releases changed, for
+// the targets older than the release that made the change.
 //
 // What this release changed outside the stored files is 0.2.27's to undo or
 // keep, and needs no step here: the next support bundle of a device with
