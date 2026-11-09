@@ -157,53 +157,70 @@ current behaviour; this file is where history lives.
    every command, the conventions page, the manual page, the help and
    `tests/README.md` (the `TACCTL_TEST_HOME` knob of the bats suite) say so.
 
-9. **`device support-bundle` keeps model names, object identifiers, vendor
-   addresses and the layout of every answer, and replaces every serial
-   number.** Captures of real devices showed what the scrubber got wrong. It
-   took model names for serial numbers (`PID: CSR1000V` lost its model and
-   `DESCR: "Cisco CSR1000V Chassis"` became `Cisco SN000001 Chassis`), it
-   missed serial numbers that have no serial shape, it rewrote
+9. **`device support-bundle` keeps model names, object identifiers and the
+   layout of every answer, keeps the public names of vendors, and replaces
+   every serial number.** Captures of real devices showed what the scrubber
+   got wrong. It took model names for serial numbers (`PID: CSR1000V` lost its
+   model and `DESCR: "Cisco CSR1000V Chassis"` became `Cisco SN000001
+   Chassis`), it missed serial numbers that have no serial shape, it rewrote
    `sysObjectID.0: 1.3.6.1.4.1.2636.1.1.1.2.165` as pieces of example IPv4
-   addresses, it replaced the vendors' own addresses, it moved the columns of a
-   table, a sysDescr came out garbled, and a command the IOS terminal echoed in
-   several lines left them at the top of its file (`07-identity-lines.txt`).
-   Now: the values after `PID:` (up to two blanks, a comma, `VID:` or `SN:`)
-   and `VID:`, the quoted `DESCR:` strings of `show inventory`, the model of
-   the `Model:` line of Junos, the model of the `cisco <model> (...)
-   processor` and `Cisco IOS Software, <model> Software` lines of IOS `show
-   version` and every model name the files of the bundle state are kept, in
-   all the files, the model itself and never the rest of its line (the serial
-   after a model is replaced, and a quoted `NAME:` is not exempt); the serial
-   numbers are replaced by their field, whatever their length, case or digits,
-   and the same real serial is the same example in every file: the `SN:` value
-   of `show inventory`, `Hw Serial#:` in a description, `Processor board ID`,
-   `System serial number`, the generic `Serial number:` field (up to the next
-   blank, comma or quote), the Junos `Serial ID` of a routing engine, and the
-   serial cell of every row of `show chassis hardware` (the transceiver, PIC
-   and power supply rows included) and of Junos `show virtual-chassis`, cut at
-   the column its header gives, or at its tabs (an empty or `BUILTIN` cell,
-   the part number and the Description column stay, and only that column
-   escapes the serial shape; a table ends at the first line with nothing in or
-   after the serial column; a word that has not the shape of a serial number,
-   such as `Prsnt`, is not learned as one); an object identifier (a dotted run
-   that begins `1.3.6.1.`) is never an address, the digits around any other
-   address (`10.20.30.40.179`) do not make it one; the bare domain of
-   cisco.com, juniper.net, hpe.com, hp.com, gnu.org, fsf.org, openssl.org,
-   ietf.org or kernel.org, with one of the labels `www`, `tools`, `ftp`,
-   `cdn`, `software` or `support` in front of it, and the example.* names, are
-   kept, but a mail address, a customer's name under those domains and any
-   name under a learned domain are replaced; and when a replacement is shorter or longer than the text it replaces and blanks
-   follow, the blanks are added or taken away so the columns after it stay
-   where the device printed them. The sysDescr garble was the learn step: an
-   empty `sysLocation.0:`, `sysContact.0:` or `snmp-server contact` line took
-   the next line as its value and replaced all of it by an example; the
-   patterns for the hostname, domain, location and contact lines stay on their
-   line now. A Cisco session also drops the echo of a command longer than the
-   terminal is wide (the device scrolls it over lines that start with `$`), so
-   the `show running-config | include ^(hostname|...)` file starts with the
-   device's answer. Release strings such as `12.4(15)SW4` and `16.07.01` were
-   never read as addresses and still are not. `docs/devices/support-bundle.md`
-   and the manual page say what is replaced and what stays.
+   addresses, it replaced the vendors' own host names, it moved the columns of
+   a table, a sysDescr came out garbled, and a command the IOS terminal echoed
+   in several lines left them at the top of its file
+   (`07-identity-lines.txt`). Now: the values after `PID:` (up to two blanks,
+   a comma, `VID:` or `SN:`) and `VID:`, the quoted `DESCR:` strings of `show
+   inventory`, the model of the `Model:` line of Junos, the model of the
+   `cisco <model> (...) processor` and `Cisco IOS Software, <model> Software`
+   lines of IOS `show version` and every model name the files of the bundle
+   state are kept, in all the files, the model itself and never the rest of
+   its line (the serial after a model is replaced, and a quoted `NAME:` is not
+   exempt). The serial numbers are replaced by their field, whatever their
+   length, case or digits, and the same real serial is the same example in
+   every file: the `SN:` value of `show inventory`, `Hw Serial#:` in a
+   description, `Processor board ID`, `System serial number`, the generic
+   `Serial number:` field and the Junos `Serial ID` of a routing engine (the
+   value runs to the next blank, comma or quote and ends at its last letter or
+   digit, so `(serial: abc12345)` keeps its parenthesis), and the serial cell
+   of every row of `show chassis hardware` (the transceiver, PIC and power
+   supply rows included) and of Junos `show virtual-chassis`, cut at the
+   column its header gives. In that column any word with a letter or digit is
+   a serial, whatever its length, case or digits, except the status words
+   (`Prsnt`, `NotPrsnt`, `Unprvsnd`, `Absent`, `Present`, `Inactive`,
+   `Online`, `Offline`, `Master`, `Backup`, `Linecard`, `Spare`, `Empty`, in
+   any case). A table ends at a blank line, a line of one word and a colon, or
+   a prompt line that begins with `{`, and not at a row with nothing in or
+   after the serial column (`Midplane`, a member without a serial). A
+   tab-separated row has its serial at the header's column when it has as many
+   cells as the header, and by shape (the one cell that is a word with a
+   digit, or the one after the part number) when it has fewer or its
+   description holds two blanks; a cell with a hyphen (`650-114384`,
+   `NON-JNPR`, `EX4300-48T`) is a part number or a model, never a serial. An
+   empty or `BUILTIN` cell and the Description column stay, and only that
+   column escapes the serial shape. An object identifier (a dotted run that
+   begins `1.3.6.1.`) is never an address, the digits around any other address
+   (`10.20.30.40.179`) do not make it one. The bare domain of cisco.com,
+   juniper.net, hpe.com, hp.com, gnu.org, fsf.org, openssl.org, ietf.org or
+   kernel.org, with one of the labels `www`, `tools`, `ftp`, `cdn`, `software`
+   or `support` in front of it, and the example.* names, are kept, but a mail
+   address (a vendor's too), a customer's name under those domains and any
+   name under a learned domain are replaced. The parent domain of every host
+   name that is replaced is learned as the owner's, so once `acme-corp.hpe.com`
+   is replaced, `hpe.com` and `www.hpe.com` are replaced in every file of the
+   bundle, and the files are looked at until nothing new is learned; a public
+   label is never replaced as a word of its own (`www` and `Technical
+   Support:` stay). When a replacement is shorter or longer than the text it
+   replaces and blanks follow, the blanks are added or taken away so the
+   columns after it stay where the device printed them. The sysDescr garble
+   was the learn step: an empty `sysLocation.0:`, `sysContact.0:` or
+   `snmp-server contact` line took the next line as its value and replaced all
+   of it by an example; the patterns for the hostname, domain, location and
+   contact lines stay on their line now. A Cisco session also drops the echo
+   of a command longer than the terminal is wide (the device scrolls it over
+   lines that start with `$`), so the `show running-config | include
+   ^(hostname|...)` file starts with the device's answer. Release strings such
+   as `12.4(15)SW4` and `16.07.01` were never read as addresses and still are
+   not. `docs/devices/support-bundle.md` and the manual page say what is
+   replaced and what stays.
 
 ## 0.2.26 (2026-11-06)
 

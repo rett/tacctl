@@ -159,6 +159,12 @@ func (s *Scrubber) Learn(k Kind, real string) string {
 	}
 	key := string(k) + "\x00" + strings.ToLower(real)
 	if ex, ok := s.byKey[key]; ok {
+		if k == Host && publicLabels[strings.ToLower(real)] {
+			// the host is called so: it is a thing to hunt for, which the
+			// label of a longer name (www.acme.corp) is not
+			s.learned[strings.ToLower(real)] = ex
+			s.dirty = true
+		}
 		return ex
 	}
 	var ex string
@@ -170,7 +176,12 @@ func (s *Scrubber) Learn(k Kind, real string) string {
 		// a name with dots is a host and a domain: sw1.corp.net
 		if label, dom, ok := strings.Cut(real, "."); ok && label != "" && dom != "" {
 			exDom := s.Learn(Domain, dom)
-			exLabel := s.Learn(Host, label)
+			var exLabel string
+			if publicLabels[strings.ToLower(label)] {
+				exLabel = s.hostLabel(label)
+			} else {
+				exLabel = s.Learn(Host, label)
+			}
 			ex = exLabel + "." + exDom
 			s.record(k, real, ex, key, true)
 			return ex
@@ -183,6 +194,19 @@ func (s *Scrubber) Learn(k Kind, real string) string {
 	}
 	byName := k != Addr4 && k != Addr6 && k != MAC && k != Serial && k != Mail
 	s.record(k, real, ex, key, byName)
+	return ex
+}
+
+// hostLabel is the example of a public label (www) in front of a host that is
+// replaced: made once and kept, without making the word one to replace
+// wherever it stands, as Learn does for the label of any other host.
+func (s *Scrubber) hostLabel(label string) string {
+	key := string(Host) + "\x00" + strings.ToLower(label)
+	if ex, ok := s.byKey[key]; ok {
+		return ex
+	}
+	ex := s.example(Host, label)
+	s.record(Host, label, ex, key, false)
 	return ex
 }
 
@@ -224,7 +248,7 @@ var (
 	reLearnCurrent  = regexp.MustCompile(`Current user: '([^']*)' login: '([^']*)' class '([^']*)'`)
 	reLearnUptime   = regexp.MustCompile(`(?m)^(\S+) uptime is `)
 	reLearnLastBy   = regexp.MustCompile(`(?m)(?:last configuration change|nvram config last updated).* by (\S+)[ \t]*$`)
-	reLearnSerial   = regexp.MustCompile(`(?mi)\bserial(?: number| no\.?)?[ \t]*[:=][ \t]*([^\s,"]+)`)
+	reLearnSerial   = regexp.MustCompile(`(?mi)\bserial(?: number| no\.?)?[ \t]*[:=][ \t]*([^\s,"]*[A-Za-z0-9])`)
 	reLearnDomain   = regexp.MustCompile(`(?mi)^[ \t]*ip domain[- ]name[ \t]+(?:vrf \S+[ \t]+)?(\S+)`)
 	// the model names a text states
 	reLearnPID      = regexp.MustCompile(`(?m)\bPID:[ \t]*(.*?)(?:[ \t]{2,}|,|\bVID:|\bSN:|$)`)
@@ -333,22 +357,23 @@ func keepSpans(text string) []span {
 // The serial numbers a text states by their field, whatever their shape: the
 // value is group 1.
 var reSerialFields = []*regexp.Regexp{
-	regexp.MustCompile(`\bSN:[ \t]*([^\s,"]+)`),
-	regexp.MustCompile(`\bHw Serial#:[ \t]*([^\s,"]+)`),
-	regexp.MustCompile(`\bProcessor board ID[ \t]+([^\s,"]+)`),
-	regexp.MustCompile(`(?i)\bSystem serial number[ \t]*:[ \t]*([^\s,"]+)`),
-	regexp.MustCompile(`\bSerial ID[ \t]+([^\s,"]+)`),
+	regexp.MustCompile(`\bSN:[ \t]*([^\s,"]*[A-Za-z0-9])`),
+	regexp.MustCompile(`\bHw Serial#:[ \t]*([^\s,"]*[A-Za-z0-9])`),
+	regexp.MustCompile(`\bProcessor board ID[ \t]+([^\s,"]*[A-Za-z0-9])`),
+	regexp.MustCompile(`(?i)\bSystem serial number[ \t]*:[ \t]*([^\s,"]*[A-Za-z0-9])`),
+	regexp.MustCompile(`\bSerial ID[ \t]+([^\s,"]*[A-Za-z0-9])`),
 	reLearnSerial,
 }
 
 // A serial column of a table is cut at the position its header gives: the
 // headers of 'show chassis hardware' and of Junos 'show virtual-chassis'.
 // The cell after the serial column is the one the exempt description starts
-// at; the rows of a table with a gap in them are counted from the right.
+// at; the tab-separated rows of a table with a gap in them are read by the
+// shape of their cells (tabRow).
 type serialTable struct {
 	head           *regexp.Regexp
 	serial, follow string // the header words that start the serial column and the column after it
-	fromRight      bool   // a tab-separated row has cells missing before the serial: count them from its end
+	fromRight      bool   // a tab-separated row may leave cells out before the serial: find it by shape
 }
 
 var serialTables = []serialTable{
@@ -366,19 +391,29 @@ func isSerialValue(v string) bool {
 
 var reExampleSerial = regexp.MustCompile(`^SN\d{6}$`)
 
+// reStatus are the words a table prints in a column next to the serial one
+// (the status of a member, the role of a module): never a serial number.
+var reStatus = regexp.MustCompile(`(?i)^(?:prsnt|notprsnt|unprvsnd|absent|present|inactive|online|offline|master|backup|linecard|spare|empty)$`)
+
 // isTableSerial reports whether v, a word in the serial column of a table, is
-// a number to learn: a serial value of the shape of one (four characters or
-// more, with a digit), not a status such as Prsnt.
+// a number to learn: a serial value (whatever its length, case or digits, but
+// with a letter or a digit in it), not a status such as Prsnt.
 func isTableSerial(v string) bool {
-	return len(v) >= 4 && strings.ContainsAny(v, "0123456789") && isSerialValue(v)
+	return strings.IndexFunc(v, func(r rune) bool { return r < utf8.RuneSelf && isAlnum(byte(r)) }) >= 0 &&
+		!reStatus.MatchString(v) && isSerialValue(v)
 }
 
 // reCellSep separates the cells of a row that was cut at tabs, or at two
-// blanks or more, instead of at the columns of its header.
-var reCellSep = regexp.MustCompile(`\t+| {2,}`)
+// blanks or more, instead of at the columns of its header; reTabSep the cells
+// of a row by its tabs alone.
+var (
+	reCellSep = regexp.MustCompile(`\t+| {2,}`)
+	reTabSep  = regexp.MustCompile(`\t+`)
+)
 
-// cellsAt are the cells of a line, trimmed, with their positions.
-func cellsAt(line string) []span {
+// cellsAt are the cells of a line, split at sep, trimmed, with their
+// positions.
+func cellsAt(line string, sep *regexp.Regexp) []span {
 	var out []span
 	add := func(from, to int) {
 		for from < to && (line[from] == ' ' || line[from] == '\t') {
@@ -392,19 +427,75 @@ func cellsAt(line string) []span {
 		}
 	}
 	pos := 0
-	for _, sep := range reCellSep.FindAllStringIndex(line, -1) {
-		add(pos, sep[0])
-		pos = sep[1]
+	for _, m := range sep.FindAllStringIndex(line, -1) {
+		add(pos, m[0])
+		pos = m[1]
 	}
 	add(pos, len(line))
 	return out
 }
 
+// tabRow finds the serial cell of a tab-separated row of a table, and where
+// the exempt description starts (-1 for none). Its place is the serial
+// column of the header (si of the nh cells of the header); a row of a table
+// that leaves cells out (byShape) with fewer cells than the header, or whose
+// description holds two blanks, has it by its shape instead: the one cell
+// with a digit that is a word, not a part number or a model (those have a
+// hyphen), or the one after the part number.
+func tabRow(body string, si, nh int, byShape bool) (serial span, found bool, descr int) {
+	ok := func(c span) bool {
+		v := body[c.start:c.end]
+		return !strings.ContainsAny(v, " \t-") && isTableSerial(v)
+	}
+	tc := cellsAt(body, reTabSep)
+	if si < len(tc) && (!byShape || len(tc) == nh) {
+		descr = -1
+		if si+1 < len(tc) {
+			descr = tc[si+1].start
+		}
+		if ok(tc[si]) {
+			return tc[si], true, descr
+		}
+		if !byShape {
+			return span{}, false, descr
+		}
+	}
+	if !byShape {
+		return span{}, false, -1
+	}
+	fc := cellsAt(body, reCellSep)
+	var cands []int
+	for i := 1; i < len(fc); i++ {
+		if ok(fc[i]) && strings.ContainsAny(body[fc[i].start:fc[i].end], "0123456789") {
+			cands = append(cands, i)
+		}
+	}
+	pick := -1
+	if len(cands) == 1 {
+		pick = cands[0]
+	}
+	for _, i := range cands {
+		if v := body[fc[i-1].start:fc[i-1].end]; pick < 0 && i >= 2 && (strings.Contains(v, "-") || reNoSerial.MatchString(v)) {
+			pick = i
+		}
+	}
+	switch {
+	case pick >= 0 && pick+1 < len(fc):
+		return fc[pick], true, fc[pick+1].start
+	case pick >= 0:
+		return fc[pick], true, -1
+	case len(cands) == 0 && len(fc) > 1:
+		return span{}, false, fc[1].start // no serial: all of it is the item and its description
+	}
+	return span{}, false, -1
+}
+
 // serialSpans are the serial numbers a text states by field, and the
 // Description columns of the tables they are cut from (the words there are
 // model names and descriptions, whatever their shape). A table ends at a
-// blank line, at a 'word:' line, and at the first line with nothing in or
-// after the serial column.
+// blank line, at a 'word:' line and at a prompt line that begins with a
+// brace; a row with nothing in or after the serial column (a bare item such
+// as Midplane, a member without a serial) is an empty row, inside the table.
 func serialSpans(text string) (cells, descr []span) {
 	for _, re := range reSerialFields {
 		for _, m := range re.FindAllStringSubmatchIndex(text, -1) {
@@ -422,7 +513,7 @@ func serialSpans(text string) (cells, descr []span) {
 	for _, line := range strings.SplitAfter(text, "\n") {
 		body := strings.TrimRight(line, "\r\n")
 		switch {
-		case strings.TrimSpace(body) == "" || strings.HasSuffix(body, ":") && !strings.Contains(body, " "):
+		case strings.TrimSpace(body) == "" || strings.HasSuffix(body, ":") && !strings.Contains(body, " ") || strings.HasPrefix(body, "{"):
 			tb = -1
 		case headerOf(body) >= 0:
 			tb = headerOf(body)
@@ -432,31 +523,27 @@ func serialSpans(text string) (cells, descr []span) {
 				tb = -1
 				break
 			}
-			hc := cellsAt(body)
+			hc := cellsAt(body, reCellSep)
 			nh, si = len(hc), slices.IndexFunc(hc, func(c span) bool { return body[c.start:c.end] == head.serial })
 		case tb >= 0 && strings.Contains(body, "\t"):
-			cs := cellsAt(body)
-			idx := si
-			if serialTables[tb].fromRight {
-				idx = len(cs) - (nh - si)
-			}
-			if len(cs) < 2 || si < 0 {
+			if si < 0 {
 				tb = -1
 				break
 			}
-			if idx >= 0 && idx < len(cs) {
-				if v := body[cs[idx].start:cs[idx].end]; isTableSerial(v) && !strings.ContainsAny(v, " \t") {
-					cells = append(cells, span{off + cs[idx].start, off + cs[idx].end})
-				}
+			if len(cellsAt(body, reTabSep)) < 2 {
+				break // a bare item: an empty row
 			}
-			if idx >= 0 && idx+1 < len(cs) {
-				descr = append(descr, span{off + cs[idx+1].start, off + len(body)})
+			serial, found, d := tabRow(body, si, nh, serialTables[tb].fromRight)
+			if found {
+				cells = append(cells, span{off + serial.start, off + serial.end})
+			}
+			if d >= 0 {
+				descr = append(descr, span{off + d, off + len(body)})
 			}
 		case tb >= 0:
 			fields := fieldsAt(body)
 			if !slices.ContainsFunc(fields, func(f span) bool { return f.start >= from }) {
-				tb = -1 // nothing in or after the serial column: not a row of the table
-				break
+				break // nothing in or after the serial column: an empty row
 			}
 			for _, f := range fields {
 				if f.start >= from && f.start < to && isTableSerial(body[f.start:f.end]) {
@@ -786,12 +873,16 @@ func (s *Scrubber) ApplyAll(texts []string) []string {
 	for _, t := range texts {
 		s.LearnFrom(t)
 	}
-	for _, t := range texts { // learns the values found by shape
-		s.Apply(t)
-	}
+	// Apply learns the values it recognises, and a name it learns in a later
+	// text (acme-lab.vendor.com) makes its domain the owner's in all of them:
+	// the texts are applied until a look learns nothing, and the last look is
+	// what is returned.
 	out := make([]string, len(texts))
-	for i, t := range texts {
-		out[i] = s.Apply(t)
+	for n := -1; n != len(s.pairs); {
+		n = len(s.pairs)
+		for i, t := range texts {
+			out[i] = s.Apply(t)
+		}
 	}
 	return out
 }
