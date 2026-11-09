@@ -185,9 +185,9 @@ host default-method radius ;; host default-method ;; config get host.default_met
 config linux script --scope lab --server 192.0.2.10
 @known 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config linux script --scope lab
-@known 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
+@known 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least); 0.2.27 item 7: an output path is written inside the caller's home and named by its absolute path in the messages and the audit line
 config linux script --scope lab --server 192.0.2.10 --output lab.sh
-@known 0.2.1 item 9: an output that cannot be written is '[ERROR] Cannot write', exit 1
+@known 0.2.1 item 9: an output that cannot be written is '[ERROR] Cannot write', exit 1; 0.2.27 item 7: an output path is written inside the caller's home and named by its absolute path in the messages and the audit line
 config linux script --scope lab --server 192.0.2.10 -o nodir/lab.sh
 @known 0.2.1 items 37-39: the script is the 0.2.1 account lifecycle (TAC_INACTIVE, TAC_REMOVE_HOMES, TAC_PROTOCOL; removed users deleted); 0.2.1 items 35 and 52: its UIDs are 80000-89999; 0.2.1 item 62: TAC_PROTOCOL=5; 0.2.14 item 4: a snapshot holds the host files (an empty linux-hosts at least)
 config linux script --scope dmz --server 192.0.2.10
@@ -209,8 +209,9 @@ scope protocols lab set radius ;; config linux script --scope lab --server 192.0
 scope auth-method lab radius ;; config linux script --scope lab --server 192.0.2.10
 @known 0.2.1 item 55: the removal script gives tacctl's console accounts /bin/bash back
 config linux remove-script
-@known 0.2.1 item 55: the removal script gives tacctl's console accounts /bin/bash back
+@known 0.2.1 item 55: the removal script gives tacctl's console accounts /bin/bash back; 0.2.27 item 7: an output path is written inside the caller's home and named by its absolute path in the messages and the audit line
 config linux remove-script -o rm.sh
+@known 0.2.27 item 7: an output path is written inside the caller's home and named by its absolute path in the messages
 config linux remove-script --output nodir/rm.sh
 config linux remove-script bogus
 @known 0.2.1 item 1: a listing does not create the UID file
