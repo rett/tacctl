@@ -401,3 +401,44 @@ func TestObjectIdentifiersAndVersionsAreNotAddresses(t *testing.T) {
 		},
 	})
 }
+
+// The columns after a replacement stay where the device printed them.
+func TestColumnsKeepTheirWidth(t *testing.T) {
+	cols := func(t *testing.T, in []string, marks ...string) {
+		t.Helper()
+		out := New().ApplyAll(in)
+		for i := range in {
+			inLines, outLines := strings.Split(in[i], "\n"), strings.Split(out[i], "\n")
+			if len(inLines) != len(outLines) {
+				t.Fatalf("the line count changed:\n%s", out[i])
+			}
+			for n := range inLines {
+				for _, m := range marks {
+					if a, b := strings.Index(inLines[n], m), strings.Index(outLines[n], m); a != b {
+						t.Errorf("%q is at column %d, was at %d:\n%s\n%s", m, b, a, inLines[n], outLines[n])
+					}
+				}
+			}
+		}
+	}
+	t.Run("virtual chassis row", func(t *testing.T) {
+		cols(t, []string{junosVC}, "ex4400-48t", "255", "Master*", "vcp-255")
+	})
+	t.Run("chassis hardware", func(t *testing.T) {
+		cols(t, []string{junosHardware}, "Virtual Chassis", "EX4400-48T", "4x10G", "JPSU", "SFP-LX10", "SFP-T", "NON-JNPR", "740-013111")
+	})
+	t.Run("shorter and longer", func(t *testing.T) {
+		in := "10.20.30.40       up    eth0\n10.1.1.1          up    eth1\nuser jsmith       ok    here\nuser jo           ok    there\n"
+		cols(t, []string{in}, "up", "ok", "eth", "here", "there")
+	})
+	t.Run("host and mac columns", func(t *testing.T) {
+		in := "Hostname: core-sw1.corp.net\ncore-sw1.corp.net   00:1b:63:84:45:e6   Gi1/0/1\nsw1                 00:1b:63:84:45:e7   Gi1/0/2\nhost ab    00:1b:63:84:45:e8   Gi1/0/3\nHostname: ab\n"
+		cols(t, []string{in}, "Gi1", "00:")
+	})
+	t.Run("end of line and single blanks", func(t *testing.T) {
+		out := New().ApplyAll([]string{"Mgmt 10.20.30.40    \nip address 192.168.100.100 255.255.255.0\n"})[0]
+		if want := "Mgmt 192.0.2.1    \nip address 192.0.2.2 255.255.255.0\n"; out != want {
+			t.Errorf("got %q, want %q", out, want)
+		}
+	})
+}

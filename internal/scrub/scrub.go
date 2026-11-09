@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // A Kind is what a value is.
@@ -484,11 +485,12 @@ func (s *Scrubber) Apply(text string) string {
 	type edit struct {
 		start, end int
 		rep        string
+		cell       bool // a cell of a table: one blank after it separates the columns
 	}
 	var edits []edit
 	for _, c := range cells {
 		if rep := s.Learn(Serial, text[c.start:c.end]); rep != text[c.start:c.end] {
-			edits = append(edits, edit{c.start, c.end, rep})
+			edits = append(edits, edit{c.start, c.end, rep, true})
 		}
 	}
 	names := s.re.SubexpNames()
@@ -518,7 +520,7 @@ func (s *Scrubber) Apply(text string) string {
 		if !ok {
 			continue
 		}
-		edits = append(edits, edit{start, end, rep})
+		edits = append(edits, edit{start, end, rep, false})
 	}
 	sort.SliceStable(edits, func(i, j int) bool { return edits[i].start < edits[j].start })
 	var b strings.Builder
@@ -528,11 +530,41 @@ func (s *Scrubber) Apply(text string) string {
 			continue
 		}
 		b.WriteString(text[last:e.start])
-		b.WriteString(e.rep)
-		last = e.end
+		rep, skip := keepWidth(text, e.start, e.end, e.rep, e.cell)
+		b.WriteString(rep)
+		last = e.end + skip
 	}
 	b.WriteString(text[last:])
 	return b.String()
+}
+
+// keepWidth keeps the columns after a replacement where the device printed
+// them. When rep is shorter than the text[start:end] it replaces and a run of
+// blanks follows (two or more, or one in the cell of a table) that is not at
+// the end of the line, the missing blanks are added to rep; when it is longer
+// and enough blanks follow, as many are skipped (skip), one blank always
+// staying. At the end of a line nothing is done.
+func keepWidth(text string, start, end int, rep string, cell bool) (string, int) {
+	have, want := utf8.RuneCountInString(text[start:end]), utf8.RuneCountInString(rep)
+	if have == want {
+		return rep, 0
+	}
+	blanks := 0
+	for end+blanks < len(text) && text[end+blanks] == ' ' {
+		blanks++
+	}
+	next := end + blanks
+	minRun := 2
+	if cell {
+		minRun = 1
+	}
+	if blanks < minRun || next >= len(text) || text[next] == '\n' || text[next] == '\r' {
+		return rep, 0
+	}
+	if have > want {
+		return rep + strings.Repeat(" ", have-want), 0
+	}
+	return rep, min(want-have, blanks-1)
 }
 
 // inDottedRun reports whether text[start:end], four groups of digits, is part
