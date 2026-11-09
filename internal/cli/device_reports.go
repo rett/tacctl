@@ -312,11 +312,18 @@ func (inv *invocation) deviceReportsGenerate(args []string) error {
 		return err
 	}
 	if len(entries) == 0 {
-		inv.app.Out.Warn("No device matches: the report has no rows.")
+		// with --stdout the report is the only thing on standard output
+		notice := inv.app.Out
+		if p.Has("--stdout") {
+			notice.Stdout = notice.Stderr
+		}
+		notice.Warn("No device matches: the report has no rows.")
 	}
 	if p.Has("--stdout") {
 		if format == reports.FormatPDF {
-			inv.writeRaw(body.Bytes())
+			if err := inv.writeRaw(body.Bytes()); err != nil {
+				return inv.rawWriteErr(err)
+			}
 		} else {
 			inv.write(body.String())
 		}
@@ -388,6 +395,11 @@ func reportSize(n int64) string {
 // scope) is left as it is. With stdout the pull's output goes to standard
 // error, so that the report is the only thing on standard output.
 func (inv *invocation) reportsPull(entries []devreg.Entry, stdout bool) error {
+	if stdout {
+		out := inv.app.Out.Stdout
+		inv.app.Out.Stdout = inv.app.Out.Stderr
+		defer func() { inv.app.Out.Stdout = out }()
+	}
 	var names []string
 	for _, e := range entries {
 		if e.Configured && slices.Contains(sortedVendors(), e.Vendor) {
@@ -397,11 +409,6 @@ func (inv *invocation) reportsPull(entries []devreg.Entry, stdout bool) error {
 	if len(names) == 0 {
 		inv.app.Out.Info("No device to read: none of the devices has a vendor the pull reads and a scope that covers it.")
 		return nil
-	}
-	if stdout {
-		out := inv.app.Out.Stdout
-		inv.app.Out.Stdout = inv.app.Out.Stderr
-		defer func() { inv.app.Out.Stdout = out }()
 	}
 	err := inv.deviceConfigPull([]string{strings.Join(names, ",")})
 	if err != nil && exitStatus(err) == 1 {

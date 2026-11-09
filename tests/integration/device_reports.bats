@@ -57,6 +57,8 @@ alice() {
     run cat "${PDF_STUB}.env"
     assert_output --partial "LANG=C.UTF-8"
     assert_output --partial "XDG_CACHE_HOME="
+    assert_output --partial "/.cache"
+    assert_output --partial "PYTHONNOUSERSITE=1"
     assert_output --partial "PATH=/usr/local/bin:/usr/bin:/bin"
     refute_output --partial "TACCTL_"
     refute_output --partial "SUDO_USER"

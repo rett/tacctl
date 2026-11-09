@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/fs"
 	"strconv"
 	"sync"
 	"testing"
@@ -29,6 +30,8 @@ func newTestHooks() *hooks {
 		terminalLine: func() string { return "" },
 		// no PDF tool unless a test installs one: the machine's own is never run
 		pdfToolDirs: []string{},
+		// and a tool a test installs is root's, in directories root's
+		pdfStat: func(string) (uint32, fs.FileMode, error) { return 0, 0o755, nil },
 	}
 }
 

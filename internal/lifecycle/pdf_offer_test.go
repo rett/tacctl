@@ -133,11 +133,25 @@ func TestPDFOfferInstallFailureNeverFailsTheUpgrade(t *testing.T) {
 	}
 }
 
-// Anything but y or Y is no: the default, an n, an empty line and the end of
+// y, Y and yes (in any case, blanks around it ignored) install; see
+// TestPDFOfferNoIsRemembered for what does not.
+func TestPDFOfferYesWordInstalls(t *testing.T) {
+	for _, answer := range []string{"yes\n", "YES\n", "Yes\n", "  yes \n", "y\n", "Y\n", "yes"} {
+		o := pdfHost(t, true, answer)
+		if code := upgrade(o); code != 0 {
+			t.Fatalf("%q: exit %d\n%s", answer, code, o.stderr)
+		}
+		if got := aptInstalls(o); len(got) != 1 || got[0] != "install -y -qq weasyprint fonts-dejavu-core" || lifecycle.PDFOfferDone(o.p) {
+			t.Errorf("%q: installs %v, marker %v", answer, got, lifecycle.PDFOfferDone(o.p))
+		}
+	}
+}
+
+// Anything but y, Y or yes is no: the default, an n, no, other words and the end of
 // input. A no is remembered, so the next upgrade does not ask or install, and
 // deleting the marker asks again.
 func TestPDFOfferNoIsRemembered(t *testing.T) {
-	for name, answer := range map[string]string{"default": "\n", "n": "n\n", "word": "yes please\n", "eof": ""} {
+	for name, answer := range map[string]string{"default": "\n", "n": "n\n", "word": "no thanks\n", "yes please": "yes please\n", "eof": ""} {
 		t.Run(name, func(t *testing.T) {
 			o := pdfHost(t, true, answer)
 			if code := upgrade(o); code != 0 {

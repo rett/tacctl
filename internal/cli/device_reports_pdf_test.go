@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,8 +87,8 @@ func TestReportsPDFStdoutForEveryType(t *testing.T) {
 		// the whole document is what the tool reads, and the tool is run as
 		// documented: HTML on standard input, the PDF on standard output
 		c := calls[0].Cmd
-		if got := strings.Join(c.Args, " "); got != "--quiet - -" || c.Dir != "/" || c.Credential != nil {
-			t.Errorf("%s: args %q dir %q credential %v", typ, got, c.Dir, c.Credential)
+		if got := strings.Join(c.Args, " "); got != "--quiet - -" || c.Dir != "/" || c.Credential != nil || !c.KillGroup {
+			t.Errorf("%s: args %q dir %q credential %v kill-group %v", typ, got, c.Dir, c.Credential, c.KillGroup)
 		}
 	}
 	// --stdout stores nothing
@@ -106,7 +107,7 @@ func TestReportsPDFEnvironment(t *testing.T) {
 		t.Fatalf("exit %d %q", b.sb.code, b.sb.stderr())
 	}
 	home := filepath.Join(b.sb.dir, "home", "alice")
-	want := []string{"PATH=/usr/local/bin:/usr/bin:/bin", "LANG=C.UTF-8", "HOME=" + home, "XDG_CACHE_HOME=" + home}
+	want := []string{"PATH=/usr/local/bin:/usr/bin:/bin", "LANG=C.UTF-8", "HOME=" + home, "XDG_CACHE_HOME=" + home + "/.cache", "PYTHONNOUSERSITE=1"}
 	if got := toolCalls(b.sb.runner, tool)[0].Cmd.Env; strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("environment %q, want %q", got, want)
 	}
@@ -358,7 +359,7 @@ func TestReportsPDFRunsAsTheCaller(t *testing.T) {
 	if c.Credential == nil || c.Credential.Uid != 1001 || c.Credential.Gid != 1001 || len(c.Credential.Groups) != 0 || c.Credential.NoSetGroups {
 		t.Errorf("credential %+v", c.Credential)
 	}
-	wantEnv := []string{"PATH=/usr/local/bin:/usr/bin:/bin", "LANG=C.UTF-8", "HOME=" + filepath.Join(home, "alice"), "XDG_CACHE_HOME=" + filepath.Join(home, "alice")}
+	wantEnv := []string{"PATH=/usr/local/bin:/usr/bin:/bin", "LANG=C.UTF-8", "HOME=" + filepath.Join(home, "alice"), "XDG_CACHE_HOME=" + filepath.Join(home, "alice") + "/.cache", "PYTHONNOUSERSITE=1"}
 	if strings.Join(c.Env, "\n") != strings.Join(wantEnv, "\n") {
 		t.Errorf("environment %q", c.Env)
 	}
@@ -417,5 +418,180 @@ func TestReportsPDFFormatIsCompleted(t *testing.T) {
 	got, _ = completeWords(t, liveNames, "device", "reports", "generate", "--format", "p")
 	if strings.Join(got, " ") != "pdf" {
 		t.Errorf("offered %q for p", got)
+	}
+}
+
+// A root session with no usable sudo caller (no SUDO_UID, one that is not a
+// number, negative or 0) runs the tool as root, with the home of root from the
+// account database (else /), never the home of the account SUDO_USER names.
+func TestReportsPDFRootWithoutACaller(t *testing.T) {
+	b := newReportsBox(t)
+	tool := b.pdfTool()
+	home := filepath.Join(b.sb.dir, "home")
+	rootHome := filepath.Join(b.sb.dir, "root-home")
+	b.sb.hooks.editEuid = func() int { return 0 }
+	b.sb.hooks.sshAccountOf = func(name string) (sshAccount, error) {
+		return sshAccount{UID: 1001, GID: 1001, Home: filepath.Join(home, name)}, nil
+	}
+	b.sb.hooks.homeOfUID = func(uid int) (string, error) {
+		if uid != 0 {
+			t.Errorf("the home of uid %d was looked up", uid)
+		}
+		return rootHome, nil
+	}
+	// through the command (no SUDO_UID at all)
+	b.asWith(pdfStub(tool), nil, "alice", asSuper, "generate", "--type", "inventory", "--format", "pdf", "--stdout")
+	if b.sb.code != 0 {
+		t.Fatalf("exit %d %q", b.sb.code, b.sb.stderr())
+	}
+	c := toolCalls(b.sb.runner, tool)[0].Cmd
+	if c.Credential != nil || !strings.Contains(strings.Join(c.Env, "\n"), "\nHOME="+rootHome+"\n") || strings.Contains(strings.Join(c.Env, "\n"), "alice") {
+		t.Errorf("credential %+v, environment %q", c.Credential, c.Env)
+	}
+	// the identity itself, for the ids that cannot be a caller
+	for _, ids := range [][]string{{"SUDO_UID=abc"}, {"SUDO_UID=0", "SUDO_GID=0"}, {"SUDO_UID=-5"}, {"SUDO_UID=1001", "SUDO_GID=-1"}} {
+		inv := &invocation{ctx: context.Background(), app: newHarness(t, nil, append([]string{"SUDO_USER=alice"}, ids...)...).app, hooks: b.sb.hooks}
+		cred, h, err := inv.pdfIdentity()
+		if err != nil || cred != nil || h != rootHome {
+			t.Errorf("%v: credential %+v, home %q, error %v", ids, cred, h, err)
+		}
+	}
+	// no home for root in the account database: the root directory
+	b.sb.hooks.homeOfUID = func(int) (string, error) { return "", os.ErrNotExist }
+	b.asWith(pdfStub(tool), nil, "alice", asSuper, "generate", "--type", "inventory", "--format", "pdf", "--stdout")
+	if got := strings.Join(toolCalls(b.sb.runner, tool)[0].Cmd.Env, "\n"); !strings.Contains(got, "\nHOME=/\n") || !strings.Contains(got, "\nXDG_CACHE_HOME=/.cache\n") {
+		t.Errorf("no home: %q", got)
+	}
+}
+
+// The tool must be root's and out of reach of others: it, what its links lead
+// to and every directory above them are owned by root and not writable by
+// group or others. One that is not is not used, and the error says why when
+// nothing else is found. The ownership comes from hooks.pdfStat.
+func TestReportsPDFToolMustBeRootsAndNotWritableByOthers(t *testing.T) {
+	b := newReportsBox(t)
+	tool := b.pdfTool()
+	dir := filepath.Dir(tool)
+	type owner struct {
+		uid  uint32
+		perm fs.FileMode
+	}
+	odd := map[string]owner{}
+	b.sb.hooks.pdfStat = func(p string) (uint32, fs.FileMode, error) {
+		if o, ok := odd[p]; ok {
+			return o.uid, o.perm, nil
+		}
+		return 0, 0o755, nil
+	}
+	rejected := "[ERROR] weasyprint at " + tool + " is not owned by root or is writable by others: not used"
+	generate := func() {
+		b.asWith(pdfStub(tool), nil, "alice", asSuper, "generate", "--type", "inventory", "--format", "pdf", "--stdout")
+	}
+	generate()
+	if b.sb.code != 0 {
+		t.Fatalf("root's tool: exit %d %q", b.sb.code, b.sb.stderr())
+	}
+	for name, o := range map[string]struct {
+		path string
+		own  owner
+	}{
+		"the tool is a user's":            {tool, owner{1000, 0o755}},
+		"the tool is group-writable":      {tool, owner{0, 0o775}},
+		"the tool is world-writable":      {tool, owner{0, 0o757}},
+		"its directory is a user's":       {dir, owner{1000, 0o755}},
+		"its directory is world-writable": {dir, owner{0, 0o777}},
+		"a directory above is a user's":   {filepath.Dir(dir), owner{1000, 0o755}},
+		"a directory above is writable":   {filepath.Dir(filepath.Dir(dir)), owner{0, 0o775}},
+	} {
+		clear(odd)
+		odd[o.path] = o.own
+		generate()
+		if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), rejected) || strings.Contains(b.sb.stderr(), "PDF reports need weasyprint") {
+			t.Errorf("%s: exit %d %q", name, b.sb.code, b.sb.stderr())
+		}
+		if b.sb.out.Len() != 0 || len(toolCalls(b.sb.runner, tool)) != 0 {
+			t.Errorf("%s: stdout %q, %d runs of the tool", name, b.sb.out.String(), len(toolCalls(b.sb.runner, tool)))
+		}
+	}
+	// a directory later in the list that holds a good tool is used, without an error
+	good := t.TempDir()
+	goodTool := filepath.Join(good, "weasyprint")
+	if err := os.WriteFile(goodTool, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	clear(odd)
+	odd[tool] = owner{1000, 0o755}
+	b.sb.hooks.pdfToolDirs = []string{dir, good}
+	b.asWith(pdfStub(goodTool), nil, "alice", asSuper, "generate", "--type", "inventory", "--format", "pdf", "--stdout")
+	if b.sb.code != 0 || len(toolCalls(b.sb.runner, goodTool)) != 1 {
+		t.Errorf("the second directory: exit %d %q", b.sb.code, b.sb.stderr())
+	}
+}
+
+// A link is followed: what it leads to and the directories above that are
+// held to the rule too, and a link that leads nowhere is no tool.
+func TestReportsPDFToolLinksAreResolved(t *testing.T) {
+	b := newReportsBox(t)
+	real := filepath.Join(t.TempDir(), "venv-bin")
+	if err := os.Mkdir(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(real, "weasyprint")
+	if err := os.WriteFile(target, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	link := filepath.Join(dir, "weasyprint")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	b.sb.hooks.pdfToolDirs = []string{dir}
+	// resolving may change the temporary directory's own path (a link above it)
+	resolved, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owned := true
+	b.sb.hooks.pdfStat = func(p string) (uint32, fs.FileMode, error) {
+		if !owned && (p == resolved || p == filepath.Dir(resolved)) {
+			return 1000, 0o755, nil
+		}
+		return 0, 0o755, nil
+	}
+	run := func() {
+		b.asWith(pdfStub(link), nil, "alice", asSuper, "generate", "--type", "inventory", "--format", "pdf", "--stdout")
+	}
+	run()
+	if b.sb.code != 0 || len(toolCalls(b.sb.runner, link)) != 1 {
+		t.Fatalf("a link to root's tool: exit %d %q", b.sb.code, b.sb.stderr())
+	}
+	owned = false
+	run()
+	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "weasyprint at "+link+" is not owned by root or is writable by others: not used") {
+		t.Errorf("a link to a user's tool: exit %d %q", b.sb.code, b.sb.stderr())
+	}
+	// a link that leads nowhere is not found
+	if err := os.Remove(target); err != nil {
+		t.Fatal(err)
+	}
+	run()
+	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "PDF reports need weasyprint") {
+		t.Errorf("a dangling link: exit %d %q", b.sb.code, b.sb.stderr())
+	}
+}
+
+// With the system's own ownership check a tool in a directory of the test,
+// which the person running it owns, is not used (unless the suite runs as
+// root, where there is nothing to tell apart).
+func TestReportsPDFToolOfTheCallerIsNotUsed(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root")
+	}
+	b := newReportsBox(t)
+	tool := b.pdfTool()
+	b.sb.hooks.pdfStat = nil
+	b.asWith(pdfStub(tool), nil, "alice", asSuper, "generate", "--type", "inventory", "--format", "pdf", "--stdout")
+	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "weasyprint at "+tool+" is not owned by root or is writable by others: not used") || len(toolCalls(b.sb.runner, tool)) != 0 {
+		t.Errorf("exit %d %q", b.sb.code, b.sb.stderr())
 	}
 }

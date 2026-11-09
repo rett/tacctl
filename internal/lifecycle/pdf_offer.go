@@ -51,6 +51,11 @@ func (h *Host) terminal() bool {
 	return h.Prompt().Interactive()
 }
 
+// pdfYes says whether an answer is a yes: y or yes, in any case.
+func pdfYes(answer string) bool {
+	return strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes")
+}
+
 // pdfInstallLine is the command that installs the PDF tools.
 func pdfInstallLine() string {
 	return "sudo apt-get install -y " + strings.Join(DepsPDF, " ")
@@ -79,7 +84,7 @@ func (h *Host) pdfOffer(ctx context.Context) {
 		h.echo("")
 		return
 	}
-	if !h.confirm(PDFOfferQuestion) {
+	if !pdfYes(h.Prompt().Ask(PDFOfferQuestion)) {
 		if _, err := os.Stat(filepath.Dir(h.Paths.PDFOfferMarker)); err == nil {
 			if err := MarkPDFOffer(h.Paths); err != nil {
 				out.Warn("Could not record the answer in " + h.Paths.PDFOfferMarker + ": " + strings.TrimSpace(err.Error()))

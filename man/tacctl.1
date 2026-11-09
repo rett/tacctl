@@ -209,7 +209,7 @@ is not installed, is the offer of the tools of the PDF device reports
 .RB ( "device reports generate \-\-format pdf" ).
 At a terminal it asks
 .B "tacctl can write device reports as PDF. Install weasyprint and fonts\-dejavu\-core now? [y/N]"
-once: \&'y' or \&'Y' installs the missing packages (a failure is a warning with
+once: \&'y', \&'Y' or \&'yes' (in any case) installs the missing packages (a failure is a warning with
 the command, never a failed upgrade, and is asked again), anything else is no,
 which is remembered in the marker
 .I /var/lib/tacctl/pdf\-tools\-offered
@@ -14297,8 +14297,10 @@ and
 .BR /opt/weasyprint/bin ,
 never in the caller's
 .BR PATH ,
-and run as the user who ran sudo, never as root, with a minimal environment, at
-most 120 seconds and at most 64 MiB of output. Without it, or at a terminal
+and only if it, what a link of it leads to and every directory above are owned by root and not writable by group or others (otherwise it is not used, and the error says
+.BR "weasyprint at <path> is not owned by root or is writable by others: not used" ),
+and run as the user who ran sudo (as root only in a root session that has no sudo caller, with root's own home), with a minimal environment, at
+most 120 seconds and at most 64 MiB of output (one that runs over is stopped with the processes it started). Without it, or at a terminal
 with
 .BR \-\-stdout ,
 .B generate
@@ -14307,7 +14309,7 @@ refuses (exit 1) before it reads any report data, with
 or
 .BR "A PDF is binary: redirect \-\-stdout to a file, or leave it out to store the report" ;
 a tool that fails, makes no PDF or does not finish in time is reported with the
-first lines of its error, and nothing is written.
+first lines of its error, and nothing is written. A PDF that cannot be written to the standard output (a full disk, a closed pipe) is an error with exit status 1, not a cut-off file with exit status 0.
 The state and applied columns of the config report are the configuration state
 that
 .B "device list"
@@ -14328,7 +14330,7 @@ engineer tier and reads the devices of the user's own scopes. A device that
 cannot be read keeps the facts and the date of its last good pull, a warning
 says so, the report is made and the exit status is 1. With
 .B \-\-stdout
-the pull's output goes to standard error. A report over the largest size, or
+the pull's output and the notices (no device matches, no device to read) go to standard error, so that standard output holds the report only. A report over the largest size, or
 that would exceed the most reports a user keeps, is refused with the setting
 named (\fBreports.max_size\fR or \fBreports.max_count\fR) and nothing written (see
 .BR "config reports" ).
@@ -14458,7 +14460,12 @@ print as \&'?'), whether the file has a valid metadata file or not; with
 .B \-\-out
 the bytes are copied as they are, and a user's own file prints as stored. A PDF
 goes to a redirected standard output as it is, for the superuser too: nothing
-can move a terminal, which it never reaches.
+can move a terminal, which it never reaches. It is a PDF only if its name ends in
+.BR .pdf ,
+its metadata file, if any, says pdf and, for another user's file, its content
+starts with
+.BR %PDF\- ;
+anything else is cleaned as text.
 .\" BEGIN GENERATED: command device reports export
 .RS
 .PP
