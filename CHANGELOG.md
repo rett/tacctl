@@ -167,22 +167,32 @@ current behaviour; this file is where history lives.
    addresses, it replaced the vendors' own addresses, it moved the columns of a
    table, a sysDescr came out garbled, and a command the IOS terminal echoed in
    several lines left them at the top of its file (`07-identity-lines.txt`).
-   Now: the values after `PID:` and `VID:`, the quoted `NAME:` and `DESCR:`
-   strings of `show inventory`, the `Model:` line of Junos, the `Cisco <model>
-   (revision ...)` line of IOS `show version` and every model name the files of
-   the bundle state are kept, in all the files; the serial numbers are replaced
-   by their field, whatever their length, case or digits, and the same real
-   serial is the same example in every file: the `SN:` value of `show
-   inventory`, `Hw Serial#:` in a description, `Processor board ID`, `System
-   serial number`, the Junos `Serial ID` of a routing engine, and the serial
-   cell of every row of `show chassis hardware` (the transceiver, PIC and power
-   supply rows included) and of Junos `show virtual-chassis`, cut at the column
-   its header gives (an empty or `BUILTIN` cell, the part number and the
-   description stay); a run of five groups of digits or more separated by dots
-   (an object identifier, a version) is never an address; a host name or mail
-   address under cisco.com, juniper.net, hpe.com, hp.com, gnu.org, fsf.org,
-   openssl.org, ietf.org or kernel.org, and the example.* names, is kept; and
-   when a replacement is shorter or longer than the text it replaces and blanks
+   Now: the values after `PID:` (up to two blanks, a comma, `VID:` or `SN:`)
+   and `VID:`, the quoted `DESCR:` strings of `show inventory`, the model of
+   the `Model:` line of Junos, the model of the `cisco <model> (...)
+   processor` and `Cisco IOS Software, <model> Software` lines of IOS `show
+   version` and every model name the files of the bundle state are kept, in
+   all the files, the model itself and never the rest of its line (the serial
+   after a model is replaced, and a quoted `NAME:` is not exempt); the serial
+   numbers are replaced by their field, whatever their length, case or digits,
+   and the same real serial is the same example in every file: the `SN:` value
+   of `show inventory`, `Hw Serial#:` in a description, `Processor board ID`,
+   `System serial number`, the generic `Serial number:` field (up to the next
+   blank, comma or quote), the Junos `Serial ID` of a routing engine, and the
+   serial cell of every row of `show chassis hardware` (the transceiver, PIC
+   and power supply rows included) and of Junos `show virtual-chassis`, cut at
+   the column its header gives, or at its tabs (an empty or `BUILTIN` cell,
+   the part number and the Description column stay, and only that column
+   escapes the serial shape; a table ends at the first line with nothing in or
+   after the serial column; a word that has not the shape of a serial number,
+   such as `Prsnt`, is not learned as one); an object identifier (a dotted run
+   that begins `1.3.6.1.`) is never an address, the digits around any other
+   address (`10.20.30.40.179`) do not make it one; the bare domain of
+   cisco.com, juniper.net, hpe.com, hp.com, gnu.org, fsf.org, openssl.org,
+   ietf.org or kernel.org, with one of the labels `www`, `tools`, `ftp`,
+   `cdn`, `software` or `support` in front of it, and the example.* names, are
+   kept, but a mail address, a customer's name under those domains and any
+   name under a learned domain are replaced; and when a replacement is shorter or longer than the text it replaces and blanks
    follow, the blanks are added or taken away so the columns after it stay
    where the device printed them. The sysDescr garble was the learn step: an
    empty `sysLocation.0:`, `sysContact.0:` or `snmp-server contact` line took
