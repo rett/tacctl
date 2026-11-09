@@ -106,7 +106,7 @@ func TestReportsPDFEnvironment(t *testing.T) {
 		t.Fatalf("exit %d %q", b.sb.code, b.sb.stderr())
 	}
 	home := filepath.Join(b.sb.dir, "home", "alice")
-	want := []string{"PATH=/usr/local/bin:/usr/bin:/bin", "LANG=C.UTF-8", "HOME=" + home, "XDG_CACHE_HOME=" + home}
+	want := []string{"PATH=/usr/local/bin:/usr/bin:/bin", "LANG=C.UTF-8", "HOME=" + home, "XDG_CACHE_HOME=" + home + "/.cache", "PYTHONNOUSERSITE=1"}
 	if got := toolCalls(b.sb.runner, tool)[0].Cmd.Env; strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("environment %q, want %q", got, want)
 	}
@@ -358,7 +358,7 @@ func TestReportsPDFRunsAsTheCaller(t *testing.T) {
 	if c.Credential == nil || c.Credential.Uid != 1001 || c.Credential.Gid != 1001 || len(c.Credential.Groups) != 0 || c.Credential.NoSetGroups {
 		t.Errorf("credential %+v", c.Credential)
 	}
-	wantEnv := []string{"PATH=/usr/local/bin:/usr/bin:/bin", "LANG=C.UTF-8", "HOME=" + filepath.Join(home, "alice"), "XDG_CACHE_HOME=" + filepath.Join(home, "alice")}
+	wantEnv := []string{"PATH=/usr/local/bin:/usr/bin:/bin", "LANG=C.UTF-8", "HOME=" + filepath.Join(home, "alice"), "XDG_CACHE_HOME=" + filepath.Join(home, "alice") + "/.cache", "PYTHONNOUSERSITE=1"}
 	if strings.Join(c.Env, "\n") != strings.Join(wantEnv, "\n") {
 		t.Errorf("environment %q", c.Env)
 	}

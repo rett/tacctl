@@ -134,9 +134,11 @@ func (inv *invocation) pdfIdentity() (*syscall.Credential, string, error) {
 	return &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid), Groups: []uint32{}}, home, nil
 }
 
-// pdfEnv is the whole environment of the tool.
+// pdfEnv is the whole environment of the tool. Its caches go to ~/.cache (not
+// into a directory of the home that fontconfig would make there) and it reads
+// no user site directory, where a .pth file would run code.
 func pdfEnv(home string) []string {
-	return []string{"PATH=" + pdfPath, "LANG=C.UTF-8", "HOME=" + home, "XDG_CACHE_HOME=" + home}
+	return []string{"PATH=" + pdfPath, "LANG=C.UTF-8", "HOME=" + home, "XDG_CACHE_HOME=" + filepath.Join(home, ".cache"), "PYTHONNOUSERSITE=1"}
 }
 
 // renderPDF makes the PDF of an HTML document with the tool at path. The tool
