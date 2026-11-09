@@ -19,6 +19,8 @@ type server struct {
 	cfg   Config
 	quota *quota  // nil when the session has no quota
 	rate  *bucket // nil when the session has no rate limit
+
+	handles handleCount // the open files and directory listings
 }
 
 var (
@@ -112,7 +114,7 @@ func (s *server) Readlink(string) (string, error) {
 	return "", errSymlink()
 }
 
-// listerAt serves a snapshot of entries to the library.
+// listerAt serves a few entries held in memory (a stat) to the library.
 type listerAt []os.FileInfo
 
 func (l listerAt) ListAt(ls []os.FileInfo, off int64) (int, error) {
@@ -131,7 +133,7 @@ func (s *server) Filelist(r *sftp.Request) (la sftp.ListerAt, err error) {
 	defer s.guard(&err, r)
 	switch r.Method {
 	case "List":
-		return s.list(r)
+		return s.listRequest(r)
 	case "Stat":
 		return s.stat(r, true)
 	default:
@@ -145,21 +147,16 @@ func (s *server) Lstat(r *sftp.Request) (la sftp.ListerAt, err error) {
 	return s.stat(r, false)
 }
 
-func (s *server) list(r *sftp.Request) (sftp.ListerAt, error) {
+func (s *server) listRequest(r *sftp.Request) (sftp.ListerAt, error) {
 	v, err := s.path(r.Filepath)
 	if err != nil {
 		return nil, err
 	}
-	t, err := s.home.resolve(v)
+	l, err := s.list(v)
 	if err != nil {
 		return nil, err
 	}
-	defer t.close()
-	infos, err := s.home.readDir(t)
-	if err != nil {
-		return nil, err
-	}
-	return listerAt(infos), nil
+	return l, nil
 }
 
 // stat answers stat (follow) and lstat. A link is lstat'ed as a link; stat
@@ -256,30 +253,11 @@ func (s *server) remove(r *sftp.Request, dir bool) (err error) {
 		flags = unix.AT_REMOVEDIR
 		op = "rmdir"
 	}
-	freed := s.freedBy(t) // looked at before it is gone
-	if err := unix.Unlinkat(t.dir, t.name, flags); err != nil {
-		return t.pathErr(op, err)
+	unlink := func() error { return t.pathErr(op, unix.Unlinkat(t.dir, t.name, flags)) }
+	if s.quota != nil {
+		return s.quota.unlinking(t, unlink)
 	}
-	s.quotaRelease(freed)
-	return nil
-}
-
-// freedBy is the room that removing the entry gives back: the size of a
-// regular file whose last name it is (a file that has other names keeps
-// its inode, which is counted once). Nothing is asked of the file system
-// when there is no quota.
-func (s *server) freedBy(t *target) int64 {
-	if s.quota == nil {
-		return 0
-	}
-	var st unix.Stat_t
-	if unix.Fstatat(t.dir, t.name, &st, unix.AT_SYMLINK_NOFOLLOW) != nil {
-		return 0
-	}
-	if st.Mode&unix.S_IFMT != unix.S_IFREG || st.Nlink > 1 {
-		return 0
-	}
-	return st.Size
+	return unlink()
 }
 
 func (s *server) quotaRelease(n int64) {
@@ -311,17 +289,13 @@ func (s *server) rename(r *sftp.Request, replace bool) (err error) {
 		return err
 	}
 	defer td.close()
+	move := func() error { return ts.pathErr("rename", renameat(ts, td, replace)) }
 	// A rename that replaces a file frees that file's room, unless source and
 	// target are the same inode (then it does nothing).
-	var freed int64
 	if replace && s.quota != nil && !sameEntry(ts, td) {
-		freed = s.freedBy(td)
+		return s.quota.unlinking(td, move)
 	}
-	if err := renameat(ts, td, replace); err != nil {
-		return ts.pathErr("rename", err)
-	}
-	s.quotaRelease(freed)
-	return nil
+	return move()
 }
 
 // sameEntry reports whether two targets name the same inode.
@@ -380,7 +354,15 @@ func (s *server) setstat(r *sftp.Request) (err error) {
 	if st.Mode&unix.S_IFMT == unix.S_IFLNK {
 		return errSymlink()
 	}
+	if st.Mode&unix.S_IFMT == unix.S_IFREG && st.Nlink > 1 {
+		return errLink()
+	}
 	if fl.Permissions {
+		// A directory the owner cannot list or search is one the quota
+		// cannot measure and the client cannot list: not a mode to set.
+		if st.Mode&unix.S_IFMT == unix.S_IFDIR && a.Mode&0o500 != 0o500 {
+			return errUnsupported("clearing the owner's read or search permission of a directory")
+		}
 		if err := t.chmod(a.Mode & 0o777); err != nil {
 			return err
 		}
@@ -428,11 +410,21 @@ func (s *server) StatVFS(r *sftp.Request) (v *sftp.StatVFS, err error) {
 	return v, nil
 }
 
+// failedOpen audits an open that failed in the kernel as the transfer it
+// was meant to be, with the error. A refusal is audited as one by guard, with
+// its reason, and not here.
+func (s *server) failedOpen(r *sftp.Request, op string, err error) {
+	if reasonOf(err) == "" {
+		s.audit(Event{Op: op, Path: display(r.Filepath), Err: err})
+	}
+}
+
 // Fileread opens a file for download.
 func (s *server) Fileread(r *sftp.Request) (ra io.ReaderAt, err error) {
 	defer s.guard(&err, r)
 	f, err := s.openFile(r, false)
 	if err != nil {
+		s.failedOpen(r, "download", err)
 		return nil, err
 	}
 	return f, nil
@@ -443,6 +435,7 @@ func (s *server) Filewrite(r *sftp.Request) (wa io.WriterAt, err error) {
 	defer s.guard(&err, r)
 	f, err := s.openFile(r, true)
 	if err != nil {
+		s.failedOpen(r, "upload", err)
 		return nil, err
 	}
 	return f, nil
@@ -453,6 +446,7 @@ func (s *server) OpenFile(r *sftp.Request) (rw sftp.WriterAtReaderAt, err error)
 	defer s.guard(&err, r)
 	f, err := s.openFile(r, true)
 	if err != nil {
+		s.failedOpen(r, "upload", err)
 		return nil, err
 	}
 	return f, nil

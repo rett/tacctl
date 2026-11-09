@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // 1. The home is "/".
@@ -444,5 +446,100 @@ func TestOtherRequestsAreRefused(t *testing.T) {
 	}
 	if _, err := e.client.ReadLink("f"); err == nil {
 		t.Error("readlink succeeded")
+	}
+}
+
+// The library hands a READ request on a handle opened only for writing to the
+// writer, as a write of zeros; the server refuses it.
+func TestReadOnWriteOnlyHandleWritesNothing(t *testing.T) {
+	for _, quota := range []int64{0, 1000} {
+		for _, fl := range []int{os.O_WRONLY, os.O_WRONLY | os.O_APPEND, os.O_WRONLY | os.O_TRUNC | os.O_CREATE} {
+			e := newEnv(t, func(c *Config) { c.Quota = quota })
+			e.write("f", "hello world")
+			h, err := e.client.OpenFile("f", fl)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := e.read("f") // an open with O_TRUNC emptied it
+			b := make([]byte, 5)
+			for _, off := range []int64{0, 3, 100} {
+				if _, err := h.ReadAt(b, off); code(err) != fxOpUnsupported {
+					t.Errorf("quota %d flags %#x: read at %d on a write-only handle: %v, want unsupported", quota, fl, off, err)
+				}
+			}
+			if got := e.read("f"); got != want {
+				t.Errorf("quota %d flags %#x: a read request changed the file from %q to %q", quota, fl, want, got)
+			}
+			// The handle still writes.
+			if _, err := h.Write([]byte("HE")); err != nil {
+				t.Errorf("quota %d flags %#x: write after the refused reads: %v", quota, fl, err)
+			}
+			if err := h.Close(); err != nil {
+				t.Errorf("close: %v", err)
+			}
+			if got := e.read("f"); !strings.Contains(got, "HE") {
+				t.Errorf("quota %d flags %#x: the write did not happen: %q", quota, fl, got)
+			}
+			if got := refusals(e.rec.all()); len(got) != 1 || got[0] != "unsupported" {
+				t.Errorf("refusals = %v, want one unsupported for the handle", got)
+			}
+		}
+	}
+}
+
+// A handle opened to read and write is not affected.
+func TestReadWriteHandleStillReadsAndWrites(t *testing.T) {
+	e := newEnv(t, nil)
+	e.write("f", "hello world")
+	h, err := e.client.OpenFile("f", os.O_RDWR)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := make([]byte, 5)
+	if n, err := h.ReadAt(b, 6); n != 5 || err != nil || string(b) != "world" {
+		t.Errorf("read: %d, %v, %q", n, err, b)
+	}
+	if _, err := h.WriteAt([]byte("J"), 0); err != nil {
+		t.Error(err)
+	}
+	_ = h.Close()
+	if e.read("f") != "Jello world" {
+		t.Errorf("file = %q", e.read("f"))
+	}
+}
+
+// A FIFO in the home must neither block the session nor be opened: the open
+// does not wait for a peer, and the type is refused before anything is read
+// or written.
+func TestFIFOIsNotOpenedAndDoesNotHang(t *testing.T) {
+	e := newEnvSeams(t, nil, seams{maxHandles: 2})
+	if err := unix.Mkfifo(filepath.Join(e.home, "p"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 5; i++ { // more than the handle limit: nothing is kept
+			if _, err := e.client.Open("p"); code(err) != fxOpUnsupported {
+				t.Errorf("open of a FIFO to read: %v, want unsupported", err)
+			}
+			for _, fl := range []int{os.O_WRONLY, os.O_RDWR, os.O_WRONLY | os.O_TRUNC, os.O_RDWR | os.O_APPEND} {
+				if _, err := e.client.OpenFile("p", fl); err == nil {
+					t.Errorf("open of a FIFO with flags %#x succeeded", fl)
+				}
+			}
+		}
+	}()
+	// A real 10 s deadline: it only passes if the code is wrong, and then the
+	// test fails instead of hanging (an open of a FIFO blocks for a peer).
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the session wedged on a FIFO")
+	}
+	// The session works, and no handle was left behind.
+	e.put("f", "x")
+	if fi, err := e.client.Stat("p"); err != nil || fi.Mode()&os.ModeNamedPipe == 0 {
+		t.Errorf("stat of the FIFO: %v, %v", fi, err)
 	}
 }

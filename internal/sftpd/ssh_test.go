@@ -3,6 +3,7 @@ package sftpd
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -106,6 +107,7 @@ func TestSSHHiddenFromListing(t *testing.T) {
 	for _, fi := range ents {
 		names = append(names, fi.Name())
 	}
+	sort.Strings(names) // a listing comes in the order of the file system
 	if len(names) != 2 || names[0] != "a" || names[1] != "plain" {
 		t.Errorf("listing of / = %v, want [a plain]", names)
 	}
@@ -333,8 +335,12 @@ func TestDirectorySwappedForLinkIsNotFollowed(t *testing.T) {
 			}
 		}
 	}()
-	var opened, leaked int
-	for i := 0; i < 400; i++ {
+	// The reads go on until enough of them found the directory in place (the
+	// swap runs at the same time, so some find the link): a run in which none
+	// did would prove nothing about the race, and fails.
+	const wantOpened, maxReads = 20, 20000
+	var opened, leaked, reads int
+	for reads = 0; reads < maxReads && opened < wantOpened; reads++ {
 		got, err := e.get("real/f")
 		if err == nil {
 			opened++
@@ -348,5 +354,104 @@ func TestDirectorySwappedForLinkIsNotFollowed(t *testing.T) {
 	if leaked != 0 {
 		t.Fatalf("%d of %d reads returned the content of .ssh/f through a swapped link", leaked, opened)
 	}
-	t.Logf("%d of 400 reads found the directory in place, the others the link", opened)
+	if opened < wantOpened {
+		t.Fatalf("only %d of %d reads found the directory in place: the race was not exercised", opened, reads)
+	}
+	t.Logf("%d of %d reads found the directory in place, the others the link", opened, reads)
+}
+
+// A regular file with more than one name is not served: a name for the
+// data of .ssh/authorized_keys or of a private key, made outside SFTP, would
+// otherwise be a way to it.
+
+func TestHardLinkedFilesAreNotServed(t *testing.T) {
+	e := sshEnv(t)
+	if err := os.Link(filepath.Join(e.home, ".ssh/authorized_keys"), filepath.Join(e.home, "keys")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(filepath.Join(e.home, "plain"), filepath.Join(e.home, "plain2")); err != nil {
+		t.Fatal(err)
+	}
+	before := e.read(".ssh/authorized_keys")
+	e.rec.reset()
+	for _, name := range []string{"keys", "plain", "plain2"} {
+		if _, err := e.client.Open(name); code(err) != fxPermissionDenied {
+			t.Errorf("download of %s: %v, want permission denied", name, err)
+		}
+		for _, fl := range []int{os.O_WRONLY, os.O_WRONLY | os.O_TRUNC, os.O_RDWR, os.O_WRONLY | os.O_APPEND, os.O_WRONLY | os.O_CREATE | os.O_TRUNC} {
+			if _, err := e.client.OpenFile(name, fl); code(err) != fxPermissionDenied {
+				t.Errorf("open of %s with flags %#x: %v, want permission denied", name, fl, err)
+			}
+		}
+		if err := e.client.Chmod(name, 0o777); code(err) != fxPermissionDenied {
+			t.Errorf("chmod of %s: %v, want permission denied", name, err)
+		}
+		if err := e.client.Chtimes(name, time.Unix(1e9, 0), time.Unix(1e9, 0)); code(err) != fxPermissionDenied {
+			t.Errorf("chtimes of %s: %v, want permission denied", name, err)
+		}
+	}
+	if got := e.read(".ssh/authorized_keys"); got != before {
+		t.Errorf("authorized_keys changed to %q", got)
+	}
+	if fi, _ := os.Stat(filepath.Join(e.home, ".ssh/authorized_keys")); fi.Mode().Perm() != 0o644 {
+		t.Errorf("authorized_keys mode = %v", fi.Mode())
+	}
+	for _, r := range refusals(e.rec.all()) {
+		if r != "link" {
+			t.Errorf("refusal reason %q, want link", r)
+		}
+	}
+	if n := len(refusals(e.rec.all())); n != 3*(1+5+2) {
+		t.Errorf("%d refusals, want %d", n, 3*(1+5+2))
+	}
+}
+
+// The name of such a file is an entry like any other: it is listed, stat'ed,
+// moved and removed (none of that reaches the data), and when the other name
+// is gone the file is served again.
+func TestHardLinkedNamesCanBeListedMovedAndRemoved(t *testing.T) {
+	e := sshEnv(t)
+	if err := os.Link(filepath.Join(e.home, ".ssh/authorized_keys"), filepath.Join(e.home, "keys")); err != nil {
+		t.Fatal(err)
+	}
+	before := e.read(".ssh/authorized_keys")
+	if fi, err := e.client.Stat("keys"); err != nil || fi.Size() != int64(len(before)) {
+		t.Errorf("stat of the name: %v, %v", fi, err)
+	}
+	if err := e.client.Rename("keys", "keys2"); err != nil {
+		t.Errorf("rename of the name: %v", err)
+	}
+	if err := e.client.PosixRename("keys2", "keys3"); err != nil {
+		t.Errorf("posix rename of the name: %v", err)
+	}
+	if err := e.client.Remove("keys3"); err != nil {
+		t.Errorf("remove of the name: %v", err)
+	}
+	if got := e.read(".ssh/authorized_keys"); got != before {
+		t.Errorf("authorized_keys changed to %q", got)
+	}
+	// A file moved over a name of such a file replaces the name only.
+	if err := os.Link(filepath.Join(e.home, ".ssh/authorized_keys"), filepath.Join(e.home, "keys")); err != nil {
+		t.Fatal(err)
+	}
+	e.put("new", "n")
+	if err := e.client.PosixRename("new", "keys"); err != nil {
+		t.Errorf("posix rename over the name: %v", err)
+	}
+	if got := e.read(".ssh/authorized_keys"); got != before {
+		t.Errorf("authorized_keys changed to %q", got)
+	}
+	// With one name left the file is a plain one again.
+	if err := os.Link(filepath.Join(e.home, "plain"), filepath.Join(e.home, "plain2")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.get("plain"); code(err) != fxPermissionDenied {
+		t.Errorf("download with two names: %v", err)
+	}
+	if err := os.Remove(filepath.Join(e.home, "plain2")); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := e.get("plain"); err != nil || got != "x" {
+		t.Errorf("download with one name: %q, %v", got, err)
+	}
 }

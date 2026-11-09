@@ -12,9 +12,11 @@ const (
 	reasonSSH         = ".ssh"
 	reasonOutside     = "outside the home"
 	reasonSymlink     = "symlink"
+	reasonLink        = "link"
 	reasonQuota       = "quota"
 	reasonUnsupported = "unsupported"
 	reasonBadPath     = "bad path"
+	reasonTooMany     = "too many open files"
 )
 
 // statusError is an error that carries its SFTP status: the code the
@@ -42,6 +44,10 @@ func errSymlink() error {
 	return refuse(reasonSymlink, "permission denied: symbolic links are not followed")
 }
 
+func errLink() error {
+	return refuse(reasonLink, "permission denied: a file with more than one name is not served")
+}
+
 func errOutside() error {
 	return refuse(reasonOutside, "permission denied: the home directory itself cannot be changed")
 }
@@ -52,6 +58,10 @@ func errUnsupported(what string) error {
 
 func errBadPath(msg string) error {
 	return &statusError{reason: reasonBadPath, code: sftp.ErrSSHFxFailure, msg: msg}
+}
+
+func errTooMany() error {
+	return &statusError{reason: reasonTooMany, code: sftp.ErrSSHFxFailure, msg: "too many open files"}
 }
 
 func errQuota() error {

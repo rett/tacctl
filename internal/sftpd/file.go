@@ -16,13 +16,16 @@ import (
 type file struct {
 	s      *server
 	f      *os.File
+	key    inode // the file on the disk, for the quota's book of open files
 	v      vpath
 	write  bool // opened for upload
+	wonly  bool // opened for upload and not for reading: no READ request may reach WriteAt
 	append bool
 	quota  *quota  // nil when there is no quota
 	rate   *bucket // nil when there is no rate limit
 
 	quotaNoted atomic.Bool
+	readNoted  atomic.Bool
 
 	read, written atomic.Int64
 
@@ -34,6 +37,15 @@ type file struct {
 // openFile opens the file of r. write says the open is for an upload (the
 // handle can write); otherwise it is a download.
 func (s *server) openFile(r *sftp.Request, write bool) (*file, error) {
+	if err := s.handles.acquire(); err != nil {
+		return nil, err
+	}
+	opened := false
+	defer func() {
+		if !opened {
+			s.handles.release() // an open that failed (or panicked) holds no place
+		}
+	}()
 	v, err := s.path(r.Filepath)
 	if err != nil {
 		return nil, err
@@ -83,6 +95,12 @@ func (s *server) openFile(r *sftp.Request, write bool) (*file, error) {
 	}
 	switch st.Mode & unix.S_IFMT {
 	case unix.S_IFREG:
+		// Judged on the open file, so that nothing between a look and the
+		// open can change what it is. Nothing has been truncated yet.
+		if st.Nlink > 1 {
+			_ = unix.Close(fd)
+			return nil, errLink()
+		}
 	case unix.S_IFDIR:
 		_ = unix.Close(fd)
 		return nil, &os.PathError{Op: "open", Path: v.String(), Err: unix.EISDIR}
@@ -101,15 +119,22 @@ func (s *server) openFile(r *sftp.Request, write bool) (*file, error) {
 		}
 		s.quotaRelease(st.Size)
 	}
-	return &file{
+	f := &file{
 		s:      s,
 		f:      os.NewFile(uintptr(fd), v.String()),
+		key:    inode{u64(st.Dev), u64(st.Ino)},
 		v:      v,
 		write:  write,
+		wonly:  write && !pf.Read,
 		append: write && pf.Append,
 		quota:  s.quota,
 		rate:   s.rate,
-	}, nil
+	}
+	if f.quota != nil {
+		f.quota.hold(f)
+	}
+	opened = true
+	return f, nil
 }
 
 func (f *file) ReadAt(p []byte, off int64) (int, error) {
@@ -119,7 +144,34 @@ func (f *file) ReadAt(p []byte, off int64) (int, error) {
 	return n, err
 }
 
+// readSlack is the room the library leaves behind the data of a READ
+// request (the header of the reply: its dataHeaderLen); the data of a WRITE
+// request is cut from the packet that came in and has none unless the client
+// sent bytes after it.
+const readSlack = 4 + 1 + 4 + 4
+
+// isReadRequest reports whether the buffer p that the library hands to WriteAt
+// is the buffer of a READ request, not the data of a WRITE.
+//
+// For a handle opened only for writing the library has one entry for both
+// kinds of request, and calls WriteAt with a buffer of zeros for a READ: the
+// request would write zeros at the offset it asks for. WriteAt is given no
+// other sign of the request, so the buffer is told by its capacity (the
+// library allocates a READ's buffer with room for the reply header). A client
+// cannot make a READ look like a WRITE; a WRITE followed by exactly readSlack
+// bytes of padding looks like a READ and is refused, which hurts only the
+// client that sent it. TestReadOnWriteOnlyHandleWritesNothing pins this to the
+// vendored library: a change of its allocation fails that test.
+func isReadRequest(p []byte) bool { return cap(p)-len(p) == readSlack }
+
 func (f *file) WriteAt(p []byte, off int64) (int, error) {
+	if f.wonly && isReadRequest(p) {
+		err := errUnsupported("read of a handle opened only for writing")
+		if f.readNoted.CompareAndSwap(false, true) {
+			f.s.noteRefusal(err, f.v.String(), "") // once per handle
+		}
+		return 0, err
+	}
 	w := func() (int, error) {
 		if f.append {
 			// The file is open with O_APPEND, which the kernel honours for
@@ -158,7 +210,11 @@ func (f *file) TransferError(err error) {
 func (f *file) Close() error {
 	var cerr error
 	f.closed.Do(func() {
+		if f.quota != nil {
+			f.quota.unhold(f) // while the descriptor is still open
+		}
 		cerr = f.f.Close()
+		f.s.handles.release()
 		f.mu.Lock()
 		err := f.xferr
 		f.mu.Unlock()

@@ -1,6 +1,7 @@
 package sftpd
 
 import (
+	"cmp"
 	"errors"
 	"io"
 	"strings"
@@ -13,7 +14,8 @@ import (
 // paths the client used, cleaned (the home is "/"); they hold what the
 // client sent, so the caller sanitises them before it logs them.
 type Event struct {
-	// Op is "upload" or "download" (at close, Bytes the total moved),
+	// Op is "upload" or "download" (at close, Bytes the total moved; an open
+	// that failed in the kernel gives the same Op at once, with Err set),
 	// "delete", "rename", "mkdir", "setstat", or "refused".
 	Op string
 	// Path is the file the Op is about; To is the new name of a rename.
@@ -21,8 +23,8 @@ type Event struct {
 	// Bytes is the size of a transfer.
 	Bytes int64
 	// Err is why an Op failed. For Op "refused" it names the reason the
-	// request was refused: ".ssh", "outside the home", "symlink", "quota",
-	// "unsupported" or "bad path".
+	// request was refused: ".ssh", "outside the home", "symlink", "link",
+	// "quota", "unsupported", "bad path" or "too many open files".
 	Err error
 }
 
@@ -31,15 +33,20 @@ type Config struct {
 	// Home is the directory that is "/" for the client.
 	Home string
 	// Quota is the size in bytes the files of the home may add up to; 0
-	// means no limit, and then the home is not measured.
+	// means no limit, and then the home is not measured. What it guarantees
+	// is in the package comment: a write is refused when it would take the
+	// usage the session measured over the limit, and no more than that.
 	Quota int64
 	// Rate is the bytes per second the session may move, reads and writes
 	// together, with a burst of one second; 0 means no limit.
 	Rate int64
 	// Audit, when set, is called once per upload, download, delete, rename,
-	// mkdir and setstat, and once per refusal. It is called from the
-	// goroutines that serve the requests, never with a lock held, and it
-	// must not block for long.
+	// mkdir and setstat (with Err set when it failed), and once per refusal.
+	// It is called from the goroutines that serve the requests. No lock of
+	// this package is held, but the library may hold one of its own: the
+	// upload and download events fire when a handle is closed, which the
+	// library does under the lock of its set of open handles. The callback
+	// must not block, and must not call into the session.
 	Audit func(Event)
 }
 
@@ -55,6 +62,9 @@ func Serve(rw io.ReadWriteCloser, cfg Config) error {
 type seams struct {
 	now   func() time.Time
 	sleep func(time.Duration)
+
+	measureDepth int // the depth of the quota walk, 0 for the default
+	maxHandles   int // the open handles a session may have, 0 for the default
 }
 
 func serve(rw io.ReadWriteCloser, cfg Config, sm seams) error {
@@ -84,9 +94,9 @@ func serve(rw io.ReadWriteCloser, cfg Config, sm seams) error {
 // newServer builds the state of one session. The home is measured here when
 // there is a quota, and not at all when there is none.
 func newServer(h *home, cfg Config, sm seams) *server {
-	s := &server{home: h, cfg: cfg}
+	s := &server{home: h, cfg: cfg, handles: handleCount{max: cmp.Or(sm.maxHandles, maxHandles)}}
 	if cfg.Quota > 0 {
-		s.quota = newQuota(h, cfg.Quota, sm.now)
+		s.quota = newQuota(h, cfg.Quota, sm.now, sm.measureDepth)
 	}
 	s.rate = newBucket(cfg.Rate, sm.now, sm.sleep)
 	return s
