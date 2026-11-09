@@ -286,3 +286,85 @@ func TestModelNamesAreNotSerialNumbers(t *testing.T) {
 		},
 	})
 }
+
+// A chassis hardware table and a virtual chassis table as Junos prints them,
+// with invented serial numbers of every shape.
+const (
+	junosHardware = "Hardware inventory:\n" +
+		"Item             Version  Part number  Serial number     Description\n" +
+		"Chassis                                ABC0123456        Virtual Chassis\n" +
+		"Routing Engine 0          BUILTIN      BUILTIN           RE-EX4400-48T\n" +
+		"FPC 0            REV 11   650-114384   ABC0123456        EX4400-48T\n" +
+		"  CPU                     BUILTIN      BUILTIN           FPC CPU\n" +
+		"  PIC 0          REV 11   BUILTIN      BUILTIN           48x10M/100M/1G Base-T\n" +
+		"  PIC 1          REV 11   650-114384   1234567           4x10G SFP+\n" +
+		"Power Supply 0   REV 03   740-000001   abc1234           JPSU-350-AC-AFO\n" +
+		"Fan Tray 0                                               Fan Module\n" +
+		"    Xcvr 0                NON-JNPR     9317670227        SFP-LX10\n" +
+		"    Xcvr 4       REV 02   740-013111   L437599           SFP-T\n" +
+		"\n"
+	junosVC = "Virtual Chassis ID: 0000.5e00.5301\n" +
+		"                                                Mstr           Mixed Route Neighbor List\n" +
+		"Member ID  Status   Serial No    Model          prio  Role      Mode  Mode ID  Interface\n" +
+		"0 (FPC 0)  Prsnt    ABC0123456   ex4400-48t     255   Master*      N  VC   1  vcp-255/1/0\n" +
+		"1 (FPC 1)  Prsnt    9876543210   ex4400-48t     255   Backup       N  VC   0  vcp-255/1/0\n" +
+		"\n"
+)
+
+// A serial number is replaced by its field, whatever its shape, and the same
+// real value is the same example in every file.
+func TestSerialNumbersAreReplacedByTheirField(t *testing.T) {
+	runScrubCases(t, []scrubCase{
+		{
+			name: "inventory fields",
+			in: []string{"NAME: \"chassis\", DESCR: \"CISCO7206VXR chassis, Hw Serial#: 1234567890, Hw Revision: 1.0\"\n" +
+				"PID: CISCO7206VXR     , VID:    , SN: 1234567890\n" +
+				"PID: IOSv              , VID: 1.0, SN: 9L17A1TZNHPW4X9XZBG30\n" +
+				"PID: PWR-7200-AC       , VID:    , SN: abc1234\n" +
+				"PID: PWR-7200-AC       , VID:    , SN:            \n"},
+			want: []string{"Hw Serial#: SN000001, Hw Revision: 1.0", "VID:    , SN: SN000001\n", "VID: 1.0, SN: SN000002\n", "SN: SN000003\n", "PID: IOSv "},
+			gone: []string{"1234567890", "9L17A1TZNHPW4X9XZBG30", "abc1234"},
+		},
+		{
+			name: "show version fields",
+			in:   []string{"Processor board ID 1234567\nSystem serial number : 7654321\nSerial ID  xyz9876\n"},
+			want: []string{"Processor board ID SN000001\n", "System serial number : SN000002\n", "Serial ID  SN000003\n"},
+			gone: []string{"1234567", "7654321", "xyz9876"},
+		},
+		{
+			name: "the same value in two files",
+			in:   []string{"PID: X , VID: V , SN: 9999999999\n", "Processor board ID 9999999999\n"},
+			want: []string{"SN: SN000001\n", "Processor board ID SN000001\n"},
+			gone: []string{"9999999999"},
+		},
+		{
+			name: "chassis hardware, every row",
+			in:   []string{junosHardware},
+			want: []string{
+				"Chassis                                SN000001  ",
+				"FPC 0            REV 11   650-114384   SN000001  ",
+				"  PIC 1          REV 11   650-114384   SN000002  ",
+				"Power Supply 0   REV 03   740-000001   SN000003  ",
+				"    Xcvr 0                NON-JNPR     SN000004  ",
+				"    Xcvr 4       REV 02   740-013111   SN000005  ",
+				"Routing Engine 0          BUILTIN      BUILTIN           RE-EX4400-48T\n",
+				"  CPU                     BUILTIN      BUILTIN           FPC CPU\n",
+				"Fan Tray 0                                               Fan Module\n",
+				"NON-JNPR", "740-013111", "650-114384", "EX4400-48T", "SFP-LX10", "SFP-T",
+			},
+			gone: []string{"ABC0123456", "1234567", "abc1234", "9317670227", "L437599"},
+		},
+		{
+			name: "virtual chassis table",
+			in:   []string{junosVC},
+			want: []string{"0 (FPC 0)  Prsnt    SN000001", "1 (FPC 1)  Prsnt    SN000002", "ex4400-48t", "255   Master*"},
+			gone: []string{"ABC0123456", "9876543210"},
+		},
+		{
+			name: "table and table share the examples",
+			in:   []string{junosHardware, junosVC},
+			want: []string{"Chassis                                SN000001", "0 (FPC 0)  Prsnt    SN000001"},
+			gone: []string{"ABC0123456"},
+		},
+	})
+}

@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -275,6 +276,100 @@ func keepSpans(text string) []span {
 	return out
 }
 
+// The serial numbers a text states by their field, whatever their shape: the
+// value is group 1.
+var reSerialFields = []*regexp.Regexp{
+	regexp.MustCompile(`\bSN:[ \t]*([^\s,"]+)`),
+	regexp.MustCompile(`\bHw Serial#:[ \t]*([^\s,"]+)`),
+	regexp.MustCompile(`\bProcessor board ID[ \t]+([^\s,"]+)`),
+	regexp.MustCompile(`(?i)\bSystem serial number[ \t]*:[ \t]*([^\s,"]+)`),
+	regexp.MustCompile(`\bSerial ID[ \t]+([^\s,"]+)`),
+	reLearnSerial,
+}
+
+// A serial column of a table is cut at the position its header gives: the
+// headers of 'show chassis hardware' and of Junos 'show virtual-chassis'.
+var serialTables = []struct {
+	head           *regexp.Regexp
+	serial, follow string // the header words that start the serial column and the column after it
+}{
+	{regexp.MustCompile(`^\s*Item\s+Version\s+Part number\s+Serial number\s+Description\b`), "Serial number", "Description"},
+	{regexp.MustCompile(`^\s*Member ID\s+Status\s+Serial No\s+Model\b`), "Serial No", "Model"},
+}
+
+var reNoSerial = regexp.MustCompile(`(?i)^(?:builtin|n/?a|none|unknown|unspecified|not[-_ ]?available|-+)$`)
+
+// isSerialValue reports whether v, the value of a serial field, is a number
+// to replace: not empty, not BUILTIN, not an example already.
+func isSerialValue(v string) bool {
+	return v != "" && !reNoSerial.MatchString(v) && !reExampleSerial.MatchString(v)
+}
+
+var reExampleSerial = regexp.MustCompile(`^SN\d{6}$`)
+
+// serialSpans are the serial numbers a text states by field, and the rows of
+// the tables they are cut from (the other cells of those rows are model
+// names and part numbers).
+func serialSpans(text string) (cells, rows []span) {
+	for _, re := range reSerialFields {
+		for _, m := range re.FindAllStringSubmatchIndex(text, -1) {
+			if isSerialValue(text[m[2]:m[3]]) {
+				cells = append(cells, span{m[2], m[3]})
+			}
+		}
+	}
+	off := 0
+	var cols []int // serial column start and end, -1 outside a table
+	for _, line := range strings.SplitAfter(text, "\n") {
+		body := strings.TrimRight(line, "\r\n")
+		switch {
+		case strings.TrimSpace(body) == "" || strings.HasSuffix(body, ":") && !strings.Contains(body, " "):
+			cols = nil
+		default:
+			found := false
+			for _, tb := range serialTables {
+				if !tb.head.MatchString(body) {
+					continue
+				}
+				from := strings.Index(body, tb.serial)
+				to := strings.Index(body, tb.follow)
+				if from >= 0 && to > from {
+					cols, found = []int{from, to}, true
+				}
+				break
+			}
+			if found || cols == nil {
+				break
+			}
+			rows = append(rows, span{off, off + len(body)})
+			for _, f := range fieldsAt(body) {
+				if f.start >= cols[0] && f.start < cols[1] && isSerialValue(body[f.start:f.end]) {
+					cells = append(cells, span{off + f.start, off + f.end})
+				}
+			}
+		}
+		off += len(line)
+	}
+	return cells, rows
+}
+
+// fieldsAt are the blank-separated words of a line, with their positions.
+func fieldsAt(line string) []span {
+	var out []span
+	start := -1
+	for i := 0; i <= len(line); i++ {
+		if i == len(line) || line[i] == ' ' || line[i] == '\t' {
+			if start >= 0 {
+				out = append(out, span{start, i})
+				start = -1
+			}
+		} else if start < 0 {
+			start = i
+		}
+	}
+	return out
+}
+
 // learnModels records the model names a text states: the PID of an
 // inventory item, the Model line, the word after 'Cisco'.
 func (s *Scrubber) learnModels(text string) {
@@ -311,8 +406,13 @@ func (s *Scrubber) LearnFrom(text string) {
 	for _, m := range reLearnLastBy.FindAllStringSubmatch(strings.ToLower(text), -1) {
 		s.Learn(User, m[1])
 	}
-	for _, m := range reLearnSerial.FindAllStringSubmatch(text, -1) {
-		s.learnByName(Serial, m[1])
+	cells, _ := serialSpans(text)
+	for _, c := range cells {
+		if v := text[c.start:c.end]; len(v) >= 4 {
+			s.learnByName(Serial, v)
+		} else {
+			s.Learn(Serial, v)
+		}
 	}
 	for _, m := range reLearnBy.FindAllStringSubmatch(text, -1) {
 		s.Learn(User, m[1])
@@ -379,14 +479,26 @@ func (s *Scrubber) Apply(text string) string {
 	text = reTZName.ReplaceAllString(text, "UTC")
 	text = reClockTZ.ReplaceAllString(text, "${1}UTC 0")
 	s.compile()
-	keep := keepSpans(text)
+	cells, rows := serialSpans(text)
+	keep := append(keepSpans(text), rows...)
+	type edit struct {
+		start, end int
+		rep        string
+	}
+	var edits []edit
+	for _, c := range cells {
+		if rep := s.Learn(Serial, text[c.start:c.end]); rep != text[c.start:c.end] {
+			edits = append(edits, edit{c.start, c.end, rep})
+		}
+	}
 	names := s.re.SubexpNames()
-	var b strings.Builder
-	last := 0
 	for _, idx := range s.re.FindAllStringSubmatchIndex(text, -1) {
 		start, end := idx[0], idx[1]
 		if start > 0 && isAlnum(text[start-1]) || end < len(text) && isAlnum(text[end]) {
 			continue // inside a longer word
+		}
+		if slices.ContainsFunc(cells, func(c span) bool { return c.start < end && start < c.end }) {
+			continue // a serial number by its field
 		}
 		tok := text[start:end]
 		which := ""
@@ -403,9 +515,18 @@ func (s *Scrubber) Apply(text string) string {
 		if !ok {
 			continue
 		}
-		b.WriteString(text[last:start])
-		b.WriteString(rep)
-		last = end
+		edits = append(edits, edit{start, end, rep})
+	}
+	sort.SliceStable(edits, func(i, j int) bool { return edits[i].start < edits[j].start })
+	var b strings.Builder
+	last := 0
+	for _, e := range edits {
+		if e.start < last {
+			continue
+		}
+		b.WriteString(text[last:e.start])
+		b.WriteString(e.rep)
+		last = e.end
 	}
 	b.WriteString(text[last:])
 	return b.String()
