@@ -101,8 +101,8 @@ the other hosts. Before upgrading, rename it (`tacctl scope rename tacctl
 tacctl can write device reports as PDF. Install weasyprint and fonts-dejavu-core now? [y/N]:
 ```
 
-- **`y` or `Y`** installs the missing ones the way the other packages are installed (`apt-get install -y -qq`, noninteractive, and after `apt-get update -qq` once if the install fails) and says whether it worked. A failure is a warning with the command to run by hand; it never fails the upgrade, and the next upgrade asks again.
-- **Anything else** (Enter, `n`, no answer) is no, the default. Nothing is installed and the answer is remembered in the marker `/var/lib/tacctl/pdf-tools-offered`, so the next upgrades do not ask. To be asked again, delete it: `sudo rm /var/lib/tacctl/pdf-tools-offered`.
+- **`y`, `Y` or `yes`** (in any case) installs the missing ones the way the other packages are installed (`apt-get install -y -qq`, noninteractive, and after `apt-get update -qq` once if the install fails) and says whether it worked. A failure is a warning with the command to run by hand; it never fails the upgrade, and the next upgrade asks again.
+- **Anything else** (Enter, `n`, `no`, no answer) is no, the default. Nothing is installed and the answer is remembered in the marker `/var/lib/tacctl/pdf-tools-offered`, so the next upgrades do not ask. To be asked again, delete it: `sudo rm /var/lib/tacctl/pdf-tools-offered`.
 - **Without a terminal on standard input** (a script, a pipe) nothing is asked and nothing is installed: the upgrade prints `tacctl can write device reports as PDF. To install what it needs: sudo apt-get install -y weasyprint fonts-dejavu-core` and goes on. Without an answer there is no marker, so each such upgrade prints the line until the packages are installed or a terminal answers no.
 - **Later**, by hand, at any time: `sudo apt-get install -y weasyprint fonts-dejavu-core`.
 

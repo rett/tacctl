@@ -208,7 +208,8 @@ current behaviour; this file is where history lives.
    Debian or Ubuntu system (`apt-get` and `dpkg-query` are there) where
    `weasyprint` or `fonts-dejavu-core` is not installed, it asks at a terminal
    `tacctl can write device reports as PDF. Install weasyprint and
-   fonts-dejavu-core now? [y/N]` (the default is no) and, on `y`, installs the
+   fonts-dejavu-core now? [y/N]` (the default is no) and, on `y` or `yes` (in
+   any case), installs the
    missing ones as the other packages are installed (noninteractive, with the
    `apt-get update` retry); a failure is a warning with the command and never
    fails the upgrade. A no is remembered in the marker
