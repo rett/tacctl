@@ -24,7 +24,47 @@ first.
 
 ---
 
-## 1. tacctl 0.2.27
+## 1. tacctl 0.2.28
+
+Released 2026-11-09 ·
+[Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.28.md)
+
+| Change | What it means on shift | Page |
+|---|---|---|
+| **The console serves file transfer (SFTP)** | `sftp alice@tacacs.example.net` and the `scp` of OpenSSH 9 or later (which speaks SFTP) work for an account that has file transfer, as that user, with the file system's permissions. `scp -O`, `rsync`, programs and shell words are still refused. It is **off for every tier but the superuser tier**, which always has it | [Getting Started](getting-started.md) §1.4, [Superuser Daily Operations](superuser-daily-operations.md) §10.3 |
+| **A superuser decides who has it** | `console file-transfer <tier> enable\|disable` and `console file-transfer user <name> enable\|disable\|clear`, a user's setting over the tier's in both directions, as for `console system-shell`. Unlike the system shell, the engineer tier is not closed to it. **Every form of the verb is the superuser's, the reads included**; `console show` (operator tier and up) lists each user's state, quota and rate | [Superuser Daily Operations](superuser-daily-operations.md) §10.3, [Concepts](concepts.md) §2 |
+| **A quota on the home, and an optional rate** | The whole home may hold 256M for the read-only, operator and engineer tiers and nothing is limited for the superuser tier until set: `console file-transfer quota <tier> <size>\|unlimited\|default` and `quota user <name> <size>\|unlimited\|clear`. The rate (bytes a second a transfer may go at) is off: `rate <tier> <size>\|off`, `rate user <name> <size>\|off\|clear`. A size is `512K`, `256M`, `2G` (powers of 1024, at most `1T`). A transfer at its rate waits | [Superuser Daily Operations](superuser-daily-operations.md) §10.3 |
+| **The home is the root** | The user's home is `/` and `..` does not leave it. `.ssh` is invisible and refused. No symbolic link is followed or made, no hard link is made, and a file with more than one name cannot be opened or changed. The reports and support bundles are in the home, so a user can fetch them | [Getting Started](getting-started.md) §1.4 |
+| **New files are 0600, new directories 0700** | The console's umask is 077, so a file uploaded with `scp` has **no executable bit**; set another mode afterwards (`chmod` in `sftp`) | [Getting Started](getting-started.md) §1.4 |
+| **What the clients show when a transfer is refused** | Over the quota they show only `Failure` (what was written before stays); an account without file transfer sees only `Connection closed`. `ssh alice@tacacs.example.net id` prints the reason, and the audit log has it (`reason=quota`, `reason=file-transfer`) | [Troubleshooting](troubleshooting.md) §8, [Audit and Compliance](audit-and-compliance.md) §3 |
+| **sshd must define `Subsystem sftp ...`** | The stock `sshd_config` of Debian and Ubuntu does; a `Match` block cannot. `console show` and `console file-transfer` print `sshd sftp subsystem: <program>` or `none` and warn in red when file transfer is on for anyone but a superuser and sshd has none. `/proc` must be mounted | [Superuser Daily Operations](superuser-daily-operations.md) §10.3 |
+| **Every transfer is audited** | `console sftp start`, a line for each upload, download, delete, rename, mkdir and setstat with the tier and the path, `console sftp DENY ... reason=` for each refusal, `console sftp end`; a refused subsystem is `console DENY ... reason=file-transfer`. A change of the settings is `console set key=file-transfer` | [Audit and Compliance](audit-and-compliance.md) §3 |
+| **The `scp` line of `device reports show` works where file transfer is enabled** | In 0.2.27 the console refused it. Now the account that has file transfer fetches a report with it (`scp alice@tacacs.example.net:reports/devices/inventory-20261106.csv .`); without file transfer the client shows `Connection closed` | [Day-to-Day Device Operations](day-to-day-device-operations.md) §1.6 |
+| A Cisco IOS support bundle no longer starts with the tail of a command | When a Cisco 2811 cut its display of a long command, the file of that command began with a line of `$` and the rest of the command before the `hostname` line. That tail is dropped now, like the rest of the echo | [Engineer Guide](engineer-guide-device-changes.md) §2.6 |
+| `tacctl rollback 0.2.27` | The release before this one is a target (fourteen in all). It converts nothing but the file transfer settings of `console.yaml`, which every target removes (after a snapshot, with no `--yes`) because no older release reads the key | [Backups and Undo](backups-and-undo.md) §5 |
+
+> **Before upgrading from 0.2.27:**
+>
+> - `tacctl upgrade` converts nothing in this release. File transfer is off
+>   for every tier but the superuser tier after the upgrade, so nothing
+>   changes for a user until a superuser runs `tacctl console file-transfer`;
+>   superusers have it at once, with no quota. Existing reports, bundles and
+>   settings are read as they were.
+> - Before you switch it on for others, check that sshd defines `Subsystem
+>   sftp ...` and that `/proc` is mounted (`tacctl console show` checks the
+>   first). Files uploaded with `scp` are 0600 and not executable.
+> - A script that relied on `scp` being refused by the console has to be
+>   looked at: with file transfer on for the account, `sftp` and the `scp` of
+>   OpenSSH 9 or later now work; `scp -O` and `rsync` stay refused.
+> - After `tacctl rollback 0.2.27` and the install of 0.2.27, the file
+>   transfer settings are gone (0.2.27 cannot read them): set them again
+>   after the next upgrade. Until the older release is installed, run no
+>   `tacctl console file-transfer` that sets something. The snapshot the
+>   rollback took holds the 0.2.28 state, which only 0.2.28 restores.
+
+---
+
+## 2. tacctl 0.2.27
 
 Released 2026-11-09 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.27.md)
@@ -62,7 +102,7 @@ Released 2026-11-09 ·
 
 ---
 
-## 2. tacctl 0.2.26
+## 3. tacctl 0.2.26
 
 Released 2026-11-06 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.26.md)
@@ -111,7 +151,7 @@ Released 2026-11-06 ·
 
 ---
 
-## 3. tacctl 0.2.25
+## 4. tacctl 0.2.25
 
 Released 2026-11-05 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.25.md)
@@ -138,7 +178,7 @@ Released 2026-11-05 ·
 
 ---
 
-## 4. tacctl 0.2.24
+## 5. tacctl 0.2.24
 
 Released 2026-11-05 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.24.md)
@@ -181,7 +221,7 @@ Released 2026-11-05 ·
 >   device whose `single-connection` was removed, 0.2.23's `diff` and `plan`
 >   show the line as missing, and applying that plan types it again.
 
-## 5. tacctl 0.2.23
+## 6. tacctl 0.2.23
 
 Released 2026-10-31 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.23.md)
@@ -218,7 +258,7 @@ Released 2026-10-31 ·
 >   again. The rollback is refused while an emergency lockdown has enrolled
 >   hosts: lift it and sync the hosts first.
 
-## 6. tacctl 0.2.22
+## 7. tacctl 0.2.22
 
 Released 2026-10-29 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.22.md)
@@ -279,7 +319,7 @@ sub-commands, and the one-letter form of `--yes` is refused:
 >   date until its first render writes its own comment, which restarts
 >   tacquito once; the rollback itself restarts nothing.
 
-## 7. tacctl 0.2.21
+## 8. tacctl 0.2.21
 
 Released 2026-10-28 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.21.md)
@@ -300,7 +340,7 @@ Released 2026-10-28 ·
 > `config validate` stop with one line. **After it,** check the line about
 > the machine's own login, and run `tacctl host sync <server>` as before.
 
-## 8. tacctl 0.2.20
+## 9. tacctl 0.2.20
 
 Released 2026-10-28 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.20.md)
@@ -333,7 +373,7 @@ sub-commands:
 > and not before. No existing user must change their password until a
 > superuser says so.
 
-## 9. tacctl 0.2.19
+## 10. tacctl 0.2.19
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.19.md)
 
@@ -346,7 +386,7 @@ sub-commands:
 | Host names may contain dots | `tacctl host rename web1 web1.example.net` works | [Linux Host Operations](linux-host-operations.md) |
 | Unknown commands answered first | A mistyped command is answered before `sudo` asks for a password | — |
 
-## 10. tacctl 0.2.18
+## 11. tacctl 0.2.18
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.18.md)
 
@@ -365,7 +405,7 @@ you may have meant (`tacctl enroll` suggests `device enroll` and
 `host enroll`). Every tier can run `device notice list` and
 `device client-config`.
 
-## 11. tacctl 0.2.17
+## 12. tacctl 0.2.17
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.17.md)
 
@@ -381,7 +421,7 @@ you may have meant (`tacctl enroll` suggests `device enroll` and
 
 ---
 
-## 12. Older releases
+## 13. Older releases
 
 Releases 0.2.0 to 0.2.16 are listed on the
 [releases page](https://github.com/rett/tacctl/releases), and every change is

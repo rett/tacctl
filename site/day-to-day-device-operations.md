@@ -229,12 +229,16 @@ the `scp` line that fetches it with your own login, and `export --out <file>`
 writes a copy (an existing file needs `--force`). The file of `--out` must
 be inside your home: tacctl expands neither `~` nor variables, and a path
 outside the home, or one that leaves it through `..` or a link, is refused
-before the report is read. The `scp` line cannot be used by a user whose
-login shell is the tacctl console: the console accepts one tacctl line (or
-`help`) and refuses `scp`, `sftp` and every other program, and there is no
-file transfer through it yet (it is planned for a later release). `export`
-prints a report or writes it inside the home, and moving the file off the
-server is not something the console does.
+before the report is read. The console serves that `scp` line (the `scp` of
+OpenSSH 9 or later, which speaks SFTP) and `sftp`, only if file transfer is
+enabled for you: it is off for every tier but the superuser tier until a
+superuser switches it on for your tier or for you
+([Superuser Daily Operations](superuser-daily-operations.md) §10.3). Without
+it the line fails: `scp` and `sftp` show only `Connection closed`, and
+`ssh alice@tacacs.example.net id` shows `file transfer is not enabled for this
+account`. Ask a superuser, or use `export`, which prints a report or writes
+it inside the home. `scp -O` and `rsync` are still refused
+([Getting Started](getting-started.md) §1.4).
 
 A user whose name has upper case letters or is longer than 32 characters has
 no Linux account on the server, and so no home for a report: `generate` then

@@ -55,7 +55,9 @@ host name, unless a superuser set another with `tacctl server name`.
 What the console does not do:
 
 - It runs tacctl commands and ssh to registered devices, nothing else.
-  `scp`, `sftp`, `rsync` and other programs are refused.
+  `rsync`, `scp -O` and other programs are refused. `sftp` and the `scp`
+  of OpenSSH 9 or later work only if a superuser has switched file transfer
+  on for you (§1.4); superusers always have it.
 - An idle session ends after a set time (30 minutes by default).
 - Every session is logged.
 
@@ -130,6 +132,48 @@ empty answer stores nothing. A wrong password stays only until the first ssh
 that ends with status 255, which forgets it. Without a terminal, for a device
 with no pinned host key, or with an option of ssh's own after `--`, ssh asks
 for the password itself, as it always did, and nothing is cached.
+
+### 1.4 File transfer: your reports and bundles (0.2.28)
+
+The files tacctl writes for you (device reports, support bundles) are in your
+home on the server. Where a superuser has switched file transfer on for you
+(or you are a superuser), the console serves **SFTP**, so you can fetch them
+without a system shell:
+
+```bash
+sftp alice@tacacs.example.net
+scp alice@tacacs.example.net:reports/devices/inventory-20261106.csv .
+scp notes.txt alice@tacacs.example.net:
+```
+
+- **Clients.** `sftp`, and the `scp` of OpenSSH 9 or later (it speaks SFTP).
+  `scp -O`, `rsync`, programs and shell words are still refused with `the
+  tacctl console does not run programs or shell commands; file transfer is
+  SFTP only (sftp, scp of OpenSSH 9 or later)`.
+- **Your home is the root.** `/` is your home directory and `..` does not
+  leave it. The folder `.ssh` is invisible and refused. No symbolic link is
+  followed or made, and a hard link cannot be made; a file that already has
+  more than one name cannot be opened or changed (it can still be listed,
+  renamed and removed). The owner of a file cannot be changed.
+- **There is a quota.** The whole home may hold 256M unless a superuser set
+  another size (superusers have none until one is set), and the reports and
+  support bundles count. A write over it is refused whole. A transfer may be
+  slowed by a rate a superuser set; it waits and is not refused.
+- **New files are private.** The console's umask is 077: a new file is 0600
+  and a new directory 0700, so a file you upload with `scp` has no executable
+  bit. Set another mode afterwards (`chmod` in `sftp`).
+- **A transfer lasts as long as the connection.** The idle timeout of the
+  console does not apply to it. A listing is in the order of the file system,
+  not sorted.
+- **Every transfer is logged**, with your tier and the path of each file.
+
+What the client tells you when a transfer is refused is short:
+
+| You see | It means |
+|---|---|
+| `Connection closed` (`sftp`, `scp`) | Your account does not have file transfer. `ssh alice@tacacs.example.net id` shows the reason: `file transfer is not enabled for this account; an administrator can switch it on (tacctl console file-transfer)`. Ask a superuser |
+| `Failure` on a write | Most often the quota (`disk quota exceeded`); the reason is in the audit log. A part uploaded stays in your home |
+| `the tacctl console does not run programs or shell commands; ...` | You used `scp -O`, `rsync` or a program. Use `sftp` or the `scp` of OpenSSH 9 or later |
 
 ---
 

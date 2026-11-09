@@ -648,7 +648,7 @@ skips it with a warning and that user has no console login until
 tacctl users keep their own shells.
 
 ```bash
-tacctl console show       # the settings, each user's shell and system-shell access, and why
+tacctl console show       # settings, each user's shell, system-shell and file-transfer access
 tacctl console check      # does sshd apply the console's settings? (operator tier and up)
 ```
 
@@ -699,6 +699,66 @@ tacctl console list-max 100                             # the longest list shown
 - `console list-max` is the longest list the console shows before it asks
   `Show all N?` (default 40, at most 1000; a negative number never asks).
 - Both are server-wide, and each console session reads them when it starts.
+
+### 10.3 File transfer (0.2.28)
+
+The console can serve SFTP, so a user can fetch their reports and support
+bundles, or put a file in their home, with `sftp` or `scp`. It is **off for
+every tier but the superuser tier**, which always has it. You decide who else
+has it, per tier and per user, and how much a home may hold:
+
+```bash
+tacctl console file-transfer                    # each tier, then users with a setting of their own
+tacctl console file-transfer operator enable    # open it to a tier
+tacctl console file-transfer user bob enable    # open it to one user, over the tier's setting
+tacctl console file-transfer user bob disable   # take it from one user, over the tier's setting
+tacctl console file-transfer user bob clear     # the tier decides again
+tacctl console file-transfer quota operator 512M       # what a whole home may hold
+tacctl console file-transfer quota user bob unlimited  # one user's quota
+tacctl console file-transfer rate operator 2M          # bytes a second; off for no limit
+tacctl console file-transfer rate user bob clear       # the tier's rate again
+```
+
+A quota is `<size>`, `unlimited` or (for a tier) `default`; a rate is
+`<size>` or `off`.
+
+- **Only a superuser runs any form of `console file-transfer`, the reads
+  included.** The verb has no row for the lower tiers. What each user has (the
+  state, the quota and the rate, with the reason) is in `console show`, which
+  the operator tier and up can run.
+- A user's setting wins over the tier's, in both directions, as for the system
+  shell: an `enable` counts only while the user stays in the tier it was set
+  for (after a move it is listed as stale), a `disable` holds in any tier,
+  `clear` returns the user to the tier's setting, and `user rename` and
+  `user remove` move or drop the user's settings. A superuser cannot be
+  disabled.
+- Unlike the system shell, the engineer tier is **not** closed to it: a
+  transfer reaches the user's home only. A caller with no tier never has it.
+- **The quota** is the bytes the whole home may hold: 256M by default for the
+  read-only, operator and engineer tiers, none for the superuser tier until
+  you set one. It counts the regular files of the home (the reports, the
+  support bundles and `.ssh` included), each file once. A write that would
+  take the home over it is refused whole. **The rate** is off by default; when
+  set, a transfer at its rate waits and is not refused. A size is a number of
+  bytes or a number with `K`, `M`, `G` or `T` (powers of 1024, at most `1T`);
+  zero, a negative number and a fraction are refused. A user's value wins over
+  the tier's.
+- The settings are in `console.yaml` (`settings.file_transfer`), apply from the
+  next console login, and each change is a `console set key=file-transfer`
+  audit line.
+- **sshd must define `Subsystem sftp ...`** (the stock `sshd_config` of Debian
+  and Ubuntu does); a `Match` block cannot, and tacctl adds nothing global.
+  `console show` and `console file-transfer` print the program (`sshd sftp
+  subsystem: <program>`) or `none`, and warn in red when file transfer is on
+  for anyone but a superuser and sshd defines none. `/proc` must be mounted too: a
+  change of a mode or times goes through it.
+- Because the quota is measured per session, several sessions of one user at
+  once can reach about that many times the quota. A directory in the home that
+  the user cannot read (one owned by root with mode 0700) makes the home count
+  as full until it is readable.
+
+What the user gets is in [Getting Started](getting-started.md) §1.4; the
+audit lines are in [Audit and Compliance](audit-and-compliance.md) §3.
 
 ---
 
@@ -882,6 +942,8 @@ sudo tacctl config render --dry-run --out ~/render-check
 | Watch logins live | `tacctl log tail -f` |
 | Console settings and each user's shell | `tacctl console show` |
 | System shell for a tier / a user | `tacctl console system-shell <tier> enable` · `console system-shell user <name> enable\|disable\|clear` |
+| File transfer for a tier / a user | `tacctl console file-transfer <tier> enable\|disable` · `console file-transfer user <name> enable\|disable\|clear` |
+| File transfer: quota and rate | `tacctl console file-transfer quota <tier> <size>\|unlimited\|default` · `quota user <name> <size>\|unlimited\|clear` · `rate <tier> <size>\|off` · `rate user <name> <size>\|off\|clear` |
 | This server at a glance | `tacctl server show` |
 | Server address: show / change | `tacctl server addresses` · `tacctl server addresses replace <ip>` |
 | Name of the server in the console | `tacctl server name [<label>\|unset]` |

@@ -34,7 +34,7 @@ explains it in full.
 | **Clone (device)** | `tacctl device clone`: register a copy of a device at a bench address, then move it into place with `device rename --replace`. | [Engineer Guide](engineer-guide-device-changes.md) §2.5 |
 | **Configured / unconfigured** | A registered device is configured when a scope's prefixes cover its address. Only configured devices authenticate users. | [Concepts](concepts.md) §4 |
 | **Confirmed shape** | A shape that an earlier apply has proved on one device (committed, a fresh login as you worked, what landed is what the check showed). `apply --confirmed` applies only confirmed shapes; a shape nobody has proved is `new`. See also Seeded shape. | [Engineer Guide](engineer-guide-device-changes.md) §5.3 |
-| **Console (login console)** | The login shell of every tacctl user on the tacctl server: tacctl commands and ssh to devices, nothing else. | [Getting Started](getting-started.md) §1 |
+| **Console (login console)** | The login shell of every tacctl user on the tacctl server: tacctl commands and ssh to devices, and SFTP for the accounts that have file transfer; nothing else. | [Getting Started](getting-started.md) §1 |
 | **Converge** | `device config plan --converge`: after the first paste is verified, also remove statements outside the standard (old servers and similar). | [Engineer Guide](engineer-guide-device-changes.md) §4 |
 | **Diff** | What differs between a device's last pull and what tacctl renders, section by section. | [Engineer Guide](engineer-guide-device-changes.md) §3 |
 | **Drift** | Two uses: a device whose configuration differs from the standard (`device config list --differs`), and a rendered server file edited by hand (`DRIFT`, exit status 3). | [Exit Codes](exit-codes.md) |
@@ -42,6 +42,7 @@ explains it in full.
 | **Enroll (device)** | `tacctl device enroll`: one attended run from a new address to its plan: key, vendor, registration, pull, plan. | [Engineer Guide](engineer-guide-device-changes.md) §2.2 |
 | **Enroll (host)** | `tacctl host enroll`: install TACACS+ or RADIUS login on a Linux host and register it. | [Linux Host Operations](linux-host-operations.md) §3 |
 | **Extras** | Statements in a managed section that tacctl does not render. Reported, left alone until `--converge`. | [Engineer Guide](engineer-guide-device-changes.md) §4 |
+| **File transfer (console)** | SFTP served by the login console, for `sftp` and the `scp` of OpenSSH 9 or later, rooted in the user's home, with a quota and an optional rate. Off for every tier but the superuser tier until a superuser runs `tacctl console file-transfer`. | [Getting Started](getting-started.md) §1.4, [Superuser Daily Operations](superuser-daily-operations.md) §10.3 |
 | **Group** | Decides *what* a user can do: device privilege and tacctl tier. | [Concepts](concepts.md) §2 |
 | **Host key / pin** | The device's ssh host key. tacctl pins it at registration, and ssh accepts only the pinned key. | [Connecting to Devices](connecting-to-devices.md) §5 |
 | **Host sync** | `tacctl host sync`: push user changes to enrolled Linux hosts. Nothing reaches a host without it. | [Linux Host Operations](linux-host-operations.md) §2 |
