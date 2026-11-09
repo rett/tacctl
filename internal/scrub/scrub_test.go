@@ -1,6 +1,7 @@
 package scrub
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -656,6 +657,61 @@ func TestASerialFieldValueEndsAtItsLastLetterOrDigit(t *testing.T) {
 			in:   []string{"Serial number: AB-12.cd-34\nlater AB-12.cd-34\n"},
 			want: []string{"Serial number: SN000001\n", "later SN000001\n"},
 			gone: []string{"AB-12"},
+		},
+	})
+}
+
+// A table ends at a blank line, a 'word:' line or a prompt line that begins
+// with a brace, not at a row with nothing in the serial column: Junos prints
+// bare item rows and members without a serial inside the table.
+func TestATableSurvivesRowsWithoutASerial(t *testing.T) {
+	hdr := "Item             Version  Part number  Serial number     Description\n"
+	vc := "Member ID  Status   Serial No    Model          prio  Role      Mode  Mode ID  Interface\n"
+	row := func(label, pad, descr string) string { return fmt.Sprintf("%-39s%-18s%s\n", label, pad, descr) }
+	runScrubCases(t, []scrubCase{
+		{
+			name: "a member without a serial is followed by one with a serial",
+			in:   []string{vc + "1 (FPC 1)  Unprvsnd\n2 (FPC 2)  Prsnt    pe3714af0999 ex4300-48t     255   Backup       N  VC   0  vcp-255/1/0\n"},
+			want: []string{"2 (FPC 2)  Prsnt    SN000001", "ex4300-48t     255", "1 (FPC 1)  Unprvsnd\n"},
+			gone: []string{"pe3714af0999"},
+		},
+		{
+			name: "bare item rows are inside the table",
+			in: []string{hdr + "Midplane\nSystem IO\nPower Supply 0\n" +
+				"FPC 1            REV 11   650-114384   pe3714af0999      EX4300-48T\n" +
+				"Fan Tray 0\nFPC 2            REV 11   650-114384   qq4815zz0777      EX4300-48T\n"},
+			want: []string{"Midplane\nSystem IO\nPower Supply 0\n", "SN000001          EX4300-48T", "SN000002          EX4300-48T", "Fan Tray 0\n"},
+			gone: []string{"pe3714af0999", "qq4815zz0777"},
+		},
+		{
+			name: "a serial without a digit, and a short one, are replaced; a status is not",
+			in: []string{hdr + "FPC 0            REV 11   650-114384   abcdefghij        EX4300-48T\n" +
+				"FPC 1            REV 11   650-114384   x9z               EX4300-48T\n" +
+				row("FPC 2", "PRSNT", "continued") + row("FPC 3", "notprsnt", "continued") + row("FPC 4", "Online", "continued") +
+				"later abcdefghij\n"},
+			want: []string{"SN000001          EX4300-48T", "SN000002          EX4300-48T", "PRSNT", "notprsnt", "Online"},
+			gone: []string{"abcdefghij", "x9z"},
+		},
+		{
+			name: "a blank line ends the table",
+			in:   []string{hdr + "Chassis                                ABC0123456        Virtual Chassis\n\n" + row("row", "", "HELLO123456")},
+			gone: []string{"HELLO123456", "ABC0123456"},
+		},
+		{
+			name: "a word with a colon ends the table",
+			in:   []string{hdr + "Chassis                                ABC0123456        Virtual Chassis\nNext:\n" + row("row", "", "HELLO123456")},
+			gone: []string{"HELLO123456", "ABC0123456"},
+		},
+		{
+			name: "a prompt line ends the table",
+			in:   []string{hdr + "Chassis                                ABC0123456        Virtual Chassis\n{master:0}\n" + row("row", "", "HELLO123456")},
+			gone: []string{"HELLO123456", "ABC0123456"},
+		},
+		{
+			name: "the same row inside the table keeps its description",
+			in:   []string{hdr + "Chassis                                ABC0123456        Virtual Chassis\n" + row("row", "", "HELLO123456")},
+			want: []string{"row" + strings.Repeat(" ", 54) + "HELLO123456"},
+			gone: []string{"ABC0123456"},
 		},
 	})
 }
