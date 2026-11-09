@@ -10,12 +10,15 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 
 	"github.com/pkg/sftp"
@@ -84,8 +87,18 @@ func startSFTP(t *testing.T, policy, line string) *sftpRig {
 
 func startSFTPCtx(t *testing.T, ctx context.Context, policy, line string) *sftpRig {
 	t.Helper()
+	return startSFTPSetup(t, ctx, policy, line, nil)
+}
+
+// startSFTPSetup is startSFTPCtx with a change to the harness (its fake
+// commands) before the console starts.
+func startSFTPSetup(t *testing.T, ctx context.Context, policy, line string, setup func(*harness)) *sftpRig {
+	t.Helper()
 	parallel(t)
 	h, _ := consoleHarness(t, "", "carol tac-users tac-readonly", policy, "-c", line)
+	if setup != nil {
+		setup(h)
+	}
 	r := &sftpRig{t: t, h: h, home: t.TempDir(), done: make(chan int, 1)}
 	r.dotenv = h.app.Env.Get("HOME")
 	h.hooks.homeOfUID = func(uid int) (string, error) {
@@ -231,17 +244,44 @@ func TestConsoleSFTPServes(t *testing.T) {
 	}{
 		{0, "mode=sftp"},
 		{1, " user=carol tier=readonly from=192.0.2.9 home=" + `"` + r.home + `"` + " quota=unlimited rate=off"},
-		{2, ` path="/up.txt" bytes=5`},
-		{3, ` path="/existing.txt" bytes=3`},
-		{4, ` path="/d"`},
-		{5, ` path="/up.txt" to="/d/moved.txt"`},
-		{6, ` path="/existing.txt"`},
+		{2, ` user=carol tier=readonly path="/up.txt" bytes=5`},
+		{3, ` user=carol tier=readonly path="/existing.txt" bytes=3`},
+		{4, ` user=carol tier=readonly path="/d"`},
+		{5, ` user=carol tier=readonly path="/up.txt" to="/d/moved.txt"`},
+		{6, ` user=carol tier=readonly path="/existing.txt"`},
 		{7, " up=5 down=3 ops=5 refused=0"},
 		{8, " user=carol reason=sftp lines=5 status=0"},
 	} {
 		if !strings.Contains(log[frag.i], frag.text) {
 			t.Errorf("log[%d] = %q, want it to contain %q", frag.i, log[frag.i], frag.text)
 		}
+	}
+}
+
+// logger failing is not a reason to stop a transfer: the warning is on
+// standard error, standard output stays the protocol's, and the transfer
+// goes on unaudited (the same as for a command of the console).
+func TestConsoleSFTPLoggerDownKeepsStdoutTheProtocol(t *testing.T) {
+	r := startSFTPSetup(t, context.Background(), sftpPolicy(console.FileTransfer{Enabled: true}), "internal-sftp",
+		func(h *harness) { h.runner.Missing("logger") })
+	c := r.client()
+	if err := put(t, c, "up.txt", "hello"); err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	if got, err := get(t, c, "up.txt"); err != nil || got != "hello" {
+		t.Errorf("download: %q %v", got, err)
+	}
+	if status := r.finish(c); status != 0 {
+		t.Fatalf("status %d, stderr %q", status, r.h.err.String())
+	}
+	if b, err := os.ReadFile(filepath.Join(r.home, "up.txt")); err != nil || string(b) != "hello" {
+		t.Errorf("the uploaded file: %q %v", b, err)
+	}
+	if !wholePackets(r.tap.bytes()) {
+		t.Errorf("standard output holds more than SFTP packets: %q", r.tap.bytes())
+	}
+	if !strings.Contains(r.h.err.String(), "The audit line was not written (logger: not found); the command continues.") {
+		t.Errorf("stderr lacks the warning: %q", r.h.err.String())
 	}
 }
 
@@ -262,7 +302,7 @@ func TestConsoleSFTPQuotaRateAndTheStartLine(t *testing.T) {
 	for _, want := range []string{
 		" quota=100 rate=1G",
 		"auth.warning console sftp DENY session=",
-		` path="/over"`, " reason=quota",
+		` user=carol tier=readonly path="/over"`, " reason=quota",
 	} {
 		if !strings.Contains(log, want) {
 			t.Errorf("log lacks %q:\n%s", want, log)
@@ -304,7 +344,7 @@ func TestConsoleSFTPRefusesSSHAndAudits(t *testing.T) {
 		t.Errorf("authorized_keys is %q", b)
 	}
 	log := strings.Join(consoleLog(r.h.runner), "\n")
-	if !strings.Contains(log, `auth.warning console sftp DENY session=`) || !strings.Contains(log, `path="/.ssh/authorized_keys"`) ||
+	if !strings.Contains(log, `auth.warning console sftp DENY session=`) || !strings.Contains(log, ` tier=readonly path="/.ssh/authorized_keys"`) ||
 		!strings.Contains(log, "reason=.ssh") {
 		t.Errorf("the refusals are not audited:\n%s", log)
 	}
@@ -343,6 +383,58 @@ func TestConsoleSFTPAuditSanitisesNames(t *testing.T) {
 	}
 	if !strings.Contains(mkdir, ` path="/`+strings.Repeat("n", console.NameMax-1)+`"... `) && !strings.HasSuffix(mkdir, ` path="/`+strings.Repeat("n", console.NameMax-1)+`"...`) {
 		t.Errorf("the long name is not cut: %q", mkdir)
+	}
+}
+
+// A failed request on a hostile long name is one line that keeps its
+// trailing fields (logger cuts a line at 1 KiB), and the error text does not
+// repeat the path.
+func TestConsoleSFTPAuditLineOfAFailedLongNameFits(t *testing.T) {
+	r := startSFTP(t, sftpPolicy(console.FileTransfer{Enabled: true}), "internal-sftp")
+	c := r.client()
+	hostile := "/" + strings.Repeat("\x01", 100) + strings.Repeat("n", 100)
+	if err := c.Remove(hostile); err == nil {
+		t.Fatal("removing a file that is not there worked")
+	}
+	if err := c.Rename(hostile, hostile+"2"); err == nil {
+		t.Fatal("renaming a file that is not there worked")
+	}
+	if status := r.finish(c); status != 0 {
+		t.Fatalf("status %d", status)
+	}
+	seen := 0
+	for _, l := range consoleLog(r.h.runner) {
+		if !strings.Contains(l, "console sftp delete") && !strings.Contains(l, "console sftp rename") {
+			continue
+		}
+		seen++
+		if len(l) >= 1000 {
+			t.Errorf("%d bytes: %s", len(l), l)
+		}
+		_, errField, ok := strings.Cut(l, " error=")
+		if !ok || strings.Contains(errField, `\x01`) || strings.Contains(errField, "nnnn") {
+			t.Errorf("the error repeats the path, or is lost: %s", l)
+		}
+	}
+	if seen < 2 {
+		t.Errorf("%d event lines, want at least 2", seen)
+	}
+}
+
+func TestErrTextDropsThePath(t *testing.T) {
+	for _, c := range []struct {
+		err  error
+		want string
+	}{
+		{nil, ""},
+		{errors.New("plain"), "plain"},
+		{&fs.PathError{Op: "open", Path: "/home/user/x", Err: syscall.ENOENT}, "open: no such file or directory"},
+		{&os.LinkError{Op: "rename", Old: "/a", New: "/b", Err: syscall.EEXIST}, "rename: file exists"},
+		{fmt.Errorf("wrapped: %w", &fs.PathError{Op: "unlink", Path: "/x", Err: syscall.EACCES}), "unlink: permission denied"},
+	} {
+		if got := errText(c.err); got != c.want {
+			t.Errorf("errText(%v) = %q, want %q", c.err, got, c.want)
+		}
 	}
 }
 

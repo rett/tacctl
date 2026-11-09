@@ -33,7 +33,10 @@ func (s Session) SFTPDenyLine(why string) string {
 // mid-packet).
 const SFTPStatus = 1
 
-// NameMax is the most bytes of a file name (a path) one log line carries.
+// NameMax is the most bytes of the escaped text of a file name (a path) that
+// one field of a log line carries. logger cuts a line at 1 KiB by default, so
+// the fields after the longest ones (reason=, error=) would be lost if the
+// escapes were not counted.
 const NameMax = 200
 
 // QuoteName is a path a client sent, made safe for one field of a log line.
@@ -43,22 +46,31 @@ const NameMax = 200
 // quote, a backslash, a byte that is not UTF-8 and a character that does not
 // print (a bidirectional override) become escapes, so that no name can end
 // the field or the line, forge a field or move a terminal that reads the
-// log. At most NameMax bytes are kept; a name that was cut ends with '...'
+// log. At most NameMax bytes of the escaped text are kept, never a part of an
+// escape sequence or of a character; a name that was cut ends with '...'
 // after the closing quote.
 func QuoteName(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	kept := 0
 	cut := false
-	if len(s) > NameMax {
-		i := NameMax
-		for i > 0 && !utf8.RuneStart(s[i]) {
-			i--
+	for i := 0; i < len(s); {
+		_, n := utf8.DecodeRuneInString(s[i:])
+		q := strconv.Quote(s[i : i+n])
+		piece := q[1 : len(q)-1]
+		if kept+len(piece) > NameMax {
+			cut = true
+			break
 		}
-		s, cut = s[:i], true
+		b.WriteString(piece)
+		kept += len(piece)
+		i += n
 	}
-	q := strconv.Quote(s)
+	b.WriteByte('"')
 	if cut {
-		q += "..."
+		b.WriteString("...")
 	}
-	return q
+	return b.String()
 }
 
 // SFTPStartLine is the log line of a file transfer opened: the tier of the
@@ -85,15 +97,18 @@ func (s Session) SFTPEndLine(up, down int64, ops, refused int) string {
 // 'console sftp DENY ... reason=<why>' at auth.warning, like a refused command;
 // the rest are info lines with the path (and the new name of a rename), the
 // bytes moved by an upload or a download, and the error text of one that
-// failed. errText is sanitised like a path.
-func (s Session) SFTPEventLine(op, path, to string, bytes int64, errText string) (priority, line string) {
+// failed. Every line names the tier of the caller. errText is sanitised like a path; with a path, a new name and an
+// error text each at NameMax, the line stays under 1000 bytes (logger cuts a
+// line at 1 KiB).
+func (s Session) SFTPEventLine(op, tier, path, to string, bytes int64, errText string) (priority, line string) {
 	head := "console sftp " + op
 	priority = "auth.info"
 	if op == "refused" {
 		head = "console sftp DENY"
 		priority = "auth.warning"
 	}
-	line = head + " session=" + s.ID + " user=" + LogValue(s.User) + " path=" + QuoteName(path)
+	line = head + " session=" + s.ID + " user=" + LogValue(s.User) +
+		" tier=" + LogValue(tier) + " path=" + QuoteName(path)
 	if to != "" {
 		line += " to=" + QuoteName(to)
 	}

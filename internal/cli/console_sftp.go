@@ -12,6 +12,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -180,7 +182,7 @@ func (au *sftpAudit) finish() sftpTotals {
 func (au *sftpAudit) run() {
 	defer close(au.done)
 	for e := range au.ch {
-		priority, line := au.cs.sess.SFTPEventLine(e.Op, e.Path, e.To, e.Bytes, errText(e.Err))
+		priority, line := au.cs.sess.SFTPEventLine(e.Op, string(au.cs.tier), e.Path, e.To, e.Bytes, errText(e.Err))
 		au.cs.log(priority, line)
 		au.t.ops++
 		switch e.Op {
@@ -194,9 +196,21 @@ func (au *sftpAudit) run() {
 	}
 }
 
+// errText is the text of an error for the log line of an event, without the
+// path the error names: the line carries the path in its own field, and a
+// second copy (the Go text of an os error is 'open <path>: <reason>') would
+// double the length of the field a hostile name fills.
 func errText(err error) string {
 	if err == nil {
 		return ""
+	}
+	var pe *fs.PathError
+	var le *os.LinkError
+	switch {
+	case errors.As(err, &pe):
+		return pe.Op + ": " + errText(pe.Err)
+	case errors.As(err, &le):
+		return le.Op + ": " + errText(le.Err)
 	}
 	return err.Error()
 }

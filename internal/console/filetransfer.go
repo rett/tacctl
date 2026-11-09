@@ -69,6 +69,10 @@ func ParseSize(s string) (int64, error) {
 	if mult != 1 {
 		digits = s[:len(s)-1]
 	}
+	if digits == "" {
+		// a unit with no number: 'K'
+		return 0, bad
+	}
 	for _, c := range digits {
 		if c < '0' || c > '9' {
 			return 0, bad
@@ -319,14 +323,16 @@ func parseFileTransfer(f *File, m *yamlpy.Map) error {
 			}
 			for name, sv := range x.All() {
 				n, err := sizeValue(sv, k == "quota")
-				if err != nil || (k == "rate" && n == 0) {
-					return fail("settings.file_transfer." + k + ": '" + name + "' must be a size" + map[bool]string{true: " or unlimited", false: ""}[k == "quota"] + ".")
+				if err != nil {
+					return fail("settings.file_transfer." + k + ": '" + name + "' must be a size" + map[bool]string{true: " or unlimited", false: " or off"}[k == "quota"] + ".")
 				}
-				if k == "quota" {
+				switch {
+				case k == "quota":
 					f.FileTransferQuota[tier.Tier(name)] = n
-				} else {
+				case n != 0:
 					f.FileTransferRate[tier.Tier(name)] = n
 				}
+				// a tier's rate of off is the built-in setting: nothing is stored
 			}
 		case "quota_users", "rate_users":
 			x, ok := v.(*yamlpy.Map)

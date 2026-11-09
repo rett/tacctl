@@ -80,9 +80,8 @@ current behaviour; this file is where history lives.
    it is not the built-in setting), apply from the next console login, are
    logged as `console set key=file-transfer` at `auth.notice`, and reach the
    console through `tacctl _console-policy` (`file_transfer=yes ft_quota=
-   ft_rate=` for a caller who has it). The settings only decide: the console's
-   file transfer, which a later change of this release turns on, reads them,
-   and until it does they change nothing a user can do. Setting them is the
+   ft_rate=` for a caller who has it). The settings decide who may transfer
+   files, and the console's file transfer (item 4) reads them. Setting them is the
    superuser's, and so are the read forms: the verb has no row in the tier
    table, so every form of `console file-transfer` is refused below the
    superuser tier, while `console show`, which the operator tier and up can
@@ -104,14 +103,29 @@ current behaviour; this file is where history lives.
    output, as the logged-in user (no change of privilege). The user's home
    directory, as the account database names it and never `$HOME`, is the root:
    `/` is the home, `..` does not leave it, `.ssh` is not listed and every
-   request for it is refused, no symbolic link is followed or made, and hard
-   links are not supported. `sftp` and the `scp` of OpenSSH 9 or later (which
+   request for it is refused, no symbolic link is followed, and neither a
+   symbolic link nor a hard link can be created through the console. A file
+   that already has more than one name (a hard link made outside SFTP)
+   cannot be opened, downloaded or written, and its mode and times cannot be
+   changed (refused, reason `link`); it can still be listed, renamed and
+   removed. Setting the mode of a directory without the owner's read and
+   search bits is refused. A listing comes in the order of the file system,
+   not sorted (the OpenSSH `sftp` client sorts what its `ls` prints itself),
+   and a session has at most 256 files and listings open at once (reason
+   `too-many-open-files`). `sftp` and the `scp` of OpenSSH 9 or later (which
    uses SFTP) work; `scp -O`, `rsync`, programs and shell words stay refused,
    with a text that no longer says file transfer is unavailable: `the tacctl
    console does not run programs or shell commands; file transfer is SFTP only
-   (sftp, scp of OpenSSH 9 or later)`. The quota (the bytes the whole home may
-   hold, the reports and support bundles of the user included) refuses a write
-   that would go over it, and the rate (bytes a second, reads and writes
+   (sftp, scp of OpenSSH 9 or later)`. The quota (the bytes the home may hold:
+   the sizes of its regular files, each inode once, never directories, links
+   or inodes; the reports and support bundles of the user are included)
+   refuses a write that would go over it. It is measured per session, so N
+   sessions at once can reach about N times the quota; a deleted file that a
+   handle still holds stays counted until the handle is closed; and a
+   directory of the home that the session cannot read or search (for example
+   one owned by root with mode 0700) makes the home count as full, so every
+   upload that grows it is refused with `disk quota exceeded` until the
+   directory is readable. The rate (bytes a second, reads and writes
    together, a burst of one second) slows the session. For an account without
    file transfer the subsystem is refused with status 126 and `file transfer is
    not enabled for this account; an administrator can switch it on (tacctl
@@ -121,18 +135,25 @@ current behaviour; this file is where history lives.
    not apply to a transfer: it lasts as long as the connection, ends with
    status 0 when the client closes it, and a protocol error ends it with
    status 1 and one line on standard error; nothing but protocol is written
-   to standard output. Every request is in the console's own log under the tag
+   to standard output. A transfer is in the console's own log under the tag
    `tacctl-console`: `console sftp start` (the tier, the home, the quota and the
-   rate in effect), `console sftp upload|download|delete|rename|mkdir|setstat`,
-   `console sftp DENY ... reason=` for a refused request (`.ssh`, outside the
-   home, a symbolic link, the quota, unsupported, bad path) at `auth.warning`,
-   `console sftp end` (the bytes up and down, the requests, the refusals), and
-   `mode=sftp` and `reason=sftp` on the session's start and end lines; the
-   subsystem refused is `console DENY ... reason=file-transfer subsystem=sftp`.
-   A path is a file name, so unlike a refused command it is logged, but as a
-   double-quoted string with control characters, quotes, backslashes and bytes
-   that are not UTF-8 escaped, cut at 200 bytes, so that no name forges a
-   field or a line. sshd starts the subsystem only if its configuration defines
+   rate in effect), `console sftp upload|download|delete|rename|mkdir|setstat`
+   (each with `tier=`, like the refusals), `console sftp DENY ... reason=` for a
+   refused request of any kind (`.ssh`, `outside-the-home`, `symlink`, `link`,
+   `quota`, `unsupported`, `bad-path`, `too-many-open-files`; a refused
+   `readlink` or `realpath` too) at `auth.warning`, `console sftp end` (the
+   bytes up and down, the requests, the refusals), and `mode=sftp` and
+   `reason=sftp` on the session's start and end lines; the successful `stat`,
+   listing, `readlink` and `realpath` are not logged. The subsystem refused is
+   `console DENY ... reason=file-transfer|password-change|policy|home|stream
+   subsystem=sftp`. A path is a file name, so unlike a refused command it is
+   logged, but as a double-quoted string with control characters, quotes,
+   backslashes and bytes that are not UTF-8 escaped, cut at 200 bytes of the
+   escaped text, so that no name forges a field or a line and `logger` keeps
+   the whole line (the error text does not repeat the path). If `logger`
+   cannot write a line, the warning `The audit line was not written (logger:
+   <reason>); the command continues.` can appear on standard error during a
+   transfer and the transfer goes on, unaudited. sshd starts the subsystem only if its configuration defines
    `Subsystem sftp ...`, which a `Match` block cannot: `console file-transfer`
    with no argument and the server section of `console show` now print `sshd
    sftp subsystem: <program>` or `none` (from `sshd -T`) and warn in red when
