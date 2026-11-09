@@ -173,6 +173,7 @@ device reports generate --type inventory             # saved in your home
 device reports generate --type members --format csv  # one row per chassis member
 device reports generate --type software --scope site-a
 device reports generate --type config --stdout       # print it, store nothing
+device reports generate --type inventory --format pdf   # a PDF (needs weasyprint)
 device reports list                                  # your reports, newest first
 device reports show inventory-20261106 --content     # who, when, the first 200 lines
 device reports export inventory-20261106             # print all of it
@@ -191,24 +192,29 @@ device reports export inventory-20261106             # print all of it
   information. A device that was never pulled is a row with empty facts and
   `never`, not a gap; only `members` leaves it out (it lists the devices that
   have a model or a serial number, and a device that is no chassis is one row).
-- `--format text` (the default) is aligned columns, `csv` follows RFC 4180
-  and `json` is one object with `schema`, `type`, `generated`, `oldest_data`,
+- `--format text` (the default) is aligned columns, `csv` follows RFC 4180,
+  `pdf` is a document to hand on (below) and `json` is one object with `schema`, `type`, `generated`, `oldest_data`,
   `filters`, `columns` and `rows`. A CSV cell that starts with `=`, `+`, `-` or `@` gets
   a leading `'`, so that a spreadsheet shows it and does not run it.
 - `--scope` (one of yours) and `--vendor cisco|juniper|wti|other` narrow the
   report and combine. A selection that matches nothing writes a report with
   no rows, after a warning. A superuser's report holds every device.
-- A **read-only** user's report holds the model, serial number, release and
-  chassis members, although `device show` shows those from the operator tier
-  up. The `state` and `applied` columns of the `config` report are `-` for a
-  read-only user (`null` in JSON): the configuration state is shown from the
-  operator tier up.
+- A **read-only** user's report follows the rule of `device show`, which
+  shows the model, serial number, release and chassis members, the
+  configuration state and the date of the last apply from the operator tier
+  up. In a read-only user's `inventory` report the `model`, `serial` and
+  `release` of every row are empty (`-` in text, an empty cell in CSV, `""` in
+  JSON) and `members` is `-` (`0` in JSON); in `software` the `model` and
+  `release` are empty; the `members` report has no rows; and `state` and
+  `applied` of `config` are `-` (`null` in JSON). The name, address, vendor,
+  scope, location, description and the date of the pull stay. A report a
+  read-only user made with 0.2.26 keeps what it holds.
 - **Engineers** can add `--pull`, which reads the devices first as `device
   config pull` does, with your own password
   ([Engineer Guide](engineer-guide-device-changes.md) §3.2).
 
 **Where the report goes.** The file is
-`~/reports/devices/<type>-<yyyymmdd>.<txt|csv|json>` in your home on the
+`~/reports/devices/<type>-<yyyymmdd>.<txt|csv|json|pdf>` in your home on the
 tacctl server (the directory 0700, the file 0600, made as you), and the first
 report creates the directory. A second report of the same type on the same
 day is `-2`, then `-3`; `--name <name>` chooses another name (letters,
@@ -220,8 +226,48 @@ alone. A file you put in the directory yourself is listed as `other`, and
 
 tacctl sends a report nowhere itself. `device reports show <report>` prints
 the `scp` line that fetches it with your own login, and `export --out <file>`
-writes a copy (an existing file needs `--force`). A user with no account on
-the server can print a report with `--stdout` and cannot store one.
+writes a copy (an existing file needs `--force`). The file of `--out` must
+be inside your home: tacctl expands neither `~` nor variables, and a path
+outside the home, or one that leaves it through `..` or a link, is refused
+before the report is read. The `scp` line cannot be used by a user whose
+login shell is the tacctl console: the console accepts one tacctl line (or
+`help`) and refuses `scp`, `sftp` and every other program, and there is no
+file transfer through it yet (it is planned for a later release). `export`
+prints a report or writes it inside the home, and moving the file off the
+server is not something the console does.
+
+A user whose name has upper case letters or is longer than 32 characters has
+no Linux account on the server, and so no home for a report: `generate` then
+refuses and stores nothing, and `list`, `show`, `export`, `rename`, `remove`
+and `prune` say the same. `--stdout` still prints, and a superuser's `tacctl
+user rename` gives the user a name that can be an account.
+
+**A PDF report.** `--format pdf` writes the report as a PDF with the
+extension `.pdf`, to hand on or print:
+
+- The page is letter landscape: a title block (the type, when the report was
+  made in UTC, the filters and the date of the oldest datum), then the
+  table in 8 pt type, with the header row repeated on every page, light
+  stripes, no row split across two pages and a page counter. An empty cell
+  is `-`.
+- It needs `weasyprint` and the DejaVu fonts, which are optional:
+  `sudo apt-get install -y weasyprint fonts-dejavu-core`. A superuser
+  installs them (`tacctl upgrade` offers them once, see
+  [Superuser Daily Operations](superuser-daily-operations.md) §4.11).
+  Without them `generate --format pdf` refuses at once, before it reads a
+  device or writes a file, with that line and exit status 1.
+- A PDF is binary. `--stdout` and `export` refuse to print one to a terminal
+  (`PDF is binary: use --out FILE or redirect`) and write the bytes when
+  standard output is a file or a pipe (`device reports export
+  inventory-20261106 > inventory.pdf` in a shell). `show --content` prints
+  `binary PDF, <n> bytes: use export` instead of the first lines.
+- A word of more than 24 characters may wrap after every 24: tacctl puts an
+  invisible zero-width space there, so copying such a value out of the PDF
+  can carry invisible characters. The text, CSV and JSON reports have none.
+- A tool that fails, runs over its 120 seconds or makes no PDF gives an error
+  with the first lines of its own and writes nothing: no file and no `.meta`.
+  A very long report can run over the time; narrow it with `--scope` or
+  `--vendor`.
 
 **Looking after your reports:**
 
@@ -315,6 +361,7 @@ holds in your scopes.
 | A pull or ssh is refused: break-glass held | The server isn't answering that device on purpose. See `breakglass list`. | — |
 | Apply says `failed: calls itself '<x>'` | The device's hostname doesn't match the registry. Check you have the right device. | Engineer |
 | `device reports generate` names `reports.max_size` or `reports.max_count` and writes nothing | Your reports are over a limit. Remove old ones (`device reports prune`), narrow the report (`--scope`) or print it (`--stdout`). | Everyone; a superuser changes the limit |
+| `generate --format pdf` says `PDF reports need weasyprint, which is not installed here` | The PDF tool is optional and is not on this server (or is not root's, or not in `/usr/bin`, `/usr/local/bin` or `/opt/weasyprint/bin`). Nothing was read or written. | A superuser: `sudo apt-get install -y weasyprint fonts-dejavu-core` |
 
 ---
 
@@ -329,7 +376,7 @@ holds in your scopes.
 | Health check | `device check <name>` | Operators |
 | Failed logins | `log failures` / `log search <user>` | Operators |
 | Devices with drift | `device config list --differs` | Operators |
-| Report on your devices | `device reports generate --type inventory\|members\|software\|config` | Everyone |
+| Report on your devices | `device reports generate --type inventory\|members\|software\|config` (`--format text\|csv\|json\|pdf`) | Everyone |
 | Read or fetch a report | `device reports list` · `show <report>` · `export <report>` | Everyone |
 | Remove old reports | `device reports prune --older-than 30d` | Everyone |
 | Onboard a device | `device enroll <address>` | Engineers |

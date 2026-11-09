@@ -24,7 +24,45 @@ first.
 
 ---
 
-## 1. tacctl 0.2.26
+## 1. tacctl 0.2.27
+
+Released 2026-11-09 ·
+[Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.27.md)
+
+| Change | What it means on shift | Page |
+|---|---|---|
+| **PDF device reports** | `device reports generate --format pdf` writes a letter landscape PDF beside text, CSV and JSON: a title block, then the table with its header row on every page. It needs `weasyprint` and `fonts-dejavu-core`, which are optional (`sudo apt-get install -y weasyprint fonts-dejavu-core`); without them the command refuses at once, before it reads a device, with exit status 1. A PDF is binary: `export` and `--stdout` refuse a terminal (`PDF is binary: use --out FILE or redirect`), and `show --content` says `binary PDF, <n> bytes: use export` | [Day-to-Day Device Operations](day-to-day-device-operations.md) §1.6, [Superuser Daily Operations](superuser-daily-operations.md) §4.11 |
+| **`tacctl upgrade` offers the PDF tools, once** | Last, on Debian and Ubuntu, if either package is missing, it asks `Install weasyprint and fonts-dejavu-core now? [y/N]`. A no is remembered in `/var/lib/tacctl/pdf-tools-offered`; delete the file to be asked again. Without a terminal nothing is asked and the upgrade prints the `apt-get` line. `install` does not offer them | [Superuser Daily Operations](superuser-daily-operations.md) §4.11 |
+| **The files tacctl writes at a path you name are inside your home** | `device config plan --out` and `--out-dir`, `device reports export --out`, `config render --dry-run --out` and `config linux script` and `remove-script --output` refuse a path outside the home (the home of the person who ran `sudo`), one that leaves it through `..` or a link, and any `~` or `$` for tacctl to expand: the shell expands them, tacctl does not. `--output /dev/stdout` and `/var/tmp/...` are refused now, and so is an `--output` that names a directory. A script that wrote elsewhere fails until it names a path inside the home | [Getting Started](getting-started.md) §5, [Superuser Daily Operations](superuser-daily-operations.md) §11.4, [Engineer Guide](engineer-guide-device-changes.md) §4 |
+| **`device support-bundle --out` is a name** | A letter or digit, then letters, digits, `.`, `_` or `-`, at most 64 characters; a `/`, `..`, a leading dot, `~` or `$` is refused with exit status 2 before anything is asked. The bundle is `~/support-bundles/<name>` and its private map `~/support-bundles/<name>.map`. Without `--out` the name is `<device>-<UTC time>`. Before, `--out ~/x` could make a folder named `~` | [Engineer Guide](engineer-guide-device-changes.md) §2.6 |
+| **The support-bundle scrubber keeps what the device printed about itself** | Model names (`PID:`, `VID:`, `DESCR:`, the `Model:` line of Junos), object identifiers and the vendors' own host names (`www.cisco.com`) stay; serial numbers are replaced by their field, whatever their length, and the serial column of a hardware table is replaced at its header's column, with the columns after it kept in place; the echo of a long Cisco command is dropped; a vendor's mail address and your own name under a vendor's domain are replaced | [Engineer Guide](engineer-guide-device-changes.md) §2.6 |
+| **A read-only user's reports follow `device show`** | Below the operator tier the model, serial number and release of the `inventory` and `software` reports are empty, `members` is `-` and the `members` report has no rows. The operator tier and up see what they saw. A report made before keeps what it holds | [Day-to-Day Device Operations](day-to-day-device-operations.md) §1.6 |
+| **A superuser's `prune` of other users' reports is audited before it reads** | One `device reports access verb=prune ... report=*` line for each other user whose directory is read, also when nothing is old enough, with no count. With `--all-users` all the lines come first, so under `audit.strict` one that cannot be written refuses the whole run | [Audit and Compliance](audit-and-compliance.md) §3, [Superuser Daily Operations](superuser-daily-operations.md) §4.11 |
+| **The `scp` line of `device reports show` does not work through the console** | The console is a login shell that accepts one tacctl line and refuses `scp` and `sftp`. `export` prints a report or writes it inside the home; file transfer through the console is planned for a later release | [Day-to-Day Device Operations](day-to-day-device-operations.md) §1.6 |
+| A user with no Linux account | A user name with upper case letters or longer than 32 characters has no account, so `generate` refuses and stores nothing; `--stdout` still prints | [Day-to-Day Device Operations](day-to-day-device-operations.md) §1.6 |
+| A Cisco stack member with no version | `show switch` rows whose H/W version column is blank (`Provisioned`) are read as members; they were dropped | [Vendor Notes](vendor-notes.md) §2.5 |
+| `tacctl rollback 0.2.26` | The release before this one is a target. It converts nothing: no key or field removed, no snapshot, no `--yes` | [Backups and Undo](backups-and-undo.md) §5 |
+
+> **Before upgrading from 0.2.26:**
+>
+> - `tacctl upgrade` converts nothing in this release. The PDF offer comes
+>   last, once, and installs only if you answer yes at a terminal. Existing
+>   reports, bundles and settings are read as they were.
+> - Check your scripts: a `device support-bundle --out`, `device config plan
+>   --out`, `reports export --out`, `config render --dry-run --out` or
+>   `config linux script --output` that named a path outside the home, or a
+>   `~` for tacctl to expand, fails until it names a path inside the home (a
+>   bundle name for `support-bundle`).
+> - After `tacctl rollback 0.2.26` and the install of 0.2.26, the limits of
+>   the reports, the chassis members and every report stay. A PDF report is a
+>   file like the others and the packages stay installed, but 0.2.26 has no
+>   PDF format: it lists a PDF, its `show --content` cleans the bytes as text,
+>   and `device reports rename` of a PDF drops its `.pdf`. Fetch it first, and
+>   remove or rename it before the rollback.
+
+---
+
+## 2. tacctl 0.2.26
 
 Released 2026-11-06 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.26.md)
@@ -73,7 +111,7 @@ Released 2026-11-06 ·
 
 ---
 
-## 2. tacctl 0.2.25
+## 3. tacctl 0.2.25
 
 Released 2026-11-05 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.25.md)
@@ -100,7 +138,7 @@ Released 2026-11-05 ·
 
 ---
 
-## 3. tacctl 0.2.24
+## 4. tacctl 0.2.24
 
 Released 2026-11-05 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.24.md)
@@ -143,7 +181,7 @@ Released 2026-11-05 ·
 >   device whose `single-connection` was removed, 0.2.23's `diff` and `plan`
 >   show the line as missing, and applying that plan types it again.
 
-## 4. tacctl 0.2.23
+## 5. tacctl 0.2.23
 
 Released 2026-10-31 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.23.md)
@@ -180,7 +218,7 @@ Released 2026-10-31 ·
 >   again. The rollback is refused while an emergency lockdown has enrolled
 >   hosts: lift it and sync the hosts first.
 
-## 5. tacctl 0.2.22
+## 6. tacctl 0.2.22
 
 Released 2026-10-29 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.22.md)
@@ -241,7 +279,7 @@ sub-commands, and the one-letter form of `--yes` is refused:
 >   date until its first render writes its own comment, which restarts
 >   tacquito once; the rollback itself restarts nothing.
 
-## 6. tacctl 0.2.21
+## 7. tacctl 0.2.21
 
 Released 2026-10-28 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.21.md)
@@ -262,7 +300,7 @@ Released 2026-10-28 ·
 > `config validate` stop with one line. **After it,** check the line about
 > the machine's own login, and run `tacctl host sync <server>` as before.
 
-## 7. tacctl 0.2.20
+## 8. tacctl 0.2.20
 
 Released 2026-10-28 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.20.md)
@@ -295,7 +333,7 @@ sub-commands:
 > and not before. No existing user must change their password until a
 > superuser says so.
 
-## 8. tacctl 0.2.19
+## 9. tacctl 0.2.19
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.19.md)
 
@@ -308,7 +346,7 @@ sub-commands:
 | Host names may contain dots | `tacctl host rename web1 web1.example.net` works | [Linux Host Operations](linux-host-operations.md) |
 | Unknown commands answered first | A mistyped command is answered before `sudo` asks for a password | — |
 
-## 9. tacctl 0.2.18
+## 10. tacctl 0.2.18
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.18.md)
 
@@ -327,7 +365,7 @@ you may have meant (`tacctl enroll` suggests `device enroll` and
 `host enroll`). Every tier can run `device notice list` and
 `device client-config`.
 
-## 10. tacctl 0.2.17
+## 11. tacctl 0.2.17
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.17.md)
 
@@ -343,7 +381,7 @@ you may have meant (`tacctl enroll` suggests `device enroll` and
 
 ---
 
-## 11. Older releases
+## 12. Older releases
 
 Releases 0.2.0 to 0.2.16 are listed on the
 [releases page](https://github.com/rett/tacctl/releases), and every change is

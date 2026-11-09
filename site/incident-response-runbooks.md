@@ -141,7 +141,8 @@ tacctl device config plan --scope site-a --secrets --out-dir ~/inc-4821
 tacctl device config apply --scope site-a --section aaa
 ```
 
-6. Paste the Cisco and WTI plans from the `--out-dir` files.
+6. Paste the Cisco and WTI plans from the `--out-dir` files (a directory
+   inside your home).
    **These files contain the secret.** Store them safely and delete them
    afterwards.
 7. Watch for devices still failing: `tacctl log failures` (look for

@@ -49,7 +49,16 @@ the pending list, because the lockdown on the devices is in force
 some device, although the report is made: it holds the facts of their last
 good pull, with its date. For `device reports`, a refused request (a name in
 use, no such report, a report over a limit) is 1 and wrong arguments (no
-`--type`, an unknown type, format or age) are 2.
+`--type`, an unknown type, format or age) are 2. A PDF report needs
+`weasyprint`: without it `generate --format pdf` exits 1 before it reads a
+device, and so does a PDF that cannot be written to standard output (a full
+disk, a closed pipe).
+
+A path that names a file to write (`--out`, `--out-dir`, `--output`) and is
+not inside your home is refused before anything is read or written, with exit
+status 2 for `device config plan` and `device reports export` and 1 for
+`config render --dry-run` and `config linux script` and `remove-script`. A
+`device support-bundle --out` that is not a plain name is 2.
 
 ---
 

@@ -157,16 +157,21 @@ changed, at `auth.notice`, and never a content:
 
 ```
 device reports access verb=show owner=bob report=inventory-20261106 by=alice sid=k3x9a0bq
-device reports access verb=prune owner=bob count=2 by=alice sid=k3x9a0bq
+device reports access verb=prune owner=bob report=* by=alice sid=k3x9a0bq
 ```
 
 `verb` is `list`, `show`, `export`, `rename`, `remove`, `prune` or
-`prune-dry-run`; `list --all-users` has `owner=*`, and a `prune` writes a
-line for each user, with `count=` and never a report name. With
-`audit.strict` on, an access whose line cannot be written is refused. A
+`prune-dry-run`; `list --all-users` has `owner=*`, and a `prune` of other
+users' reports writes a line with `report=*` for each other user whose
+directory it reads, also when nothing in it is old enough, and never a report
+name or a count (since 0.2.27; the line carried `count=` before). All the
+lines of a run are written before the first directory is read. With
+`audit.strict` on, an access whose line cannot be written is refused, and so
+is a whole `prune --all-users` when one line cannot. A
 user's own reports write a detail line only when something changes:
 `device reports generate type= name= format= rows=`, `rename name= new=`,
-`remove name=` and `prune older-than= removed=`. `config reports` writes
+`remove name=` and `prune older-than= removed=`; the `format=` of a `generate`
+can be `pdf`. `config reports` writes
 `key=max_size|max_count from= to=` and `user reports-limit` writes `name=
 key=max-size|max-count op=set|clear` and `value=` for a set
 ([Superuser Daily Operations](superuser-daily-operations.md) §4.11).

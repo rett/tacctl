@@ -124,7 +124,10 @@ A new IOS 15.6 router may need `--legacy-ssh` and still speak `modern`.
   The roles are one vocabulary for both vendors: a `Master` switch, or
   `Active` as IOS-XE 16.x and later print it (Catalyst 3650, 3850, 9000), is
   `master`, `Standby` is `backup` and `Member` is `member`. At most 32
-  members are kept. A device that is no stack (`show switch` is refused, or
+  members are kept. A row of `show switch` whose H/W version column is blank
+  (`4  Member 0000.0000.0000  1  Provisioned`) is a member like the others
+  (since 0.2.27 it is read; it used to be dropped without a word). A device
+  that is no stack (`show switch` is refused, or
   lists one switch) has no members and is one row of the `members` report; a
   refused command changes nothing in the pull. A device has no members until
   it is pulled again since 0.2.26.

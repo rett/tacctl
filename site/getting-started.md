@@ -222,6 +222,7 @@ tacctl config validate         # configuration problems; each warning names its 
 | A word that is none of a command's sub-commands | One error line, a `Did you mean` hint when something fits and a `Run 'tacctl <command> -h' for usage.` line; exit status 1, no usage page (below) |
 | Names | Lower case: letters, digits, `_`, `-`; device and host names may also use `.` |
 | Secrets | Let the command prompt for them, or use `--hash -` / `--stdin`. Never type a secret on the command line. |
+| A path to a file tacctl writes (`--out`, `--out-dir`, `--output`) | Inside your home, relative to the current directory or absolute. tacctl expands neither `~` nor variables (your shell does, before tacctl sees them), and refuses a path outside the home, one that leaves it through `..` or a link, and the home itself. `device support-bundle --out` is a name, not a path. |
 
 A mistyped sub-command such as `device config seed jr1` (the verb is
 `device config shapes seed`) gets that short answer:

@@ -31,7 +31,7 @@ engineer or superuser.
 | Change your own password (`tacctl passwd`) | ✔ | ✔ |
 | See users, groups, scopes and devices (`user`, `group`, `device` `list` and `show`; `scope list`) | ✔ | ✔ |
 | `tacctl ssh` to devices in **your own scopes** | ✔ | ✔ |
-| Make, read and remove **your own** reports of your devices (`device reports`); a read-only report has `-` for the configuration state | ✔ | ✔ |
+| Make, read and remove **your own** reports of your devices (`device reports`); a read-only user's report leaves out what `device show` hides from that tier: model, serial number, release, chassis members and configuration state | ✔ | ✔ |
 | Server health (`status`, `backend status`) | ✔ | ✔ |
 | Read logs (`log tail`, `search`, `failures`, `accounting`) | | ✔ |
 | Check devices (`device check`, `scan`, `discover`, `list --probe`) | | ✔ |
