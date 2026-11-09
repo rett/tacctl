@@ -3,9 +3,10 @@ package lifecycle
 // The rollback to 0.2.23, the release before 0.2.24 (rollback0224.go). 0.2.24
 // changed no stored file 0.2.23 reads strictly but the break-glass firewall
 // setting (a step of rollbackAdditions undoes it, rollback_firewall.go), so
-// 0.2.23 reads every file 0.2.24 and this release write, and the plan of the
+// 0.2.23 reads every file 0.2.24 to 0.2.26 and this release write, and the plan of the
 // target converts nothing but the per-tier sudoers drop-in: when it is
-// exactly 0.2.24's text (this release writes the same) it is rewritten with
+// exactly the text of 0.2.24 and 0.2.25, or the one 0.2.26 and this release
+// write (with the rows of 'device reports' more), it is rewritten with
 // 0.2.23's (tier.Sudoers0223, without the operator's 'log failures *', which
 // 0.2.23 does not know; sudo would accept the row, but 0.2.23's upgrade
 // compares the file with its own text). A file that is already 0.2.23's, an
@@ -49,7 +50,7 @@ func planRollback0223(p *RollbackPlan) (*RollbackPlan, error) {
 }
 
 // tiers0223Step plans the per-tier sudoers drop-in for the target: exactly
-// the text of 0.2.24 and this release is rewritten with 0.2.23's (tier.Sudoers0223), which
+// the text of 0.2.24 and 0.2.25, or the one of 0.2.26 and this release, is rewritten with 0.2.23's (tier.Sudoers0223), which
 // takes out the operator's row of 'log failures *'. A file that is already
 // that text, or absent, needs no step; any other text is left and said so.
 func (p *RollbackPlan) tiers0223Step(target string) []RollbackStep {

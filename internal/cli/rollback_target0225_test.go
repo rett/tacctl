@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// 'tacctl rollback 0.2.25', the release before this one, on the host sandbox
+// 'tacctl rollback 0.2.25' on the host sandbox
 // with this server enrolled. The plan's own cases are internal/lifecycle's.
 
 // With no limit of the stored reports set, 0.2.25 reads everything: the dry run
@@ -64,7 +64,7 @@ func TestRollback0225ConvertsNothingWithoutLimits(t *testing.T) {
 }
 
 // The two settings of the file go after a snapshot and need no --yes; the
-// users' own limits are data and need it. The snapshot holds the 0.2.26 state
+// users' own limits are data and need it. The snapshot holds the 0.2.27 state
 // and the note says 0.2.25 cannot restore it; the reports in the homes and the
 // pull records are not touched.
 func TestRollback0225RemovesTheLimitsAfterASnapshot(t *testing.T) {
@@ -112,7 +112,8 @@ func TestRollback0225RemovesTheLimitsAfterASnapshot(t *testing.T) {
 	hs.expect(0, "Applying.", "")
 	out = hs.all()
 	for _, want := range []string{"tacctl.yaml: removed 2 keys", "store.yaml: removed the report limits of 1 user", "  bob: max-count 7 reports",
-		"holds the 0.2.26 state", "tacctl upgrade --branch 0.2.25", "The reports in the users' homes stay", "0.2.25 has no 'device reports' verbs"} {
+		"holds the 0.2.27 state", "0.2.25's restore refuses a tacctl.yaml with a key it does not know and a store.yaml with a field it does not know.",
+		"tacctl upgrade --branch 0.2.25", "The reports in the users' homes stay", "0.2.25 has no 'device reports' verbs"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("--apply lacks %q:\n%s", want, out)
 		}
@@ -151,6 +152,42 @@ func TestRollback0225RemovesTheLimitsAfterASnapshot(t *testing.T) {
 	}
 }
 
+// The note of the snapshot says what the older release's restore refuses for
+// what the rollback removed: a key of tacctl.yaml (the settings), a field of
+// the store (a user's own limit), or both. It never names a tacctl.yaml key
+// when only a store field went.
+func TestRollbackSnapshotNoteNamesWhatTheRestoreRefuses(t *testing.T) {
+	const keysTail = "'s restore refuses a tacctl.yaml with a key it does not know."
+	const fieldsTail = "'s restore refuses a store.yaml with a field it does not know."
+	const bothTail = "'s restore refuses a tacctl.yaml with a key it does not know and a store.yaml with a field it does not know."
+	for _, c := range []struct {
+		name, target, tail string
+		steps              [][]string
+	}{
+		{"settings only", "0.2.25", keysTail, [][]string{{"config", "reports", "max-size", "20Mi"}}},
+		{"a user's limit only", "0.2.25", fieldsTail, [][]string{{"user", "reports-limit", "bob", "max-count", "7"}}},
+		{"both", "0.2.25", bothTail, [][]string{{"config", "reports", "max-count", "0"}, {"user", "reports-limit", "bob", "max-count", "7"}}},
+		{"settings only, 0.2.24", "0.2.24", keysTail, [][]string{{"config", "reports", "max-size", "20Mi"}}},
+		{"a user's limit only, 0.2.24", "0.2.24", fieldsTail, [][]string{{"user", "reports-limit", "bob", "max-count", "7"}}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			hs := rollback0224State(t)
+			for _, st := range c.steps {
+				hs.step("", st...)
+			}
+			hs.run(hs.runner(), "rollback", c.target, "--apply", "--yes")
+			hs.expect(0, "Applying.", "")
+			out := hs.all()
+			if !strings.Contains(out, "holds the 0.2.27 state") || !strings.Contains(out, c.target+c.tail) {
+				t.Errorf("the note lacks %q:\n%s", c.target+c.tail, out)
+			}
+			if c.tail == fieldsTail && strings.Contains(out, "a tacctl.yaml with a key") {
+				t.Errorf("a store field alone names a tacctl.yaml key:\n%s", out)
+			}
+		})
+	}
+}
+
 // The per-tier drop-in is left as it is while 0.2.25 and this release write the
 // same text, and an emergency lockdown on the scope an enrolled host answers
 // stays in the target (0.2.25 has the lockdown).
@@ -172,11 +209,10 @@ func TestRollback0225LeavesTheDropInAndTheLockdown(t *testing.T) {
 	hs.expect(1, "", "Scope tacctl is locked down and has enrolled hosts (authsrv)")
 }
 
-// 0.2.25 is the release before this one; this release is not a target.
-func TestRollback0225IsTheReleaseBeforeThisOne(t *testing.T) {
+// 0.2.25 is a target, with or without the "v"; it is no longer the release
+// before this one (0.2.26 is, rollback_target0226_test.go).
+func TestRollback0225IsATarget(t *testing.T) {
 	hs := rollback0224State(t)
-	hs.run(hs.runner(), "rollback", "0.2.26")
-	hs.expect(1, "", "prepares the state for 0.2.25 (the release before this one), 0.2.24, 0.2.23")
 	hs.run(hs.runner(), "rollback", "v0.2.25")
 	hs.expect(0, "Roll back to 0.2.25 (dry run)", "")
 }

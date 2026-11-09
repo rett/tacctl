@@ -1,7 +1,7 @@
 package lifecycle
 
-// The rollback to 0.2.25, the release before this one. This release added the
-// reports of 'tacctl device reports' (docs/plans/0.2.26-plan.md): the verbs,
+// The rollback to 0.2.25, the release before 0.2.26 (rollback0226.go). 0.2.26
+// added the reports of 'tacctl device reports' (docs/plans/0.2.26-plan.md): the verbs,
 // the report files in each user's home, the chassis members a pull records
 // (the key 'members' of the pull records), the limits of the stored reports
 // (D326) and their rows in the per-tier sudoers drop-in. What 0.2.25 cannot
@@ -21,13 +21,14 @@ package lifecycle
 // every report file, which is the user's own file in the user's home and which
 // 0.2.25, having no 'device reports' verb, never opens. It takes a snapshot
 // only when a key or a field is removed (PendingFiles), and the per-tier
-// sudoers drop-in is rewritten with 0.2.25's text only when this release's
-// differs from it (the rows of 'device reports', tier.Sudoers0225).
+// sudoers drop-in is rewritten with 0.2.25's text only when the text 0.2.26
+// and this release write differs from it (the rows of 'device reports',
+// tier.Sudoers0225).
 
 import "github.com/rett/tacctl/internal/tier"
 
 // planRollback0225 completes p (a plan whose tacctl.yaml was read and whose
-// records hold no unsettled apply) for the release before this one.
+// records hold no unsettled apply) for 0.2.25.
 func planRollback0225(p *RollbackPlan) (*RollbackPlan, error) {
 	return planRollbackAfter0224(p, RollbackTarget0225)
 }

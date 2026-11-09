@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/execx/fake"
 	"github.com/rett/tacctl/internal/reports"
 )
@@ -474,20 +475,21 @@ func TestReportsPruneSuperuserUser(t *testing.T) {
 			t.Errorf("%s was removed", p)
 		}
 	}
-	// one audit line for bob, with the number and no name; no detail line of
-	// an own prune
+	// one audit line for bob, with no name; no detail line of an own prune
 	l := b.pruneLines()
-	if len(l) != 1 || !strings.Contains(l[0], "device reports access verb=prune owner=bob count=2 by=alice") {
+	if len(l) != 1 || !strings.Contains(l[0], "device reports access verb=prune owner=bob report=\"*\" by=alice") {
 		t.Errorf("audit lines: %v", l)
 	}
 	if all := b.loggerLines(); strings.Contains(all, "bob-old") || strings.Contains(all, "device reports prune ") {
 		t.Errorf("the log:\n%s", all)
 	}
 
-	// nothing of bob's is old enough now: no access line
+	// nothing of bob's is old enough now: his directory is read all the same,
+	// so the access line is written all the same
 	out = b.as("alice", asSuper, "prune", "--older-than", "7d", "--user", "bob", "--yes")
-	if b.sb.code != 0 || !strings.Contains(out, "Nothing to prune: no report of the users asked for is older than 7d.") || len(b.audits()) != 0 {
-		t.Errorf("again: %d %q %v", b.sb.code, out, b.audits())
+	if l := b.audits(); b.sb.code != 0 || !strings.Contains(out, "Nothing to prune: no report of the users asked for is older than 7d.") ||
+		len(l) != 1 || !strings.Contains(l[0], "device reports access verb=prune owner=bob report=\"*\" by=alice") {
+		t.Errorf("again: %d %q %v", b.sb.code, out, l)
 	}
 
 	// --user with his own name is his own prune: no access line
@@ -532,26 +534,28 @@ func TestReportsPruneSuperuserAllUsers(t *testing.T) {
 			t.Errorf("%s was removed", p)
 		}
 	}
-	// bob has an access line; alice's own reports have a detail line; carol
-	// had nothing to prune and has no line
+	// bob and carol each have an access line, in the order of the names, carol
+	// though she had nothing to prune (her directory was read); alice's own
+	// reports have a detail line and no access line
 	l := b.pruneLines()
-	if len(l) != 1 || !strings.Contains(l[0], "device reports access verb=prune owner=bob count=2 by=alice") {
+	if len(l) != 2 || !strings.Contains(l[0], "device reports access verb=prune owner=bob report=\"*\" by=alice") ||
+		!strings.Contains(l[1], "device reports access verb=prune owner=carol report=\"*\" by=alice") {
 		t.Errorf("audit lines: %v", l)
 	}
 	if !strings.Contains(b.loggerLines(), "device reports prune older-than=7d removed=1 by=alice") {
 		t.Errorf("no detail line of the own reports:\n%s", b.loggerLines())
 	}
-	if strings.Contains(b.loggerLines(), "owner=carol") || strings.Contains(b.loggerLines(), "owner=alice") {
-		t.Errorf("a line for a user with nothing pruned or for himself:\n%s", b.loggerLines())
+	if strings.Contains(b.loggerLines(), "owner=alice") || strings.Contains(b.loggerLines(), "count=") {
+		t.Errorf("a line for himself, or a count:\n%s", b.loggerLines())
 	}
 
-	// two users with reports to prune: a line each, in the order of the names
+	// two users with reports to prune: still a line each, in the order of the names
 	b.seed("bob", "bob-old-3", "config", 9*day)
 	b.seed("carol", "carol-old", "config", 9*day)
 	b.seed("carol", "carol-old-2", "config", 12*day)
 	b.as("alice", asSuper, "prune", "--older-than", "1w", "--all-users", "--yes")
 	l = b.pruneLines()
-	if b.sb.code != 0 || len(l) != 2 || !strings.Contains(l[0], "owner=bob count=1 ") || !strings.Contains(l[1], "owner=carol count=2 ") {
+	if b.sb.code != 0 || len(l) != 2 || !strings.Contains(l[0], "owner=bob report=\"*\" ") || !strings.Contains(l[1], "owner=carol report=\"*\" ") {
 		t.Errorf("%d audit lines: %v", b.sb.code, l)
 	}
 }
@@ -569,7 +573,12 @@ func TestReportsPruneSuperuserDryRunAndNo(t *testing.T) {
 			t.Errorf("%v: %d %q", args, b.sb.code, out)
 		}
 		// looking at another user's reports is an access, a dry run too
-		if l := b.pruneLines(); len(l) != 1 || !strings.Contains(l[0], "device reports access verb=prune-dry-run owner=bob count=1 by=alice") {
+		// (--all-users reads carol's directory too, with nothing in it)
+		want := 1
+		if slices.Contains(args, "--all-users") {
+			want = 2
+		}
+		if l := b.pruneLines(); len(l) != want || !strings.Contains(l[0], "device reports access verb=prune-dry-run owner=bob report=\"*\" by=alice") {
 			t.Errorf("%v: audit lines %v", args, l)
 		}
 	}
@@ -585,7 +594,7 @@ func TestReportsPruneSuperuserDryRunAndNo(t *testing.T) {
 	if b.sb.code != 0 || !strings.Contains(out, "Aborted.") || !exists(t, b1) {
 		t.Errorf("no: %d %q", b.sb.code, out)
 	}
-	if l := b.pruneLines(); len(l) != 1 || !strings.Contains(l[0], "verb=prune owner=bob count=1") {
+	if l := b.pruneLines(); len(l) != 1 || !strings.Contains(l[0], "verb=prune owner=bob report=\"*\"") {
 		t.Errorf("no: audit lines %v", l)
 	}
 	out = b.asYes("y\n", "alice", asSuper, "prune", "--older-than", "7d", "--user", "bob")
@@ -685,6 +694,105 @@ func TestReportsPruneStrictRefusesWhenTheAccessLineCannotBeWritten(t *testing.T)
 	}
 }
 
+// The access line of another user's directory is written before that
+// directory is read: the logger, when it is asked for bob's line, has a report
+// put into bob's directory, and the prune that reads the directory afterwards
+// lists it (a read before the line would not have seen it).
+func TestReportsPruneAuditLineComesBeforeTheRead(t *testing.T) {
+	for _, verbArgs := range [][]string{{"--yes"}, {"--dry-run"}} {
+		b := newReportsBox(t)
+		b.seed("bob", "bob-early", "inventory", 30*day)
+		var late string
+		var seen []string
+		setup := func(r *fake.Runner) {
+			idAs("alice", "tac-users "+asSuper)(r)
+			r.OnFunc([]string{"logger"}, func(c execx.Cmd) (execx.Result, error) {
+				seen = append(seen, strings.Join(c.Args, " "))
+				if late == "" && strings.Contains(strings.Join(c.Args, " "), "owner=bob") {
+					late = b.seed("bob", "bob-late", "software", 20*day)
+				}
+				return execx.Result{}, nil
+			})
+		}
+		args := append([]string{"prune", "--older-than", "7d", "--user", "bob"}, verbArgs...)
+		out := plain(b.sb.cfgRun("", append([]string{"device", "reports"}, args...), setup, "SUDO_USER=alice"))
+		if b.sb.code != 0 || late == "" || !strings.Contains(out, "bob-early") || !strings.Contains(out, "bob-late") || !strings.Contains(out, "Reports older than 7d (2)") {
+			t.Errorf("%v: the line was not written before the read: %d %q %q", verbArgs, b.sb.code, out, b.sb.stderr())
+		}
+		if len(seen) < 1 || !strings.Contains(seen[0], "device reports access verb=prune") {
+			t.Errorf("%v: logger calls %q", verbArgs, seen)
+		}
+	}
+}
+
+// With --all-users every line is written before the first directory is read:
+// the line of the last user is what refuses the run, and no directory was
+// read by then (the first user's directory, which cannot be read, would have
+// been said). Nothing is listed or removed.
+func TestReportsPruneStrictRefusesBeforeAnyDirectoryIsRead(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a directory whatever its mode")
+	}
+	b := newReportsBox(t)
+	b.sb.write("state/tacctl.yaml", testBcryptOverride+"server:\n  name: tacctl\naudit:\n  strict: true\n", 0o600)
+	b.seed("bob", "bob-old", "inventory", 30*day)
+	c1 := b.seed("carol", "carol-old", "inventory", 30*day)
+	if err := os.Chmod(b.dir("bob"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(b.dir("bob"), 0o700) })
+	var lines int
+	setup := func(r *fake.Runner) {
+		idAs("alice", "tac-users "+asSuper)(r)
+		// bob's line is written, carol's is not
+		r.OnFunc([]string{"logger"}, func(c execx.Cmd) (execx.Result, error) {
+			if l := strings.Join(c.Args, " "); strings.Contains(l, "device reports access") {
+				lines++
+				if strings.Contains(l, "owner=carol") {
+					return execx.Result{Code: 1, Stderr: []byte("socket closed")}, nil
+				}
+			}
+			return execx.Result{}, nil
+		})
+	}
+	out := plain(b.sb.cfgRun("", []string{"device", "reports", "prune", "--older-than", "7d", "--all-users", "--yes"}, setup, "SUDO_USER=alice"))
+	if b.sb.code != 1 || !strings.Contains(b.sb.stderr(), "audit.strict is set; nothing was shown.") ||
+		strings.Contains(b.sb.stderr(), "cannot read") || strings.Contains(out, "carol-old") || strings.Contains(out, "Removed") {
+		t.Errorf("%d %q %q", b.sb.code, out, b.sb.stderr())
+	}
+	if lines != 2 {
+		t.Errorf("%d access lines tried, want bob's and carol's", lines)
+	}
+	if !exists(t, c1) || !exists(t, c1+".meta") {
+		t.Error("carol's report went")
+	}
+}
+
+// A user with nothing old enough is read all the same, so the line is
+// written: the audit says who looked at whose directory, not whose reports
+// were old.
+func TestReportsPruneNothingToPruneStillAudits(t *testing.T) {
+	b := newReportsBox(t)
+	b.seed("bob", "bob-new", "inventory", time.Hour)
+	for _, args := range [][]string{
+		{"prune", "--older-than", "7d", "--user", "bob", "--yes"},
+		{"prune", "--older-than", "7d", "--user", "bob", "--dry-run"},
+		{"prune", "--older-than", "7d", "--user", "dave", "--yes"}, // no directory at all
+	} {
+		out := b.as("alice", asSuper, args...)
+		owner := args[4]
+		verb := "prune"
+		if slices.Contains(args, "--dry-run") {
+			verb = "prune-dry-run"
+		}
+		l := b.audits()
+		if b.sb.code != 0 || !strings.Contains(out, "Nothing to prune") ||
+			len(l) != 1 || !strings.Contains(l[0], "device reports access verb="+verb+" owner="+owner+" report=\"*\" by=alice") {
+			t.Errorf("%v: %d %q %v", args, b.sb.code, out, l)
+		}
+	}
+}
+
 // One user's directory that cannot be pruned does not stop the others, and
 // the exit status says some were not removed.
 func TestReportsPruneAllUsersPartialFailure(t *testing.T) {
@@ -709,7 +817,7 @@ func TestReportsPruneAllUsersPartialFailure(t *testing.T) {
 		t.Error("the others were not pruned, or the failed one went")
 	}
 	// the access line of bob was written all the same: before the removal
-	if l := b.pruneLines(); len(l) != 2 || !strings.Contains(l[0], "owner=bob count=1") || !strings.Contains(l[1], "owner=carol count=1") {
+	if l := b.pruneLines(); len(l) != 2 || !strings.Contains(l[0], "owner=bob report=\"*\"") || !strings.Contains(l[1], "owner=carol report=\"*\"") {
 		t.Errorf("audit lines: %v", l)
 	}
 }

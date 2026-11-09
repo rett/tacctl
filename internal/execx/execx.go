@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
+	"time"
 )
 
 // Cmd describes one program run.
@@ -42,7 +43,16 @@ type Cmd struct {
 	// with its output thrown away: it goes on when the caller's session
 	// ends (a background scan at the start of a login).
 	Detach bool
+	// KillGroup puts the program in a process group of its own and, when ctx
+	// ends, kills the whole group (the program's children too, which would
+	// otherwise keep Stdout open and hold the run); the run returns at the
+	// latest killGroupWait after that.
+	KillGroup bool
 }
+
+// killGroupWait is how long a run with KillGroup waits for the output to
+// close after the group was killed.
+const killGroupWait = 5 * time.Second
 
 // Argv is the program and arguments actually run, AsUser applied.
 func (c Cmd) Argv() []string {
@@ -126,6 +136,20 @@ func (Real) Start(ctx context.Context, c Cmd) (Process, error) {
 	cmd.Dir = c.Dir
 	if c.Credential != nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{Credential: c.Credential}
+	}
+	if c.KillGroup && !c.Detach {
+		if cmd.SysProcAttr == nil {
+			cmd.SysProcAttr = &syscall.SysProcAttr{}
+		}
+		cmd.SysProcAttr.Setpgid = true
+		cmd.Cancel = func() error {
+			// the group has the program's pid as its id
+			if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
+				return cmd.Process.Kill()
+			}
+			return nil
+		}
+		cmd.WaitDelay = killGroupWait
 	}
 	if c.Detach {
 		if cmd.SysProcAttr == nil {

@@ -151,6 +151,7 @@ func TestFileName(t *testing.T) {
 		{"inventory-20261106", "text", "inventory-20261106.txt"},
 		{"inventory-20261106", "csv", "inventory-20261106.csv"},
 		{"a.b", "json", "a.b.json"},
+		{"a", "pdf", "a.pdf"},
 	}
 	for _, c := range cases {
 		got, err := FileName(c.name, c.format)
@@ -158,7 +159,7 @@ func TestFileName(t *testing.T) {
 			t.Errorf("FileName(%q, %q) = %q, %v", c.name, c.format, got, err)
 		}
 	}
-	if _, err := FileName("a", "pdf"); err == nil || !strings.Contains(err.Error(), "valid formats: text, csv, json") {
+	if _, err := FileName("a", "docx"); err == nil || !strings.Contains(err.Error(), "valid formats: text, csv, json, pdf") {
 		t.Errorf("unknown format: %v", err)
 	}
 	if _, err := FileName("../a", "csv"); err == nil {

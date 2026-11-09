@@ -1,6 +1,6 @@
 .\" Manual page for tacctl, the management CLI for pluggable network-device AAA.
 .\" Render locally with: groff -man -Tascii man/tacctl.1 | less
-.TH TACCTL 1 "2026-11-06" "tacctl 0.2.26" "tacctl Manual"
+.TH TACCTL 1 "2026-11-09" "tacctl 0.2.27" "tacctl Manual"
 .\" The body margin is 7n on every groff: 1.24 narrowed its default (BP) to 5n, which moves the
 .\" columns that `tacctl man` searches for.
 .nr BP 7n
@@ -197,6 +197,31 @@ Listener, log-level and metrics settings in
 .I tacctl.yaml
 survive.
 .IP
+The last step of a successful upgrade, on a system with
+.B apt\-get
+and
+.B dpkg\-query
+where
+.B weasyprint
+or
+.B fonts\-dejavu\-core
+is not installed, is the offer of the tools of the PDF device reports
+.RB ( "device reports generate \-\-format pdf" ).
+At a terminal it asks
+.B "tacctl can write device reports as PDF. Install weasyprint and fonts\-dejavu\-core now? [y/N]"
+once: \&'y', \&'Y' or \&'yes' (in any case) installs the missing packages (a failure is a warning with
+the command, never a failed upgrade, and is asked again), anything else is no,
+which is remembered in the marker
+.I /var/lib/tacctl/pdf\-tools\-offered
+so that the next upgrades do not ask (delete the file to be asked again). Without
+a terminal nothing is asked or installed and the line
+.B "sudo apt\-get install \-y weasyprint fonts\-dejavu\-core"
+is printed. Nothing is offered when both are installed, and
+.B install
+never installs them. A rollback leaves the marker, and
+.B uninstall
+removes it.
+.IP
 The clone, the fetch and the pull of the tacctl repository in
 .I /opt/tacctl
 never wait for an answer, as the pull of the tacquito source
@@ -246,7 +271,9 @@ user has a period. The command prints one line for each user
 and a note to tell the people to log in with the new name: the name typed at a
 device's login changed. A name with a period never had a Linux account, so no
 account on the server or a host is renamed; the new name gets its account at
-the next sync. When the new name is taken (a user of that name, a second name
+the next sync. When the ledger already has a line for the new name, the line of
+the old name is not moved: the new name keeps its UID, the old line stays in the
+file as it is, and a warning says so. When the new name is taken (a user of that name, a second name
 that becomes the same, or a break-glass local user of one of the user's scopes),
 the user gets \&'_' and four random lowercase letters or digits after it, drawn
 again until the name is free of every user, every other new name and the
@@ -391,8 +418,9 @@ The tacctl repo branch to install or upgrade from (default: the current one).
 Prepare tacctl's state for the release before this one; run on the newer
 release, before the older one is installed. A dry run by default: it lists
 every step and every warning and changes nothing. The versions it takes are
-.B 0.2.25
+.B 0.2.26
 (the release before this one),
+.BR 0.2.25 ,
 .BR 0.2.24 ,
 .BR 0.2.23 ,
 .BR 0.2.22 ,
@@ -412,12 +440,12 @@ and older are refused, with the way there (one release at a time: this
 rollback,
 .BR "tacctl upgrade \-\-branch 0.2.9" ,
 then the rollback of that release), and so is any other word (0.2.10 to
-0.2.15 included: the refusal names the targets). Every target but 0.2.25, 0.2.24, 0.2.23, 0.2.22, 0.2.21, 0.2.20
+0.2.15 included: the refusal names the targets). Every target but 0.2.26, 0.2.25, 0.2.24, 0.2.23, 0.2.22, 0.2.21, 0.2.20
 and 0.2.19 is refused while an emergency lockdown locks a group (the refusal lists each
 one and
 .B "emergency lockdown <scope> disable"
 lifts it; a release before 0.2.19 would render the locked users back into the
-scope; 0.2.19 has the record and keeps it), every target but 0.2.25, 0.2.24 and 0.2.23 is refused while an emergency lockdown stands on a scope that has enrolled hosts, or a lifted one still waits for a host to drop sshd's lockdown drop\-in (older releases cannot lift it on a host; lift it and sync the hosts first), and every target is refused while a device's record says a confirmed commit of
+scope; 0.2.19 has the record and keeps it), every target but 0.2.26, 0.2.25, 0.2.24 and 0.2.23 is refused while an emergency lockdown stands on a scope that has enrolled hosts, or a lifted one still waits for a host to drop sshd's lockdown drop\-in (older releases cannot lift it on a host; lift it and sync the hosts first), and every target is refused while a device's record says a confirmed commit of
 .B "device config apply"
 is
 .B pending
@@ -432,7 +460,7 @@ settles it). The
 and
 .B users
 mappings of console.yaml that this release ignores stay in the file, and a
-release before 0.2.20 (the targets 0.2.19 and older; 0.2.25 to 0.2.20 ignore
+release before 0.2.20 (the targets 0.2.19 and older; 0.2.26 to 0.2.20 ignore
 them too, and their rollback says nothing of it) reads them as it always did: a user or a tier
 switched off there gets a plain shell again, and the password cache is on again
 for every user of a tier that is allowed it, so the plan lists each user who
@@ -440,7 +468,7 @@ would gain a system shell or the cache, with the reason, as a warning that
 .B \-\-apply
 refuses without
 .BR \-\-yes .
-Every target before 0.2.20 (0.2.19 and older; 0.2.25 to 0.2.20 read them and leave them) also takes out of
+Every target before 0.2.20 (0.2.19 and older; 0.2.26 to 0.2.20 read them and leave them) also takes out of
 .I console.yaml
 the settings of 0.2.20 that no release before it reads:
 .BR settings.color ,
@@ -456,7 +484,7 @@ stay, for the releases that have them) are removed and a
 of \-1 (never ask) is written as 1000, with every other setting kept and a
 snapshot first.
 .IP
-Every target but 0.2.25, 0.2.24, 0.2.23, 0.2.22 and 0.2.21, which have it themselves, keeps every user's
+Every target but 0.2.26, 0.2.25, 0.2.24, 0.2.23, 0.2.22 and 0.2.21, which have it themselves, keeps every user's
 login to this server: an older release answers
 it only for the users that have the server's scope
 .RB ( tacctl )
@@ -465,16 +493,16 @@ to the server and lacks it (it counts and names them; a warning, so
 .B \-\-apply
 needs
 .BR \-\-yes ),
-after a snapshot. Every target but 0.2.25, 0.2.24, 0.2.23 and 0.2.22 removes
+after a snapshot. Every target but 0.2.26, 0.2.25, 0.2.24, 0.2.23 and 0.2.22 removes
 .B server.name
 (the name of
 .BR "server name" ),
-and every target but 0.2.25, 0.2.24, 0.2.23, 0.2.22 and 0.2.21
+and every target but 0.2.26, 0.2.25, 0.2.24, 0.2.23, 0.2.22 and 0.2.21
 .B server.addresses
 as well, from
 .IR tacctl.yaml ,
 which no older release knows; the host registry keeps the address in this
-server's entry. Every target but 0.2.25, 0.2.24, 0.2.23 and 0.2.22 also removes the timing scale:
+server's entry. Every target but 0.2.26, 0.2.25, 0.2.24, 0.2.23 and 0.2.22 also removes the timing scale:
 .B device.timeout_scale
 and
 .B timeout_scale_scope.\fIscope\fR
@@ -489,7 +517,7 @@ key it does not know). It is a note in the plan, not a warning: the older
 release connects to every device with its fixed timings again, which a slow or
 distant device may not meet, and the values stay in the snapshot.
 .IP
-Every target but 0.2.25, 0.2.24 and 0.2.23 removes the users' email addresses
+Every target but 0.2.26, 0.2.25, 0.2.24 and 0.2.23 removes the users' email addresses
 .RB ( "user email" ,
 .BR "user add \-\-email" )
 from
@@ -517,7 +545,7 @@ snapshot and the users. A store that cannot be read
 refuses every target. Until the older release is installed, the two verbs that
 set an address write the key again, and the command says so.
 .IP
-Every target but 0.2.25, 0.2.24 and 0.2.23 writes the SNMP credential files
+Every target but 0.2.26, 0.2.25, 0.2.24 and 0.2.23 writes the SNMP credential files
 .RI ( snmp.yaml ,
 .IR snmp/ scope .yaml ,
 .IR snmp/devices/ name .yaml )
@@ -546,7 +574,7 @@ the audit line adds
 and the apply names
 .BR "tacctl backup recover <snapshot> \-\-only snmp\-users" .
 .IP
-Every target but 0.2.25, 0.2.24 and 0.2.23 drops from
+Every target but 0.2.26, 0.2.25, 0.2.24 and 0.2.23 drops from
 .I state/staging
 the entries marked
 .B covered
@@ -560,7 +588,7 @@ A clone that still waits for its
 .B "device rename \-\-replace"
 loses its entry, and after a re-upgrade the verb refuses it as not staged: remove the clone and clone again from the original, or restore the snapshot. Every other entry stays.
 .IP
-Every target but 0.2.25 and 0.2.24 removes the break\-glass firewall: the key
+Every target but 0.2.26, 0.2.25 and 0.2.24 removes the break\-glass firewall: the key
 .B breakglass.firewall
 (when set; every older release refuses it, so it is removed after the snapshot
 like the other keys they do not know), the nftables table
@@ -606,7 +634,7 @@ and
 then
 .BR "systemctl daemon\-reload" .
 .IP
-Every target removes the limits of the stored reports of
+Every target before 0.2.26 (0.2.25 and older; 0.2.26 reads the limits and keeps them) removes the limits of the stored reports of
 .BR "device reports" :
 the settings
 .B reports.max_size
@@ -623,7 +651,7 @@ and
 of the user in
 .I store.yaml
 .RB ( "user reports\-limit" ),
-which no older release reads. A user's own limit is data somebody chose, so the
+which no release before 0.2.26 reads. A user's own limit is data somebody chose, so the
 plan names each user with the values in a warning
 .RB ( "remove the report limits of bob (max\-size 20 MiB, max\-count 50 reports)" ),
 .B \-\-apply
@@ -636,7 +664,7 @@ never a value). Once this release is installed again,
 .B "user reports\-limit"
 sets them again from the list the rollback prints
 .RB ( "backup recover"
-does not). A store that cannot be read refuses every target: a limit that cannot
+does not). A store that cannot be read refuses every target before 0.2.26: a limit that cannot
 be seen is not hidden. The reports in the users' homes stay, as the users' own
 files (an older release has no
 .B "device reports"
@@ -650,15 +678,41 @@ Until the older release is installed, run none of
 .B "config reports max\-count"
 and
 .BR "user reports\-limit" :
-they write what the older release refuses. Every target ends with a note that
+they write what the older release refuses. Every target before 0.2.26 ends with a note that
 the reports stay and what to avoid; if one of the commands ran, run the rollback
 again (with
 .B \-\-yes
 while a user has a limit of their own).
 .IP
+.B "rollback 0.2.26"
+converts nothing: this release changed no stored file 0.2.26 reads strictly (what
+the
+.B "show switch"
+reader accepts, what the reports of a user below the operator tier hold, the audit
+line of a prune of other users' reports, the wording of two notes and the
+documentation are all that moved), so 0.2.26 reads every file this release
+writes. It removes no key and no field (the limits of the stored reports, the
+settings
+.B reports.max_size
+and
+.B reports.max_count
+and a user's own limits, stay: 0.2.26 has them, and so do the break\-glass firewall and its setting, the
+email addresses, the SNMP credential files, the covered staging entries, the
+server name, the timing scale, the server address, the users' login to this
+server and an emergency lockdown, with or without enrolled hosts), leaves the
+per\-tier sudoers drop\-in (0.2.26 and this release write the same text), the
+pull records and every report in the users' homes (0.2.26 reads them), takes no
+snapshot and needs no
+.BR \-\-yes .
+It is refused only while a device's apply is not settled.
+.B \-\-hosts
+is accepted and does nothing. The command ends with the next step,
+.BR "tacctl upgrade \-\-branch 0.2.26" ,
+with no note to follow: the limits and the reports are 0.2.26's own.
+.IP
 .B "rollback 0.2.25"
-removes the limits of the stored reports of this release and converts nothing
-else: 0.2.25 reads every other file this release writes (the break\-glass
+removes the limits of the stored reports of 0.2.26 and this release and converts nothing
+else: 0.2.25 reads every other file 0.2.26 and this release write (the break\-glass
 firewall and its setting, the email addresses, the SNMP credential files, the
 covered staging entries, the server name, the timing scale, the server address,
 the users' login to this server and an emergency lockdown, with or without
@@ -685,17 +739,19 @@ refuses without
 naming each user and the values (see below). The per\-tier sudoers drop\-in is
 rewritten, after
 .BR "visudo \-cf" ,
-with the text 0.2.25 wrote, this release's without the rows of
+with the text 0.2.25 wrote, the text of 0.2.26 and this release without the rows of
 .BR "device reports" ,
-when the file is exactly this release's text (no snapshot holds it; a file tacctl
+when the file is exactly that text (no snapshot holds it; a file tacctl
 did not write is left). The
 .B members
 of the pull records are left (0.2.25's decoder ignores the key), and so is every
 report in the users' homes: they are the users' own files, and 0.2.25 has no
 .B "device reports"
 verb to list or remove them. When the snapshot was taken, the next steps say
-that it holds the 0.2.26 state and is to be restored with 0.2.26 only (0.2.25's
-restore refuses a tacctl.yaml with a key it does not know). The command ends
+that it holds the 0.2.27 state and is to be restored with 0.2.27 only, and what
+0.2.25's restore refuses: a tacctl.yaml with a key it does not know when a
+setting was removed, a store.yaml with a field it does not know when only a
+user's own limit was, both when both were. The command ends
 with the next step,
 .BR "tacctl upgrade \-\-branch 0.2.25" ,
 and a note that the reports stay and that
@@ -730,19 +786,19 @@ is accepted and does nothing. The command ends with the next step,
 .B "rollback 0.2.23"
 converts no file but the key
 .B breakglass.firewall
-(0.2.24's) and the limits of the stored reports (this release's; when either is set the snapshot is taken): 0.2.24, 0.2.25 and this release changed no other stored file, so 0.2.23 reads every file they
+(0.2.24's) and the limits of the stored reports (0.2.26's; when either is set the snapshot is taken): 0.2.24 to 0.2.26 and this release changed no other stored file, so 0.2.23 reads every file they
 write (the email addresses, the SNMP credential files, the covered staging
 entries, the server name, the timing scale, the server address, the users' login
 to this server and an emergency lockdown, with or without enrolled hosts, all
 stay), the per\-tier sudoers drop\-in is put back as 0.2.23 wrote it
 (without the operator's
 .BR "log failures *" ;
-when it is exactly the text of 0.2.24 and 0.2.25, or this release's, it is rewritten, after
+when it is exactly the text of 0.2.24 and 0.2.25, or the one 0.2.26 and this release write, it is rewritten, after
 .BR "visudo \-cf" ,
 and any other file is left), no snapshot is taken for them and
 .B \-\-yes
 is never needed unless a user has an own limit of the stored reports. When the key was set the snapshot was taken, and the next steps
-say that it holds the 0.2.26 state and is to be restored with 0.2.26 only
+say that it holds the 0.2.27 state and is to be restored with 0.2.27 only
 (0.2.23's restore refuses its tacctl.yaml, which has the key). It is refused only while a device's apply is not settled.
 Every older target that rewrites that drop\-in recognises this release's text,
 0.2.25's and 0.2.23's as tacctl's own and puts back its own.
@@ -775,7 +831,7 @@ converts nothing but the email addresses, the SNMP credential files, the covered
 with 0.2.22's: the engineer's rule of
 .B "device clone"
 is taken out; an edited drop\-in is left): 0.2.22
-reads every other file 0.2.23, 0.2.24, 0.2.25 and this release write, so the server name, the timing
+reads every other file 0.2.23 to 0.2.26 and this release write, so the server name, the timing
 scale, the server address, the users' login to this server and an emergency
 lockdown (of scopes with no enrolled host) stay. With no
 address in the store, no SNMP
@@ -900,7 +956,7 @@ An older release lints such a block as an error and plans nothing for the
 devices it reaches. The block files are not rewritten; take the statements
 out before the upgrade.
 .IP
-Every target before 0.2.20 (0.2.19 and older; 0.2.25 to 0.2.20 read it and leave it) removes the management filter mode of the scopes
+Every target before 0.2.20 (0.2.19 and older; 0.2.26 to 0.2.20 read it and leave it) removes the management filter mode of the scopes
 .RB ( scope_mgmt_acl.mode.\fIscope\fR ,
 only
 .B strict
@@ -922,7 +978,7 @@ or
 would put that filter back on a device that holds the strict one, without
 saying so. The rollback is not refused, and no device is contacted.
 .IP
-Every target but 0.2.25 to 0.2.20 (which read it) removes the required password change
+Every target but 0.2.26 to 0.2.20 (which read it) removes the required password change
 .RB ( password_change_required
 of a user in
 .IR store.yaml ,
@@ -3215,7 +3271,7 @@ and so on) instead of installing them. Nothing live is touched: no artifact,
 no render record, no service. A hand edit does not stop a dry run.
 .I dir
 must be new or empty and is private to root (the artifacts hold secrets and
-password hashes).
+password hashes). The path may be relative to the current directory or absolute, but it must be inside the home of the person who ran \fBsudo\fR (else of the user running tacctl; taken from the account database, never from \fB$HOME\fR): tacctl does not expand \fB~\fR or variables, and refuses a path that leaves the home through \fB..\fR or a symbolic link.
 .\" BEGIN GENERATED: command config render
 .RS
 .PP
@@ -3230,7 +3286,7 @@ Overwrite a generated file that was edited by hand.
 Render into the directory named by \-\-out; nothing live is written.
 .TP
 \fB\-\-out\fR \fI<dir>\fR
-The new, empty directory a \-\-dry\-run render writes to, at the live paths.
+The new, empty directory a \-\-dry\-run render writes to, at the live paths, inside your home.
 .RE
 .\" END GENERATED: command config render
 .TP
@@ -4647,6 +4703,10 @@ for the accounting port); 49, 1812 and 1813 by default. Re-run it with
 .B \-\-accounts\-only
 to sync users after changes on the server (this leaves the PAM files, and so
 the port, as they were).
+.B \-\-output
+names the file (default
+.B tacctl\-linux\-<scope>.sh
+in the current directory). The path may be relative to the current directory or absolute, but it must be inside the home of the person who ran \fBsudo\fR (else of the user running tacctl; taken from the account database, never from \fB$HOME\fR): tacctl does not expand \fB~\fR or variables, and refuses a path that leaves the home through \fB..\fR or a symbolic link. The default name is not a path you named and is not checked. A file of the name you give is replaced; a directory, or a link to one, is refused and nothing is written in it. The file is made as root with mode 0600, and under \fBsudo\fR it is handed to the person who ran it.
 .\" BEGIN GENERATED: command config linux script
 .RS
 .PP
@@ -4664,7 +4724,7 @@ Options:
 (script) pam_tacplus, or the host's pam_radius_auth (default: host default\-method).
 .TP
 \fB\-\-output\fR, \fB\-o\fR \fI<file>\fR
-Where the script goes (default: tacctl\-linux\-<scope>.sh, remove\-script: tacctl\-linux\-remove.sh).
+Where the script goes: a file in your home (default, in the current directory: tacctl\-linux\-<scope>.sh, remove\-script: tacctl\-linux\-remove.sh).
 .RE
 .\" END GENERATED: command config linux script
 .TP
@@ -4803,6 +4863,10 @@ secret, the module, the SELinux module, the sudoers drop-in and sshd's
 lockdown drop-in (sshd is reloaded), and reports accounts left with no way to
 log in. Local accounts, home directories, the
 tac-* groups and installed packages are left in place.
+.B \-\-output
+names the file (default
+.B tacctl\-linux\-remove.sh
+in the current directory). The path may be relative to the current directory or absolute, but it must be inside the home of the person who ran \fBsudo\fR (else of the user running tacctl; taken from the account database, never from \fB$HOME\fR): tacctl does not expand \fB~\fR or variables, and refuses a path that leaves the home through \fB..\fR or a symbolic link. The default name is not a path you named and is not checked. A file of the name you give is replaced; a directory, or a link to one, is refused and nothing is written in it. The file is made as root with mode 0644, and under \fBsudo\fR it is handed to the person who ran it.
 .\" BEGIN GENERATED: command config linux remove-script
 .RS
 .PP
@@ -4811,7 +4875,7 @@ Requires: \fBsuperuser\fR.
 Options:
 .TP
 \fB\-\-output\fR, \fB\-o\fR \fI<file>\fR
-Where the script goes (default: tacctl\-linux\-<scope>.sh, remove\-script: tacctl\-linux\-remove.sh).
+Where the script goes: a file in your home (default, in the current directory: tacctl\-linux\-<scope>.sh, remove\-script: tacctl\-linux\-remove.sh).
 .RE
 .\" END GENERATED: command config linux remove-script
 .TP
@@ -10449,12 +10513,12 @@ One object: each device's fields, actions and facts.
 .RE
 .\" END GENERATED: command device sync
 .TP
-.BI "device support\-bundle " "name " "[ \-\-vendor cisco|juniper|wti ] [ \-\-login " "local\-user " "] [ \-\-out " "dir " "]"
+.BI "device support\-bundle " "name " "[ \-\-vendor cisco|juniper|wti ] [ \-\-login " "local\-user " "] [ \-\-out " "name " "]"
 Logs in once to a registered device and collects what a developer needs to make tacctl read that kind of device correctly, as a directory of text files that is safe to share. The commands are fixed and read only, per vendor: Junos, the version of every member and routing engine, the chassis hardware, the virtual chassis, the cluster status, the routing engine, the uptime, the login's permissions (\c
 .B "show cli authorization"\c
 ), the commit history and the difference to rollback 0; IOS, the version, the inventory, the switch stack, the modules, the clock, the privilege level and the lines of the running configuration that name the device; a WTI unit, the screens its pull reads, without the user directory. For all three, the SNMP system group is added when SNMP is set up. The configuration itself is not collected: the Junos difference to rollback 0 is the candidate's changes only, and the IOS lines are those that name the device.
 .IP
-The text is scrubbed before it is written: host names, domains, users, classes, addresses, MAC addresses, serial numbers, locations, contacts and time zones become the standard example values (the same real value always the same example), the free text of a commit comment is removed (tacctl's own comments stay), and anything that looks like a secret, a hash or a key is removed. A text that still holds a value the scrubber learned to replace is not written. What was replaced is kept in a private file beside the directory, \fIdir\fR\fB.map\fR (mode 0600, the real values), never in it; read the files before sharing them.
+The text is scrubbed before it is written: host names, domains, users, classes, addresses, MAC addresses, serial numbers, locations, contacts and time zones become the standard example values (the same real value always the same example), the free text of a commit comment is removed (tacctl's own comments stay), and anything that looks like a secret, a hash or a key is removed. Serial numbers are replaced by their field, whatever their length, case or digits: the SN: value of the inventory, Hw Serial# (also inside a quoted DESCR:), Processor board ID, System serial number, the generic Serial number: field and the Junos Serial ID of a routing engine; the value runs to the next blank, comma or quote and ends at its last letter or digit, so the punctuation after it stays. So is the serial cell of every row of the chassis hardware and virtual chassis tables, cut at the column its header gives: any word there with a letter or digit is a serial, except the status words (Prsnt, NotPrsnt, Unprvsnd, Absent, Present, Inactive, Online, Offline, Master, Backup, Linecard, Spare, Empty, in any case). A table ends at a blank line, a line of one word and a colon, or a prompt line that begins with a brace; a row with nothing in or after the serial column stays inside it. A tab\-separated row is cut at its tabs: with as many cells as the header it has its serial at the header\(aqs column, with fewer it has it by shape (the one cell that is a word with a digit, or the one after the part number), and a cell with a hyphen (a part number, a model) is never a serial. An empty or BUILTIN cell stays, and so does the Description column. Any other token with the shape of a serial number (eight to fourteen capitals and digits, with both) is replaced too, except an example value, an image name (K9), a model name and the quoted DESCR: text. Model names stay as the device printed them: the values after PID: and VID:, the quoted DESCR: string, the model of the Model: line, of the \(lqcisco <model> (...) processor\(rq line (the \(lqCisco <model> (revision ...)\(rq line of IOS) and of the \(lqCisco IOS Software, <model> Software\(rq line, and every model name the files of the bundle state, in all the files; only the model is kept, never the rest of its line. An object identifier (a dotted run that begins 1.3.6.1.) is not an address; the digits around any other address do not make it one. The host names of vendors and standards bodies stay when they are the bare domain (cisco.com, juniper.net, hpe.com, hp.com, gnu.org, fsf.org, openssl.org, ietf.org, kernel.org) or have one of the labels www, tools, ftp, cdn, software or support in front of it; a mail address, any other name under those domains and any name under a domain the files state as the owner\(aqs are replaced (only the example.* names stay). The parent domain of every host name that is replaced is the owner\(aqs too, so after acme\-corp.hpe.com is replaced, hpe.com and www.hpe.com are replaced in every file of the bundle; a public label is never replaced as a word of its own. The columns after a replacement keep their place. A Cisco session also drops the echo of a command longer than the terminal is wide, so the first file line is the device\(aqs answer. A text that still holds a value the scrubber learned to replace is not written. What was replaced is kept in a private file beside the directory, \fIname\fR\fB.map\fR (mode 0600, the real values), never in it; read the files before sharing them.
 .IP
 The login is the one of
 .BR "device config pull" :
@@ -10465,9 +10529,20 @@ with the one\-shot password of a local account. The registered vendor decides wh
 reads the device as another one for this run only and saves nothing (for a device registered as
 .BR other ).
 .B \-\-out
-names the directory, which must not exist or must be empty (default:
-.B support\-bundle\-<UTC time>
-in the current directory). Logged:
+names the bundle, not a path: a letter or digit, then letters, digits,
+.BR . ,
+.B _
+or
+.BR \- ,
+64 characters at most (default: \fIdevice\fR\fB\-\fR\fIYYYYMMDD\fR\fB\-\fR\fIHHMMSS\fR, the UTC time). The bundle is written to \fBsupport\-bundles/\fR\fIname\fR in your home (the folder is created with mode 0700 when it is missing) and its map to \fBsupport\-bundles/\fR\fIname\fR\fB.map\fR;
+a name that exists, or whose map exists, is refused and nothing is replaced.
+tacctl does not expand
+.B ~
+or variables, and writes only inside your home (the home of the account of the person who ran
+.BR sudo ,
+else of the user running tacctl, never
+.BR $HOME ).
+The success lines print the full paths. Logged:
 .B "auth.info device support-bundle user= device= vendor= login=own|local:<account> files= result=ok"
 (never a command's text). Exit status: 0, 1 refused or the login failed, 2 wrong arguments, 130 interrupted.
 .\" BEGIN GENERATED: command device support-bundle
@@ -10483,8 +10558,8 @@ Options:
 \fB\-\-login\fR \fI<local\-user>\fR
 (support\-bundle) A Junos device's local account to log in as instead of you, as for a pull (the device needs a pinned host key): its password is asked once on the terminal and never kept or cached.
 .TP
-\fB\-\-out\fR \fI<dir>\fR
-(support\-bundle) The directory to write (default: support\-bundle\-<UTC time> in the current directory; it must not exist). The map of what was replaced is <dir>.map, private.
+\fB\-\-out\fR \fI<name>\fR
+(support\-bundle) The bundle's name, not a path (default: <device>\-<UTC time>): written to support\-bundles/<name> in your home, with the private map <name>.map; it must not exist.
 .RE
 .\" END GENERATED: command device support-bundle
 .TP
@@ -13165,7 +13240,8 @@ are 0600 and written as the user who ran sudo;
 .B \-\-out\-dir
 makes its directory with mode 0700 (an existing directory open to others is
 refused, and so is one that only a supplementary
-group of that user may write); an existing file is refused, all of them before
+group of that user may write). The path may be relative to the current directory or absolute, but it must be inside the home of the person who ran \fBsudo\fR (else of the user running tacctl; taken from the account database, never from \fB$HOME\fR): tacctl does not expand \fB~\fR or variables, and refuses a path that leaves the home through \fB..\fR or a symbolic link.
+An existing file is refused, all of them before
 any is written, unless
 .BR \-\-force .
 A device that cannot be planned gets no
@@ -13217,7 +13293,8 @@ the server, accounting,
 .BR snmp )
 is not in the region, with one report line saying so. Every device is logged
 .RB ( "auth.info device config plan user= device= status= sections= converge= secrets= out=" ,
-never a value). The Cisco report states which output has been tested on a
+never a value; \fBout=\fR is the resolved absolute path of the file written, or
+\fB\-\fR when none). The Cisco report states which output has been tested on a
 device.
 .\" BEGIN GENERATED: command device config plan
 .RS
@@ -13296,10 +13373,10 @@ Only the back\-out region (what puts the pulled lines back; the one kept from th
 One object per device: the findings, the region, the cleanup and the back\-out; values elided.
 .TP
 \fB\-\-out\fR \fI<file>\fR
-Write one device's output to a file (0600).
+Write one device's output to a file in your home (0600).
 .TP
 \fB\-\-out\-dir\fR \fI<dir>\fR
-One file per device (<name>.txt, .set with \-\-plain, .json with \-\-json; each plan's .backout.txt) and COVER.txt, 0600 in a 0700 directory.
+One file per device (<name>.txt, .set with \-\-plain, .json with \-\-json; each plan's .backout.txt) and COVER.txt, 0600 in a 0700 directory in your home.
 .TP
 \fB\-\-force\fR
 Replace files \-\-out or \-\-out\-dir would write.
@@ -14081,10 +14158,24 @@ superuser's every device. With no sub\-command the usage is printed.
 Access.
 .B "device reports"
 is open to every tier for the user's own reports, which hold the devices of the
-user's own scopes (the model, serial number, release and chassis members among
-the facts, though
+user's own scopes; as
 .B "device show"
-shows them from the operator tier up);
+does, a report leaves out the model, serial number, release and chassis members
+of the devices (and the state and the apply date of
+.BR config )
+for a user below the operator tier, so that
+.B inventory
+and
+.B software
+show them empty, the
+.B members
+count of
+.B inventory
+is
+.BR \- ,
+and
+.B members
+has no rows;
 .B "generate \-\-pull"
 needs the engineer tier. A superuser reaches other users' reports with
 .BR \-\-user ,
@@ -14101,9 +14192,11 @@ read or changed, at
 .BI by= user
 (the owner and the report are
 .B *
-for a listing of every user, and a prune has
-.BI count= n
-for the number of reports and no report); the contents are never written. They
+for a listing of every user, and the report is
+.B *
+for a listing and for a prune, which writes one line for each other user whose
+directory it reads, all of them before the first directory is read, also for a
+user with nothing to prune); the contents are never written. They
 are reveals: under
 .B audit.strict
 an access whose line cannot be written is refused before anything is shown. A
@@ -14117,7 +14210,7 @@ lines (type, name, format, rows, new name, number removed). There is no
 .B "generate \-\-as"
 and no verb writes a report into another user's home.
 .TP
-.BI "device reports generate " "\-\-type inventory|members|software|config " "[ \-\-scope " scope " ] [ \-\-vendor cisco|juniper|wti|other ] [ \-\-format text|csv|json ] [ \-\-name " name " ] [ \-\-stdout ] [ \-\-pull ]"
+.BI "device reports generate " "\-\-type inventory|members|software|config " "[ \-\-scope " scope " ] [ \-\-vendor cisco|juniper|wti|other ] [ \-\-format text|csv|json|pdf ] [ \-\-name " name " ] [ \-\-stdout ] [ \-\-pull ]"
 Make a report. It is written to
 .IR ~/reports/devices/<name>.<ext> ,
 the directory of mode 0700 and the file of mode 0600, by tacctl as the user
@@ -14125,8 +14218,14 @@ the directory of mode 0700 and the file of mode 0600, by tacctl as the user
 .IR <name>.<ext>.meta
 beside it: a JSON file of mode 0600 that holds the name, the type, the format,
 the user, the exact command line, the filters, the time, the date of the oldest
-datum, the size, the number of rows and the schema number. The default name is
-the type and the date in UTC
+datum, the size, the number of rows and the schema number. The home is the one the
+account database of the server gives the user, so a user with no Linux account
+there (a name that is no Linux account name, upper case letters or more than 32
+characters, or a user no sync has given an account yet) is refused with
+.B "the user '<name>' has no account on this server"
+and nothing is stored; such a user can print the report with
+.BR \-\-stdout .
+The default name is the type and the date in UTC
 .RB ( inventory\-20261106 ),
 then
 .B \-2
@@ -14153,8 +14252,7 @@ or a tab or a carriage return gets a leading
 so a spreadsheet does not run it, and a lone
 .B \-
 is left as it is;
-.BR .csv )
-and
+.BR .csv ),
 .B json
 (one object with
 .BR schema ,
@@ -14179,7 +14277,39 @@ dates in RFC 3339 UTC, null for a device never pulled; every row of the
 members report has a
 .B components
 list that is empty in this release;
-.BR .json ).
+.BR .json )
+and
+.B pdf
+(a letter landscape document made from the report: the type, the time, the
+filters and the date of the oldest datum, then a table in DejaVu Sans whose
+header row repeats on each page, with a page counter; text outside the Latin and
+common Unicode ranges of DejaVu prints only if another font on the server has it, and
+otherwise shows as empty boxes;
+.BR .pdf ).
+The PDF is made by
+.BR weasyprint ,
+which must be installed
+.RB ( "sudo apt\-get install \-y weasyprint fonts\-dejavu\-core" ):
+it is looked for in
+.BR /usr/bin ,
+.B /usr/local/bin
+and
+.BR /opt/weasyprint/bin ,
+never in the caller's
+.BR PATH ,
+and only if it, what a link of it leads to and every directory above are owned by root and not writable by group or others (otherwise it is not used, and the error says
+.BR "weasyprint at <path> is not owned by root or is writable by others: not used" ),
+and run as the user who ran sudo (as root only in a root session that has no sudo caller, with root's own home), with a minimal environment, at
+most 120 seconds and at most 64 MiB of output (one that runs over is stopped with the processes it started). Without it, or at a terminal
+with
+.BR \-\-stdout ,
+.B generate
+refuses (exit 1) before it reads any report data, with
+.B "PDF reports need weasyprint, which is not installed here. Install it: sudo apt\-get install \-y weasyprint fonts\-dejavu\-core"
+or
+.BR "A PDF is binary: redirect \-\-stdout to a file, or leave it out to store the report" ;
+a tool that fails, makes no PDF or does not finish in time is reported with the
+first lines of its error, and nothing is written. A PDF that cannot be written to the standard output (a full disk, a closed pipe) is an error with exit status 1, not a cut-off file with exit status 0.
 The state and applied columns of the config report are the configuration state
 that
 .B "device list"
@@ -14200,7 +14330,7 @@ engineer tier and reads the devices of the user's own scopes. A device that
 cannot be read keeps the facts and the date of its last good pull, a warning
 says so, the report is made and the exit status is 1. With
 .B \-\-stdout
-the pull's output goes to standard error. A report over the largest size, or
+the pull's output and the notices (no device matches, no device to read) go to standard error, so that standard output holds the report only. A report over the largest size, or
 that would exceed the most reports a user keeps, is refused with the setting
 named (\fBreports.max_size\fR or \fBreports.max_count\fR) and nothing written (see
 .BR "config reports" ).
@@ -14212,7 +14342,7 @@ Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show
 Options:
 .TP
 \fB\-\-type\fR \fIinventory|members|software|config\fR
-The type of report: inventory (one row per device), members (one row per chassis member), software (one row per device: model and release) or config (one row per device: the state of its last pull). Inventory, software and config have a row for every device, a device that was never pulled with empty facts; members has rows for the devices that have a model or a serial number, so a device with neither is not in it.
+The type of report: inventory (one row per device), members (one row per chassis member), software (one row per device: model and release) or config (one row per device: the state of its last pull). Inventory, software and config have a row for every device, a device that was never pulled with empty facts; members has rows for the devices that have a model or a serial number, so a device with neither is not in it. Below the operator tier the model, serial number, release and chassis members of a device are left out, as 'device show' leaves them: the members report has no rows for such a user.
 .TP
 \fB\-\-scope\fR \fI<scope>\fR
 Only the devices that scope answers. A scope that is not one of yours is refused.
@@ -14220,8 +14350,8 @@ Only the devices that scope answers. A scope that is not one of yours is refused
 \fB\-\-vendor\fR \fIcisco|juniper|wti|other\fR
 Only the devices of that vendor.
 .TP
-\fB\-\-format\fR \fItext|csv|json\fR
-The format: text (aligned columns, the default), csv (RFC 4180, a header line, UTF\-8) or json (one object: schema, type, generated, oldest_data, filters, columns, rows). It sets the extension of the file.
+\fB\-\-format\fR \fItext|csv|json|pdf\fR
+The format: text (aligned columns, the default), csv (RFC 4180, a header line, UTF\-8), json (one object: schema, type, generated, oldest_data, filters, columns, rows) or pdf (a letter landscape document with the header row repeated on each page, made by weasyprint, which must be installed: sudo apt\-get install \-y weasyprint fonts\-dejavu\-core). It sets the extension of the file. A PDF is binary: with \-\-stdout it is refused at a terminal.
 .TP
 \fB\-\-name\fR \fI<name>\fR
 The name of the report, without the extension: letters, digits, '.', '_' and '\-', at most 64 bytes, no leading dot. The default is the type and the date (inventory\-20261106); a second report of the same day gets \-2. A name in use is refused, never overwritten.
@@ -14273,7 +14403,11 @@ the size and the command that fetches it
 .B \-\-content
 adds the first 200 lines of the report, read from the start of the file and no
 further than 256 KiB (a file with more says that, and counts the lines only when it
-read all of it). A report is addressed by its name or by
+read all of it); a PDF is binary, so
+.B \-\-content
+prints
+.B "binary PDF, <n> bytes: use export"
+instead. A report is addressed by its name or by
 its file name; when two files share a name (only a file the user put there can)
 the extension is needed. A superuser names another user's report as
 .IR user/report .
@@ -14285,15 +14419,17 @@ Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show
 Options:
 .TP
 \fB\-\-content\fR
-Print the report itself under the facts, its first 200 lines ('export' prints all of it).
+Print the report itself under the facts, its first 200 lines ('export' prints all of it); a PDF is binary and prints its size and 'use export' instead.
 .RE
 .\" END GENERATED: command device reports show
 .TP
 .BI "device reports export " "report " "[ \-\-out " file " [ \-\-force ] ]"
 Print a report as it is stored, or with
 .B \-\-out
-write it to a file, made as the caller with mode 0600; a file that exists is
-refused unless
+write it to a file, made as the caller with mode 0600 inside the home of the
+person who ran \fBsudo\fR (else of the user running tacctl; never \fB$HOME\fR: tacctl does not
+expand \fB~\fR or variables, and refuses a path that leaves the home through \fB..\fR or
+a symbolic link); a file that exists is refused unless
 .B \-\-force
 is given. tacctl sends a report nowhere itself: the
 .B scp
@@ -14305,7 +14441,13 @@ the report's owner
 or the larger size the report's metadata records, 1 GiB at the most) and refuses a
 file over it. Both verbs open the file without following a link and without
 waiting, and read a regular file only: a link, a FIFO or a device node is refused,
-the metadata file too. A superuser exports another user's report as
+the metadata file too. A PDF report (or any file of the directory that ends in
+.BR .pdf )
+is binary and is never printed to a terminal: without
+.B \-\-out
+it is refused with
+.B "PDF is binary: use --out FILE or redirect"
+and, when the standard output is redirected, written as it is stored. A superuser exports another user's report as
 .IR user/report ;
 it is audited. What another user wrote is not trusted with the superuser's
 terminal, and the metadata file does not vouch for it (its owner makes it too):
@@ -14316,7 +14458,14 @@ as
 does (control and formatting characters, escape sequences and line separators
 print as \&'?'), whether the file has a valid metadata file or not; with
 .B \-\-out
-the bytes are copied as they are, and a user's own file prints as stored.
+the bytes are copied as they are, and a user's own file prints as stored. A PDF
+goes to a redirected standard output as it is, for the superuser too: nothing
+can move a terminal, which it never reaches. It is a PDF only if its name ends in
+.BR .pdf ,
+its metadata file, if any, says pdf and, for another user's file, its content
+starts with
+.BR %PDF\- ;
+anything else is cleaned as text.
 .\" BEGIN GENERATED: command device reports export
 .RS
 .PP
@@ -14325,7 +14474,7 @@ Requires: \fBreadonly\fR. Every tier may generate (without \-\-pull), list, show
 Options:
 .TP
 \fB\-\-out\fR \fI<file>\fR
-Write the copy to this file, mode 0600, made as you; a file that exists is refused unless \-\-force.
+Write the copy to this file, mode 0600, made as you, inside your home (tacctl does not expand ~ or variables); a file that exists is refused unless \-\-force. A PDF report is binary: without \-\-out it is refused at a terminal and written to standard output when that is redirected.
 .TP
 \fB\-\-force\fR
 Replace the file \-\-out names, if there is one.
@@ -14404,10 +14553,10 @@ Options:
 Remove the reports made longer ago than this age: a whole number and one unit, h (hours), d (days) or w (weeks), for example 30d. There is no default and no zero. The age of a report is the date it was generated, which its metadata file holds, not the time of the file.
 .TP
 \fB\-\-user\fR \fI<name>\fR
-Prune the reports of another user. It is the superuser's, and writes an audit line with who pruned whose reports and how many, never their names.
+Prune the reports of another user. It is the superuser's, and writes an audit line with who looked at whose reports, before that user's directory is read.
 .TP
 \fB\-\-all\-users\fR
-Prune the reports of every user tacctl knows, one audit line for each user whose reports are listed or removed. It is the superuser's.
+Prune the reports of every user tacctl knows, one audit line for each other user whose directory is read, also when nothing of theirs is old enough. It is the superuser's.
 .TP
 \fB\-\-dry\-run\fR
 List what would be removed and remove nothing; \-\-yes does not change that.
@@ -16698,7 +16847,7 @@ kind (community, v3\-user, clear, version, port, timeout, clients or contact), a
 kind, name. A secret was shown (kind scope, snmp, snmp\-device, snmp\-default, block, block\-adopt, store, config, snapshot or backup); written for every caller, a superuser's too.
 .TP
 .B "secret\-export"
-scope, file. config linux script wrote a file that holds the scope's secret.
+scope, file (the resolved absolute path). config linux script wrote a file that holds the scope's secret.
 .TP
 .B "config allow, config deny, config mgmt\-acl"
 op (add, remove, clear, cisco\-name or juniper\-name), value.
@@ -18759,6 +18908,20 @@ Do not edit.
 Gets the line
 .I /usr/local/bin/tacctl\-console
 with the drop-in, and loses it with it.
+.TP
+.I /var/lib/tacctl/pdf\-tools\-offered
+Marker that
+.B "tacctl upgrade"
+offered to install
+.B weasyprint
+and
+.B fonts\-dejavu\-core
+(the tools of
+.BR "device reports generate \-\-format pdf" )
+and the answer was no. It is written only for a no (mode 0600); delete it to be
+asked at the next upgrade.
+.B uninstall
+removes it.
 .TP
 .I /var/lib/tacctl/tier\-pinned
 Marker that

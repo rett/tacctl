@@ -89,7 +89,11 @@ skip) with the names of the skipped tests, at most 20, listed above the line: a
 test that skips for a missing tool passes silently, and an unexpected skip
 count is how a green run shows it did not test what it should; the ten
 slowest top-level tests of the run (`gate-go: slowest: TestX 47.1s`) follow
-the skipped names, still above the verdict line: start it with a tool that notices the process
+the skipped names, still above the verdict line. A run of the whole suite
+(no package listed, no `--tags`) first runs `make lint-go` (gofmt, `go vet`
+and golangci-lint in both tag sets, the Go half of the lint job of CI), so a
+finding fails the run before any test runs (`lint-failed` in the verdict line,
+the findings in the log; `--no-lint` leaves it out). Start it with a tool that notices the process
 ending (an agent: Bash `run_in_background`), never with a trailing `&` and
 never wait for it with `pgrep -f`; `GATE_TMPFS=1 make gate-go` keeps the tests' sandboxes on `/dev/shm` (the fsync calls cost nothing there: the run takes about a third of the time; the log and `GOCACHE` stay on disk); the bats suite, the diff corpus and the container
 matrix stay on the maintainer's machine.
@@ -97,12 +101,14 @@ matrix stay on the maintainer's machine.
 does (a data race, or a test that exists only with `-tags testknobs`, passes
 it and fails the pull request): `make gate-ci` (`tests/tools/gate-ci.sh`,
 which `tests/integration/gate_ci.bats` pins) runs what the workflow runs,
+starting with its `lint` job (`make lint`, named `lint:<file:line>` in the
+`failed=` list; a missing golangci-lint fails it, it is never skipped),
 as one tracked run. It checks the shards first (`go-test-shard.sh --check
 2`), then, for each tag set, every package but `internal/cli` with `-race`
 and the two shards of `internal/cli` (the run without tags with `-race`, the
 one with the test knobs without it, as the workflow has them; the script
 stops with status 2 when the workflow's shard or tag matrix changes). Every
-job runs, and the run ends with a single `GATE-CI PASS rc=0 jobs=6/6 ...`
+job runs, and the run ends with a single `GATE-CI PASS rc=0 jobs=7/7 ...`
 line, or `GATE-CI FAIL ...` with `failed=<job>:<test>,...` naming each
 failing test (a package when no test failed) and `races=` counting the data
 races (`skipped=` counts the skips of all the jobs, a test that runs in
@@ -247,6 +253,7 @@ argv, so nothing leaves the machine and no secret may appear in one.
 | `integration/device_config_diff.bats` | `tacctl device config diff`: a device that agrees is ok in every section (exit 0 even with `--exit-code`), `-` and `+` lines with `--exit-code` 2 and no secret value shown, a device never pulled named with the command that reads it, `--pull` with the pull's exit status, the usage and the options that need `--pull` |
 | `integration/device_config_plan.bats` | `tacctl device config plan` against the fake device: a device that agrees is consistent with no region, the report with one region, the check and the follow-up as a comment (nothing after the region is a line to type) and no secret value, `--plain` and the wrong arguments (exit 2), `--json`, `--backout`, `--out` at 0600 refused over a file unless `--force`, `--out-dir` with the cover and each back-out, `--converge` and `--from`, a device never pulled or stale or whose pull failed (exit 1), a statement a group supplies refused from the plain view, a Cisco device in the dialect its image says (the ssh flag decides nothing, a record without the image needs a pull), and the confirm timeout |
 | `integration/device_config_list.bats` | `tacctl device config list` and `forget`, and the CONFIG column of `device list`: `never` for devices not pulled and `-` for a WTI unit or a device in no scope, `ok`, `differs` (after a change of the store, with no new pull) and `failed`, `forget` of one, many and `--all` (superuser only, the sections file goes with the record), `device import --replace` dropping the record, `--json` and the filters validated |
+| `integration/device_reports.bats` | `device reports generate --format pdf --stdout` with `TACCTL_TEST_PDF_TOOL` naming a stub (`%PDF-1.7`, then its standard input): the escaped report document the tool is given, the arguments and the environment it is run with, every type, a missing tool refused first with the fix, a tool that fails or makes no PDF writing nothing, and the format in the usage. The stored reports need a Linux account for the user, so `internal/cli/device_reports_pdf_test.go` carries storing and the rest of the verbs |
 | `integration/device_apply.bats` | `tacctl device config apply` and `device config shapes` against the fake device with a configure model (`fake/junos-apply`): the superuser's only and before any login; `--check` (the device's own check, nothing committed, the shape and the record kept, `--json`, `--exit-code`); the review typed back, then the commit, the proof and the confirm; a wrong answer changing nothing; no terminal needing `--confirmed --yes`; an unknown shape skipped and a seeded one applied; a refused fresh login rolled back; a dropped session left `pending` and settled by the next run; another editor's change and a held exclusive session refused; a statement the device refuses; `--hold`, `--max`, `--section`; Cisco, WTI and a break-glass hold refused before any login; `shapes list`, `--show`, `--json`, `seed`; the setters' line and `--apply` |
 | `integration/device_onboard.bats` | `tacctl device onboard` against `fake/junos-blank`: the superuser's only, before anything is sent; no terminal needing `--host-key` and then only `--check`; the registration and the read as the local account; the trust question, the review, the two passwords and the TACACS+ sessions after the commit; a refused or wrong fresh login rolled back with the local account untouched; a declined question; a device that has a server refused; `--login root` through the csh wrapper; a break-glass account and a held address |
 | `integration/device_config_login.bats` | `--login <local-user>` on `device config pull`, `diff --pull` and `plan --pull`: the tier denial, one device by name only, the record and the log line saying `local:<account>` and never the user's password, no terminal and no password, `root` only on a device never read as the user, a held device refused |
@@ -906,8 +913,10 @@ not a knob: it stays an ordinary environment check.
 | `TACCTL_TEST_DEVICE_QUIET=<duration>` | the quiet period of every device session (the wait for a device's output to stop after each prompt) instead of the 150 ms default: a Go duration up to `1s`, `25ms` for the fake device, which has nothing more to say; a malformed, negative or larger value is an error; tacctl itself never sets it |
 | `TACCTL_TEST_DEVICE_PASSWORD=<text>` | the password a pull logs in with, in place of the terminal prompt (a bats test has no terminal) |
 | `TACCTL_TEST_LOCAL_PASSWORD=<text>` | the password of the device's local account that `--login` and `device onboard` log in with, in place of the terminal prompt |
+| `TACCTL_TEST_HOME=<dir>` | the caller's home for the commands that write a path the caller names (`device support-bundle`, `--out`, `--out-dir`, `--output`): they write only inside the home, which production takes from the account database of the person who ran `sudo` (never from `$HOME`); a bats test points this at its sandbox; a relative value is an error |
 | `TACCTL_TEST_APPLY_PAUSE=gate:<seconds>` | `device config apply` waits that long (at most 600) between the gate and the open of its session, so a second session can commit in that window (`docs/plans/0.2.11-lab.md`, N4); read only in a `-tags testknobs` build; a malformed value is an error |
 | `TACCTL_TEST_RESOLVE=<name>=<address>[,<address>][;<name>=...]` | the host name lookups of `device sync` (a reported host name must resolve to the device's address and no other) and of `--server` answer from this table instead of DNS; a name it lacks does not resolve |
+| `TACCTL_TEST_PDF_TOOL=<absolute path>` | the program `device reports generate --format pdf` runs as the PDF tool, in place of `weasyprint` from the fixed directories (`/usr/bin`, `/usr/local/bin`, `/opt/weasyprint/bin`); a stub that writes `%PDF-1.7` and copies its standard input to its output lets a test read the HTML the tool was given |
 
 `tacctl _fake-device <dir> [--user <name> --password <text>] [--info-file <file>] [--netconf off] [--seconds <n>]`
 is a hidden verb of test builds only: the fake device of `internal/devssh/fakedev`

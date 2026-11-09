@@ -91,6 +91,7 @@ type Paths struct {
 	ApplyDir              string // VarLib/device-apply: the shape store and the per-device locks of 'device config apply' (0.2.9)
 	TierPinMarker         string // VarLib/tier-pinned: the upgrade recorded the tier of every group at priv-lvl 15, once (outside tacctl.yaml, which is what gets lost)
 	OperatorNoticeMarker  string // VarLib/operator-policy-noted: the upgrade told once about the devices configured before the operator lost the commands that can interrupt service (0.2.5)
+	PDFOfferMarker        string // VarLib/pdf-tools-offered: the upgrade offered to install weasyprint and fonts-dejavu-core for the PDF device reports and the answer was no (0.2.27); delete it to be asked again
 	WTIPlainNoticeMarker  string // VarLib/wti-plain-acl-noted: the upgrade told once which scopes have plain management ACL entries that now permit every protocol and port on WTI units (0.2.7)
 
 	// FirewallRules is the nftables rules file tacctl owns (0.2.24): the
@@ -193,6 +194,7 @@ func Resolve(env Env, exe string, exists func(string) bool) Paths {
 	p.TierPinMarker = p.VarLib + "/tier-pinned"
 	p.OperatorNoticeMarker = p.VarLib + "/operator-policy-noted"
 	p.WTIPlainNoticeMarker = p.VarLib + "/wti-plain-acl-noted"
+	p.PDFOfferMarker = p.VarLib + "/pdf-tools-offered"
 	p.KnownHosts = p.VarLib + "/ssh/known_hosts"
 
 	p.SudoersFile = env.Or("TACCTL_SUDOERS_FILE", "/etc/sudoers.d/tacctl")

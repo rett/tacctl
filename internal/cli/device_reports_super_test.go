@@ -95,7 +95,7 @@ func TestReportsSuperuserWorksOnOtherUsersReports(t *testing.T) {
 	}
 	check("export")
 
-	dest := filepath.Join(t.TempDir(), "bobs.csv")
+	dest := filepath.Join(b.sb.homePath(""), "bobs.csv")
 	b.as("alice", asSuper, "export", ref, "--out", dest)
 	if got, _ := os.ReadFile(dest); string(got) != string(body) || b.sb.code != 0 {
 		t.Errorf("export --out: %d %q", b.sb.code, got)
@@ -165,7 +165,7 @@ func TestReportsOthersAreRefusedTheReportsOfOtherUsers(t *testing.T) {
 			{"list", "--all-users"},
 			{"show", "alice/" + name},
 			{"export", "alice/" + name},
-			{"export", "alice/" + name, "--out", filepath.Join(t.TempDir(), "x")},
+			{"export", "alice/" + name, "--out", filepath.Join(b.sb.homePath(""), "x")},
 			{"rename", "alice/" + name, "mine"},
 			{"remove", "alice/" + name, "--yes"},
 		} {
@@ -262,7 +262,7 @@ func TestReportsExportOfAnotherUsersFileIsCleaned(t *testing.T) {
 		if b.sb.code != 0 || out != clean {
 			t.Errorf("export %s: %d %q (want %q) %q", ref, b.sb.code, out, clean, b.sb.stderr())
 		}
-		dest := filepath.Join(t.TempDir(), "copy.txt")
+		dest := filepath.Join(b.sb.homePath(""), strings.ReplaceAll(ref, "/", "-")+".copy")
 		b.as("alice", asSuper, "export", ref, "--out", dest)
 		if got, _ := os.ReadFile(dest); b.sb.code != 0 || string(got) != evil {
 			t.Errorf("export %s --out: %d %q", ref, b.sb.code, got)

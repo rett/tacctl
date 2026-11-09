@@ -29,12 +29,12 @@ var deviceReportsSpecs = map[string]Spec{
 	"generate": {MaxArgs: 0, Flags: []Flag{
 		{Names: []string{"--type"}, Value: true, Kind: "inventory|members|software|config", Arg: "inventory|members|software|config",
 			Desc: "Make this type of report (required)",
-			Long: "The type of report: inventory (one row per device), members (one row per chassis member), software (one row per device: model and release) or config (one row per device: the state of its last pull). Inventory, software and config have a row for every device, a device that was never pulled with empty facts; members has rows for the devices that have a model or a serial number, so a device with neither is not in it"},
+			Long: "The type of report: inventory (one row per device), members (one row per chassis member), software (one row per device: model and release) or config (one row per device: the state of its last pull). Inventory, software and config have a row for every device, a device that was never pulled with empty facts; members has rows for the devices that have a model or a serial number, so a device with neither is not in it. Below the operator tier the model, serial number, release and chassis members of a device are left out, as 'device show' leaves them: the members report has no rows for such a user"},
 		{Names: []string{"--scope"}, Value: true, Kind: KindScopes, Arg: "<scope>", Desc: "Only the devices that scope answers",
 			Long: "Only the devices that scope answers. A scope that is not one of yours is refused"},
 		{Names: []string{"--vendor"}, Value: true, Kind: KindVendors, Arg: "cisco|juniper|wti|other", Desc: "Only the devices of that vendor"},
-		{Names: []string{"--format"}, Value: true, Kind: "text|csv|json", Arg: "text|csv|json", Desc: "Write the report in this format (default text)",
-			Long: "The format: text (aligned columns, the default), csv (RFC 4180, a header line, UTF-8) or json (one object: schema, type, generated, oldest_data, filters, columns, rows). It sets the extension of the file"},
+		{Names: []string{"--format"}, Value: true, Kind: "text|csv|json|pdf", Arg: "text|csv|json|pdf", Desc: "Write the report in this format (default text)",
+			Long: "The format: text (aligned columns, the default), csv (RFC 4180, a header line, UTF-8), json (one object: schema, type, generated, oldest_data, filters, columns, rows) or pdf (a letter landscape document with the header row repeated on each page, made by weasyprint, which must be installed: sudo apt-get install -y weasyprint fonts-dejavu-core). It sets the extension of the file. A PDF is binary: with --stdout it is refused at a terminal"},
 		{Names: []string{"--name"}, Value: true, Arg: "<name>", Desc: "Name the report (default <type>-<yyyymmdd>)",
 			Long: "The name of the report, without the extension: letters, digits, '.', '_' and '-', at most 64 bytes, no leading dot. The default is the type and the date (inventory-20261106); a second report of the same day gets -2. A name in use is refused, never overwritten"},
 		{Names: []string{"--stdout"}, Desc: "Print the report and store nothing",
@@ -50,10 +50,10 @@ var deviceReportsSpecs = map[string]Spec{
 			Long: "List the reports of every user tacctl knows, one audit line for the whole listing. It is the superuser's"}}},
 	"show": {MinArgs: 1, MaxArgs: 1, Args: []string{KindReports}, Flags: []Flag{
 		{Names: []string{"--content"}, Desc: "Print the first 200 lines of the report as well",
-			Long: "Print the report itself under the facts, its first 200 lines ('export' prints all of it)"}}},
+			Long: "Print the report itself under the facts, its first 200 lines ('export' prints all of it); a PDF is binary and prints its size and 'use export' instead"}}},
 	"export": {MinArgs: 1, MaxArgs: 1, Args: []string{KindReports}, Flags: []Flag{
-		{Names: []string{"--out"}, Value: true, Kind: KindFile, Arg: "<file>", Desc: "Write to this file instead of standard output",
-			Long: "Write the copy to this file, mode 0600, made as you; a file that exists is refused unless --force"},
+		{Names: []string{"--out"}, Value: true, Kind: KindFile, Arg: "<file>", Desc: "Write to a file in your home instead of standard output",
+			Long: "Write the copy to this file, mode 0600, made as you, inside your home (tacctl does not expand ~ or variables); a file that exists is refused unless --force. A PDF report is binary: without --out it is refused at a terminal and written to standard output when that is redirected"},
 		{Names: []string{"--force"}, Desc: "Replace the file --out names",
 			Long: "Replace the file --out names, if there is one"}}},
 	"rename": {MinArgs: 2, MaxArgs: 2, Args: []string{KindReports, ""}},
@@ -63,9 +63,9 @@ var deviceReportsSpecs = map[string]Spec{
 		{Names: []string{"--older-than"}, Value: true, Kind: "24h|7d|30d|4w", Arg: "<age>", Desc: "Remove reports older than this age: 12h, 30d or 4w (required)",
 			Long: "Remove the reports made longer ago than this age: a whole number and one unit, h (hours), d (days) or w (weeks), for example 30d. There is no default and no zero. The age of a report is the date it was generated, which its metadata file holds, not the time of the file"},
 		{Names: []string{"--user"}, Value: true, Kind: KindUsers, Arg: "<name>", Desc: "Prune the reports of another user",
-			Long: "Prune the reports of another user. It is the superuser's, and writes an audit line with who pruned whose reports and how many, never their names"},
+			Long: "Prune the reports of another user. It is the superuser's, and writes an audit line with who looked at whose reports, before that user's directory is read"},
 		{Names: []string{"--all-users"}, Desc: "Prune the reports of every user",
-			Long: "Prune the reports of every user tacctl knows, one audit line for each user whose reports are listed or removed. It is the superuser's"},
+			Long: "Prune the reports of every user tacctl knows, one audit line for each other user whose directory is read, also when nothing of theirs is old enough. It is the superuser's"},
 		{Names: []string{"--dry-run"}, Desc: "List what would be removed and remove nothing",
 			Long: "List what would be removed and remove nothing; --yes does not change that"},
 		{Names: []string{"--yes"}, Desc: "Do not ask for confirmation"}}},
@@ -141,9 +141,12 @@ model, serial, release, chassis members, location, description, pulled),
 'software' (model and release) and 'config' (the state 'device config list'
 shows, the pull and the apply). Every row has the date of the pull its facts
 came from, 'never' for a device that was not pulled, and the report holds
-only the devices your scopes cover. No secret is in any report.
+only the devices your scopes cover. As 'device show' does, a report leaves
+out the model, serial number, release and chassis members (and the state and
+the apply date of 'config') for a user below the operator tier. No secret is
+in any report.
 
-A report is the file ~/reports/devices/<name>.<txt|csv|json> of your home,
+A report is the file ~/reports/devices/<name>.<txt|csv|json|pdf> of your home,
 mode 0600 in a directory of mode 0700, made as you, with <name>.<ext>.meta
 beside it (when, by whom, the command line, the filters, the oldest datum).
 'show' prints that and the line to copy it with scp; 'export' prints or copies
@@ -162,8 +165,8 @@ removed.
 A superuser reads other users' reports: 'list --user <name>', 'list
 --all-users', '<user>/<report>' for show, export, rename and remove, and
 'prune --user <name>' or '--all-users' for the old reports of others. Every
-such access writes one audit line (who, whose, which report or how many for a
-prune, never a name or a content). No verb writes into another user's home.
+such access writes one audit line, before anything is read (who, whose and
+which report, '*' for a list or a prune, never a name or a content). No verb writes into another user's home.
 
 Examples:
   tacctl device reports generate --type inventory --format csv
@@ -237,6 +240,14 @@ func (inv *invocation) deviceReportsGenerate(args []string) error {
 			return inv.argErr("Invalid report name: "+err.Error()+".", usage)
 		}
 	}
+	// A PDF report needs the tool, and a PDF for standard output a place to
+	// go: both are checked before a report is read or anything is written.
+	pdfTool := ""
+	if format == reports.FormatPDF {
+		if pdfTool, err = inv.pdfRequire(p.Has("--stdout")); err != nil {
+			return err
+		}
+	}
 	if p.Has("--pull") {
 		if t, ok := inv.deviceConfigPermits("pull"); !ok {
 			return inv.deniedUsage(reasonSuperuser, "--pull runs 'tacctl device config pull', which is not permitted for the "+string(t)+" tier.")
@@ -291,14 +302,31 @@ func (inv *invocation) deviceReportsGenerate(args []string) error {
 		}
 	}
 	var body bytes.Buffer
-	if err := reports.Render(&body, rep, format); err != nil {
+	if format == reports.FormatPDF {
+		pdf, err := inv.renderPDF(pdfTool, reports.RenderHTML(rep))
+		if err != nil {
+			return inv.usageErr("Cannot make the PDF: "+err.Error()+".", "Nothing was written.")
+		}
+		body.Write(pdf)
+	} else if err := reports.Render(&body, rep, format); err != nil {
 		return err
 	}
 	if len(entries) == 0 {
-		inv.app.Out.Warn("No device matches: the report has no rows.")
+		// with --stdout the report is the only thing on standard output
+		notice := inv.app.Out
+		if p.Has("--stdout") {
+			notice.Stdout = notice.Stderr
+		}
+		notice.Warn("No device matches: the report has no rows.")
 	}
 	if p.Has("--stdout") {
-		inv.write(body.String())
+		if format == reports.FormatPDF {
+			if err := inv.writeRaw(body.Bytes()); err != nil {
+				return inv.rawWriteErr(err)
+			}
+		} else {
+			inv.write(body.String())
+		}
 		return pullErr
 	}
 
@@ -367,6 +395,11 @@ func reportSize(n int64) string {
 // scope) is left as it is. With stdout the pull's output goes to standard
 // error, so that the report is the only thing on standard output.
 func (inv *invocation) reportsPull(entries []devreg.Entry, stdout bool) error {
+	if stdout {
+		out := inv.app.Out.Stdout
+		inv.app.Out.Stdout = inv.app.Out.Stderr
+		defer func() { inv.app.Out.Stdout = out }()
+	}
 	var names []string
 	for _, e := range entries {
 		if e.Configured && slices.Contains(sortedVendors(), e.Vendor) {
@@ -376,11 +409,6 @@ func (inv *invocation) reportsPull(entries []devreg.Entry, stdout bool) error {
 	if len(names) == 0 {
 		inv.app.Out.Info("No device to read: none of the devices has a vendor the pull reads and a scope that covers it.")
 		return nil
-	}
-	if stdout {
-		out := inv.app.Out.Stdout
-		inv.app.Out.Stdout = inv.app.Out.Stderr
-		defer func() { inv.app.Out.Stdout = out }()
 	}
 	err := inv.deviceConfigPull([]string{strings.Join(names, ",")})
 	if err != nil && exitStatus(err) == 1 {
@@ -394,9 +422,12 @@ func (inv *invocation) reportsPull(entries []devreg.Entry, stdout bool) error {
 // against what tacctl renders now, which only the config report shows.
 func (inv *invocation) reportDevices(entries []devreg.Entry, needState bool) []reports.Device {
 	recs := inv.configRecords()
-	// The configuration state and the date of the last apply are what
-	// 'device list' and 'device config list' show from the operator tier up
-	// (D69): below it the config report has "-" for both.
+	// The configuration state, the date of the last apply and what the pull
+	// read of the device (model, serial, release, chassis members) are what
+	// 'device show', 'device list' and 'device config list' show from the
+	// operator tier up (D69): below it the reports have none of them (the
+	// config report "-" for the state and the apply, the others empty facts,
+	// as for a device that was never pulled). The pulled date stays.
 	seeConfig := inv.configVisible()
 	needState = needState && seeConfig
 	var states map[string]configNowState
@@ -409,14 +440,16 @@ func (inv *invocation) reportDevices(entries []devreg.Entry, needState bool) []r
 			Location: cleanLine(e.Location), Description: cleanLine(e.Description)}
 		rec, _ := recs.Of(e.Name)
 		if rec != nil {
-			d.Model, d.Serial, d.Release = cleanLine(rec.Model), cleanLine(rec.Serial), cleanLine(rec.Release)
 			d.Pulled = rec.Pulled
-			if a := rec.Applied; seeConfig && a != nil && a.Result == devconf.AppliedApplied {
-				d.Applied = a.At
-			}
-			for _, m := range rec.Members {
-				d.Members = append(d.Members, reports.Member{ID: cleanLine(m.ID), Role: cleanLine(m.Role), Model: cleanLine(m.Model),
-					Serial: cleanLine(m.Serial), Release: cleanLine(m.Release), Status: cleanLine(m.Status), Priority: m.Priority})
+			if seeConfig {
+				d.Model, d.Serial, d.Release = cleanLine(rec.Model), cleanLine(rec.Serial), cleanLine(rec.Release)
+				if a := rec.Applied; a != nil && a.Result == devconf.AppliedApplied {
+					d.Applied = a.At
+				}
+				for _, m := range rec.Members {
+					d.Members = append(d.Members, reports.Member{ID: cleanLine(m.ID), Role: cleanLine(m.Role), Model: cleanLine(m.Model),
+						Serial: cleanLine(m.Serial), Release: cleanLine(m.Release), Status: cleanLine(m.Status), Priority: m.Priority})
+				}
 			}
 		}
 		if needState {

@@ -3,6 +3,290 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.27 (2026-11-09)
+
+1. **A read-only user's device reports no longer hold what `device show`
+   hides from them.** `device show` and `device list` show the model, serial
+   number and release of a device, and its chassis members, from the operator
+   tier up, but `device reports generate` put them in the `inventory`,
+   `members` and `software` reports of a read-only user. The reports follow the
+   same rule now: below the operator tier the `model`, `serial` and `release`
+   of the `inventory` and `software` rows are empty (`-` in text, an empty cell
+   in CSV, an empty string in JSON), the `members` count of `inventory` is `-`
+   (`0` in JSON) and the `members` report has no rows. The name, address,
+   vendor, scope, location, description and the `pulled` date stay, as
+   `device show` shows them to every tier, and the `config` report is as it
+   was. The operator tier and up see what they saw. A report a read-only user
+   made with 0.2.26 keeps what it holds.
+
+2. **A superuser's `device reports prune` of other users' reports writes its
+   audit line before it reads their directories.** Item 7 of 0.2.26 said every
+   access to another user's reports is audited before anything is read or
+   changed, but `prune --user <name>` and `--all-users` listed every directory
+   first and wrote the line afterwards, and only for a user with something to
+   prune. The line is now written for each other user whose directory the run
+   reads, before it is read and also when none of that user's reports is old
+   enough, and with `--all-users` every line is written before the first
+   directory is read, so under `audit.strict` a line that cannot be written
+   refuses the whole run before any directory of another user is read. The
+   line no longer carries the number of reports, which is not known before the
+   read: `device reports access verb=prune owner=bob report=* by=alice`
+   (`prune-dry-run` for `--dry-run`), as `list` writes `report=*`. The
+   superuser's own reports write no access line, as before.
+
+3. **The reader of `show switch` accepts a row whose H/W version column is
+   blank.** A row such as `4  Member 0000.0000.0000  1            Provisioned`
+   was dropped silently, because the reader wanted a word between the priority
+   and the state; the member is now read, with the state `Provisioned` and no
+   version, and shows in the chassis members of `device show` and in the
+   members report. Rows with a version are read as before. This says what the
+   reader accepts, not which devices print such a row.
+
+4. **Two notes of the upgrade and the rollback say what they do.** When
+   `tacctl upgrade` renames a user whose name has a period and `linux-uids`
+   already has a line for the new name, it reused the text of `user rename`
+   (the account is removed on hosts and the new name created with another
+   UID), which is false for a name that never had an account. Nothing in the
+   ledger changes in that case, and the warning now says so: `'alice_smith'
+   already has UID 80007 in linux-uids, so the line of 'alice.smith' (UID
+   80001) is not moved: 'alice_smith' keeps UID 80007 and the line of
+   'alice.smith' stays in the file as it is`. The note that ends `tacctl
+   rollback 0.2.25` and `0.2.24` after a snapshot said that the older
+   release's restore refuses a `tacctl.yaml` with a key it does not know, also
+   when only a user's own report limit (a field of the store) was removed. It
+   now names what the restore refuses for what was removed: a `tacctl.yaml`
+   with a key it does not know (the settings), a `store.yaml` with a field it
+   does not know (a user's own limit), or both.
+
+5. **The reports page no longer says every user has an account on the
+   server.** It said the directory of the reports is the home of the user's
+   Linux account, "which every tacctl user has", but a user whose name has upper
+   case letters or is longer than 32 characters (a user name, not a Linux
+   account name) has none, and neither has a user no sync has given an account
+   yet. The page and the manual page now say what `device reports` does for
+   such a user: `generate` refuses and stores nothing (`the user 'Carol' has no
+   account on this server`), `--stdout` still prints the report, and
+   `tacctl user rename` gives the user a name that can be an account.
+
+6. **`tacctl rollback 0.2.26`, the release before this one, is a target.**
+   This release changed no stored file 0.2.26 reads strictly (what the
+   `show switch` reader accepts, what the reports of a user below the operator
+   tier hold, the audit line of a prune of other users' reports, the wording of
+   two notes and the documentation are all that moved), so 0.2.26 reads
+   everything it writes: the rollback converts no file, removes no key and no
+   field, takes no snapshot and needs no `--yes`. The limits of the stored
+   reports (`reports.max_size` and `reports.max_count` in `tacctl.yaml`, and a
+   user's own `reports_max_size` and `reports_max_count` in `store.yaml`) stay,
+   0.2.26 has them, and so do the chassis `members` of the pull records and
+   every report in the users' homes, which 0.2.26 reads. The per-tier sudoers
+   drop-in is left too: 0.2.26 and this release write the same text. The
+   break-glass firewall, the users' email addresses, the SNMPv3 users, the
+   covered staging entries, the server name, the timing scale and an emergency
+   lockdown with enrolled hosts, which the older targets drop or refuse, stay
+   as well. It is refused only while a device's apply is not settled. The
+   command ends with `tacctl upgrade --branch 0.2.26` and, having nothing to
+   avoid, has no closing note. `rollback 0.2.25` and older keep removing the
+   limits as before, and the lists of "every target but" in the rollback pages
+   and the manual page now include 0.2.26. The top-level help, `docs/cli/conventions.md`,
+   `docs/install/upgrading.md` (Rolling back, To 0.2.26), `docs/releasing.md`,
+   the manual page and the completion list the new target, and `tacctl
+   rollback` now takes thirteen targets. The note that follows a rollback that
+   took a snapshot names this release, 0.2.27, as the state the snapshot holds
+   ("Restore it with 0.2.27 only").
+
+7. **The files tacctl writes at a path you name go inside your home only, and
+   `device support-bundle --out` names a bundle, not a path.**
+   `tacctl device support-bundle sw1 --out ~/x` made a
+   directory literally named `~` in the current directory when the `~` reached
+   tacctl unexpanded (a quoted argument, a script), because tacctl took the
+   path as given. `--out` is now a name: a letter or digit, then letters,
+   digits, `.`, `_` or `-`, at most 64 characters; anything else (a `/`, `..`,
+   a leading dot, `~`, `$`) is refused with exit status 2 and a sentence that
+   says the rule, before anything is asked or written. The bundle is
+   `support-bundles/<name>` and its private map `support-bundles/<name>.map`,
+   in the home of the person who ran `sudo` (else of the user running tacctl),
+   taken from the account database and never from `$HOME`; the
+   `support-bundles` folder is created with mode 0700 when it is missing, and
+   one that is a link leading out of the home is refused. Without `--out` the
+   name is `<device>-<UTC YYYYMMDD-HHMMSS>` (it was `support-bundle-<UTC
+   time>` in the current directory). A name that exists, or whose `.map`
+   exists, is refused as before, the files are still written as the caller and
+   never replace anything, and the success lines print the full paths. The
+   audit line is unchanged.
+
+   The other options that name a file or directory to write follow one rule:
+   `device config plan --out` and `--out-dir`, `device reports export --out`,
+   `config render --dry-run --out`, and `config linux script` and
+   `remove-script --output` (`-o`). tacctl never expands `~` or variables, and
+   the path must be inside the home of the person who ran `sudo` (else of the
+   user running tacctl, from the account database, never `$HOME`). An empty
+   path, a NUL, a first component that starts with `~`, a `$` or a backtick,
+   the home itself, and a path that after `..` and the symbolic links of its
+   existing part is not strictly inside the home are refused with one
+   sentence (`tacctl does not expand ~ or variables; name a path inside your
+   home, relative to the current directory`), before a device is read, a
+   report is opened or a script is made, and nothing is written; `plan` and
+   `reports export` end with exit status 2, the others with 1. Before, these
+   options took any path the caller could write, `~` included, and so
+   `--output /dev/stdout` and a directory outside the home such as `/var/tmp`
+   are refused now (the default file name of the two scripts, in the current
+   directory, is not a path you named and is unchanged). Relative paths are
+   taken from the current directory. A home directory of `/` (an account
+   whose home is the root directory) is refused, since every path is inside it.
+   The files keep the protections they had, which differ by command.
+   `device config plan`, `device reports export` and `device support-bundle`
+   write as the caller: new files only, a link never followed, replaced only by
+   `--force` where that option exists. `config render --dry-run` writes as
+   root, as before: the new or empty directory it names and everything in it
+   are root-owned (0700, 0600), and the files are now written through a handle
+   on that directory, so a link planted in it after the emptiness check cannot
+   send a root write elsewhere. `config linux script` and `remove-script` make
+   the file as root (0600; 0644 for the removal script) and hand it to the
+   person who ran `sudo`, and, as before, replace a file of that name without
+   `--force`; after the write they no longer follow a link swapped in at the
+   name (`lchown`, and the mode set on the open file). `--output` naming an
+   existing directory, or a link to one, is refused (`--output '<path>' names a
+   directory, name a file.`) and nothing is written: it used to write the
+   script inside it as `tmp.XXXXXXXXXX` (the removal script as
+   `client-remove.sh`) and hand the directory itself to the caller. Without
+   `--output` the two scripts are `tacctl-linux-<scope>.sh` and
+   `tacctl-linux-remove.sh` in the current directory, a name that is not
+   checked (the help said "in your home"). The audit fields `out=` of
+   `device config plan` and `file=` of the `secret-export` record of the script
+   now hold the resolved absolute path, not the path as typed. The pages of
+   every command, the conventions page, the manual page, the help and
+   `tests/README.md` (the `TACCTL_TEST_HOME` knob of the bats suite) say so.
+
+8. **`tacctl device reports generate --format pdf` writes the report as a PDF.**
+   The format sits beside `text`, `csv` and `json` and sets the extension
+   `.pdf`. The document is letter landscape: a title block (the type, when the
+   report was made, the filters, the date of the oldest datum), then the table
+   in 8 pt DejaVu Sans with the header row repeated on each page, light
+   stripes, no row split across two pages and a page counter. It is made from
+   the report itself (not from the text file) as one HTML document with every
+   cell escaped and no link, image, script, style sheet or font reference, and
+   turned into a PDF by `weasyprint` (`sudo apt-get install -y weasyprint
+   fonts-dejavu-core`). The tool is found in `/usr/bin`, `/usr/local/bin` or
+   `/opt/weasyprint/bin` and nowhere else (not in the caller's `PATH`), and
+   only if it, what a link of it leads to and every directory above are owned
+   by root and not writable by the group or by others (otherwise `weasyprint at
+   <path> is not owned by root or is writable by others: not used`), and
+   when tacctl runs as root through `sudo` it runs the tool as the person who
+   ran `sudo` (as root only in a root session that has no `sudo` caller, with
+   the home of root), with an environment of `PATH`, `LANG`, `HOME`,
+   `XDG_CACHE_HOME` (`~/.cache`) and `PYTHONNOUSERSITE=1` only, 120 seconds
+   and 64 MiB of output at the most (a tool that runs over is stopped with
+   every process it started). A PDF that cannot be written to standard output
+   (a full disk, a closed pipe) is an error with exit status 1, for `generate
+   --stdout` and `export`. Without
+   the tool the command refuses first, before it reads a device or writes a
+   file (`PDF reports need weasyprint, which is not installed here. Install it:
+   sudo apt-get install -y weasyprint fonts-dejavu-core`, exit 1); a tool that
+   fails, makes no PDF or runs over a limit gives an error with the first five
+   lines of its own, and nothing is written. A PDF is binary: `--stdout` refuses
+   at a terminal and writes the bytes when it is redirected. The `.meta` file is
+   JSON as before and says `"format": "pdf"`. The other verbs treat a PDF like
+   any report, by the extension its metadata names, and never print binary to
+   a terminal: `export` to standard output refuses at a terminal (`PDF is
+   binary: use --out FILE or redirect`) and writes the bytes as they are when
+   it is redirected (for a superuser's `export <user>/<report>` too, which
+   cleans the lines of a text report but not the bytes of a PDF that never
+   reach a terminal), `show --content` prints `binary PDF, <n> bytes: use
+   export` in place of the first 200 lines, and `list`, `rename`, `remove`,
+   `prune`, the per-user and superuser listings, the completion of names and
+   the access audit lines work on `.pdf` files as on the others. A file you
+   put in the directory that ends in `.pdf` is binary as well. A long
+   unbroken value (a word of more than 24 characters) gets a zero-width space
+   (U+200B) after every 24 characters so that it can wrap, so copying such a
+   value out of the PDF can carry invisible characters. A file counts
+   as a PDF only by its name ending in `.pdf` (its metadata file saying `pdf`
+   is not enough, the owner writes that too) and, for a superuser's
+   `export <user>/<report>`, only if it also starts with `%PDF-`; anything else
+   is cleaned as text. With `--stdout`, in every format, the notices `No
+   device matches: the report has no rows.` and `No device to read: ...` go to
+   standard error like the pull's output, so that standard output holds the
+   report only (they were printed before it).
+
+   `tacctl upgrade` offers the tools, last, once the upgrade is done: on a
+   Debian or Ubuntu system (`apt-get` and `dpkg-query` are there) where
+   `weasyprint` or `fonts-dejavu-core` is not installed, it asks at a terminal
+   `tacctl can write device reports as PDF. Install weasyprint and
+   fonts-dejavu-core now? [y/N]` (the default is no) and, on `y` or `yes` (in
+   any case), installs the
+   missing ones as the other packages are installed (noninteractive, with the
+   `apt-get update` retry); a failure is a warning with the command and never
+   fails the upgrade. A no is remembered in the marker
+   `/var/lib/tacctl/pdf-tools-offered`, so that it is not asked at every
+   upgrade; delete the file to be asked again. Without a terminal nothing is
+   asked or installed and the upgrade prints `sudo apt-get install -y
+   weasyprint fonts-dejavu-core`. `install` does not offer them, `uninstall`
+   removes the marker and a rollback leaves it.
+
+9. **`device support-bundle` keeps model names, object identifiers and the
+   layout of every answer, keeps the public names of vendors, and replaces
+   every serial number.** Captures of real devices showed what the scrubber
+   got wrong. It took model names for serial numbers (`PID: CSR1000V` lost its
+   model and `DESCR: "Cisco CSR1000V Chassis"` became `Cisco SN000001
+   Chassis`), it missed serial numbers that have no serial shape, it rewrote
+   `sysObjectID.0: 1.3.6.1.4.1.2636.1.1.1.2.165` as pieces of example IPv4
+   addresses, it replaced the vendors' own host names, it moved the columns of
+   a table, a sysDescr came out garbled, and a command the IOS terminal echoed
+   in several lines left them at the top of its file
+   (`07-identity-lines.txt`). Now: the values after `PID:` (up to two blanks,
+   a comma, `VID:` or `SN:`) and `VID:`, the quoted `DESCR:` strings of `show
+   inventory`, the model of the `Model:` line of Junos, the model of the
+   `cisco <model> (...) processor` and `Cisco IOS Software, <model> Software`
+   lines of IOS `show version` and every model name the files of the bundle
+   state are kept, in all the files, the model itself and never the rest of
+   its line (the serial after a model is replaced, and a quoted `NAME:` is not
+   exempt). The serial numbers are replaced by their field, whatever their
+   length, case or digits, and the same real serial is the same example in
+   every file: the `SN:` value of `show inventory`, `Hw Serial#:` in a
+   description, `Processor board ID`, `System serial number`, the generic
+   `Serial number:` field and the Junos `Serial ID` of a routing engine (the
+   value runs to the next blank, comma or quote and ends at its last letter or
+   digit, so `(serial: abc12345)` keeps its parenthesis), and the serial cell
+   of every row of `show chassis hardware` (the transceiver, PIC and power
+   supply rows included) and of Junos `show virtual-chassis`, cut at the
+   column its header gives. In that column any word with a letter or digit is
+   a serial, whatever its length, case or digits, except the status words
+   (`Prsnt`, `NotPrsnt`, `Unprvsnd`, `Absent`, `Present`, `Inactive`,
+   `Online`, `Offline`, `Master`, `Backup`, `Linecard`, `Spare`, `Empty`, in
+   any case). A table ends at a blank line, a line of one word and a colon, or
+   a prompt line that begins with `{`, and not at a row with nothing in or
+   after the serial column (`Midplane`, a member without a serial). A
+   tab-separated row has its serial at the header's column when it has as many
+   cells as the header, and by shape (the one cell that is a word with a
+   digit, or the one after the part number) when it has fewer or its
+   description holds two blanks; a cell with a hyphen (`650-114384`,
+   `NON-JNPR`, `EX4300-48T`) is a part number or a model, never a serial. An
+   empty or `BUILTIN` cell and the Description column stay, and only that
+   column escapes the serial shape. An object identifier (a dotted run that
+   begins `1.3.6.1.`) is never an address, the digits around any other address
+   (`10.20.30.40.179`) do not make it one. The bare domain of cisco.com,
+   juniper.net, hpe.com, hp.com, gnu.org, fsf.org, openssl.org, ietf.org or
+   kernel.org, with one of the labels `www`, `tools`, `ftp`, `cdn`, `software`
+   or `support` in front of it, and the example.* names, are kept, but a mail
+   address (a vendor's too), a customer's name under those domains and any
+   name under a learned domain are replaced. The parent domain of every host
+   name that is replaced is learned as the owner's, so once `acme-corp.hpe.com`
+   is replaced, `hpe.com` and `www.hpe.com` are replaced in every file of the
+   bundle, and the files are looked at until nothing new is learned; a public
+   label is never replaced as a word of its own (`www` and `Technical
+   Support:` stay). When a replacement is shorter or longer than the text it
+   replaces and blanks follow, the blanks are added or taken away so the
+   columns after it stay where the device printed them. The sysDescr garble
+   was the learn step: an empty `sysLocation.0:`, `sysContact.0:` or
+   `snmp-server contact` line took the next line as its value and replaced all
+   of it by an example; the patterns for the hostname, domain, location and
+   contact lines stay on their line now. A Cisco session also drops the echo
+   of a command longer than the terminal is wide (the device scrolls it over
+   lines that start with `$`), so the `show running-config | include
+   ^(hostname|...)` file starts with the device's answer. Release strings such
+   as `12.4(15)SW4` and `16.07.01` were never read as addresses and still are
+   not. `docs/devices/support-bundle.md` and the manual page say what is
+   replaced and what stays.
+
 ## 0.2.26 (2026-11-06)
 
 1. **The break-glass firewall line of `tacctl upgrade` and `install` is one

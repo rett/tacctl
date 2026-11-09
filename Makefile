@@ -73,8 +73,9 @@ gate-go:
 # What CI runs (.github/workflows/test.yml): every package but internal/cli
 # with -race, internal/cli in its two shards, each for both tag sets, as one
 # tracked run that ends with a single GATE-CI PASS|FAIL line that names the
-# failing tests (tests/tools/gate-ci.sh); LOG names the log. gate-go does not
-# run the race detector or the test knobs, so run this before a pull request.
+# failing tests (tests/tools/gate-ci.sh); LOG names the log. It starts with the
+# lint job of CI (make lint). gate-go does not run the race detector or the
+# test knobs, so run this before a pull request.
 gate-ci:
 	GO=$(GO) tests/tools/gate-ci.sh $(if $(LOG),-o $(LOG))
 

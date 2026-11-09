@@ -89,6 +89,17 @@ type reportFile struct {
 	Mod  time.Time
 }
 
+// isPDF says whether the file is a PDF, which is binary: its extension is
+// .pdf and its metadata, when there is any, says pdf. The metadata alone
+// decides nothing (the owner writes it too), and a file tacctl did not make
+// is a PDF by its extension.
+func (f reportFile) isPDF() bool {
+	if !strings.EqualFold(filepath.Ext(f.File), reports.Ext(reports.FormatPDF)) {
+		return false
+	}
+	return f.Meta == nil || f.Meta.Format == reports.FormatPDF
+}
+
 // When is the time of the report: generated, else the file's own.
 func (f reportFile) When() time.Time {
 	if f.Meta != nil {

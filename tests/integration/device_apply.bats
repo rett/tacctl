@@ -226,7 +226,8 @@ print("fine")' <<< "$output"
     # the shape is confirmed on the device that proved it
     SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config shapes
     plain
-    assert_line --regexp '^  [0-9a-f]{12} +confirmed +1 device +example-sw1 '
+    assert_line --regexp '^  [0-9a-f]{12} +confirmed +1 device +1 device '
+    assert_line --regexp '^  [0-9a-f]{12} +example-sw1$'
     # a second apply finds nothing to do and asks nothing
     tapply '' example-sw1
     [[ "$status" -eq 0 ]]
@@ -330,7 +331,8 @@ EOF
     stub_called "logger -t tacctl -p auth.notice device config shapes seed user=alice device=example-sw1 shape="
     SUDO_USER=alice run "$TACCTL_BIN_SCRIPT" device config shapes
     plain
-    assert_line --regexp '^  [0-9a-f]{12} +seeded +1 device +example-sw1 '
+    assert_line --regexp '^  [0-9a-f]{12} +seeded +1 device +1 device '
+    assert_line --regexp '^  [0-9a-f]{12} +example-sw1$'
     # now the shape is known: the batch applies it, --yes answering the
     # review for every device, which says so
     apply example-sw1 --confirmed --yes

@@ -72,6 +72,36 @@ func TestJunosMembers(t *testing.T) {
 	}
 }
 
+// The members of the virtual chassis of real devices, read from the three
+// answers (status, hardware, version) as the device printed them, with the
+// values replaced by the examples.
+func TestJunosMembersOfRealDevices(t *testing.T) {
+	m := func(id, role, model, serial, rel string, prio int) Member {
+		return Member{ID: id, Role: role, Model: model, Serial: serial, Release: rel, Status: "Prsnt", Priority: prio}
+	}
+	for _, c := range []struct {
+		name string
+		want []Member
+	}{
+		{"ex4400-vc-2", []Member{
+			m("0", "master", "EX4400-48T", "SN000001", "24.2R2.18", 255),
+			m("1", "backup", "EX4400-48T", "SN000005", "24.2R2.18", 255)}},
+		{"ex4600-ex4300-vc-4", []Member{
+			m("0", "master", "EX4600-40F", "SN000001", "21.4R3-S2.4", 129),
+			m("1", "backup", "EX4600-40F", "SN000009", "21.4R3-S2.4", 129),
+			m("2", "linecard", "EX4300-48T", "SN000020", "21.4R3-S2.4", 0),
+			m("3", "linecard", "EX4300-48T", "SN000025", "21.4R3-S2.4", 0)}},
+		{"ex4300-vc-enabled-1", nil}, // one member is no chassis
+	} {
+		vc := vcFixture(t, "real-"+c.name+"-status.txt")
+		hw := vcFixture(t, "real-"+c.name+"-hardware.txt")
+		ver := vcFixture(t, "real-"+c.name+"-version.txt")
+		if got := JunosMembers(vc, hw, ver); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s:\n got  %+v\n want %+v", c.name, got, c.want)
+		}
+	}
+}
+
 // The hardware row wins over the table only when it has something to say, and
 // a hardware inventory with no header is read by its blank runs.
 func TestJunosMembersHardware(t *testing.T) {
@@ -135,6 +165,14 @@ func TestIOSMembers(t *testing.T) {
 			[]Member{{ID: "1", Role: "master", Status: "Ready", Priority: 15},
 				{ID: "2", Role: "member", Status: "Provisioned"},
 				{ID: "3", Status: "HA sync in progress Unknown", Priority: 1}}},
+		{"a provisioned member with a blank H/W version column is read", vcFixture(t, "synthetic-ios-show-switch-provisioned.txt"), "", "", []Member{
+			{ID: "1", Role: "master", Status: "Ready", Priority: 15},
+			{ID: "2", Role: "member", Status: "Ready", Priority: 14},
+			{ID: "3", Role: "member", Status: "Provisioned", Priority: 1}}},
+		{"a blank version column in a row of its own",
+			"*1       Master 0000.5e00.5301     15     V01     Ready\n 4  Member 0000.0000.0000  1            Provisioned\n", "", "",
+			[]Member{{ID: "1", Role: "master", Status: "Ready", Priority: 15},
+				{ID: "4", Role: "member", Status: "Provisioned", Priority: 1}}},
 		{"a refusal", vcFixture(t, "real-ios-show-switch-refusal.txt"), inv, ver, nil},
 		{"line has invalid autocommand", "Line has invalid autocommand \"show switch\"\n", inv, ver, nil},
 		{"one switch is no stack", "Switch/Stack Mac Address : 0000.5e00.5301 - Local Mac Address\n*1       Master 0000.5e00.5301     15     V01     Ready\n", inv, ver, nil},

@@ -297,8 +297,9 @@ object per device, secret values elided; --backout prints the back-out region
 alone (every plan with changes keeps its back-out beside the record, so after
 the check pull --backout prints that one, and says which pull it undoes;
 --backout with --pull is refused); --out and --out-dir write 0600 files, as
-the user who ran sudo, into a directory that user may write without a
-supplementary group (--out-dir adds COVER.txt and each plan's back-out). A secret the device lacks is typed in its line, and a
+the user who ran sudo, inside that user's home (tacctl does not expand ~ or
+variables, and a path outside the home is refused), into a directory that user
+may write without a supplementary group (--out-dir adds COVER.txt and each plan's back-out). A secret the device lacks is typed in its line, and a
 secret it has is neither printed nor changed unless --secrets; --no-secrets
 leaves each as a marked line to fill in. --from <address> is where you are
 logged in from: the cleanup never removes it. --restore-point (a Cisco IOS or

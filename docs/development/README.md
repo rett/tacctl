@@ -84,9 +84,11 @@ tacctl/
   which runs `internal/cli` under `setsid` with no stdin and ends with one
   `GATE-GO PASS|FAIL` line: start it with the Bash tool's
   `run_in_background`, never with a trailing `&` or a `pgrep -f` wait, and
-  count only that line), `make gate-ci` before a pull request (what the
-  `test` workflow runs, which `make gate-go` does not: the race detector
-  and `-tags testknobs`, `internal/cli` in its two shards; it ends with one
+  count only that line; a run of the whole suite first runs `make lint-go`,
+  the Go half of the CI lint job, and a finding fails it before any test
+  runs), `make gate-ci` before a pull request (what the `test` workflow
+  runs, which `make gate-go` does not: `make lint` as its first job, the race
+  detector and `-tags testknobs`, `internal/cli` in its two shards; it ends with one
   `GATE-CI PASS|FAIL` line that names the failing tests, started and read
   like `gate-go`, and takes several times as long), bats as an ordinary
   user (any account that is not root and not a `sudo` session;

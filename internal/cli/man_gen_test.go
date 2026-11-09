@@ -251,7 +251,7 @@ var manFlagOverrides = map[string]string{
 	"host target --port":                 "The ssh port; tested first, and the host's ssh keys must match the pin.",
 	"host target --identity":             "The ssh key file; tested first, and the host's ssh keys must match the pin.",
 	"config render --dry-run":            "Render into the directory named by --out; nothing live is written.",
-	"config render --out":                "The new, empty directory a --dry-run render writes to, at the live paths.",
+	"config render --out":                "The new, empty directory a --dry-run render writes to, at the live paths, inside your home.",
 	"config snmp v3-user --priv":         "The privacy protocol: AES-128 (the only one).",
 	"scope snmp --priv":                  "The privacy protocol: AES-128 (the only one).",
 	"config snmp v3-user --auth":         "The authentication protocol: sha (HMAC-SHA-96) or sha256 (HMAC-SHA-256-192) (default sha).",

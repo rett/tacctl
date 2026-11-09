@@ -25,7 +25,7 @@ Commands:
       <o>--yes</o>                             Answer yes to the confirmations
   <b>upgrade</b> [<o>--branch <name></o>]             Pull latest source, rebuild, update scripts and every enabled backend
   <b>uninstall</b> [<o>--yes</o>]                     Remove tacctl, its backends' services and all associated files
-  <b>rollback</b> <o><version></o> [options]          Prepare the state for the release before this one (0.2.25), for 0.2.24, 0.2.23, 0.2.22, 0.2.21, 0.2.20, 0.2.19, 0.2.18, 0.2.17, 0.2.16, 0.2.9 or 0.2.3: a dry run unless <o>--apply</o>
+  <b>rollback</b> <o><version></o> [options]          Prepare the state for the release before this one (0.2.26), for 0.2.25, 0.2.24, 0.2.23, 0.2.22, 0.2.21, 0.2.20, 0.2.19, 0.2.18, 0.2.17, 0.2.16, 0.2.9 or 0.2.3: a dry run unless <o>--apply</o>
       <o>--apply</o>                           Take a snapshot, then convert the files the target cannot read (tacctl.yaml, sudoers; for 0.2.3 also console.yaml, devices.yaml)
       <o>--yes</o>                             Acknowledge the warnings that <o>--apply</o> refuses to go on without
       <o>--hosts</o>                           Accepted; the hosts need nothing for this target (no host is synced)
@@ -432,7 +432,7 @@ Subcommands:
       --yes                            With <o>--fix-names</o>: answer yes to every rename
   <b>render</b> [<o>--force</o>]                     Regenerate every enabled backend's config from the store (<o>--force</o> overwrites hand edits)
       <o>--force</o>                          Overwrite a generated file that was edited by hand
-  <b>render</b> <o>--dry-run</o> <o>--out <dir></o>         Render into a new, empty directory at the live paths; nothing live is written
+  <b>render</b> <o>--dry-run</o> <o>--out <dir></o>         Render into a new, empty directory in your home at the live paths; nothing live is written
   <b>diff</b> [<o><timestamp></o>]                   Diff store.yaml and tacctl.yaml vs the last snapshot (or named one)
   <b>restore</b> <o><timestamp></o> [<o>--legacy</o>|<o>--keep-uids</o>]  Restore a snapshot (prompts for confirmation); <o>--legacy</o> for an old-style backup
       <o>--legacy</o>                         The timestamp names an old-style backup (backups/legacy)
@@ -535,7 +535,7 @@ Usage: tacctl config linux <subcommand>
       --scope <name>                      (script) The scope whose users and secret it carries (default: the default scope)
       --server <address>                  (script) The server address hosts use (default: recorded, else detected)
       --method tacplus|radius             (script) pam_tacplus, or the host's pam_radius_auth (default: host default-method)
-      --output, -o <file>                 Where the script goes (default: tacctl-linux-<scope>.sh, remove-script: tacctl-linux-remove.sh)
+      --output, -o <file>                 Where the script goes: a file in your home (default, in the current directory: tacctl-linux-<scope>.sh, remove-script: tacctl-linux-remove.sh)
   remove-script [--output <file>]         Write the removal script (no secrets; accounts are left in place)
   uid [<username> [<uid>]]                Show or change the UID a user gets on every host
   uid-range [<min>-<max>]                 Show or change the UID range of all hosts (default 80000-89999)

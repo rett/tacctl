@@ -39,9 +39,9 @@ func TestKnobsIgnoredWithoutTag(t *testing.T) {
 	}
 	// The device knobs are not even spelled in this build: the variables the
 	// tagged file names are read by nothing here.
-	for _, kv := range []string{"TACCTL_TEST_DEVICE_DIAL=127.0.0.1:2222", "TACCTL_TEST_DEVICE_PASSWORD=x", "TACCTL_TEST_DEVICE_QUIET=25ms", "TACCTL_TEST_LOCAL_PASSWORD=x", "TACCTL_TEST_RESOLVE=h.example.net=192.0.2.1"} {
+	for _, kv := range []string{"TACCTL_TEST_DEVICE_DIAL=127.0.0.1:2222", "TACCTL_TEST_DEVICE_PASSWORD=x", "TACCTL_TEST_DEVICE_QUIET=25ms", "TACCTL_TEST_LOCAL_PASSWORD=x", "TACCTL_TEST_RESOLVE=h.example.net=192.0.2.1", "TACCTL_TEST_HOME=/home/user", "TACCTL_TEST_PDF_TOOL=/sandbox/bin/weasyprint-stub"} {
 		dk, err := LoadKnobs(paths.NewEnv([]string{kv}))
-		if err != nil || dk.DeviceDial() != "" || dk.DeviceQuiet() != 0 || dk.DevicePassword() != "" || dk.LocalPassword() != "" || dk.Resolver() != nil {
+		if err != nil || dk.DeviceDial() != "" || dk.DeviceQuiet() != 0 || dk.DevicePassword() != "" || dk.LocalPassword() != "" || dk.Resolver() != nil || dk.Home() != "" || dk.PDFTool() != "" {
 			t.Errorf("%s took effect: %q %q %v", kv, dk.DeviceDial(), dk.DevicePassword(), err)
 		}
 	}

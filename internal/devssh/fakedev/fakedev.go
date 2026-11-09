@@ -237,6 +237,12 @@ func WithMenuScreens(dir string) Option { return func(s *Server) { s.menuScreens
 // not given, as a device with a terminal does).
 func WithEcho(on bool) Option { return func(s *Server) { s.echo = on } }
 
+// WithWrappedEcho makes a shell session echo a command longer than width
+// characters the way IOS scrolls a line that runs out of the terminal: the
+// first width characters on a line, then the rest in lines that start with
+// '$', each at most width-1 characters.
+func WithWrappedEcho(width int) Option { return func(s *Server) { s.wrap = width } }
+
 // WithHang stops the server answering at stage, for the timeout tests; the
 // connections are held until Stop.
 func WithHang(st Stage) Option { return func(s *Server) { s.hang, s.hangSet = st, true } }
@@ -255,6 +261,7 @@ type Server struct {
 	ciphers   []string
 	framing   Framing
 	echo      bool
+	wrap      int // WithWrappedEcho
 
 	menuScreens string
 
@@ -692,7 +699,7 @@ func (s *Server) shell(ch ssh.Channel) {
 		}
 		cmd := strings.TrimSpace(line)
 		if s.echo {
-			_, _ = io.WriteString(ch, cmd+"\r\n")
+			_, _ = io.WriteString(ch, s.echoOf(cmd))
 		}
 		switch cmd {
 		case "":
@@ -719,6 +726,20 @@ func (s *Server) shell(ch ssh.Channel) {
 			return
 		}
 	}
+}
+
+// echoOf is what the session writes back for the command typed.
+func (s *Server) echoOf(cmd string) string {
+	if s.wrap <= 0 || len(cmd) <= s.wrap {
+		return cmd + "\r\n"
+	}
+	out := cmd[:s.wrap] + "\r\n"
+	for rest := cmd[s.wrap:]; rest != ""; {
+		n := min(s.wrap-1, len(rest))
+		out += "$" + rest[:n] + "\r\n"
+		rest = rest[n:]
+	}
+	return out
 }
 
 // page writes out, stopping after every pageLen lines for a key when

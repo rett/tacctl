@@ -1,0 +1,6 @@
+fpc0:
+--------------------------------------------------------------------------
+Hostname: sw1.example.net
+Model: ex4300-48t
+Junos: 20.2R3.9
+JUNOS EX  Software Suite [20.2R3.9]

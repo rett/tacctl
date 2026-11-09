@@ -9,8 +9,8 @@ package cli
 // are listed and removed by the store of device_reports_store.go, with the
 // identity of the user whose directory it is, and a link is not followed).
 // A superuser can prune the reports of another user (--user) or of every user
-// (--all-users); each such user's reports, listed or removed, are one audit
-// line (device_reports_super.go).
+// (--all-users); the access to each such user's reports is one audit line,
+// written before that user's directory is read (device_reports_super.go).
 
 import (
 	"errors"
@@ -85,10 +85,17 @@ func (inv *invocation) deviceReportsPrune(args []string) error {
 
 	// What would go, user by user. A user the server has no account for has
 	// no reports; a directory that cannot be read is said and fails the run.
+	// The access to another user's reports is audited before the directory is
+	// read, for every such user, and all the lines are written before the
+	// first directory is read: under audit.strict a line that cannot be
+	// written refuses the whole run, with nothing read, listed or changed.
 	a := inv.app
 	cutoff := a.Knobs.Now().UTC().Add(-span)
-	var sets []pruneSet
-	unreadable := 0
+	verb := "prune"
+	if p.Has("--dry-run") {
+		verb = "prune-dry-run"
+	}
+	var places []reportPlace
 	for _, o := range owners {
 		pl, err := inv.reportPlaceOf(o)
 		if err != nil {
@@ -97,6 +104,14 @@ func (inv *invocation) deviceReportsPrune(args []string) error {
 			}
 			continue
 		}
+		if o != me {
+			inv.reportsAccess(verb, o, "*")
+		}
+		places = append(places, pl)
+	}
+	var sets []pruneSet
+	unreadable := 0
+	for _, pl := range places {
 		d, err := pl.read()
 		if err != nil {
 			if len(owners) == 1 {
@@ -107,7 +122,7 @@ func (inv *invocation) deviceReportsPrune(args []string) error {
 			continue
 		}
 		if files, size := prunable(d, cutoff); len(files) > 0 {
-			sets = append(sets, pruneSet{owner: o, cross: o != me, pl: pl, files: files, size: size})
+			sets = append(sets, pruneSet{owner: pl.user, cross: pl.user != me, pl: pl, files: files, size: size})
 		}
 	}
 	if len(sets) == 0 {
@@ -120,19 +135,6 @@ func (inv *invocation) deviceReportsPrune(args []string) error {
 			return inv.usageErr(howMany(unreadable, "directory") + " could not be read (see above).")
 		}
 		return nil
-	}
-
-	// The access to another user's reports is audited before anything is
-	// shown or removed; under audit.strict a line that cannot be written
-	// refuses the whole run here, with nothing listed and nothing changed.
-	verb := "prune"
-	if p.Has("--dry-run") {
-		verb = "prune-dry-run"
-	}
-	for _, s := range sets {
-		if s.cross {
-			inv.reportsPruneAccess(verb, s.owner, len(s.files))
-		}
 	}
 
 	var count int

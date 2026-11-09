@@ -166,13 +166,16 @@ device sync <name>[,<name>...] | --all | --scope <scope> | --vendor <vendor> [--
     refused; see Filling the registry from the records (devices/planning.md, "Filling the registry
     from the records")
 
-device support-bundle <name> [--vendor cisco|juniper|wti] [--login <local-user>] [--out <dir>]
+device support-bundle <name> [--vendor cisco|juniper|wti] [--login <local-user>] [--out <name>]
 
     Engineers: log in once to a registered device and collect what a developer needs to make tacctl
     read that kind of device (fixed, read-only commands; no configuration), scrubbed and written as
     a directory of text files: names, users, classes, addresses, serial numbers, locations,
     contacts and time zones become the standard example values, comments and secrets are removed.
-    What was replaced is kept in `<dir>.map` (mode 0600), beside the directory, never in it.
+    `--out` is the bundle's name, not a path (default `<device>-<UTC time>`): the bundle is
+    `support-bundles/<name>` in your home, created with mode 0700 when the folder is missing, and
+    tacctl does not expand `~` or variables. What was replaced is kept in
+    `support-bundles/<name>.map` (mode 0600), beside the directory, never in it.
     `--vendor` reads the device as another vendor for this run only; `--login` is a Junos local
     account's one-shot password, as for a pull; see Support bundles (devices/support-bundle.md)
 
@@ -615,7 +618,8 @@ device config plan <name>[,<name>...] | --all | --scope <scope> | --vendor <vend
         `--pull`)
     --out <file>, --out-dir <dir>, --force
         Write one device's output, or one file per device with `COVER.txt` and each back-out (0600,
-        0700 directory); replace what exists
+        0700 directory), inside your home (tacctl does not expand `~` or variables; a path outside
+        the home is refused); replace what exists
     --from <address>, --exit-code
         The address you are logged in from (the cleanup keeps it; a Junos management filter that the
         device applies to `lo0` must permit it, or its section is refused, in either filter mode);
@@ -753,21 +757,25 @@ device config forget <name>[,<name>...] | --all
     administrators
 
 device reports generate --type inventory|members|software|config [--scope <scope>]
-                        [--vendor cisco|juniper|wti|other] [--format text|csv|json]
+                        [--vendor cisco|juniper|wti|other] [--format text|csv|json|pdf]
                         [--name <name>] [--stdout] [--pull]
 
     Make a dated report of the registered devices from what is stored (no device is contacted) and
-    keep it as `~/reports/devices/<name>.<txt|csv|json>` of your home, mode 0600, with a `.meta`
+    keep it as `~/reports/devices/<name>.<txt|csv|json|pdf>` of your home, mode 0600, with a `.meta`
     file beside it; the name is `<type>-<yyyymmdd>` (`-2`, `-3` for a second one the same day) or
     `--name`. `inventory` has a row per device (address, vendor, scope, model, serial number,
     release, number of chassis members, location, description, date of the pull), `members` one per
     chassis member (a standalone device is one row), `software` one per device (model and release)
     and `config` one per device (the state `device config list` shows, the pull and the apply). A
     device never pulled is a row with empty facts and `never` in all but `members`, which lists the
-    devices that have a model or a serial number. The report holds the devices of your scopes (a
-    superuser's: all); `--scope` and `--vendor` narrow it. `--stdout` prints it and
-    stores nothing. `--pull` reads the devices first as `device config pull` does, with your own
-    password (engineer tier); a device that fails keeps its last facts and the exit status is 1. A
+    devices that have a model or a serial number. Below the operator tier the model, serial number,
+    release and chassis members are left out as `device show` leaves them (`members` has no rows).
+    The report holds the devices of your scopes (a superuser's: all); `--scope` and `--vendor`
+    narrow it. `--format pdf` makes a letter landscape PDF with `weasyprint` (`sudo apt-get install
+    -y weasyprint fonts-dejavu-core`; without it the command refuses before it reads anything) and,
+    being binary, is not printed to a terminal. `--stdout` prints it and stores nothing.
+    `--pull` reads the devices first as `device config pull` does, with your own password (engineer
+    tier); a device that fails keeps its last facts and the exit status is 1. A
     report over the size or the count limit is refused (see `config reports`). See
     [Device reports](../devices/reports.md)
 
@@ -779,14 +787,15 @@ device reports list [--json] [--user <name> | --all-users]
 device reports show <report> [--content]
 
     When, by whom and with what command the report was made, its filters, the date of its oldest
-    datum, its size and the `scp` line that fetches it; `--content` adds its first 200 lines. A
-    report is its name, or its file name when two files share a name; a superuser names another
-    user's as `<user>/<report>` (audited)
+    datum, its size and the `scp` line that fetches it; `--content` adds its first 200 lines (a PDF
+    is binary: it says `binary PDF, <n> bytes: use export`). A report is its name, or its file name
+    when two files share a name; a superuser names another user's as `<user>/<report>` (audited)
 
 device reports export <report> [--out <file>] [--force]
 
-    Print the report, or write it to a file (made as you, mode 0600; an existing file needs
-    `--force`)
+    Print the report, or write it to a file (made as you, mode 0600, inside your home: tacctl does
+    not expand `~` or variables and refuses a path outside the home; an existing file needs
+    `--force`). A PDF is never printed to a terminal: use `--out` or redirect
 
 device reports rename <report> <new>
 
@@ -800,7 +809,8 @@ device reports prune --older-than <n>h|<n>d|<n>w [--user <name> | --all-users] [
 
     Remove your reports made longer ago than the age (the `generated` date of the metadata file;
     no default), after listing them and one confirmation; `--dry-run` only lists. Files without
-    metadata are never removed. A superuser: `--user` and `--all-users` (one audit line per user)
+    metadata are never removed. A superuser: `--user` and `--all-users` (one audit line for each
+    other user whose directory is read, written before it is read)
 ```
 
 New device names are lower case: `device add`, `rename` and the

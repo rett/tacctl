@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# gate-go.sh [-o <log>] [-t <timeout>] [--tags <tags>] [<package>...]
+# gate-go.sh [-o <log>] [-t <timeout>] [--tags <tags>] [--no-lint] [<package>...]
 #
 # Runs the Go tests (default ./internal/...) and ends with ONE verdict line,
 # on standard output and as the last line of the log:
@@ -18,6 +18,14 @@
 # TestX (N.NNs)' lines ('gate-go: slowest: TestX 47.1s'; a name that ran in
 # several packages counts with its longest time): where the time went, and the
 # input of 'tests/tools/go-test-shard.sh --regen'.
+#
+# A run of the whole suite (no package listed, no --tags) first runs 'make
+# lint-go': gofmt, go vet and golangci-lint in both tag sets, the Go half of
+# the lint job of CI, so a finding the pull request would fail on shows up at
+# the feature that made it (a few seconds with a warm cache, about 90 s cold).
+# A finding, or a missing or wrong-version golangci-lint (the message names the
+# install line), fails the run before any test runs ('lint-failed' in the
+# verdict line, its output in the log). --no-lint leaves it out.
 #
 # A run is a PASS only when go test exited 0, every listed package printed an
 # ok or no-test-files line and no FAIL or panic line is in the log. A run that
@@ -83,12 +91,13 @@ if [[ "${GATE_TMPFS:-}" = 1 ]]; then
     fi
 fi
 
-log="" timeout="40m" tags=""
+log="" timeout="40m" tags="" lint=1
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -o) log="${2:-}"; shift 2 || exit 2 ;;
         -t) timeout="${2:-}"; shift 2 || exit 2 ;;
         --tags) tags="${2:-}"; shift 2 || exit 2 ;;
+        --no-lint) lint=0; shift ;;
         -h | --help) sed -n '2,/^set -/p' "$0" | sed '$d;s/^# \{0,1\}//' ; exit 0 ;;
         --) shift; break ;;
         -*) echo "gate-go: unknown option $1" >&2; exit 2 ;;
@@ -96,6 +105,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 pkgs=("$@")
+[[ ${#pkgs[@]} -eq 0 ]] || lint=0
+[[ -z "$tags" ]] || lint=0
 [[ ${#pkgs[@]} -gt 0 ]] || pkgs=(./internal/...)
 [[ -n "$log" ]] || log="$(mktemp "$logdir/tacctl-gate-go.XXXXXX.log")" || exit 2
 : >"$log" || { echo "gate-go: cannot write $log" >&2; exit 2; }
@@ -147,7 +158,24 @@ interrupted() {
 }
 trap interrupted TERM INT HUP
 
-setsid "$GO" test -v -parallel 16 -timeout "$timeout" "${tagflag[@]}" "${pkgs[@]}" </dev/null >"$log" 2>&1 &
+if [[ "$lint" -eq 1 ]]; then
+    lstart=$(date +%s)
+    echo "=== lint: make lint-go" >>"$log"
+    setsid make lint-go </dev/null >>"$log" 2>&1 &
+    child=$!
+    wait "$child"
+    lrc=$?
+    child=""
+    if [[ "$lrc" -ne 0 ]]; then
+        trap - TERM INT HUP
+        tail -n 40 "$log" | sed 's/^/gate-go: lint: /'
+        verdict "$lrc" lint-failed
+        exit 1
+    fi
+    echo "gate-go: lint ok ($(($(date +%s) - lstart)) s)" | tee -a "$log"
+fi
+
+setsid "$GO" test -v -parallel 16 -timeout "$timeout" "${tagflag[@]}" "${pkgs[@]}" </dev/null >>"$log" 2>&1 &
 child=$!
 wait "$child"
 rc=$?

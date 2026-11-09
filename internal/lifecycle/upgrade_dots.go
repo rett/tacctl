@@ -565,8 +565,11 @@ func (h *Host) renameDottedUsers() error {
 		}
 		out.Info(line)
 		if moves[i].HeldBy != "" {
-			out.Warn("'" + r.New + "' already has UID " + moves[i].HeldBy + " in linux-uids; the account '" + r.Old + "' (UID " + moves[i].UID +
-				") is removed on hosts and '" + r.New + "' created with " + moves[i].HeldBy)
+			// The ledger is left as it was: a name with a period never had an
+			// account, so nothing is removed or created on a host; the old
+			// line is not moved and the new name keeps its number.
+			out.Warn("'" + r.New + "' already has UID " + moves[i].HeldBy + " in linux-uids, so the line of '" + r.Old + "' (UID " + moves[i].UID +
+				") is not moved: '" + r.New + "' keeps UID " + moves[i].HeldBy + " and the line of '" + r.Old + "' stays in the file as it is")
 		}
 		uidWord := "-"
 		if moves[i].Moved {

@@ -4,6 +4,7 @@ package cli
 // reports that were made (device_reports.go makes them).
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"sort"
@@ -209,6 +210,12 @@ func (inv *invocation) deviceReportsShow(args []string) error {
 	if !p.Has("--content") {
 		return nil
 	}
+	if f.isPDF() {
+		// binary: no line of it is shown
+		inv.echo("binary PDF, " + strconv.FormatInt(f.Size, 10) + " bytes: use export")
+		inv.echo("")
+		return nil
+	}
 	shown, rest, err := t.pl.head(f.File, reportContentLines)
 	if err != nil {
 		return inv.usageErr("Cannot read the report: " + err.Error())
@@ -254,15 +261,35 @@ func (inv *invocation) deviceReportsExport(args []string) error {
 	if p.Has("--force") && !p.Has("--out") {
 		return inv.argErr("--force replaces the file --out names.", usage)
 	}
+	// the file is written inside the caller's home only
+	out := ""
+	if p.Has("--out") {
+		if out, err = inv.outPath("--out", p.Value("--out")); err != nil {
+			return inv.argErr(err.Error(), usage)
+		}
+	}
 	t, err := inv.reportTargetOf("export", p.Args[0])
 	if err != nil {
 		return err
+	}
+	// a PDF is binary: it is never printed to a terminal, whatever it holds
+	if !p.Has("--out") && t.f.isPDF() && inv.hooks.terminalWriter(inv.app.Out.Stdout) {
+		return inv.usageErr(pdfBinaryExport)
 	}
 	b, err := t.pl.content(t.f.File, inv.exportLimit(t))
 	if err != nil {
 		return inv.usageErr("Cannot read the report: " + err.Error())
 	}
 	if !p.Has("--out") {
+		// What another user wrote must also start like a PDF to go out raw.
+		if t.f.isPDF() && (!t.cross || bytes.HasPrefix(b, []byte("%PDF-"))) {
+			// not a terminal (checked above), so nothing here can move one;
+			// the bytes go out as they are, past the colour filter
+			if err := inv.writeRaw(b); err != nil {
+				return inv.rawWriteErr(err)
+			}
+			return nil
+		}
 		if t.cross {
 			// What another user wrote is not trusted with the superuser's
 			// terminal, whatever its metadata file says (the owner makes
@@ -281,7 +308,6 @@ func (inv *invocation) deviceReportsExport(args []string) error {
 		inv.write(string(b))
 		return nil
 	}
-	out := p.Value("--out")
 	if err := inv.asCaller(func() error { return writePrivate(out, b, p.Has("--force")) }); err != nil {
 		return inv.usageErr("Cannot write " + out + ": " + existsText(err, " (--force replaces it)"))
 	}

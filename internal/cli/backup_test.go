@@ -498,3 +498,7 @@ func TestBackupDiffReadsTheOldSyntaxKey(t *testing.T) {
 		t.Errorf("the copy was left: %s", copyPath)
 	}
 }
+
+// homePath is a path under the sandbox's home, where --out and --output may
+// write.
+func (sb *sandbox) homePath(rel string) string { return filepath.Join(sb.home, rel) }
