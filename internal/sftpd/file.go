@@ -19,7 +19,8 @@ type file struct {
 	v      vpath
 	write  bool // opened for upload
 	append bool
-	quota  *quota // nil when there is no quota
+	quota  *quota  // nil when there is no quota
+	rate   *bucket // nil when there is no rate limit
 
 	quotaNoted atomic.Bool
 
@@ -107,12 +108,14 @@ func (s *server) openFile(r *sftp.Request, write bool) (*file, error) {
 		write:  write,
 		append: write && pf.Append,
 		quota:  s.quota,
+		rate:   s.rate,
 	}, nil
 }
 
 func (f *file) ReadAt(p []byte, off int64) (int, error) {
 	n, err := f.f.ReadAt(p, off)
 	f.read.Add(int64(n))
+	f.rate.take(int64(n))
 	return n, err
 }
 
@@ -137,6 +140,7 @@ func (f *file) WriteAt(p []byte, off int64) (int, error) {
 		n, err = w()
 	}
 	f.written.Add(int64(n))
+	f.rate.take(int64(n)) // what was written, after it: a refused write costs nothing
 	return n, err
 }
 

@@ -17,7 +17,8 @@ import (
 type server struct {
 	home  *home
 	cfg   Config
-	quota *quota // nil when the session has no quota
+	quota *quota  // nil when the session has no quota
+	rate  *bucket // nil when the session has no rate limit
 }
 
 var (

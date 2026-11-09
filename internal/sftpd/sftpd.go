@@ -33,6 +33,9 @@ type Config struct {
 	// Quota is the size in bytes the files of the home may add up to; 0
 	// means no limit, and then the home is not measured.
 	Quota int64
+	// Rate is the bytes per second the session may move, reads and writes
+	// together, with a burst of one second; 0 means no limit.
+	Rate int64
 	// Audit, when set, is called once per upload, download, delete, rename,
 	// mkdir and setstat, and once per refusal. It is called from the
 	// goroutines that serve the requests, never with a lock held, and it
@@ -47,15 +50,22 @@ func Serve(rw io.ReadWriteCloser, cfg Config) error {
 	return serve(rw, cfg, seams{})
 }
 
-// seams are what a test replaces: the clock.
+// seams are what a test replaces: the clock, and the sleep of the rate
+// limit (the default sleeps until the time is up or the session has ended).
 type seams struct {
-	now func() time.Time
+	now   func() time.Time
+	sleep func(time.Duration)
 }
 
 func serve(rw io.ReadWriteCloser, cfg Config, sm seams) error {
+	n := newEndNotifier(rw)
+	rw = n
 	defer func() { _ = rw.Close() }()
 	if sm.now == nil {
 		sm.now = time.Now
+	}
+	if sm.sleep == nil {
+		sm.sleep = func(d time.Duration) { sleepUntil(n.done, d) }
 	}
 	h, err := openHome(cfg.Home)
 	if err != nil {
@@ -78,6 +88,7 @@ func newServer(h *home, cfg Config, sm seams) *server {
 	if cfg.Quota > 0 {
 		s.quota = newQuota(h, cfg.Quota, sm.now)
 	}
+	s.rate = newBucket(cfg.Rate, sm.now, sm.sleep)
 	return s
 }
 
