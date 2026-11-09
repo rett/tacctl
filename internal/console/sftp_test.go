@@ -105,14 +105,14 @@ func TestSFTPEventLinesFitALogLine(t *testing.T) {
 		if op == "rename" {
 			to = hostile
 		}
-		_, line := s.SFTPEventLine(op, hostile, to, 1<<62, hostile)
+		_, line := s.SFTPEventLine(op, "superuser", hostile, to, 1<<62, hostile)
 		check(op, line)
 		if !strings.Contains(line, " error=") {
 			t.Errorf("%s: the error field is lost: %s", op, line)
 		}
 	}
 	for _, why := range []string{".ssh", "outside the home", "symlink", "link", "quota", "unsupported", "bad path", "too many open files"} {
-		_, line := s.SFTPEventLine("refused", hostile, hostile, 0, why)
+		_, line := s.SFTPEventLine("refused", "superuser", hostile, hostile, 0, why)
 		check("refused "+why, line)
 		if !strings.HasSuffix(line, " reason="+strings.ReplaceAll(why, " ", "-")) {
 			t.Errorf("refused %s: the reason is lost: %s", why, line)
@@ -146,25 +146,25 @@ func TestSFTPLines(t *testing.T) {
 		priority     string
 		want         string
 	}{
-		{"upload", "/a b", "", 12, "", "auth.info", `console sftp upload session=0123456789ab user=carol path="/a b" bytes=12`},
-		{"download", "/a", "", 3, "", "auth.info", `console sftp download session=0123456789ab user=carol path="/a" bytes=3`},
-		{"delete", "/a", "", 0, "", "auth.info", `console sftp delete session=0123456789ab user=carol path="/a"`},
-		{"rename", "/a", "/b\n", 0, "", "auth.info", `console sftp rename session=0123456789ab user=carol path="/a" to="/b\n"`},
-		{"mkdir", "/d", "", 0, "", "auth.info", `console sftp mkdir session=0123456789ab user=carol path="/d"`},
-		{"setstat", "/a", "", 0, "", "auth.info", `console sftp setstat session=0123456789ab user=carol path="/a"`},
-		{"delete", "/a", "", 0, "no such file", "auth.info", `console sftp delete session=0123456789ab user=carol path="/a" error="no such file"`},
-		{"refused", "/.ssh/k", "", 0, ".ssh", "auth.warning", `console sftp DENY session=0123456789ab user=carol path="/.ssh/k" reason=.ssh`},
-		{"refused", "/x", "", 0, "outside the home", "auth.warning", `console sftp DENY session=0123456789ab user=carol path="/x" reason=outside-the-home`},
-		{"refused", "/q", "", 0, "quota", "auth.warning", `console sftp DENY session=0123456789ab user=carol path="/q" reason=quota`},
+		{"upload", "/a b", "", 12, "", "auth.info", `console sftp upload session=0123456789ab user=carol tier=operator path="/a b" bytes=12`},
+		{"download", "/a", "", 3, "", "auth.info", `console sftp download session=0123456789ab user=carol tier=operator path="/a" bytes=3`},
+		{"delete", "/a", "", 0, "", "auth.info", `console sftp delete session=0123456789ab user=carol tier=operator path="/a"`},
+		{"rename", "/a", "/b\n", 0, "", "auth.info", `console sftp rename session=0123456789ab user=carol tier=operator path="/a" to="/b\n"`},
+		{"mkdir", "/d", "", 0, "", "auth.info", `console sftp mkdir session=0123456789ab user=carol tier=operator path="/d"`},
+		{"setstat", "/a", "", 0, "", "auth.info", `console sftp setstat session=0123456789ab user=carol tier=operator path="/a"`},
+		{"delete", "/a", "", 0, "no such file", "auth.info", `console sftp delete session=0123456789ab user=carol tier=operator path="/a" error="no such file"`},
+		{"refused", "/.ssh/k", "", 0, ".ssh", "auth.warning", `console sftp DENY session=0123456789ab user=carol tier=operator path="/.ssh/k" reason=.ssh`},
+		{"refused", "/x", "", 0, "outside the home", "auth.warning", `console sftp DENY session=0123456789ab user=carol tier=operator path="/x" reason=outside-the-home`},
+		{"refused", "/q", "", 0, "quota", "auth.warning", `console sftp DENY session=0123456789ab user=carol tier=operator path="/q" reason=quota`},
 	} {
-		priority, line := s.SFTPEventLine(c.op, c.path, c.to, c.bytes, c.err)
+		priority, line := s.SFTPEventLine(c.op, "operator", c.path, c.to, c.bytes, c.err)
 		if priority != c.priority || line != c.want {
 			t.Errorf("%s: %s %s\nwant %s %s", c.op, priority, line, c.priority, c.want)
 		}
 	}
 	// A user name with a space or a quote cannot forge a field.
 	forged := Session{ID: "0123456789ab", User: "x\" path=\"/y"}
-	_, line := forged.SFTPEventLine("delete", "/a", "", 0, "")
+	_, line := forged.SFTPEventLine("delete", "operator", "/a", "", 0, "")
 	if strings.Contains(line, `path="/y`) || strings.Count(line, " path=") != 1 {
 		t.Errorf("forged user: %s", line)
 	}

@@ -97,17 +97,18 @@ func (s Session) SFTPEndLine(up, down int64, ops, refused int) string {
 // 'console sftp DENY ... reason=<why>' at auth.warning, like a refused command;
 // the rest are info lines with the path (and the new name of a rename), the
 // bytes moved by an upload or a download, and the error text of one that
-// failed. errText is sanitised like a path; with a path, a new name and an
+// failed. Every line names the tier of the caller. errText is sanitised like a path; with a path, a new name and an
 // error text each at NameMax, the line stays under 1000 bytes (logger cuts a
 // line at 1 KiB).
-func (s Session) SFTPEventLine(op, path, to string, bytes int64, errText string) (priority, line string) {
+func (s Session) SFTPEventLine(op, tier, path, to string, bytes int64, errText string) (priority, line string) {
 	head := "console sftp " + op
 	priority = "auth.info"
 	if op == "refused" {
 		head = "console sftp DENY"
 		priority = "auth.warning"
 	}
-	line = head + " session=" + s.ID + " user=" + LogValue(s.User) + " path=" + QuoteName(path)
+	line = head + " session=" + s.ID + " user=" + LogValue(s.User) +
+		" tier=" + LogValue(tier) + " path=" + QuoteName(path)
 	if to != "" {
 		line += " to=" + QuoteName(to)
 	}

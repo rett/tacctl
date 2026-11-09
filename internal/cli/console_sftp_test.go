@@ -234,11 +234,11 @@ func TestConsoleSFTPServes(t *testing.T) {
 	}{
 		{0, "mode=sftp"},
 		{1, " user=carol tier=readonly from=192.0.2.9 home=" + `"` + r.home + `"` + " quota=unlimited rate=off"},
-		{2, ` path="/up.txt" bytes=5`},
-		{3, ` path="/existing.txt" bytes=3`},
-		{4, ` path="/d"`},
-		{5, ` path="/up.txt" to="/d/moved.txt"`},
-		{6, ` path="/existing.txt"`},
+		{2, ` user=carol tier=readonly path="/up.txt" bytes=5`},
+		{3, ` user=carol tier=readonly path="/existing.txt" bytes=3`},
+		{4, ` user=carol tier=readonly path="/d"`},
+		{5, ` user=carol tier=readonly path="/up.txt" to="/d/moved.txt"`},
+		{6, ` user=carol tier=readonly path="/existing.txt"`},
 		{7, " up=5 down=3 ops=5 refused=0"},
 		{8, " user=carol reason=sftp lines=5 status=0"},
 	} {
@@ -265,7 +265,7 @@ func TestConsoleSFTPQuotaRateAndTheStartLine(t *testing.T) {
 	for _, want := range []string{
 		" quota=100 rate=1G",
 		"auth.warning console sftp DENY session=",
-		` path="/over"`, " reason=quota",
+		` user=carol tier=readonly path="/over"`, " reason=quota",
 	} {
 		if !strings.Contains(log, want) {
 			t.Errorf("log lacks %q:\n%s", want, log)
@@ -307,7 +307,7 @@ func TestConsoleSFTPRefusesSSHAndAudits(t *testing.T) {
 		t.Errorf("authorized_keys is %q", b)
 	}
 	log := strings.Join(consoleLog(r.h.runner), "\n")
-	if !strings.Contains(log, `auth.warning console sftp DENY session=`) || !strings.Contains(log, `path="/.ssh/authorized_keys"`) ||
+	if !strings.Contains(log, `auth.warning console sftp DENY session=`) || !strings.Contains(log, ` tier=readonly path="/.ssh/authorized_keys"`) ||
 		!strings.Contains(log, "reason=.ssh") {
 		t.Errorf("the refusals are not audited:\n%s", log)
 	}

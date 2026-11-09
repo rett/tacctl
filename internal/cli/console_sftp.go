@@ -182,7 +182,7 @@ func (au *sftpAudit) finish() sftpTotals {
 func (au *sftpAudit) run() {
 	defer close(au.done)
 	for e := range au.ch {
-		priority, line := au.cs.sess.SFTPEventLine(e.Op, e.Path, e.To, e.Bytes, errText(e.Err))
+		priority, line := au.cs.sess.SFTPEventLine(e.Op, string(au.cs.tier), e.Path, e.To, e.Bytes, errText(e.Err))
 		au.cs.log(priority, line)
 		au.t.ops++
 		switch e.Op {
