@@ -3,7 +3,7 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
-## 0.2.28 (unreleased)
+## 0.2.28 (2026-11-09)
 
 1. **A support bundle from a Cisco IOS device no longer starts the identity
    lines with the tail of the command.** Item 9 of 0.2.27 dropped the echo
