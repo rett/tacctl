@@ -21,6 +21,9 @@ type server struct {
 	rate  *bucket // nil when the session has no rate limit
 
 	handles handleCount // the open files and directory listings
+
+	beforeTruncate func() // a test's hooks, see seams
+	afterPin       func()
 }
 
 var (
@@ -99,19 +102,25 @@ func (s *server) changePath(p string) (vpath, error) {
 }
 
 // RealPath answers realpath without touching the file system: the cleaned
-// virtual path ("." is "/"). Links are not resolved, as none is followed.
+// virtual path ("." is "/"). Links are not resolved, as none is followed. The
+// library calls it outside the handlers that guard audits, so a refusal (a
+// path that is not one) is audited here; an answer is not, clients ask for it
+// all the time.
 func (s *server) RealPath(p string) (string, error) {
 	v, err := parsePath(p)
 	if err != nil {
+		s.noteRefusal(err, p, "")
 		return "", err
 	}
 	return v.String(), nil
 }
 
 // Readlink is refused: a link is never followed, and its target is not
-// shown.
-func (s *server) Readlink(string) (string, error) {
-	return "", errSymlink()
+// shown. The refusal is audited here, as for RealPath.
+func (s *server) Readlink(p string) (string, error) {
+	err := errSymlink()
+	s.noteRefusal(err, p, "")
+	return "", err
 }
 
 // listerAt serves a few entries held in memory (a stat) to the library.
@@ -260,12 +269,6 @@ func (s *server) remove(r *sftp.Request, dir bool) (err error) {
 	return unlink()
 }
 
-func (s *server) quotaRelease(n int64) {
-	if s.quota != nil {
-		s.quota.release(n)
-	}
-}
-
 // rename moves an entry; a link is moved as the link it is. Plain rename
 // fails when the target exists (as OpenSSH's server does), posix-rename
 // replaces it.
@@ -347,15 +350,23 @@ func (s *server) setstat(r *sftp.Request) (err error) {
 		return err
 	}
 	defer t.close()
-	st, err := t.lstat()
+	// The entry is pinned, judged on the descriptor and changed through it:
+	// a name that is made to mean another file between the look and the change
+	// (a rename of a hard link of a key file over it) is not followed.
+	p, err := t.pin("stat")
 	if err != nil {
 		return err
 	}
+	defer p.close()
+	st := p.st
 	if st.Mode&unix.S_IFMT == unix.S_IFLNK {
 		return errSymlink()
 	}
 	if st.Mode&unix.S_IFMT == unix.S_IFREG && st.Nlink > 1 {
 		return errLink()
+	}
+	if s.afterPin != nil {
+		s.afterPin()
 	}
 	if fl.Permissions {
 		// A directory the owner cannot list or search is one the quota
@@ -363,12 +374,12 @@ func (s *server) setstat(r *sftp.Request) (err error) {
 		if st.Mode&unix.S_IFMT == unix.S_IFDIR && a.Mode&0o500 != 0o500 {
 			return errUnsupported("clearing the owner's read or search permission of a directory")
 		}
-		if err := t.chmod(a.Mode & 0o777); err != nil {
+		if err := p.chmod(a.Mode & 0o777); err != nil {
 			return err
 		}
 	}
 	if fl.Acmodtime {
-		if err := t.utimes(a.Atime, a.Mtime); err != nil {
+		if err := p.utimes(a.Atime, a.Mtime); err != nil {
 			return err
 		}
 	}

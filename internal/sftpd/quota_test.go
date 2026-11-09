@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/pkg/sftp"
 )
 
 // 4. The quota.
@@ -669,4 +671,69 @@ func TestQuotaHeldRemovedFileStillGrowsTheUsage(t *testing.T) {
 	_, err = h.Write([]byte(bytesOf(41)))
 	wantQuotaRefusal(t, "growing the removed file past the quota", err)
 	_ = h.Close()
+}
+
+// A truncating open reads the size, cuts the file and lowers the usage as one
+// step under the quota's lock. A write on another handle of the same file
+// that is running when the cut happens must not leave the usage below the
+// disk: the open is held before its cut, a write is started and is in its
+// write when the cut is let go.
+//
+// The write waits for the file to be cut, up to a deadline on a real timer: with
+// the lock held by the write the cut cannot happen until the write is over, so
+// the wait ends by the deadline; without the lock the cut comes at once.
+func TestQuotaTruncatingOpenDoesNotLoseAConcurrentWrite(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "f"), []byte(bytesOf(100)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	atCut, letCut, inWrite := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	s := newServer(mustHome(t, dir), Config{Quota: 1000}, seams{now: time.Now, beforeTruncate: func() {
+		close(atCut)
+		<-letCut
+	}})
+	// The writer's handle: no truncation, so no hook.
+	b, err := s.openFile(&sftp.Request{Method: "Put", Filepath: "/f", Flags: 0x2}, true) // SSH_FXF_WRITE
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = b.Close() }()
+	opened := make(chan error, 1)
+	go func() {
+		a, err := s.openFile(&sftp.Request{Method: "Put", Filepath: "/f", Flags: 0x2 | 0x10}, true) // WRITE | TRUNC
+		if err == nil {
+			_ = a.Close()
+		}
+		opened <- err
+	}()
+	<-atCut
+	wrote := make(chan error, 1)
+	go func() {
+		w := func() (int, error) {
+			close(inWrite)
+			for deadline := time.Now().Add(300 * time.Millisecond); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+				if fi, err := b.f.Stat(); err == nil && fi.Size() == 0 {
+					break
+				}
+			}
+			return b.f.WriteAt([]byte(bytesOf(100)), 0)
+		}
+		_, err := s.quota.write(b.f, 100, 0, false, w)
+		wrote <- err
+	}()
+	<-inWrite
+	close(letCut)
+	if err := <-wrote; err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := <-opened; err != nil {
+		t.Fatalf("truncating open: %v", err)
+	}
+	fi, err := os.Stat(filepath.Join(dir, "f"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.quota.usage(); got != fi.Size() {
+		t.Errorf("usage %d, the file on the disk has %d", got, fi.Size())
+	}
 }

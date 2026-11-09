@@ -113,11 +113,13 @@ func (s *server) openFile(r *sftp.Request, write bool) (*file, error) {
 		return nil, t.pathErr("open", err)
 	}
 	if write && pf.Trunc {
-		if err := unix.Ftruncate(fd, 0); err != nil {
-			_ = unix.Close(fd)
-			return nil, t.pathErr("truncate", err)
+		if s.beforeTruncate != nil {
+			s.beforeTruncate()
 		}
-		s.quotaRelease(st.Size)
+		if err := s.truncate(fd, t); err != nil {
+			_ = unix.Close(fd)
+			return nil, err
+		}
 	}
 	f := &file{
 		s:      s,
@@ -135,6 +137,29 @@ func (s *server) openFile(r *sftp.Request, write bool) (*file, error) {
 	}
 	opened = true
 	return f, nil
+}
+
+// truncate empties the open file fd and takes the size it had off the usage.
+// With a quota the size is read, the file cut and the usage lowered as one step
+// under the quota's lock, like a write: a write on another handle of the same
+// file has either finished before (its growth is in the size read here) or
+// starts after (it sees the empty file), and the usage never lags the disk.
+func (s *server) truncate(fd int, t *target) error {
+	cut := func() (int64, error) {
+		var cur unix.Stat_t
+		if err := unix.Fstat(fd, &cur); err != nil {
+			return 0, t.pathErr("stat", err)
+		}
+		if err := unix.Ftruncate(fd, 0); err != nil {
+			return 0, t.pathErr("truncate", err)
+		}
+		return cur.Size, nil
+	}
+	if s.quota == nil {
+		_, err := cut()
+		return err
+	}
+	return s.quota.truncating(cut)
 }
 
 func (f *file) ReadAt(p []byte, off int64) (int, error) {

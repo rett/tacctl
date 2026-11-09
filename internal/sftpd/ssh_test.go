@@ -455,3 +455,101 @@ func TestHardLinkedNamesCanBeListedMovedAndRemoved(t *testing.T) {
 		t.Errorf("download with one name: %q, %v", got, err)
 	}
 }
+
+// The setstat judges the entry it changes: the name is pinned, and the mode
+// and the times are set on what was pinned. A name that is made to mean a hard
+// link of a key file between the check and the change (here by an exchange
+// with a name that is one) must not carry the change to that file.
+func TestSetstatPinsTheEntryItJudged(t *testing.T) {
+	ops := []struct {
+		name  string
+		do    func(*env, string) error
+		moved func(t *testing.T, e *env) bool // the key file was changed
+	}{
+		{"chmod", func(e *env, n string) error { return e.client.Chmod(n, 0o600) }, func(t *testing.T, e *env) bool {
+			fi, err := os.Stat(filepath.Join(e.home, ".ssh/authorized_keys"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			return fi.Mode().Perm() != 0o644
+		}},
+		{"chtimes", func(e *env, n string) error { return e.client.Chtimes(n, time.Unix(1e9, 0), time.Unix(1e9, 0)) }, func(t *testing.T, e *env) bool {
+			fi, err := os.Stat(filepath.Join(e.home, ".ssh/authorized_keys"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			return fi.ModTime().Unix() == 1e9
+		}},
+	}
+	for _, op := range ops {
+		t.Run(op.name, func(t *testing.T) {
+			var e *env
+			var once sync.Once
+			e = newEnvSeams(t, nil, seams{afterPin: func() {
+				once.Do(func() {
+					a, b := filepath.Join(e.home, "n"), filepath.Join(e.home, "keys")
+					if err := unix.Renameat2(unix.AT_FDCWD, a, unix.AT_FDCWD, b, unix.RENAME_EXCHANGE); err != nil {
+						t.Error(err)
+					}
+				})
+			}})
+			e.write(".ssh/authorized_keys", "ssh-ed25519 AAAA example-key alice@example.net\n")
+			e.write("n", "x")
+			if err := os.Link(filepath.Join(e.home, ".ssh/authorized_keys"), filepath.Join(e.home, "keys")); err != nil {
+				t.Fatal(err)
+			}
+			// Before the setstat n is a plain file, and keys is a link of the key
+			// file. The exchange happens after the look: n is now the link.
+			if err := op.do(e, "n"); err != nil {
+				t.Fatalf("%s of the plain file: %v", op.name, err)
+			}
+			if op.moved(t, e) {
+				t.Errorf("%s reached the key file through the exchanged name", op.name)
+			}
+		})
+	}
+}
+
+// The same exchange, run all the time against a stream of setstats: the key
+// file is never changed, and enough of the setstats got through (found the
+// plain file) to show the race was exercised.
+func TestSetstatNeverReachesALinkedFileUnderExchange(t *testing.T) {
+	e := sshEnv(t)
+	e.write("n", "x")
+	if err := os.Link(filepath.Join(e.home, ".ssh/authorized_keys"), filepath.Join(e.home, "keys")); err != nil {
+		t.Fatal(err)
+	}
+	a, b := filepath.Join(e.home, "n"), filepath.Join(e.home, "keys")
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if err := unix.Renameat2(unix.AT_FDCWD, a, unix.AT_FDCWD, b, unix.RENAME_EXCHANGE); err != nil {
+				t.Error(err)
+				return
+			}
+		}
+	}()
+	const wantDone, maxTries = 20, 20000
+	var done, tries int
+	for tries = 0; tries < maxTries && done < wantDone; tries++ {
+		if e.client.Chmod("n", 0o600) == nil {
+			done++
+		}
+	}
+	close(stop)
+	wg.Wait()
+	if fi, err := os.Stat(filepath.Join(e.home, ".ssh/authorized_keys")); err != nil || fi.Mode().Perm() != 0o644 {
+		t.Errorf("the key file after %d setstats: %v, %v", tries, fi, err)
+	}
+	if done < wantDone {
+		t.Fatalf("only %d of %d setstats found the plain file: the race was not exercised", done, tries)
+	}
+}

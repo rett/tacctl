@@ -65,6 +65,13 @@ type seams struct {
 
 	measureDepth int // the depth of the quota walk, 0 for the default
 	maxHandles   int // the open handles a session may have, 0 for the default
+
+	// beforeTruncate, when set, runs in an open that truncates, after the
+	// file is open and judged and before it is cut.
+	beforeTruncate func()
+	// afterPin, when set, runs in a setstat after the entry is pinned and
+	// judged and before it is changed.
+	afterPin func()
 }
 
 func serve(rw io.ReadWriteCloser, cfg Config, sm seams) error {
@@ -94,7 +101,7 @@ func serve(rw io.ReadWriteCloser, cfg Config, sm seams) error {
 // newServer builds the state of one session. The home is measured here when
 // there is a quota, and not at all when there is none.
 func newServer(h *home, cfg Config, sm seams) *server {
-	s := &server{home: h, cfg: cfg, handles: handleCount{max: cmp.Or(sm.maxHandles, maxHandles)}}
+	s := &server{home: h, cfg: cfg, handles: handleCount{max: cmp.Or(sm.maxHandles, maxHandles)}, beforeTruncate: sm.beforeTruncate, afterPin: sm.afterPin}
 	if cfg.Quota > 0 {
 		s.quota = newQuota(h, cfg.Quota, sm.now, sm.measureDepth)
 	}
