@@ -50,6 +50,10 @@ import (
 //	                             the password of the local account that
 //	                             '--login' and 'device onboard' log in
 //	                             with, in place of the terminal prompt
+//	TACCTL_TEST_HOME=<dir>       the caller's home for the commands that
+//	                             write to a path the caller names (--out,
+//	                             --output), in place of the home the account
+//	                             database gives; an absolute path
 //
 // They are read from the environment only by a binary built with
 // -tags testknobs ('make build', which the bats harness and the differential
@@ -89,6 +93,9 @@ type Knobs struct {
 	// localPass is the local account's password ('--login', 'device
 	// onboard'): "" asks on the terminal.
 	localPass string
+	// home is the caller's home for the paths a command writes ("": the
+	// account database's).
+	home string
 	// applyPause is the point and the wait of TACCTL_TEST_APPLY_PAUSE.
 	applyPause struct {
 		point string
@@ -130,6 +137,11 @@ func (k Knobs) DevicePassword() string { return k.devPass }
 // LocalPassword is the password of the local account a test build logs in
 // with for '--login' and 'device onboard' ("": ask on the terminal).
 func (k Knobs) LocalPassword() string { return k.localPass }
+
+// Home is the caller's home a test build writes the paths the caller names
+// under ("" in a production build, and when the knob is unset: the home the
+// account database gives).
+func (k Knobs) Home() string { return k.home }
 
 // ApplyPause is the lab pause of 'device config apply' (docs/plans/0.2.11-lab.md):
 // nil unless a test build's knob names a point, then a function that waits

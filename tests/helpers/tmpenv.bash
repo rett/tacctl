@@ -32,6 +32,10 @@ tacctl_tmpenv_init() {
     # The package's main dictionary, which tacctl's own includes: present, as
     # an installed package has it (a test that wants it absent removes it).
     export TACCTL_RADIUS_DICT="${BATS_TEST_TMPDIR}/radius-share/dictionary"
+    # The caller's home, for the commands that write a path the caller names
+    # (--out, --output): inside it only. The test directory is the home, so a
+    # file a test names there is inside; a path outside it is refused.
+    export TACCTL_TEST_HOME="${BATS_TEST_TMPDIR}"
     # Skip the sudo re-exec so tacctl runs as the current (non-root) user.
     # Prod never sets this.
     export TACCTL_SKIP_SUDO=1

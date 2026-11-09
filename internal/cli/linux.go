@@ -779,6 +779,7 @@ func baseName(path string) string { return path[strings.LastIndexByte(path, '/')
 func (inv *invocation) configLinuxScript(args []string) error {
 	a := inv.app
 	var scope, server, output, method string
+	outputNamed := false
 	for i := 0; i < len(args); i += 2 {
 		var dst *string
 		switch args[i] {
@@ -790,6 +791,7 @@ func (inv *invocation) configLinuxScript(args []string) error {
 			dst = &method
 		case "--output", "-o":
 			dst = &output
+			outputNamed = true
 		default:
 			return inv.usageErr("Unknown argument: '"+args[i]+"'",
 				"Usage: tacctl config linux script [--scope <name>] [--server <address>] [--method tacplus|radius] [--output <file>]")
@@ -799,6 +801,14 @@ func (inv *invocation) configLinuxScript(args []string) error {
 			return exit(1)
 		}
 		*dst = args[i+1]
+	}
+	// a file the caller names is written inside their home only
+	if outputNamed {
+		out, err := inv.outPath("--output", output)
+		if err != nil {
+			return inv.usageErr(err.Error())
+		}
+		output = out
 	}
 	// The method: the one asked for; else what the scope says (its
 	// auth-method, else its only protocol); else the default. One that was
@@ -863,8 +873,8 @@ func (inv *invocation) configLinuxScript(args []string) error {
 	if err := inv.renumberUIDs(true); err != nil {
 		return err
 	}
-	// The script holds the scope's secret and goes to the caller (a file, or
-	// the terminal with --output /dev/stdout): the line is written before
+	// The script holds the scope's secret and goes to the caller (a file inside
+	// the caller's home): the line is written before
 	// it, and under audit.strict a line that cannot be written refuses the
 	// script before it is written. The start line first: the export line is
 	// a detail line of the command, between its start and its end.
@@ -919,6 +929,14 @@ func (inv *invocation) configLinuxRemoveScript(args []string) error {
 	switch arg(args, 0) {
 	case "--output", "-o":
 		output = arg(args, 1)
+		// a file the caller names is written inside their home only
+		if len(args) > 1 {
+			out, err := inv.outPath("--output", output)
+			if err != nil {
+				return inv.usageErr(err.Error())
+			}
+			output = out
+		}
 	case "":
 	default:
 		return inv.usageErr("Usage: tacctl config linux remove-script [--output <file>]")

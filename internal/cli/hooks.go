@@ -3,6 +3,8 @@ package cli
 import (
 	"io"
 	"os"
+	"os/user"
+	"strconv"
 	"strings"
 	"time"
 
@@ -98,6 +100,9 @@ type hooks struct {
 	editEuid func() int
 	// sshAccountOf looks an account up in the local account database.
 	sshAccountOf func(name string) (sshAccount, error)
+	// homeOfUID looks the home directory of an account up by its id in the
+	// local account database (nil: the system's).
+	homeOfUID func(uid int) (string, error)
 	// sshTerminal reports whether stdin is a terminal.
 	sshTerminal func(r io.Reader) bool
 	// sshConfigServer names this machine in the client-config fragment.
@@ -321,6 +326,18 @@ func (h *hooks) account(name string) (sshAccount, error) {
 		return h.sshAccountOf(name)
 	}
 	return lookupAccount(name)
+}
+
+// homeOf is the home directory of the account with the id uid.
+func (h *hooks) homeOf(uid int) (string, error) {
+	if h != nil && h.homeOfUID != nil {
+		return h.homeOfUID(uid)
+	}
+	u, err := user.LookupId(strconv.Itoa(uid))
+	if err != nil {
+		return "", err
+	}
+	return u.HomeDir, nil
 }
 
 // terminalIn reports whether stdin is a terminal.

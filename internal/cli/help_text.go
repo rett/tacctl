@@ -432,7 +432,7 @@ Subcommands:
       --yes                            With <o>--fix-names</o>: answer yes to every rename
   <b>render</b> [<o>--force</o>]                     Regenerate every enabled backend's config from the store (<o>--force</o> overwrites hand edits)
       <o>--force</o>                          Overwrite a generated file that was edited by hand
-  <b>render</b> <o>--dry-run</o> <o>--out <dir></o>         Render into a new, empty directory at the live paths; nothing live is written
+  <b>render</b> <o>--dry-run</o> <o>--out <dir></o>         Render into a new, empty directory in your home at the live paths; nothing live is written
   <b>diff</b> [<o><timestamp></o>]                   Diff store.yaml and tacctl.yaml vs the last snapshot (or named one)
   <b>restore</b> <o><timestamp></o> [<o>--legacy</o>|<o>--keep-uids</o>]  Restore a snapshot (prompts for confirmation); <o>--legacy</o> for an old-style backup
       <o>--legacy</o>                         The timestamp names an old-style backup (backups/legacy)
@@ -535,7 +535,7 @@ Usage: tacctl config linux <subcommand>
       --scope <name>                      (script) The scope whose users and secret it carries (default: the default scope)
       --server <address>                  (script) The server address hosts use (default: recorded, else detected)
       --method tacplus|radius             (script) pam_tacplus, or the host's pam_radius_auth (default: host default-method)
-      --output, -o <file>                 Where the script goes (default: tacctl-linux-<scope>.sh, remove-script: tacctl-linux-remove.sh)
+      --output, -o <file>                 Where the script goes, in your home (default: tacctl-linux-<scope>.sh, remove-script: tacctl-linux-remove.sh)
   remove-script [--output <file>]         Write the removal script (no secrets; accounts are left in place)
   uid [<username> [<uid>]]                Show or change the UID a user gets on every host
   uid-range [<min>-<max>]                 Show or change the UID range of all hosts (default 80000-89999)

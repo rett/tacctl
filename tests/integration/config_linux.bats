@@ -255,6 +255,26 @@ _client_env() {
     [[ ! -e "$OUT" ]]
 }
 
+@test "config linux script and remove-script: --output is written inside the home only; ~ and variables are not expanded" {
+    local outside
+    outside="$(mktemp -d -p "${BATS_RUN_TMPDIR}")"
+    for args in "script --scope lab --server 192.0.2.10 --output" "script --scope lab --server 192.0.2.10 -o" "remove-script --output"; do
+        # shellcheck disable=SC2086
+        run "$TACCTL_BIN_SCRIPT" config linux $args "${outside}/x.sh"
+        assert_failure 1
+        assert_output --partial "--output '${outside}/x.sh' is not inside your home"
+        # shellcheck disable=SC2086
+        run "$TACCTL_BIN_SCRIPT" config linux $args '~/x.sh'
+        assert_failure 1
+        assert_output --partial "tacctl does not expand ~ or variables; name a path inside your home, relative to the current directory."
+        # shellcheck disable=SC2086
+        run "$TACCTL_BIN_SCRIPT" config linux $args '$HOME/x.sh'
+        assert_failure 1
+    done
+    [[ -z "$(ls -A "$outside")" ]]
+    [[ ! -e "${PWD}/~" ]]
+}
+
 @test "config linux remove-script: carries no secret" {
     run "$TACCTL_BIN_SCRIPT" config linux remove-script --output "$BATS_TEST_TMPDIR/remove.sh"
     assert_success
