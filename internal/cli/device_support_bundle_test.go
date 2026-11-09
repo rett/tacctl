@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rett/tacctl/internal/devssh/fakedev"
 )
 
 // The values the fake device prints below are invented stand-ins for what a
@@ -205,5 +207,35 @@ func TestSupportBundleFolderThatLeavesTheHome(t *testing.T) {
 	}
 	if b.pw.asked != 0 {
 		t.Error("a password was asked for a refused line")
+	}
+}
+
+// An IOS device that scrolls the echo of the long identity-lines command
+// leaves none of it in the file, and the model names and serial numbers of
+// the inventory are told apart.
+func TestSupportBundleIOSHasNoEchoOfTheCommandAndKeepsModels(t *testing.T) {
+	b := newPullBox(t, fakedev.WithWrappedEcho(72))
+	if err := os.WriteFile(filepath.Join(b.dir, "prompt"), []byte("lab-c#"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b.devices([3]string{"lab-c", "192.168.1.30", "cisco"})
+	b.answer("show version", "Cisco IOS Software, CSR1000V Software (X86_64_LINUX_IOSD-UNIVERSALK9-M), Version 16.9.4\nProcessor board ID 9999999999\n")
+	b.answer("show inventory", "NAME: \"Chassis\", DESCR: \"Cisco CSR1000V Chassis\"\nPID: CSR1000V        , VID: V00  , SN: 9999999999\n")
+	identity := "show running-config | include ^(hostname|ip domain|clock timezone|snmp-server location|snmp-server contact)"
+	b.answer(identity, "hostname lab-c\nip domain name example.net\n")
+	b.run("device", "support-bundle", "lab-c", "--out", "ios")
+	if b.sb.code != 0 {
+		t.Fatalf("exit %d: %q", b.sb.code, b.sb.stderr())
+	}
+	files := readTree(t, b.sb.homePath("support-bundles/ios"))
+	if got, want := files["07-identity-lines.txt"], "# "+identity+"\nhostname sw1\nip domain name example.net\n"; got != want {
+		t.Errorf("identity lines:\n%q\nwant\n%q", got, want)
+	}
+	inv := files["02-inventory.txt"]
+	if !strings.Contains(inv, "DESCR: \"Cisco CSR1000V Chassis\"") || !strings.Contains(inv, "PID: CSR1000V        , VID: V00  , SN: SN000001\n") || strings.Contains(inv, "9999999999") {
+		t.Errorf("inventory:\n%s", inv)
+	}
+	if v := files["01-version.txt"]; !strings.Contains(v, "CSR1000V Software") || !strings.Contains(v, "Processor board ID SN000001\n") {
+		t.Errorf("version:\n%s", v)
 	}
 }

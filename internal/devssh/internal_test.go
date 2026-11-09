@@ -184,6 +184,36 @@ func TestPromptUnitAndRepeats(t *testing.T) {
 	}
 }
 
+// The echo of a command longer than the terminal is wide, as IOS scrolls it.
+func TestStripEchoOfAWrappedCommand(t *testing.T) {
+	t.Parallel()
+	const cmd = "show running-config | include ^(hostname|ip domain|clock timezone|snmp-server location|snmp-server contact)"
+	const out = "hostname sw1\nip domain-name example.net\n"
+	for name, c := range map[string]struct{ body, want string }{
+		"lines":         {cmd[:60] + "\n$" + cmd[60:] + "\n" + out, out},
+		"three lines":   {cmd[:50] + "\n$" + cmd[50:80] + "\n$" + cmd[80:] + "\n" + out, out},
+		"carriage cut":  {cmd[:60] + "$" + cmd[60:] + "\n" + out, out},
+		"backspaces":    {cmd[:64] + strings.Repeat("\b", 24) + "$" + cmd[41:] + "\n" + out, out},
+		"erase blanks":  {cmd[:60] + "\b \b\b \b\n$" + cmd[58:] + "\n" + out, out},
+		"escape":        {cmd[:60] + "\x1b[K\n$" + cmd[60:] + "\n" + out, out},
+		"no output":     {cmd[:60] + "\n$" + cmd[60:] + "\n", ""},
+		"whole command": {cmd + "\n" + out, out},
+		// not an echo: the end of the command never comes, or the first line is output
+		"cut short":      {cmd[:60] + "\n$" + cmd[60:90] + "\n" + out, cmd[:60] + "\n$" + cmd[60:90] + "\n" + out},
+		"output only":    {out, out},
+		"other first":    {"% Invalid input\n$" + cmd[60:] + "\n" + out, "% Invalid input\n$" + cmd[60:] + "\n" + out},
+		"output in echo": {cmd[:60] + "\n$" + cmd[60:] + "\nclock timezone\n" + out, "clock timezone\n" + out},
+	} {
+		if got := stripEcho(c.body, cmd); got != c.want {
+			t.Errorf("%s: stripEcho = %q, want %q", name, got, c.want)
+		}
+	}
+	// A short command never looks for pieces.
+	if got := stripEcho("show\nclock\n", "show clock"); got != "show\nclock\n" {
+		t.Errorf("short command: %q", got)
+	}
+}
+
 func TestStripEcho(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct{ body, cmd, want string }{
