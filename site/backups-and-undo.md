@@ -9,7 +9,7 @@ doctype: how-to
 
 # Backups and Undo
 
-*Snapshots, comparing them, and restoring tacctl's configuration · Checked against tacctl 0.2.26*
+*Snapshots, comparing them, and restoring tacctl's configuration · Checked against tacctl 0.2.27*
 
 [Printable PDF](../pdf/tacctl-backups-and-undo.pdf){: .pdf-link }
 
@@ -217,26 +217,47 @@ before it again, a superuser converts the state with `tacctl rollback`
 first, then installs that release:
 
 ```bash
-tacctl rollback 0.2.25            # the dry run: its steps and warnings; writes nothing
-tacctl rollback 0.2.25 --apply    # convert the state (add --yes when it warns)
-tacctl upgrade --branch 0.2.25    # install 0.2.25
+tacctl rollback 0.2.26            # the dry run: its steps and warnings; writes nothing
+tacctl rollback 0.2.26 --apply    # convert the state (add --yes when it warns)
+tacctl upgrade --branch 0.2.26    # install 0.2.26
 ```
 
-`tacctl rollback` also takes `0.2.24`, `0.2.23`, `0.2.22`, `0.2.21`, `0.2.20`,
+`tacctl rollback` also takes `0.2.25`, `0.2.24`, `0.2.23`, `0.2.22`, `0.2.21`, `0.2.20`,
 `0.2.19`, `0.2.18`, `0.2.17`, `0.2.16`, `0.2.9` and `0.2.3`. It refuses, the
 dry run too and with nothing changed:
 
 - while a Junos apply is not settled (`PENDING` or unknown);
 - when the store cannot be read: a limit that cannot be seen is not hidden;
-- for every target but `0.2.25`, `0.2.24`, `0.2.23`, `0.2.22`, `0.2.21`,
-  `0.2.20` and `0.2.19`, while an emergency lockdown locks a group;
-- for every target but `0.2.25`, `0.2.24` and `0.2.23`, while an emergency
+- for every target but `0.2.26`, `0.2.25`, `0.2.24`, `0.2.23`, `0.2.22`,
+  `0.2.21`, `0.2.20` and `0.2.19`, while an emergency lockdown locks a group;
+- for every target but `0.2.26`, `0.2.25`, `0.2.24` and `0.2.23`, while an emergency
   lockdown has enrolled hosts, or a lifted one still waits for a host: an
   older release cannot lift sshd's lockdown drop-in on a host. The refusal
   names the hosts: lift the lockdown, then `tacctl host sync <hosts>`.
 
+The target `0.2.26` converts **nothing**. This release changed no stored file
+0.2.26 reads strictly, so the rollback removes no key and no field, takes no
+snapshot, needs no `--yes` and leaves every file alone. The limits of the
+stored reports, the chassis members of the pull records, every report in the
+users' homes, the per-tier sudoers drop-in, the break-glass firewall and the
+other settings 0.2.26 knows all stay. It still refuses while a device's apply
+is not settled, and it ends with `tacctl upgrade --branch 0.2.26`. What this
+release changed outside the stored files is 0.2.26's to undo or keep: after
+the rollback a row of `show switch` with a blank version column is not read
+again, and the reports of a user below the operator tier hold the model,
+serial number and release again, as in 0.2.26.
+
+**PDF reports.** No target converts or removes them. A PDF report is a file
+of the user's home like the others, and the packages `weasyprint` and
+`fonts-dejavu-core` stay installed, as does the marker
+`/var/lib/tacctl/pdf-tools-offered`, which no release reads but this one.
+0.2.26 has no PDF format: it lists such a report, its `show --content` cleans
+the bytes as text, and `device reports rename` of a PDF gives the file the new
+name without its `.pdf`. So fetch the PDF first (with the `scp` line of
+`device reports show`), and remove or rename it before the rollback.
+
 The target `0.2.25` removes the **limits of the stored reports** and converts
-nothing else. 0.2.25 reads every file this release writes but those limits, so
+nothing else. 0.2.25 reads every file 0.2.26 and this release write but those limits, so
 the rollback removes `reports.max_size` and `reports.max_count` from
 `tacctl.yaml` and the users' own `reports_max_size` and `reports_max_count`
 from `store.yaml` (0.2.25 refuses both: its `config validate` reports the
@@ -245,8 +266,10 @@ command fails on the fields).
 
 - With none of them set, it converts nothing, takes no snapshot and needs no
   `--yes`. With a setting or a limit it takes a snapshot first, and says that
-  the snapshot holds the 0.2.26 state and is to be restored with 0.2.26 only:
-  0.2.25's restore refuses a `tacctl.yaml` with a key it does not know.
+  the snapshot holds the 0.2.27 state and is to be restored with 0.2.27 only,
+  and says what 0.2.25's restore refuses: a `tacctl.yaml` with a key it does
+  not know (a setting was removed), a `store.yaml` with a field it does not
+  know (only a user's own limit was), or both.
 - A user's own limit is data somebody chose for one user, so it is a warning:
   the dry run names each user with the values (`remove the report limits of
   bob (max-size 20 MiB, max-count 50 reports)`) and `--apply` needs `--yes`.
@@ -255,8 +278,8 @@ command fails on the fields).
   the list the rollback prints (`user reports-limit <user> max-size <value>`
   or `max-count <value>`); `backup recover` does not bring them back.
 - It puts back the per-tier sudoers drop-in 0.2.25 wrote (this release's
-  without the rows of `device reports`) when the file is exactly this
-  release's text: the dry run shows the step, `--apply` writes it after
+  without the rows of `device reports`) when the file is exactly the text
+  0.2.26 and this release write: the dry run shows the step, `--apply` writes it after
   `visudo -cf`, and a file `tacctl` did not write is left.
 - **What stays.** The chassis `members` of the pull records (0.2.25 ignores
   the key) and every report in the users' homes. The reports are the users'
@@ -280,11 +303,11 @@ master prints its own label is rolled back again, as in 0.2.24.
 The target `0.2.23` removes the limits as above, and the one key 0.2.24 added
 to the stored files, the setting of the break-glass firewall: after a snapshot,
 when the setting is set, together with the nftables table, its rules file and
-its boot unit (every target but `0.2.25` and `0.2.24` does; the `nftables`
+its boot unit (every target but `0.2.26`, `0.2.25` and `0.2.24` does; the nftables
 package stays). With the key unset, no firewall file and no limit it takes no
 snapshot and needs no `--yes`. It also puts back 0.2.23's sudoers drop-in,
 without the operator's `log failures *`, when the file is exactly the text
-0.2.24 and 0.2.25 wrote, or this release's.
+0.2.24 and 0.2.25 wrote, or the one 0.2.26 and this release write.
 
 > **A hold that stands stays, without the firewall.** The older release's
 > server completes the TCP handshake of the held address again, so a device
@@ -324,9 +347,9 @@ you add `--yes`:
 
 | The dry run warns of | What happens after the rollback | What to do first |
 |---|---|---|
-| Users who log in to the server and lack its scope (every target but `0.2.25`, `0.2.24`, `0.2.23`, `0.2.22` and `0.2.21`) | The plan adds the scope of the server's own login (`tacctl`) to the scopes of each, and names them, because an older release answers that login only for users who have it. A warning, so `--apply` needs `--yes`. | Nothing: it is part of the rollback |
-| Users with an email address, or SNMPv3 users beyond one per level (every target but `0.2.25`, `0.2.24` and `0.2.23`) | They are removed, and the rollback keeps the snapshot that holds them | After the upgrade, `tacctl backup recover <snapshot>` (§4.3) |
-| Users with a limit of their own for the stored reports (every target) | The limits are removed (`--apply` needs `--yes`), and the snapshot holds them. The dry run names each user with the values; the audit line names the users, never a value | After the upgrade, set them again with `tacctl user reports-limit` (`backup recover` does not bring them back) |
+| Users who log in to the server and lack its scope (every target but `0.2.26`, `0.2.25`, `0.2.24`, `0.2.23`, `0.2.22` and `0.2.21`) | The plan adds the scope of the server's own login (`tacctl`) to the scopes of each, and names them, because an older release answers that login only for users who have it. A warning, so `--apply` needs `--yes`. | Nothing: it is part of the rollback |
+| Users with an email address, or SNMPv3 users beyond one per level (every target but `0.2.26`, `0.2.25`, `0.2.24` and `0.2.23`) | They are removed, and the rollback keeps the snapshot that holds them | After the upgrade, `tacctl backup recover <snapshot>` (§4.3) |
+| Users with a limit of their own for the stored reports (every target before `0.2.26`) | The limits are removed (`--apply` needs `--yes`), and the snapshot holds them. The dry run names each user with the values; the audit line names the users, never a value | After the upgrade, set them again with `tacctl user reports-limit` (`backup recover` does not bring them back) |
 | Users who must change their password | The requirement is removed. Once the older release renders, those users (superusers aside) can log in to the devices with the password they were to change. | Have them change it, or keep this release |
 | Scopes with a strict Junos management filter | The mode is removed. The older release plans the `ssh-only` filter, which accepts by default again. | Keep this release, or leave those scopes' filters out of the older release's plans |
 | Scopes that record `root` as a break-glass account | The entry stays, but the older release renders a `system login user root` line that Junos refuses, and pulls read the `breakglass` section as `differs` | `tacctl scope breakglass <scope> remove root` |
@@ -374,7 +397,7 @@ Every step, per target, is in the repository's
 | Remove the kept copy | `tacctl backup unkeep <ts>` | Superuser |
 | Put back only email addresses or SNMPv3 users | `tacctl backup recover <ts> [--only email,snmp-users]` | Superuser |
 | Find the snapshot before a change | `journalctl -t tacctl \| grep 'cmd end'` | Superuser |
-| Prepare the release before this one (dry run) | `tacctl rollback 0.2.25` | Superuser |
+| Prepare the release before this one (dry run) | `tacctl rollback 0.2.26` | Superuser |
 
 ---
 

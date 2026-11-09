@@ -9,7 +9,7 @@ doctype: how-to
 
 # Incident Response Runbooks
 
-*Step-by-step security and availability runbooks · Checked against tacctl 0.2.26*
+*Step-by-step security and availability runbooks · Checked against tacctl 0.2.27*
 
 [Printable PDF](../pdf/tacctl-incident-response-runbooks.pdf){: .pdf-link }
 
@@ -141,7 +141,8 @@ tacctl device config plan --scope site-a --secrets --out-dir ~/inc-4821
 tacctl device config apply --scope site-a --section aaa
 ```
 
-6. Paste the Cisco and WTI plans from the `--out-dir` files.
+6. Paste the Cisco and WTI plans from the `--out-dir` files (a directory
+   inside your home).
    **These files contain the secret.** Store them safely and delete them
    afterwards.
 7. Watch for devices still failing: `tacctl log failures` (look for

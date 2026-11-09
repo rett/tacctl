@@ -9,7 +9,7 @@ doctype: how-to
 
 # Engineer Guide: Device Changes
 
-*Register, compare, plan and apply device AAA configuration · Checked against tacctl 0.2.26*
+*Register, compare, plan and apply device AAA configuration · Checked against tacctl 0.2.27*
 
 [Printable PDF](../pdf/tacctl-engineer-guide-device-changes.pdf){: .pdf-link }
 
@@ -162,6 +162,65 @@ tacctl device rename sw1-new sw1 --replace
 - A plain `device rename` (without `--replace`) and `host rename` carry the
   bench address that was staged under the old name.
 
+### 2.6 A device tacctl cannot read: a support bundle
+
+When a pull of a device fails or reads it wrongly (a model or a release the
+reader does not know), `device support-bundle` collects what a developer needs
+to make tacctl read that kind of device, in one attended login, and writes it
+so that it can be shared:
+
+```bash
+tacctl device support-bundle sw1                      # asks for your password, once
+tacctl device support-bundle sw1 --out sw1-ios-16     # choose the bundle's name
+tacctl device support-bundle jsw1 --login admin       # a Junos local account, one-shot password
+```
+
+- It runs fixed, read-only commands (`show version`, `show inventory` and the
+  like for IOS, `show chassis hardware` and `show virtual-chassis` for Junos,
+  the screens of a pull for WTI) and no command that prints the configuration.
+  The login is the one of a pull: your own TACACS+ account, or, for a Junos
+  device with a pinned host key, `--login <local-user>`. `--vendor` reads the
+  device as another vendor for this run only.
+- **Where it goes.** `--out` is a **name**, not a path: a letter or digit,
+  then letters, digits, `.`, `_` or `-`, at most 64 characters (`/`, `..`, a
+  leading dot, `~` and `$` are refused before anything is asked). The bundle
+  is the folder `~/support-bundles/<name>`, one file for each command plus
+  a `README.txt`, and the folder `support-bundles` is made with mode 0700. Without `--out`
+  the name is `<device>-<UTC YYYYMMDD-HHMMSS>`. A name that is in use is
+  refused; nothing is replaced. The home is the one of the person who ran
+  `sudo`, not `$HOME`.
+- **What is scrubbed.** Names, domains, users, login classes, addresses,
+  serial numbers, locations and contacts become the standard example values
+  (the same real value is always the same example), a time zone becomes
+  `UTC`, comments and anything that looks like a secret are removed, and
+  nothing is written if a value that should have been replaced is still in
+  a file.
+- **What stays as the device printed it.** Model names (the values after
+  `PID:` and `VID:`, the `DESCR:` strings of `show inventory`, the `Model:`
+  line of Junos, the model on the `cisco <model> (...) processor` line of
+  IOS), release lines, the layout of every answer and the object identifiers
+  (a dotted run that begins `1.3.6.1.` is not an address). The vendors' own
+  host names stay when they say nothing about you (`Technical Support:
+  http://www.cisco.com/techsupport` is as printed); a mail address, even a
+  vendor's, and a name that is yours under a vendor's domain are replaced.
+- **Serial numbers go by their field**, whatever their length or case: the
+  `SN:` value, `Processor board ID`, `System serial number`, a `Serial
+  number:` field, the Junos `Serial ID`, and the serial cell of every row of
+  `show chassis hardware` and `show virtual-chassis`, cut at the column the
+  table's header gives. When a replacement is shorter or longer than the text
+  it replaces, blanks are added or taken away so that the columns after it
+  stay where the device printed them. A Cisco echo of a command longer than
+  the terminal is wide is left out of the file.
+- **The map is private.** What was replaced is kept in
+  `~/support-bundles/<name>.map` (mode 0600), beside the folder and never in
+  it: kind, real value and example. It holds the real values, so keep it out
+  of the bundle and out of every repository. The scrubber knows the shapes it
+  replaces, not everything a device can print: **read the files before you
+  share them.** A part number without a hyphen in a tab-separated row that
+  leaves cells out is replaced as a serial number.
+- The command writes `device support-bundle user= device= vendor= login=
+  files= result=ok` to the audit log, never a command's text.
+
 ---
 
 ## 3. Reading and comparing
@@ -261,7 +320,7 @@ routing instance and the like) are no longer listed as differences.
 A good pull records more than the configuration: the device's release, model
 and serial number and, for a Junos virtual chassis or a Cisco stack, its
 members (see [Vendor Notes](vendor-notes.md) §2.5, §3.3). `device reports`
-turns those records into a saved, dated report, as text, CSV or JSON. How to
+turns those records into a saved, dated report, as text, CSV, JSON or PDF. How to
 read and look after the files is in
 [Day-to-Day Device Operations](day-to-day-device-operations.md) §1.6; this is
 the part that logs in.
@@ -288,6 +347,11 @@ tacctl device reports generate --type config --pull --stdout     # the report al
   exit status is 1.
 - With `--stdout` and `--pull`, the pull's own output goes to standard error,
   so that standard output holds the report only: a script can redirect it.
+  The notices (`No device matches: the report has no rows.`, `No device to
+  read: ...`) go to standard error in every format with `--stdout`.
+- `--format pdf` makes a letter landscape PDF with `weasyprint` (optional,
+  see [Day-to-Day Device Operations](day-to-day-device-operations.md) §1.6),
+  and refuses before it reads a device when the tool is missing.
 - A WTI unit has a release only (its menu prints no model or serial number),
   so its model and serial number columns stay empty.
 
@@ -358,6 +422,18 @@ paste that removes the old one.
 A plan is refused (exit 1) if the device has never been pulled, its last
 pull is older than `stale-days`, its last pull failed, or its Cisco syntax is
 unknown. Pull again first, or use `--pull`.
+
+**Plans in files.** `--out <file>` writes one device's plan, and
+`--out-dir <dir>` one file for each device with `COVER.txt` and each
+back-out. The path
+must be inside your home: tacctl expands neither `~` nor variables (your shell
+does, before tacctl sees the word), and a path outside the home, one that
+leaves it through `..` or a link, an empty path and the home itself are
+refused with exit status 2 and the sentence `tacctl does not expand ~ or
+variables; name a path inside your home, relative to the current directory`,
+before a device is read. The files are made as you (0600, the directory 0700)
+and never through a link; an existing file needs `--force`. The `out=` field
+of the audit line holds the full path.
 
 ### 4.1 The full walkthrough for a new device
 
@@ -745,6 +821,7 @@ tacctl device config plan sw1 --converge  # optional: remove old servers and sim
 | Back-out | `tacctl device config plan <n> --backout` |
 | Walkthrough for a device | `tacctl device config show <n>` |
 | Register a copy at a bench address | `tacctl device clone <n> <new> --staging <ip>` |
+| Collect a bundle for a device tacctl cannot read (§2.6) | `tacctl device support-bundle <n> [--out <name>]` |
 | Move the copy into place | `tacctl device rename <new> <n> --replace` |
 | Test the AAA source addresses | `tacctl device check <n> --sources` |
 | Junos filter mode of a scope | `tacctl scope mgmt-acl <s> mode` |

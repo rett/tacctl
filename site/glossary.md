@@ -9,7 +9,7 @@ doctype: explanation
 
 # Glossary
 
-*The words tacctl and this documentation use, in one list · Checked against tacctl 0.2.26*
+*The words tacctl and this documentation use, in one list · Checked against tacctl 0.2.27*
 
 [Printable PDF](../pdf/tacctl-glossary.pdf){: .pdf-link }
 
@@ -29,7 +29,7 @@ explains it in full.
 | **Break-glass firewall** | The nftables table `inet tacctl` that refuses the TCP connections of held addresses to the server, so a device that falls back only when the server is unreachable does fall back. Set with `tacctl config breakglass-firewall reject\|drop\|off`. | [Break Glass](break-glass.md) §2.1 |
 | **Break-glass hold** | The server stops answering one device or host on purpose, so its local accounts work. Never expires. | [Break Glass](break-glass.md) |
 | **Canary** | In one Junos apply run, the first device of each shape goes alone; the rest of its shape start only when it applied. If it fails, they are skipped (`skipped: canary <name> failed`) and, at the default `--max-failures` of 1, the run stops. It is about the order of a run, not about what was proved earlier (see Confirmed shape). | [Engineer Guide](engineer-guide-device-changes.md) §5.3 |
-| **Chassis members** | The units of a Junos virtual chassis or a Cisco stack, recorded by a good `device config pull` (id, role, model, serial number, release, status, priority). `device show` prints them; the `members` report has a row for each. | [Vendor Notes](vendor-notes.md) §2.5, §3.3 |
+| **Chassis members** | The units of a Junos virtual chassis or a Cisco stack, recorded by a good `device config pull` (id, role, model, serial number, release, status, priority). `device show` prints them; the `members` report has a row for each (a read-only user sees none). | [Vendor Notes](vendor-notes.md) §2.5, §3.3 |
 | **Client config** | An ssh configuration file (`tacctl device client-config`) that gives plain `ssh` and `scp` the registry's pinned host keys. | [Connecting to Devices](connecting-to-devices.md) §3 |
 | **Clone (device)** | `tacctl device clone`: register a copy of a device at a bench address, then move it into place with `device rename --replace`. | [Engineer Guide](engineer-guide-device-changes.md) §2.5 |
 | **Configured / unconfigured** | A registered device is configured when a scope's prefixes cover its address. Only configured devices authenticate users. | [Concepts](concepts.md) §4 |
@@ -60,7 +60,7 @@ explains it in full.
 | **Reason** | Free text given with `--reason` on lockdowns and holds. Logged as typed: never put a secret in it. | [Audit and Compliance](audit-and-compliance.md) §6 |
 | **Recover** | `tacctl backup recover`: put back only the email addresses or SNMPv3 users that a rollback dropped, from a snapshot, without restoring anything else. | [Backups and Undo](backups-and-undo.md) §4.3 |
 | **Registry** | The list of devices (and hosts) by name, with address, vendor and pinned keys. | [Concepts](concepts.md) §4 |
-| **Report (device report)** | A saved, dated document about the devices of your scopes, made from what tacctl stores and kept as a file in your home (`~/reports/devices/`): `tacctl device reports generate`. A superuser reaches other users' reports, and every access is audited; the size and the number of a user's reports are limited. | [Day-to-Day Device Operations](day-to-day-device-operations.md) §1.6, [Superuser Daily Operations](superuser-daily-operations.md) §4.11 |
+| **Report (device report)** | A saved, dated document about the devices of your scopes, made from what tacctl stores and kept as a file in your home (`~/reports/devices/`): `tacctl device reports generate`. As text, CSV, JSON or PDF (`--format pdf` needs `weasyprint`). A superuser reaches other users' reports, and every access is audited; the size and the number of a user's reports are limited. | [Day-to-Day Device Operations](day-to-day-device-operations.md) §1.6, [Superuser Daily Operations](superuser-daily-operations.md) §4.11 |
 | **Required password change** | A user must change the password before logging in to anything but the tacctl server. Set by `user add` and a superuser's `user passwd` by default; never binds a superuser. | [Access Lifecycle](access-lifecycle.md) §5.1 |
 | **Restore point** | Cisco: a copy of the configuration on flash, added before a plan's region with `--restore-point=flash:`. | [Vendor Notes](vendor-notes.md) §2.5 |
 | **Scope** | Client address prefixes plus a shared secret. Decides *where* a user can log in. | [Concepts](concepts.md) §3 |

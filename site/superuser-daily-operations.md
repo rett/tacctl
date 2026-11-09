@@ -9,7 +9,7 @@ doctype: how-to
 
 # Superuser Daily Operations
 
-*Day-to-day operations for tacctl superusers · Checked against tacctl 0.2.26*
+*Day-to-day operations for tacctl superusers · Checked against tacctl 0.2.27*
 
 [Printable PDF](../pdf/tacctl-superuser-daily-operations.pdf){: .pdf-link }
 
@@ -401,12 +401,44 @@ tacctl user reports-limit carol clear          # carol follows the server's limi
 - The limits count the reports tacctl made (the files with a valid `.meta`
   file). They are a guard rail against growth, not a quota enforced against
   someone who edits their own directory. Nothing deletes a report to make
-  room, and nothing by age but `device reports prune`.
+  room, and nothing by age but `device reports prune`. The size limit
+  counts the bytes of a PDF.
 - The settings are `reports.max_size` and `reports.max_count` of
   `tacctl.yaml` and the fields `reports_max_size` and `reports_max_count` of a
   user in `store.yaml`; both are written only when set. A limit restarts
-  nothing. Going back to 0.2.25 removes them
-  ([Backups and Undo](backups-and-undo.md) §5).
+  nothing. Going back to 0.2.25 or an older release removes them, going
+  back to 0.2.26 keeps them ([Backups and Undo](backups-and-undo.md) §5).
+
+**PDF reports: the tools.** `device reports generate --format pdf` needs
+`weasyprint` and the DejaVu fonts, which `install` does not put on the server:
+
+```bash
+sudo apt-get install -y weasyprint fonts-dejavu-core
+```
+
+- **`tacctl upgrade` offers them, once**, as its last step on a Debian or
+  Ubuntu system where either is missing. At a terminal it asks `tacctl can
+  write device reports as PDF. Install weasyprint and fonts-dejavu-core now?
+  [y/N]`: `y` or `yes` installs the missing ones (a failure is a warning with
+  the command to run by hand, never a failed upgrade), anything else is no.
+  A no is remembered in `/var/lib/tacctl/pdf-tools-offered`; delete the file
+  to be asked at the next upgrade. With no terminal (a script, a pipe)
+  nothing is asked or installed: the upgrade prints the `apt-get` line, and
+  prints it again each time until the packages are in. Nothing is asked when
+  both are installed, on a system without `apt-get`, or when the marker
+  exists. `uninstall` removes the marker.
+- **The tool is found only in `/usr/bin`, `/usr/local/bin` or
+  `/opt/weasyprint/bin`**, never in the caller's `PATH`, and is used only when
+  it, what a link of it leads to and every directory above are owned by root
+  and not writable by the group or by others; a `weasyprint` that is there
+  and does not meet this is refused (`weasyprint at /usr/local/bin/weasyprint
+  is not owned by root or is writable by others: not used`).
+- Under `sudo` the tool runs as the person who ran `sudo`, not as root, with
+  an environment of `PATH`, `LANG`, `HOME`, `XDG_CACHE_HOME` and
+  `PYTHONNOUSERSITE=1` only, for at most 120 seconds and 64 MiB of output. The
+  document it is given is built from the report with every cell escaped and
+  has no link, image, script, style sheet or font reference, so the tool has
+  nothing to fetch.
 
 **Other users' reports.** The reports are files in each user's home, and a
 superuser can reach them without logging in as the user:
@@ -415,7 +447,7 @@ superuser can reach them without logging in as the user:
 tacctl device reports list --user bob            # bob's reports
 tacctl device reports list --all-users           # everyone's, with a USER column
 tacctl device reports show bob/inventory-20261106 --content
-tacctl device reports export bob/inventory-20261106 --out bob-inventory.txt
+tacctl device reports export bob/inventory-20261106 --out bob-inventory.txt   # inside your home
 tacctl device reports rename bob/inventory-20261106 inventory-checked
 tacctl device reports remove bob/inventory-20261106
 tacctl device reports prune --all-users --older-than 90d --dry-run
@@ -433,7 +465,12 @@ tacctl device reports prune --all-users --older-than 90d --dry-run
   control and formatting characters, escape sequences and line separators with
   `?`, for a report and for a file that is no report alike (the user makes the
   `.meta` file too, so it does not vouch for the content). `export --out`
-  copies the bytes as they are.
+  copies the bytes as they are, to a path inside your home.
+- A PDF is not text and is not cleaned: it is refused at a terminal and goes to
+  a file or a pipe as it is. A file counts as a PDF only if its name ends in
+  `.pdf` and, for another user's file, its content starts with `%PDF-`; the
+  `.meta` file saying `pdf` is not enough, since the owner writes that too.
+  Anything else is cleaned as text.
 - A link, a FIFO or a device node in the directory is refused with its name:
   only a regular file is read, so that a file a user grew cannot exhaust the
   memory of the process that reads it.
@@ -445,14 +482,18 @@ which, and never the contents:
 ```
 device reports access verb=show owner=bob report=inventory-20261106 by=alice sid=k3x9a0bq
 device reports access verb=list owner=* report=* by=alice sid=k3x9a0bq
-device reports access verb=prune owner=bob count=2 by=alice sid=k3x9a0bq
+device reports access verb=prune owner=bob report=* by=alice sid=k3x9a0bq
 ```
 
 `verb` is `list`, `show`, `export`, `rename`, `remove`, `prune` or
 `prune-dry-run`. `list --all-users` writes one line with `owner=*`, and a
-`prune` one line for each user, with the number of reports and never their
-names. With `audit.strict` on, an access whose line cannot be written is
-refused before anything is shown
+`prune` of other users' reports one line with `report=*` for each other user
+whose directory it reads, also for a user none of whose reports is old
+enough, and never a report name or a count. All the lines of a run are
+written before the first directory of another user is read, so with
+`--all-users` and `audit.strict` on, a line that cannot be written refuses
+the whole run. With `audit.strict` on, an access whose line cannot be written
+is refused before anything is shown
 ([Audit and Compliance](audit-and-compliance.md) §3). A user's own
 `generate`, `rename`, `remove` and `prune` write detail lines only when
 something changes; `list`, `show` and `export` of your own write none.
@@ -763,6 +804,48 @@ exporter of the TACACS+ backend (loopback only, 127.0.0.1:8080, by default;
 loopback prints a warning). The device walkthroughs follow the listeners'
 ports ([Engineer Guide](engineer-guide-device-changes.md) §4.1).
 
+### 11.4 Files that tacctl writes at a path you name
+
+Some commands write a file or a directory at a path the caller names:
+`config render --dry-run --out <dir>` (the rendered files of every enabled
+backend, in a new, empty directory) and `config linux script` and
+`config linux remove-script` with `--output <file>` (the install script of a
+scope, which holds its secret, and the removal script). Since 0.2.27 the path
+must be strictly inside the home of the person who ran `sudo` (else of the
+user running tacctl), taken from the account database and never from
+`$HOME`:
+
+```bash
+sudo tacctl config linux script --scope site-a --output ~/tacctl-linux-site-a.sh
+sudo tacctl config linux remove-script --output ~/tacctl-linux-remove.sh
+sudo tacctl config render --dry-run --out ~/render-check
+```
+
+- tacctl expands neither `~` nor variables (the shell does, before `sudo`
+  starts it). An empty path, one that starts with `~` or holds a `$` or a
+  backtick, one that leaves the home through `..` or a link, the home itself
+  and an account whose home is `/` are refused with one sentence (`tacctl does
+  not expand ~ or variables; name a path inside your home, relative to the
+  current directory`), exit status 1, before anything is made. A relative
+  path is taken from the current directory.
+- **This breaks scripts that wrote elsewhere**: `--output /dev/stdout` and a
+  directory outside the home such as `/var/tmp` are refused now, and so is an
+  `--output` that names an existing directory. Without `--output` the scripts
+  are `tacctl-linux-<scope>.sh` and `tacctl-linux-remove.sh` in the current
+  directory, as before.
+- The scripts are made as root (0600 and 0644) and handed to the person who
+  ran `sudo`; a file of that name is replaced, and a link swapped in at the
+  name is no longer followed. `config render --dry-run` writes as root, now
+  through a handle on the directory so that a link planted after the check
+  cannot send a root write elsewhere. The `file=` field of the `secret-export`
+  audit line of a script holds the resolved absolute path.
+- The files an engineer or operator writes as themselves (`device config plan
+  --out` and `--out-dir`, `device reports export --out`, `device
+  support-bundle`) follow the same rule and keep their protections: new files
+  only, never through a link. A script that passed `--out ~/x` quoted, so that
+  `~` reached tacctl unexpanded, gets the refusal; before, `device
+  support-bundle --out ~/x` made a folder literally named `~`.
+
 ---
 
 ## 12. Quick reference
@@ -785,7 +868,7 @@ ports ([Engineer Guide](engineer-guide-device-changes.md) §4.1).
 | Re-pin host key | `tacctl device hostkey <name> set SHA256:<fp>` |
 | AAA config drift | `tacctl device config pull --scope <s>` then `device config list --differs` |
 | Fix plan | `tacctl device config plan <name>` |
-| Saved report of every device | `tacctl device reports generate --type inventory\|members\|software\|config` |
+| Saved report of every device | `tacctl device reports generate --type inventory\|members\|software\|config [--format text\|csv\|json\|pdf]` |
 | Another user's reports | `tacctl device reports list --user <name>` · `--all-users` · `show <user>/<report>` (audited) |
 | Limits of the stored reports | `tacctl config reports [max-size\|max-count] [<value>]` · `tacctl user reports-limit <name> [max-size\|max-count] [<value>\|clear]` |
 | Which scope owns an IP | `tacctl scope lookup <ip>` |
