@@ -9,7 +9,7 @@ doctype: how-to
 
 # Incident Response Runbooks
 
-*Step-by-step security and availability runbooks · Checked against tacctl 0.2.26*
+*Step-by-step security and availability runbooks · Checked against tacctl 0.2.27*
 
 [Printable PDF](../pdf/tacctl-incident-response-runbooks.pdf){: .pdf-link }
 
