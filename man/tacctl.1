@@ -16432,11 +16432,34 @@ is the home, a relative path starts there and
 .B ..
 does not leave it,
 .B .ssh
-is not listed and every request for it is refused, no symbolic link is followed
-or made, and hard links are not supported. The quota
+is not listed and every request for it is refused, no symbolic link is followed,
+and neither a symbolic link nor a hard link can be created through the console.
+A file that already has more than one name (a hard link made outside SFTP)
+cannot be opened, downloaded or written, and its mode and times cannot be
+changed (refused, reason
+.BR link ):
+it can still be listed, renamed and removed. Setting the mode of a directory
+without the owner's read and search bits is refused. A listing is in the order
+of the file system, not sorted (the OpenSSH
+.B sftp
+client sorts what its
+.B ls
+prints). A session has at most 256 files and listings open at once (reason
+.BR too\-many\-open\-files ).
+The quota
 .RB ( "console file\-transfer quota" )
-is the bytes the whole home may hold, reports and support bundles included; a
-write over it is refused. The rate
+is the bytes the home may hold: the sizes of its regular files, each inode once
+(not directories, links or inodes), reports, support bundles and
+.B .ssh
+included; a write over it is refused whole
+.RB ( "disk quota exceeded" ).
+It is measured per session, so N sessions at once can reach about N times the
+quota; a file deleted while a handle still holds it stays counted until the
+handle is closed; and a directory in the home that the session cannot read or
+search (for example one owned by root with mode 0700) makes the home count as
+full, so that every upload that grows it is refused with
+.B disk quota exceeded
+until the directory is readable. The rate
 .RB ( "console file\-transfer rate" )
 is the bytes a second the session may move, reads and writes together. The
 subsystem is refused with status 126 and
@@ -16445,7 +16468,12 @@ when the account does not have file transfer (and with a text of its own when a
 password change is required or the policy cannot be read). The idle timeout
 does not apply: the session lasts as long as the connection and ends with
 status 0 when the client closes it; a protocol error ends it with status 1 and
-one line on standard error. Nothing but protocol is written to standard output.
+one line on standard error. Nothing but protocol is written to standard output;
+if
+.B logger
+cannot write an audit line, the warning
+.B The audit line was not written (logger: reason); the command continues.
+can appear on standard error and the transfer goes on, unaudited.
 sshd starts the subsystem only if its configuration defines
 .BR "Subsystem sftp ..." ;
 see
@@ -16536,19 +16564,22 @@ and
 .B len=
 is the length of the string, so a password typed at the prompt is never in the
 log),
-.BI "console DENY session=" id " user=" user " reason=file\-transfer|password\-change|policy|home subsystem=sftp"
+.BI "console DENY session=" id " user=" user " reason=file\-transfer|password\-change|policy|home|stream subsystem=sftp"
 (the sftp subsystem refused),
 .BI "console sftp start session=" id " user=" user " tier=" tier " from=" address " home=" \(dqpath\(dq " quota=" size|unlimited " rate=" size|off\fR,
-.BI "console sftp " "upload|download|delete|rename|mkdir|setstat" " session=" id " user=" user " path=" \(dqpath\(dq " [to=" \(dqpath\(dq "] [bytes=" n "] [error=" \(dqtext\(dq ]
-(one line for each request),
-.BI "console sftp DENY session=" id " user=" user " path=" \(dqpath\(dq " reason=" .ssh|outside\-the\-home|symlink|quota|unsupported|bad\-path
-(auth.warning; a request the server refused) and
+.BI "console sftp " "upload|download|delete|rename|mkdir|setstat" " session=" id " user=" user " tier=" tier " path=" \(dqpath\(dq " [to=" \(dqpath\(dq "] [bytes=" n "] [error=" \(dqtext\(dq ]
+(one line for each upload, download and change),
+.BI "console sftp DENY session=" id " user=" user " tier=" tier " path=" \(dqpath\(dq " reason=" .ssh|outside\-the\-home|symlink|link|quota|unsupported|bad\-path|too\-many\-open\-files
+(auth.warning; a request the server refused, of any kind, a refused readlink or
+realpath included; a successful stat, listing, readlink or realpath is not
+logged) and
 .BI "console sftp end session=" id " user=" user " up=" n " down=" n " ops=" n " refused=" n\fR.
 A path is a file name, so unlike a refused string it is logged, but as a quoted
 string in which a control character, a quote, a backslash and a byte that is not
-UTF-8 are escapes, cut at 200 bytes (a cut name ends with
+UTF-8 are escapes, cut at 200 bytes of the escaped text (a cut name ends with
 .B ...
-after the closing quote).
+after the closing quote); the error text is cut the same way and does not
+repeat the path, so a line stays short enough for logger to keep it whole.
 .BI "console system\-shell start" \fR,
 .B end
 .RB ( status= ", " duration= )
