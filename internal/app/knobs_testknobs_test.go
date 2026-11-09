@@ -213,6 +213,21 @@ func TestApplyPauseKnob(t *testing.T) {
 	}
 }
 
+// The home knob is the caller's home for the paths a command writes: an
+// absolute path, else an error naming the variable.
+func TestHomeKnob(t *testing.T) {
+	k, err := load(t, EnvTestHome+"=/home/user")
+	if err != nil || k.Home() != "/home/user" {
+		t.Errorf("home: %q %v", k.Home(), err)
+	}
+	if _, err = load(t, EnvTestHome+"=user"); err == nil || !strings.Contains(err.Error(), EnvTestHome) {
+		t.Errorf("relative: %v", err)
+	}
+	if k, err = load(t); err != nil || k.Home() != "" {
+		t.Errorf("unset: %q %v", k.Home(), err)
+	}
+}
+
 // The PDF tool knob: an absolute path, unset and empty alike meaning none.
 func TestPDFToolKnob(t *testing.T) {
 	k, err := load(t, EnvTestPDFTool+"=/sandbox/bin/weasyprint-stub")

@@ -52,8 +52,8 @@ var deviceReportsSpecs = map[string]Spec{
 		{Names: []string{"--content"}, Desc: "Print the first 200 lines of the report as well",
 			Long: "Print the report itself under the facts, its first 200 lines ('export' prints all of it); a PDF is binary and prints its size and 'use export' instead"}}},
 	"export": {MinArgs: 1, MaxArgs: 1, Args: []string{KindReports}, Flags: []Flag{
-		{Names: []string{"--out"}, Value: true, Kind: KindFile, Arg: "<file>", Desc: "Write to this file instead of standard output",
-			Long: "Write the copy to this file, mode 0600, made as you; a file that exists is refused unless --force. A PDF report is binary: without --out it is refused at a terminal and written to standard output when that is redirected"},
+		{Names: []string{"--out"}, Value: true, Kind: KindFile, Arg: "<file>", Desc: "Write to a file in your home instead of standard output",
+			Long: "Write the copy to this file, mode 0600, made as you, inside your home (tacctl does not expand ~ or variables); a file that exists is refused unless --force. A PDF report is binary: without --out it is refused at a terminal and written to standard output when that is redirected"},
 		{Names: []string{"--force"}, Desc: "Replace the file --out names",
 			Long: "Replace the file --out names, if there is one"}}},
 	"rename": {MinArgs: 2, MaxArgs: 2, Args: []string{KindReports, ""}},

@@ -525,7 +525,7 @@ func TestReportsListShowExportRenameRemove(t *testing.T) {
 	if out = b.as("alice", asSuper, "export", inv); out != string(body) {
 		t.Errorf("export:\n%q\n%q", out, body)
 	}
-	dest := filepath.Join(t.TempDir(), "copy.csv")
+	dest := filepath.Join(b.sb.homePath(""), "copy.csv")
 	b.as("alice", asSuper, "export", inv, "--out", dest)
 	if got, err := os.ReadFile(dest); err != nil || string(got) != string(body) {
 		t.Errorf("export --out: %v %q", err, got)
@@ -869,5 +869,22 @@ func TestReportsSoftwareFactsAreOperatorAndUp(t *testing.T) {
 		if strings.Contains(ro, word) || strings.Contains(txt, word) {
 			t.Errorf("the read-only software report shows %q:\n%s%s", word, ro, txt)
 		}
+	}
+}
+
+// 'export --out' writes inside the caller's home only; ~ and variables are
+// not expanded, and the report is not even read for a refused path.
+func TestReportsExportOutIsInsideTheHome(t *testing.T) {
+	b := newReportsBox(t)
+	outside := t.TempDir()
+	for _, path := range []string{filepath.Join(outside, "x.csv"), "~/x.csv", "$HOME/x.csv", b.sb.homePath("../x.csv")} {
+		b.as("alice", asSuper, "export", "anything", "--out", path)
+		if b.sb.code != 2 || !strings.Contains(b.sb.stderr(), "--out '"+path+"'") ||
+			!strings.Contains(b.sb.stderr(), "tacctl does not expand ~ or variables; name a path inside your home, relative to the current directory.") {
+			t.Errorf("export --out %s: %d %q", path, b.sb.code, b.sb.stderr())
+		}
+	}
+	if ents, _ := os.ReadDir(outside); len(ents) != 0 {
+		t.Errorf("written outside the home: %v", ents)
 	}
 }

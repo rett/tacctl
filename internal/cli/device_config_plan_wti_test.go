@@ -153,7 +153,7 @@ func TestPlanWTIBackoutAndFiles(t *testing.T) {
 	noSecrets(t, "the back-out", out, wtiPlanCommunity, wtiPlanSecret, testPassword)
 
 	// --out-dir: a .txt and the back-out, no .set; 0600 in a 0700 directory
-	dir := filepath.Join(t.TempDir(), "plans")
+	dir := filepath.Join(b.sb.homePath(""), "plans")
 	b.run("device", "config", "plan", "pdu1", "--out-dir", dir)
 	if b.sb.code != 0 {
 		t.Fatalf("--out-dir: %d %s", b.sb.code, b.sb.stderr())
@@ -178,7 +178,7 @@ func TestPlanWTIBackoutAndFiles(t *testing.T) {
 		t.Errorf("pdu1.txt:\n%s", data)
 	}
 	// --out: one file
-	f := filepath.Join(t.TempDir(), "pdu1.txt")
+	f := filepath.Join(b.sb.homePath(""), "pdu1.txt")
 	b.run("device", "config", "plan", "pdu1", "--out", f)
 	if b.sb.code != 0 {
 		t.Fatalf("--out: %d %s", b.sb.code, b.sb.stderr())

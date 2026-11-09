@@ -260,6 +260,13 @@ func (inv *invocation) deviceReportsExport(args []string) error {
 	if p.Has("--force") && !p.Has("--out") {
 		return inv.argErr("--force replaces the file --out names.", usage)
 	}
+	// the file is written inside the caller's home only
+	out := ""
+	if p.Has("--out") {
+		if out, err = inv.outPath("--out", p.Value("--out")); err != nil {
+			return inv.argErr(err.Error(), usage)
+		}
+	}
 	t, err := inv.reportTargetOf("export", p.Args[0])
 	if err != nil {
 		return err
@@ -297,7 +304,6 @@ func (inv *invocation) deviceReportsExport(args []string) error {
 		inv.write(string(b))
 		return nil
 	}
-	out := p.Value("--out")
 	if err := inv.asCaller(func() error { return writePrivate(out, b, p.Has("--force")) }); err != nil {
 		return inv.usageErr("Cannot write " + out + ": " + existsText(err, " (--force replaces it)"))
 	}

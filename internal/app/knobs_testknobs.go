@@ -34,6 +34,8 @@ const (
 	// EnvTestLocalPassword is the password of the local account of
 	// '--login' and 'device onboard'.
 	EnvTestLocalPassword = "TACCTL_TEST_LOCAL_PASSWORD"
+	// EnvTestHome is the caller's home for the paths a command writes.
+	EnvTestHome = "TACCTL_TEST_HOME"
 	// EnvTestApplyPause is <point>:<seconds>: 'device config apply' waits
 	// that long at the point ("gate": between the gate and the open of its
 	// session), so a second session can commit in that window.
@@ -114,6 +116,12 @@ func loadKnobs(env paths.Env) (Knobs, error) {
 			}
 			k.resolve[strings.ToLower(name)] = l
 		}
+	}
+	if v := env.Get(EnvTestHome); v != "" {
+		if !filepath.IsAbs(v) {
+			return Knobs{}, fmt.Errorf("%s=%q: not an absolute path", EnvTestHome, v)
+		}
+		k.home = v
 	}
 	if v := env.Get(EnvTestApplyPause); v != "" {
 		point, secs, ok := strings.Cut(v, ":")

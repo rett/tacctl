@@ -1,7 +1,7 @@
 package cli
 
 // 'device support-bundle <name> [--vendor cisco|juniper|wti] [--login
-// <local-user>] [--out <dir>]': what a developer needs of a device to make
+// <local-user>] [--out <name>]': what a developer needs of a device to make
 // tacctl read it right, collected in one attended login and made safe to
 // share. A fixed list of read-only commands per vendor (Junos and IOS: the
 // version, the hardware or inventory, the stack, the login's permissions or
@@ -11,7 +11,8 @@ package cli
 // names, users, classes, addresses, serial numbers, locations, contacts and
 // time zones become the standard example values (docs/development), secrets
 // are removed, and what was replaced is kept apart in a private file beside
-// the directory, never in it.
+// the directory, never in it. The bundle is <home>/support-bundles/<name>
+// and its map <home>/support-bundles/<name>.map, in the caller's home.
 //
 // The login is the one of 'device config pull': the caller's own TACACS+
 // account with the password asked on the terminal, or with --login (Junos)
@@ -23,6 +24,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"syscall"
@@ -38,7 +40,14 @@ import (
 )
 
 // supportBundleUse is the usage line of the verb.
-const supportBundleUse = "Usage: tacctl device support-bundle <name> [--vendor cisco|juniper|wti] [--login <local-user>] [--out <dir>]"
+const supportBundleUse = "Usage: tacctl device support-bundle <name> [--vendor cisco|juniper|wti] [--login <local-user>] [--out <name>]"
+
+// bundleNameRE is what --out may be: a name, never a path.
+var bundleNameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+
+// bundleFolder is the folder of the caller's home that holds the bundles and
+// their maps.
+const bundleFolder = "support-bundles"
 
 // bundleCommandTimeout is how long one command may take.
 const bundleCommandTimeout = 30 * time.Second
@@ -93,6 +102,10 @@ func (inv *invocation) deviceSupportBundle(args []string) error {
 	}
 	if err := inv.deviceVerbAllowed("device", "support-bundle", tier.Engineer); err != nil {
 		return err
+	}
+	if p.Has("--out") && !bundleNameRE.MatchString(p.Value("--out")) {
+		return inv.argErr("--out '"+p.Value("--out")+"' is not a bundle name: --out names the bundle, not a path (a letter or digit, then letters, digits, '.', '_' or '-', 64 characters at most); "+
+			"it is written to "+bundleFolder+"/<name> in your home, and tacctl does not expand ~ or variables.", supportBundleUse)
 	}
 	vendorFlag := strings.ToLower(p.Value("--vendor"))
 	if p.Has("--vendor") && !slices.Contains(bundleVendors, vendorFlag) {
@@ -150,7 +163,7 @@ func (inv *invocation) deviceSupportBundle(args []string) error {
 	if _, held := inv.holdOf(e.Name, e.Address); held {
 		return inv.usageErr(holdRefusal(e.Name))
 	}
-	dir, err := inv.bundleDir(p.Value("--out"))
+	dir, err := inv.bundleDir(p.Value("--out"), e.Name)
 	if err != nil {
 		return err
 	}
@@ -204,27 +217,49 @@ func loginKind(l *localLogin) string {
 	return "own"
 }
 
-// bundleDir is the directory the bundle is written to: --out, else a new one
-// in the current directory named by the time, made absolute. Nothing may be at
-// that path or at its private map's (<dir>.map): the bundle is written as the
-// caller and never replaces anything.
-func (inv *invocation) bundleDir(out string) (string, error) {
+// bundleDir is the directory the bundle is written to:
+// <home>/support-bundles/<name>, the name being --out, else the device's name
+// and the UTC time. Nothing may be at that path or at its private map's
+// (<dir>.map): the bundle is written as the caller and never replaces
+// anything. The folder may be a link, but not one that leads out of the home.
+func (inv *invocation) bundleDir(out, device string) (string, error) {
 	if out == "" {
-		out = "support-bundle-" + inv.app.Knobs.Now().UTC().Format("20060102-150405")
+		out = bundleDefaultName(device, inv.app.Knobs.Now())
 	}
-	abs, err := filepath.Abs(out)
+	home, err := inv.callerHome()
 	if err != nil {
-		return "", inv.usageErr("Cannot resolve '" + out + "': " + err.Error())
+		return "", inv.usageErr("--out: " + err.Error() + ".")
 	}
-	if abs == "/" {
-		return "", inv.usageErr("--out names a directory to create, not '/'.")
+	dir, err := inv.outPath("--out", filepath.Join(home, bundleFolder, out))
+	if err != nil {
+		return "", inv.usageErr(err.Error())
 	}
-	for _, p := range []string{abs, abs + ".map"} {
+	for _, p := range []string{dir, dir + ".map"} {
 		if _, err := os.Lstat(p); err == nil {
-			return "", inv.usageErr("'" + p + "' exists: name a directory (--out) that does not exist yet, whose '.map' file does not exist either.")
+			return "", inv.usageErr("'" + p + "' exists: name a bundle (--out) that does not exist yet, whose '.map' file does not exist either.")
 		}
 	}
-	return abs, nil
+	return dir, nil
+}
+
+// bundleDefaultName is the name of a bundle when --out is not given: the
+// device's name (cut and cleaned to what a bundle name may hold) and the UTC
+// time, 20060102-150405.
+func bundleDefaultName(device string, now time.Time) string {
+	clean := strings.Map(func(r rune) rune {
+		if r < 0x80 && (r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '_' || r == '-') {
+			return r
+		}
+		return '-'
+	}, device)
+	if len(clean) > 40 {
+		clean = clean[:40]
+	}
+	clean = strings.TrimLeft(clean, ".-_")
+	if clean == "" {
+		clean = "device"
+	}
+	return clean + "-" + now.UTC().Format("20060102-150405")
 }
 
 // collectBundle logs in and runs the vendor's commands. A command that fails
@@ -376,7 +411,8 @@ func (inv *invocation) writeBundle(dir string, e devreg.Entry, vendor, user, acc
 	// followed; a failure takes back what was made.
 	var made []string
 	err := inv.asCaller(func() error {
-		if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
+		// the folder is private: the maps in it hold the real values
+		if err := os.Mkdir(filepath.Dir(dir), 0o700); err != nil && !errors.Is(err, os.ErrExist) {
 			return err
 		}
 		if err := os.Mkdir(dir, 0o755); err != nil {

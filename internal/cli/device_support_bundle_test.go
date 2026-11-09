@@ -3,8 +3,10 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The values the fake device prints below are invented stand-ins for what a
@@ -47,9 +49,9 @@ func readTree(t *testing.T, dir string) map[string]string {
 
 func TestSupportBundleJunosIsScrubbedAndTheMapStaysApart(t *testing.T) {
 	b := bundleBox(t)
-	dir := filepath.Join(t.TempDir(), "bundle")
-	out := b.run("device", "support-bundle", "lab-edge-77", "--out", dir)
-	if b.sb.code != 0 || !strings.Contains(out, "Wrote ") {
+	dir := b.sb.homePath("support-bundles/bundle")
+	out := b.run("device", "support-bundle", "lab-edge-77", "--out", "bundle")
+	if b.sb.code != 0 || !strings.Contains(out, "Wrote ") || !strings.Contains(out, " to "+dir+" ") || !strings.Contains(out, "in "+dir+".map ") {
 		t.Fatalf("exit %d: %q %q", b.sb.code, out, b.sb.stderr())
 	}
 	files := readTree(t, dir)
@@ -82,6 +84,9 @@ func TestSupportBundleJunosIsScrubbedAndTheMapStaysApart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if fst, err := os.Stat(filepath.Dir(dir)); err != nil || fst.Mode().Perm() != 0o700 {
+		t.Errorf("the support-bundles folder: %v, %v", fst, err)
+	}
 	if st.Mode().Perm() != 0o600 {
 		t.Errorf("map mode %v", st.Mode().Perm())
 	}
@@ -98,7 +103,8 @@ func TestSupportBundleJunosIsScrubbedAndTheMapStaysApart(t *testing.T) {
 
 func TestSupportBundleRefusals(t *testing.T) {
 	b := bundleBox(t)
-	dir := filepath.Join(t.TempDir(), "bundle")
+	folder := b.sb.homePath("support-bundles")
+	dir := filepath.Join(folder, "bundle")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -106,19 +112,17 @@ func TestSupportBundleRefusals(t *testing.T) {
 		t.Fatal(err)
 	}
 	// a map file (or a link) already beside the directory is never written over
-	mapTaken := filepath.Join(t.TempDir(), "taken")
-	if err := os.Symlink("/nonexistent-target", mapTaken+".map"); err != nil {
+	if err := os.Symlink("/nonexistent-target", filepath.Join(folder, "taken.map")); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range []struct {
 		args []string
 		want string
 	}{
-		{[]string{"device", "support-bundle", "lab-edge-77", "--out", dir}, "exists"},
+		{[]string{"device", "support-bundle", "lab-edge-77", "--out", "bundle"}, "exists"},
 		{[]string{"device", "support-bundle", "lab-edge-77", "--vendor", "other"}, "--vendor takes cisco, juniper or wti"},
 		{[]string{"device", "support-bundle", "lab-edge-77", "--vendor", "cisco", "--login", "admin"}, "--login is for Junos devices"},
-		{[]string{"device", "support-bundle", "lab-edge-77", "--out", "."}, "exists"},
-		{[]string{"device", "support-bundle", "lab-edge-77", "--out", mapTaken}, "exists"},
+		{[]string{"device", "support-bundle", "lab-edge-77", "--out", "taken"}, "exists"},
 		{[]string{"device", "support-bundle", "nope"}, "not found"},
 		{[]string{"device", "support-bundle"}, "Usage: tacctl device support-bundle"},
 	} {
@@ -126,6 +130,78 @@ func TestSupportBundleRefusals(t *testing.T) {
 		if b.sb.code == 0 || !strings.Contains(b.sb.stderr(), c.want) {
 			t.Errorf("%v: exit %d %q", c.args, b.sb.code, b.sb.stderr())
 		}
+	}
+	if b.pw.asked != 0 {
+		t.Error("a password was asked for a refused line")
+	}
+}
+
+// --out is a name: a path, a tilde, a variable or a leading dot is refused
+// with the rule, before anything is asked or written.
+func TestSupportBundleOutIsAName(t *testing.T) {
+	b := bundleBox(t)
+	for _, name := range []string{"", "~", "~/x", "~alice", "$HOME", "a$b", "x/y", "/abs/x", ".", "..", "../x", ".hidden", "-x", "a b", "a\x00b", "é", strings.Repeat("a", 65)} {
+		b.run("device", "support-bundle", "lab-edge-77", "--out", name)
+		if b.sb.code != 2 || !strings.Contains(b.sb.stderr(), "is not a bundle name: --out names the bundle, not a path") ||
+			!strings.Contains(b.sb.stderr(), "tacctl does not expand ~ or variables") {
+			t.Errorf("--out %q: exit %d %q", name, b.sb.code, b.sb.stderr())
+		}
+	}
+	if b.pw.asked != 0 {
+		t.Error("a password was asked for a refused name")
+	}
+	if _, err := os.Lstat(b.sb.homePath("support-bundles")); err == nil {
+		t.Error("a refused name made the folder")
+	}
+	for _, name := range []string{"a", "x.1_2-3", "0", strings.Repeat("a", 64)} {
+		b.run("device", "support-bundle", "lab-edge-77", "--out", name)
+		if b.sb.code != 0 {
+			t.Errorf("--out %q: exit %d %q", name, b.sb.code, b.sb.stderr())
+		}
+	}
+}
+
+// Without --out the name is the device and the UTC time; the bundle is in the
+// home's support-bundles folder.
+func TestSupportBundleDefaultName(t *testing.T) {
+	b := bundleBox(t)
+	out := b.run("device", "support-bundle", "lab-edge-77")
+	ents, err := os.ReadDir(b.sb.homePath("support-bundles"))
+	if err != nil || len(ents) != 2 {
+		t.Fatalf("%v %v: %q", ents, err, out)
+	}
+	for _, e := range ents {
+		if !regexp.MustCompile(`^lab-edge-77-\d{8}-\d{6}(\.map)?$`).MatchString(e.Name()) {
+			t.Errorf("default name %q", e.Name())
+		}
+	}
+	for in, want := range map[string]string{
+		"sw1":                   "sw1-20261012-131100",
+		"sw1.example.net":       "sw1.example.net-20261012-131100",
+		".odd name/é":           "odd-name---20261012-131100",
+		"":                      "device-20261012-131100",
+		strings.Repeat("n", 50): strings.Repeat("n", 40) + "-20261012-131100",
+	} {
+		if got := bundleDefaultName(in, time.Date(2026, 10, 12, 13, 11, 0, 0, time.UTC)); got != want || !bundleNameRE.MatchString(got) {
+			t.Errorf("bundleDefaultName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// The support-bundles folder may not lead out of the home, and nothing is
+// written outside it.
+func TestSupportBundleFolderThatLeavesTheHome(t *testing.T) {
+	b := bundleBox(t)
+	outside := t.TempDir()
+	if err := os.Symlink(outside, b.sb.homePath("support-bundles")); err != nil {
+		t.Fatal(err)
+	}
+	b.run("device", "support-bundle", "lab-edge-77", "--out", "bundle")
+	if b.sb.code == 0 || !strings.Contains(b.sb.stderr(), "not inside your home") {
+		t.Errorf("exit %d %q", b.sb.code, b.sb.stderr())
+	}
+	if ents, _ := os.ReadDir(outside); len(ents) != 0 {
+		t.Errorf("written outside the home: %v", ents)
 	}
 	if b.pw.asked != 0 {
 		t.Error("a password was asked for a refused line")

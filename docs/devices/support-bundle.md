@@ -1,6 +1,6 @@
 # Support bundles
 
-`tacctl device support-bundle <name> [--vendor cisco|juniper|wti] [--login <local-user>] [--out <dir>]`
+`tacctl device support-bundle <name> [--vendor cisco|juniper|wti] [--login <local-user>] [--out <name>]`
 collects what a developer needs to make tacctl read a kind of device, in one attended login, and
 writes it so that it can be shared.
 
@@ -28,8 +28,15 @@ up. A command the device does not know is recorded as the device answered; the n
 
 ## What is written
 
-A directory (default `support-bundle-<UTC time>` in the current directory; it must not exist or must
-be empty), one file per command, and a `README.txt` that lists the commands. The text is scrubbed
+A directory `support-bundles/<name>` in your home, one file per command, and a `README.txt` that
+lists the commands. `--out` is the bundle's name, not a path: a letter or digit, then letters,
+digits, `.`, `_` or `-`, at most 64 characters (default `<device>-<UTC YYYYMMDD-HHMMSS>`); anything
+else, a `/`, `..`, a leading dot, `~` or `$` included, is refused. The `support-bundles` folder is
+created with mode 0700 when it is missing, and the success lines print the full paths. The name
+must not be in use, and neither must its `.map` file: nothing is ever replaced. The home is the
+one of the person who ran `sudo` (else of the user running tacctl), taken from the account
+database and never from `$HOME`; tacctl does not expand `~` or variables, and a `support-bundles`
+folder that is a link leading out of the home is refused. The text is scrubbed
 first (see [Examples](../development/README.md#examples) for the values):
 
 - host names, domains, users, login classes, IPv4 and IPv6 and MAC addresses, serial numbers,
@@ -41,7 +48,7 @@ first (see [Examples](../development/README.md#examples) for the values):
 
 A text that still holds a value the scrubber learned to replace is not written, and nothing is.
 
-What was replaced is kept in `<dir>.map`, beside the directory, mode 0600: kind, real value and
+What was replaced is kept in `support-bundles/<name>.map`, beside the directory, mode 0600: kind, real value and
 example, one per line. It holds the real names, so it is private; keep it out of the bundle and out
 of every repository. Read the files before you share them: the scrubber knows the shapes it
 replaces, not everything a device can print.
