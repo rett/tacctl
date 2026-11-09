@@ -15,14 +15,16 @@ import (
 // handler changes is held by the file it works on or guarded by its own
 // lock.
 type server struct {
-	home *home
-	cfg  Config
+	home  *home
+	cfg   Config
+	quota *quota // nil when the session has no quota
 }
 
 var (
 	_ sftp.FileReader           = (*server)(nil)
 	_ sftp.OpenFileWriter       = (*server)(nil)
 	_ sftp.PosixRenameFileCmder = (*server)(nil)
+	_ sftp.StatVFSFileCmder     = (*server)(nil)
 	_ sftp.LstatFileLister      = (*server)(nil)
 	_ sftp.RealPathFileLister   = (*server)(nil)
 	_ sftp.ReadlinkFileLister   = (*server)(nil)
@@ -253,7 +255,36 @@ func (s *server) remove(r *sftp.Request, dir bool) (err error) {
 		flags = unix.AT_REMOVEDIR
 		op = "rmdir"
 	}
-	return t.pathErr(op, unix.Unlinkat(t.dir, t.name, flags))
+	freed := s.freedBy(t) // looked at before it is gone
+	if err := unix.Unlinkat(t.dir, t.name, flags); err != nil {
+		return t.pathErr(op, err)
+	}
+	s.quotaRelease(freed)
+	return nil
+}
+
+// freedBy is the room that removing the entry gives back: the size of a
+// regular file whose last name it is (a file that has other names keeps
+// its inode, which is counted once). Nothing is asked of the file system
+// when there is no quota.
+func (s *server) freedBy(t *target) int64 {
+	if s.quota == nil {
+		return 0
+	}
+	var st unix.Stat_t
+	if unix.Fstatat(t.dir, t.name, &st, unix.AT_SYMLINK_NOFOLLOW) != nil {
+		return 0
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFREG || st.Nlink > 1 {
+		return 0
+	}
+	return st.Size
+}
+
+func (s *server) quotaRelease(n int64) {
+	if s.quota != nil {
+		s.quota.release(n)
+	}
 }
 
 // rename moves an entry; a link is moved as the link it is. Plain rename
@@ -279,7 +310,27 @@ func (s *server) rename(r *sftp.Request, replace bool) (err error) {
 		return err
 	}
 	defer td.close()
-	return ts.pathErr("rename", renameat(ts, td, replace))
+	// A rename that replaces a file frees that file's room, unless source and
+	// target are the same inode (then it does nothing).
+	var freed int64
+	if replace && s.quota != nil && !sameEntry(ts, td) {
+		freed = s.freedBy(td)
+	}
+	if err := renameat(ts, td, replace); err != nil {
+		return ts.pathErr("rename", err)
+	}
+	s.quotaRelease(freed)
+	return nil
+}
+
+// sameEntry reports whether two targets name the same inode.
+func sameEntry(a, b *target) bool {
+	var sa, sb unix.Stat_t
+	if unix.Fstatat(a.dir, a.name, &sa, unix.AT_SYMLINK_NOFOLLOW) != nil ||
+		unix.Fstatat(b.dir, b.name, &sb, unix.AT_SYMLINK_NOFOLLOW) != nil {
+		return false
+	}
+	return sa.Dev == sb.Dev && sa.Ino == sb.Ino
 }
 
 func renameat(ts, td *target, replace bool) error {
@@ -339,6 +390,41 @@ func (s *server) setstat(r *sftp.Request) (err error) {
 		}
 	}
 	return nil
+}
+
+// StatVFS answers statvfs (df in sftp). With a quota the file system is
+// the quota: its size and what is left of it, in 4 KiB blocks; else it is
+// the file system of the home.
+func (s *server) StatVFS(r *sftp.Request) (v *sftp.StatVFS, err error) {
+	defer s.guard(&err, r)
+	if _, err := s.path(r.Filepath); err != nil {
+		return nil, err
+	}
+	var fs unix.Statfs_t
+	if err := unix.Fstatfs(s.home.fd, &fs); err != nil {
+		return nil, &os.PathError{Op: "statvfs", Path: "/", Err: err}
+	}
+	v = &sftp.StatVFS{
+		Bsize:   u64(fs.Bsize),
+		Frsize:  u64(fs.Frsize),
+		Blocks:  u64(fs.Blocks),
+		Bfree:   u64(fs.Bfree),
+		Bavail:  u64(fs.Bavail),
+		Files:   u64(fs.Files),
+		Ffree:   u64(fs.Ffree),
+		Favail:  u64(fs.Ffree),
+		Namemax: maxName,
+	}
+	if s.quota != nil {
+		const block = 4096
+		used := s.quota.usage()
+		free := max(0, s.quota.limit-used)
+		v.Bsize, v.Frsize = block, block
+		v.Blocks = uint64((s.quota.limit + block - 1) / block)
+		v.Bfree = uint64(free / block)
+		v.Bavail = v.Bfree
+	}
+	return v, nil
 }
 
 // Fileread opens a file for download.

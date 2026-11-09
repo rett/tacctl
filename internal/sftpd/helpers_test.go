@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/pkg/sftp"
 )
@@ -45,13 +46,20 @@ type env struct {
 	client *sftp.Client
 	rec    *recorder
 	done   chan error
+	sm     seams
 }
 
 // newEnv starts a session. tweak, when not nil, changes the Config before
 // Serve gets it.
 func newEnv(t *testing.T, tweak func(*Config)) *env {
 	t.Helper()
-	e := &env{t: t, rec: &recorder{}, done: make(chan error, 1)}
+	return newEnvSeams(t, tweak, seams{})
+}
+
+// newEnvSeams is newEnv with the clock (and whatever else a test replaces).
+func newEnvSeams(t *testing.T, tweak func(*Config), sm seams) *env {
+	t.Helper()
+	e := &env{t: t, rec: &recorder{}, done: make(chan error, 1), sm: sm}
 	e.root = t.TempDir()
 	e.home = filepath.Join(e.root, "home")
 	if err := os.Mkdir(e.home, 0o755); err != nil {
@@ -70,7 +78,7 @@ func (e *env) start(cfg Config) {
 	e.t.Helper()
 	cs, ss := net.Pipe()
 	e.done = make(chan error, 1)
-	go func() { e.done <- Serve(ss, cfg) }()
+	go func() { e.done <- serve(ss, cfg, e.sm) }()
 	c, err := sftp.NewClientPipe(cs, cs)
 	if err != nil {
 		e.t.Fatal(err)
@@ -186,3 +194,25 @@ func refusals(ev []Event) []string {
 
 // pipePair is two connected ends.
 func pipePair() (net.Conn, net.Conn) { return net.Pipe() }
+
+// clock is a clock a test moves by hand.
+type clock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func newClock() *clock {
+	return &clock{t: time.Date(2026, 10, 12, 13, 11, 0, 0, time.UTC)}
+}
+
+func (c *clock) now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.t
+}
+
+func (c *clock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.t = c.t.Add(d)
+}

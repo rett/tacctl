@@ -54,6 +54,10 @@ func errBadPath(msg string) error {
 	return &statusError{reason: reasonBadPath, code: sftp.ErrSSHFxFailure, msg: msg}
 }
 
+func errQuota() error {
+	return &statusError{reason: reasonQuota, code: sftp.ErrSSHFxFailure, msg: "disk quota exceeded"}
+}
+
 // reasonOf is the refusal reason in err, or "" when err is not a refusal.
 func reasonOf(err error) string {
 	var se *statusError

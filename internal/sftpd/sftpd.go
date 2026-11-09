@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/pkg/sftp"
 )
@@ -29,6 +30,9 @@ type Event struct {
 type Config struct {
 	// Home is the directory that is "/" for the client.
 	Home string
+	// Quota is the size in bytes the files of the home may add up to; 0
+	// means no limit, and then the home is not measured.
+	Quota int64
 	// Audit, when set, is called once per upload, download, delete, rename,
 	// mkdir and setstat, and once per refusal. It is called from the
 	// goroutines that serve the requests, never with a lock held, and it
@@ -40,19 +44,41 @@ type Config struct {
 // rw. A client that ends the session cleanly gives nil. It never writes to
 // standard output or error.
 func Serve(rw io.ReadWriteCloser, cfg Config) error {
+	return serve(rw, cfg, seams{})
+}
+
+// seams are what a test replaces: the clock.
+type seams struct {
+	now func() time.Time
+}
+
+func serve(rw io.ReadWriteCloser, cfg Config, sm seams) error {
 	defer func() { _ = rw.Close() }()
+	if sm.now == nil {
+		sm.now = time.Now
+	}
 	h, err := openHome(cfg.Home)
 	if err != nil {
 		return err
 	}
 	defer h.close()
-	s := &server{home: h, cfg: cfg}
+	s := newServer(h, cfg, sm)
 	rs := sftp.NewRequestServer(rw, sftp.Handlers{FileGet: s, FilePut: s, FileCmd: s, FileList: s})
 	err = rs.Serve()
 	if errors.Is(err, io.EOF) {
 		return nil
 	}
 	return err
+}
+
+// newServer builds the state of one session. The home is measured here when
+// there is a quota, and not at all when there is none.
+func newServer(h *home, cfg Config, sm seams) *server {
+	s := &server{home: h, cfg: cfg}
+	if cfg.Quota > 0 {
+		s.quota = newQuota(h, cfg.Quota, sm.now)
+	}
+	return s
 }
 
 // subsystemNames are the programs sshd's Subsystem line names for sftp:

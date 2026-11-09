@@ -19,6 +19,9 @@ type file struct {
 	v      vpath
 	write  bool // opened for upload
 	append bool
+	quota  *quota // nil when there is no quota
+
+	quotaNoted atomic.Bool
 
 	read, written atomic.Int64
 
@@ -46,6 +49,9 @@ func (s *server) openFile(r *sftp.Request, write bool) (*file, error) {
 	// written, and the flag is cleared for a regular file. The file is
 	// not truncated by the open: the size it had is needed, and a FIFO or
 	// device must not be touched.
+	if write && s.quota != nil {
+		s.quota.refresh()
+	}
 	flags := unix.O_NONBLOCK
 	mode := uint32(0o644) // the attributes of an open are not parsed: the client sets the mode with setstat
 	if write {
@@ -92,6 +98,7 @@ func (s *server) openFile(r *sftp.Request, write bool) (*file, error) {
 			_ = unix.Close(fd)
 			return nil, t.pathErr("truncate", err)
 		}
+		s.quotaRelease(st.Size)
 	}
 	return &file{
 		s:      s,
@@ -99,6 +106,7 @@ func (s *server) openFile(r *sftp.Request, write bool) (*file, error) {
 		v:      v,
 		write:  write,
 		append: write && pf.Append,
+		quota:  s.quota,
 	}, nil
 }
 
@@ -109,15 +117,24 @@ func (f *file) ReadAt(p []byte, off int64) (int, error) {
 }
 
 func (f *file) WriteAt(p []byte, off int64) (int, error) {
+	w := func() (int, error) {
+		if f.append {
+			// The file is open with O_APPEND, which the kernel honours for
+			// every write and Go's WriteAt refuses; the offset is ignored,
+			// as it is for the OpenSSH server.
+			return f.f.Write(p)
+		}
+		return f.f.WriteAt(p, off)
+	}
 	var n int
 	var err error
-	if f.append {
-		// The file is open with O_APPEND, which the kernel honours for
-		// every write and Go's WriteAt refuses; the offset is ignored, as
-		// it is for the OpenSSH server.
-		n, err = f.f.Write(p)
+	if f.quota != nil {
+		n, err = f.quota.write(f.f, len(p), off, f.append, w)
+		if reasonOf(err) == reasonQuota && f.quotaNoted.CompareAndSwap(false, true) {
+			f.s.noteRefusal(err, f.v.String(), "") // once per handle, not once per packet
+		}
 	} else {
-		n, err = f.f.WriteAt(p, off)
+		n, err = w()
 	}
 	f.written.Add(int64(n))
 	return n, err
