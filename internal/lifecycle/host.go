@@ -69,6 +69,9 @@ type Host struct {
 	// command: what it cannot do it says in one line, with the command to
 	// run (internal/cli/own_login.go). Nil: nothing is set up.
 	OwnLogin func(ctx context.Context, o OwnLoginOptions)
+	// Terminal, when set, says whether a terminal can answer the question of
+	// an upgrade (the PDF offer); nil asks whether standard input is one.
+	Terminal func() bool
 	// NameSuffix, when set, draws the suffix of a user renamed by the
 	// upgrade whose new name is taken (four lowercase letters or digits,
 	// RandomSuffix); tests set it. Nil: RandomSuffix.

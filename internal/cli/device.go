@@ -238,7 +238,7 @@ var deviceVerbs = [][2]string{
 	{"config shapes [list [--show <hash>] [--json] | seed <name>[,<name>...] [--yes]]", "Superusers: the shapes of the changes 'apply' has seen (a shape is the same change on several devices) and whether a verified apply confirmed each; 'seed' files a device's shape as confirmed on your word, for a change applied and verified by hand"},
 	{"config list [--stale] [--never] [--failed] [--differs] [--name <text>] [--ip <addr|cidr|text>] [--transport netconf|ssh|none] [--scope <scope>] [--vendor <vendor>] [--json]", "Each device's configuration state, when it was read, by whom and over what"},
 	{"config forget <name>[,<name>...] | --all", "Delete the pull records (a pull makes them again)"},
-	{"reports generate --type inventory|members|software|config [--scope <scope>] [--vendor <vendor>] [--format text|csv|json] [--name <name>] [--stdout] [--pull]", "Make a dated report of the registered devices from what is stored"},
+	{"reports generate --type inventory|members|software|config [--scope <scope>] [--vendor <vendor>] [--format text|csv|json|pdf] [--name <name>] [--stdout] [--pull]", "Make a dated report of the registered devices from what is stored"},
 	{"reports list [--json] [--user <name> | --all-users]", "List your saved reports, newest first"},
 	{"reports show <report> [--content]", "Show when, by whom and how a report was made"},
 	{"reports export <report> [--out <file>] [--force]", "Copy a report to standard output or to a file"},

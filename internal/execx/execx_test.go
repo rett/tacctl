@@ -120,3 +120,23 @@ func TestDetachedProgramOutlivesItsContext(t *testing.T) {
 		t.Fatalf("code %d, err %v", res.Code, err)
 	}
 }
+
+// A program that starts a child which keeps the output open is stopped with
+// that child when KillGroup is set: the run ends with the deadline, not when
+// the child ends. Without it the child holds the pipe until it is done.
+func TestRealKillGroupStopsTheChildrenToo(t *testing.T) {
+	if _, err := (Real{}).LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	var out bytes.Buffer
+	start := time.Now()
+	_, err := Real{}.Run(ctx, Cmd{Name: "sh", Args: []string{"-c", "sleep 20 & wait"}, Stdout: &out, KillGroup: true})
+	if took := time.Since(start); took > 3*time.Second {
+		t.Errorf("the run took %v: the child held the output", took)
+	}
+	if err == nil {
+		t.Error("a run stopped by the deadline has no error")
+	}
+}

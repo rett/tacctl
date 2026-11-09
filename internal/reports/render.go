@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -12,7 +13,7 @@ import (
 	"unicode/utf8"
 )
 
-// The report formats.
+// The report formats (FormatPDF is in pdf.go).
 const (
 	FormatText = "text"
 	FormatCSV  = "csv"
@@ -20,7 +21,7 @@ const (
 )
 
 // Formats lists the report formats, the default first.
-func Formats() []string { return []string{FormatText, FormatCSV, FormatJSON} }
+func Formats() []string { return []string{FormatText, FormatCSV, FormatJSON, FormatPDF} }
 
 // Ext is the file extension of a format, with the dot, or "" for an unknown
 // format.
@@ -32,6 +33,8 @@ func Ext(format string) string {
 		return ".csv"
 	case FormatJSON:
 		return ".json"
+	case FormatPDF:
+		return ".pdf"
 	}
 	return ""
 }
@@ -40,7 +43,9 @@ func errFormat(format string) error {
 	return fmt.Errorf("unknown report format %q (valid formats: %s)", format, strings.Join(Formats(), ", "))
 }
 
-// Render writes the report in a format: text, csv or json.
+// Render writes the report in a format: text, csv or json. The PDF is not made
+// here: it is made from RenderHTML by an external tool, which only the caller
+// can run, so Render refuses it.
 func Render(w io.Writer, r Report, format string) error {
 	var b []byte
 	var err error
@@ -51,6 +56,8 @@ func Render(w io.Writer, r Report, format string) error {
 		b, err = renderCSV(r)
 	case FormatJSON:
 		b, err = renderJSON(r)
+	case FormatPDF:
+		return errors.New("a PDF report is made from RenderHTML by an external tool, not by Render")
 	default:
 		return errFormat(format)
 	}

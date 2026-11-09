@@ -36,6 +36,9 @@ func TestGoldens(t *testing.T) {
 	for _, typ := range Types() {
 		r := mustBuild(t, typ)
 		for _, f := range Formats() {
+			if f == FormatPDF {
+				continue // made from RenderHTML by an external tool; pdf_test.go
+			}
 			t.Run(typ+Ext(f), func(t *testing.T) {
 				got := render(t, r, f)
 				p := filepath.Join("testdata", typ+Ext(f))
@@ -63,11 +66,11 @@ func TestGoldens(t *testing.T) {
 func TestRenderUnknownFormat(t *testing.T) {
 	r := mustBuild(t, TypeInventory)
 	var b bytes.Buffer
-	err := Render(&b, r, "pdf")
+	err := Render(&b, r, "docx")
 	if err == nil {
 		t.Fatal("unknown format accepted")
 	}
-	for _, w := range []string{`"pdf"`, "text", "csv", "json"} {
+	for _, w := range []string{`"docx"`, "text", "csv", "json", "pdf"} {
 		if !strings.Contains(err.Error(), w) {
 			t.Errorf("error %q does not mention %s", err, w)
 		}
@@ -78,7 +81,7 @@ func TestRenderUnknownFormat(t *testing.T) {
 }
 
 func TestExt(t *testing.T) {
-	if Ext("text") != ".txt" || Ext("csv") != ".csv" || Ext("json") != ".json" || Ext("pdf") != "" {
+	if Ext("text") != ".txt" || Ext("csv") != ".csv" || Ext("json") != ".json" || Ext("pdf") != ".pdf" || Ext("docx") != "" {
 		t.Error("Ext")
 	}
 }
@@ -310,5 +313,22 @@ func TestNoControlBytes(t *testing.T) {
 	r, _ := Build(TypeSoftware, devs, now)
 	if strings.ContainsAny(render(t, r, "json"), "\x1b\x00\t\r") {
 		t.Error("raw control byte in json")
+	}
+}
+
+func TestPDFFormat(t *testing.T) {
+	if got := Formats(); got[len(got)-1] != FormatPDF || got[0] != FormatText {
+		t.Errorf("Formats = %v", got)
+	}
+	if Ext(FormatPDF) != ".pdf" {
+		t.Errorf("Ext(pdf) = %q", Ext(FormatPDF))
+	}
+	if name, err := FileName("inventory-20261106", FormatPDF); err != nil || name != "inventory-20261106.pdf" {
+		t.Errorf("FileName = %q, %v", name, err)
+	}
+	// Render does not make a PDF: the caller runs the tool on RenderHTML
+	var b bytes.Buffer
+	if err := Render(&b, mustBuild(t, TypeInventory), FormatPDF); err == nil || b.Len() != 0 {
+		t.Errorf("Render(pdf) = %v, wrote %d bytes", err, b.Len())
 	}
 }

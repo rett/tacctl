@@ -43,6 +43,10 @@ const (
 	// EnvTestResolve is the fixed host name table the lookups of 'device
 	// sync' and --server answer from: name=address[,address][;name=...].
 	EnvTestResolve = "TACCTL_TEST_RESOLVE"
+	// EnvTestPDFTool is the absolute path of the program that stands for the
+	// PDF tool of 'device reports generate --format pdf', in place of the
+	// fixed directories weasyprint is looked for in.
+	EnvTestPDFTool = "TACCTL_TEST_PDF_TOOL"
 )
 
 // loadKnobs is the only place the knob variables are read.
@@ -126,6 +130,12 @@ func loadKnobs(env paths.Env) (Knobs, error) {
 			return Knobs{}, fmt.Errorf("%s=%q: not <point>:<seconds> (gate:20, at most 600)", EnvTestApplyPause, v)
 		}
 		k.applyPause.point, k.applyPause.wait = point, time.Duration(n*float64(time.Second))
+	}
+	if v := env.Get(EnvTestPDFTool); v != "" {
+		if !filepath.IsAbs(v) {
+			return Knobs{}, fmt.Errorf("%s=%q: not an absolute path", EnvTestPDFTool, v)
+		}
+		k.pdfTool = v
 	}
 	k.devPass = env.Get(EnvTestDevicePassword)
 	k.localPass = env.Get(EnvTestLocalPassword)
