@@ -1,0 +1,14 @@
+
+Preprovisioned Virtual Chassis
+Virtual Chassis ID: 0000.5e00.5301
+Virtual Chassis Mode: Mixed
+                                                Mstr           Mixed Route Neighbor List
+Member ID  Status   Serial No    Model          prio  Role      Mode  Mode ID  Interface
+0 (FPC 0)  Prsnt    SN000001     ex4600-40f     129   Master*      Y  VC   3  vcp-255/0/22
+                                                                           1  vcp-255/0/23
+1 (FPC 1)  Prsnt    SN000009     ex4600-40f     129   Backup       Y  VC   0  vcp-255/0/22
+                                                                           2  vcp-255/0/23
+2 (FPC 2)  Prsnt    SN000020     ex4300-48t       0   Linecard     Y  VC   1  vcp-255/2/2
+                                                                           3  vcp-255/2/3
+3 (FPC 3)  Prsnt    SN000025     ex4300-48t       0   Linecard     Y  VC   2  vcp-255/2/2
+                                                                           0  vcp-255/2/3

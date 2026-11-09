@@ -1,0 +1,15 @@
+fpc0:
+--------------------------------------------------------------------------
+Hostname: sw1.example.net
+Model: ex4400-48t
+Family: junos-ex
+Junos: 24.2R2.18
+JUNOS ex platform support [20250221.075806_builder_junos_242_r2]
+
+fpc1:
+--------------------------------------------------------------------------
+Hostname: sw1.example.net
+Model: ex4400-48t
+Family: junos-ex
+Junos: 24.2R2.18
+JUNOS ex platform support [20250221.075806_builder_junos_242_r2]

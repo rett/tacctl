@@ -1,0 +1,30 @@
+fpc0:
+--------------------------------------------------------------------------
+Hostname: sw1.example.net
+Model: ex4600-40f
+Junos: 21.4R3-S2.4
+JUNOS Base OS boot [21.4R3-S2.4]
+JUNOS Host Software [18.1R3-S6.1]
+
+fpc1:
+--------------------------------------------------------------------------
+Hostname: sw1.example.net
+Model: ex4600-40f
+Junos: 21.4R3-S2.4
+JUNOS Base OS boot [21.4R3-S2.4]
+JUNOS Host Software [21.4R3-S1.5]
+
+fpc2:
+--------------------------------------------------------------------------
+Hostname: sw1.example.net
+Model: ex4300-48t
+Junos: 21.4R3-S2.4
+JUNOS EX  Software Suite [21.4R3-S2.4]
+
+fpc3:
+--------------------------------------------------------------------------
+Hostname: sw1.example.net
+Model: ex4300-48t
+Junos: 21.4R3-S2.4
+JUNOS EX  Software Suite [21.4R3-S2.4]
+

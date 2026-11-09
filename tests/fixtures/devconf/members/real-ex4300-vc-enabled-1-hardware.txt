@@ -1,0 +1,6 @@
+Hardware inventory:
+Item             Version  Part number  Serial number     Description
+Chassis                                SN000001          EX4300-48T
+Routing Engine 0 REV 35   650-044933   SN000001          EX4300-48T
+FPC 0            REV 35   650-044933   SN000001          EX4300-48T
+  CPU                     BUILTIN      BUILTIN           FPC CPU
