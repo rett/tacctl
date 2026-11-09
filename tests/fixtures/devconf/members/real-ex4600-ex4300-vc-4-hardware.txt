@@ -1,0 +1,15 @@
+Hardware inventory:
+Item             Version  Part number  Serial number     Description
+Chassis                                SN000001          Virtual Chassis
+Routing Engine 0          BUILTIN      BUILTIN           EX4600-40F
+Routing Engine 1          BUILTIN      BUILTIN           EX4600-40F
+FPC 0            REV 25   650-064285   SN000001          EX4600-40F
+  CPU                     BUILTIN      BUILTIN           FPC CPU
+  PIC 0                   BUILTIN      BUILTIN           24x10G-4x40G
+FPC 1            REV 15   650-064285   SN000009          EX4600-40F
+  CPU                     BUILTIN      BUILTIN           FPC CPU
+FPC 2            REV 35   650-044933   SN000020          EX4300-48T
+  CPU                     BUILTIN      BUILTIN
+  PIC 0          REV 35   BUILTIN      BUILTIN           48x 10/100/1000 Base-T
+FPC 3            REV 35   650-044933   SN000025          EX4300-48T
+  CPU                     BUILTIN      BUILTIN
