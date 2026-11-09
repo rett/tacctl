@@ -21,6 +21,33 @@ current behaviour; this file is where history lives.
    tail that does not end the command, and an output line that begins with
    `$` stay. `docs/devices/support-bundle.md` and the manual page say so.
 
+2. **`tacctl rollback 0.2.27`, the release before this one, is a target.** It
+   converts nothing. This release changed no stored file 0.2.27 reads strictly
+   (how the answer of a Cisco IOS device to a long command is read, and the
+   documentation, are all that moved), so 0.2.27 reads everything it writes:
+   the rollback removes no key and no field, takes no snapshot and needs no
+   `--yes`. The limits of the stored reports (`reports.max_size` and
+   `reports.max_count` in `tacctl.yaml`, and a user's own `reports_max_size`
+   and `reports_max_count` in `store.yaml`) stay, 0.2.27 has them, and so do
+   the chassis `members` of the pull records and every report in the users'
+   homes, the PDF ones included, which 0.2.27 reads, and the marker
+   `/var/lib/tacctl/pdf-tools-offered` with the packages `weasyprint` and
+   `fonts-dejavu-core`. The per-tier sudoers drop-in is left too: 0.2.27 and
+   this release write the same text. The break-glass firewall, the users'
+   email addresses, the SNMPv3 users, the covered staging entries, the server
+   name, the timing scale and an emergency lockdown with enrolled hosts,
+   which the older targets drop or refuse, stay as well. It is refused only
+   while a device's apply is not settled. The command ends with `tacctl
+   upgrade --branch 0.2.27` and, having nothing to avoid, has no closing note.
+   `rollback 0.2.26` and older behave as before, and the lists of "every target
+   but" in the rollback pages and the manual page now include 0.2.27. The
+   top-level help, `docs/cli/conventions.md`, `docs/install/upgrading.md`
+   (Rolling back, To 0.2.27), `docs/releasing.md`, the manual page and the
+   completion list the new target, and `tacctl rollback` now takes fourteen
+   targets. The note that follows a rollback that took a snapshot names this
+   release, 0.2.28, as the state the snapshot holds ("Restore it with 0.2.28
+   only").
+
 ## 0.2.27 (2026-11-09)
 
 1. **A read-only user's device reports no longer hold what `device show`

@@ -5,7 +5,7 @@ package lifecycle
 //
 // A target's own plan (rollback0222.go, rollback0221.go, ...) says what that
 // target converts, and several of them return before the generic steps run
-// (0.2.26, 0.2.25, 0.2.24, 0.2.23, 0.2.22, 0.2.21 and 0.2.20 read most of what this release writes). A change
+// (0.2.27, 0.2.26, 0.2.25, 0.2.24, 0.2.23, 0.2.22, 0.2.21 and 0.2.20 read most of what this release writes). A change
 // that every older release refuses, such as the timing scale, does not belong
 // in each of those plans: it is one entry of rollbackAdditions, and
 // PlanRollback adds its steps, warnings and notes after the target's plan, for
