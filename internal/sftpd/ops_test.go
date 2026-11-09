@@ -382,12 +382,9 @@ func TestSetstat(t *testing.T) {
 	if fi, _ := os.Stat(filepath.Join(e.home, "f")); fi.Mode().Perm() != 0o640 {
 		t.Errorf("mode after fsetstat = %v", fi.Mode())
 	}
-	// Owner and size changes are refused.
+	// An owner change is refused (the size is in size_test.go).
 	if err := e.client.Chown("f", 0, 0); code(err) != fxOpUnsupported {
 		t.Errorf("chown: %v", err)
-	}
-	if err := e.client.Truncate("f", 0); code(err) != fxOpUnsupported {
-		t.Errorf("truncate by setstat: %v", err)
 	}
 	if e.read("f") != "content" {
 		t.Error("a refused setstat changed the file")

@@ -327,22 +327,30 @@ func renameat(ts, td *target, replace bool) error {
 	return err
 }
 
-// setstat changes the permission bits and the times, nothing else.
+// maxSize is the largest size a client may set (4 EiB): a size the file
+// system could never hold is refused before anything is looked at.
+const maxSize = 1 << 62
+
+// setstat changes the size, the permission bits and the times, in that order,
+// and nothing else. Everything a request can be refused for is judged before
+// the first change, so that a refused request changes nothing; what the file
+// system refuses later (the room of a growing file, a permission) can still
+// leave the part before it done.
 func (s *server) setstat(r *sftp.Request) (err error) {
 	v, err := s.changePath(r.Filepath)
 	if err != nil {
 		return err
 	}
 	fl := r.AttrFlags()
-	if fl.Size {
-		return errUnsupported("changing the size")
-	}
 	if fl.UidGid {
 		return errUnsupported("changing the owner")
 	}
 	a := r.Attributes()
 	if a == nil {
 		return errBadPath("malformed attributes")
+	}
+	if fl.Size && a.Size > maxSize {
+		return errUnsupported("a size of more than 4 EiB")
 	}
 	defer func() { s.audit(Event{Op: "setstat", Path: v.String(), Err: err}) }()
 	t, err := s.home.resolve(v)
@@ -359,21 +367,36 @@ func (s *server) setstat(r *sftp.Request) (err error) {
 	}
 	defer p.close()
 	st := p.st
-	if st.Mode&unix.S_IFMT == unix.S_IFLNK {
+	typ := st.Mode & unix.S_IFMT
+	if typ == unix.S_IFLNK {
 		return errSymlink()
 	}
-	if st.Mode&unix.S_IFMT == unix.S_IFREG && st.Nlink > 1 {
+	if typ == unix.S_IFREG && st.Nlink > 1 {
 		return errLink()
+	}
+	if fl.Size {
+		switch typ {
+		case unix.S_IFREG:
+		case unix.S_IFDIR:
+			return t.pathErr("truncate", unix.EISDIR)
+		default:
+			return errUnsupported("changing the size of something that is not a regular file")
+		}
+	}
+	// A directory the owner cannot list or search is one the quota
+	// cannot measure and the client cannot list: not a mode to set.
+	if fl.Permissions && typ == unix.S_IFDIR && a.Mode&0o500 != 0o500 {
+		return errUnsupported("clearing the owner's read or search permission of a directory")
 	}
 	if s.afterPin != nil {
 		s.afterPin()
 	}
-	if fl.Permissions {
-		// A directory the owner cannot list or search is one the quota
-		// cannot measure and the client cannot list: not a mode to set.
-		if st.Mode&unix.S_IFMT == unix.S_IFDIR && a.Mode&0o500 != 0o500 {
-			return errUnsupported("clearing the owner's read or search permission of a directory")
+	if fl.Size {
+		if err := s.resize(p, int64(a.Size)); err != nil {
+			return err
 		}
+	}
+	if fl.Permissions {
 		if err := p.chmod(a.Mode & 0o777); err != nil {
 			return err
 		}
@@ -384,6 +407,17 @@ func (s *server) setstat(r *sftp.Request) (err error) {
 		}
 	}
 	return nil
+}
+
+// resize sets the size of the pinned regular file: it cuts or extends it. With
+// a quota the size is read, the file changed and the usage corrected as one
+// step under the quota's lock, like a write or a truncating open, and a growth
+// that does not fit is refused.
+func (s *server) resize(p *pinned, size int64) error {
+	if s.quota == nil {
+		return p.truncate(size)
+	}
+	return s.quota.resizing(p, size)
 }
 
 // StatVFS answers statvfs (df in sftp). With a quota the file system is

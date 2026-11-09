@@ -133,6 +133,39 @@ func (q *quota) truncating(cut func() (int64, error)) error {
 	return nil
 }
 
+// resizing sets the size of the pinned regular file and corrects the usage by
+// the difference. The size the file has is read under the lock, with the
+// cut: a write of the session holds the lock from its check to the end of
+// its write, so none can change the file between the size and the cut. A
+// growth that would take the usage over the limit is refused, whole. A file
+// that lost its last name is counted only while a handle of the session holds
+// it, as everywhere else: one that no handle holds has been given back, and
+// what is done to it is not accounted. A file that gained a second name since
+// it was pinned is refused (the link rule).
+func (q *quota) resizing(p *pinned, size int64) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	st, err := p.restat()
+	if err != nil {
+		return err
+	}
+	if st.Mode&unix.S_IFMT == unix.S_IFREG && st.Nlink > 1 {
+		return errLink()
+	}
+	counted := st.Nlink > 0 || len(q.held[inode{u64(st.Dev), u64(st.Ino)}]) > 0
+	grow := size - st.Size
+	if counted && grow > 0 && grow > q.limit-q.usedLocked() {
+		return errQuota()
+	}
+	if err := p.truncate(size); err != nil {
+		return err
+	}
+	if counted {
+		q.used = max(0, q.used+grow)
+	}
+	return nil
+}
+
 // hold notes that f is open. A file that lost its last name between its
 // open and now (a remove that did not know of the handle) took its room off
 // the usage: it is put back.

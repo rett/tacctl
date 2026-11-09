@@ -226,3 +226,16 @@ func (p *pinned) utimes(atime, mtime uint32) error {
 	ts := []unix.Timespec{{Sec: int64(atime)}, {Sec: int64(mtime)}}
 	return p.t.pathErr("chtimes", unix.UtimesNano(p.proc(), ts))
 }
+
+// restat reads the attributes of the pinned inode again.
+func (p *pinned) restat() (unix.Stat_t, error) {
+	var st unix.Stat_t
+	err := unix.Fstat(p.fd, &st)
+	return st, p.t.pathErr("stat", err)
+}
+
+// truncate sets the size of the pinned inode (a regular file; the caller
+// judged it): the file is cut, or extended with zeros.
+func (p *pinned) truncate(size int64) error {
+	return p.t.pathErr("truncate", unix.Truncate(p.proc(), size))
+}
