@@ -48,8 +48,8 @@
 // not depend on it: the name goes through the same resolution as any path of
 // the client (no link followed, nothing outside the home), it can never name
 // something in .ssh since a rename into .ssh is refused, and the attribute
-// rules of setstat (no owner or size change, the link rule, the directory
-// rule) apply to it as to a setstat by path. Reads and writes use the open
+// rules of setstat (no owner change, the link rule, the directory rule, the
+// quota for a growing size) apply to it as to a setstat by path. Reads and writes use the open
 // file itself.
 //
 // It adds no command and prints nothing: a caller (the console) hands it the
