@@ -3,8 +3,9 @@ package cli
 // The PDF format of 'device reports generate': the report is built as an
 // HTML document (internal/reports.RenderHTML) and an external tool,
 // weasyprint, turns it into the PDF. tacctl runs the tool as the person who
-// ran sudo, never as root, with a minimal environment, a time limit and a
-// limit on what it may write, and finds it in fixed directories only.
+// ran sudo (as root only in a root session that has no sudo caller), with a
+// minimal environment, a time limit and a limit on what it may write, and
+// finds it in fixed directories only.
 
 import (
 	"bytes"
@@ -109,29 +110,37 @@ func (inv *invocation) pdfRequire(stdout bool) (string, error) {
 // pdfIdentity is who the tool runs as and where its home is. A process that is
 // root through sudo runs it as the person sudo was run by (the user and group
 // of SUDO_UID and SUDO_GID, no supplementary groups), after checking that
-// SUDO_USER is that account. A process that is not root runs it as itself, and
-// a root session without sudo is the person's own.
+// SUDO_USER is that account. A process that is not root runs it as itself. A
+// root session that has no usable sudo caller (no SUDO_UID, or one that is not
+// a number, is negative or is 0) runs it as root, with the home of root from
+// the account database (else /), never the home of the account SUDO_USER names.
 func (inv *invocation) pdfIdentity() (*syscall.Credential, string, error) {
-	home := inv.app.Env.Get("HOME")
-	user := inv.sudoUser()
-	acct, aerr := inv.hooks.account(user)
-	if aerr == nil && acct.Home != "" && filepath.IsAbs(acct.Home) {
-		home = acct.Home
-	}
-	if home == "" || !filepath.IsAbs(home) {
-		home = "/"
-	}
 	if inv.hooks.euid() != 0 {
-		return nil, home, nil
+		home := inv.app.Env.Get("HOME")
+		if acct, err := inv.hooks.account(inv.sudoUser()); err == nil && acct.Home != "" && filepath.IsAbs(acct.Home) {
+			home = acct.Home
+		}
+		return nil, pdfHome(home), nil
 	}
 	uid, gid, ok := inv.callerIDs()
-	if !ok || uid == 0 {
-		return nil, home, nil
+	if !ok || uid <= 0 || gid < 0 {
+		home, _ := inv.hooks.homeOf(0)
+		return nil, pdfHome(home), nil
 	}
-	if aerr != nil || int(acct.UID) != uid {
+	user := inv.sudoUser()
+	acct, err := inv.hooks.account(user)
+	if err != nil || int(acct.UID) != uid {
 		return nil, "", errors.New("the account of '" + user + "' is not the one sudo ran this for")
 	}
-	return &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid), Groups: []uint32{}}, home, nil
+	return &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid), Groups: []uint32{}}, pdfHome(acct.Home), nil
+}
+
+// pdfHome is home when it is an absolute path, else the root directory.
+func pdfHome(home string) string {
+	if home == "" || !filepath.IsAbs(home) {
+		return "/"
+	}
+	return home
 }
 
 // pdfEnv is the whole environment of the tool. Its caches go to ~/.cache (not

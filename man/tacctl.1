@@ -14297,7 +14297,7 @@ and
 .BR /opt/weasyprint/bin ,
 never in the caller's
 .BR PATH ,
-and run as the user who ran sudo, never as root, with a minimal environment, at
+and run as the user who ran sudo (as root only in a root session that has no sudo caller, with root's own home), with a minimal environment, at
 most 120 seconds and at most 64 MiB of output (one that runs over is stopped with the processes it started). Without it, or at a terminal
 with
 .BR \-\-stdout ,

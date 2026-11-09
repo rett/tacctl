@@ -419,3 +419,46 @@ func TestReportsPDFFormatIsCompleted(t *testing.T) {
 		t.Errorf("offered %q for p", got)
 	}
 }
+
+// A root session with no usable sudo caller (no SUDO_UID, one that is not a
+// number, negative or 0) runs the tool as root, with the home of root from the
+// account database (else /), never the home of the account SUDO_USER names.
+func TestReportsPDFRootWithoutACaller(t *testing.T) {
+	b := newReportsBox(t)
+	tool := b.pdfTool()
+	home := filepath.Join(b.sb.dir, "home")
+	rootHome := filepath.Join(b.sb.dir, "root-home")
+	b.sb.hooks.editEuid = func() int { return 0 }
+	b.sb.hooks.sshAccountOf = func(name string) (sshAccount, error) {
+		return sshAccount{UID: 1001, GID: 1001, Home: filepath.Join(home, name)}, nil
+	}
+	b.sb.hooks.homeOfUID = func(uid int) (string, error) {
+		if uid != 0 {
+			t.Errorf("the home of uid %d was looked up", uid)
+		}
+		return rootHome, nil
+	}
+	// through the command (no SUDO_UID at all)
+	b.asWith(pdfStub(tool), nil, "alice", asSuper, "generate", "--type", "inventory", "--format", "pdf", "--stdout")
+	if b.sb.code != 0 {
+		t.Fatalf("exit %d %q", b.sb.code, b.sb.stderr())
+	}
+	c := toolCalls(b.sb.runner, tool)[0].Cmd
+	if c.Credential != nil || !strings.Contains(strings.Join(c.Env, "\n"), "\nHOME="+rootHome+"\n") || strings.Contains(strings.Join(c.Env, "\n"), "alice") {
+		t.Errorf("credential %+v, environment %q", c.Credential, c.Env)
+	}
+	// the identity itself, for the ids that cannot be a caller
+	for _, ids := range [][]string{{"SUDO_UID=abc"}, {"SUDO_UID=0", "SUDO_GID=0"}, {"SUDO_UID=-5"}, {"SUDO_UID=1001", "SUDO_GID=-1"}} {
+		inv := &invocation{ctx: context.Background(), app: newHarness(t, nil, append([]string{"SUDO_USER=alice"}, ids...)...).app, hooks: b.sb.hooks}
+		cred, h, err := inv.pdfIdentity()
+		if err != nil || cred != nil || h != rootHome {
+			t.Errorf("%v: credential %+v, home %q, error %v", ids, cred, h, err)
+		}
+	}
+	// no home for root in the account database: the root directory
+	b.sb.hooks.homeOfUID = func(int) (string, error) { return "", os.ErrNotExist }
+	b.asWith(pdfStub(tool), nil, "alice", asSuper, "generate", "--type", "inventory", "--format", "pdf", "--stdout")
+	if got := strings.Join(toolCalls(b.sb.runner, tool)[0].Cmd.Env, "\n"); !strings.Contains(got, "\nHOME=/\n") || !strings.Contains(got, "\nXDG_CACHE_HOME=/.cache\n") {
+		t.Errorf("no home: %q", got)
+	}
+}

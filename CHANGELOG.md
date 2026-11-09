@@ -169,9 +169,11 @@ current behaviour; this file is where history lives.
    fonts-dejavu-core`). The tool is found in `/usr/bin`, `/usr/local/bin` or
    `/opt/weasyprint/bin` and nowhere else (not in the caller's `PATH`), and
    when tacctl runs as root through `sudo` it runs the tool as the person who
-   ran `sudo`, never as root, with an environment of `PATH`, `LANG`, `HOME`,
-   `XDG_CACHE_HOME` (`~/.cache`) and `PYTHONNOUSERSITE=1` only, 120 seconds and 64 MiB of output at the most (a tool
-   that runs over is stopped with every process it started). Without
+   ran `sudo` (as root only in a root session that has no `sudo` caller, with
+   the home of root), with an environment of `PATH`, `LANG`, `HOME`,
+   `XDG_CACHE_HOME` (`~/.cache`) and `PYTHONNOUSERSITE=1` only, 120 seconds
+   and 64 MiB of output at the most (a tool that runs over is stopped with
+   every process it started). Without
    the tool the command refuses first, before it reads a device or writes a
    file (`PDF reports need weasyprint, which is not installed here. Install it:
    sudo apt-get install -y weasyprint fonts-dejavu-core`, exit 1); a tool that
