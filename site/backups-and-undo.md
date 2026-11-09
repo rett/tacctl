@@ -303,7 +303,7 @@ master prints its own label is rolled back again, as in 0.2.24.
 The target `0.2.23` removes the limits as above, and the one key 0.2.24 added
 to the stored files, the setting of the break-glass firewall: after a snapshot,
 when the setting is set, together with the nftables table, its rules file and
-its boot unit (every target but `0.2.26`, `0.2.25` and `0.2.24` does; the `nftables
+its boot unit (every target but `0.2.26`, `0.2.25` and `0.2.24` does; the nftables
 package stays). With the key unset, no firewall file and no limit it takes no
 snapshot and needs no `--yes`. It also puts back 0.2.23's sudoers drop-in,
 without the operator's `log failures *`, when the file is exactly the text
