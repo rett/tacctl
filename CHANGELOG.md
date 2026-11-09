@@ -3,7 +3,7 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
-## 0.2.27 (unreleased)
+## 0.2.27 (2026-11-09)
 
 1. **A read-only user's device reports no longer hold what `device show`
    hides from them.** `device show` and `device list` show the model, serial
