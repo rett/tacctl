@@ -102,19 +102,25 @@ func (s *server) changePath(p string) (vpath, error) {
 }
 
 // RealPath answers realpath without touching the file system: the cleaned
-// virtual path ("." is "/"). Links are not resolved, as none is followed.
+// virtual path ("." is "/"). Links are not resolved, as none is followed. The
+// library calls it outside the handlers that guard audits, so a refusal (a
+// path that is not one) is audited here; an answer is not, clients ask for it
+// all the time.
 func (s *server) RealPath(p string) (string, error) {
 	v, err := parsePath(p)
 	if err != nil {
+		s.noteRefusal(err, p, "")
 		return "", err
 	}
 	return v.String(), nil
 }
 
 // Readlink is refused: a link is never followed, and its target is not
-// shown.
-func (s *server) Readlink(string) (string, error) {
-	return "", errSymlink()
+// shown. The refusal is audited here, as for RealPath.
+func (s *server) Readlink(p string) (string, error) {
+	err := errSymlink()
+	s.noteRefusal(err, p, "")
+	return "", err
 }
 
 // listerAt serves a few entries held in memory (a stat) to the library.

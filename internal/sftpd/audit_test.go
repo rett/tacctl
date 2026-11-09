@@ -460,3 +460,25 @@ func TestAuditFailedOperations(t *testing.T) {
 		t.Error("a failed upload changed the file")
 	}
 }
+
+// Readlink and RealPath do not go through the guard of the handlers, and
+// their refusals are audited all the same; an answer to RealPath is not.
+func TestAuditReadlinkAndRealPathRefusals(t *testing.T) {
+	e := sshEnv(t)
+	if err := os.Symlink("plain", e.home+"/lnk"); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = e.client.ReadLink("lnk")
+	_, _ = e.client.ReadLink("plain")
+	_, _ = e.client.RealPath("a\x00b")
+	wantEvents(t, e,
+		"refused /lnk !symlink",
+		"refused /plain !symlink",
+		"refused a\x00b !bad path",
+	)
+	e.rec.reset()
+	if got, err := e.client.RealPath("a/../plain"); err != nil || got != "/plain" {
+		t.Fatalf("RealPath = %q, %v", got, err)
+	}
+	wantEvents(t, e)
+}
