@@ -67,7 +67,7 @@ fi
     || fail "docs/release-notes-${tag}.md is missing or empty"
 
 if [[ $bad -ne 0 ]]; then
-    echo "release-preflight: the release metadata of ${tag} is not ready (docs/releasing.md, step 1)" >&2
+    echo "release-preflight: the release metadata of ${tag} is not ready (docs/releasing.md, steps 2 and 5)" >&2
     exit 1
 fi
 echo "Release metadata of ${tag} in place (CHANGELOG ${date}, man page, release notes)."
