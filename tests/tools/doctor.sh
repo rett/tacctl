@@ -51,7 +51,7 @@ have_tool() {
     ok "$item" "${ver:-$path}"
 }
 
-# --- 1. Go: the Makefile's GO, at exactly the version bin/tacctl.sh pins ------
+# --- 1. Go: the Makefile's GO, at the version bin/tacctl.sh pins or newer -----
 go_pin=$(sed -n 's/^GO_VERSION="\([0-9.]*\)"$/\1/p' "$root/bin/tacctl.sh" 2> /dev/null)
 GO="${GO:-$(sed -n 's/^GO ?= *//p' "$root/Makefile" 2> /dev/null | head -n 1)}"
 GO="${GO:-/usr/local/go/bin/go}"
@@ -63,8 +63,14 @@ elif ! go_path=$(command -v "$GO" 2> /dev/null); then
 else
     go_have=$("$go_path" version 2> /dev/null | awk '{print $3}')
     go_have="${go_have#go}"
-    if [[ "$go_have" == "$go_pin" ]]; then
-        ok go "$go_have ($go_path)"
+    # bin/tacctl.sh installs Go only when it is missing or older and never
+    # replaces a newer one, so a Go equal to the pin or newer is fine.
+    if [[ -n "$go_have" && "$(printf '%s\n%s\n' "$go_pin" "$go_have" | sort -V | head -n 1)" == "$go_pin" ]]; then
+        if [[ "$go_have" == "$go_pin" ]]; then
+            ok go "$go_have ($go_path)"
+        else
+            ok go "$go_have ($go_path; the pin is $go_pin)"
+        fi
     else
         missing go "$go_path is ${go_have:-of an unknown version}, bin/tacctl.sh pins $go_pin: $go_fix"
     fi
