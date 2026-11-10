@@ -7,8 +7,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/iotest"
+	"time"
 )
 
 // openPacket is an open request, whole with its length, as a client sends it.
@@ -123,6 +125,30 @@ func TestOpenFilterStream(t *testing.T) {
 				t.Errorf("the stream differs: %d bytes, want %d", len(got), len(want))
 			}
 		})
+	}
+}
+
+// The length of a packet above the limit of the library ends the session at
+// once, from the four bytes alone: the filter does not wait for the type byte
+// of a packet it does not read whole. A client that sends the length of a
+// 300 KiB packet and then stays silent gets the library's error without
+// sending or closing anything more.
+func TestOpenFilterLongLengthEndsTheSession(t *testing.T) {
+	r := newRawConn(t, newHome(t))
+	if _, err := r.c.Write(binary.BigEndian.AppendUint32(nil, 300*1024)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-r.done:
+		r.done <- err // for the cleanup of the connection
+		if err == nil || !strings.Contains(err.Error(), "packet too long") {
+			t.Errorf("the session ended with %v, want the error for a packet too long", err)
+		}
+	// The timer is real: the session is a goroutine on a pipe and the
+	// failure this guards against is a read that waits for the client, which
+	// no fake clock shows. It runs out only when the session does not end.
+	case <-time.After(10 * time.Second):
+		t.Fatal("the session did not end after the length of a packet over the limit")
 	}
 }
 

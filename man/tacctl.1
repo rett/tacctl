@@ -10755,6 +10755,9 @@ or variables, and writes only inside your home (the home of the account of the p
 .BR sudo ,
 else of the user running tacctl, never
 .BR $HOME ).
+The path is checked as that user, so a home exported by NFS with
+.B root_squash
+that others may not search is no obstacle.
 The success lines print the full paths. Logged:
 .B "auth.info device support-bundle user= device= vendor= login=own|local:<account> files= result=ok"
 (never a command's text). Exit status: 0, 1 refused or the login failed, 2 wrong arguments, 130 interrupted.
@@ -14647,7 +14650,9 @@ Print a report as it is stored, or with
 write it to a file, made as the caller with mode 0600 inside the home of the
 person who ran \fBsudo\fR (else of the user running tacctl; never \fB$HOME\fR: tacctl does not
 expand \fB~\fR or variables, and refuses a path that leaves the home through \fB..\fR or
-a symbolic link); a file that exists is refused unless
+a symbolic link). The path is checked as that user, so a home exported by NFS
+with \fBroot_squash\fR that others may not search is no obstacle. A file that
+exists is refused unless
 .B \-\-force
 is given. tacctl sends a report nowhere itself: the
 .B scp
@@ -16656,7 +16661,11 @@ sends the permissions alone and
 .B scp \-p
 the permissions with the times), and 0644 otherwise: a request without
 permissions gets it, and so does one that asks for no permission bits (the mode
-0, with or without file type bits), which is read as asking for nothing;
+0, with or without file type bits), which is read as asking for nothing, and
+so does an open longer than 64 KiB, which is not read for its permissions (the
+opens real clients send are far shorter; one that long has a path padded with
+"\&./", which is cleaned to the same file, or a long block of extended
+attributes);
 a file that already exists keeps its
 mode, whatever the open asks. A new file asked at a mode without the owner's
 write bit (0444, which
