@@ -1635,7 +1635,16 @@ took any length) keeps working as it is, is carried unchanged by
 .B "backup restore"
 and
 .BR "tacctl upgrade" ,
-and has no Linux account, here or on a host. A period is refused: it
+and has no Linux account, here or on a host. So has a user whose name has upper
+case letters or starts with a digit or
+.BR \- :
+a Linux account name starts with a lower case letter or
+.BR _ ,
+and
+.B "user add"
+still accepts a name that starts with a digit or
+.BR \- .
+A period is refused: it
 cannot be part of a Linux account name, and a user whose name is not one has no
 account on this server. This holds for every
 .B user

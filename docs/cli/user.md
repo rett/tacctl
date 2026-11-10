@@ -21,7 +21,9 @@ user add <name> <group>
     account name).`). A name is at most 32 characters, the longest a Linux account name can be: a
     longer one is refused with its length (`Username '<name>' is 33 characters; a user name is at
     most 32 (the longest a Linux account name can be).`; see "A name of more than 32 characters").
-    Reserved names `root` and
+    A name that starts with a digit or `-` (`1alice`) is still accepted, but a Linux account name
+    starts with a lower case letter or `_`, so that user has no account on the tacctl server or
+    on a host. Reserved names `root` and
     `tacquito` are rejected (they collide with OS accounts tacquito resolves locally). A new user
     must change the password at the first login to this server (see "A required password
     change").
@@ -244,6 +246,8 @@ changed, renamed away to a shorter name and removed as before, and `backup resto
 `tacctl upgrade` carry it unchanged (neither refuses or drops it), but it has no account on the tacctl
 server or on a host, so it gets none at a sync and cannot make a report (see
 [Upgrading](../install/upgrading.md)). Rename it with `tacctl user rename <name> <shorter name>`.
+The length is not the only reason a user has no account: a name with upper case letters, and a
+name that starts with a digit or `-`, which `user add` still accepts, have none either.
 
 **This server's accounts.** `user add`, `remove`, `rename`, `move`, `enable`,
 `disable`, `scope add|remove|replace|remove --all` and
