@@ -54,10 +54,12 @@ have_tool() {
 # --- 1. Go: the Makefile's GO, at the version bin/tacctl.sh pins or newer -----
 go_pin=$(sed -n 's/^GO_VERSION="\([0-9.]*\)"$/\1/p' "$root/bin/tacctl.sh" 2> /dev/null)
 GO="${GO:-$(sed -n 's/^GO ?= *//p' "$root/Makefile" 2> /dev/null | head -n 1)}"
-GO="${GO:-/usr/local/go/bin/go}"
+GO="${GO:-$(command -v go 2> /dev/null)}"
 go_fix="run bin/tacctl.sh as root (it installs the pinned Go ${go_pin:-?} in /usr/local/go; --build only uses it), or set GO=<path to go ${go_pin:-?}>"
 if [[ -z "$go_pin" ]]; then
     missing go "no GO_VERSION in bin/tacctl.sh, so the pinned Go cannot be known"
+elif [[ -z "$GO" ]]; then
+    missing go "no GO ?= line in the Makefile and no go in PATH: $go_fix"
 elif ! go_path=$(command -v "$GO" 2> /dev/null); then
     missing go "$GO does not exist: $go_fix"
 else
@@ -79,7 +81,10 @@ fi
 # --- 2. gofmt beside that go, and a C compiler (cgo, the race detector) -------
 # A value with a slash is a path; one without is looked up in PATH, as make
 # does when it runs it.
-gofmt="${GOFMT:-$(dirname "${go_path:-${GO:-go}}")/gofmt}"
+gofmt="${GOFMT:-}"
+if [[ -z "$gofmt" ]]; then
+    if [[ -n "${go_path:-}" ]]; then gofmt="$(dirname "$go_path")/gofmt"; else gofmt=gofmt; fi
+fi
 if [[ "$gofmt" == */* ]]; then
     gofmt_path=""
     [[ ! -x "$gofmt" ]] || gofmt_path="$gofmt"
