@@ -44,9 +44,9 @@ current behaviour; this file is where history lives.
    manual page say so.
 
 2. **`tacctl rollback 0.2.28`, the release before this one, is a target.**
-   This release changed no stored file 0.2.28 reads strictly (the mode a file
-   uploaded through the console gets, item 1, a test and the documentation are
-   all that moved), so 0.2.28 reads everything it writes: the rollback
+   This release changed no stored file 0.2.28 reads strictly: no change of
+   0.2.29 writes a stored file in a form 0.2.28 does not read, so 0.2.28 reads
+   everything it writes: the rollback
    converts no file, removes no key and no field, takes no snapshot and needs
    no `--yes`. The file transfer settings of `console.yaml`
    (`settings.file_transfer`) stay, 0.2.28 has them, and so do the limits of
@@ -81,7 +81,11 @@ current behaviour; this file is where history lives.
    given in full). A name of exactly 32 is accepted. Only the creation
    paths check it: a user that exists with a longer name keeps working (it is
    shown, changed, renamed away to a shorter name and removed as before) and
-   `backup restore` and `tacctl upgrade` carry it unchanged. `docs/cli/user.md`, `docs/install/upgrading.md` and the
+   `backup restore` and `tacctl upgrade` carry it unchanged; `store import`
+   loads it as it is too, with one line (`1 user name(s) are longer than 32
+   characters and are loaded as they are; new names are at most 32, and such
+   a user has no Linux account (tacctl config validate lists them).`), as it
+   says for names with upper case. `docs/cli/user.md`, `docs/install/upgrading.md` and the
    manual page say so; they no longer say that every user has an account.
 
 4. **`config validate` warns of a user whose name is longer than 32

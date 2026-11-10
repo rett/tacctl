@@ -282,8 +282,9 @@ break-glass users of the user's scopes
 the line reads
 .BR "renamed user alice.smith to alice_smith_k3x9 (alice_smith was taken)" ).
 Of two names that meet the first in the store keeps the name without a suffix,
-and a name longer than a Linux account name (32 characters) is cut before the
-suffix. A new name with upper case letters or longer than 32 characters is a user
+and a name that would be longer than a Linux account name (32 characters) with
+its suffix is cut before the suffix; the upgrade shortens a name only to make
+room for a suffix, so a name renamed without one keeps its length. A new name with upper case letters or longer than 32 characters is a user
 name but not a Linux account name: the user gets no account at a sync, so after
 the renames the upgrade lists each such user with the reason and
 .BR "tacctl user rename" " <name> <new\-name>" ,
@@ -6730,7 +6731,11 @@ which a rendered or legacy file cannot hold. The scope
 .B tacctl
 of a rendered file (the login of the server it came from, which every user is
 in) is not imported and is taken out of the users' scopes, in one line; a
-server registered in its own keeps it. An import that holds users to a
+server registered in its own keeps it. Names from before load as they are,
+with one line each saying how many users or scopes have upper case and how many
+users have a name longer than 32 characters (such a user has no Linux account;
+.B config validate
+lists them). An import that holds users to a
 password change rewrites the list of them in the console's sshd drop-in at
 once (see
 .BR "console forwarding" ).

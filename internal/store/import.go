@@ -260,6 +260,22 @@ func (s *Store) mixedCaseNote() string {
 	return strings.Join(parts, " and ") + " name(s) have upper case and are loaded as they are; new names are lower case (tacctl config validate lists them)."
 }
 
+// longNameNote is the one line an import says when users have names longer
+// than names.UsernameMax: existing data loads as it is, and only new names are
+// checked, so such a user has no Linux account. "" when there are none.
+func (s *Store) longNameNote() string {
+	n := 0
+	for _, k := range sortedKeys(s.section("users")) {
+		if len(k) > names.UsernameMax {
+			n++
+		}
+	}
+	if n == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d user name(s) are longer than %d characters and are loaded as they are; new names are at most %d, and such a user has no Linux account (tacctl config validate lists them).", n, names.UsernameMax, names.UsernameMax)
+}
+
 // pyLen is len() of a list (0 for anything else).
 func pyLen(v any) int {
 	l, _ := v.([]any)
@@ -373,6 +389,10 @@ func Import(out ui.Output, opts ImportOptions) error {
 		return ImportFailed
 	}
 	if n := s.mixedCaseNote(); n != "" {
+		say("")
+		say("  " + n)
+	}
+	if n := s.longNameNote(); n != "" {
 		say("")
 		say("  " + n)
 	}
