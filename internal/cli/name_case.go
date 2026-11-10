@@ -110,8 +110,8 @@ func (inv *invocation) caseFindings() []hostFinding {
 // than names.UsernameMax or one that starts with a digit or '-' (a Linux
 // account name does not: the user keeps working but has no account, here or on
 // a host), and a name with upper case whose lower-case spelling 'user rename'
-// would refuse (it starts with '_', which has an account but is not a letter,
-// or is reserved). The rules are those of names.CheckNewUsername (the names
+// would refuse (it starts with '_', which Linux would take but a new name does
+// not, or is reserved). The rules are those of names.CheckNewUsername (the names
 // are checked at 'user add' and 'user rename' only). They are warnings in
 // 'config validate' with the verb that renames the user to a name of the
 // person's choice, sorted by name, the superuser's view only. They carry no
@@ -167,8 +167,9 @@ func (inv *invocation) userNameFindings() []hostFinding {
 			text = "the user '" + n + "' " + strings.Join(has, " and ") + "; new user names " + strings.Join(must, " and ") +
 				", and this user has no Linux account, here or on a host"
 		case upper:
-			// Only the lower-case spelling can be refused here: the user has an
-			// account (or a name another verb handles).
+			// The name has upper case, so the user has no Linux account (a
+			// Linux account name is lower case); only the lower-case spelling
+			// can be refused here, and 'user rename' would refuse it.
 			err := names.CheckNewUsername(strings.ToLower(n))
 			if err == nil {
 				continue

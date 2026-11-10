@@ -237,9 +237,10 @@ func TestUpperCaseNamesThatCannotBeLowerCasedAreOneFindingEach(t *testing.T) {
 	}
 }
 
-// A user with upper case whose name starts with '_' has an account, but the
-// rename to its lower-case spelling would be refused: it gets one finding that
-// says so and names the rename with a name of the person's choice, and
+// A user with upper case whose name starts with '_' has no account (a Linux
+// account name is lower case), and the rename to its lower-case spelling, which
+// would be one, is refused because a new name starts with a letter: it gets one
+// finding that says so and names the rename with a name of the person's choice, and
 // --fix-names offers nothing.
 func TestUpperCaseNameStartingWithAnUnderscoreIsNotOfferedTheLowerCaseSpelling(t *testing.T) {
 	sb := newSandbox(t, true)
