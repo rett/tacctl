@@ -1,5 +1,5 @@
 .PHONY: test test-go test-bats test-integration test-e2e test-diff test-pyyaml build \
-	coverage gate-go gate-ci lint lint-sh lint-go lint-man lint-private lint-logger lint-short-yes lint-shared-proc man hooks clean bootstrap release-assets release-verify release-reproduce
+	coverage gate-go gate-ci lint lint-sh lint-go lint-man lint-private lint-logger lint-short-yes lint-shared-proc man hooks clean bootstrap doctor release-assets release-verify release-reproduce
 
 BATS := tests/bats/bats-core/bin/bats
 BATS_FLAGS ?= --print-output-on-failure
@@ -233,6 +233,13 @@ lint-go:
 # First-time setup: ensure bats submodules are populated.
 bootstrap:
 	git submodule update --init --recursive
+
+# What this checkout and machine lack for the targets above: one line per tool
+# or file, ok, missing (with the fix) or expected (optional), and exit 1 when
+# any is missing. It only looks: no install, no test, no network, no sudo
+# (tests/tools/doctor.sh).
+doctor:
+	GO="$(GO)" GOFMT="$(GOFMT)" GOLANGCI_LINT="$(GOLANGCI_LINT)" tests/tools/doctor.sh
 
 clean:
 	rm -rf coverage dist
