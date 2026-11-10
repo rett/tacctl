@@ -9,7 +9,7 @@ doctype: reference
 
 # Quick Reference
 
-*The most common tacctl commands on one card · Checked against tacctl 0.2.27*
+*The most common tacctl commands on one card · Checked against tacctl 0.2.28*
 
 [Printable PDF](../pdf/tacctl-quick-reference.pdf){: .pdf-link }
 
@@ -144,7 +144,7 @@ usage. In the console and `tacctl shell`, `?` shows help.
 | Diff / restore | `tacctl backup diff [ts]` · `backup restore <ts>` | S |
 | Keep / unkeep a snapshot | `tacctl backup keep <ts>` · `backup unkeep <ts>` | S |
 | Put back email or SNMPv3 users after a rollback | `tacctl backup recover <ts> [--only email,snmp-users]` | S |
-| Prepare the release before this one (dry run) | `tacctl rollback 0.2.26` | S |
+| Prepare the release before this one (dry run) | `tacctl rollback 0.2.27` | S |
 | Audit trail | `journalctl -t tacctl -t tacctl-console` | — |
 
 ## 9. Exit codes

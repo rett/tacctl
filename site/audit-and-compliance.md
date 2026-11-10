@@ -9,7 +9,7 @@ doctype: how-to
 
 # Audit and Compliance
 
-*Audit trail, evidence and periodic reviews · Checked against tacctl 0.2.27*
+*Audit trail, evidence and periodic reviews · Checked against tacctl 0.2.28*
 
 [Printable PDF](../pdf/tacctl-audit-and-compliance.pdf){: .pdf-link }
 
@@ -30,7 +30,7 @@ tacctl writes every audit line to **syslog**, facility `auth`:
 | Tag | Source |
 |---|---|
 | `tacctl` | Every tacctl command that changes state, and every refusal |
-| `tacctl-console` | Login console sessions (start, end, refused commands) |
+| `tacctl-console` | Login console sessions (start, end, refused commands, and each file transfer: `console sftp ...`) |
 
 tacctl keeps no log of its own. On a journald system:
 
@@ -138,6 +138,9 @@ $J | grep -E 'server (addresses|listen|metrics|name)'   # changes of this server
 $J | grep 'group edit'                           # privilege or tier changes to groups
 $J | grep 'backup restore'                       # rollbacks
 $J | grep 'console start'                        # console logins (user=, from=)
+$J | grep 'console sftp'                         # file transfers through the console
+$J | grep 'console sftp DENY'                    # transfer requests the console refused (reason=)
+$J | grep 'console set' | grep file-transfer     # who may transfer files, quota and rate changes
 ```
 
 The changes of this server's settings each write a detail line beside the
@@ -175,6 +178,49 @@ can be `pdf`. `config reports` writes
 `key=max_size|max_count from= to=` and `user reports-limit` writes `name=
 key=max-size|max-count op=set|clear` and `value=` for a set
 ([Superuser Daily Operations](superuser-daily-operations.md) §4.11).
+
+**File transfer through the console.** A transfer (the sftp subsystem, new in
+0.2.28) has lines of its own under the tag `tacctl-console`, with the session
+id and the user. The session opens with `console start ... mode=sftp` and
+`console sftp start ... tier= from= home="<path>" quota=<size>|unlimited
+rate=<size>|off`. Each upload, download and change is one line
+(`console sftp upload|download|delete|rename|mkdir|setstat ... tier=
+path="<path>"`, with `to="<path>"` for a rename, `bytes=` for an upload and a
+download and `error="<text>"` for a request that failed), and each request
+the console refused is `console sftp DENY ... tier= path="<path>" reason=` at
+`auth.warning`. The session ends with `console sftp end ... up=<bytes>
+down=<bytes> ops=<n> refused=<n>` and `console end ... reason=sftp`.
+
+```
+console sftp upload sid=k3x9a0bq user=bob tier=operator path="/notes.txt" bytes=431
+console sftp DENY sid=k3x9a0bq user=bob tier=operator path="/big.iso" reason=quota
+```
+
+- The reasons of a refusal are `.ssh` (the folder is out of reach),
+  `outside-the-home`, `symlink`, `link` (a file with more than one name was
+  asked to be opened, written or have its mode or times set), `quota`,
+  `unsupported`, `bad-path` and `too-many-open-files` (the 257th handle of a
+  session).
+- A refusal of any kind is logged, a refused `readlink` and `realpath`
+  included. A successful `stat`, listing, `readlink` or `realpath` is not.
+- A path is logged as a double-quoted string in which a control character, a
+  quote, a backslash and a byte that is not UTF-8 are escapes, cut at 200
+  bytes: no file name can end a line or forge a field.
+- A transfer the console would not start is `console DENY ...
+  reason=file-transfer|password-change|policy|home|stream subsystem=sftp`.
+  `reason=file-transfer` is an account that does not have file transfer:
+  that user sees only `Connection closed` from the client, so this line is
+  where to look.
+- A superuser's change of who may transfer, or of a quota or rate, is a
+  `console set` line with `key=file-transfer` at `auth.notice`; its `item` is
+  the tier, `user:<name>`, `quota:<tier>`, `quota-user:<name>`,
+  `rate:<tier>` or `rate-user:<name>`.
+- If `logger` cannot write a line during a transfer, the transfer goes on
+  unaudited and the warning `The audit line was not written` appears on the
+  client's standard error.
+
+A command string the console does not run (`scp -O`, a program, a shell) is
+`console DENY ... reason=command first=<word>`, as before.
 
 > A `cmd start` with no matching `cmd end` means the command did not finish
 > (killed, crash, power loss). The snapshot named on its lines holds the

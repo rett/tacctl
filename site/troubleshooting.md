@@ -9,7 +9,7 @@ doctype: how-to
 
 # Troubleshooting
 
-*Symptom-first fixes for login and device problems · Checked against tacctl 0.2.27*
+*Symptom-first fixes for login and device problems · Checked against tacctl 0.2.28*
 
 [Printable PDF](../pdf/tacctl-troubleshooting.pdf){: .pdf-link }
 
@@ -148,6 +148,9 @@ retry, run `tacctl log tail 50`, then set the log level back.
 | `is locked by another tacctl command` | Wait, then retry |
 | `not permitted` in the shell | Your tier doesn't allow the command. `?` shows the tier it needs. |
 | `[ERROR] Unknown subcommand: '<word>'`, then `Run 'tacctl <command> -h' for usage.` | The word is none of that command's sub-commands. The `Did you mean` line, when there is one, names the commands that have it; `<command> -h` lists the sub-commands. In the shell and the console a verb your tier cannot run is refused as not permitted, not as unknown. |
+| `sftp` or `scp` to the server says only `Connection closed` | Your account does not have file transfer (it is off for every tier but the superuser tier). `ssh <you>@<server> id` prints the reason (`file transfer is not enabled for this account; an administrator can switch it on (tacctl console file-transfer)`); a superuser runs `tacctl console file-transfer`. The same happens when sshd defines no `Subsystem sftp ...` line; `tacctl console show` (operator tier and up) says `sshd sftp subsystem: none` and warns ([Superuser Daily Operations](superuser-daily-operations.md) §10.3) |
+| `sftp` or `scp` says only `Failure` on an upload | The write would take your home over its quota (256M by default; reports and support bundles count). Remove files, or ask a superuser for a larger quota. What was written before the refusal stays. `reason=quota` is in the audit log ([Audit and Compliance](audit-and-compliance.md) §3) |
+| `the tacctl console does not run programs or shell commands; file transfer is SFTP only (sftp, scp of OpenSSH 9 or later)` | You used `scp -O`, `rsync` or a program. Use `sftp`, or the `scp` of OpenSSH 9 or later without `-O` ([Getting Started](getting-started.md) §1.4) |
 | `A password change is required of '<user>'` | Only `passwd`, `version` and `help` run until you change your password: `tacctl passwd` |
 | A user cannot log in to the tacctl server or its console | Every user can, unless disabled or in a group of tier none (`tacctl user show <name>`). The account exists after the next `tacctl host sync <server>`. A name with upper case letters is no Linux account name and gets none: `tacctl user rename <name> <new-name>`. |
 | `Username must contain only letters, numbers, underscores and hyphens (a period cannot be part of a Linux account name).` | A `user` verb, `passwd` or `config linux uid` was given a name with a period, whether the user exists or not. Use `-` or `_`. |

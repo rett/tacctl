@@ -9,7 +9,7 @@ doctype: how-to
 
 # Engineer Guide: Device Changes
 
-*Register, compare, plan and apply device AAA configuration · Checked against tacctl 0.2.27*
+*Register, compare, plan and apply device AAA configuration · Checked against tacctl 0.2.28*
 
 [Printable PDF](../pdf/tacctl-engineer-guide-device-changes.pdf){: .pdf-link }
 
@@ -210,7 +210,12 @@ tacctl device support-bundle jsw1 --login admin       # a Junos local account, o
   table's header gives. When a replacement is shorter or longer than the text
   it replaces, blanks are added or taken away so that the columns after it
   stay where the device printed them. A Cisco echo of a command longer than
-  the terminal is wide is left out of the file.
+  the terminal is wide is left out of the file. So is the tail of that echo
+  when only the tail reaches the session (a first line of `$` and the rest
+  of the command, as a Cisco 2811 prints it when it cuts its display, where
+  the identity lines used to start with that tail); since 0.2.28. A line
+  with text that is not in the command, a tail that does not end the command
+  and an output line that begins with `$` stay.
 - **The map is private.** What was replaced is kept in
   `~/support-bundles/<name>.map` (mode 0600), beside the folder and never in
   it: kind, real value and example. It holds the real values, so keep it out
@@ -218,6 +223,13 @@ tacctl device support-bundle jsw1 --login admin       # a Junos local account, o
   replaces, not everything a device can print: **read the files before you
   share them.** A part number without a hyphen in a tab-separated row that
   leaves cells out is replaced as a serial number.
+- **Fetching it.** The bundle is in your home, so where file transfer is
+  enabled for you (it is off for every tier but the superuser tier until a
+  superuser switches it on), `sftp` or the `scp` of OpenSSH 9 or later
+  fetches its files ([Getting Started](getting-started.md) §1.4). The quota
+  of the home (256M by default) counts the bundle, and the `.map` file with
+  the real values is in the same home: leave it on the server when you share
+  the bundle.
 - The command writes `device support-bundle user= device= vendor= login=
   files= result=ok` to the audit log, never a command's text.
 

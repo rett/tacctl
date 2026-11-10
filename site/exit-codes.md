@@ -9,7 +9,7 @@ doctype: reference
 
 # Exit Codes
 
-*What each tacctl exit status means on shift and in scripts · Checked against tacctl 0.2.27*
+*What each tacctl exit status means on shift and in scripts · Checked against tacctl 0.2.28*
 
 [Printable PDF](../pdf/tacctl-exit-codes.pdf){: .pdf-link }
 
@@ -34,6 +34,13 @@ change is needed" apart.
 
 `tacctl ssh` ends with the status of the ssh it runs, and `tacctl shell -c`
 with the status of its line.
+
+The login console also ends with 126 when it refuses a command string it
+does not run (`scp -O`, `rsync`, a program) and when it refuses the sftp
+subsystem to an account without file transfer; the `sftp` and `scp` clients
+show the latter only as `Connection closed`, and `ssh <server> id` shows the
+message. A file transfer that ends normally ends with 0, and one that ends on
+a protocol error with 1.
 
 Two cases end with 1 although the change stands. `tacctl breakglass hold` or
 `release`, and `tacctl config breakglass-firewall`, exit 1 when `nft` is
