@@ -9,7 +9,7 @@ doctype: how-to
 
 # Linux Host Operations
 
-*Keeping enrolled Linux hosts in step · Checked against tacctl 0.2.28*
+*Keeping enrolled Linux hosts in step · Checked against tacctl 0.2.29*
 
 [Printable PDF](../pdf/tacctl-linux-host-operations.pdf){: .pdf-link }
 

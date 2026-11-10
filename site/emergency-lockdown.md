@@ -9,7 +9,7 @@ doctype: how-to
 
 # Emergency Lockdown
 
-*Refusing the logins of chosen groups on a scope, and lifting it again · Checked against tacctl 0.2.28*
+*Refusing the logins of chosen groups on a scope, and lifting it again · Checked against tacctl 0.2.29*
 
 [Printable PDF](../pdf/tacctl-emergency-lockdown.pdf){: .pdf-link }
 

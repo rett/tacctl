@@ -9,7 +9,7 @@ doctype: tutorial
 
 # Getting Started
 
-*Your first login, the console and the shell, and where to go next · Checked against tacctl 0.2.28*
+*Your first login, the console and the shell, and where to go next · Checked against tacctl 0.2.29*
 
 [Printable PDF](../pdf/tacctl-getting-started.pdf){: .pdf-link }
 
