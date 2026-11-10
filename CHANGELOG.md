@@ -129,7 +129,10 @@ current behaviour; this file is where history lives.
    have no `password=` field; a plain session's lines are unchanged. The
    warning for a device with break-glass held says `you log in as its local
    account '<local-user>'` and the session goes on. Help (`tacctl ssh -h`,
-   `help device`), the completion (a `--login` flag with no candidates, as for
+   `tacctl device` and `help device`, which now list `--login <local-user>`
+   under `ssh` as they list its other options), the tier lines of `ssh` and
+   `device ssh` in the manual page (a session as you is every tier's,
+   `--login` needs the engineer tier), the completion (a `--login` flag with no candidates, as for
    the other `--login` verbs), the manual page, `docs/cli/console.md`,
    `docs/cli/conventions.md`, `docs/cli/device.md`,
    `docs/cli/shell.md`, `docs/devices/connecting.md`,

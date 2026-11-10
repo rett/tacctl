@@ -328,6 +328,7 @@ var deviceOptions = map[string][][2]string{
 		{"--against", "(block check) Plan the device with the text in force and print its section's statements"},
 	},
 	"ssh": {
+		{"--login <local-user>", "(ssh) Log in as this local account of the device, not as you (engineer and up)"},
 		{"-p <port>", "Connect to this port (default: the device's port, else 22)"},
 		{"-X, -Y", "Forward X11 (untrusted, trusted) to this server's display"},
 		{"-L <spec>", "Forward a local port, as ssh -L (repeatable)"},

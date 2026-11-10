@@ -125,14 +125,14 @@ as for every ssh). The device asks for the account's password itself: tacctl
 never asks for it, caches it or stores it, and the password cache is not used
 for the line.
 
-  --login <user>   Log in as this local account of the device, not as you
-  -p <port>        Connect to this port (default: the device's port, else 22)
-  -X, -Y           Forward X11 (untrusted, trusted) to this server's display
-  -L <spec>        Forward a local port, as ssh -L (repeatable)
-  -R <spec>        Forward a remote port, as ssh -R (repeatable)
-  -D <spec>        Open a SOCKS proxy, as ssh -D (repeatable)
-  -g               Let -L and -D ports listen on every address, as ssh -g
-  -- <ssh args>    Pass the rest to ssh for this session (a remote command)
+  --login <local-user>  Log in as this local account of the device, not as you
+  -p <port>             Connect to this port (default: the device's port, else 22)
+  -X, -Y                Forward X11 (untrusted, trusted) to this server's display
+  -L <spec>             Forward a local port, as ssh -L (repeatable)
+  -R <spec>             Forward a remote port, as ssh -R (repeatable)
+  -D <spec>             Open a SOCKS proxy, as ssh -D (repeatable)
+  -g                    Let -L and -D ports listen on every address, as ssh -g
+  -- <ssh args>         Pass the rest to ssh for this session (a remote command)
 
 Only active tacctl users reach a device, and only one in a scope of their own,
 whatever their tier; a device no scope covers is reached by no one. Every

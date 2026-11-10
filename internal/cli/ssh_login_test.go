@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -382,5 +384,53 @@ func TestDropAskpassClearsTheProcessValue(t *testing.T) {
 	inv.dropAskpass()
 	if processAskpass != "" {
 		t.Errorf("kept %q", processAskpass)
+	}
+}
+
+// 'tacctl device' lists --login under the ssh row as it lists the other ssh
+// options, and the row does not change what '?' says of the --login of
+// another verb that has no option line of its own ('device collect --login'
+// is described by the shared line of onboard, not by ssh's).
+func TestDeviceUsageListsTheSSHLoginOption(t *testing.T) {
+	sb := newSandbox(t, true)
+	out := plain(sb.run("", []string{"device"}))
+	i := strings.Index(out, "\n  ssh <name|address>")
+	if i < 0 {
+		t.Fatalf("no ssh row in the usage:\n%s", out)
+	}
+	rest := out[i+1:]
+	if j := strings.Index(rest, "\n  scan"); j > 0 {
+		rest = rest[:j]
+	}
+	if !strings.Contains(rest, "--login <local-user>") || !strings.Contains(rest, "(engineer and up)") {
+		t.Errorf("the ssh row lacks the --login option line:\n%s", rest)
+	}
+
+	texts := flagTexts(t)
+	if got := texts["device collect --login"]; !strings.HasPrefix(got, "(onboard, collect;") {
+		t.Errorf("device collect --login is described as %q", got)
+	}
+}
+
+// The gate sees 'ssh' and 'device ssh' as readonly rows and --login is the
+// engineer's: both verbs carry a tier note, which the manual page's
+// Requires line and the TIERS list read; and the help of 'ssh' spells the
+// value of --login as the flag's Spec does.
+func TestSSHLoginTierNoteAndHelpValue(t *testing.T) {
+	for _, k := range []string{"ssh ", "device ssh"} {
+		if n := tierNotes[k]; !strings.Contains(n, "--login") || !strings.Contains(n, "engineer tier") {
+			t.Errorf("tierNotes[%q] = %q", k, n)
+		}
+	}
+	page, err := os.ReadFile(filepath.Join("..", "..", "man", "tacctl.1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(string(page), `Requires: \fBreadonly\fR. A session as you is every tier's; \-\-login`); n != 2 {
+		t.Errorf("%d Requires lines of the man page name the engineer tier of --login, want 2 (ssh, device ssh)", n)
+	}
+	flag := sshSpec.Flags[1]
+	if flag.Names[0] != "--login" || !strings.Contains(sshUsage(), "--login "+flag.Arg+" ") {
+		t.Errorf("the help of ssh does not spell the value of --login as %s", flag.Arg)
 	}
 }

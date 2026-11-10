@@ -11544,7 +11544,7 @@ below.
 .\" BEGIN GENERATED: command device ssh
 .RS
 .PP
-Requires: \fBreadonly\fR.
+Requires: \fBreadonly\fR. A session as you is every tier's; \-\-login (a session as a local account of the device) needs the engineer tier.
 .PP
 Options:
 .TP
@@ -14917,7 +14917,7 @@ used.
 .\" BEGIN GENERATED: command ssh
 .RS
 .PP
-Requires: \fBreadonly\fR.
+Requires: \fBreadonly\fR. A session as you is every tier's; \-\-login (a session as a local account of the device) needs the engineer tier.
 .PP
 Options:
 .TP
@@ -16972,6 +16972,9 @@ The Configuration, Release, Model and Serial rows, the Chassis members table (an
 .B device snmp
 An engineer may read the settings of a device of their own scope (show [\-\-reveal [<user>]], version, port, timeout, v3\-user list|default, clients list); every setter and clear needs the superuser tier.
 .TP
+.B device ssh
+A session as you is every tier's; \-\-login (a session as a local account of the device) needs the engineer tier.
+.TP
 .B host show
 An engineer reads what tacctl recorded of a host; \-\-check logs in to it and needs the superuser tier.
 .TP
@@ -16989,6 +16992,9 @@ An engineer may read the settings of a scope of their own (show [\-\-reveal [<us
 .TP
 .B scope staging
 An engineer may run list for a scope of their own; the other verbs need the superuser tier.
+.TP
+.B ssh
+A session as you is every tier's; \-\-login (a session as a local account of the device) needs the engineer tier.
 .\" END GENERATED: tiers
 .PP
 An engineer's verbs reach only the devices, hosts and secrets of the scopes
