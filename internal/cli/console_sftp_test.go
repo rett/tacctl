@@ -18,12 +18,15 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/pkg/sftp"
 
 	"github.com/rett/tacctl/internal/console"
+	"github.com/rett/tacctl/internal/execx"
 )
 
 // protocolTap keeps what the console wrote to its standard output, so that a
@@ -613,5 +616,64 @@ func TestConsoleSFTPWithoutAPolicyAnswer(t *testing.T) {
 		if log := consoleLog(h.runner); len(log) != 3 || !strings.HasSuffix(log[1], " reason="+c.why+" subsystem=sftp") {
 			t.Errorf("%s: log %q", c.groups, log)
 		}
+	}
+}
+
+// A session whose audit lines are slow to log ends soon after the client
+// leaves: every line is still logged, in order, before the console ends, so
+// what the client waits for at its end is the lines queued, and the queue is
+// short (sftpAuditQueue); a client that is ahead of the log is held back
+// request by request, not all at once at the end (it was about a second for
+// 200 lines at 5 ms a line, with a queue of 256).
+//
+// The fake logger takes 5 ms a call: a real timer, which is the point (the
+// time a 'logger' process takes is what the audit is slow by), and the only
+// wait of the test. The client makes 200 requests that are each a line and
+// leaves at once. The bound is on the lines that were not yet begun when the
+// client's last request was answered, which a loaded machine cannot change;
+// the time from the close to the end is only logged.
+func TestConsoleSFTPEndsWithABacklogOfAuditLines(t *testing.T) {
+	const lines = 200
+	var begun atomic.Int64
+	r := startSFTPSetup(t, context.Background(), sftpPolicy(console.FileTransfer{Enabled: true}), "internal-sftp",
+		func(h *harness) {
+			h.runner.OnFunc([]string{"logger"}, func(execx.Cmd) (execx.Result, error) {
+				begun.Add(1)
+				time.Sleep(5 * time.Millisecond) // the fake 'logger': 5 ms a line
+				return execx.Result{}, nil
+			})
+		})
+	c := r.client()
+	for i := 0; i < lines; i++ {
+		if err := c.Mkdir(fmt.Sprintf("d%03d", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The two start lines (the console's, the transfer's) are the first calls,
+	// then comes one for each request answered.
+	backlog := int64(2+lines) - begun.Load()
+	left := time.Now()
+	_ = c.Close()
+	status := <-r.done
+	t.Logf("handler returned %v after the client's close; %d lines were not yet begun at the close", time.Since(left), backlog)
+	if status != 0 {
+		t.Fatalf("status %d, stderr %q", status, r.h.err.String())
+	}
+	// A line being logged, and the one the request that was answered last may
+	// still be handing over, are not in the queue.
+	if backlog > sftpAuditQueue+2 {
+		t.Errorf("%d lines waited for their log at the client's close, the queue holds %d", backlog, sftpAuditQueue)
+	}
+	log := consoleLog(r.h.runner)
+	if len(log) != 2+lines+2 {
+		t.Fatalf("%d lines logged, want %d: the start lines, a line for each request, the totals, the end", len(log), 2+lines+2)
+	}
+	for i := 0; i < lines; i++ {
+		if want := fmt.Sprintf(` path="/d%03d"`, i); !strings.HasSuffix(log[2+i], want) || !strings.Contains(log[2+i], "console sftp mkdir") {
+			t.Fatalf("line %d is %q, want the mkdir of d%03d in order", 2+i, log[2+i], i)
+		}
+	}
+	if !strings.Contains(log[lines+2], "console sftp end") || !strings.Contains(log[lines+3], "console end") {
+		t.Errorf("the last lines are %q", log[lines+2:])
 	}
 }

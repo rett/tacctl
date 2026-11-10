@@ -77,6 +77,21 @@ current behaviour; this file is where history lives.
    `docs/cli/config.md`, `docs/install/upgrading.md` and the manual page say
    so.
 
+3. **A file transfer session ends sooner after the client leaves.** Every
+   request of a console file transfer that changes something (an upload, a
+   download, a delete, a rename, a make-directory, a refusal) is one audit
+   line, one `logger` process, and the console ends only when every line is
+   logged, in order. The lines wait in a queue while the client goes on, and
+   the queue held 256: a client that did many small requests (a tree of small
+   files) and then left was held until the console had logged all that was
+   still queued, about a second for 200 lines at 5 ms a line, which is where
+   a transfer seemed to linger after the client had left. The queue now holds
+   32 lines, so at most 32 lines are left to log when the client leaves (about
+   0.2 s at that speed) and a client that is ahead of the audit is held back
+   by it, request by request, as it goes. No line is dropped, none is logged
+   out of order and none after the console has ended. Nothing else changes:
+   the lines, their words and their order are as before.
+
 ## 0.2.29 (2026-11-09)
 
 1. **A file uploaded through the console keeps the owner's execute bit.** The
