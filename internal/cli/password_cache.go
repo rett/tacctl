@@ -313,8 +313,9 @@ func askpassWords(words []string) bool {
 	return false
 }
 
-// localLoginLine reports whether the words of a 'device config' verb give
-// --login before any '--'.
+// localLoginLine reports whether the words of a verb that logs in to a device
+// (a 'device config' verb, 'ssh' and 'device ssh', 'device collect') give
+// --login before any '--': the account is the device's own, not the caller's.
 func localLoginLine(words []string) bool {
 	for _, w := range words {
 		switch {

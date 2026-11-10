@@ -92,7 +92,9 @@ config validate [--json | --fix-names [--yes]]
     an earlier release whose name is longer than 32 characters (a new name is at most 32, see
     cli/user.md) gets a `Names:` warning too: it works but has no Linux account, here or on a
     host, and the warning names `tacctl user rename <name> <new-name>`; `--fix-names` does not
-    offer that rename, since it has no name to propose. Exits 1 on
+    offer that rename, since it has no name to propose. A user whose name is both longer than 32
+    characters and has upper case gets that one warning only, which says so (the lower-case
+    spelling is longer than 32 characters too, and `user rename` refuses it). Exits 1 on
     errors. The verb takes no argument: a word other than its options is refused (`Unknown
     argument`) and no report is printed. `--json` prints the findings as one JSON object and
     nothing else on standard output (the schema is below); the exit status is the same.
@@ -370,6 +372,10 @@ when it was given here: without it the verb asks its own questions (a
 leftover under the new name, the scope) after this one. The findings are
 read again after each rename, so a scope that a host rename carried is not
 offered twice.
+
+A user whose name is longer than 32 characters is not offered, whatever its case:
+its lower-case spelling would be refused by `user rename` too, and the `Names:` warning for
+its length names the rename (it is counted neither as not offered nor as failed).
 
 A name whose lower-case spelling is another name's (`Alice` beside `alice`,
 two hosts equal ignoring case, a device and a host that are one name) is not

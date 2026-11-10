@@ -395,9 +395,10 @@ device ssh <name|address> [--login <local-user>] [-p <port>] [-X|-Y] [-g]
         key is checked strictly against the pin, as for a plain session); the engineer tier and
         up, for a device in one of your scopes. The device asks for the account's password
         itself: tacctl never asks for it, caches it or stores it, and the password cache is not
-        used for the line. The session's log lines end with `login=<local-user>` (no password
-        field). A hold on the device only warns: it is what the account is for. The words after
-        `--` stay the remote command in the console.
+        used for the line. The session's log lines carry `login=<local-user>` (after the device
+        and address fields; `from=` and `console=` follow; no password field). A hold on the
+        device only warns: it is what the account is for. The words after `--` stay the remote
+        command in the console.
 
 device client-config
 

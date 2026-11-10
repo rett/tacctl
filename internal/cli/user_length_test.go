@@ -111,3 +111,51 @@ func TestBackupRestoreKeepsAnOverLongUser(t *testing.T) {
 	sb.run("", []string{"user", "show", long})
 	sb.expect(0, long, "")
 }
+
+// A user whose name has upper case and is over the limit gets one finding, the
+// rename that fixes the length (the lower-case spelling would be over the
+// limit too, and 'user rename' refuses it), and it says the name also has
+// upper case. 'config validate --fix-names' offers nothing for it and ends as
+// for a store with no fixable names.
+func TestOverLongNameWithUpperCaseIsOneFinding(t *testing.T) {
+	long := "A" + strings.Repeat("a", 39)
+	sb := newSandbox(t, true)
+	sb.legacyStoreCase("  alice:", "  "+long+":")
+	sb.run("", []string{"config", "render"})
+	sb.expect(0, "", "")
+
+	sb.run("", []string{"config", "validate"})
+	out := plain(sb.out.String())
+	if n := strings.Count(out, "'"+long+"'"); n != 1 {
+		t.Errorf("%d findings name the user, want 1:\n%s", n, out)
+	}
+	if strings.Contains(out, "has upper case in its name") || strings.Contains(out, "rename "+long+" "+strings.ToLower(long)) {
+		t.Errorf("the lower-case rename is proposed:\n%s", out)
+	}
+	want := "the user '" + long + "' has a name of 40 characters and has upper case letters; new user names are at most 32 and lower case, and this user has no Linux account, here or on a host (tacctl user rename " + long + " <new-name>)"
+	if !strings.Contains(out, want) {
+		t.Errorf("config validate lacks %q:\n%s", want, out)
+	}
+
+	v := validateJSONOf(t, sb.run("", []string{"config", "validate", "--json"}))
+	var names []validateFinding
+	for _, f := range v.Findings {
+		if f.Section == "names" {
+			names = append(names, f)
+		}
+	}
+	if len(names) != 1 || names[0].Fix != "tacctl user rename "+long+" <new-name>" || names[0].Kind != "" {
+		t.Errorf("the json names findings: %+v", names)
+	}
+
+	before := sb.store()
+	snaps := len(sb.snapshotDirs())
+	sb.run("", []string{"config", "validate", "--fix-names", "--yes"})
+	sb.expect(0, "Names: renamed 0, declined 0, not offered 0, failed 0.", "")
+	if sb.store() != before || len(sb.snapshotDirs()) != snaps {
+		t.Error("--fix-names changed something")
+	}
+	if strings.Contains(sb.printed(), "Rename user") {
+		t.Errorf("a rename was offered:\n%s", sb.printed())
+	}
+}
