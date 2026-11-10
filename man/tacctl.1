@@ -16485,7 +16485,14 @@ and
 .B scp
 send), and 0644 otherwise (a request that carries other attributes with the
 permissions is read as carrying none); a file that already exists keeps its
-mode, whatever the open asks. Both are reduced by the umask of the console, 077:
+mode, whatever the open asks. A new file asked at a mode without the owner's
+write bit (0444, which
+.B scp
+sends for a read\-only source) is created writable by its owner and gets the
+mode asked for, reduced the same way, when the client closes the handle, so that
+the size step an upload ends with works; a client that sets the permissions
+itself in between keeps what it set, and a session that ends with the handle
+open closes it. Both are reduced by the umask of the console, 077:
 the owner's bits survive and the group and other bits go, so a script uploaded
 with mode 0755 is 0700, one with 0644 is 0600, and a directory asked 0755 is
 0700. The set\-user\-ID,

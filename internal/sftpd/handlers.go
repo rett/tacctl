@@ -21,6 +21,7 @@ type server struct {
 	rate  *bucket // nil when the session has no rate limit
 
 	handles handleCount // the open files and directory listings
+	fresh   freshModes  // the files created owner-writable, waiting for their mode
 
 	beforeTruncate func() // a test's hooks, see seams
 	afterPin       func()
@@ -400,6 +401,7 @@ func (s *server) setstat(r *sftp.Request) (err error) {
 		if err := p.chmod(permBits(a.Mode)); err != nil {
 			return err
 		}
+		s.fresh.forget(inode{u64(p.st.Dev), u64(p.st.Ino)}) // what the client set stays
 	}
 	if fl.Acmodtime {
 		if err := p.utimes(a.Atime, a.Mtime); err != nil {

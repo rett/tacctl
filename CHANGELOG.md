@@ -17,7 +17,13 @@ current behaviour; this file is where history lives.
    The owner's bits survive and the group and other bits go: a script asked
    at 0755 is 0700, a file asked at 0644 is 0600. A request without
    permissions still gives 0644, 0600 after the umask. A file that already
-   exists keeps its mode, and a download changes nothing. A request that
+   exists keeps its mode, and a download changes nothing. A file asked at a
+   mode without the owner's write bit (0444, or 0555, which `scp` sends for a
+   read-only source) is created writable by its owner and gets the mode asked
+   for, reduced by the umask, when the client closes the handle: `scp` ends an
+   upload by setting the size of the file, which the kernel refuses on a file
+   its owner cannot write, so the mode comes last. A client that sets the
+   permissions itself before it closes the handle keeps what it set. A request that
    carries other attributes together with the permissions (for example the
    times, as with the preserve option of `scp`) is read as carrying none,
    because the library does not tell which attributes a request holds; such
