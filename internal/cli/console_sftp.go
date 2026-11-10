@@ -156,11 +156,11 @@ type sftpTotals struct {
 
 // sftpAuditQueue is how many events wait for their log line. The session
 // ends only when every line is logged (none is dropped, none follows the end
-// of the process), so what is queued when the client leaves is the wait of the
-// client's end: at 256 it was about a second at 5 ms a line, and a client
-// that is ahead of the log is now held back by it, a request at a time,
-// instead of at the end.
-const sftpAuditQueue = 32
+// of the process). A full queue blocks the goroutine that serves a request
+// until a line is logged, so the number is a bound of the memory the queue
+// holds, not of the wait at the end of the session: the whole session takes
+// as long as its lines take to log, whatever the size.
+const sftpAuditQueue = 256
 
 // sftpAudit turns the events of the server into log lines, in order, off the
 // goroutines that serve the requests (each line is a 'logger' process).
