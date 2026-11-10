@@ -27,7 +27,10 @@ current behaviour; this file is where history lives.
    without `-p`, `scp` ends an upload by setting the size of the file, which
    the kernel refuses on a file its owner cannot write, so the mode comes
    last. A client that sets the permissions itself before it closes the
-   handle keeps what it set. A request that carries other attributes
+   handle keeps what it set. An upload of a read-only source that is
+   interrupted ends read-only (0400, say), since the session ends by closing
+   the handle, and resuming it with `put -a` or `reput` is refused with
+   permission denied, as it is by the OpenSSH server. A request that carries other attributes
    together with the permissions (the times that `scp -p` sends) is read as
    carrying none, and such a file gets 0644, 0600 after the umask, as before;
    `scp -p` then sets the permissions and the times of the file after the

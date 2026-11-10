@@ -593,3 +593,69 @@ func TestOpenModeWithTimesThenSetstat(t *testing.T) {
 		t.Errorf("mtime %d, want %d", fi.ModTime().Unix(), mtime)
 	}
 }
+
+// setUmask sets the umask of the process for the test and puts it back when
+// the test ends, whatever way it ends.
+func setUmask(t *testing.T, m int) {
+	t.Helper()
+	old := syscall.Umask(m)
+	t.Cleanup(func() { syscall.Umask(old) })
+}
+
+// A client that asks for O_EXCL on a name that exists is told so, as it is for
+// any file, and the file is not touched, whatever mode the request asks.
+func TestOpenModeWithoutOwnerWriteExclOnExistingFile(t *testing.T) {
+	setUmask(t, 0o022)
+	home := newHome(t)
+	p := filepath.Join(home, "f")
+	if err := os.WriteFile(p, []byte("old data"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(p, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	r := newRawConn(t, home)
+	const pflags = rawFlagWrite | rawFlagCreat | rawFlagExcl
+	_, want := r.open("f", pflags, 0, nil)
+	if want == 0 {
+		t.Fatal("an exclusive create of an existing file succeeded")
+	}
+	for _, mode := range []uint32{0o400, 0o444} {
+		if h, code := r.open("f", pflags, rawAttrPerm, permAttrs(mode)); h != "" || code != want {
+			t.Errorf("mode %o: open = %q, status %d, want status %d", mode, h, code, want)
+		}
+	}
+	if got := modeOfFile(t, p); got != 0o640 {
+		t.Errorf("mode %v, want -rw-r-----", got)
+	}
+	if b, err := os.ReadFile(p); err != nil || string(b) != "old data" {
+		t.Errorf("content %q, %v; want the old data", b, err)
+	}
+}
+
+// An error after the file was created, before the handle is given out (here a
+// file that gained a second name between the open and the check), leaves the
+// file with the mode the client asked for, not with the owner's write bit the
+// open added. The other such errors (the descriptor that cannot be made
+// blocking, the truncation that fails) share the code and cannot be provoked
+// from a test.
+func TestOpenModeWithoutOwnerWriteFailedOpenRestoresTheMode(t *testing.T) {
+	setUmask(t, 0o022)
+	home := newHome(t)
+	p := filepath.Join(home, "f")
+	var once sync.Once
+	var linkErr error
+	r := newRawConnCfg(t, Config{Home: home}, seams{afterOpen: func() {
+		once.Do(func() { linkErr = os.Link(p, filepath.Join(home, "g")) })
+	}})
+	h, code := r.open("f", rawFlagWrite|rawFlagCreat|rawFlagTrunc, rawAttrPerm, permAttrs(0o444))
+	if linkErr != nil {
+		t.Fatal(linkErr)
+	}
+	if h != "" || code != fxPermissionDenied {
+		t.Fatalf("open = %q, status %d, want status %d", h, code, fxPermissionDenied)
+	}
+	if got := modeOfFile(t, p); got != 0o444 {
+		t.Errorf("mode %v, want -r--r--r--", got)
+	}
+}

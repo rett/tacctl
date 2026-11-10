@@ -16497,7 +16497,12 @@ sends for a read\-only source) is created writable by its owner and gets the
 mode asked for, reduced the same way, when the client closes the handle, so that
 the size step an upload ends with works; a client that sets the permissions
 itself in between keeps what it set, and a session that ends with the handle
-open closes it. The mode of a new file is reduced by the umask of the console,
+open closes it, so an upload of a read\-only source that is interrupted ends
+read\-only (0400, say) and resuming it with
+.B put \-a
+or
+.B reput
+is refused with permission denied, as it is by the OpenSSH server. The mode of a new file is reduced by the umask of the console,
 077: the owner's bits survive and the group and other bits go, so a script
 uploaded with mode 0755 is 0700 and one with 0644 is 0600. The set\-user\-ID,
 set\-group\-ID and sticky bits are ignored. A mode that a client sets afterwards
