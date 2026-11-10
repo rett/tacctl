@@ -424,22 +424,46 @@ branches, local and remote), as a plan like the others.
 ## A hotfix
 
 A fix that cannot wait for the next release starts from `master`, not from
-`develop`:
+`develop`. `qargi release start 0.2.6 --hotfix` is the tooling's way to cut
+`hotfix/0.2.6` from `master`, but it is refused for this project at present:
+before it changes anything it needs content under the CHANGELOG's unreleased
+heading and runs the stored preflight
+(`tests/tools/release-notes-check.sh 0.2.6`, which wants
+`docs/release-notes-0.2.6.md`, a numbered `## 0.2.6 (` section and `const
+rollbackFrom` equal to `0.2.6`), and on `master` none of that exists before
+the hotfix branch does (`release.preflight failed ... nothing was changed`).
+So cut the branch by hand, and use the tooling from the push on:
 
 ```sh
-qargi release start 0.2.6 --hotfix
-# the fix and its CHANGELOG section (## 0.2.6 (unreleased), numbering from 1,
-# the items that differ from the release it fixes) and the release notes
+git checkout master && git pull
+git flow hotfix start 0.2.6          # the branch is hotfix/0.2.6
+```
+
+Commit on that branch:
+
+- the fix;
+- its CHANGELOG section, `## 0.2.6 (YYYY-MM-DD)`, dated now because `start`
+  is not there to date it, numbered from 1, with the items that differ from
+  the release it fixes;
+- `docs/release-notes-0.2.6.md`;
+- `const rollbackFrom` in `internal/cli/rollback.go` set to `0.2.6`;
+- the `.TH` line of `man/tacctl.1` with the same date and `tacctl 0.2.6` (the
+  `sed` of the by-hand section below).
+
+Then check it, push it and finish it with the tooling:
+
+```sh
+tests/tools/release-preflight.sh 0.2.6
+tests/tools/release-notes-check.sh 0.2.6
 qargi release push 0.2.6
 qargi release finish 0.2.6 --hotfix
 ```
 
-`start` makes `hotfix/0.2.6` from `master`; `finish` tags `master` and merges
-the fix back into the release branch when one is open, else into `develop`.
-Everything else is as for a release: the same plans and go-aheads, the date
-and version in `man/tacctl.1` and the CHANGELOG heading before the finish,
-and the after-steps 5 to 11 above (assets, sign, publish, reproducible,
-check on a host, site, prune).
+`finish` tags `master` and merges the fix back into the release branch when
+one is open, else into `develop`. Everything else is as for a release: the
+same plans and go-aheads, and the after-steps 5 to 11 above (assets, sign,
+publish, reproducible, check on a host, site, prune). This route has not
+been exercised with the tooling yet, so read each plan before approving it.
 
 ## If the release tooling is unavailable (by hand)
 
