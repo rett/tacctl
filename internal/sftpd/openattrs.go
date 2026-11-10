@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/binary"
 	"io"
+	"math"
 )
 
 // The library hands a handler the attribute block of an open request as raw
@@ -20,15 +21,16 @@ import (
 // Only the open request is touched, the bytes of every other packet go through
 // as they came, and an open that is not well formed is passed on as it is,
 // which openMode reads as asking for nothing: the new file gets the default
-// mode, the safe side. So is an open too long to be read whole (maxOpenPacket:
-// its path is longer than the file system takes, and the open fails).
+// mode, the safe side. So is an open too long to be read whole (maxOpenPacket).
 const (
 	sshFxpOpen = 3 // the type of an open request
 
 	// maxOpenPacket is the longest open request that is read whole to be
-	// rewritten: a path (at most a few thousand bytes), the flags and a
-	// block of attributes are far below it. A longer one cannot be a real
-	// open and is passed through.
+	// rewritten, a bound on what one packet may make the filter hold. The
+	// opens real clients send are far below it; a longer one (a path padded
+	// with "./", which the library cleans, or a block of extended
+	// attributes) is passed through as it came, and openMode gives the new
+	// file the default mode.
 	maxOpenPacket = 64 * 1024
 
 	openAttrSize   = 0x1 // the size field (8 bytes)
@@ -88,8 +90,14 @@ func (f *openFilter) next() {
 		return
 	}
 	length := binary.BigEndian.Uint32(hdr[:4])
-	if length == 0 {
-		f.out = hdr[:4] // the library refuses it
+	if length == 0 || length > maxOpenPacket {
+		// The length alone decides: the library refuses a length of zero
+		// and one above its own limit as soon as it has the four bytes (a
+		// client that sends them and stops is answered at once), and a
+		// packet longer than maxOpenPacket is not read whole here. So the
+		// type byte is not waited for. The cap keeps int(length) from
+		// going negative where an int has 32 bits.
+		f.out, f.passing = hdr[:4], int(min(length, math.MaxInt32))
 		return
 	}
 	n, err = io.ReadFull(f.r, hdr[4:5])
@@ -97,7 +105,7 @@ func (f *openFilter) next() {
 		f.out, f.err = hdr[:4+n], err
 		return
 	}
-	if hdr[4] != sshFxpOpen || length > maxOpenPacket {
+	if hdr[4] != sshFxpOpen {
 		f.out, f.passing = hdr[:], int(length)-1
 		return
 	}
