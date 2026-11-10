@@ -77,9 +77,17 @@ else
 fi
 
 # --- 2. gofmt beside that go, and a C compiler (cgo, the race detector) -------
-gofmt="${GOFMT:-$(dirname "$GO")/gofmt}"
-if [[ -x "$gofmt" ]]; then
-    ok gofmt "$gofmt"
+# A value with a slash is a path; one without is looked up in PATH, as make
+# does when it runs it.
+gofmt="${GOFMT:-$(dirname "${go_path:-${GO:-go}}")/gofmt}"
+if [[ "$gofmt" == */* ]]; then
+    gofmt_path=""
+    [[ ! -x "$gofmt" ]] || gofmt_path="$gofmt"
+else
+    gofmt_path=$(command -v "$gofmt" 2> /dev/null)
+fi
+if [[ -n "$gofmt_path" ]]; then
+    ok gofmt "$gofmt_path"
 else
     missing gofmt "$gofmt does not exist; it comes with the Go toolchain (see go)"
 fi
