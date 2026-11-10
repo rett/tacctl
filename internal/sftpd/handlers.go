@@ -237,7 +237,7 @@ func (s *server) mkdir(r *sftp.Request) (err error) {
 	mode := uint32(0o755)
 	if r.AttrFlags().Permissions {
 		if a := r.Attributes(); a != nil {
-			mode = a.Mode & 0o777
+			mode = permBits(a.Mode)
 		}
 	}
 	return t.pathErr("mkdir", unix.Mkdirat(t.dir, t.name, mode))
@@ -397,7 +397,7 @@ func (s *server) setstat(r *sftp.Request) (err error) {
 		}
 	}
 	if fl.Permissions {
-		if err := p.chmod(a.Mode & 0o777); err != nil {
+		if err := p.chmod(permBits(a.Mode)); err != nil {
 			return err
 		}
 	}

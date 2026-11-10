@@ -16444,8 +16444,18 @@ can be set (cut, or extended with zeros), which is what
 .B scp
 does after an upload to give the file its final size; it counts against the quota
 like a write. The owner cannot be changed, and a request that asks for it is
-refused whole. A new directory gets the mode the client asks for and a new file
-0644, both reduced by the umask of the console, 077; the set\-user\-ID,
+refused whole. A new directory gets the mode the client asks for. A new file gets
+the mode the client asks for in the request that opens it, when that request
+carries the permissions alone (which is what the OpenSSH
+.B sftp
+and
+.B scp
+send), and 0644 otherwise (a request that carries other attributes with the
+permissions is read as carrying none); a file that already exists keeps its
+mode, whatever the open asks. Both are reduced by the umask of the console, 077:
+the owner's bits survive and the group and other bits go, so a script uploaded
+with mode 0755 is 0700, one with 0644 is 0600, and a directory asked 0755 is
+0700. The set\-user\-ID,
 set\-group\-ID and sticky bits are ignored, and a client that wants another mode
 sets it afterwards, which is applied as given. Changing the mode or the times of
 a file goes through
