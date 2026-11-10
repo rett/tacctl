@@ -141,7 +141,7 @@ not one of them: it is the maintainer's own check, and nothing records it.
 | 8 | reproducible | the maintainer's tooling | the `release-reproducible` run of the tag is green |
 | 9 | check on a host | the maintainer, not recorded | `tacctl upgrade` installs the verified binary |
 | 10 | site | the maintainer's tooling | the `build` check of the `gh-pages` pull request is green, then it is merged |
-| 11 | prune | the maintainer's tooling, on the maintainer's go-ahead | no merged branch is left, local or remote |
+| 11 | prune | the maintainer's tooling, on the maintainer's go-ahead | no merged `agent/*` or `feature/*` branch is left locally and, if pruned with `--remote`, on origin |
 
 ### 1. Verify
 
@@ -425,10 +425,13 @@ passed.
 
 ```sh
 qargi branch prune
+qargi branch prune --remote
 ```
 
 A plan, on the maintainer's go-ahead, since it deletes branches: the ones
-that are merged (the release's feature and agent branches, local and remote).
+that are merged (the release's `feature/*` and `agent/*` branches). Without
+`--remote` it deletes only the local ones; run the second form, with its own
+plan and go-ahead, when the branches on origin are meant to go too.
 
 ## A hotfix
 
