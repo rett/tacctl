@@ -5,8 +5,9 @@ import (
 	"testing"
 )
 
-// A user name is letters, digits, '_' and '-': every user has an account on
-// the tacctl server, and a name with a period cannot be a Linux account name.
+// A user name is letters, digits, '_' and '-', and a name with a period
+// cannot be a Linux account name (a user whose name is not one has no account
+// on the tacctl server).
 // 0.2.20 and 0.2.21 allowed periods; the upgrade renames such a user
 // (internal/lifecycle/upgrade_dots.go), and no command makes or accepts one.
 
