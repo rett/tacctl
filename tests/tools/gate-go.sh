@@ -19,6 +19,14 @@
 # several packages counts with its longest time): where the time went, and the
 # input of 'tests/tools/go-test-shard.sh --regen'.
 #
+# A FAIL verdict is preceded, last of the lines above it, by the failing tests,
+# at most ten, one 'FAIL: <name>' line each, from the '--- FAIL: TestX' lines of
+# the log (a top-level test and a subtest each, a name once, in the order of
+# the log; the form 'qargi feature verify' reads). A package that failed
+# without a failing test (a build failure, a panic, a timeout) is named by its
+# 'FAIL <package>' line instead ('FAIL: <package>'). The failures= field of the
+# verdict line counts every FAIL and panic line, listed or not.
+#
 # A run of the whole suite (no package listed, no --tags) first runs 'make
 # lint-go': gofmt, go vet and golangci-lint in both tag sets, the Go half of
 # the lint job of CI, so a finding the pull request would fail on shows up at
@@ -119,7 +127,7 @@ start=$(date +%s)
 child=""
 
 verdict() { # <rc> <note>
-    local rc=$1 note=${2:-} got bad v secs skipped names n max=20
+    local rc=$1 note=${2:-} got bad v secs skipped names n max=20 failing
     got=$(grep -cE '^(ok|\?)[[:space:]]' "$log")
     bad=$(grep -cE '^(FAIL|--- FAIL|panic:)' "$log")
     secs=$(($(date +%s) - start))
@@ -143,6 +151,16 @@ verdict() { # <rc> <note>
         awk '{ printf "gate-go: slowest: %s %.1fs\n", $2, $1 }' | tee -a "$log"
     v=FAIL
     if [[ "$rc" -eq 0 && "$got" -eq "$want" && "$want" -gt 0 && "$bad" -eq 0 && -z "$note" ]]; then v=PASS; fi
+    if [[ "$v" = FAIL ]]; then
+        # The failing tests (at most ten, in the order of the log, each once);
+        # without one, the packages that failed (a build failure, a panic).
+        failing=$(sed -n 's/^[[:space:]]*--- FAIL: \([^ ]*\).*/\1/p' "$log" | awk '!seen[$0]++')
+        [[ -n "$failing" ]] ||
+            failing=$(sed -n 's/^FAIL[[:space:]]\{1,\}\([^[:space:]]\{1,\}\).*/\1/p' "$log" | awk '!seen[$0]++')
+        if [[ -n "$failing" ]]; then
+            head -n 10 <<<"$failing" | sed 's/^/FAIL: /' | tee -a "$log"
+        fi
+    fi
     echo "GATE-GO $v rc=$rc packages=$got/$want failures=$bad secs=$secs skipped=$skipped${note:+ $note} log=$log" | tee -a "$log"
     [[ "$v" = PASS ]]
 }

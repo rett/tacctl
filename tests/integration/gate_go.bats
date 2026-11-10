@@ -23,6 +23,13 @@ test) case "$STUB_MODE" in
         printf 'ok  \tp/a\t0.1s\n?   \tp/b\t[no test files]\n' ;;
     slowmany) for i in $(seq 12); do printf -- '--- PASS: TestT%02d (%d.00s)\n' "$i" "$i"; done
         printf 'ok  \tp/a\t0.1s\n?   \tp/b\t[no test files]\n' ;;
+    failsub) printf -- '=== RUN   TestB\n--- FAIL: TestB (0.00s)\n    --- FAIL: TestB/sub (0.00s)\n--- FAIL: TestA (0.00s)\nFAIL\tp/a\t0.1s\n'
+        printf -- '--- FAIL: TestB (0.00s)\nFAIL\tp/b\t0.1s\n'; exit 1 ;;
+    failmany) for i in $(seq -w 12); do printf -- '--- FAIL: TestF%s (0.00s)\n' "$i"; done
+        printf 'FAIL\tp/a\t0.1s\nok  \tp/b\t0.1s\n'; exit 1 ;;
+    failslow) printf -- '--- SKIP: TestY (0.00s)\n--- PASS: TestSlow (47.12s)\n--- FAIL: TestX (0.00s)\nFAIL\tp/a\t0.1s\nok  \tp/b\t0.1s\n'; exit 1 ;;
+    build) printf 'FAIL\tp/a [build failed]\nok  \tp/b\t0.1s\n'; exit 1 ;;
+    panic) printf 'panic: boom [recovered]\nFAIL\tp/a\t0.1s\nFAIL\tp/b\t0.1s\nFAIL\n'; exit 1 ;;
     hang) exec sleep 30 ;;
     tmp) printf '%s\n' "$TMPDIR" >"$STUB_TMP_OUT"; printf 'ok  \tp/a\t0.1s\n?   \tp/b\t[no test files]\n' ;;
     args) printf '%s\n' "$*" >"$STUB_ARGS_OUT"; printf 'ok  \tp/a\t0.1s\n?   \tp/b\t[no test files]\n' ;;
@@ -126,6 +133,60 @@ sleeper_below() {
 @test "a failing test is a FAIL with its status and failure lines" {
     STUB_MODE=fail run -1 "$GATE" -o "$LOG"
     [[ "${lines[-1]}" == "GATE-GO FAIL rc=1 packages=1/2 failures=2 "* ]]
+}
+
+@test "a failing test is named in a FAIL: line above the FAIL verdict, which stays the last line" {
+    STUB_MODE=fail run -1 "$GATE" -o "$LOG"
+    [[ "${lines[-1]}" == "GATE-GO FAIL rc=1 "* ]]
+    [[ "${lines[-2]}" == "FAIL: TestX" ]]
+    [[ "$(printf '%s\n' "${lines[@]}" | grep -c '^FAIL: ')" -eq 1 ]]
+    # the log ends the same way
+    [[ "$(tail -n 1 "$LOG")" == "${lines[-1]}" ]]
+    [[ "$(tail -n 2 "$LOG" | head -n 1)" == "FAIL: TestX" ]]
+}
+
+@test "failing tests and subtests are each named once, in the order of the log" {
+    STUB_MODE=failsub run -1 "$GATE" -o "$LOG"
+    [[ "${lines[-1]}" == "GATE-GO FAIL rc=1 packages=0/2 failures=5 "* ]]
+    [[ "${lines[-2]}" == "FAIL: TestA" ]]
+    [[ "${lines[-3]}" == "FAIL: TestB/sub" ]]
+    [[ "${lines[-4]}" == "FAIL: TestB" ]]
+    [[ "$(printf '%s\n' "${lines[@]}" | grep -c '^FAIL: ')" -eq 3 ]]
+    # a package that has a failing test is not named
+    [[ "$output" != *"FAIL: p/a"* ]]
+}
+
+@test "the failing tests come below the skipped names and the slowest tests, right above the verdict" {
+    STUB_MODE=failslow run -1 "$GATE" -o "$LOG"
+    [[ "${lines[-1]}" == "GATE-GO FAIL "*" skipped=1 log=$LOG" ]]
+    [[ "${lines[-2]}" == "FAIL: TestX" ]]
+    [[ "${lines[-3]}" == "gate-go: slowest: TestSlow 47.1s" ]]
+    [[ "${lines[-4]}" == "gate-go: skipped: TestY" ]]
+}
+
+@test "no more than ten failing tests are named, the failures= count stays exact" {
+    STUB_MODE=failmany run -1 "$GATE" -o "$LOG"
+    [[ "${lines[-1]}" == "GATE-GO FAIL rc=1 packages=1/2 failures=13 "* ]]
+    [[ "$(printf '%s\n' "${lines[@]}" | grep -c '^FAIL: ')" -eq 10 ]]
+    [[ "${lines[-2]}" == "FAIL: TestF10" ]]
+    [[ "${lines[-11]}" == "FAIL: TestF01" ]]
+    [[ "$output" != *"FAIL: TestF11"* ]]
+}
+
+@test "a package that failed to build or panicked, with no failing test, is named by its FAIL line" {
+    STUB_MODE=build run -1 "$GATE" -o "$LOG"
+    [[ "${lines[-1]}" == "GATE-GO FAIL rc=1 packages=1/2 failures=1 "* ]]
+    [[ "${lines[-2]}" == "FAIL: p/a" ]]
+    STUB_MODE=panic run -1 "$GATE" -o "$LOG"
+    [[ "${lines[-1]}" == "GATE-GO FAIL rc=1 packages=0/2 failures=4 "* ]]
+    [[ "${lines[-2]}" == "FAIL: p/b" ]]
+    [[ "${lines[-3]}" == "FAIL: p/a" ]]
+    [[ "$(printf '%s\n' "${lines[@]}" | grep -c '^FAIL: ')" -eq 2 ]]
+}
+
+@test "a PASS names no failing test" {
+    STUB_MODE=ok run -0 "$GATE" -o "$LOG"
+    [[ "$output" != *"FAIL: "* ]]
 }
 
 @test "SIGTERM stops the run, reaps go and prints a FAIL verdict" {
