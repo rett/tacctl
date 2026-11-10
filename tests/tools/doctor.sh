@@ -61,7 +61,7 @@ if [[ -z "$go_pin" ]]; then
 elif ! go_path=$(command -v "$GO" 2> /dev/null); then
     missing go "$GO does not exist: $go_fix"
 else
-    go_have=$("$go_path" version 2> /dev/null | awk '{print $3}')
+    go_have=$(GOTOOLCHAIN=local "$go_path" version 2> /dev/null | awk '{print $3}')
     go_have="${go_have#go}"
     # bin/tacctl.sh installs Go only when it is missing or older and never
     # replaces a newer one, so a Go equal to the pin or newer is fine.
