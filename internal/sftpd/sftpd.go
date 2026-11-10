@@ -66,6 +66,10 @@ type seams struct {
 	measureDepth int // the depth of the quota walk, 0 for the default
 	maxHandles   int // the open handles a session may have, 0 for the default
 
+	// sleeping, when set, is called when the default rate sleep begins (a
+	// test that replaces the sleep does not see it).
+	sleeping func()
+
 	// beforeTruncate, when set, runs in an open that truncates, after the
 	// file is open and judged and before it is cut.
 	beforeTruncate func()
@@ -82,7 +86,12 @@ func serve(rw io.ReadWriteCloser, cfg Config, sm seams) error {
 		sm.now = time.Now
 	}
 	if sm.sleep == nil {
-		sm.sleep = func(d time.Duration) { sleepUntil(n.done, d) }
+		sm.sleep = func(d time.Duration) {
+			if sm.sleeping != nil {
+				sm.sleeping()
+			}
+			sleepUntil(n.done, d)
+		}
 	}
 	h, err := openHome(cfg.Home)
 	if err != nil {

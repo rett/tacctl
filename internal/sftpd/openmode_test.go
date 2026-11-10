@@ -2,12 +2,14 @@ package sftpd
 
 import (
 	"encoding/binary"
+	"errors"
 	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"syscall"
 	"testing"
+	"time"
 )
 
 // The SFTP packet types a raw client needs.
@@ -16,6 +18,7 @@ const (
 	rawOpen    = 3
 	rawClose   = 4
 	rawWrite   = 6
+	rawRead    = 5
 	rawVersion = 2
 	rawStatus  = 101
 	rawHandle  = 102
@@ -40,9 +43,15 @@ type rawConn struct {
 
 func newRawConn(t *testing.T, home string) *rawConn {
 	t.Helper()
+	return newRawConnCfg(t, Config{Home: home}, seams{})
+}
+
+// newRawConnCfg is newRawConn with the whole configuration and the seams.
+func newRawConnCfg(t *testing.T, cfg Config, sm seams) *rawConn {
+	t.Helper()
 	cs, ss := net.Pipe()
 	r := &rawConn{t: t, c: cs, done: make(chan error, 1)}
-	go func() { r.done <- serve(ss, Config{Home: home}, seams{}) }()
+	go func() { r.done <- serve(ss, cfg, sm) }()
 	t.Cleanup(func() { _ = r.close() })
 	r.send(rawInit, binary.BigEndian.AppendUint32(nil, 3))
 	if typ, _ := r.recv(); typ != rawVersion {
@@ -57,7 +66,12 @@ func (r *rawConn) close() error {
 	}
 	_ = r.c.Close()
 	r.c = nil
-	return <-r.done
+	select {
+	case err := <-r.done:
+		return err
+	case <-time.After(10 * time.Second): // only if the session does not end
+		return errors.New("the session did not end")
+	}
 }
 
 func (r *rawConn) send(typ byte, body []byte) {
