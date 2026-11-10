@@ -18,6 +18,18 @@ current behaviour; this file is where history lives.
    `backup restore` and `tacctl upgrade` carry it unchanged. `docs/cli/user.md`, `docs/install/upgrading.md` and the
    manual page say so; they no longer say that every user has an account.
 
+2. **`config validate` warns of a user whose name is longer than 32
+   characters.** Item 1 keeps such a user (from an earlier release) working,
+   but it has no Linux account, here or on a host, so it gets none at a
+   sync. It is a `Names:` warning now, as a name with upper case is, with the
+   rename that fixes it: `the user 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' has a
+   name of 33 characters; new user names are at most 32, and this user has no
+   Linux account, here or on a host (tacctl user rename
+   aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa <new-name>)`. It is a warning, never an
+   error, and `config validate --json` has it under the section `names`;
+   `--fix-names` does not offer it, since there is no name to propose. The
+   superuser's view only. `docs/cli/config.md` and the manual page say so.
+
 ## 0.2.28 (2026-11-09)
 
 1. **A support bundle from a Cisco IOS device no longer starts the identity

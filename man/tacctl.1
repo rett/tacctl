@@ -3172,7 +3172,14 @@ case) is a warning under
 naming the rename that fixes it
 .RB ( "tacctl user rename Alice alice" ,
 and the like); the one for a user adds that devices match the typed login name
-exactly, so the rename changes what the person types at the device. Only the superuser's view has these findings.
+exactly, so the rename changes what the person types at the device. A user from
+an earlier release whose name is longer than 32 characters (a new name is at
+most 32) is a warning under
+.B Names:
+too: it works but has no Linux account, here or on a host, and the warning names
+.BR "tacctl user rename" " name " new\-name ;
+.B \-\-fix\-names
+does not offer that rename. Only the superuser's view has these findings.
 .IP
 Then, for every enabled backend, whether its rendered config is up to date
 with the store and whether any of its files was edited by hand (drift). With

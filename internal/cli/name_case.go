@@ -7,6 +7,7 @@ package cli
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/rett/tacctl/internal/names"
@@ -92,6 +93,38 @@ func (inv *invocation) caseFindings() []hostFinding {
 				}
 			}
 		}
+	}
+	return out
+}
+
+// lengthFindings are the users whose name is longer than names.UsernameMax,
+// a user from an earlier release (new names are checked at 'user add' and
+// 'user rename'): each keeps working but has no Linux account, here or on a
+// host. They are warnings in 'config validate' with the verb that renames the
+// user, sorted by name, the superuser's view only. They carry no Kind, so
+// 'config validate --fix-names' (case findings only) does not read them.
+func (inv *invocation) lengthFindings() []hostFinding {
+	if inv.callerScopes().restricted {
+		return nil
+	}
+	m, err := inv.model()
+	if err != nil {
+		return nil
+	}
+	var long []string
+	for _, n := range m.UserNames() {
+		if len(n) > names.UsernameMax {
+			long = append(long, n)
+		}
+	}
+	sort.Strings(long)
+	var out []hostFinding
+	for _, n := range long {
+		out = append(out, hostFinding{
+			Text: "the user '" + n + "' has a name of " + strconv.Itoa(len(n)) + " characters; new user names are at most " +
+				strconv.Itoa(names.UsernameMax) + ", and this user has no Linux account, here or on a host",
+			Fix: "tacctl user rename " + n + " <new-name>",
+		})
 	}
 	return out
 }
