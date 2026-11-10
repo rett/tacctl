@@ -3,7 +3,7 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
-## 0.2.29 (unreleased)
+## 0.2.29 (2026-11-09)
 
 1. **A file uploaded through the console keeps the owner's execute bit.** The
    console's file transfer gave every new file the mode 0644 and ignored the
