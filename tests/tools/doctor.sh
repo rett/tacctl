@@ -164,8 +164,19 @@ else
     missing bats "not initialised:$bats_bad; run make bootstrap (git submodule update --init --recursive)"
 fi
 
-# --- 7. the 0.2.2 tag: two Go tests skip without it ---------------------------
-if git -C "$root" rev-parse -q --verify refs/tags/0.2.2 > /dev/null 2>&1; then
+# --- 7. git, and the 0.2.2 tag: two Go tests skip without it -----------------
+have_git=0
+if command -v git > /dev/null 2>&1; then
+    ok git "$(first_line git --version)"
+    have_git=1
+else
+    missing git "$(apt_hint git git)"
+fi
+if [[ $have_git -eq 0 ]]; then
+    expected tag-0.2.2 "git is missing, so the tag cannot be checked"
+elif ! git -C "$root" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+    expected tag-0.2.2 "not a git checkout, so the tag cannot be checked"
+elif git -C "$root" rev-parse -q --verify refs/tags/0.2.2 > /dev/null 2>&1; then
     ok tag-0.2.2 "present"
 else
     missing tag-0.2.2 "two Go tests skip without it (the rollback build, the 0.2.2 schema): git fetch --tags"
