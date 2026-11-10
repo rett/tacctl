@@ -230,7 +230,7 @@ func (inv *invocation) bundleDir(out, device string) (string, error) {
 	if err != nil {
 		return "", inv.usageErr("--out: " + err.Error() + ".")
 	}
-	dir, err := inv.outPath("--out", filepath.Join(home, bundleFolder, out))
+	dir, err := inv.outPathAsCaller("--out", filepath.Join(home, bundleFolder, out))
 	if err != nil {
 		return "", inv.usageErr(err.Error())
 	}
