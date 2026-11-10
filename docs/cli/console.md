@@ -105,7 +105,8 @@ console password-cache [on|off]
     before they connect, and keep it; the logins tacctl makes itself (device config pull,
     diff --pull, plan --pull, block ... adopt, device config apply, device onboard, device
     collect, device enroll) keep the password a device accepted, and every one of these lines
-    uses a cached password (details: shell.md, Password cache)
+    uses a cached password, except a line with --login (a local account's password never
+    comes from or goes into the cache; details: shell.md, Password cache)
 
 console password-cache tiers [<csv>|none]
 

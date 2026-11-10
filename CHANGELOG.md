@@ -3,6 +3,39 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.29 (unreleased)
+
+1. **`tacctl ssh <device> --login <local-user>` logs in as one of the device's
+   own accounts.** In the tacctl console the words after `--` are the remote
+   command and ssh's `-l admin` is refused, and while break-glass is held on a
+   device only its local accounts work, so a person had no way to open a
+   session as `admin` from the console. `tacctl ssh <name|address> --login
+   <local-user> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]`
+   (and `tacctl device ssh`, the same command) now runs ssh as you, as
+   before, with `-l <local-user>` in place of your name. It is for
+   registered devices of any vendor; an enrolled host is refused in one
+   sentence (hosts are reached as you) and nothing is started. The device must
+   have a pinned host key: without one the line is refused and names
+   `tacctl device hostkey <name> accept`, because a local password goes only
+   to a device whose key was verified; with one, ssh checks the key strictly
+   against the pin, exactly as for a plain session. It needs the engineer tier
+   or above, as the other `--login` verbs do (a lower tier gets
+   `'tacctl device ssh --login' is not permitted for the <tier> tier.`), and
+   the device must be in one of your scopes, as for every ssh. The name is
+   letters, digits, `.`, `_` and `-`. The device asks for the account's
+   password at its own prompt: tacctl never asks for it, caches it or stores
+   it, and the password cache of the shell and the console is not used for the
+   line (it is not asked, filled or told to forget, not even when ssh ends with
+   status 255, and the shell gives the line no token). The session's
+   `ssh user= device= addr=` and `ssh end` lines end with `login=<local-user>`
+   (and have no `password=` field); a plain session's lines are unchanged. The
+   warning for a device with break-glass held says `you log in as its local
+   account '<local-user>'` and the session goes on. Help (`tacctl ssh -h`,
+   `help device`), the completion (a `--login` flag with no candidates, as for
+   the other `--login` verbs), the manual page, `docs/cli/device.md`,
+   `docs/cli/shell.md`, `docs/devices/connecting.md`,
+   `docs/devices/walkthroughs.md` and `docs/devices/break-glass.md` describe it.
+
 ## 0.2.28 (2026-11-09)
 
 1. **A support bundle from a Cisco IOS device no longer starts the identity
