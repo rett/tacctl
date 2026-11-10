@@ -187,21 +187,8 @@ func familyTier(root *cobra.Command, path []string) tier.Tier {
 // tierNotes are the verbs whose sub-verbs the gate cannot tell apart (it
 // sees two words); the family's help says what the code decides. They are
 // the Note field of the rows of tier.Rules, so a row and its sentence are
-// edited in one place. The two ssh rows are the exception for now: --login
-// makes their verb two-tiered ("ssh" is an AnySub row, whose key has no
-// sub-verb, "ssh "), and their sentences are added here, with the generated
-// man page and the family's help reading them as any other note.
-var tierNotes = withSSHNotes(tier.Notes())
-
-// sshLoginNote is what the gate cannot tell of 'ssh' and 'device ssh': the
-// session as you is every tier's, --login needs the engineer tier.
-const sshLoginNote = ": a session as you is every tier's; --login (a session as a local account of the device) needs the engineer tier."
-
-func withSSHNotes(n map[string]string) map[string]string {
-	n["ssh "] = "ssh" + sshLoginNote
-	n["device ssh"] = "device ssh" + sshLoginNote
-	return n
-}
+// edited in one place. The key of an AnySub row ("ssh ") has no sub-verb.
+var tierNotes = tier.Notes()
 
 // tierSection is the part of a family's help that names the tier each of
 // its verbs needs: the lowest tier whose rows run it, grouped by tier, with

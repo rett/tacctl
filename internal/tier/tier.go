@@ -133,9 +133,14 @@ type Rule struct {
 	// Note is the sentence the verb's help carries where the gate cannot
 	// tell its sub-verbs apart (it sees two words): what the code decides
 	// beyond the row. One note per Cmd and Sub, on the first row of the
-	// pair; the manual page's TIERS block is generated from it.
+	// pair (an AnySub row has the Sub ""); the manual page's TIERS block is
+	// generated from it.
 	Note string
 }
+
+// sshLoginNote is what the gate cannot tell of 'ssh' and 'device ssh': the
+// session as you is every tier's, --login needs the engineer tier.
+const sshLoginNote = ": a session as you is every tier's; --login (a session as a local account of the device) needs the engineer tier."
 
 // Rules is the tier table (tier_permits and emit_tier_sudoers). Anything
 // that prints a shared secret or a password hash (scope secret, backup diff,
@@ -182,7 +187,8 @@ var Rules = []Rule{
 	{Tier: Readonly, Cmd: "backend", Sub: "status", Sudoers: []string{"backend status", "backend status *"}, Wrap: true},
 	// 'ssh <name>' and the device registry's reads (0.2.1): the root side
 	// filters them to the caller's own scopes (docs/plans/operator-console.md 8).
-	{Tier: Readonly, Cmd: "ssh", AnySub: true, Sudoers: []string{"ssh *"}},
+	{Tier: Readonly, Cmd: "ssh", AnySub: true, Sudoers: []string{"ssh *"},
+		Note: "ssh" + sshLoginNote},
 	{Tier: Readonly, Cmd: "device", Sub: "list", Sudoers: []string{"device list", "device list *"},
 		Note: "device list: the CONFIG column (and config, release, model and serial of --json) is the operator tier's; a read-only user's list has none."},
 	{Tier: Readonly, Cmd: "device", Sub: "show", Sudoers: []string{"device show *"},
@@ -199,7 +205,8 @@ var Rules = []Rule{
 	// 'device notice', and the verb keeps 'ack' and 'unack' the superuser's.
 	{Tier: Readonly, Cmd: "device", Sub: "notice", Sudoers: []string{"device notice list", "device notice list *"},
 		Note: "device notice: every tier may run list; ack and unack need the superuser tier."},
-	{Tier: Readonly, Cmd: "device", Sub: "ssh", Sudoers: []string{"device ssh *"}},
+	{Tier: Readonly, Cmd: "device", Sub: "ssh", Sudoers: []string{"device ssh *"},
+		Note: "device ssh" + sshLoginNote},
 	{Tier: Readonly, Cmd: "device", Sub: "client-config", Sudoers: []string{"device client-config"}, Wrap: true},
 	{Tier: Readonly, Cmd: "_completion-names", AnySub: true, Sudoers: []string{"_completion-names *"}},
 	// The login console asks for its settings once per session (console.go).

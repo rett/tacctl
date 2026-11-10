@@ -838,8 +838,8 @@ func TestNotesAreOnePerCommandAndSub(t *testing.T) {
 			t.Errorf("two rows carry a note for %q", k)
 		}
 		seen[k] = true
-		if r.Cmd == "" || r.Sub == "" || r.AnySub {
-			t.Errorf("a note on a row without Cmd and Sub: %+v", r)
+		if r.Cmd == "" || (r.Sub == "") != r.AnySub {
+			t.Errorf("a note on a row without Cmd, or whose Sub does not match AnySub: %+v", r)
 		}
 	}
 	if len(seen) != len(Notes()) || len(seen) < 13 {

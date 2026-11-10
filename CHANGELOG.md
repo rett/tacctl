@@ -77,6 +77,15 @@ current behaviour; this file is where history lives.
    `docs/cli/config.md`, `docs/install/upgrading.md` and the manual page say
    so.
 
+3. **What a home on an NFS `root_squash` export does to the commands that
+   write as root is documented and tested.** The behaviour is unchanged: a
+   home that others may not search is refused by the path check
+   (`cannot be resolved (Permission denied)`), and in one that others may
+   search `config render --dry-run` and `config linux script|remove-script`
+   write nothing and say `Permission denied`, with the path. Tests pin both,
+   and `docs/cli/conventions.md` and the manual page say to write the file on
+   the local disk of the host and copy it to the home as yourself.
+
 ## 0.2.29 (2026-11-09)
 
 1. **A file uploaded through the console keeps the owner's execute bit.** The
