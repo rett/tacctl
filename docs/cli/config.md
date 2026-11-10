@@ -94,7 +94,9 @@ config validate [--json | --fix-names [--yes]]
     warning too: it works but has no Linux account, here or on a host, and the warning names
     `tacctl user rename <name> <new-name>` (the new name must pass the rules of a new name);
     `--fix-names` does not offer that rename, since it has no name to propose. A name that starts
-    with `_` has an account and is not warned of. A user with several of these faults, upper
+    with `_` has an account and is not warned of, unless it is longer than 32 characters: its
+    warning then gives the letter rule next to the length, so that the replacement (`_svc` is no
+    new name) is not refused in turn. A user with several of these faults, upper
     case included (`1Alice`, or `Alice` followed by 41 characters), gets that one warning only,
     which says so: the lower-case spelling would be refused by `user rename` too (it is longer than
     32 characters, or does not start with a letter, or is reserved), so no warning proposes it. A

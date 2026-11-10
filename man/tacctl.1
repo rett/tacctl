@@ -1731,17 +1731,26 @@ and
 are refused as the first character
 .RB ( "Username '1alice' must start with a letter (a to z): every new user gets a Linux account, and a name that starts with a digit or '-' is no account name (a new name does not start with '_' either)." ),
 and nothing is changed. The checks run in this order and the first that fails is
-the answer: the shape, the reserved names, upper case (so
-.B Alice
-and
-.B 1Alice
-are told the lower case spelling first), the length and the first character. A
-user that exists as
+the answer: the shape, the reserved names, upper case, the length and the first
+character. The lower case spelling is suggested only when it passes the other
+checks, so that the retry is accepted
+.RB ( Alice
+is told
+.BR alice ;
+.BR 1Alice " and " _Alice
+are told at once to be lower case and start with a letter,
+.BR Root " and " Tacquito
+that their lower case spelling is reserved). A user that exists as
 .BR 9dave ,
 .B _svc
 or
 .B \-x
-keeps working as it is; only a new name is checked, and
+keeps working as it is (a name that starts with
+.B \-
+is typed as an ordinary word,
+.BR "tacctl user show \-x" ;
+.B \-\-
+is not an end\-of\-options marker of the user verbs); only a new name is checked, and
 .B "config validate"
 warns of an existing name that starts with a digit or
 .BR \- .
@@ -3293,7 +3302,8 @@ too: it works but has no Linux account, here or on a host, and the warning names
 .B \-\-fix\-names
 does not offer that rename. A name that starts with
 .B _
-has an account and is not warned of. A user with several of these faults, upper
+has an account and is not warned of, unless it is longer than 32 characters:
+its warning then gives the letter rule next to the length. A user with several of these faults, upper
 case included, gets that one warning only, which says so: the lower case
 spelling would be refused by
 .B "user rename"

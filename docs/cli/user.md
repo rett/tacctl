@@ -249,10 +249,15 @@ must start with a letter (a to z): every new user gets a Linux account, and a na
 with a digit or '-' is no account name (a new name does not start with '_' either).` and change
 nothing. The checks run in this order, and the first that fails is the answer: the shape (letters,
 digits, `_` and `-`; no period), the reserved names, upper case (`Names are lower case: use
-'alice'.`, so `Alice` and `1Alice` are told the lower-case spelling first, and the letter rule
-follows on the retry with `1alice`), the length (at most 32) and the first character. Only a new
-name is checked: a user from an earlier release named `9dave`, `_svc` or `-x` keeps working. It
-is shown, listed, changed, renamed away to a name that passes the rules, removed and restored by
+'alice'.`), the length (at most 32) and the first character. The lower-case spelling is suggested
+only when it passes the other checks, so the retry is accepted: `Alice` is told `alice`, while
+`1Alice` and `_Alice` are told at once that the name must be lower case and start with a letter
+(`Username '1Alice' must be lower case and start with a letter (a to z): ...`), `Root` and
+`Tacquito` that `root` and `tacquito` are reserved, and an upper-case name over 32 characters its
+length and that names are lower case as well. Only a new name is checked: a user from an earlier
+release named `9dave`, `_svc` or `-x` keeps working. A name that starts with `-` is typed as an
+ordinary word (`tacctl user show -x`, `tacctl user remove -x`); `--` is not an end-of-options marker
+of the user verbs and would be read as the user name. The user is shown, listed, changed, renamed away to a name that passes the rules, removed and restored by
 `backup restore` as before, and `tacctl upgrade` carries it unchanged. A name that starts with a
 digit or `-` has no account on the tacctl server or on a host, so `config validate` warns of it
 under `Names:` with `tacctl user rename <name> <new-name>`; a name that starts with `_` has an
