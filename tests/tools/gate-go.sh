@@ -22,10 +22,12 @@
 # A FAIL verdict is preceded, last of the lines above it, by the failing tests,
 # at most ten, one 'FAIL: <name>' line each, from the '--- FAIL: TestX' lines of
 # the log (a top-level test and a subtest each, a name once, in the order of
-# the log; the form 'qargi feature verify' reads). A package that failed
-# without a failing test (a build failure, a panic, a timeout) is named by its
-# 'FAIL <package>' line instead ('FAIL: <package>'). The failures= field of the
-# verdict line counts every FAIL and panic line, listed or not.
+# the log; the form 'qargi feature verify' reads). Only when no test failed
+# (no '--- FAIL:' line at all: a build failure, a panic, a timeout) are the
+# packages named by their 'FAIL <package>' lines instead ('FAIL: <package>'); a
+# run with a failing test and a package that failed to build names only the
+# test. The failures= field of the verdict line counts every FAIL and panic
+# line, listed or not, and the build failure is in the log.
 #
 # A run of the whole suite (no package listed, no --tags) first runs 'make
 # lint-go': gofmt, go vet and golangci-lint in both tag sets, the Go half of

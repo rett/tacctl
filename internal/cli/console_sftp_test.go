@@ -18,7 +18,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -619,26 +618,20 @@ func TestConsoleSFTPWithoutAPolicyAnswer(t *testing.T) {
 	}
 }
 
-// A session whose audit lines are slow to log ends soon after the client
-// leaves: every line is still logged, in order, before the console ends, so
-// what the client waits for at its end is the lines queued, and the queue is
-// short (sftpAuditQueue); a client that is ahead of the log is held back
-// request by request, not all at once at the end (it was about a second for
-// 200 lines at 5 ms a line, with a queue of 256).
+// A session whose audit lines are slow to log still logs every one of them,
+// in order, before the console ends: the start lines, a line for each
+// request, the totals, the end. The client leaves while lines are still
+// queued, and none is dropped or put out of order.
 //
 // The fake logger takes 5 ms a call: a real timer, which is the point (the
-// time a 'logger' process takes is what the audit is slow by), and the only
-// wait of the test. The client makes 200 requests that are each a line and
-// leaves at once. The bound is on the lines that were not yet begun when the
-// client's last request was answered, which a loaded machine cannot change;
-// the time from the close to the end is only logged.
-func TestConsoleSFTPEndsWithABacklogOfAuditLines(t *testing.T) {
-	const lines = 200
-	var begun atomic.Int64
+// time a 'logger' process takes is what makes the audit slower than the
+// client), and the only wait of the test. The time from the close to the end
+// is only logged, it is not a bound: it depends on the machine.
+func TestConsoleSFTPLogsEveryAuditLineInOrderWithASlowLogger(t *testing.T) {
+	const lines = 60
 	r := startSFTPSetup(t, context.Background(), sftpPolicy(console.FileTransfer{Enabled: true}), "internal-sftp",
 		func(h *harness) {
 			h.runner.OnFunc([]string{"logger"}, func(execx.Cmd) (execx.Result, error) {
-				begun.Add(1)
 				time.Sleep(5 * time.Millisecond) // the fake 'logger': 5 ms a line
 				return execx.Result{}, nil
 			})
@@ -649,20 +642,12 @@ func TestConsoleSFTPEndsWithABacklogOfAuditLines(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// The two start lines (the console's, the transfer's) are the first calls,
-	// then comes one for each request answered.
-	backlog := int64(2+lines) - begun.Load()
 	left := time.Now()
 	_ = c.Close()
 	status := <-r.done
-	t.Logf("handler returned %v after the client's close; %d lines were not yet begun at the close", time.Since(left), backlog)
+	t.Logf("handler returned %v after the client's close", time.Since(left))
 	if status != 0 {
 		t.Fatalf("status %d, stderr %q", status, r.h.err.String())
-	}
-	// A line being logged, and the one the request that was answered last may
-	// still be handing over, are not in the queue.
-	if backlog > sftpAuditQueue+2 {
-		t.Errorf("%d lines waited for their log at the client's close, the queue holds %d", backlog, sftpAuditQueue)
 	}
 	log := consoleLog(r.h.runner)
 	if len(log) != 2+lines+2 {

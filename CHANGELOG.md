@@ -77,38 +77,14 @@ current behaviour; this file is where history lives.
    `docs/cli/config.md`, `docs/install/upgrading.md` and the manual page say
    so.
 
-3. **A file transfer session ends sooner after the client leaves.** Every
-   request of a console file transfer that changes something (an upload, a
-   download, a delete, a rename, a make-directory, a refusal) is one audit
-   line, one `logger` process, and the console ends only when every line is
-   logged, in order. The lines wait in a queue while the client goes on, and
-   the queue held 256: a client that did many small requests (a tree of small
-   files) and then left was held until the console had logged all that was
-   still queued, about a second for 200 lines at 5 ms a line, which is where
-   a transfer seemed to linger after the client had left. The queue now holds
-   32 lines, so at most 32 lines are left to log when the client leaves (about
-   0.2 s at that speed) and a client that is ahead of the audit is held back
-   by it, request by request, as it goes. No line is dropped, none is logged
-   out of order and none after the console has ended. Nothing else changes:
-   the lines, their words and their order are as before.
-
-4. **A home that root cannot write is refused in one line, and a test says
-   so.** `config render --dry-run --out`, `config linux script --output` and
-   `config linux remove-script --output` write as root, inside the home of the
-   person who ran `sudo`. On an NFS export with `root_squash` root is mapped to
-   an unprivileged account and cannot write there, although the path is inside
-   the home. This was already a plain refusal and is unchanged: nothing is
-   written, no file or directory is left half made, a file of that name stays
-   as it was, and the line names the path and the cause (`Cannot write
-   <path>: Permission denied`, `Cannot create '<path>': Permission denied` or
-   `install: cannot create regular file '<path>': Permission denied`), exit
-   status 1. The files written as the caller (`device config plan`,
-   `device reports export`, `device support-bundle`) take the caller's
-   identity and are not affected. A test (`TestOutPathRootSquashedHome...`)
-   pins the three, with a directory its owner cannot write for the refusal.
-   `docs/cli/conventions.md` and the manual page say what to do: name a path
-   inside the home that root can write, or run the command without `sudo`
-   where the tier allows it.
+3. **What a home on an NFS `root_squash` export does to the commands that
+   write as root is documented and tested.** The behaviour is unchanged: a
+   home that others may not search is refused by the path check
+   (`cannot be resolved (Permission denied)`), and in one that others may
+   search `config render --dry-run` and `config linux script|remove-script`
+   write nothing and say `Permission denied`, with the path. Tests pin both,
+   and `docs/cli/conventions.md` and the manual page say to write the file on
+   the local disk of the host and copy it to the home as yourself.
 
 ## 0.2.29 (2026-11-09)
 

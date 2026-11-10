@@ -28,6 +28,7 @@ test) case "$STUB_MODE" in
     failmany) for i in $(seq -w 12); do printf -- '--- FAIL: TestF%s (0.00s)\n' "$i"; done
         printf 'FAIL\tp/a\t0.1s\nok  \tp/b\t0.1s\n'; exit 1 ;;
     failslow) printf -- '--- SKIP: TestY (0.00s)\n--- PASS: TestSlow (47.12s)\n--- FAIL: TestX (0.00s)\nFAIL\tp/a\t0.1s\nok  \tp/b\t0.1s\n'; exit 1 ;;
+    mixed) printf -- '--- FAIL: TestX (0.00s)\nFAIL\tp/a\t0.1s\nFAIL\tp/b [build failed]\n'; exit 1 ;;
     build) printf 'FAIL\tp/a [build failed]\nok  \tp/b\t0.1s\n'; exit 1 ;;
     panic) printf 'panic: boom [recovered]\nFAIL\tp/a\t0.1s\nFAIL\tp/b\t0.1s\nFAIL\n'; exit 1 ;;
     hang) exec sleep 30 ;;
@@ -182,6 +183,16 @@ sleeper_below() {
     [[ "${lines[-2]}" == "FAIL: p/b" ]]
     [[ "${lines[-3]}" == "FAIL: p/a" ]]
     [[ "$(printf '%s\n' "${lines[@]}" | grep -c '^FAIL: ')" -eq 2 ]]
+}
+
+@test "a failing test and a package that failed to build: only the test is named, the build failure is counted" {
+    STUB_MODE=mixed run -1 "$GATE" -o "$LOG"
+    [[ "${lines[-1]}" == "GATE-GO FAIL rc=1 packages=0/2 failures=3 "* ]]
+    [[ "${lines[-2]}" == "FAIL: TestX" ]]
+    [[ "$(printf '%s\n' "${lines[@]}" | grep -c '^FAIL: ')" -eq 1 ]]
+    [[ "$output" != *"FAIL: p/b"* ]]
+    # the build failure is in the log
+    grep -q '^FAIL	p/b \[build failed\]' "$LOG"
 }
 
 @test "a PASS names no failing test" {
