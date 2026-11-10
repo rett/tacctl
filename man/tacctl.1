@@ -1627,8 +1627,26 @@ Add a user. The name is lower case (lower\-case letters, digits,
 a name with upper case is refused with the lower\-case spelling to use, and a
 user that exists with upper case keeps working as it is
 .RB ( "tacctl config validate"
-lists it). A period is refused: it cannot be part of a Linux account name, and
-every user has an account on the tacctl server. This holds for every
+lists it). A name is at most 32 characters, the longest a Linux account name can
+be: a longer one is refused with its length
+.RB ( "Username '<name>' is 33 characters; a user name is at most 32 (the longest a Linux account name can be)." ),
+and nothing is changed. A user that exists with a longer name (an earlier release
+took any length) keeps working as it is, is carried unchanged by
+.B "backup restore"
+and
+.BR "tacctl upgrade" ,
+and has no Linux account, here or on a host. So has a user whose name has upper
+case letters or starts with a digit or
+.BR \- :
+a Linux account name starts with a lower case letter or
+.BR _ ,
+and
+.B "user add"
+still accepts a name that starts with a digit or
+.BR \- .
+A period is refused: it
+cannot be part of a Linux account name, and a user whose name is not one has no
+account on this server. This holds for every
 .B user
 verb, for
 .B passwd
@@ -1968,9 +1986,10 @@ Requires: \fBsuperuser\fR.
 .BI "user rename " "old new"
 Rename a user. The user's
 .B "console system\-shell user"
-setting moves to the new name, and the command says so. The new name is lower case and follows the rules of
+setting moves to the new name, and the command says so. The new name is lower case, at most 32 characters, and follows the rules of
 .BR "user add" ;
-a period is refused in either name.
+a period is refused in either name, and the old name can be any name a user has
+(also one of more than 32 characters).
 Changing only the spelling
 .RB ( "user rename Alice alice" )
 is how a name from before is fixed. A device matches the typed login name
@@ -3162,7 +3181,14 @@ case) is a warning under
 naming the rename that fixes it
 .RB ( "tacctl user rename Alice alice" ,
 and the like); the one for a user adds that devices match the typed login name
-exactly, so the rename changes what the person types at the device. Only the superuser's view has these findings.
+exactly, so the rename changes what the person types at the device. A user from
+an earlier release whose name is longer than 32 characters (a new name is at
+most 32) is a warning under
+.B Names:
+too: it works but has no Linux account, here or on a host, and the warning names
+.BR "tacctl user rename" " name " new\-name ;
+.B \-\-fix\-names
+does not offer that rename. Only the superuser's view has these findings.
 .IP
 Then, for every enabled backend, whether its rendered config is up to date
 with the store and whether any of its files was edited by hand (drift). With

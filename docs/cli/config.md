@@ -88,7 +88,11 @@ config validate [--json | --fix-names [--yes]]
     `host rename`; see cli/host.md). A device, host, user or scope whose name has upper case (the
     names of new ones are lower case) gets a `Names:` warning that names the rename which fixes it
     (`tacctl user rename Alice alice`; for a user it adds that devices match the typed login name
-    exactly, so the rename changes what the person types); the superuser's view only. Exits 1 on
+    exactly, so the rename changes what the person types); the superuser's view only. A user from
+    an earlier release whose name is longer than 32 characters (a new name is at most 32, see
+    cli/user.md) gets a `Names:` warning too: it works but has no Linux account, here or on a
+    host, and the warning names `tacctl user rename <name> <new-name>`; `--fix-names` does not
+    offer that rename, since it has no name to propose. Exits 1 on
     errors. The verb takes no argument: a word other than its options is refused (`Unknown
     argument`) and no report is printed. `--json` prints the findings as one JSON object and
     nothing else on standard output (the schema is below); the exit status is the same.

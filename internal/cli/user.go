@@ -477,6 +477,9 @@ func (inv *invocation) userAdd(args []string) error {
 	if err := names.RequireLower(username); err != nil {
 		return err
 	}
+	if err := names.RejectLongUsername(username); err != nil {
+		return err
+	}
 	if err := inv.groupCheck(group, "Usage: tacctl user add <username> <group>"); err != nil {
 		return err
 	}
@@ -1080,6 +1083,7 @@ func (inv *invocation) userRename(args []string) error {
 		func() error { return names.ValidateUsername(newname) },
 		func() error { return names.RejectReservedUsername(newname) },
 		func() error { return names.RequireLower(newname) },
+		func() error { return names.RejectLongUsername(newname) },
 	} {
 		if err := check(); err != nil {
 			return err
