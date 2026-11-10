@@ -11502,7 +11502,7 @@ Options:
 .RE
 .\" END GENERATED: command device hostkey
 .TP
-.BI "device ssh " name|address " [ \-p " port " ] [ \-\- " "ssh args" " ]"
+.BI "device ssh " name|address " [ \-\-login " local\-user " ] [ \-p " port " ] [ \-\- " "ssh args" " ]"
 The same as
 .BR "tacctl ssh" ,
 below.
@@ -11515,6 +11515,9 @@ Options:
 .TP
 \fB\-p\fR \fI<port>\fR
 Connect to this port (default: the device's port, else 22).
+.TP
+\fB\-\-login\fR \fI<local\-user>\fR
+Log in as this local account of the device (a break\-glass one, or any other) instead of as you; the account's password is asked by the device itself, never by tacctl, and is not cached or stored. For registered devices of any vendor with a pinned host key, not enrolled hosts; the engineer tier and up, for a device in one of your scopes.
 .TP
 \fB\-X\fR
 Forward X11 to this server's display (untrusted, as ssh \-X).
@@ -14654,7 +14657,7 @@ Do not ask for confirmation.
 .\" END GENERATED: command device reports prune
 .SS SSH to a device \fB(tacctl ssh)\fR
 .TP
-.BI "ssh " name|address " [ \-p " port " ] [ \-X | \-Y ] [ \-g ] [ { \-L | \-R | \-D } " spec " ]... [ \-\- " "ssh args" " ]"
+.BI "ssh " name|address " [ \-\-login " local\-user " ] [ \-p " port " ] [ \-X | \-Y ] [ \-g ] [ { \-L | \-R | \-D } " spec " ]... [ \-\- " "ssh args" " ]"
 Open an ssh session to a registered device or an enrolled host, named by its
 name or its registered address. tacctl resolves the name as root and admits
 only an active tacctl user (in the store, not disabled, with a password) whose
@@ -14837,6 +14840,41 @@ Words after
 that start with a dash, an unpinned device, and an account that is not in the
 local account database keep the prompt. An ssh that ends with status 255
 makes the cache forget the password.
+.IP
+.BI \-\-login " local\-user"
+logs in as that local account of the device instead of as the invoking user
+(ssh's
+.B \-l
+is not available after
+.BR \-\- ,
+in the console the words there are the remote command): the way in to a device
+whose break-glass is held, which takes local accounts only. The name is
+letters, digits,
+.BR . ,
+.B _
+and
+.BR \- .
+It is for registered devices of any vendor, not for an enrolled host
+.RI ( "\-\-login is for registered devices" ;
+hosts are reached as the user), and only for a device with a pinned host key
+.RI ( "has no pinned host key, and a local password goes only to a device whose key was verified" ;
+the key is checked strictly against the pin, as for a plain session), for the
+engineer tier and up
+.RI ( "'tacctl device ssh \-\-login' is not permitted for the tier tier" ),
+and for a device in one of the caller's scopes, as for every ssh. A refusal of the
+entry is logged
+.RB ( "ssh DENY ... reason=login\-host" " or " "reason=login\-unpinned" ).
+The device asks for the account's password at its own prompt: tacctl never
+asks for it, caches it or stores it, it is the engineer's, and the password
+cache is neither asked, filled nor told to forget for the line (the shell
+leaves it shut). The two log lines end with
+.BI login= local\-user
+(before
+.BR console= ),
+and have no
+.B password=
+field. The warning for a held device then says the local account is what is
+used.
 .\" BEGIN GENERATED: command ssh
 .RS
 .PP
@@ -14846,6 +14884,9 @@ Options:
 .TP
 \fB\-p\fR \fI<port>\fR
 Connect to this port (default: the device's port, else 22).
+.TP
+\fB\-\-login\fR \fI<local\-user>\fR
+Log in as this local account of the device (a break\-glass one, or any other) instead of as you; the account's password is asked by the device itself, never by tacctl, and is not cached or stored. For registered devices of any vendor with a pinned host key, not enrolled hosts; the engineer tier and up, for a device in one of your scopes.
 .TP
 \fB\-X\fR
 Forward X11 to this server's display (untrusted, as ssh \-X).
@@ -14942,7 +14983,9 @@ has a
 .B Break\-glass
 section, and
 .B "tacctl ssh"
-warns and connects.
+warns and connects
+.RB ( "tacctl ssh " device " \-\-login " account
+logs in as one of its local accounts).
 .PP
 The record is
 .B breakglass_hold.<device>.address|since|by|reason
