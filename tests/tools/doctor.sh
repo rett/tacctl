@@ -13,8 +13,9 @@
 # 'missing' is a tool or file that make lint, make gate-go or make build needs,
 # or whose absence makes tests skip silently (the list in the comment at the
 # top of .github/workflows/test.yml); 'expected' is optional, with what you
-# lose without it. The exit status is 1 when any line starts with 'missing',
-# else 0.
+# lose without it (the bats submodules, which only the bats suite needs, and
+# so a fresh clone before make bootstrap, are 'expected'). The exit status is
+# 1 when any line starts with 'missing', else 0.
 #
 # The pins are read where they live, never copied here: the Go version
 # (GO_VERSION) from bin/tacctl.sh, the golangci-lint version
@@ -54,14 +55,16 @@ have_tool() {
 # --- 1. Go: the Makefile's GO, at the version bin/tacctl.sh pins or newer -----
 go_pin=$(sed -n 's/^GO_VERSION="\([0-9.]*\)"$/\1/p' "$root/bin/tacctl.sh" 2> /dev/null)
 GO="${GO:-$(sed -n 's/^GO ?= *//p' "$root/Makefile" 2> /dev/null | head -n 1)}"
-GO="${GO:-/usr/local/go/bin/go}"
+GO="${GO:-$(command -v go 2> /dev/null)}"
 go_fix="run bin/tacctl.sh as root (it installs the pinned Go ${go_pin:-?} in /usr/local/go; --build only uses it), or set GO=<path to go ${go_pin:-?}>"
 if [[ -z "$go_pin" ]]; then
     missing go "no GO_VERSION in bin/tacctl.sh, so the pinned Go cannot be known"
+elif [[ -z "$GO" ]]; then
+    missing go "no GO ?= line in the Makefile and no go in PATH: $go_fix"
 elif ! go_path=$(command -v "$GO" 2> /dev/null); then
     missing go "$GO does not exist: $go_fix"
 else
-    go_have=$("$go_path" version 2> /dev/null | awk '{print $3}')
+    go_have=$(GOTOOLCHAIN=local "$go_path" version 2> /dev/null | awk '{print $3}')
     go_have="${go_have#go}"
     # bin/tacctl.sh installs Go only when it is missing or older and never
     # replaces a newer one, so a Go equal to the pin or newer is fine.
@@ -77,9 +80,20 @@ else
 fi
 
 # --- 2. gofmt beside that go, and a C compiler (cgo, the race detector) -------
-gofmt="${GOFMT:-$(dirname "$GO")/gofmt}"
-if [[ -x "$gofmt" ]]; then
-    ok gofmt "$gofmt"
+# A value with a slash is a path; one without is looked up in PATH, as make
+# does when it runs it.
+gofmt="${GOFMT:-}"
+if [[ -z "$gofmt" ]]; then
+    if [[ -n "${go_path:-}" ]]; then gofmt="$(dirname "$go_path")/gofmt"; else gofmt=gofmt; fi
+fi
+if [[ "$gofmt" == */* ]]; then
+    gofmt_path=""
+    [[ ! -x "$gofmt" ]] || gofmt_path="$gofmt"
+else
+    gofmt_path=$(command -v "$gofmt" 2> /dev/null)
+fi
+if [[ -n "$gofmt_path" ]]; then
+    ok gofmt "$gofmt_path"
 else
     missing gofmt "$gofmt does not exist; it comes with the Go toolchain (see go)"
 fi
@@ -97,9 +111,12 @@ if [[ -n "${GOLANGCI_LINT:-}" ]]; then
     lint="$GOLANGCI_LINT"
 else
     lint=$(command -v golangci-lint 2> /dev/null)
-    for cand in "$HOME/go/bin/golangci-lint" "$HOME/.local/bin/golangci-lint"; do
-        [[ -n "$lint" || ! -x "$cand" ]] || lint="$cand"
-    done
+    # The home candidates need HOME; without it they are skipped.
+    if [[ -n "${HOME:-}" ]]; then
+        for cand in "$HOME/go/bin/golangci-lint" "$HOME/.local/bin/golangci-lint"; do
+            [[ -n "$lint" || ! -x "$cand" ]] || lint="$cand"
+        done
+    fi
 fi
 if [[ -z "$lint_pin" ]]; then
     missing golangci-lint "no GOLANGCI_LINT_VERSION in the Makefile, so the pinned version cannot be known"
@@ -136,7 +153,7 @@ else
 fi
 have_tool ssh-keygen ssh-keygen "$(apt_hint openssh-client openssh)"
 
-# --- 6. the bats submodules ---------------------------------------------------
+# --- 6. the bats submodules: only the bats suite needs them -------------------
 bats_bad=""
 [[ -x "$root/tests/bats/bats-core/bin/bats" ]] || bats_bad=" bats-core/bin/bats"
 for d in bats-support bats-assert bats-file; do
@@ -145,11 +162,22 @@ done
 if [[ -z "$bats_bad" ]]; then
     ok bats "the four submodules under tests/bats are in place"
 else
-    missing bats "not initialised:$bats_bad; run make bootstrap (git submodule update --init --recursive)"
+    expected bats "not initialised:$bats_bad; only the bats suite needs them (make bootstrap)"
 fi
 
-# --- 7. the 0.2.2 tag: two Go tests skip without it ---------------------------
-if git -C "$root" rev-parse -q --verify refs/tags/0.2.2 > /dev/null 2>&1; then
+# --- 7. git, and the 0.2.2 tag: two Go tests skip without it -----------------
+have_git=0
+if command -v git > /dev/null 2>&1; then
+    ok git "$(first_line git --version)"
+    have_git=1
+else
+    missing git "$(apt_hint git git)"
+fi
+if [[ $have_git -eq 0 ]]; then
+    expected tag-0.2.2 "git is missing, so the tag cannot be checked"
+elif ! git -C "$root" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+    expected tag-0.2.2 "not a git checkout, so the tag cannot be checked"
+elif git -C "$root" rev-parse -q --verify refs/tags/0.2.2 > /dev/null 2>&1; then
     ok tag-0.2.2 "present"
 else
     missing tag-0.2.2 "two Go tests skip without it (the rollback build, the 0.2.2 schema): git fetch --tags"
@@ -191,8 +219,11 @@ if [[ $EUID -eq 0 || -n "${SUDO_USER:-}" ]]; then
 else
     ok user "an ordinary user (uid $EUID), as bats needs (tests/README.md)"
 fi
-patterns="${TACCTL_PRIVATE_PATTERNS:-$HOME/.config/tacctl/private-patterns}"
-if [[ -f "$patterns" ]]; then
+patterns="${TACCTL_PRIVATE_PATTERNS:-}"
+[[ -n "$patterns" || -z "${HOME:-}" ]] || patterns="$HOME/.config/tacctl/private-patterns"
+if [[ -z "$patterns" ]]; then
+    expected private-patterns "HOME is not set and TACCTL_PRIVATE_PATTERNS is empty; tests/tools/no-private.sh then checks only its built-in patterns"
+elif [[ -f "$patterns" ]]; then
     ok private-patterns "$patterns"
 else
     expected private-patterns "$patterns is absent; tests/tools/no-private.sh then checks only its built-in patterns"
