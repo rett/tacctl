@@ -23,7 +23,8 @@ type server struct {
 	handles handleCount // the open files and directory listings
 	fresh   freshModes  // the files created owner-writable, waiting for their mode
 
-	beforeTruncate func() // a test's hooks, see seams
+	afterOpen      func() // a test's hooks, see seams
+	beforeTruncate func()
 	afterPin       func()
 }
 
