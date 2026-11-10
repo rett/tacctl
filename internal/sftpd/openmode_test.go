@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -14,14 +15,17 @@ import (
 
 // The SFTP packet types a raw client needs.
 const (
-	rawInit    = 1
-	rawOpen    = 3
-	rawClose   = 4
-	rawWrite   = 6
-	rawRead    = 5
-	rawVersion = 2
-	rawStatus  = 101
-	rawHandle  = 102
+	rawInit     = 1
+	rawOpen     = 3
+	rawClose    = 4
+	rawSetstat  = 9
+	rawFsetstat = 10
+	rawMkdir    = 14
+	rawWrite    = 6
+	rawRead     = 5
+	rawVersion  = 2
+	rawStatus   = 101
+	rawHandle   = 102
 
 	rawFlagRead  = 0x1
 	rawFlagWrite = 0x2
@@ -29,7 +33,10 @@ const (
 	rawFlagTrunc = 0x10
 	rawFlagExcl  = 0x20
 
-	rawAttrPerm = 0x4
+	rawAttrSize     = 0x1
+	rawAttrExtended = 0x80000000
+	rawAttrPerm     = 0x4
+	rawAttrTimes    = 0x8
 )
 
 // rawConn speaks SFTP by hand, so that a test can put attributes in an open
@@ -156,6 +163,28 @@ func (r *rawConn) finish(h, data string) {
 	}
 }
 
+// fsetstat sends an fsetstat request for the handle h with the attribute flags
+// aflags and the block attrs, and returns the status code.
+func (r *rawConn) fsetstat(h string, aflags uint32, attrs []byte) uint32 {
+	r.t.Helper()
+	b := str(nil, h)
+	b = binary.BigEndian.AppendUint32(b, aflags)
+	b = append(b, attrs...)
+	typ, body := r.request(rawFsetstat, b)
+	return status(r.t, typ, body)
+}
+
+// closeHandle closes the handle h.
+func (r *rawConn) closeHandle(h string) {
+	r.t.Helper()
+	typ, body := r.request(rawClose, str(nil, h))
+	if c := status(r.t, typ, body); c != 0 {
+		r.t.Fatalf("close: status %d", c)
+	}
+}
+
+func sizeAttrs(size uint64) []byte { return binary.BigEndian.AppendUint64(nil, size) }
+
 func permAttrs(mode uint32) []byte { return binary.BigEndian.AppendUint32(nil, mode) }
 
 // The open request carries the mode of the new file: its permission bits,
@@ -189,6 +218,10 @@ func TestOpenModeOfTheRequest(t *testing.T) {
 		{"no attributes: 0644 under umask 022", 0o022, creatTrunc, 0, nil, 0, 0o644},
 		{"no attributes: 0600 under the console umask", 0o077, creatTrunc, 0, nil, 0, 0o600},
 		{"create and exclusive", 0o022, rawFlagWrite | rawFlagCreat | rawFlagExcl, rawAttrPerm, permAttrs(0o755), 0, 0o755},
+		{"mode 0 asks for nothing: 0644 under umask 022", 0o022, creatTrunc, rawAttrPerm, permAttrs(0), 0, 0o644},
+		{"mode 0 asks for nothing: 0600 under the console umask", 0o077, creatTrunc, rawAttrPerm, permAttrs(0), 0, 0o600},
+		{"extended attributes without any: 0644 under umask 022", 0o022, creatTrunc, rawAttrExtended, permAttrs(0), 0, 0o644},
+		{"extended attributes without any: 0600 under the console umask", 0o077, creatTrunc, rawAttrExtended, permAttrs(0), 0, 0o600},
 		{"permissions with times are not read", 0o022, creatTrunc, rawAttrPerm | times, twelve, 0, 0o644},
 		{"an existing file keeps its mode", 0o022, creatTrunc, rawAttrPerm, permAttrs(0o755), 0o640, 0o640},
 		{"an existing file without create keeps its mode", 0o022, rawFlagWrite, rawAttrPerm, permAttrs(0o755), 0o640, 0o640},
@@ -258,5 +291,305 @@ func TestPermBits(t *testing.T) {
 		if got := permBits(in); got != want {
 			t.Errorf("permBits(%o) = %o, want %o", in, got, want)
 		}
+	}
+}
+
+// An upload of a file whose mode lacks the owner's write bit (scp without -p
+// sends 0444 or 0555 for a read-only source) ends with a size step: the client
+// sets the size of the handle it wrote, which the library turns into a setstat
+// of the path, a truncate that needs write permission. The file must be
+// writable by its owner until the handle is closed, and have the mode the
+// client asked for after it.
+func TestOpenModeWithoutOwnerWrite(t *testing.T) {
+	const creatTrunc = rawFlagWrite | rawFlagCreat | rawFlagTrunc
+	tests := []struct {
+		name   string
+		umask  int
+		mode   uint32
+		pflags uint32
+		want   os.FileMode
+	}{
+		{"0400 under the console umask", 0o077, 0o400, creatTrunc, 0o400},
+		{"0444 under the console umask", 0o077, 0o444, creatTrunc, 0o400},
+		{"0500 under the console umask", 0o077, 0o500, creatTrunc, 0o500},
+		{"0555 under the console umask", 0o077, 0o555, creatTrunc, 0o500},
+		{"0444 under umask 022", 0o022, 0o444, creatTrunc, 0o444},
+		{"0555 under umask 022", 0o022, 0o555, creatTrunc, 0o555},
+		{"0444 and exclusive", 0o022, 0o444, rawFlagWrite | rawFlagCreat | rawFlagExcl, 0o444},
+		{"0444 for reading and writing", 0o022, 0o444, rawFlagRead | creatTrunc, 0o444},
+		{"the special bits are dropped", 0o022, 0o4444, creatTrunc, 0o444},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			old := syscall.Umask(tc.umask)
+			defer syscall.Umask(old)
+			home := filepath.Join(t.TempDir(), "home")
+			if err := os.Mkdir(home, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			p := filepath.Join(home, "f")
+			r := newRawConn(t, home)
+			h, code := r.open("f", tc.pflags, rawAttrPerm, permAttrs(tc.mode))
+			if h == "" {
+				t.Fatalf("open refused: status %d", code)
+			}
+			b := str(nil, h)
+			b = binary.BigEndian.AppendUint64(b, 0)
+			b = str(b, "newdata")
+			typ, body := r.request(rawWrite, b)
+			if c := status(t, typ, body); c != 0 {
+				t.Fatalf("write: status %d", c)
+			}
+			// What scp does after the data: the size of the handle.
+			if c := r.fsetstat(h, rawAttrSize, sizeAttrs(7)); c != 0 {
+				t.Errorf("fsetstat of the size: status %d, want 0", c)
+			}
+			r.closeHandle(h)
+			fi, err := os.Stat(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if fi.Mode() != tc.want {
+				t.Errorf("mode %v, want %v", fi.Mode(), tc.want)
+			}
+			if fi.Size() != 7 {
+				t.Errorf("size %d, want 7", fi.Size())
+			}
+		})
+	}
+}
+
+// writeAt writes data at offset 0 of the handle h.
+func (r *rawConn) writeAt(h, data string) {
+	r.t.Helper()
+	b := binary.BigEndian.AppendUint64(str(nil, h), 0)
+	typ, body := r.request(rawWrite, str(b, data))
+	if c := status(r.t, typ, body); c != 0 {
+		r.t.Fatalf("write: status %d", c)
+	}
+}
+
+func newHome(t *testing.T) string {
+	t.Helper()
+	home := filepath.Join(t.TempDir(), "home")
+	if err := os.Mkdir(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return home
+}
+
+func modeOfFile(t *testing.T, p string) os.FileMode {
+	t.Helper()
+	fi, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fi.Mode()
+}
+
+// A file that exists is not touched by an open that asks for a mode without
+// the owner's write bit, with or without truncation: it keeps its mode, and
+// the client's size step works on it as on any file its owner can write.
+func TestOpenModeWithoutOwnerWriteExistingFile(t *testing.T) {
+	for _, pflags := range []uint32{
+		rawFlagWrite | rawFlagCreat | rawFlagTrunc,
+		rawFlagWrite | rawFlagCreat,
+		rawFlagRead | rawFlagWrite | rawFlagCreat,
+	} {
+		old := syscall.Umask(0o077)
+		home := newHome(t)
+		p := filepath.Join(home, "f")
+		if err := os.WriteFile(p, []byte("old data"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(p, 0o640); err != nil {
+			t.Fatal(err)
+		}
+		r := newRawConn(t, home)
+		h, code := r.open("f", pflags, rawAttrPerm, permAttrs(0o400))
+		if h == "" {
+			t.Fatalf("pflags %#x: open refused: status %d", pflags, code)
+		}
+		r.writeAt(h, "new")
+		if c := r.fsetstat(h, rawAttrSize, sizeAttrs(3)); c != 0 {
+			t.Errorf("pflags %#x: fsetstat of the size: status %d", pflags, c)
+		}
+		r.closeHandle(h)
+		syscall.Umask(old)
+		if got := modeOfFile(t, p); got != 0o640 {
+			t.Errorf("pflags %#x: mode %v, want -rw-r-----", pflags, got)
+		}
+	}
+}
+
+// A client that sets the permissions of the file between the data and the
+// close gets what it set: the close does not put the mode of the open back.
+func TestOpenModeWithoutOwnerWriteSetstatWins(t *testing.T) {
+	old := syscall.Umask(0o077)
+	defer syscall.Umask(old)
+	home := newHome(t)
+	p := filepath.Join(home, "f")
+	r := newRawConn(t, home)
+	h, code := r.open("f", rawFlagWrite|rawFlagCreat|rawFlagTrunc, rawAttrPerm, permAttrs(0o400))
+	if h == "" {
+		t.Fatalf("open refused: status %d", code)
+	}
+	r.writeAt(h, "data")
+	if c := r.fsetstat(h, rawAttrSize, sizeAttrs(4)); c != 0 {
+		t.Fatalf("fsetstat of the size: status %d", c)
+	}
+	if c := r.fsetstat(h, rawAttrPerm, permAttrs(0o755)); c != 0 {
+		t.Fatalf("fsetstat of the permissions: status %d", c)
+	}
+	r.closeHandle(h)
+	if got := modeOfFile(t, p); got != 0o755 {
+		t.Errorf("mode %v, want -rwxr-xr-x", got)
+	}
+}
+
+// A session that ends with the handle open still gives the file the mode the
+// client asked for: the library closes the handles it holds.
+func TestOpenModeWithoutOwnerWriteSessionEnds(t *testing.T) {
+	old := syscall.Umask(0o077)
+	defer syscall.Umask(old)
+	home := newHome(t)
+	p := filepath.Join(home, "f")
+	r := newRawConn(t, home)
+	h, code := r.open("f", rawFlagWrite|rawFlagCreat|rawFlagTrunc, rawAttrPerm, permAttrs(0o444))
+	if h == "" {
+		t.Fatalf("open refused: status %d", code)
+	}
+	r.writeAt(h, "data")
+	_ = r.close() // the client leaves with the handle open
+	if got := modeOfFile(t, p); got != 0o400 {
+		t.Errorf("mode %v, want -r--------", got)
+	}
+}
+
+// With a quota the size step of the upload is measured as always, and with an
+// audit the upload is one event.
+func TestOpenModeWithoutOwnerWriteQuotaAndAudit(t *testing.T) {
+	old := syscall.Umask(0o077)
+	defer syscall.Umask(old)
+	home := newHome(t)
+	var events []Event
+	var mu sync.Mutex
+	cfg := Config{Home: home, Quota: 10, Audit: func(e Event) {
+		mu.Lock()
+		events = append(events, e)
+		mu.Unlock()
+	}}
+	r := newRawConnCfg(t, cfg, seams{})
+	h, code := r.open("f", rawFlagWrite|rawFlagCreat|rawFlagTrunc, rawAttrPerm, permAttrs(0o444))
+	if h == "" {
+		t.Fatalf("open refused: status %d", code)
+	}
+	r.writeAt(h, "12345")
+	if c := r.fsetstat(h, rawAttrSize, sizeAttrs(100)); c != fxFailure && c != fxPermissionDenied && c == 0 {
+		t.Errorf("a size over the quota: status %d, want a refusal", c)
+	}
+	if c := r.fsetstat(h, rawAttrSize, sizeAttrs(5)); c != 0 {
+		t.Errorf("fsetstat of the size: status %d", c)
+	}
+	r.closeHandle(h)
+	if got := modeOfFile(t, filepath.Join(home, "f")); got != 0o400 {
+		t.Errorf("mode %v, want -r--------", got)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	var up int
+	for _, e := range events {
+		if e.Op == "upload" {
+			up++
+			if e.Err != nil || e.Bytes != 5 {
+				t.Errorf("upload event %+v", e)
+			}
+		}
+	}
+	if up != 1 {
+		t.Errorf("%d upload events, want 1: %+v", up, events)
+	}
+}
+
+// mkdir sends a mkdir request with the attribute flags aflags and the block
+// attrs, and returns the status code.
+func (r *rawConn) mkdir(path string, aflags uint32, attrs []byte) uint32 {
+	r.t.Helper()
+	b := binary.BigEndian.AppendUint32(str(nil, path), aflags)
+	typ, body := r.request(rawMkdir, append(b, attrs...))
+	return status(r.t, typ, body)
+}
+
+// A new directory is 0755 less the umask whatever the request asks: the library
+// reads only the attribute flags of a mkdir packet (vendor/github.com/pkg/sftp,
+// sshFxpMkdirPacket.UnmarshalBinary) and sets no Request.Flags for it, so the
+// handler is never told the permissions. The docs say so; this test fails if a
+// library upgrade starts to deliver them (and the docs and the handler are then
+// to be looked at together).
+func TestMkdirIgnoresTheModeOfTheRequest(t *testing.T) {
+	tests := []struct {
+		name  string
+		umask int
+		mode  uint32
+		want  os.FileMode
+	}{
+		{"0500 under the console umask", 0o077, 0o500, 0o700},
+		{"0777 under the console umask", 0o077, 0o777, 0o700},
+		{"0500 under umask 022", 0o022, 0o500, 0o755},
+		{"0700 under umask 022", 0o022, 0o700, 0o755},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			home := newHome(t)
+			old := syscall.Umask(tc.umask)
+			defer syscall.Umask(old)
+			r := newRawConn(t, home)
+			if c := r.mkdir("d", rawAttrPerm, permAttrs(tc.mode)); c != 0 {
+				t.Fatalf("mkdir: status %d", c)
+			}
+			fi, err := os.Stat(filepath.Join(home, "d"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if fi.Mode() != tc.want|os.ModeDir {
+				t.Errorf("mode %v, want %v", fi.Mode(), tc.want|os.ModeDir)
+			}
+		})
+	}
+}
+
+// What scp -p does: the open carries the permissions and the times (twelve
+// bytes, read as asking for nothing, so the file is created 0644 less the
+// umask), and after the data an fsetstat sets the same permissions and times,
+// which are applied as given: the umask of the console does not reduce them.
+func TestOpenModeWithTimesThenSetstat(t *testing.T) {
+	old := syscall.Umask(0o077)
+	defer syscall.Umask(old)
+	home := newHome(t)
+	p := filepath.Join(home, "f")
+	const mtime = 1_700_000_000
+	times := binary.BigEndian.AppendUint32(binary.BigEndian.AppendUint32(nil, mtime), mtime)
+	r := newRawConn(t, home)
+	h, code := r.open("f", rawFlagWrite|rawFlagCreat|rawFlagTrunc, rawAttrPerm|rawAttrTimes, append(permAttrs(0o755), times...))
+	if h == "" {
+		t.Fatalf("open refused: status %d", code)
+	}
+	if got := modeOfFile(t, p); got != 0o600 {
+		t.Errorf("mode after the open %v, want -rw-------", got)
+	}
+	r.writeAt(h, "#!/bin/sh\n")
+	if c := r.fsetstat(h, rawAttrPerm|rawAttrTimes, append(permAttrs(0o755), times...)); c != 0 {
+		t.Fatalf("fsetstat: status %d", c)
+	}
+	r.closeHandle(h)
+	fi, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode() != 0o755 {
+		t.Errorf("mode %v, want -rwxr-xr-x", fi.Mode())
+	}
+	if fi.ModTime().Unix() != mtime {
+		t.Errorf("mtime %d, want %d", fi.ModTime().Unix(), mtime)
 	}
 }

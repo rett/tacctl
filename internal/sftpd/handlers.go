@@ -21,6 +21,7 @@ type server struct {
 	rate  *bucket // nil when the session has no rate limit
 
 	handles handleCount // the open files and directory listings
+	fresh   freshModes  // the files created owner-writable, waiting for their mode
 
 	beforeTruncate func() // a test's hooks, see seams
 	afterPin       func()
@@ -234,6 +235,11 @@ func (s *server) mkdir(r *sftp.Request) (err error) {
 		return err
 	}
 	defer t.close()
+	// The library reads only the attribute flags of a mkdir packet and sets no
+	// flags in the request, so the permissions are never delivered and a new
+	// directory is 0755 less the umask whatever the client asks (the docs say
+	// so; TestMkdirIgnoresTheModeOfTheRequest holds it). The branch is for a
+	// library that delivers them.
 	mode := uint32(0o755)
 	if r.AttrFlags().Permissions {
 		if a := r.Attributes(); a != nil {
@@ -400,6 +406,7 @@ func (s *server) setstat(r *sftp.Request) (err error) {
 		if err := p.chmod(permBits(a.Mode)); err != nil {
 			return err
 		}
+		s.fresh.forget(inode{u64(p.st.Dev), u64(p.st.Ino)}) // what the client set stays
 	}
 	if fl.Acmodtime {
 		if err := p.utimes(a.Atime, a.Mtime); err != nil {

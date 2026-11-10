@@ -9,20 +9,34 @@ current behaviour; this file is where history lives.
    console's file transfer gave every new file the mode 0644 and ignored the
    mode in the request that opens it, so a script copied with the `scp` of
    OpenSSH 9 or later (which speaks SFTP and sends the permissions in that
-   request, and sets nothing afterwards) lost its execute bit. A new file now
-   gets the mode the client asks for in the open request when the request
-   carries the permissions alone, which is what the OpenSSH `sftp` and `scp`
-   send: the permission bits only (set-user-ID, set-group-ID and sticky are
-   ignored, as for a new directory), reduced by the umask of the console, 077.
-   The owner's bits survive and the group and other bits go: a script asked
-   at 0755 is 0700, a file asked at 0644 is 0600. A request without
-   permissions still gives 0644, 0600 after the umask. A file that already
-   exists keeps its mode, and a download changes nothing. A request that
-   carries other attributes together with the permissions (for example the
-   times, as with the preserve option of `scp`) is read as carrying none,
-   because the library does not tell which attributes a request holds; such
-   a file gets 0644, 0600 after the umask, as before. `docs/cli/console.md`
-   and the manual page say so.
+   request) lost its execute bit. A new file now gets the mode the client
+   asks for in the open request when the request carries a block of four
+   bytes, read as the permissions alone (the library does not say which
+   attributes a request holds; four bytes is what the OpenSSH `sftp` and
+   `scp` send): the permission bits only (set-user-ID, set-group-ID and
+   sticky are ignored), reduced by the umask of the console, 077. The
+   owner's bits survive and the group and other bits go: a script asked at
+   0755 is 0700, a file asked at 0644 is 0600. A request without
+   permissions, or that asks for the mode 0 (a block of four bytes of zero
+   is also what a request with no attributes but the extended ones looks
+   like), still gives 0644, 0600 after the umask. A file that already
+   exists keeps its mode, and a download changes nothing. A file asked at a
+   mode without the owner's write bit (0444, or 0555, which `scp` sends for
+   a read-only source) is created writable by its owner and gets the mode
+   asked for, reduced by the umask, when the client closes the handle:
+   without `-p`, `scp` ends an upload by setting the size of the file, which
+   the kernel refuses on a file its owner cannot write, so the mode comes
+   last. A client that sets the permissions itself before it closes the
+   handle keeps what it set. A request that carries other attributes
+   together with the permissions (the times that `scp -p` sends) is read as
+   carrying none, and such a file gets 0644, 0600 after the umask, as before;
+   `scp -p` then sets the permissions and the times of the file after the
+   upload, which are applied as given, with no umask, so a script ends with
+   the mode of its source, 0755. A new directory is not affected: the
+   library does not deliver the mode of a request to make a directory, so it
+   is 0755, 0700 after the umask, whatever the client asks, and a client
+   that wants another mode sets it afterwards. `docs/cli/console.md` and the
+   manual page say so.
 
 2. **`tacctl rollback 0.2.28`, the release before this one, is a target.**
    This release changed no stored file 0.2.28 reads strictly (the mode a file
