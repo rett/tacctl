@@ -165,8 +165,13 @@ scp notes.txt alice@tacacs.example.net:
   the mode your client asks for, without the group and other bits, so a
   script uploaded at 0755 is 0700 and keeps its execute bit, and a file at
   0644 is 0600. A client that asks no mode gets 0600. A new directory is
-  0700, whatever the client asks. `scp -p` keeps the mode of the source
-  (0755). Set another mode afterwards with `chmod` in `sftp`. A file that
+  0700, whatever the client asks. `scp -p` sends the mode together with the
+  times in the request that opens the file, so the file has its mode from the
+  start (a script at 0755 is created 0700, and an upload that is interrupted
+  keeps that mode), and the mode and times the client sets at the end are
+  applied as given: the file ends with the mode of its source (0755). A
+  request without a mode, or one that asks for no permission bit, still gives
+  0600. Set another mode afterwards with `chmod` in `sftp`. A file that
   already exists keeps its mode.
 - **A transfer lasts as long as the connection.** The idle timeout of the
   console does not apply to it. A listing is in the order of the file system,
