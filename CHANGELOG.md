@@ -77,6 +77,24 @@ current behaviour; this file is where history lives.
    `docs/cli/config.md`, `docs/install/upgrading.md` and the manual page say
    so.
 
+3. **A home that root cannot write is refused in one line, and a test says
+   so.** `config render --dry-run --out`, `config linux script --output` and
+   `config linux remove-script --output` write as root, inside the home of the
+   person who ran `sudo`. On an NFS export with `root_squash` root is mapped to
+   an unprivileged account and cannot write there, although the path is inside
+   the home. This was already a plain refusal and is unchanged: nothing is
+   written, no file or directory is left half made, a file of that name stays
+   as it was, and the line names the path and the cause (`Cannot write
+   <path>: Permission denied`, `Cannot create '<path>': Permission denied` or
+   `install: cannot create regular file '<path>': Permission denied`), exit
+   status 1. The files written as the caller (`device config plan`,
+   `device reports export`, `device support-bundle`) take the caller's
+   identity and are not affected. A test (`TestOutPathRootSquashedHome...`)
+   pins the three, with a directory its owner cannot write for the refusal.
+   `docs/cli/conventions.md` and the manual page say what to do: name a path
+   inside the home that root can write, or run the command without `sudo`
+   where the tier allows it.
+
 ## 0.2.29 (2026-11-09)
 
 1. **A file uploaded through the console keeps the owner's execute bit.** The
