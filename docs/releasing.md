@@ -462,7 +462,7 @@ Then check it, push it and finish it with the tooling:
 ```sh
 tests/tools/release-preflight.sh 0.2.6
 tests/tools/release-notes-check.sh 0.2.6
-qargi release push 0.2.6
+qargi release push 0.2.6 --hotfix
 qargi release finish 0.2.6 --hotfix
 ```
 
