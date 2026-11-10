@@ -177,6 +177,24 @@ green before the finish.
 
 ### 4. Finish
 
+First, in a checkout of the release branch (`release/0.2.1`, at the commit the
+pull request checks ran on), check the release metadata:
+
+```sh
+tests/tools/release-preflight.sh 0.2.1
+```
+
+Finish only when it passes. It lists every problem: the dated
+`## 0.2.1 (YYYY-MM-DD)` CHANGELOG heading (a real date, and no
+`(unreleased)` one), the `.TH` line of `man/tacctl.1` naming `tacctl 0.2.1`
+and the same date, and `docs/release-notes-0.2.1.md`. Nothing else before
+the finish checks this: `release start` runs only
+`tests/tools/release-notes-check.sh`, which accepts an `(unreleased)`
+heading, and `make release-assets` runs the preflight only in step 5, after
+the finish has pushed the tag, when a fault is no longer fixable in this
+release. A second argument names another tree to check instead of this
+repository.
+
 ```sh
 qargi release finish 0.2.1
 ```
@@ -190,8 +208,11 @@ merges the release into `develop`, deletes the release branch, and pushes
 The GitHub repository refuses force pushes and deletion of `master` and
 `develop` and any move or deletion of a `0.*` tag: a pushed tag is final, so
 a fault found after the finish is fixed in the next release (or a hotfix),
-never by moving the tag. That is why the gate of step 1, the preflight of
-step 2 and the checks of step 3 come before it. A host that upgrades between
+never by moving the tag. That is why the gate of step 1, the checks of
+step 3 and the preflight above come before it; the gate and the checks of
+the pull request do not look at the release metadata (the dated heading, the
+`.TH` line, the notes), so the preflight above is the only check of it
+before the tag. A host that upgrades between
 the finish and the publish (step 7) finds no release binary and builds from
 source (`could not download SHA256SUMS`).
 
