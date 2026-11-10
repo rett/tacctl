@@ -16,14 +16,17 @@ user show <name>
 user add <name> <group>
 
     Add a new user; lands in default scope. The name is lower case (`Names are lower case: use
-    'alice'.`): lower-case letters, digits, `_` and `-`. A period is refused (`Username must
+    'alice'.`) and starts with a letter: a lower-case letter (a to z), then lower-case letters,
+    digits, `_` and `-`. A period is refused (`Username must
     contain only letters, numbers, underscores and hyphens (a period cannot be part of a Linux
     account name).`). A name is at most 32 characters, the longest a Linux account name can be: a
     longer one is refused with its length (`Username '<name>' is 33 characters; a user name is at
     most 32 (the longest a Linux account name can be).`; see "A name of more than 32 characters").
-    A name that starts with a digit or `-` (`1alice`) is still accepted, but a Linux account name
-    starts with a lower case letter or `_`, so that user has no account on the tacctl server or
-    on a host. Reserved names `root` and
+    A first character that is not a letter is refused (`Username '1alice' must start with a
+    letter (a to z): every new user gets a Linux account, and a name that starts with a digit or
+    '-' is no account name (a new name does not start with '_' either).`), so that every new user
+    has an account on the tacctl server and on a host; see "A new name starts with a letter".
+    Reserved names `root` and
     `tacquito` are rejected (they collide with OS accounts tacquito resolves locally). A new user
     must change the password at the first login to this server (see "A required password
     change").
@@ -107,8 +110,8 @@ user enable <name>
 
 user rename <old> <new>
 
-    Rename a user; the new name is lower case, at most 32 characters, and follows the rules of
-    `user add` (the old name can be any name a user has). The user's
+    Rename a user; the new name is lower case, starts with a letter, is at most 32 characters, and
+    follows the rules of `user add` (the old name can be any name a user has). The user's
     `console system-shell user` setting and its `console file-transfer` settings (the switch, the
     quota and the rate) move to the new name, and the command says so. Changing only the spelling
     (`user rename Alice alice`) fixes a name from before. Devices match the
@@ -237,6 +240,24 @@ and `tacctl user rename` gives another name afterwards (see [Upgrading](../insta
 upgrade runs, a store that still holds such a name fails every write with `user 'alice.smith':
 invalid name` and says that `tacctl upgrade` renames it.
 
+**A new name starts with a letter.** Every new user gets a Linux account, on the tacctl server
+and on the enrolled hosts, and a name that starts with a digit or `-` is no account name (Linux
+itself takes a leading `_`, but a new name does not start with one, so that every new name is
+an account name everywhere). So `user add` and the new name of `user rename` take a lower-case
+letter, `a` to `z`, as the first character and refuse a digit, `-` and `_` with `Username '1alice'
+must start with a letter (a to z): every new user gets a Linux account, and a name that starts
+with a digit or '-' is no account name (a new name does not start with '_' either).` and change
+nothing. The checks run in this order, and the first that fails is the answer: the shape (letters,
+digits, `_` and `-`; no period), the reserved names, upper case (`Names are lower case: use
+'alice'.`, so `Alice` and `1Alice` are told the lower-case spelling first, and the letter rule
+follows on the retry with `1alice`), the length (at most 32) and the first character. Only a new
+name is checked: a user from an earlier release named `9dave`, `_svc` or `-x` keeps working. It
+is shown, listed, changed, renamed away to a name that passes the rules, removed and restored by
+`backup restore` as before, and `tacctl upgrade` carries it unchanged. A name that starts with a
+digit or `-` has no account on the tacctl server or on a host, so `config validate` warns of it
+under `Names:` with `tacctl user rename <name> <new-name>`; a name that starts with `_` has an
+account and is not warned of (see [config](config.md)).
+
 **A name of more than 32 characters.** A Linux account name is at most 32 characters, so `user add`
 and the new name of `user rename` refuse a longer one, and change nothing, with the length and the
 limit: `Username '<name>' is 33 characters; a user name is at most 32 (the longest a Linux account
@@ -247,7 +268,7 @@ changed, renamed away to a shorter name and removed as before, and `backup resto
 server or on a host, so it gets none at a sync and cannot make a report (see
 [Upgrading](../install/upgrading.md)). Rename it with `tacctl user rename <name> <shorter name>`.
 The length is not the only reason a user has no account: a name with upper case letters, and a
-name that starts with a digit or `-`, which `user add` still accepts, have none either.
+name that starts with a digit or `-`, have none either (`user add` refuses a new one of them).
 
 **This server's accounts.** `user add`, `remove`, `rename`, `move`, `enable`,
 `disable`, `scope add|remove|replace|remove --all` and

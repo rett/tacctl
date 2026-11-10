@@ -35,6 +35,38 @@ current behaviour; this file is where history lives.
    release, 0.2.30, as the state the snapshot holds ("Restore it with 0.2.30
    only").
 
+2. **A new user name starts with a lower-case letter.** Every new user gets a
+   Linux account, on this server and on the enrolled hosts, and a name that
+   starts with a digit or `-` is no account name, so `user add` and the new
+   name of `user rename` now refuse a first character that is not a letter, a
+   to z (a digit, `-` and `_`, which Linux itself would take, are refused so
+   that every new name is an account name everywhere): `Username '1alice'
+   must start with a letter (a to z): every new user gets a Linux account, and
+   a name that starts with a digit or '-' is no account name (a new name does
+   not start with '_' either).`, exit status 1, nothing changed. A new name is
+   now a lower-case letter, then lower-case letters, digits, `_` and `-`, at
+   most 32 characters. The checks run in a fixed order and the first that
+   fails is the answer (`names.CheckNewUsername`): the shape (no period), the
+   reserved names, upper case, the length, the first character, so `Alice` and
+   `1Alice` are told the lower-case spelling first (`Names are lower case: use
+   '1alice'.`) and the letter rule follows on the retry. Only a new name is
+   checked: a user that exists as `9dave`, `_svc` or `-x` keeps working and is
+   shown, changed, renamed away, removed, restored and carried by the upgrade
+   as before. `config validate` warns, under `Names:`, of an existing user
+   whose name starts with a digit or `-` (no Linux account, here or on a host)
+   and names `tacctl user rename <name> <new-name>`; a name that starts with
+   `_` has an account and gets no warning. `config validate --fix-names`
+   offers the rename to the lower-case spelling of a name with upper case only
+   when that spelling would pass all the rules of a new name: for `1Alice`,
+   `_Alice`, `Root` or `Alice` followed by 41 characters it offers nothing,
+   and the user gets exactly one warning, which names the rename to a name of
+   your choice and says what else is wrong with the name (`--fix-names`
+   counts nothing as not offered or failed for it and exits 0). The rollback
+   to 0.2.29 (item 1) leaves every user as it is. `docs/cli/user.md`
+   (`user add`, `user rename`, A new name starts with a letter),
+   `docs/cli/config.md`, `docs/install/upgrading.md` and the manual page say
+   so.
+
 ## 0.2.29 (2026-11-09)
 
 1. **A file uploaded through the console keeps the owner's execute bit.** The

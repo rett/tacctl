@@ -245,12 +245,29 @@ func TestUserChangeNamesNoHostWhoseAccountStaysAsItWas(t *testing.T) {
 	}
 }
 
-// A name that is no Linux account name has no account on any host.
-func TestUserAddOfANameWithNoLinuxAccountNamesNoHost(t *testing.T) {
+// A name that is no Linux account name is refused for a new user ('user add'
+// and the new name of 'user rename'; internal/cli/user_firstletter_test.go),
+// and a user from before with such a name has no account on any host: the
+// verbs that change it name no host and offer no sync.
+func TestUserOfANameWithNoLinuxAccountNamesNoHost(t *testing.T) {
 	hs := userHostsSandbox(t)
 	hs.run(hs.localRunner(), "user", "add", "9dave", "operator", "--hash", hashOf(t, "CorrectHorse99"), "--scopes", "lab")
 	all := plain(hs.out.String() + hs.err.String())
-	if hs.code != 0 || !strings.Contains(all, "User '9dave' added") || strings.Contains(all, "web1") || strings.Contains(all, "enrolled host") {
+	if hs.code != 1 || !strings.Contains(all, "Username '9dave' must start with a letter (a to z)") || strings.Contains(all, "web1") || strings.Contains(all, "enrolled host") {
+		t.Errorf("%d\n%s", hs.code, all)
+	}
+	hs.run(hs.localRunner(), "user", "rename", "bob", "9dave")
+	all = plain(hs.out.String() + hs.err.String())
+	if hs.code != 1 || !strings.Contains(all, "Username '9dave' must start with a letter (a to z)") || strings.Contains(all, "web1") {
+		t.Errorf("%d\n%s", hs.code, all)
+	}
+
+	// the user from before: the store of an earlier release has it
+	hs.legacyStoreCase("  bob:", "  9dave:")
+	hs.answerOn("n\n")
+	hs.run(hs.localRunner(), "user", "passwd", "9dave", "--hash", hashOf(t, "CorrectHorse99"))
+	all = plain(hs.out.String() + hs.err.String())
+	if hs.code != 0 || !strings.Contains(all, "Password changed for '9dave'") || strings.Contains(all, "web1") || strings.Contains(all, "enrolled host") || strings.Contains(all, "Sync these hosts now") {
 		t.Errorf("%d\n%s", hs.code, all)
 	}
 }

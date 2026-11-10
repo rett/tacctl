@@ -172,6 +172,47 @@ func RejectLongUsername(value string) error {
 	return nil
 }
 
+// RejectNonLetterUsername is the first-character check of the creation paths
+// ('user add' and the new name of 'user rename'): a new user name starts with a
+// lower case letter, a to z. Every new user gets a Linux account on the tacctl
+// server and on the enrolled hosts, and a name that starts with a digit or '-'
+// is no Linux account name; Linux itself allows a leading '_', the project does
+// not for a new name, so that every new name is an account name on every
+// system. It is not part of ValidateUsername, which every verb runs: a user
+// that exists as '9dave', '_svc' or '-x' is shown, changed, renamed away and
+// removed as before. An upper case first letter is the business of
+// RequireLower, which comes first in CheckNewUsername and suggests the lower
+// case spelling.
+func RejectNonLetterUsername(value string) error {
+	if value == "" || value[0] < 'a' || value[0] > 'z' {
+		return fail(fmt.Sprintf("Username '%s' must start with a letter (a to z): every new user gets a Linux account, and a name that starts with a digit or '-' is no account name (a new name does not start with '_' either).", value))
+	}
+	return nil
+}
+
+// StartsWithNoAccountChar reports whether the name of an existing user starts
+// with a digit or '-': no Linux account name does (a leading '_' is one, so a
+// user named '_svc' has an account). 'config validate' warns of such a user.
+func StartsWithNoAccountChar(value string) bool {
+	return value != "" && (value[0] == '-' || (value[0] >= '0' && value[0] <= '9'))
+}
+
+// CheckNewUsername is the whole check of a name a user is created with, by
+// 'user add' and by the new name of 'user rename', in this order: the shape
+// (ValidateUsername), the reserved names, upper case (RequireLower, so that
+// 'Alice' gets the lower case spelling suggested and '1Alice' is first told
+// the same, the letter rule following on the retry), the length and the first
+// character. The first failing check is the answer. Existing users are never
+// checked with it: ValidateUsername is what every other verb runs.
+func CheckNewUsername(value string) error {
+	for _, check := range []func(string) error{ValidateUsername, RejectReservedUsername, RequireLower, RejectLongUsername, RejectNonLetterUsername} {
+		if err := check(value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ValidateGroupName is the group-name check of 'group add'.
 func ValidateGroupName(value string) error {
 	if !reGroup.MatchString(value) {
