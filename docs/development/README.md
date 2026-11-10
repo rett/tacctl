@@ -36,6 +36,7 @@ tacctl/
                             # hosts
                             # verify a release binary), radius-notes.md, release notes, plans/
   tests/                    # Go and bats suites, containers (tests/README.md)
+                            # tests/tools/doctor.sh is `make doctor` (checks the checkout's tools)
   AGENTS.md                 # instructions for agents and contributors
   CONTRIBUTING.md           # branches, pull requests
   CHANGELOG.md
@@ -85,10 +86,12 @@ tacctl/
   descriptions.
 - No secret, hash, password or community string in any log line, test
   golden or doc example.
-- Gates. The declared gates are `make lint` (shellcheck, gofmt, `go vet`,
-  golangci-lint and the repository's own static checks) and `make gate-go`
-  for each feature, and `make gate-ci` for each release. The checks are:
-  build, gofmt, `go vet`, `make lint`, Go tests (`make gate-go`,
+- Gates. For each feature: `make lint` (shellcheck, gofmt, `go vet`,
+  golangci-lint and the repository's own static checks), the static checks
+  (gofmt, `go vet` with and without `-tags testknobs`, and
+  `tests/tools/go-test-shard.sh --check 2`) and `make gate-go`. For each
+  release: `make gate-ci`. The checks are: build, gofmt, `go vet`,
+  `make lint`, Go tests (`make gate-go`,
   which runs `internal/cli` under `setsid` with no stdin and ends with one
   `GATE-GO PASS|FAIL` line: start it with the Bash tool's
   `run_in_background`, never with a trailing `&` or a `pgrep -f` wait, and
