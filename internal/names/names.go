@@ -122,11 +122,18 @@ func ValidateClassName(value string) error {
 // '-': it says why a period is not among them.
 const usernameShape = "Username must contain only letters, numbers, underscores and hyphens (a period cannot be part of a Linux account name)."
 
+// UsernameMax is the most characters a new user name has: the longest a Linux
+// account name can be (hosts.LinuxName). A user that exists with a longer name
+// (a store from an earlier release) keeps working but has no account.
+const UsernameMax = 32
+
 // ValidateUsername is validate_username: the shape of a user name, letters,
-// digits, '_' and '-'. A name with a period is refused whatever the verb:
-// every user has an account on the tacctl server and a period cannot be
-// part of a Linux account name. See RejectReservedUsername for the
-// creation-path check.
+// digits, '_' and '-'. A name with a period is refused whatever the verb: a
+// period cannot be part of a Linux account name, and a user whose name is not
+// one has no account on the tacctl server. The length and the upper case of a
+// name from before are not checked here, so every verb still reaches such a
+// user. See RejectReservedUsername and RejectLongUsername for the
+// creation-path checks.
 func ValidateUsername(value string) error {
 	if !reUser.MatchString(value) {
 		return fail(usernameShape)
@@ -148,6 +155,19 @@ func RejectReservedUsername(value string) error {
 		)
 	case "tacquito":
 		return fail("Username 'tacquito' is reserved (matches the service user). Pick a different name.")
+	}
+	return nil
+}
+
+// RejectLongUsername is the length check of the creation paths ('user add' and
+// the new name of 'user rename'): a new user name is at most UsernameMax
+// characters, the longest a Linux account name can be. It is not part of
+// ValidateUsername, which every verb runs: a user that exists with a longer name
+// is shown, changed, renamed away and removed as before. The name has passed
+// ValidateUsername, so its length in bytes is its length in characters.
+func RejectLongUsername(value string) error {
+	if n := len(value); n > UsernameMax {
+		return fail(fmt.Sprintf("Username '%s' is %d characters; a user name is at most %d (the longest a Linux account name can be).", value, n, UsernameMax))
 	}
 	return nil
 }

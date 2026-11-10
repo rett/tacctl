@@ -282,8 +282,9 @@ break-glass users of the user's scopes
 the line reads
 .BR "renamed user alice.smith to alice_smith_k3x9 (alice_smith was taken)" ).
 Of two names that meet the first in the store keeps the name without a suffix,
-and a name longer than a Linux account name (32 characters) is cut before the
-suffix. A new name with upper case letters or longer than 32 characters is a user
+and a name that would be longer than a Linux account name (32 characters) with
+its suffix is cut before the suffix; the upgrade shortens a name only to make
+room for a suffix, so a name renamed without one keeps its length. A new name with upper case letters or longer than 32 characters is a user
 name but not a Linux account name: the user gets no account at a sync, so after
 the renames the upgrade lists each such user with the reason and
 .BR "tacctl user rename" " <name> <new\-name>" ,
@@ -1660,8 +1661,26 @@ Add a user. The name is lower case (lower\-case letters, digits,
 a name with upper case is refused with the lower\-case spelling to use, and a
 user that exists with upper case keeps working as it is
 .RB ( "tacctl config validate"
-lists it). A period is refused: it cannot be part of a Linux account name, and
-a user is meant to have an account on the tacctl server. This holds for every
+lists it). A name is at most 32 characters, the longest a Linux account name can
+be: a longer one is refused with its length
+.RB ( "Username '<name>' is 33 characters; a user name is at most 32 (the longest a Linux account name can be)." ),
+and nothing is changed. A user that exists with a longer name (an earlier release
+took any length) keeps working as it is, is carried unchanged by
+.B "backup restore"
+and
+.BR "tacctl upgrade" ,
+and has no Linux account, here or on a host. So has a user whose name has upper
+case letters or starts with a digit or
+.BR \- :
+a Linux account name starts with a lower case letter or
+.BR _ ,
+and
+.B "user add"
+still accepts a name that starts with a digit or
+.BR \- .
+A period is refused: it
+cannot be part of a Linux account name, and a user whose name is not one has no
+account on this server. This holds for every
 .B user
 verb, for
 .B passwd
@@ -2001,9 +2020,10 @@ Requires: \fBsuperuser\fR.
 .BI "user rename " "old new"
 Rename a user. The user's
 .B "console system\-shell user"
-setting moves to the new name, and the command says so. The new name is lower case and follows the rules of
+setting moves to the new name, and the command says so. The new name is lower case, at most 32 characters, and follows the rules of
 .BR "user add" ;
-a period is refused in either name.
+a period is refused in either name, and the old name can be any name a user has
+(also one of more than 32 characters).
 Changing only the spelling
 .RB ( "user rename Alice alice" )
 is how a name from before is fixed. A device matches the typed login name
@@ -3195,7 +3215,16 @@ case) is a warning under
 naming the rename that fixes it
 .RB ( "tacctl user rename Alice alice" ,
 and the like); the one for a user adds that devices match the typed login name
-exactly, so the rename changes what the person types at the device. Only the superuser's view has these findings.
+exactly, so the rename changes what the person types at the device. A user from
+an earlier release whose name is longer than 32 characters (a new name is at
+most 32) is a warning under
+.B Names:
+too: it works but has no Linux account, here or on a host, and the warning names
+.BR "tacctl user rename" " name " new\-name ;
+.B \-\-fix\-names
+does not offer that rename. A user whose name is both longer than 32 characters
+and has upper case gets that one warning only, which says so. Only the
+superuser's view has these findings.
 .IP
 Then, for every enabled backend, whether its rendered config is up to date
 with the store and whether any of its files was edited by hand (drift). With
@@ -6702,7 +6731,11 @@ which a rendered or legacy file cannot hold. The scope
 .B tacctl
 of a rendered file (the login of the server it came from, which every user is
 in) is not imported and is taken out of the users' scopes, in one line; a
-server registered in its own keeps it. An import that holds users to a
+server registered in its own keeps it. Names from before load as they are,
+with one line each saying how many users or scopes have upper case and how many
+users have a name longer than 32 characters (such a user has no Linux account;
+.B config validate
+lists them). An import that holds users to a
 password change rewrites the list of them in the console's sshd drop-in at
 once (see
 .BR "console forwarding" ).
@@ -11509,19 +11542,22 @@ Options:
 .RE
 .\" END GENERATED: command device hostkey
 .TP
-.BI "device ssh " name|address " [ \-p " port " ] [ \-\- " "ssh args" " ]"
+.BI "device ssh " name|address " [ \-\-login " local\-user " ] [ \-p " port " ] [ \-\- " "ssh args" " ]"
 The same as
 .BR "tacctl ssh" ,
 below.
 .\" BEGIN GENERATED: command device ssh
 .RS
 .PP
-Requires: \fBreadonly\fR.
+Requires: \fBreadonly\fR. A session as you is every tier's; \-\-login (a session as a local account of the device) needs the engineer tier.
 .PP
 Options:
 .TP
 \fB\-p\fR \fI<port>\fR
 Connect to this port (default: the device's port, else 22).
+.TP
+\fB\-\-login\fR \fI<local\-user>\fR
+Log in as this local account of the device (a break\-glass one, or any other) instead of as you; the account's password is asked by the device itself, never by tacctl, and is not cached or stored. For registered devices of any vendor with a pinned host key, not enrolled hosts; the engineer tier and up, for a device in one of your scopes.
 .TP
 \fB\-X\fR
 Forward X11 to this server's display (untrusted, as ssh \-X).
@@ -14661,7 +14697,7 @@ Do not ask for confirmation.
 .\" END GENERATED: command device reports prune
 .SS SSH to a device \fB(tacctl ssh)\fR
 .TP
-.BI "ssh " name|address " [ \-p " port " ] [ \-X | \-Y ] [ \-g ] [ { \-L | \-R | \-D } " spec " ]... [ \-\- " "ssh args" " ]"
+.BI "ssh " name|address " [ \-\-login " local\-user " ] [ \-p " port " ] [ \-X | \-Y ] [ \-g ] [ { \-L | \-R | \-D } " spec " ]... [ \-\- " "ssh args" " ]"
 Open an ssh session to a registered device or an enrolled host, named by its
 name or its registered address. tacctl resolves the name as root and admits
 only an active tacctl user (in the store, not disabled, with a password) whose
@@ -14684,8 +14720,10 @@ or the host of the terminal's login record) and, when ssh ends, as
 runs as the invoking user
 .RB ( "sudo \-u " "\fIuser\fR " \-H ),
 with the terminal, returning its exit status. The login is always the invoking
-user's own name and the session authenticates by password only: no agent, no
-key, no other login; an enrolled host's enrolment account and identity are
+user's own name (or, with
+.BR \-\-login ,
+the device's local account named there) and the session authenticates by
+password only: no agent, no key, no other login; an enrolled host's enrolment account and identity are
 never used. It never runs ssh as root: run by root itself (no
 .BR SUDO_USER ,
 or
@@ -14844,15 +14882,55 @@ Words after
 that start with a dash, an unpinned device, and an account that is not in the
 local account database keep the prompt. An ssh that ends with status 255
 makes the cache forget the password.
+.IP
+.BI \-\-login " local\-user"
+logs in as that local account of the device instead of as the invoking user
+(ssh's
+.B \-l
+is not available after
+.BR \-\- ,
+in the console the words there are the remote command): the way in to a device
+whose break-glass is held, which takes local accounts only. The name is
+letters, digits,
+.BR . ,
+.B _
+and
+.BR \- .
+It is for registered devices of any vendor, not for an enrolled host
+.RI ( "\-\-login is for registered devices" ;
+hosts are reached as the user), and only for a device with a pinned host key
+.RI ( "has no pinned host key, and a local password goes only to a device whose key was verified" ;
+the key is checked strictly against the pin, as for a plain session), for the
+engineer tier and up
+.RI ( "'tacctl device ssh \-\-login' is not permitted for the <tier> tier" ),
+and for a device in one of the caller's scopes, as for every ssh. A refusal of the
+entry is logged
+.RB ( "ssh DENY ... reason=login\-host" " or " "reason=login\-unpinned" ).
+The device asks for the account's password at its own prompt: tacctl never
+asks for it, caches it or stores it, it is the engineer's, and the password
+cache is neither asked, filled nor told to forget for the line (the shell
+leaves it shut). The two log lines carry
+.BI login= local\-user
+(after the device and address fields;
+.B from=
+and
+.B console=
+follow), and have no
+.B password=
+field. The warning for a held device then says the local account is what is
+used.
 .\" BEGIN GENERATED: command ssh
 .RS
 .PP
-Requires: \fBreadonly\fR.
+Requires: \fBreadonly\fR. A session as you is every tier's; \-\-login (a session as a local account of the device) needs the engineer tier.
 .PP
 Options:
 .TP
 \fB\-p\fR \fI<port>\fR
 Connect to this port (default: the device's port, else 22).
+.TP
+\fB\-\-login\fR \fI<local\-user>\fR
+Log in as this local account of the device (a break\-glass one, or any other) instead of as you; the account's password is asked by the device itself, never by tacctl, and is not cached or stored. For registered devices of any vendor with a pinned host key, not enrolled hosts; the engineer tier and up, for a device in one of your scopes.
 .TP
 \fB\-X\fR
 Forward X11 to this server's display (untrusted, as ssh \-X).
@@ -14949,7 +15027,9 @@ has a
 .B Break\-glass
 section, and
 .B "tacctl ssh"
-warns and connects.
+warns and connects
+.RB ( "tacctl ssh " device " \-\-login " account
+logs in as one of its local accounts).
 .PP
 The record is
 .B breakglass_hold.<device>.address|since|by|reason
@@ -16897,6 +16977,9 @@ The Configuration, Release, Model and Serial rows, the Chassis members table (an
 .B device snmp
 An engineer may read the settings of a device of their own scope (show [\-\-reveal [<user>]], version, port, timeout, v3\-user list|default, clients list); every setter and clear needs the superuser tier.
 .TP
+.B device ssh
+A session as you is every tier's; \-\-login (a session as a local account of the device) needs the engineer tier.
+.TP
 .B host show
 An engineer reads what tacctl recorded of a host; \-\-check logs in to it and needs the superuser tier.
 .TP
@@ -16914,6 +16997,9 @@ An engineer may read the settings of a scope of their own (show [\-\-reveal [<us
 .TP
 .B scope staging
 An engineer may run list for a scope of their own; the other verbs need the superuser tier.
+.TP
+.B ssh
+A session as you is every tier's; \-\-login (a session as a local account of the device) needs the engineer tier.
 .\" END GENERATED: tiers
 .PP
 An engineer's verbs reach only the devices, hosts and secrets of the scopes

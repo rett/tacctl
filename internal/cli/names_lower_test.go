@@ -269,6 +269,37 @@ func TestConfigValidateListsNamesWithUpperCase(t *testing.T) {
 	}
 }
 
+// A user from before with a name of more than 32 characters is a warning
+// under Names: with the rename that fixes it (it keeps working but has no
+// account); a name of 32 is not listed, and an engineer is told nothing.
+func TestConfigValidateListsAUserWithAnOverLongName(t *testing.T) {
+	long, ok := strings.Repeat("a", 33), strings.Repeat("b", 32)
+	hs := newHostSandbox(t)
+	hs.legacyStoreCase("  bob:", "  "+long+":")
+	hs.legacyStoreCase("  carol:", "  "+ok+":")
+	out := plain(hs.run(nil, "config", "validate") + hs.err.String())
+	want := "the user '" + long + "' has a name of 33 characters; new user names are at most 32, and this user has no Linux account, here or on a host (tacctl user rename " + long + " <new-name>)"
+	if !strings.Contains(out, want) {
+		t.Errorf("config validate lacks %q:\n%s", want, out)
+	}
+	if strings.Contains(out, "'"+ok+"' has a name") {
+		t.Errorf("a name of 32 characters was listed:\n%s", out)
+	}
+	js := hs.run(nil, "config", "validate", "--json")
+	if !strings.Contains(js, `"section": "names"`) || !strings.Contains(js, `"level": "warning"`) || !strings.Contains(js, `"fix": "tacctl user rename `+long+" ") {
+		t.Errorf("the json lacks the names finding:\n%s", js)
+	}
+
+	sb := engineerSandbox(t)
+	sb.legacyStoreCase("  carol:", "  "+long+":")
+	if got := plain(sb.run("", []string{"config", "validate"}) + sb.err.String()); !strings.Contains(got, long) {
+		t.Fatalf("the superuser's view lacks the finding:\n%s", got)
+	}
+	if got := sb.asEngineer("", "config", "validate") + plain(sb.err.String()); strings.Contains(got, long) {
+		t.Errorf("an engineer was told of a name:\n%s", got)
+	}
+}
+
 // A host name worked out from a host name is lowercased (host names are not
 // case-sensitive); one given with --name is refused with upper case; a host
 // enrolled before under a name with upper case is enrolled again as it is.

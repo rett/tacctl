@@ -233,7 +233,7 @@ func TestSSHRefusals(t *testing.T) {
 	}
 	// No name: the usage, exit 0.
 	out := sb.sshRun("alice", nil, "ssh")
-	if sb.code != 0 || !strings.Contains(out, "Usage: tacctl ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]") {
+	if sb.code != 0 || !strings.Contains(out, "Usage: tacctl ssh <name|address> [--login <local-user>] [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]") {
 		t.Errorf("usage: %d %q", sb.code, out)
 	}
 }

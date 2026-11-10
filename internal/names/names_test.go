@@ -2,6 +2,7 @@ package names
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -109,6 +110,28 @@ func TestRejectReservedUsername(t *testing.T) {
 		if err := RejectReservedUsername(s); err != nil {
 			t.Errorf("%q: %v", s, err)
 		}
+	}
+}
+
+// --- the length of a new user name ---
+
+func TestRejectLongUsername(t *testing.T) {
+	for _, s := range []string{"", "a", "jsmith", strings.Repeat("a", UsernameMax)} {
+		if err := RejectLongUsername(s); err != nil {
+			t.Errorf("%q: %v", s, err)
+		}
+	}
+	for _, n := range []int{UsernameMax + 1, 40} {
+		name := strings.Repeat("a", n)
+		var e *Error
+		want := "Username '" + name + "' is " + strconv.Itoa(n) + " characters; a user name is at most 32 (the longest a Linux account name can be)."
+		if !errors.As(RejectLongUsername(name), &e) || len(e.Lines()) != 1 || e.Lines()[0] != want {
+			t.Errorf("%d: %v", n, e)
+		}
+	}
+	// ValidateUsername, which every verb runs, takes a user from before.
+	if err := ValidateUsername(strings.Repeat("a", 40)); err != nil {
+		t.Errorf("ValidateUsername refuses a long name: %v", err)
 	}
 }
 

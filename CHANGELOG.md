@@ -44,9 +44,9 @@ current behaviour; this file is where history lives.
    manual page say so.
 
 2. **`tacctl rollback 0.2.28`, the release before this one, is a target.**
-   This release changed no stored file 0.2.28 reads strictly (the mode a file
-   uploaded through the console gets, item 1, a test and the documentation are
-   all that moved), so 0.2.28 reads everything it writes: the rollback
+   This release changed no stored file 0.2.28 reads strictly: no change of
+   0.2.29 writes a stored file in a form 0.2.28 does not read, so 0.2.28 reads
+   everything it writes: the rollback
    converts no file, removes no key and no field, takes no snapshot and needs
    no `--yes`. The file transfer settings of `console.yaml`
    (`settings.file_transfer`) stay, 0.2.28 has them, and so do the limits of
@@ -70,6 +70,77 @@ current behaviour; this file is where history lives.
    new target, and `tacctl rollback` now takes fifteen targets. The note that
    follows a rollback that took a snapshot names this release, 0.2.29, as the
    state the snapshot holds ("Restore it with 0.2.29 only").
+
+3. **A new user name is at most 32 characters.** A Linux account name is at
+   most 32 characters, but `user add` took any length, so a longer name became
+   a tacctl user that has no account on the tacctl server or on a host.
+   `user add` and the new name of `user rename` now refuse a name of more
+   than 32 characters, change nothing and exit 1, with
+   `Username 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' is 33 characters; a user name
+   is at most 32 (the longest a Linux account name can be).` (the name is
+   given in full). A name of exactly 32 is accepted. Only the creation
+   paths check it: a user that exists with a longer name keeps working (it is
+   shown, changed, renamed away to a shorter name and removed as before) and
+   `backup restore` and `tacctl upgrade` carry it unchanged; `store import`
+   loads it as it is too, with one line (`1 user name(s) are longer than 32
+   characters and are loaded as they are; new names are at most 32, and such
+   a user has no Linux account (tacctl config validate lists them).`), as it
+   says for names with upper case. `docs/cli/user.md`, `docs/install/upgrading.md` and the
+   manual page say so; they no longer say that every user has an account.
+
+4. **`config validate` warns of a user whose name is longer than 32
+   characters.** Item 3 keeps such a user (from an earlier release) working,
+   but it has no Linux account, here or on a host, so it gets none at a
+   sync. It is a `Names:` warning now, as a name with upper case is, with the
+   rename that fixes it: `the user 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' has a
+   name of 33 characters; new user names are at most 32, and this user has no
+   Linux account, here or on a host (tacctl user rename
+   aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa <new-name>)`. It is a warning, never an
+   error, and `config validate --json` has it under the section `names`;
+   `--fix-names` does not offer it, since there is no name to propose. A
+   user whose name is also in upper case gets this one warning, not a second
+   one that proposes the lower-case spelling (also over 32 characters, so
+   `user rename` would refuse it): it reads `has a name of 40 characters and
+   has upper case letters; new user names are at most 32 and lower case, and
+   this user has no Linux account, here or on a host`, and `--fix-names`
+   offers nothing for the user and exits as for a store with no fixable
+   names. The superuser's view only. `docs/cli/config.md` and the manual page say so.
+
+5. **`tacctl ssh <device> --login <local-user>` logs in as one of the device's
+   own accounts.** In the tacctl console the words after `--` are the remote
+   command and ssh's `-l admin` is refused, and while break-glass is held on a
+   device only its local accounts work, so a person had no way to open a
+   session as `admin` from the console. `tacctl ssh <name|address> --login
+   <local-user> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]`
+   (and `tacctl device ssh`, the same command) now runs ssh as you, as
+   before, with `-l <local-user>` in place of your name. It is for
+   registered devices of any vendor; an enrolled host is refused in one
+   sentence (hosts are reached as you) and nothing is started. The device must
+   have a pinned host key: without one the line is refused and names
+   `tacctl device hostkey <name> accept`, because a local password goes only
+   to a device whose key was verified; with one, ssh checks the key strictly
+   against the pin, exactly as for a plain session. It needs the engineer tier
+   or above, as the other `--login` verbs do (a lower tier gets
+   `'tacctl device ssh --login' is not permitted for the <tier> tier.`), and
+   the device must be in one of your scopes, as for every ssh. The name is
+   letters, digits, `.`, `_` and `-`. The device asks for the account's
+   password at its own prompt: tacctl never asks for it, caches it or stores
+   it, and the password cache of the shell and the console is not used for the
+   line (it is not asked, filled or told to forget, not even when ssh ends with
+   status 255, and the shell gives the line no token). The session's
+   `ssh user= device= addr=` and `ssh end` lines carry `login=<local-user>`
+   (after the device and address fields; `from=` and `console=` follow) and
+   have no `password=` field; a plain session's lines are unchanged. The
+   warning for a device with break-glass held says `you log in as its local
+   account '<local-user>'` and the session goes on. Help (`tacctl ssh -h`,
+   `tacctl device` and `help device`, which now list `--login <local-user>`
+   under `ssh` as they list its other options), the tier lines of `ssh` and
+   `device ssh` in the manual page (a session as you is every tier's,
+   `--login` needs the engineer tier), the completion (a `--login` flag with no candidates, as for
+   the other `--login` verbs), the manual page, `docs/cli/console.md`,
+   `docs/cli/conventions.md`, `docs/cli/device.md`,
+   `docs/cli/shell.md`, `docs/devices/connecting.md`,
+   `docs/devices/walkthroughs.md` and `docs/devices/break-glass.md` describe it.
 
 ## 0.2.28 (2026-11-09)
 

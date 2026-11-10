@@ -445,6 +445,13 @@ func (inv *invocation) collectValidate(r *validateReport) {
 			Kind: fnd.Kind, Name: fnd.Name, To: fnd.To, Verb: fnd.Verb})
 	}
 
+	// A user from before with a name longer than a Linux account name: it
+	// works, but has no account. A warning with the rename that fixes it.
+	for _, fnd := range inv.lengthFindings() {
+		r.found(howEchoE, "  "+Y+"Names:"+NC+"                "+fnd.String(), validateFinding{
+			Section: "names", Level: levelWarning, Text: fnd.Text, Fix: fnd.Fix})
+	}
+
 	// Break-glass local users (D55): a scope without one is a lockout risk
 	// when the server is unreachable, and a name that is also a tacctl user
 	// of its scope is shadowed on the device. Warnings, never errors.

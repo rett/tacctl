@@ -88,9 +88,11 @@ tacctl server <subcommand>
 
     This server's settings (show, name, addresses, listen, metrics); see server.md
 
-tacctl ssh <name|address> [-p port] [-X|-Y] [-g] [-L|-R|-D spec]... [-- ssh args]
+tacctl ssh <name|address> [--login local-user] [-p port] [-X|-Y] [-g]
+          [-L|-R|-D spec]... [-- ssh args]
 
-    ssh session to a registered device or enrolled host, as you, by password (never root)
+    ssh session to a registered device or enrolled host, as you, by password (never root),
+    or as a local account of a device with --login
 
 tacctl console <subcommand>
 

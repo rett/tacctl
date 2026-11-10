@@ -384,9 +384,21 @@ device hostkey <name> set SHA256:<fp>
     time to greet) and the same two ways to accept a key. Nothing is written;
     `--no-host-key` registers the device unpinned.
 
-device ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]
+device ssh <name|address> [--login <local-user>] [-p <port>] [-X|-Y] [-g]
+           [-L|-R|-D <spec>]... [-- <ssh args>]
 
     Same as tacctl ssh
+    --login <local-user>
+        Log in as this local account of the device instead of as you (a break-glass account, or any
+        other): ssh runs with `-l <local-user>`. Registered devices only, of any vendor (an enrolled
+        host is refused: hosts are reached as you), and only a device with a pinned host key (the
+        key is checked strictly against the pin, as for a plain session); the engineer tier and
+        up, for a device in one of your scopes. The device asks for the account's password
+        itself: tacctl never asks for it, caches it or stores it, and the password cache is not
+        used for the line. The session's log lines carry `login=<local-user>` (after the device
+        and address fields; `from=` and `console=` follow; no password field). A hold on the
+        device only warns: it is what the account is for. The words after `--` stay the remote
+        command in the console.
 
 device client-config
 
@@ -824,7 +836,7 @@ export. A name that exists with upper case keeps working, is found in any
 case, and is listed by `tacctl config validate` with the `device rename` that
 fixes it.
 
-A device is found by name (any case) or by its registered address; an unregistered address is not found, even when a scope covers it. An address is registered once. A device name is letters, digits, `.`, `_` and `-`, starting with a letter or digit, at most 253 characters with each dotted part at most 63, so a fully qualified host name (`sw1.site-a.example`) is one. An enrolled host's name is the same, starting with a letter; `host enroll` borrows the short name from the target (`alice@sw1.example.net` is `sw1`), and a fully qualified name is given with `--name` or `host rename`. Enrolled Linux hosts share the namespace and `show` (and the other verbs that take a device, which do not change a host) takes one by name, as a `linux` entry, read-only; `list` shows devices only, and `host list` the hosts. `list`, `show`, `notice list`, `client-config` and `tacctl ssh` are open to the read-only and operator tiers, limited to the entries of their own scopes (`tacctl ssh` is limited so for every tier); `export` is operator-level, filtered the same way. `device reports` is open to every tier for its own reports (made from stored data and limited to the user's own scopes); `generate --pull` is the engineer's, and another user's reports (`--user`, `--all-users`, `<user>/<report>`) the superuser's (see [Device reports](../devices/reports.md)).
+A device is found by name (any case) or by its registered address; an unregistered address is not found, even when a scope covers it. An address is registered once. A device name is letters, digits, `.`, `_` and `-`, starting with a letter or digit, at most 253 characters with each dotted part at most 63, so a fully qualified host name (`sw1.site-a.example`) is one. An enrolled host's name is the same, starting with a letter; `host enroll` borrows the short name from the target (`alice@sw1.example.net` is `sw1`), and a fully qualified name is given with `--name` or `host rename`. Enrolled Linux hosts share the namespace and `show` (and the other verbs that take a device, which do not change a host) takes one by name, as a `linux` entry, read-only; `list` shows devices only, and `host list` the hosts. `list`, `show`, `notice list`, `client-config` and `tacctl ssh` are open to the read-only and operator tiers, limited to the entries of their own scopes (`tacctl ssh` is limited so for every tier; its `--login` is the engineer's); `export` is operator-level, filtered the same way. `device reports` is open to every tier for its own reports (made from stored data and limited to the user's own scopes); `generate --pull` is the engineer's, and another user's reports (`--user`, `--all-users`, `<user>/<report>`) the superuser's (see [Device reports](../devices/reports.md)).
 
 A name that is a factory or image default is refused with the command that names the device on the device itself (`hostname`, `set system host-name`, ...); a host already enrolled under such a name is not refused and carries a `generic-name` notice. `host enroll --name` follows the same rules. Add your own patterns with `generic_names:` (regular expressions, whole-name, case-insensitive) in `devices.yaml`.
 
