@@ -6,7 +6,8 @@ groups and scopes, network devices and enrolled Linux hosts.
 ## Read first
 
 - `docs/development/README.md`: working rules, the examples table.
-- `docs/plans/backlog.md` §0: roadmap and the plan of the release in progress.
+- `docs/plans/backlog.md` §0: the roadmap.
+- The plan of the release in progress, under `docs/plans/`.
 - `CONTRIBUTING.md`: branches, pull requests.
 - `docs/releasing.md`: releases.
 
@@ -14,7 +15,7 @@ groups and scopes, network devices and enrolled Linux hosts.
 
 - The Go version is `GO_VERSION` in `bin/tacctl.sh`; the linter pin is `GOLANGCI_LINT_VERSION` in the `Makefile`.
 - `make bootstrap` only initialises the bats submodules (`git submodule update --init --recursive`) and installs nothing else; preview it with `make -n bootstrap`.
-- `make doctor` checks the checkout and prints one line per item: a line starting `missing`, `fail` or `error` is a problem, a line starting `expected` is a known accepted absence. Run it after pulling and before the gates.
+- `make doctor` checks the checkout and prints one line per item: it prints only `ok`, `missing` and `expected` lines: `missing` is a problem, `expected` is a known accepted absence, and exit status 1 means at least one `missing`. Run it after pulling and before the gates.
 - Agents never install system packages themselves; the doctor prints the install line.
 - A new tool the project needs goes into `make doctor` and into this section in the same change.
 
@@ -30,7 +31,7 @@ groups and scopes, network devices and enrolled Linux hosts.
 - Bats: `make build`, then as an ordinary user, neither root nor one with sudo (`tests/README.md`): `tests/bats/bats-core/bin/bats tests/integration/<file>.bats`
 - Diff corpus: `tests/diff/run.sh --all --against <previous release tag>`
 - Containers (rootless podman): `tests/containers/run-all.sh` (the whole matrix, with a table) or one of `tests/containers/{hosts,radius,fresh}/run.sh`
-- The whole-suite runs are gated as `make lint` and the static checks, then `make gate-go` per feature, and `make gate-ci` per release.
+- The whole-suite runs are gated per feature with `make lint`, the static checks (`test -z "$(gofmt -l cmd internal)"`, `go vet ./...` and `go vet -tags testknobs ./...`, `tests/tools/go-test-shard.sh --check 2`) and `GATE_TMPFS=1 make gate-go`; per release with `GATE_TMPFS=1 make gate-ci`.
 
 ## Rules
 
