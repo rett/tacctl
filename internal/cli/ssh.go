@@ -7,7 +7,8 @@ package cli
 // resolves the name, admits only an active tacctl user whose scopes hold
 // the entry's (every tier, superusers included), logs the session, and runs
 // ssh as SUDO_USER with the terminal, logging in as SUDO_USER by password
-// (no agent, no key, no other login), returning ssh's exit status. The
+// (no agent, no key, no other login; or, with --login, the device's local
+// account), returning ssh's exit status. The
 // shell and the console run the same line ('sudo -n tacctl ssh <name>'), so
 // there is one path to audit. 'device ssh' is the same command.
 //
@@ -39,7 +40,7 @@ package cli
 // instead of the caller: '-l <local-user>', the password asked by the device
 // itself. The password cache is not used for such a line (never read, never
 // asked, never told to forget; the shell leaves it shut, askpassWords), and
-// the log lines carry login=<local-user>.
+// the log lines carry login=<local-user> (before from= and console=).
 
 import (
 	"context"

@@ -14715,8 +14715,10 @@ or the host of the terminal's login record) and, when ssh ends, as
 runs as the invoking user
 .RB ( "sudo \-u " "\fIuser\fR " \-H ),
 with the terminal, returning its exit status. The login is always the invoking
-user's own name and the session authenticates by password only: no agent, no
-key, no other login; an enrolled host's enrolment account and identity are
+user's own name (or, with
+.BR \-\-login ,
+the device's local account named there) and the session authenticates by
+password only: no agent, no key, no other login; an enrolled host's enrolment account and identity are
 never used. It never runs ssh as root: run by root itself (no
 .BR SUDO_USER ,
 or
@@ -14895,18 +14897,20 @@ hosts are reached as the user), and only for a device with a pinned host key
 .RI ( "has no pinned host key, and a local password goes only to a device whose key was verified" ;
 the key is checked strictly against the pin, as for a plain session), for the
 engineer tier and up
-.RI ( "'tacctl device ssh \-\-login' is not permitted for the tier tier" ),
+.RI ( "'tacctl device ssh \-\-login' is not permitted for the <tier> tier" ),
 and for a device in one of the caller's scopes, as for every ssh. A refusal of the
 entry is logged
 .RB ( "ssh DENY ... reason=login\-host" " or " "reason=login\-unpinned" ).
 The device asks for the account's password at its own prompt: tacctl never
 asks for it, caches it or stores it, it is the engineer's, and the password
 cache is neither asked, filled nor told to forget for the line (the shell
-leaves it shut). The two log lines end with
+leaves it shut). The two log lines carry
 .BI login= local\-user
-(before
-.BR console= ),
-and have no
+(after the device and address fields;
+.B from=
+and
+.B console=
+follow), and have no
 .B password=
 field. The warning for a held device then says the local account is what is
 used.

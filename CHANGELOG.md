@@ -124,12 +124,14 @@ current behaviour; this file is where history lives.
    it, and the password cache of the shell and the console is not used for the
    line (it is not asked, filled or told to forget, not even when ssh ends with
    status 255, and the shell gives the line no token). The session's
-   `ssh user= device= addr=` and `ssh end` lines end with `login=<local-user>`
-   (and have no `password=` field); a plain session's lines are unchanged. The
+   `ssh user= device= addr=` and `ssh end` lines carry `login=<local-user>`
+   (after the device and address fields; `from=` and `console=` follow) and
+   have no `password=` field; a plain session's lines are unchanged. The
    warning for a device with break-glass held says `you log in as its local
    account '<local-user>'` and the session goes on. Help (`tacctl ssh -h`,
    `help device`), the completion (a `--login` flag with no candidates, as for
-   the other `--login` verbs), the manual page, `docs/cli/device.md`,
+   the other `--login` verbs), the manual page, `docs/cli/console.md`,
+   `docs/cli/conventions.md`, `docs/cli/device.md`,
    `docs/cli/shell.md`, `docs/devices/connecting.md`,
    `docs/devices/walkthroughs.md` and `docs/devices/break-glass.md` describe it.
 
