@@ -1,10 +1,10 @@
 package lifecycle
 
 // The rollback to 0.2.22, the release before 0.2.23 (rollback0223.go).
-// 0.2.22 reads every file 0.2.23 to 0.2.28 and this release write but what a step of
+// 0.2.22 reads every file 0.2.23 to 0.2.29 and this release write but what a step of
 // rollbackAdditions (rollback_additions.go) undoes, so the plan of the target converts nothing
 // of its own: it leaves every file alone but the per-tier sudoers drop-in
-// when it is exactly this release's text (the same as 0.2.28's, 0.2.27's and 0.2.26's), 0.2.25's or 0.2.23's (it loses the engineer's
+// when it is exactly this release's text (the same as 0.2.29's, 0.2.28's, 0.2.27's and 0.2.26's), 0.2.25's or 0.2.23's (it loses the engineer's
 // row of 'device clone', tier.Sudoers0222, and the same goes for 0.2.21 and
 // 0.2.20, which wrote the same text), and a change of this release that
 // 0.2.22 refuses (the users' email addresses, rollback_email.go) is a step of

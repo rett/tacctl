@@ -138,7 +138,7 @@ func TestSudoersIsTheTextOf0227(t *testing.T) {
 	}
 }
 
-// This release's per-tier text is the one 0.2.28 wrote, which is why the
+// The per-tier text is the one 0.2.28 wrote, which is why the
 // rollback to 0.2.28 leaves the drop-in alone. A release that changes a rule
 // makes this fail: it freezes the text of the release before it and gives the
 // rollback to that release a step for the drop-in. Skipped where git or the
@@ -157,5 +157,27 @@ func TestSudoersIsTheTextOf0228(t *testing.T) {
 	}
 	if string(res.Stdout) != Sudoers() {
 		t.Error("the per-tier text differs from the golden file of the 0.2.28 tag: freeze that text for the rollback to 0.2.28 (rollback0228.go leaves the drop-in alone only while they are the same)")
+	}
+}
+
+// This release's per-tier text is the one 0.2.29 wrote, which is why the
+// rollback to 0.2.29 leaves the drop-in alone. A release that changes a rule
+// makes this fail: it freezes the text of the release before it and gives the
+// rollback to that release a step for the drop-in. Skipped where git or the
+// tag is absent.
+func TestSudoersIsTheTextOf0229(t *testing.T) {
+	r := execx.Real{}
+	if _, err := r.LookPath("git"); err != nil {
+		t.Skip("git is not installed, so the 0.2.29 tag cannot be read")
+	}
+	if res, err := r.Run(context.Background(), execx.Cmd{Name: "git", Args: []string{"rev-parse", "-q", "--verify", "0.2.29^{commit}"}}); err != nil || res.Code != 0 {
+		t.Skip("the 0.2.29 tag is not in this repository (CI must fetch tags: git fetch --tags)")
+	}
+	res, err := r.Run(context.Background(), execx.Cmd{Name: "git", Args: []string{"show", "0.2.29:internal/tier/testdata/sudoers.tiers"}})
+	if err != nil || res.Code != 0 {
+		t.Fatalf("cannot read the 0.2.29 tag's golden file: %v %s", err, res.Stderr)
+	}
+	if string(res.Stdout) != Sudoers() {
+		t.Error("the per-tier text differs from the golden file of the 0.2.29 tag: freeze that text for the rollback to 0.2.29 (rollback0229.go leaves the drop-in alone only while they are the same)")
 	}
 }

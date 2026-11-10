@@ -9,10 +9,10 @@ import (
 	"github.com/rett/tacctl/internal/tier"
 )
 
-// 'tacctl rollback 0.2.28', the release before this one, on the host sandbox
+// 'tacctl rollback 0.2.28', the release before 0.2.29, on the host sandbox
 // with this server enrolled. The plan's own cases are internal/lifecycle's.
 
-// This release changed no stored file 0.2.28 reads strictly, so 0.2.28 reads
+// 0.2.29 and this release changed no stored file 0.2.28 reads strictly, so 0.2.28 reads
 // everything: the dry run lists nothing to do and --apply converts nothing,
 // even with the console's file transfer settings, an email address in the
 // store, the break-glass firewall and the limits of the stored reports set,
@@ -163,12 +163,12 @@ func TestRollback0228LeavesTheDropIn(t *testing.T) {
 	hs.expect(0, "put back the per-tier sudoers drop-in 0.2.25 writes", "")
 }
 
-// 0.2.28 is the release before this one; this release is not a target, and
-// the refusal names 0.2.28 first.
-func TestRollback0228IsTheReleaseBeforeThisOne(t *testing.T) {
+// 0.2.28 is the release before 0.2.29; this release is not a target, and the
+// refusal names 0.2.29 as the release before this one, and 0.2.28 after it.
+func TestRollback0228IsAccepted(t *testing.T) {
 	hs := rollback0227State(t)
-	hs.run(hs.runner(), "rollback", "0.2.29")
-	hs.expect(1, "", "'0.2.29' is not a release to roll back to: 'tacctl rollback' prepares the state for 0.2.28 (the release before this one), 0.2.27, 0.2.26, 0.2.25, 0.2.24")
+	hs.run(hs.runner(), "rollback", "0.2.30")
+	hs.expect(1, "", "'0.2.30' is not a release to roll back to: 'tacctl rollback' prepares the state for 0.2.29 (the release before this one), 0.2.28, 0.2.27, 0.2.26, 0.2.25, 0.2.24")
 	hs.run(hs.runner(), "rollback", "v0.2.28")
 	hs.expect(0, "Roll back to 0.2.28 (dry run)", "")
 }

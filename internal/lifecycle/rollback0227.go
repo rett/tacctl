@@ -20,9 +20,9 @@ package lifecycle
 // documentation. The stored state files,
 // the per-tier sudoers text, the keys of tacctl.yaml, the fields of the store,
 // the format of the pull records and of the reports in the users' homes are
-// all as 0.2.27 reads them. So 0.2.27 reads every other file 0.2.28 and this
-// release write and the plan of the target leaves them alone, the per-tier
-// sudoers drop-in included (0.2.27 to 0.2.28 and this release write the same
+// all as 0.2.27 reads them. So 0.2.27 reads every other file 0.2.28, 0.2.29 and
+// this release write and the plan of the target leaves them alone, the per-tier
+// sudoers drop-in included (0.2.27 to 0.2.29 and this release write the same
 // text), removes no key of
 // tacctl.yaml (the limits of the stored reports, reports.max_size and
 // reports.max_count in tacctl.yaml and a user's own limits in the store, stay:
@@ -33,7 +33,7 @@ package lifecycle
 // fires for it either: they undo what 0.2.26 and older releases changed, for
 // the targets older than the release that made the change.
 //
-// What 0.2.28 and this release changed outside the stored files is 0.2.27's
+// What 0.2.28 to 0.2.29 and this release changed outside the stored files is 0.2.27's
 // to undo or keep, and needs no step here: the next support bundle of a device
 // with 0.2.27 starts the identity lines of an IOS device with the tail of a
 // long command's echo again, as it did before.
