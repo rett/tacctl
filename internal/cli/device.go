@@ -225,7 +225,7 @@ var deviceVerbs = [][2]string{
 	{"snmp <name> v3-user add|remove|default|list [<user>]", "The device's v3 user pool: add, remove, default (any pool it sees), list"},
 	{"snmp <name> clear", "Remove everything the device sets of its own: its scope's settings apply again"},
 	{deviceBlockUse, "A device's own configuration blocks (snmp and system, for Junos and IOS) over its scope's: list, show, check, set, remove, edit, adopt"},
-	{"ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]", "Alias of 'tacctl ssh': a session to the device, as you"},
+	{"ssh <name|address> [--login <local-user>] [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]", "Alias of 'tacctl ssh': a session to a device, as you or a local account"},
 	{"client-config", "Print an ssh_config Include for your devices (Host blocks, pinned keys)"},
 	{"scan [--full] [--since <dur>] [--backend <id>] [--sources]", "Read the logs for the devices seen; re-scan pinned host keys"},
 	{"discover [--all] [--snmp] [--backend <id>]", "Scan, then list the addresses that authenticated unregistered (--snmp: read each one's name and vendor by SNMP for the add lines)"},

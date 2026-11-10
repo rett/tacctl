@@ -261,10 +261,12 @@ func askpassWords(words []string) bool {
 	switch {
 	case len(words) == 0:
 		return false
+	// a session as a device's local account (--login) never asks the cache:
+	// the device asks the password, and the line leaves the cache shut
 	case words[0] == "ssh":
-		return true
+		return !localLoginLine(words[1:])
 	case words[0] == "device" && len(words) > 1 && words[1] == "ssh":
-		return true
+		return !localLoginLine(words[2:])
 	// a read as a device's local account (--login, 0.2.9 D136) never asks
 	// the cache: its line leaves it shut
 	case words[0] == "device" && len(words) > 2 && words[1] == "config" && localLoginLine(words[3:]):
@@ -405,4 +407,16 @@ func (inv *invocation) takeAskpass() *askpass.Client {
 	}
 	c.ExpectUID = uid
 	return c
+}
+
+// dropAskpass discards the cache's value for this process unread, for a line
+// that must not use the cache (a local account's login): no client is made
+// from it, the value kept by captureAskpass is cleared, and the process
+// environment is cleared of it as askpassValue does.
+func (inv *invocation) dropAskpass() {
+	if inv.hooks != nil && inv.hooks.askpassFromApp {
+		return // a test: the app's environment only, no process state touched
+	}
+	processAskpass = ""
+	_ = os.Unsetenv(askpass.EnvVar) //nolint:forbidigo // removing the token, not reading the environment
 }
