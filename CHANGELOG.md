@@ -24,6 +24,34 @@ current behaviour; this file is where history lives.
    a file gets 0644, 0600 after the umask, as before. `docs/cli/console.md`
    and the manual page say so.
 
+2. **`tacctl rollback 0.2.28`, the release before this one, is a target.**
+   This release changed no stored file 0.2.28 reads strictly (the mode a file
+   uploaded through the console gets, item 1, a test and the documentation are
+   all that moved), so 0.2.28 reads everything it writes: the rollback
+   converts no file, removes no key and no field, takes no snapshot and needs
+   no `--yes`. The file transfer settings of `console.yaml`
+   (`settings.file_transfer`) stay, 0.2.28 has them, and so do the limits of
+   the stored reports (`reports.max_size` and `reports.max_count` in
+   `tacctl.yaml`, and a user's own `reports_max_size` and `reports_max_count`
+   in `store.yaml`), the chassis `members` of the pull records and every
+   report in the users' homes, the PDF ones included, with the marker
+   `/var/lib/tacctl/pdf-tools-offered` and the packages `weasyprint` and
+   `fonts-dejavu-core`. The per-tier sudoers drop-in is left too: 0.2.28 and
+   this release write the same text. The break-glass firewall, the users'
+   email addresses, the SNMPv3 users, the covered staging entries, the server
+   name, the timing scale and an emergency lockdown with enrolled hosts,
+   which the older targets drop or refuse, stay as well. It is refused only
+   while a device's apply is not settled. The command ends with `tacctl
+   upgrade --branch 0.2.28` and, having nothing to avoid, has no closing note.
+   `rollback 0.2.27` and older behave as before (they still remove the file
+   transfer settings), and the lists of "every target but" in the rollback
+   pages and the manual page now include 0.2.28. The top-level help,
+   `docs/cli/conventions.md`, `docs/install/upgrading.md` (Rolling back, To
+   0.2.28), `docs/releasing.md`, the manual page and the completion list the
+   new target, and `tacctl rollback` now takes fifteen targets. The note that
+   follows a rollback that took a snapshot names this release, 0.2.29, as the
+   state the snapshot holds ("Restore it with 0.2.29 only").
+
 ## 0.2.28 (2026-11-09)
 
 1. **A support bundle from a Cisco IOS device no longer starts the identity
