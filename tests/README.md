@@ -89,7 +89,11 @@ skip) with the names of the skipped tests, at most 20, listed above the line: a
 test that skips for a missing tool passes silently, and an unexpected skip
 count is how a green run shows it did not test what it should; the ten
 slowest top-level tests of the run (`gate-go: slowest: TestX 47.1s`) follow
-the skipped names, still above the verdict line. A run of the whole suite
+the skipped names, still above the verdict line. A FAIL verdict is preceded,
+last of the lines above it, by the failing tests, at most ten `FAIL: <name>`
+lines (from the `--- FAIL:` lines of the log, else the package of a
+`FAIL <package>` line), which `qargi feature verify` reads to name the failing
+test. A run of the whole suite
 (no package listed, no `--tags`) first runs `make lint-go` (gofmt, `go vet`
 and golangci-lint in both tag sets, the Go half of the lint job of CI), so a
 finding fails the run before any test runs (`lint-failed` in the verdict line,
