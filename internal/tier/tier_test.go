@@ -839,7 +839,7 @@ func TestNotesAreOnePerCommandAndSub(t *testing.T) {
 		}
 		seen[k] = true
 		if r.Cmd == "" || (r.Sub == "") != r.AnySub {
-			t.Errorf("a note on a row without Cmd and Sub: %+v", r)
+			t.Errorf("a note on a row without Cmd, or whose Sub does not match AnySub: %+v", r)
 		}
 	}
 	if len(seen) != len(Notes()) || len(seen) < 13 {
