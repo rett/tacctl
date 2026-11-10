@@ -3,7 +3,7 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
-## 0.2.30 (unreleased)
+## 0.2.30 (2026-11-10)
 
 1. **`tacctl rollback 0.2.29`, the release before this one, is a target.**
    This release changed no stored file 0.2.29 reads strictly (the check of the
