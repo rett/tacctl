@@ -17,10 +17,10 @@ current behaviour; this file is where history lives.
    sticky are ignored), reduced by the umask of the console, 077. The
    owner's bits survive and the group and other bits go: a script asked at
    0755 is 0700, a file asked at 0644 is 0600. A request without
-   permissions, or that asks for the mode 0 (a block of four bytes of zero
-   is also what a request with no attributes but the extended ones looks
-   like), still gives 0644, 0600 after the umask. A file that already
-   exists keeps its mode, and a download changes nothing. A file asked at a
+   permissions, or that asks for no permission bits (the mode 0, with or
+   without file type bits; a block of four bytes of zero is also what a
+   request with no attributes but the extended ones looks like), still gives
+   0644, 0600 after the umask. A file that already exists keeps its mode, and a download changes nothing. A file asked at a
    mode without the owner's write bit (0444, or 0555, which `scp` sends for
    a read-only source) is created writable by its owner and gets the mode
    asked for, reduced by the umask, when the client closes the handle:

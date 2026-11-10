@@ -100,9 +100,10 @@ func permBits(m uint32) uint32 { return m & 0o777 }
 // permissions: it is what the OpenSSH sftp and scp clients send, without a
 // size, owner or times. It is not always so: a version 3 block that holds only
 // the flag of the extended attributes and a count of none is four bytes of
-// zero too, and would read as the mode 0000. A value of zero is therefore
-// read as asking for nothing (a client that really asks for 0000 gets the
-// default, and can set the mode afterwards). Any other length could be the
+// zero too, and would read as the mode 0000. A value without any permission
+// bit (zero, or only file type bits, which permBits drops) is therefore read
+// as asking for nothing (a client that really asks for 0000 gets the default,
+// and can set the mode afterwards). Any other length could be the
 // permissions together with a size, an owner or times, in an order that
 // cannot be told apart, so it asks for nothing and the new file gets the
 // default mode, as before.
@@ -110,11 +111,11 @@ func openMode(r *sftp.Request) (uint32, bool) {
 	if len(r.Attrs) != 4 {
 		return 0, false
 	}
-	v := binary.BigEndian.Uint32(r.Attrs)
-	if v == 0 {
+	m := permBits(binary.BigEndian.Uint32(r.Attrs))
+	if m == 0 {
 		return 0, false
 	}
-	return permBits(v), true
+	return m, true
 }
 
 // openFile opens the file of r. write says the open is for an upload (the

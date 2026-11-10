@@ -3,6 +3,7 @@ package sftpd
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -220,6 +221,11 @@ func TestOpenModeOfTheRequest(t *testing.T) {
 		{"create and exclusive", 0o022, rawFlagWrite | rawFlagCreat | rawFlagExcl, rawAttrPerm, permAttrs(0o755), 0, 0o755},
 		{"mode 0 asks for nothing: 0644 under umask 022", 0o022, creatTrunc, rawAttrPerm, permAttrs(0), 0, 0o644},
 		{"mode 0 asks for nothing: 0600 under the console umask", 0o077, creatTrunc, rawAttrPerm, permAttrs(0), 0, 0o600},
+		{"only file type bits ask for nothing: 0644 under umask 022", 0o022, creatTrunc, rawAttrPerm, permAttrs(0o100000), 0, 0o644},
+		{"only file type bits ask for nothing: 0600 under the console umask", 0o077, creatTrunc, rawAttrPerm, permAttrs(0o100000), 0, 0o600},
+		{"all file type bits ask for nothing: 0644 under umask 022", 0o022, creatTrunc, rawAttrPerm, permAttrs(0o170000), 0, 0o644},
+		{"all file type bits ask for nothing: 0600 under the console umask", 0o077, creatTrunc, rawAttrPerm, permAttrs(0o170000), 0, 0o600},
+		{"only special bits ask for nothing: 0644 under umask 022", 0o022, creatTrunc, rawAttrPerm, permAttrs(0o7000), 0, 0o644},
 		{"extended attributes without any: 0644 under umask 022", 0o022, creatTrunc, rawAttrExtended, permAttrs(0), 0, 0o644},
 		{"extended attributes without any: 0600 under the console umask", 0o077, creatTrunc, rawAttrExtended, permAttrs(0), 0, 0o600},
 		{"permissions with times are not read", 0o022, creatTrunc, rawAttrPerm | times, twelve, 0, 0o644},
@@ -396,29 +402,30 @@ func TestOpenModeWithoutOwnerWriteExistingFile(t *testing.T) {
 		rawFlagWrite | rawFlagCreat,
 		rawFlagRead | rawFlagWrite | rawFlagCreat,
 	} {
-		old := syscall.Umask(0o077)
-		home := newHome(t)
-		p := filepath.Join(home, "f")
-		if err := os.WriteFile(p, []byte("old data"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Chmod(p, 0o640); err != nil {
-			t.Fatal(err)
-		}
-		r := newRawConn(t, home)
-		h, code := r.open("f", pflags, rawAttrPerm, permAttrs(0o400))
-		if h == "" {
-			t.Fatalf("pflags %#x: open refused: status %d", pflags, code)
-		}
-		r.writeAt(h, "new")
-		if c := r.fsetstat(h, rawAttrSize, sizeAttrs(3)); c != 0 {
-			t.Errorf("pflags %#x: fsetstat of the size: status %d", pflags, c)
-		}
-		r.closeHandle(h)
-		syscall.Umask(old)
-		if got := modeOfFile(t, p); got != 0o640 {
-			t.Errorf("pflags %#x: mode %v, want -rw-r-----", pflags, got)
-		}
+		t.Run(fmt.Sprintf("pflags %#x", pflags), func(t *testing.T) {
+			setUmask(t, 0o077)
+			home := newHome(t)
+			p := filepath.Join(home, "f")
+			if err := os.WriteFile(p, []byte("old data"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(p, 0o640); err != nil {
+				t.Fatal(err)
+			}
+			r := newRawConn(t, home)
+			h, code := r.open("f", pflags, rawAttrPerm, permAttrs(0o400))
+			if h == "" {
+				t.Fatalf("open refused: status %d", code)
+			}
+			r.writeAt(h, "new")
+			if c := r.fsetstat(h, rawAttrSize, sizeAttrs(3)); c != 0 {
+				t.Errorf("fsetstat of the size: status %d", c)
+			}
+			r.closeHandle(h)
+			if got := modeOfFile(t, p); got != 0o640 {
+				t.Errorf("mode %v, want -rw-r-----", got)
+			}
+		})
 	}
 }
 
@@ -485,7 +492,7 @@ func TestOpenModeWithoutOwnerWriteQuotaAndAudit(t *testing.T) {
 		t.Fatalf("open refused: status %d", code)
 	}
 	r.writeAt(h, "12345")
-	if c := r.fsetstat(h, rawAttrSize, sizeAttrs(100)); c != fxFailure && c != fxPermissionDenied && c == 0 {
+	if c := r.fsetstat(h, rawAttrSize, sizeAttrs(100)); c == 0 {
 		t.Errorf("a size over the quota: status %d, want a refusal", c)
 	}
 	if c := r.fsetstat(h, rawAttrSize, sizeAttrs(5)); c != 0 {
@@ -679,5 +686,154 @@ func TestOpenModeWithoutOwnerWriteChmodElsewhereWins(t *testing.T) {
 	r.closeHandle(h)
 	if got := modeOfFile(t, p); got != 0o640 {
 		t.Errorf("mode %v, want -rw-r-----", got)
+	}
+}
+
+// A name that is a directory, a symbolic link or a FIFO is refused with a
+// mode without the owner's write bit exactly as with any other mode, and what
+// is at the name is not changed.
+func TestOpenModeWithoutOwnerWriteNotARegularFile(t *testing.T) {
+	setUmask(t, 0o022)
+	tests := []struct {
+		name  string
+		make  func(t *testing.T, home string)
+		check func(t *testing.T, p string)
+	}{
+		{"directory", func(t *testing.T, home string) {
+			if err := os.Mkdir(filepath.Join(home, "f"), 0o750); err != nil {
+				t.Fatal(err)
+			}
+		}, func(t *testing.T, p string) {
+			if got := modeOfFile(t, p); got != 0o750|os.ModeDir {
+				t.Errorf("mode %v, want drwxr-x---", got)
+			}
+		}},
+		{"symbolic link", func(t *testing.T, home string) {
+			if err := os.WriteFile(filepath.Join(home, "target"), []byte("old"), 0o640); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(filepath.Join(home, "target"), 0o640); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink("target", filepath.Join(home, "f")); err != nil {
+				t.Fatal(err)
+			}
+		}, func(t *testing.T, p string) {
+			if got := modeOfFile(t, filepath.Join(filepath.Dir(p), "target")); got != 0o640 {
+				t.Errorf("mode of the target %v, want -rw-r-----", got)
+			}
+			if fi, err := os.Lstat(p); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+				t.Errorf("the link is gone or changed: %v, %v", fi, err)
+			}
+		}},
+		{"FIFO", func(t *testing.T, home string) {
+			if err := syscall.Mkfifo(filepath.Join(home, "f"), 0o640); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(filepath.Join(home, "f"), 0o640); err != nil {
+				t.Fatal(err)
+			}
+		}, func(t *testing.T, p string) {
+			if got := modeOfFile(t, p); got != 0o640|os.ModeNamedPipe {
+				t.Errorf("mode %v, want prw-r-----", got)
+			}
+		}},
+	}
+	for _, tc := range tests {
+		for _, pflags := range []uint32{rawFlagWrite | rawFlagCreat | rawFlagTrunc, rawFlagRead | rawFlagWrite | rawFlagCreat} {
+			t.Run(fmt.Sprintf("%s %#x", tc.name, pflags), func(t *testing.T) {
+				home := newHome(t)
+				tc.make(t, home)
+				r := newRawConn(t, home)
+				_, want := r.open("f", pflags, 0, nil) // the answer without a mode in the request
+				if want == 0 {
+					t.Fatal("the open without a mode succeeded")
+				}
+				for _, mode := range []uint32{0o400, 0o444} {
+					if h, code := r.open("f", pflags, rawAttrPerm, permAttrs(mode)); h != "" || code != want {
+						t.Errorf("mode %o: open = %q, status %d, want status %d", mode, h, code, want)
+					}
+				}
+				tc.check(t, filepath.Join(home, "f"))
+			})
+		}
+	}
+}
+
+// A umask that clears the owner's write bit leaves the new file as the kernel
+// made it: the file is created, and the close changes nothing.
+func TestOpenModeWithoutOwnerWriteUmaskClearsOwnerWrite(t *testing.T) {
+	home := newHome(t) // before the umask: the test's directories need the owner's write bit
+	setUmask(t, 0o277)
+	p := filepath.Join(home, "f")
+	r := newRawConn(t, home)
+	h, code := r.open("f", rawFlagWrite|rawFlagCreat|rawFlagTrunc, rawAttrPerm, permAttrs(0o444))
+	if h == "" {
+		t.Fatalf("open refused: status %d", code)
+	}
+	if got := modeOfFile(t, p); got != 0o400 {
+		t.Errorf("mode after the open %v, want -r--------", got)
+	}
+	r.writeAt(h, "data")
+	r.closeHandle(h)
+	if got := modeOfFile(t, p); got != 0o400 {
+		t.Errorf("mode after the close %v, want -r--------", got)
+	}
+	if b, err := os.ReadFile(p); err != nil || string(b) != "data" {
+		t.Errorf("content %q, %v; want data", b, err)
+	}
+}
+
+// An fsetstat of the times alone does not say anything about the permissions:
+// the close still gives the mode asked for.
+func TestOpenModeWithoutOwnerWriteTimesOnlyKeepsTheRestore(t *testing.T) {
+	setUmask(t, 0o022)
+	home := newHome(t)
+	p := filepath.Join(home, "f")
+	const mtime = 1_700_000_000
+	times := binary.BigEndian.AppendUint32(binary.BigEndian.AppendUint32(nil, mtime), mtime)
+	r := newRawConn(t, home)
+	h, code := r.open("f", rawFlagWrite|rawFlagCreat|rawFlagTrunc, rawAttrPerm, permAttrs(0o444))
+	if h == "" {
+		t.Fatalf("open refused: status %d", code)
+	}
+	r.writeAt(h, "data")
+	if c := r.fsetstat(h, rawAttrTimes, times); c != 0 {
+		t.Fatalf("fsetstat of the times: status %d", c)
+	}
+	r.closeHandle(h)
+	fi, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode() != 0o444 {
+		t.Errorf("mode %v, want -r--r--r--", fi.Mode())
+	}
+	if fi.ModTime().Unix() != mtime {
+		t.Errorf("mtime %d, want %d", fi.ModTime().Unix(), mtime)
+	}
+}
+
+// The mode is given to the descriptor, not to the name: a file renamed before
+// the close gets it, and nothing is left at the old name.
+func TestOpenModeWithoutOwnerWriteRenamedBeforeClose(t *testing.T) {
+	setUmask(t, 0o022)
+	home := newHome(t)
+	p, moved := filepath.Join(home, "f"), filepath.Join(home, "g")
+	r := newRawConn(t, home)
+	h, code := r.open("f", rawFlagWrite|rawFlagCreat|rawFlagTrunc, rawAttrPerm, permAttrs(0o444))
+	if h == "" {
+		t.Fatalf("open refused: status %d", code)
+	}
+	r.writeAt(h, "data")
+	if err := os.Rename(p, moved); err != nil {
+		t.Fatal(err)
+	}
+	r.closeHandle(h)
+	if got := modeOfFile(t, moved); got != 0o444 {
+		t.Errorf("mode of the renamed file %v, want -r--r--r--", got)
+	}
+	if _, err := os.Lstat(p); err == nil {
+		t.Error("a file is at the old name")
 	}
 }
