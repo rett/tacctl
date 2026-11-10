@@ -9,7 +9,7 @@ doctype: reference
 
 # Quick Reference
 
-*The most common tacctl commands on one card · Checked against tacctl 0.2.29*
+*The most common tacctl commands on one card · Checked against tacctl 0.2.30*
 
 [Printable PDF](../pdf/tacctl-quick-reference.pdf){: .pdf-link }
 

@@ -9,7 +9,7 @@ doctype: how-to
 
 # Access Lifecycle
 
-*Joiners, movers and leavers · Checked against tacctl 0.2.29*
+*Joiners, movers and leavers · Checked against tacctl 0.2.30*
 
 [Printable PDF](../pdf/tacctl-access-lifecycle.pdf){: .pdf-link }
 

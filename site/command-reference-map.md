@@ -9,7 +9,7 @@ doctype: reference
 
 # Command Reference Map
 
-*From each tacctl command family to its reference page and the task page that uses it · Checked against tacctl 0.2.29*
+*From each tacctl command family to its reference page and the task page that uses it · Checked against tacctl 0.2.30*
 
 [Printable PDF](../pdf/tacctl-command-reference-map.pdf){: .pdf-link }
 
