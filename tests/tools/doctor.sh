@@ -97,9 +97,12 @@ if [[ -n "${GOLANGCI_LINT:-}" ]]; then
     lint="$GOLANGCI_LINT"
 else
     lint=$(command -v golangci-lint 2> /dev/null)
-    for cand in "$HOME/go/bin/golangci-lint" "$HOME/.local/bin/golangci-lint"; do
-        [[ -n "$lint" || ! -x "$cand" ]] || lint="$cand"
-    done
+    # The home candidates need HOME; without it they are skipped.
+    if [[ -n "${HOME:-}" ]]; then
+        for cand in "$HOME/go/bin/golangci-lint" "$HOME/.local/bin/golangci-lint"; do
+            [[ -n "$lint" || ! -x "$cand" ]] || lint="$cand"
+        done
+    fi
 fi
 if [[ -z "$lint_pin" ]]; then
     missing golangci-lint "no GOLANGCI_LINT_VERSION in the Makefile, so the pinned version cannot be known"
@@ -191,8 +194,11 @@ if [[ $EUID -eq 0 || -n "${SUDO_USER:-}" ]]; then
 else
     ok user "an ordinary user (uid $EUID), as bats needs (tests/README.md)"
 fi
-patterns="${TACCTL_PRIVATE_PATTERNS:-$HOME/.config/tacctl/private-patterns}"
-if [[ -f "$patterns" ]]; then
+patterns="${TACCTL_PRIVATE_PATTERNS:-}"
+[[ -n "$patterns" || -z "${HOME:-}" ]] || patterns="$HOME/.config/tacctl/private-patterns"
+if [[ -z "$patterns" ]]; then
+    expected private-patterns "HOME is not set and TACCTL_PRIVATE_PATTERNS is empty; tests/tools/no-private.sh then checks only its built-in patterns"
+elif [[ -f "$patterns" ]]; then
     ok private-patterns "$patterns"
 else
     expected private-patterns "$patterns is absent; tests/tools/no-private.sh then checks only its built-in patterns"
