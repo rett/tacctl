@@ -77,14 +77,34 @@ current behaviour; this file is where history lives.
    `docs/cli/config.md`, `docs/install/upgrading.md` and the manual page say
    so.
 
-3. **What a home on an NFS `root_squash` export does to the commands that
-   write as root is documented and tested.** The behaviour is unchanged: a
-   home that others may not search is refused by the path check
+3. **What a home on an NFS `root_squash` export does to the two commands
+   that write as root is documented and tested.** `config render --dry-run`
+   and `config linux script|remove-script` check the path as root, so a home
+   that others may not search is refused by the check
    (`cannot be resolved (Permission denied)`), and in one that others may
-   search `config render --dry-run` and `config linux script|remove-script`
-   write nothing and say `Permission denied`, with the path. Tests pin both,
-   and `docs/cli/conventions.md` and the manual page say to write the file on
-   the local disk of the host and copy it to the home as yourself.
+   search they write nothing and say `Permission denied`, with the path.
+   Tests pin both, and `docs/cli/conventions.md` and the manual page say to
+   write the file on the local disk of the host and copy it to the home as
+   yourself.
+
+4. **The three commands that write as you work in a root-squashed home that
+   others cannot search, and a path that cannot be resolved is not told to
+   be spelled differently.** `device config plan --out|--out-dir`,
+   `device reports export --out` and `device support-bundle` write as the
+   person who ran `sudo`, but their check of the path (inside the home, links
+   resolved) ran as root: on an NFS home with `root_squash` that others may
+   not search (0700, 0750) root could not look at the path and the check
+   refused it, `cannot be resolved (Permission denied)`, although the write,
+   as you, would work. The check now runs as you for these three, and the
+   other rules are unchanged. `config render --dry-run` and
+   `config linux script|remove-script` write as root and still check as root
+   (item 3). A refusal that says `cannot be resolved (<cause>)` (permission
+   denied, a link that leads nowhere) now gives the cause and the path and no
+   longer ends with `tacctl does not expand ~ or variables; name a path inside
+   your home, relative to the current directory`, which is about the
+   spelling of the path and stays on the other refusals (an empty path, a
+   NUL, a `$` or backtick, a `~`, a path outside the home).
+   `docs/cli/conventions.md` and the manual page (`device config plan`) say so.
 
 ## 0.2.29 (2026-11-09)
 
