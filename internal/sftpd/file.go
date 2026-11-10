@@ -1,6 +1,7 @@
 package sftpd
 
 import (
+	"encoding/binary"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -32,6 +33,31 @@ type file struct {
 	mu     sync.Mutex
 	xferr  error // the error that ended the session with the handle open
 	closed sync.Once
+}
+
+// defaultFileMode is the mode of a new file when the client's open request
+// does not carry one (the umask of the console still applies).
+const defaultFileMode = 0o644
+
+// permBits is the part of a mode a client may set: the permission bits. The
+// set-user-ID, set-group-ID and sticky bits, and any file type bits, are
+// dropped. Mkdir, setstat and open all take their mode through it.
+func permBits(m uint32) uint32 { return m & 0o777 }
+
+// openMode is the mode the client asks for in the open request r, and whether
+// it asked. The library hands the handlers the attribute block of an open as
+// raw bytes and drops the attribute flags that say which fields it holds
+// (Request.Flags of an open is the open flags, so AttrFlags and Attributes
+// would read the wrong thing). A block of exactly four bytes can only be the
+// permissions: it is what the OpenSSH sftp and scp clients send, without a
+// size, owner or times. Any other length could be the permissions together
+// with a size, an owner or times, in an order that cannot be told apart, so it
+// asks for nothing and the new file gets the default mode, as before.
+func openMode(r *sftp.Request) (uint32, bool) {
+	if len(r.Attrs) != 4 {
+		return 0, false
+	}
+	return permBits(binary.BigEndian.Uint32(r.Attrs)), true
 }
 
 // openFile opens the file of r. write says the open is for an upload (the
@@ -66,7 +92,7 @@ func (s *server) openFile(r *sftp.Request, write bool) (*file, error) {
 		s.quota.refresh()
 	}
 	flags := unix.O_NONBLOCK
-	mode := uint32(0o644) // the attributes of an open are not parsed: the client sets the mode with setstat
+	mode := uint32(defaultFileMode)
 	if write {
 		flags |= unix.O_WRONLY
 		if pf.Read {
@@ -74,6 +100,9 @@ func (s *server) openFile(r *sftp.Request, write bool) (*file, error) {
 		}
 		if pf.Creat {
 			flags |= unix.O_CREAT
+			if m, ok := openMode(r); ok {
+				mode = m // only a file the open creates gets it; an existing one keeps its mode
+			}
 		}
 		if pf.Excl {
 			flags |= unix.O_EXCL

@@ -3,6 +3,27 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.29 (unreleased)
+
+1. **A file uploaded through the console keeps the owner's execute bit.** The
+   console's file transfer gave every new file the mode 0644 and ignored the
+   mode in the request that opens it, so a script copied with the `scp` of
+   OpenSSH 9 or later (which speaks SFTP and sends the permissions in that
+   request, and sets nothing afterwards) lost its execute bit. A new file now
+   gets the mode the client asks for in the open request when the request
+   carries the permissions alone, which is what the OpenSSH `sftp` and `scp`
+   send: the permission bits only (set-user-ID, set-group-ID and sticky are
+   ignored, as for a new directory), reduced by the umask of the console, 077.
+   The owner's bits survive and the group and other bits go: a script asked
+   at 0755 is 0700, a file asked at 0644 is 0600. A request without
+   permissions still gives 0644, 0600 after the umask. A file that already
+   exists keeps its mode, and a download changes nothing. A request that
+   carries other attributes together with the permissions (for example the
+   times, as with the preserve option of `scp`) is read as carrying none,
+   because the library does not tell which attributes a request holds; such
+   a file gets 0644, 0600 after the umask, as before. `docs/cli/console.md`
+   and the manual page say so.
+
 ## 0.2.28 (2026-11-09)
 
 1. **A support bundle from a Cisco IOS device no longer starts the identity
