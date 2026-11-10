@@ -353,3 +353,91 @@ func TestMatchersStillTakeUpperCase(t *testing.T) {
 		t.Error("an existing name with upper case no longer matches")
 	}
 }
+
+// --- the first character of a new user name ---
+
+func TestRejectNonLetterUsername(t *testing.T) {
+	for _, s := range []string{"a", "alice", "z9", "a_b-c", strings.Repeat("a", UsernameMax)} {
+		if err := RejectNonLetterUsername(s); err != nil {
+			t.Errorf("%q: %v", s, err)
+		}
+	}
+	for _, s := range []string{"1alice", "9dave", "0", "-x", "_svc", "_", "-", "A", "Alice", ""} {
+		var e *Error
+		want := "Username '" + s + "' must start with a letter (a to z): every new user gets a Linux account, and a name that starts with a digit or '-' is no account name (a new name does not start with '_' either)."
+		if !errors.As(RejectNonLetterUsername(s), &e) || len(e.Lines()) != 1 || e.Lines()[0] != want {
+			t.Errorf("%q: %v", s, e)
+		}
+	}
+	// ValidateUsername, which every verb runs, takes a user from before.
+	for _, s := range []string{"9dave", "_svc", "-x", "Alice"} {
+		if err := ValidateUsername(s); err != nil {
+			t.Errorf("ValidateUsername refuses %q: %v", s, err)
+		}
+	}
+}
+
+func TestStartsWithNoAccountChar(t *testing.T) {
+	for s, want := range map[string]bool{"1a": true, "9dave": true, "-x": true, "_svc": false, "alice": false, "Alice": false, "": false} {
+		if got := StartsWithNoAccountChar(s); got != want {
+			t.Errorf("%q: %v", s, got)
+		}
+	}
+}
+
+// CheckNewUsername runs the checks in a fixed order: the shape, the reserved
+// names, upper case, the length, then the first character, for a name with no
+// upper case. A name with upper case is told to be lower case only when its
+// lower-case spelling would be accepted (the suggestion is a name the command
+// takes); otherwise the first check the lower-case spelling fails is the answer.
+func TestCheckNewUsernameOrder(t *testing.T) {
+	long := strings.Repeat("a", 40)
+	for _, c := range []struct{ name, want string }{
+		{"alice", ""},
+		{"a1_-", ""},
+		{"j.smith", usernameShape},
+		{"J.smith", usernameShape},
+		{"root", "Username 'root' is reserved as an accounting-only sink"},
+		{"tacquito", "Username 'tacquito' is reserved"},
+		{"Alice", "Names are lower case: use 'alice'. Nothing was changed."},
+		{"A1_-", "Names are lower case: use 'a1_-'. Nothing was changed."},
+		{"Root", "Username 'root' is reserved as an accounting-only sink"},
+		{"ROOT", "Username 'root' is reserved as an accounting-only sink"},
+		{"Tacquito", "Username 'tacquito' is reserved"},
+		{"1Alice", "Username '1Alice' must be lower case and start with a letter (a to z)"},
+		{"_Alice", "Username '_Alice' must be lower case and start with a letter (a to z)"},
+		{"-X", "Username '-X' must be lower case and start with a letter (a to z)"},
+		{"A" + long, "Username 'A" + long + "' is 41 characters; a user name is at most 32 (the longest a Linux account name can be). Names are lower case as well."},
+		{"1" + long, "Username '1" + long + "' is 41 characters"},
+		{"1A" + long, "Username '1A" + long + "' is 42 characters; a user name is at most 32 (the longest a Linux account name can be). Names are lower case as well."},
+		{"1alice", "Username '1alice' must start with a letter (a to z)"},
+		{"_svc", "Username '_svc' must start with a letter (a to z)"},
+		{"-x", "Username '-x' must start with a letter (a to z)"},
+	} {
+		err := CheckNewUsername(c.name)
+		if c.want == "" {
+			if err != nil {
+				t.Errorf("%q: %v", c.name, err)
+			}
+			continue
+		}
+		if err == nil || !strings.HasPrefix(err.Error(), c.want) {
+			t.Errorf("%q: %v, want %q", c.name, err, c.want)
+		}
+	}
+}
+
+// What CheckNewUsername suggests, it takes: the lower-case spelling it names is
+// a name that passes, for every name it tells to be lower case.
+func TestCheckNewUsernameSuggestionIsAcceptedItself(t *testing.T) {
+	for _, name := range []string{"Alice", "ALICE", "A", "Z9_-", "aLICE", "Root2", "Tacquito2"} {
+		err := CheckNewUsername(name)
+		if err == nil || !strings.HasPrefix(err.Error(), "Names are lower case: use '") {
+			t.Errorf("%q: %v", name, err)
+			continue
+		}
+		if again := CheckNewUsername(strings.ToLower(name)); again != nil {
+			t.Errorf("%q: the suggestion %q is refused: %v", name, strings.ToLower(name), again)
+		}
+	}
+}

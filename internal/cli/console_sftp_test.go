@@ -20,10 +20,12 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/pkg/sftp"
 
 	"github.com/rett/tacctl/internal/console"
+	"github.com/rett/tacctl/internal/execx"
 )
 
 // protocolTap keeps what the console wrote to its standard output, so that a
@@ -613,5 +615,50 @@ func TestConsoleSFTPWithoutAPolicyAnswer(t *testing.T) {
 		if log := consoleLog(h.runner); len(log) != 3 || !strings.HasSuffix(log[1], " reason="+c.why+" subsystem=sftp") {
 			t.Errorf("%s: log %q", c.groups, log)
 		}
+	}
+}
+
+// A session whose audit lines are slow to log still logs every one of them,
+// in order, before the console ends: the start lines, a line for each
+// request, the totals, the end. The client leaves while lines are still
+// queued, and none is dropped or put out of order.
+//
+// The fake logger takes 5 ms a call: a real timer, which is the point (the
+// time a 'logger' process takes is what makes the audit slower than the
+// client), and the only wait of the test. The time from the close to the end
+// is only logged, it is not a bound: it depends on the machine.
+func TestConsoleSFTPLogsEveryAuditLineInOrderWithASlowLogger(t *testing.T) {
+	const lines = 60
+	r := startSFTPSetup(t, context.Background(), sftpPolicy(console.FileTransfer{Enabled: true}), "internal-sftp",
+		func(h *harness) {
+			h.runner.OnFunc([]string{"logger"}, func(execx.Cmd) (execx.Result, error) {
+				time.Sleep(5 * time.Millisecond) // the fake 'logger': 5 ms a line
+				return execx.Result{}, nil
+			})
+		})
+	c := r.client()
+	for i := 0; i < lines; i++ {
+		if err := c.Mkdir(fmt.Sprintf("d%03d", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	left := time.Now()
+	_ = c.Close()
+	status := <-r.done
+	t.Logf("handler returned %v after the client's close", time.Since(left))
+	if status != 0 {
+		t.Fatalf("status %d, stderr %q", status, r.h.err.String())
+	}
+	log := consoleLog(r.h.runner)
+	if len(log) != 2+lines+2 {
+		t.Fatalf("%d lines logged, want %d: the start lines, a line for each request, the totals, the end", len(log), 2+lines+2)
+	}
+	for i := 0; i < lines; i++ {
+		if want := fmt.Sprintf(` path="/d%03d"`, i); !strings.HasSuffix(log[2+i], want) || !strings.Contains(log[2+i], "console sftp mkdir") {
+			t.Fatalf("line %d is %q, want the mkdir of d%03d in order", 2+i, log[2+i], i)
+		}
+	}
+	if !strings.Contains(log[lines+2], "console sftp end") || !strings.Contains(log[lines+3], "console end") {
+		t.Errorf("the last lines are %q", log[lines+2:])
 	}
 }

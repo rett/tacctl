@@ -10,10 +10,11 @@ import (
 	"github.com/rett/tacctl/internal/tier"
 )
 
-// The rollback to 0.2.28, the release before this one, on the sandbox of
-// rollback_test.go: this release changed no stored file 0.2.28 reads strictly
-// (it changed the mode of a file uploaded through the console), so the plan
-// converts nothing, whatever 0.2.28 itself added to the state (the console's
+// The rollback to 0.2.28, the release before 0.2.29, on the sandbox of
+// rollback_test.go: 0.2.29 and this release changed no stored file 0.2.28
+// reads strictly (0.2.29 changed the mode of a file uploaded through the
+// console, this release the check of a new user name), so the plan converts
+// nothing, whatever 0.2.28 itself added to the state (the console's
 // file transfer settings included).
 
 func plan0228(t *testing.T, s *rbSandbox) *RollbackPlan {

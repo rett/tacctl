@@ -250,7 +250,7 @@ A report that is too large can be made smaller (`--scope`, `--vendor`), printed 
 
 ## Older releases
 
-A release before 0.2.26 has no `device reports` verb. `tacctl rollback` to 0.2.25 or older (see [Rolling back](../install/upgrading.md#rolling-back)) leaves the reports and their metadata files where they are, because they are the users' own files, and says so; it removes the limits of this page (the two settings and the users' own limits, after a snapshot, and `--yes` while a user has one), and puts back the per-tier sudoers drop-in without the `device reports` rows. The `members` of the pull records stay too: an older release ignores them. `tacctl rollback 0.2.26`, `tacctl rollback 0.2.27` and `tacctl rollback 0.2.28` keep them: all three have the verbs, the limits and the reports, and read them as they are (0.2.26 has no PDF format and shows a PDF report as text; 0.2.27 and 0.2.28 read it as it is).
+A release before 0.2.26 has no `device reports` verb. `tacctl rollback` to 0.2.25 or older (see [Rolling back](../install/upgrading.md#rolling-back)) leaves the reports and their metadata files where they are, because they are the users' own files, and says so; it removes the limits of this page (the two settings and the users' own limits, after a snapshot, and `--yes` while a user has one), and puts back the per-tier sudoers drop-in without the `device reports` rows. The `members` of the pull records stay too: an older release ignores them. `tacctl rollback 0.2.26`, `tacctl rollback 0.2.27`, `tacctl rollback 0.2.28` and `tacctl rollback 0.2.29` keep them: all four have the verbs, the limits and the reports, and read them as they are (0.2.26 has no PDF format and shows a PDF report as text; 0.2.27 to 0.2.29 read it as it is).
 
 ## Exit status
 

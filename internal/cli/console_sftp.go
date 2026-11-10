@@ -154,6 +154,14 @@ type sftpTotals struct {
 	ops, refused int
 }
 
+// sftpAuditQueue is how many events wait for their log line. The session
+// ends only when every line is logged (none is dropped, none follows the end
+// of the process). A full queue blocks the goroutine that serves a request
+// until a line is logged, so the number is a bound of the memory the queue
+// holds, not of the wait at the end of the session: the whole session takes
+// as long as its lines take to log, whatever the size.
+const sftpAuditQueue = 256
+
 // sftpAudit turns the events of the server into log lines, in order, off the
 // goroutines that serve the requests (each line is a 'logger' process).
 type sftpAudit struct {
@@ -164,7 +172,7 @@ type sftpAudit struct {
 }
 
 func (cs *consoleSession) newSFTPAudit() *sftpAudit {
-	au := &sftpAudit{cs: cs, ch: make(chan sftpd.Event, 256), done: make(chan struct{})}
+	au := &sftpAudit{cs: cs, ch: make(chan sftpd.Event, sftpAuditQueue), done: make(chan struct{})}
 	go au.run()
 	return au
 }

@@ -455,10 +455,10 @@ JSON
     assert_output --partial "Roll back to 0.2.19 (dry run)"
     assert_output --partial "put back the per-tier sudoers drop-in 0.2.19 writes"
     [[ "$(_sums)" == "$before" ]]
-    run "$TACCTL_BIN_SCRIPT" rollback 0.2.29
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.30
     assert_failure 1
-    assert_output --partial "'0.2.29' is not a release to roll back to"
-    assert_output --partial "prepares the state for 0.2.28 (the release before this one), 0.2.27, 0.2.26, 0.2.25, 0.2.24, 0.2.23"
+    assert_output --partial "'0.2.30' is not a release to roll back to"
+    assert_output --partial "prepares the state for 0.2.29 (the release before this one), 0.2.28, 0.2.27, 0.2.26, 0.2.25, 0.2.24, 0.2.23"
 }
 
 @test "rollback 0.2.21: the release before 0.2.22; the dry run writes nothing and --apply takes out the server name and nothing else" {
@@ -486,7 +486,44 @@ JSON
     assert_output --partial "Nothing to convert: every file is one 0.2.21 can read."
 }
 
-@test "rollback 0.2.28: the release before this one; the dry run writes nothing and --apply converts nothing, the report limits stay" {
+@test "rollback 0.2.29: the release before this one; the dry run writes nothing and --apply converts nothing, the report limits stay" {
+    _state_024
+    "$TACCTL_BIN_SCRIPT" server name core-1 > /dev/null
+    "$TACCTL_BIN_SCRIPT" user add bob engineer --hash "$HASH" --scopes lab > /dev/null
+    "$TACCTL_BIN_SCRIPT" config reports max-size 20Mi > /dev/null
+    "$TACCTL_BIN_SCRIPT" user reports-limit bob max-count 7 > /dev/null
+    mkdir -p "$BATS_TEST_TMPDIR/var-lib"
+    echo "offered" > "$BATS_TEST_TMPDIR/var-lib/pdf-tools-offered"
+    before=$(_sums)
+    n=$(_snapshots)
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.29 --hosts
+    assert_success
+    assert_output --partial "Roll back to 0.2.29 (dry run)"
+    assert_output --partial "nothing to remove (every key of tacctl.yaml is one 0.2.29 knows)"
+    assert_output --partial "nothing to do for 0.2.29: this release changed nothing on the enrolled hosts"
+    assert_output --partial "--apply converts no file of tacctl's own and takes no snapshot"
+    refute_output --partial "remove reports.max_size"
+    refute_output --partial "--yes"
+    assert_output --partial "This was a dry run: nothing was changed."
+    [[ "$(_sums)" == "$before" ]]
+    [[ "$(_snapshots)" == "$n" ]]
+    run "$TACCTL_BIN_SCRIPT" rollback 0.2.29 --apply
+    assert_success
+    assert_output --partial "Nothing to convert: every file is one 0.2.29 can read."
+    assert_output --partial "tacctl upgrade --branch 0.2.29"
+    refute_output --partial "The reports in the users' homes stay"
+    [[ "$(_sums)" == "$before" ]]
+    [[ "$(_snapshots)" == "$n" ]]
+    run "$TACCTL_BIN_SCRIPT" config get reports.max_size unset-marker
+    refute_output "unset-marker"
+    run "$TACCTL_BIN_SCRIPT" user show bob
+    assert_output --partial "Report max-count"
+    run "$TACCTL_BIN_SCRIPT" config get server.name unset-marker
+    assert_output "core-1"
+    [[ "$(cat "$BATS_TEST_TMPDIR/var-lib/pdf-tools-offered")" == "offered" ]]
+}
+
+@test "rollback 0.2.28: the release before 0.2.29; the dry run writes nothing and --apply converts nothing, the report limits stay" {
     _state_024
     "$TACCTL_BIN_SCRIPT" server name core-1 > /dev/null
     "$TACCTL_BIN_SCRIPT" user add bob engineer --hash "$HASH" --scopes lab > /dev/null

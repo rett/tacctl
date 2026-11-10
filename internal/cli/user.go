@@ -468,16 +468,9 @@ func (inv *invocation) userAdd(args []string) error {
 	if err := inv.requireStore(); err != nil {
 		return err
 	}
-	if err := names.ValidateUsername(username); err != nil {
-		return err
-	}
-	if err := names.RejectReservedUsername(username); err != nil {
-		return err
-	}
-	if err := names.RequireLower(username); err != nil {
-		return err
-	}
-	if err := names.RejectLongUsername(username); err != nil {
+	// A new name: the shape, the reserved names, upper case, the length and
+	// the first character, in that order (names.CheckNewUsername).
+	if err := names.CheckNewUsername(username); err != nil {
 		return err
 	}
 	if err := inv.groupCheck(group, "Usage: tacctl user add <username> <group>"); err != nil {
@@ -1078,12 +1071,12 @@ func (inv *invocation) userRename(args []string) error {
 	if err := inv.requireStore(); err != nil {
 		return err
 	}
+	// The old name is any name that exists; the new one is a new name
+	// (names.CheckNewUsername: shape, reserved, upper case, length, first
+	// character).
 	for _, check := range []func() error{
 		func() error { return names.ValidateUsername(oldname) },
-		func() error { return names.ValidateUsername(newname) },
-		func() error { return names.RejectReservedUsername(newname) },
-		func() error { return names.RequireLower(newname) },
-		func() error { return names.RejectLongUsername(newname) },
+		func() error { return names.CheckNewUsername(newname) },
 	} {
 		if err := check(); err != nil {
 			return err

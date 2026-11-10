@@ -89,7 +89,11 @@ skip) with the names of the skipped tests, at most 20, listed above the line: a
 test that skips for a missing tool passes silently, and an unexpected skip
 count is how a green run shows it did not test what it should; the ten
 slowest top-level tests of the run (`gate-go: slowest: TestX 47.1s`) follow
-the skipped names, still above the verdict line. A run of the whole suite
+the skipped names, still above the verdict line. A FAIL verdict is preceded,
+last of the lines above it, by the failing tests, at most ten `FAIL: <name>`
+lines (from the `--- FAIL:` lines of the log, or, when no test failed, the
+package of a `FAIL <package>` line), which `qargi feature verify` reads to name the failing
+test. A run of the whole suite
 (no package listed, no `--tags`) first runs `make lint-go` (gofmt, `go vet`
 and golangci-lint in both tag sets, the Go half of the lint job of CI), so a
 finding fails the run before any test runs (`lint-failed` in the verdict line,
@@ -1047,6 +1051,18 @@ tests/diff/run.sh --self-test                # the runner against itself and aga
   0.2.19, the markers written for 0.2.1 to 0.2.18: most of the corpus). So
   do not drop a marker because a run against the previous release reports
   it; drop one only when no tag the corpus is run with differs from it.
+- **The run against the baseline is informational, not a gate.**
+  `tests/diff/run.sh --all` (A = the 0.1.18 tag) currently shows 0 stale
+  markers, 17 inert doubled markers (below) and about 281 unmarked
+  differences (added audit `logger` calls on failing commands, and usage
+  text). The gate is the run against the previous release tag
+  (`tests/diff/run.sh --all --against <tag>`).
+- **A doubled `@known` is inert.** The runner keeps one reason at a time, so
+  a `@known` directive directly followed by another `@known` replaces the
+  first, which is never consulted. 17 such pairs exist (in the `config`,
+  `devices`, `scopes` and `store` corpora); they are kept as a record under
+  the policy above. Merge a new doubled marker into one `@known` line that
+  gives both reasons.
 
 ## Characterisation tests: `tests/integration/characterisation.bats`
 

@@ -166,10 +166,86 @@ func RejectReservedUsername(value string) error {
 // is shown, changed, renamed away and removed as before. The name has passed
 // ValidateUsername, so its length in bytes is its length in characters.
 func RejectLongUsername(value string) error {
-	if n := len(value); n > UsernameMax {
-		return fail(fmt.Sprintf("Username '%s' is %d characters; a user name is at most %d (the longest a Linux account name can be).", value, n, UsernameMax))
+	if len(value) > UsernameMax {
+		return longUsername(value, false)
 	}
 	return nil
+}
+
+// longUsername is the refusal of a name over UsernameMax characters; upper adds
+// that the name has upper case, which a new name does not (the lower-case
+// spelling would be over the limit too).
+func longUsername(value string, upper bool) error {
+	msg := fmt.Sprintf("Username '%s' is %d characters; a user name is at most %d (the longest a Linux account name can be).", value, len(value), UsernameMax)
+	if upper {
+		msg += " Names are lower case as well."
+	}
+	return fail(msg)
+}
+
+// RejectNonLetterUsername is the first-character check of the creation paths
+// ('user add' and the new name of 'user rename'): a new user name starts with a
+// lower case letter, a to z. Every new user gets a Linux account on the tacctl
+// server and on the enrolled hosts, and a name that starts with a digit or '-'
+// is no Linux account name; Linux itself allows a leading '_', the project does
+// not for a new name, so that every new name is an account name on every
+// system. It is not part of ValidateUsername, which every verb runs: a user
+// that exists as '9dave', '_svc' or '-x' is shown, changed, renamed away and
+// removed as before. An upper case first letter is the business of
+// CheckNewUsername, which suggests the lower case spelling when that is a
+// name it takes.
+func RejectNonLetterUsername(value string) error {
+	if value == "" || value[0] < 'a' || value[0] > 'z' {
+		return nonLetterUsername(value, false)
+	}
+	return nil
+}
+
+// nonLetterUsername is the refusal of a name whose first character is no lower
+// case letter; upper says that the name has upper case too, so that the refusal
+// names both faults ("must be lower case and start with a letter").
+func nonLetterUsername(value string, upper bool) error {
+	must := "must start with a letter (a to z)"
+	if upper {
+		must = "must be lower case and start with a letter (a to z)"
+	}
+	return fail(fmt.Sprintf("Username '%s' %s: every new user gets a Linux account, and a name that starts with a digit or '-' is no account name (a new name does not start with '_' either).", value, must))
+}
+
+// StartsWithNoAccountChar reports whether the name of an existing user starts
+// with a digit or '-': no Linux account name does (a leading '_' is one, so a
+// user named '_svc' has an account). 'config validate' warns of such a user.
+func StartsWithNoAccountChar(value string) bool {
+	return value != "" && (value[0] == '-' || (value[0] >= '0' && value[0] <= '9'))
+}
+
+// CheckNewUsername is the whole check of a name a user is created with, by
+// 'user add' and by the new name of 'user rename'. For a name with no upper
+// case the checks run in this order and the first that fails is the answer: the
+// shape (ValidateUsername), the reserved names, the length and the first
+// character. A name with upper case is told to be lower case (RequireLower,
+// with the lower case spelling suggested) only when that spelling would pass
+// every other check, so that the suggestion is a name the command takes;
+// otherwise the answer is the first check its lower case spelling fails: the
+// reserved name, or the length or the first character, said with the name as
+// typed and with "lower case" among what to fix. Existing users are never
+// checked with it: ValidateUsername is what every other verb runs.
+func CheckNewUsername(value string) error {
+	if err := ValidateUsername(value); err != nil {
+		return err
+	}
+	upper := HasUpper(value)
+	lower := strings.ToLower(value)
+	if err := RejectReservedUsername(lower); err != nil {
+		return err
+	}
+	if len(value) > UsernameMax {
+		return longUsername(value, upper)
+	}
+	if RejectNonLetterUsername(lower) != nil {
+		return nonLetterUsername(value, upper)
+	}
+	return RequireLower(value)
 }
 
 // ValidateGroupName is the group-name check of 'group add'.

@@ -445,9 +445,11 @@ func (inv *invocation) collectValidate(r *validateReport) {
 			Kind: fnd.Kind, Name: fnd.Name, To: fnd.To, Verb: fnd.Verb})
 	}
 
-	// A user from before with a name longer than a Linux account name: it
-	// works, but has no account. A warning with the rename that fixes it.
-	for _, fnd := range inv.lengthFindings() {
+	// A user from before with a name no Linux account has (longer than 32
+	// characters, or starting with a digit or '-'), or with upper case and a
+	// lower-case spelling a new user could not have: a warning with the
+	// rename that fixes it, once per user.
+	for _, fnd := range inv.userNameFindings() {
 		r.found(howEchoE, "  "+Y+"Names:"+NC+"                "+fnd.String(), validateFinding{
 			Section: "names", Level: levelWarning, Text: fnd.Text, Fix: fnd.Fix})
 	}

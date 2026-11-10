@@ -3,6 +3,127 @@
 All notable changes to tacctl. The README and the manual page describe only the
 current behaviour; this file is where history lives.
 
+## 0.2.30 (2026-11-10)
+
+1. **`tacctl rollback 0.2.29`, the release before this one, is a target.**
+   This release changed no stored file 0.2.29 reads strictly (the check of the
+   name of a new user, item 2, writes no new form of a file, and the
+   documentation moved), so 0.2.29 reads everything it writes: the rollback
+   converts no file, removes no key and no field, takes no snapshot and needs
+   no `--yes`. The file transfer settings of `console.yaml`
+   (`settings.file_transfer`) stay, 0.2.29 has them, and so do the limits of
+   the stored reports (`reports.max_size` and `reports.max_count` in
+   `tacctl.yaml`, and a user's own `reports_max_size` and `reports_max_count`
+   in `store.yaml`), the chassis `members` of the pull records and every
+   report in the users' homes, the PDF ones included, with the marker
+   `/var/lib/tacctl/pdf-tools-offered` and the packages `weasyprint` and
+   `fonts-dejavu-core`. The per-tier sudoers drop-in is left too: 0.2.29 and
+   this release write the same text. The break-glass firewall, the users'
+   email addresses, the SNMPv3 users, the covered staging entries, the server
+   name, the timing scale and an emergency lockdown with enrolled hosts,
+   which the older targets drop or refuse, stay as well, and so does every
+   user, whatever the name. It is refused only while a device's apply is not
+   settled. The command ends with `tacctl upgrade --branch 0.2.29` and,
+   having nothing to avoid, has no closing note. `rollback 0.2.28` and older
+   behave as before (`0.2.28` still converts nothing, `0.2.27` and older
+   still remove the file transfer settings), and the lists of "every target
+   but" in the rollback pages and the manual page now include 0.2.29. The
+   top-level help, `docs/cli/conventions.md`, `docs/install/upgrading.md`
+   (Rolling back, To 0.2.29), `docs/releasing.md`, the manual page and the
+   completion list the new target, and `tacctl rollback` now takes sixteen
+   targets. The note that follows a rollback that took a snapshot names this
+   release, 0.2.30, as the state the snapshot holds ("Restore it with 0.2.30
+   only").
+
+2. **A new user name starts with a lower-case letter.** Every new user gets a
+   Linux account, on this server and on the enrolled hosts, and a name that
+   starts with a digit or `-` is no account name, so `user add` and the new
+   name of `user rename` now refuse a first character that is not a letter, a
+   to z (a digit and `-`, which no Linux account name starts with, and `_`,
+   which Linux would take, are refused so that every new name is an account
+   name everywhere): `Username '1alice' must start with a letter (a to z):
+   every new user gets a Linux account, and a name that starts with a digit or
+   '-' is no account name (a new name does not start with '_' either).`, exit
+   status 1, nothing changed. A new name is
+   now a lower-case letter, then lower-case letters, digits, `_` and `-`, at
+   most 32 characters. The checks run in a fixed order and the first that
+   fails is the answer (`names.CheckNewUsername`): the shape (no period), the
+   reserved names, upper case, the length, the first character. A name with
+   upper case is told its lower-case spelling (`Names are lower case: use
+   'alice'.`) only when that spelling passes every other check, so the
+   suggestion is always a name the command takes; for `1Alice`, `_Alice`,
+   `Root`, `Tacquito` or `Alice` followed by 41 characters the answer is the
+   first check the lower-case spelling fails, said with the name as typed and
+   with the lower case among what to fix (`Username '1Alice' must be lower
+   case and start with a letter (a to z): ...`). Only a new name is checked:
+   a user that exists as `9dave`, `_svc` or `-x` keeps working and is shown,
+   changed, renamed away, removed, restored and carried by the upgrade as
+   before. `config validate` warns, under `Names:`, of an existing user
+   whose name starts with a digit or `-` (no Linux account, here or on a host)
+   and names `tacctl user rename <name> <new-name>`; a name that starts with
+   `_` has an account and gets no warning, unless it is also longer than 32
+   characters, when the warning gives the letter rule next to the length so
+   that the replacement is not refused in turn. A user stored as `-x` is
+   reached by the verbs as a bare word (`tacctl user show -x`); `--` is not
+   an end-of-options marker of the user verbs. `config validate --fix-names`
+   offers the rename to the lower-case spelling of a name with upper case only
+   when that spelling would pass all the rules of a new name: for `1Alice`,
+   `_Alice`, `Root` or `Alice` followed by 41 characters it offers nothing,
+   and the user gets exactly one warning, which names the rename to a name of
+   your choice and says what else is wrong with the name (`--fix-names`
+   counts nothing as not offered or failed for it and exits 0). The rollback
+   to 0.2.29 (item 1) leaves every user as it is. `docs/cli/user.md`
+   (`user add`, `user rename`, A new name starts with a letter),
+   `docs/cli/config.md`, `docs/install/upgrading.md` and the manual page say
+   so.
+
+3. **What a home on an NFS `root_squash` export does to the two commands
+   that write as root is documented and tested.** `config render --dry-run`
+   and `config linux script|remove-script` check the path as root, so a home
+   that others may not search is refused by the check
+   (`cannot be resolved (Permission denied)`), and in one that others may
+   search they write nothing and say `Permission denied`, with the path.
+   Tests pin both, and `docs/cli/conventions.md` and the manual page say to
+   write the file on the local disk of the host and copy it to the home as
+   yourself.
+
+4. **The three commands that write as you work in a root-squashed home that
+   others cannot search, and a path that cannot be resolved is not told to
+   be spelled differently.** `device config plan --out|--out-dir`,
+   `device reports export --out` and `device support-bundle` write as the
+   person who ran `sudo`, but their check of the path (inside the home, links
+   resolved) ran as root: on an NFS home with `root_squash` that others may
+   not search (0700, 0750) root could not look at the path and the check
+   refused it, `cannot be resolved (Permission denied)`, although the write,
+   as you, would work. The check now runs as you for these three, and the
+   other rules are unchanged. `config render --dry-run` and
+   `config linux script|remove-script` write as root and still check as root
+   (item 3). A refusal that says `cannot be resolved (<cause>)` (permission
+   denied, a link that leads nowhere) now gives the cause and the path and no
+   longer ends with `tacctl does not expand ~ or variables; name a path inside
+   your home, relative to the current directory`, which is about the
+   spelling of the path and stays on the other refusals (an empty path, a
+   NUL, a `$` or backtick, a `~`, a path outside the home).
+   `docs/cli/conventions.md` and the manual page (`device config plan`) say so.
+
+5. **A file uploaded with `scp -p` is created with its mode.** The `scp` of
+   OpenSSH 9 or later sends the permissions together with the times in the
+   request that opens the file (twelve bytes of attributes), and the console
+   read only a block of four bytes, because the library that speaks SFTP does
+   not say which attributes a request holds: the file was created 0644 (0600
+   after the umask, 077) and got its mode only from the permissions that
+   follow the data. The console now reads the attribute flags of the open
+   request itself, before the library sees it, so the permissions are found
+   whatever else the request carries (the times, a size, an owner), and a
+   size is never read as a mode. A new file is created with the permission
+   bits asked for, reduced by the umask as before: a script asked at 0755 is
+   0700 from the start, and an upload of `scp -p` that is interrupted leaves
+   that mode and not 0600. A request without permissions, or that asks for no
+   permission bit, still gives 0644 (0600), a file that exists keeps its
+   mode, and the mode and the times the client sets at the end are applied as
+   given, as before. The page of the console (`docs/cli/console.md`, file
+   transfer) and the manual page say so.
+
 ## 0.2.29 (2026-11-09)
 
 1. **A file uploaded through the console keeps the owner's execute bit.** The
