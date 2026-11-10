@@ -18,10 +18,12 @@ user add <name> <group>
     Add a new user; lands in default scope. The name is lower case (`Names are lower case: use
     'alice'.`): lower-case letters, digits, `_` and `-`. A period is refused (`Username must
     contain only letters, numbers, underscores and hyphens (a period cannot be part of a Linux
-    account name).`): every user has an account on the tacctl server. Reserved names `root` and
-    `tacquito` are rejected (they collide with OS accounts tacquito resolves locally). A new user
-    must change the password at the first login to this server (see "A required password
-    change").
+    account name).`): the user gets an account on the tacctl server. A name longer than 32
+    characters, or one with upper case letters from an earlier release, is a user name but not an
+    account name, and that user has none (see [Upgrading](../install/upgrading.md)). Reserved
+    names `root` and `tacquito` are rejected (they collide with OS accounts tacquito resolves
+    locally). A new user must change the password at the first login to this server (see "A
+    required password change").
 
 user add <name> <group> --no-change-required
 
@@ -218,9 +220,9 @@ only when set, so a store without one is unchanged. No mail is sent to it.
   [Rolling back](../install/upgrading.md#rolling-back)).
 
 **A name with a period.** A user name is letters, digits, `_` and `-`. A period cannot be part of a
-Linux account name, and every user has an account on the tacctl server, so every `user` verb, `passwd`
-and `config linux uid` refuse a name with a period with `Username must contain only letters, numbers,
-underscores and hyphens (a period cannot be part of a Linux account name).` 0.2.20 and 0.2.21 allowed
+Linux account name, and a user is meant to have an account on the tacctl server, so every `user`
+verb, `passwd` and `config linux uid` refuse a name with a period with `Username must contain only
+letters, numbers, underscores and hyphens (a period cannot be part of a Linux account name).` 0.2.20 and 0.2.21 allowed
 periods: `tacctl upgrade` renames each user a store of theirs still holds, replacing every period with
 `_` (`alice.smith` becomes `alice_smith`), with the user's record, UID line and console settings,
 after a snapshot it names; it prints `renamed user alice.smith to alice_smith` for each and asks you to
