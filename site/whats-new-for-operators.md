@@ -24,7 +24,34 @@ first.
 
 ---
 
-## 1. tacctl 0.2.29
+## 1. tacctl 0.2.30
+
+Released 2026-11-10 ·
+[Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.30.md)
+
+| Change | What it means on shift | Page |
+|---|---|---|
+| **A new user name starts with a letter** | `user add` and the new name of `user rename` take a lower-case letter, then lower-case letters, digits, `_` and `-`, at most 32 characters. A first character that is a digit, `-` or `_` is refused (`Username '1alice' must start with a letter (a to z) ...`) and nothing is changed, so that every new user has a Linux account. The first check that fails is the answer, and a name with upper case is told its lower-case spelling only when that spelling is accepted. Users that exist as `9dave`, `_svc` or `-x` keep working | [Access Lifecycle](access-lifecycle.md) §2, [Troubleshooting](troubleshooting.md) §8 |
+| **`config validate` and `--fix-names` follow the rule** | `config validate` warns once per user whose name starts with a digit or `-` (no Linux account) under `Names:` and names `tacctl user rename <name> <new-name>`; a name that starts with `_` has an account and gets no warning. `--fix-names` never offers a rename that `user rename` would refuse: for `1Alice` or a name over 32 characters it offers nothing, and the run exits 0 | [Access Lifecycle](access-lifecycle.md) §2 |
+| **A home on an NFS `root_squash` export** | `device config plan --out`, `device reports export --out` and `device support-bundle` check the path as you, so they work in a home that others may not search. A `cannot be resolved` refusal gives the cause and the path and no longer says to spell the path differently (the `~` hint). `config render --dry-run` and `config linux script` and `remove-script` still check the path as root: write the file on the local disk of the host and copy it to your home as yourself | [Superuser Daily Operations](superuser-daily-operations.md) §11.4, [Engineer Guide](engineer-guide-device-changes.md) §4 |
+| **`scp -p` creates the file with its mode** | The console reads the permissions of the open request, so a script uploaded at 0755 is created 0700 (the umask is 077) and not 0600, and an interrupted upload leaves that mode. The mode and times set at the end are applied as given: the file still ends with the mode of its source. A request without permissions still gives 0600 | [Getting Started](getting-started.md) §1.4 |
+| `tacctl rollback 0.2.29` | The release before this one is a target (sixteen in all). It converts nothing: no key or field removed, no snapshot, no `--yes`, no closing note | [Backups and Undo](backups-and-undo.md) §5 |
+
+> **Before upgrading from 0.2.29:**
+>
+> - `tacctl upgrade` converts nothing in this release. A user whose name
+>   starts with a digit or `-` is carried unchanged; `tacctl config validate`
+>   lists it, and `tacctl user rename <name> <new-name>` gives it an
+>   account.
+> - After `tacctl rollback 0.2.29` and the install of 0.2.29, `user add` and
+>   `user rename` take a new name that starts with a digit, `-` or `_` again,
+>   the three commands above check the path as root again, and a file
+>   uploaded with `scp -p` is created 0600 again; what was done in between
+>   keeps its name and its mode.
+
+---
+
+## 2. tacctl 0.2.29
 
 Released 2026-11-09 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.29.md)
@@ -48,7 +75,7 @@ Released 2026-11-09 ·
 
 ---
 
-## 2. tacctl 0.2.28
+## 3. tacctl 0.2.28
 
 Released 2026-11-09 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.28.md)
@@ -88,7 +115,7 @@ Released 2026-11-09 ·
 
 ---
 
-## 3. tacctl 0.2.27
+## 4. tacctl 0.2.27
 
 Released 2026-11-09 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.27.md)
@@ -126,7 +153,7 @@ Released 2026-11-09 ·
 
 ---
 
-## 4. tacctl 0.2.26
+## 5. tacctl 0.2.26
 
 Released 2026-11-06 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.26.md)
@@ -175,7 +202,7 @@ Released 2026-11-06 ·
 
 ---
 
-## 5. tacctl 0.2.25
+## 6. tacctl 0.2.25
 
 Released 2026-11-05 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.25.md)
@@ -202,7 +229,7 @@ Released 2026-11-05 ·
 
 ---
 
-## 6. tacctl 0.2.24
+## 7. tacctl 0.2.24
 
 Released 2026-11-05 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.24.md)
@@ -245,7 +272,7 @@ Released 2026-11-05 ·
 >   device whose `single-connection` was removed, 0.2.23's `diff` and `plan`
 >   show the line as missing, and applying that plan types it again.
 
-## 7. tacctl 0.2.23
+## 8. tacctl 0.2.23
 
 Released 2026-10-31 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.23.md)
@@ -282,7 +309,7 @@ Released 2026-10-31 ·
 >   again. The rollback is refused while an emergency lockdown has enrolled
 >   hosts: lift it and sync the hosts first.
 
-## 8. tacctl 0.2.22
+## 9. tacctl 0.2.22
 
 Released 2026-10-29 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.22.md)
@@ -343,7 +370,7 @@ sub-commands, and the one-letter form of `--yes` is refused:
 >   date until its first render writes its own comment, which restarts
 >   tacquito once; the rollback itself restarts nothing.
 
-## 9. tacctl 0.2.21
+## 10. tacctl 0.2.21
 
 Released 2026-10-28 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.21.md)
@@ -364,7 +391,7 @@ Released 2026-10-28 ·
 > `config validate` stop with one line. **After it,** check the line about
 > the machine's own login, and run `tacctl host sync <server>` as before.
 
-## 10. tacctl 0.2.20
+## 11. tacctl 0.2.20
 
 Released 2026-10-28 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.20.md)
@@ -397,7 +424,7 @@ sub-commands:
 > and not before. No existing user must change their password until a
 > superuser says so.
 
-## 11. tacctl 0.2.19
+## 12. tacctl 0.2.19
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.19.md)
 
@@ -410,7 +437,7 @@ sub-commands:
 | Host names may contain dots | `tacctl host rename web1 web1.example.net` works | [Linux Host Operations](linux-host-operations.md) |
 | Unknown commands answered first | A mistyped command is answered before `sudo` asks for a password | — |
 
-## 12. tacctl 0.2.18
+## 13. tacctl 0.2.18
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.18.md)
 
@@ -429,7 +456,7 @@ you may have meant (`tacctl enroll` suggests `device enroll` and
 `host enroll`). Every tier can run `device notice list` and
 `device client-config`.
 
-## 13. tacctl 0.2.17
+## 14. tacctl 0.2.17
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.17.md)
 
@@ -445,7 +472,7 @@ you may have meant (`tacctl enroll` suggests `device enroll` and
 
 ---
 
-## 14. Older releases
+## 15. Older releases
 
 Releases 0.2.0 to 0.2.16 are listed on the
 [releases page](https://github.com/rett/tacctl/releases), and every change is
