@@ -292,7 +292,7 @@ The work packages of `0.2.5-plan.md` (decisions D77-D92), for a coordinator to h
 
 Sizes: S ≈ ½ session, M ≈ 1 session, L ≈ 1½-2.
 
-## Acceptance commands (from `CLAUDE.md`; every package runs the ones that apply)
+## Acceptance commands (from `AGENTS.md`; every package runs the ones that apply)
 
 ```
 make build
