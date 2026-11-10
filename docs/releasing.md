@@ -196,12 +196,14 @@ tests/tools/release-preflight.sh 0.2.1
 Finish only when it passes. It lists every problem: the dated
 `## 0.2.1 (YYYY-MM-DD)` CHANGELOG heading (a real date, and no
 `(unreleased)` one), the `.TH` line of `man/tacctl.1` naming `tacctl 0.2.1`
-and the same date, and `docs/release-notes-0.2.1.md`. Nothing else before
-the finish checks this: `release start` runs only
-`tests/tools/release-notes-check.sh`, which accepts an `(unreleased)`
-heading, and `make release-assets` runs the preflight only in step 5, after
-the finish has pushed the tag, when a fault is no longer fixable in this
-release. A second argument names another tree to check instead of this
+and the same date, and `docs/release-notes-0.2.1.md`. Little else before
+the finish checks this: `release start` only checks that the man page's
+`.TH` line exists and runs `tests/tools/release-notes-check.sh`, which
+accepts an `(unreleased)` heading, and `release finish` refuses an empty
+`.TH` date or version. Only the preflight checks the dated heading, that the
+date and the version match, and the notes, so run it before the finish.
+`make release-assets` runs it only in step 5, after the finish has pushed the
+tag, when a fault is no longer fixable in this release. A second argument names another tree to check instead of this
 repository.
 
 ```sh
