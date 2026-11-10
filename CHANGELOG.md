@@ -93,8 +93,14 @@ current behaviour; this file is where history lives.
    Linux account, here or on a host (tacctl user rename
    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa <new-name>)`. It is a warning, never an
    error, and `config validate --json` has it under the section `names`;
-   `--fix-names` does not offer it, since there is no name to propose. The
-   superuser's view only. `docs/cli/config.md` and the manual page say so.
+   `--fix-names` does not offer it, since there is no name to propose. A
+   user whose name is also in upper case gets this one warning, not a second
+   one that proposes the lower-case spelling (also over 32 characters, so
+   `user rename` would refuse it): it reads `has a name of 40 characters and
+   has upper case letters; new user names are at most 32 and lower case, and
+   this user has no Linux account, here or on a host`, and `--fix-names`
+   offers nothing for the user and exits as for a store with no fixable
+   names. The superuser's view only. `docs/cli/config.md` and the manual page say so.
 
 5. **`tacctl ssh <device> --login <local-user>` logs in as one of the device's
    own accounts.** In the tacctl console the words after `--` are the remote

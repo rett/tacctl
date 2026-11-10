@@ -3221,7 +3221,9 @@ most 32) is a warning under
 too: it works but has no Linux account, here or on a host, and the warning names
 .BR "tacctl user rename" " name " new\-name ;
 .B \-\-fix\-names
-does not offer that rename. Only the superuser's view has these findings.
+does not offer that rename. A user whose name is both longer than 32 characters
+and has upper case gets that one warning only, which says so. Only the
+superuser's view has these findings.
 .IP
 Then, for every enabled backend, whether its rendered config is up to date
 with the store and whether any of its files was edited by hand (drift). With
