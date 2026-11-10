@@ -74,15 +74,17 @@ The example is 0.2.1 (the release before it 0.2.0); replace it throughout.
 A release runs with qargi, the git-flow release tooling the maintainer
 uses. The commands that change something (`release start`, `push`, `finish`
 and `publish`, and `branch prune`) are plans: each prints what it will do
-before anything is applied. `release verify`, `release assets` and `release
-step` print no plan. The division of labour is fixed. The maintainer's
+before anything is applied. `release verify`, `release assets`, `release
+step` and `release sign` print no plan (`sign` is run by the key holder on
+their own terminal). The division of labour is fixed. The maintainer's
 tooling drives the git-flow steps (verify, start, push, finish) and the
 after-steps that build, publish and clean up; the key holder alone signs; and
 every merge into `develop` or `master`, every push, every tag, every publish
 and every prune is a plan that needs the maintainer's explicit go-ahead
-(`start`, `finish` and `publish` also take a plan token; `push` opens the
-pull request; `prune` deletes branches). The hand commands are kept at the end,
-for a release made without the tooling.
+(`start`, `push`, `finish`, `publish` and `prune` each print a plan and take
+a plan token with `--plan` and the go-ahead with `--approved`; `push` opens
+the pull request; `prune` deletes branches). The hand commands are kept at
+the end, for a release made without the tooling.
 
 Before the first step, bring the tacquito fork's `main` up to upstream
 (`patches/README.md`, Following upstream) and run the gates on it: a host
@@ -139,7 +141,7 @@ not one of them: it is the maintainer's own check, and nothing records it.
 | 8 | reproducible | the maintainer's tooling | the `release-reproducible` run of the tag is green |
 | 9 | check on a host | the maintainer, not recorded | `tacctl upgrade` installs the verified binary |
 | 10 | site | the maintainer's tooling | the `build` check of the `gh-pages` pull request is green, then it is merged |
-| 11 | prune | the maintainer's tooling, on the maintainer's go-ahead | no merged branch is left, local or remote |
+| 11 | prune | the maintainer's tooling, on the maintainer's go-ahead | no merged `agent/*` or `feature/*` branch is left locally and, if pruned with `--remote`, on origin |
 
 ### 1. Verify
 
@@ -194,12 +196,14 @@ tests/tools/release-preflight.sh 0.2.1
 Finish only when it passes. It lists every problem: the dated
 `## 0.2.1 (YYYY-MM-DD)` CHANGELOG heading (a real date, and no
 `(unreleased)` one), the `.TH` line of `man/tacctl.1` naming `tacctl 0.2.1`
-and the same date, and `docs/release-notes-0.2.1.md`. Nothing else before
-the finish checks this: `release start` runs only
-`tests/tools/release-notes-check.sh`, which accepts an `(unreleased)`
-heading, and `make release-assets` runs the preflight only in step 5, after
-the finish has pushed the tag, when a fault is no longer fixable in this
-release. A second argument names another tree to check instead of this
+and the same date, and `docs/release-notes-0.2.1.md`. Little else before
+the finish checks this: `release start` only checks that the man page's
+`.TH` line exists and runs `tests/tools/release-notes-check.sh`, which
+accepts an `(unreleased)` heading, and `release finish` refuses an empty
+`.TH` date or version. Only the preflight checks the dated heading, that the
+date and the version match, and the notes, so run it before the finish.
+`make release-assets` runs it only in step 5, after the finish has pushed the
+tag, when a fault is no longer fixable in this release. A second argument names another tree to check instead of this
 repository.
 
 ```sh
@@ -423,10 +427,13 @@ passed.
 
 ```sh
 qargi branch prune
+qargi branch prune --remote
 ```
 
 A plan, on the maintainer's go-ahead, since it deletes branches: the ones
-that are merged (the release's feature and agent branches, local and remote).
+that are merged (the release's `feature/*` and `agent/*` branches). Without
+`--remote` it deletes only the local ones; run the second form, with its own
+plan and go-ahead, when the branches on origin are meant to go too.
 
 ## A hotfix
 
@@ -462,7 +469,7 @@ Then check it, push it and finish it with the tooling:
 ```sh
 tests/tools/release-preflight.sh 0.2.6
 tests/tools/release-notes-check.sh 0.2.6
-qargi release push 0.2.6
+qargi release push 0.2.6 --hotfix
 qargi release finish 0.2.6 --hotfix
 ```
 
