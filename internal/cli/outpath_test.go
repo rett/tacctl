@@ -52,7 +52,6 @@ func TestOutPathRefusals(t *testing.T) {
 		{"link out", sb.homePath("escape/x"), "not inside your home"},
 		{"link out, deep", sb.homePath("escape/a/b/c"), "not inside your home"},
 		{"link itself out", sb.homePath("escape"), "not inside your home"},
-		{"dangling link", sb.homePath("dangling"), "cannot be resolved"},
 		{"sibling with the home's name as prefix", sb.home + "-other/x", "not inside your home"},
 	} {
 		got, err := inv.outPath("--out", c.path)
@@ -62,6 +61,25 @@ func TestOutPathRefusals(t *testing.T) {
 		}
 		if !strings.HasPrefix(err.Error(), "--out ") || !strings.Contains(err.Error(), "tacctl does not expand ~ or variables; name a path inside your home, relative to the current directory.") {
 			t.Errorf("%s: the error does not say what to do: %v", c.name, err)
+		}
+	}
+}
+
+// What the file system says is told with the path and the cause and without
+// the hint about '~' and variables, which has nothing to do with it.
+func TestOutPathUnresolvedHasNoHint(t *testing.T) {
+	inv, sb := outInv(t)
+	if err := os.Symlink(filepath.Join(t.TempDir(), "gone"), sb.homePath("dangling")); err != nil {
+		t.Fatal(err)
+	}
+	for _, run := range []func(flag, p string) (string, error){inv.outPath, inv.outPathAsCaller} {
+		p := sb.homePath("dangling")
+		got, err := run("--out", p)
+		if err == nil || got != "" {
+			t.Fatalf("%q, %v; want a refusal", got, err)
+		}
+		if !strings.HasPrefix(err.Error(), "--out '"+p+"' cannot be resolved (No such file or directory)") || strings.Contains(err.Error(), "~") || strings.Contains(err.Error(), outPathHint) {
+			t.Errorf("%v", err)
 		}
 	}
 }

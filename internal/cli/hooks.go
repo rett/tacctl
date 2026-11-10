@@ -110,6 +110,9 @@ type hooks struct {
 	pdfStat func(path string) (uid uint32, perm fs.FileMode, err error)
 	// sshAccountOf looks an account up in the local account database.
 	sshAccountOf func(name string) (sshAccount, error)
+	// asCallerRun replaces asCaller where a test cannot switch the
+	// file-system identity (nil: asCaller).
+	asCallerRun func(fn func() error) error
 	// homeOfUID looks the home directory of an account up by its id in the
 	// local account database (nil: the system's).
 	homeOfUID func(uid int) (string, error)
