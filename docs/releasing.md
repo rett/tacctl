@@ -127,8 +127,8 @@ proof holds.
 | 2 | start | the maintainer's tooling, on the maintainer's go-ahead | `release/0.2.1` exists, its first commit dates the release |
 | 3 | push | the maintainer's tooling | the checks of the pull request into `master` are green |
 | 4 | finish | the maintainer's tooling, on the maintainer's go-ahead | `git describe master` prints `0.2.1`; `master`, `develop` and the tag are pushed |
-| 5 | assets | the maintainer's tooling | `dist/release` holds the two binaries and `SHA256SUMS` |
-| 6 | sign | the key holder only | `make release-verify` passes |
+| 5 | assets | the maintainer's tooling | the worktree that `release assets` prints holds the two binaries and `SHA256SUMS` |
+| 6 | sign | the key holder only | `release sign` records that `make release-verify` passed |
 | 7 | publish | the maintainer's tooling | the GitHub release holds the four files |
 | 8 | reproducible | the maintainer's tooling | the `release-reproducible` run of the tag is green |
 | 9 | check on a host | the maintainer | `tacctl upgrade` installs the verified binary |
@@ -201,10 +201,14 @@ source (`could not download SHA256SUMS`).
 qargi release assets 0.2.1
 ```
 
-Builds `dist/release/tacctl-0.2.1-linux-amd64`,
-`dist/release/tacctl-0.2.1-linux-arm64` and `dist/release/SHA256SUMS` from the
-tag, with `make release-assets` (by hand: `git checkout 0.2.1`, a clean
-checkout of exactly the tag, then `make release-assets`).
+Builds `tacctl-0.2.1-linux-amd64`, `tacctl-0.2.1-linux-arm64` and
+`SHA256SUMS` from the tag, with `make release-assets`, in a clean detached
+worktree of the tag under qargi's state directory. It prints the path of that
+worktree; the files are in its `dist/release`, not in `dist/release` of the
+repository's own checkout, which it never touches. The signing (step 6) and
+the publish (step 7) take their files from the same worktree. By hand:
+`git checkout 0.2.1`, a clean checkout of exactly the tag, then `make
+release-assets`, and the files are in that checkout's `dist/release`.
 
 `make release-assets` refuses a tree that is not at a release tag or has
 local changes, and one whose release metadata is not in place
@@ -222,6 +226,21 @@ skips the metadata check.
 Only the key holder signs, on the release manager's own machine, and types
 the passphrase; nobody else handles the passphrase or the private key. The
 release waits for the key holder here.
+
+```sh
+qargi release sign 0.2.1
+```
+
+The key holder runs it, in their own terminal; it refuses without a terminal.
+In the worktree that `release assets` printed (step 5) it runs the two
+commands below: `ssh-keygen -Y sign -f <key> -n tacctl-release <file>` for
+each file to sign, so that the passphrase is typed on the terminal and never
+passes through qargi, a log or an agent, and then `make release-verify`. It
+records the result, and `release publish` (step 7) waits for that recorded
+ok.
+
+What it runs, and what to run by hand in a checkout of the tag after `make
+release-assets`:
 
 ```sh
 ssh-keygen -Y sign -f ~/.ssh/tacctl-release -n tacctl-release dist/release/SHA256SUMS
