@@ -36,6 +36,7 @@ const (
 	rawAttrSize     = 0x1
 	rawAttrExtended = 0x80000000
 	rawAttrPerm     = 0x4
+	rawAttrTimes    = 0x8
 )
 
 // rawConn speaks SFTP by hand, so that a test can put attributes in an open
@@ -507,5 +508,88 @@ func TestOpenModeWithoutOwnerWriteQuotaAndAudit(t *testing.T) {
 	}
 	if up != 1 {
 		t.Errorf("%d upload events, want 1: %+v", up, events)
+	}
+}
+
+// mkdir sends a mkdir request with the attribute flags aflags and the block
+// attrs, and returns the status code.
+func (r *rawConn) mkdir(path string, aflags uint32, attrs []byte) uint32 {
+	r.t.Helper()
+	b := binary.BigEndian.AppendUint32(str(nil, path), aflags)
+	typ, body := r.request(rawMkdir, append(b, attrs...))
+	return status(r.t, typ, body)
+}
+
+// A new directory is 0755 less the umask whatever the request asks: the library
+// reads only the attribute flags of a mkdir packet (vendor/github.com/pkg/sftp,
+// sshFxpMkdirPacket.UnmarshalBinary) and sets no Request.Flags for it, so the
+// handler is never told the permissions. The docs say so; this test fails if a
+// library upgrade starts to deliver them (and the docs and the handler are then
+// to be looked at together).
+func TestMkdirIgnoresTheModeOfTheRequest(t *testing.T) {
+	tests := []struct {
+		name  string
+		umask int
+		mode  uint32
+		want  os.FileMode
+	}{
+		{"0500 under the console umask", 0o077, 0o500, 0o700},
+		{"0777 under the console umask", 0o077, 0o777, 0o700},
+		{"0500 under umask 022", 0o022, 0o500, 0o755},
+		{"0700 under umask 022", 0o022, 0o700, 0o755},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			home := newHome(t)
+			old := syscall.Umask(tc.umask)
+			defer syscall.Umask(old)
+			r := newRawConn(t, home)
+			if c := r.mkdir("d", rawAttrPerm, permAttrs(tc.mode)); c != 0 {
+				t.Fatalf("mkdir: status %d", c)
+			}
+			fi, err := os.Stat(filepath.Join(home, "d"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if fi.Mode() != tc.want|os.ModeDir {
+				t.Errorf("mode %v, want %v", fi.Mode(), tc.want|os.ModeDir)
+			}
+		})
+	}
+}
+
+// What scp -p does: the open carries the permissions and the times (twelve
+// bytes, read as asking for nothing, so the file is created 0644 less the
+// umask), and after the data an fsetstat sets the same permissions and times,
+// which are applied as given: the umask of the console does not reduce them.
+func TestOpenModeWithTimesThenSetstat(t *testing.T) {
+	old := syscall.Umask(0o077)
+	defer syscall.Umask(old)
+	home := newHome(t)
+	p := filepath.Join(home, "f")
+	const mtime = 1_700_000_000
+	times := binary.BigEndian.AppendUint32(binary.BigEndian.AppendUint32(nil, mtime), mtime)
+	r := newRawConn(t, home)
+	h, code := r.open("f", rawFlagWrite|rawFlagCreat|rawFlagTrunc, rawAttrPerm|rawAttrTimes, append(permAttrs(0o755), times...))
+	if h == "" {
+		t.Fatalf("open refused: status %d", code)
+	}
+	if got := modeOfFile(t, p); got != 0o600 {
+		t.Errorf("mode after the open %v, want -rw-------", got)
+	}
+	r.writeAt(h, "#!/bin/sh\n")
+	if c := r.fsetstat(h, rawAttrPerm|rawAttrTimes, append(permAttrs(0o755), times...)); c != 0 {
+		t.Fatalf("fsetstat: status %d", c)
+	}
+	r.closeHandle(h)
+	fi, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode() != 0o755 {
+		t.Errorf("mode %v, want -rwxr-xr-x", fi.Mode())
+	}
+	if fi.ModTime().Unix() != mtime {
+		t.Errorf("mtime %d, want %d", fi.ModTime().Unix(), mtime)
 	}
 }

@@ -235,6 +235,11 @@ func (s *server) mkdir(r *sftp.Request) (err error) {
 		return err
 	}
 	defer t.close()
+	// The library reads only the attribute flags of a mkdir packet and sets no
+	// flags in the request, so the permissions are never delivered and a new
+	// directory is 0755 less the umask whatever the client asks (the docs say
+	// so; TestMkdirIgnoresTheModeOfTheRequest holds it). The branch is for a
+	// library that delivers them.
 	mode := uint32(0o755)
 	if r.AttrFlags().Permissions {
 		if a := r.Attributes(); a != nil {
