@@ -19,10 +19,18 @@ func letterWant(name string) string {
 	return "Username '" + name + "' must start with a letter (a to z): every new user gets a Linux account, and a name that starts with a digit or '-' is no account name (a new name does not start with '_' either)."
 }
 
+// upperLetterWant is the refusal of a new name that has upper case and does not
+// start with a letter: it names both.
+func upperLetterWant(name string) string {
+	return "Username '" + name + "' must be lower case and start with a letter (a to z): every new user gets a Linux account, and a name that starts with a digit or '-' is no account name (a new name does not start with '_' either)."
+}
+
 // A digit, '-' and '_' are refused as the first character by 'user add' and
-// by the new name of 'user rename', and nothing is changed; the order of the
-// checks puts upper case first: 'Alice' and '1Alice' get the lower-case
-// spelling, and the letter rule follows on the retry.
+// by the new name of 'user rename', and nothing is changed. A name with upper
+// case is told to be lower case only when its lower-case spelling would be
+// accepted ('Alice'); otherwise it is told what to fix at once, so that the
+// retry is not refused again ('1Alice', '_Svc', 'Root', 'Tacquito', an upper
+// case name over the length).
 func TestNewUserNamesStartWithALetter(t *testing.T) {
 	sb := newSandbox(t, true)
 	before := sb.store()
@@ -36,17 +44,31 @@ func TestNewUserNamesStartWithALetter(t *testing.T) {
 		t.Error("a refusal changed the store")
 	}
 
-	// upper case first, then the letter rule on the retry
-	sb.run("", []string{"user", "add", "1Alice", "operator", "--hash", testHash, "--scopes", "lab"})
-	sb.expect(1, "", "Names are lower case: use '1alice'. Nothing was changed.")
+	// the lower-case spelling is suggested only when it is accepted
 	sb.run("", []string{"user", "add", "Alice", "operator", "--hash", testHash, "--scopes", "lab"})
 	sb.expect(1, "", "Names are lower case: use 'alice'. Nothing was changed.")
-	sb.run("", []string{"user", "rename", "bob", "_Svc"})
-	sb.expect(1, "", "Names are lower case: use '_svc'. Nothing was changed.")
-	// the length comes before the first character
-	long := "1" + strings.Repeat("a", 40)
-	sb.run("", []string{"user", "add", long, "operator", "--hash", testHash, "--scopes", "lab"})
-	sb.expect(1, "", longWant(long))
+	sb.run("", []string{"user", "rename", "bob", "Robert"})
+	sb.expect(1, "", "Names are lower case: use 'robert'. Nothing was changed.")
+	upperLong := "A" + strings.Repeat("a", 40)
+	for _, c := range []struct{ name, want string }{
+		{"1Alice", upperLetterWant("1Alice")},
+		{"_Svc", upperLetterWant("_Svc")},
+		{"-X", upperLetterWant("-X")},
+		{"Root", "Username 'root' is reserved as an accounting-only sink"},
+		{"ROOT", "Username 'root' is reserved as an accounting-only sink"},
+		{"Tacquito", "Username 'tacquito' is reserved"},
+		{upperLong, longWant(upperLong) + " Names are lower case as well."},
+		// the length comes before the first character
+		{"1" + strings.Repeat("a", 40), longWant("1" + strings.Repeat("a", 40))},
+	} {
+		sb.run("", []string{"user", "add", c.name, "operator", "--hash", testHash, "--scopes", "lab"})
+		sb.expect(1, "", c.want)
+		sb.run("", []string{"user", "rename", "bob", c.name})
+		sb.expect(1, "", c.want)
+		if strings.Contains(sb.printed(), "Names are lower case: use") {
+			t.Errorf("%s: a lower-case spelling is suggested:\n%s", c.name, sb.printed())
+		}
+	}
 	if sb.store() != before {
 		t.Error("a refusal changed the store")
 	}
@@ -112,6 +134,49 @@ func TestUsersWithAnyFirstCharacterKeepWorking(t *testing.T) {
 	}
 	sb3.run("", []string{"user", "show", "9dave"})
 	sb3.expect(0, "9dave", "")
+}
+
+// A user stored as '-x' is reached by the verbs as an ordinary word, typed as
+// it is ('tacctl user show -x'): the command line takes a word that starts with
+// '-' and is no option of the verb as a positional. '--' is not an end-of-options
+// marker of the user verbs (it would be read as the user name), so there is no
+// other form. A new name of that shape is refused ('user rename' to '-x').
+func TestUserStoredWithALeadingHyphenKeepsWorking(t *testing.T) {
+	h, err := hash.Generate("CorrectHorse99", 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name  string
+		args  []string
+		stdin string
+		out   string
+		store func(string) bool // what the store must satisfy afterwards
+	}{
+		{name: "show", args: []string{"user", "show", "-x"}, out: "-x"},
+		{name: "passwd", args: []string{"user", "passwd", "-x", "--hash", h}, out: "Password changed for '-x'."},
+		{name: "disable", args: []string{"user", "disable", "-x"}, out: "User '-x' disabled."},
+		{name: "move", args: []string{"user", "move", "-x", "readonly"}, out: "User '-x' moved: superuser -> readonly"},
+		{name: "rename away", args: []string{"user", "rename", "-x", "xx"}, out: "User renamed: -x -> xx",
+			store: func(st string) bool { return !strings.Contains(st, "  -x:") && strings.Contains(st, "  xx:") }},
+		{name: "remove", args: []string{"user", "remove", "-x"}, stdin: "y\n", out: "User '-x' removed.",
+			store: func(st string) bool { return !strings.Contains(st, "  -x:") }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			sb := newSandbox(t, true)
+			sb.legacyStoreCase("  alice:", "  -x:")
+			sb.run(c.stdin, c.args)
+			sb.expect(0, c.out, "")
+			if c.store != nil && !c.store(sb.store()) {
+				t.Errorf("the store after %v:\n%s", c.args, sb.store())
+			}
+		})
+	}
+	// there is no end-of-options form: '--' is taken for the user name
+	sb := newSandbox(t, true)
+	sb.legacyStoreCase("  alice:", "  -x:")
+	sb.run("", []string{"user", "show", "--", "-x"})
+	sb.expect(1, "", "User '--' does not exist.")
 }
 
 // namesFindingsOf are the lines of the report of 'config validate' that are
@@ -260,5 +325,98 @@ func TestUpperCaseNameStartingWithAnUnderscoreIsNotOfferedTheLowerCaseSpelling(t
 	sb.expect(0, "Names: renamed 0, declined 0, not offered 0, failed 0.", "")
 	if sb.store() != before {
 		t.Error("--fix-names changed the store")
+	}
+}
+
+// A user from before whose name starts with '_' and is over the length is told
+// both rules: a natural replacement such as '_svc' would be refused by the
+// letter rule. A short '_svc' is not warned of, and a long name that starts
+// with a letter is told the length only.
+func TestOverLongNameStartingWithAnUnderscoreIsToldTheLetterRule(t *testing.T) {
+	long := "_" + strings.Repeat("a", 39)
+	sb := newSandbox(t, true)
+	sb.legacyStoreCase("  alice:", "  "+long+":")
+	sb.legacyStoreCase("  bob:", "  "+strings.Repeat("b", 40)+":")
+	sb.run("", []string{"config", "render"})
+	sb.expect(0, "", "")
+	out, found := namesFindingsOf(t, sb)
+	want := "the user '" + long + "' has a name of 40 characters and starts with '_'; new user names are at most 32 and start with a letter (a to z), and this user has no Linux account, here or on a host (tacctl user rename " + long + " <new-name>)"
+	if !strings.Contains(out, want) {
+		t.Errorf("config validate lacks %q:\n%s", want, out)
+	}
+	wantB := "the user '" + strings.Repeat("b", 40) + "' has a name of 40 characters; new user names are at most 32, and this user has no Linux account, here or on a host"
+	if !strings.Contains(out, wantB) {
+		t.Errorf("config validate lacks %q:\n%s", wantB, out)
+	}
+	if len(found) != 2 {
+		t.Errorf("the json names findings: %+v", found)
+	}
+	before := sb.store()
+	sb.run("", []string{"config", "validate", "--fix-names", "--yes"})
+	sb.expect(0, "Names: renamed 0, declined 0, not offered 0, failed 0.", "")
+	if sb.store() != before {
+		t.Error("--fix-names changed the store")
+	}
+
+	// the same name with upper case: both rules and lower case, once
+	up := "_A" + strings.Repeat("a", 38)
+	sb2 := newSandbox(t, true)
+	sb2.legacyStoreCase("  alice:", "  "+up+":")
+	sb2.run("", []string{"config", "render"})
+	sb2.expect(0, "", "")
+	out, found = namesFindingsOf(t, sb2)
+	want = "the user '" + up + "' has a name of 40 characters and starts with '_' and has upper case letters; new user names are at most 32 and lower case and start with a letter (a to z), and this user has no Linux account, here or on a host (tacctl user rename " + up + " <new-name>)"
+	if !strings.Contains(out, want) || len(found) != 1 {
+		t.Errorf("config validate lacks %q (%d json findings):\n%s", want, len(found), out)
+	}
+}
+
+// A user with upper case whose lower-case spelling is reserved ('Root',
+// 'Tacquito') gets one finding, in the text and the json, that says the
+// spelling is reserved and names the rename with a name of the person's choice;
+// --fix-names offers nothing and counts nothing as not offered or failed.
+func TestUpperCaseNameWhoseLowerCaseSpellingIsReservedIsOneFinding(t *testing.T) {
+	for _, c := range []struct{ name, reserved string }{
+		{"Root", "Username 'root' is reserved as an accounting-only sink for Junos internal daemons (non-tty CLI as root)"},
+		{"Tacquito", "Username 'tacquito' is reserved (matches the service user). Pick a different name"},
+	} {
+		sb := newSandbox(t, true)
+		sb.legacyStoreCase("  alice:", "  "+c.name+":")
+		sb.legacyStoreCase("  bob:", "  Bobby:")
+		sb.run("", []string{"config", "render"})
+		sb.expect(0, "", "")
+		out, found := namesFindingsOf(t, sb)
+		lower := strings.ToLower(c.name)
+		want := "the user '" + c.name + "' has upper case letters; new user names are lower case, but its lower-case spelling '" + lower + "' is not a name 'user rename' takes: " + c.reserved + " (tacctl user rename " + c.name + " <new-name>)"
+		if !strings.Contains(out, want) || strings.Count(out, "'"+c.name+"'") != 1 {
+			t.Errorf("%s: config validate lacks %q:\n%s", c.name, want, out)
+		}
+		if strings.Contains(out, "rename "+c.name+" "+lower) {
+			t.Errorf("%s: the lower-case rename is proposed:\n%s", c.name, out)
+		}
+		var ofName, ofBobby int
+		for _, f := range found {
+			switch {
+			case strings.Contains(f.Text, "'"+c.name+"'"):
+				ofName++
+				if f.Fix != "tacctl user rename "+c.name+" <new-name>" || f.Kind != "" || f.Level != levelWarning {
+					t.Errorf("%s: the json finding: %+v", c.name, f)
+				}
+			case strings.Contains(f.Text, "'Bobby'"):
+				ofBobby++
+			}
+		}
+		if ofName != 1 || ofBobby != 1 {
+			t.Errorf("%s: json findings %d and %d: %+v", c.name, ofName, ofBobby, found)
+		}
+
+		sb.run("", []string{"config", "validate", "--fix-names", "--yes"})
+		sb.expect(0, "Names: renamed 1, declined 0, not offered 0, failed 0.", "")
+		if !strings.Contains(sb.store(), "  "+c.name+":") || !strings.Contains(sb.store(), "  bobby:") {
+			t.Errorf("%s: the store after --fix-names:\n%s", c.name, sb.store())
+		}
+		if strings.Contains(sb.printed(), "Rename user '"+c.name+"'") {
+			t.Errorf("%s: a rename was offered:\n%s", c.name, sb.printed())
+		}
 	}
 }
