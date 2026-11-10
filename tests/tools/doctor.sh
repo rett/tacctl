@@ -13,8 +13,9 @@
 # 'missing' is a tool or file that make lint, make gate-go or make build needs,
 # or whose absence makes tests skip silently (the list in the comment at the
 # top of .github/workflows/test.yml); 'expected' is optional, with what you
-# lose without it. The exit status is 1 when any line starts with 'missing',
-# else 0.
+# lose without it (the bats submodules, which only the bats suite needs, and
+# so a fresh clone before make bootstrap, are 'expected'). The exit status is
+# 1 when any line starts with 'missing', else 0.
 #
 # The pins are read where they live, never copied here: the Go version
 # (GO_VERSION) from bin/tacctl.sh, the golangci-lint version
@@ -152,7 +153,7 @@ else
 fi
 have_tool ssh-keygen ssh-keygen "$(apt_hint openssh-client openssh)"
 
-# --- 6. the bats submodules ---------------------------------------------------
+# --- 6. the bats submodules: only the bats suite needs them -------------------
 bats_bad=""
 [[ -x "$root/tests/bats/bats-core/bin/bats" ]] || bats_bad=" bats-core/bin/bats"
 for d in bats-support bats-assert bats-file; do
@@ -161,7 +162,7 @@ done
 if [[ -z "$bats_bad" ]]; then
     ok bats "the four submodules under tests/bats are in place"
 else
-    missing bats "not initialised:$bats_bad; run make bootstrap (git submodule update --init --recursive)"
+    expected bats "not initialised:$bats_bad; only the bats suite needs them (make bootstrap)"
 fi
 
 # --- 7. git, and the 0.2.2 tag: two Go tests skip without it -----------------
