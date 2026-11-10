@@ -55,9 +55,46 @@ func (inv *invocation) callerHome() (string, error) {
 // do. An empty path, a NUL, a first component that starts with '~', a '$' or
 // a backtick, and a path that, with the symbolic links of its longest existing
 // part resolved, is not strictly inside the caller's home are refused.
+//
+// The refusals about the spelling of the path end with outPathHint; one that
+// is about what the file system says ("cannot be resolved") gives the cause
+// and the path and no hint, since it is not a matter of '~' or variables.
+//
+// The file-system calls run as this process, which is root under sudo. A
+// command that then writes as the caller (asCaller) uses outPathAsCaller
+// instead, so that the check sees what the write will see: on an NFS home
+// with root_squash that others cannot search, root cannot stat the path and
+// the caller can. A command that writes as root keeps outPath: the check
+// must fail where its write would.
 func (inv *invocation) outPath(flag, p string) (string, error) {
+	return inv.checkOutPath(flag, p, func(fn func() error) error { return fn() })
+}
+
+// outPathAsCaller is outPath with the file-system calls of the check run with
+// the identity of the person who ran sudo (inv.callerRun), for a command that
+// writes the file as that person.
+func (inv *invocation) outPathAsCaller(flag, p string) (string, error) {
+	return inv.checkOutPath(flag, p, inv.callerRun)
+}
+
+// callerRun runs fn as the person who ran sudo: asCaller, or the hook that
+// replaces it in a test (the identity switch itself needs root).
+func (inv *invocation) callerRun(fn func() error) error {
+	if h := inv.hooks; h != nil && h.asCallerRun != nil {
+		return h.asCallerRun(fn)
+	}
+	return inv.asCaller(fn)
+}
+
+// checkOutPath is the one place of the rules; run runs the calls that touch
+// the file system (the symbolic links of the path and of its directory).
+func (inv *invocation) checkOutPath(flag, p string, run func(func() error) error) (string, error) {
 	refuse := func(why string) (string, error) {
 		return "", errors.New(flag + " " + why + ": " + outPathHint + ".")
+	}
+	// what the file system says is told as it is, with the path
+	unresolved := func(err error) (string, error) {
+		return "", errors.New(flag + " '" + p + "' cannot be resolved (" + cfgErrno(err) + ").")
 	}
 	switch {
 	case p == "":
@@ -76,23 +113,28 @@ func (inv *invocation) outPath(flag, p string) (string, error) {
 	}
 	abs, err := filepath.Abs(p)
 	if err != nil {
-		return refuse("'" + p + "' cannot be resolved (" + err.Error() + ")")
+		return unresolved(err)
 	}
 	outside := func() (string, error) {
 		return refuse("'" + p + "' is not inside your home (" + home + "), the only place tacctl writes")
 	}
-	// the path itself, a symbolic link in it followed (it must lead inside)
-	full, err := resolveExisting(abs)
-	if err != nil {
-		return refuse("'" + p + "' cannot be resolved (" + cfgErrno(err) + ")")
+	// the path itself, a symbolic link in it followed (it must lead inside),
+	// and what is written: its directory resolved, the name as given
+	var full, dir string
+	if err := run(func() (err error) {
+		if full, err = resolveExisting(abs); err != nil {
+			return err
+		}
+		if !strictlyInside(home, full) {
+			return nil // refused below, as outside
+		}
+		dir, err = resolveExisting(filepath.Dir(abs))
+		return err
+	}); err != nil {
+		return unresolved(err)
 	}
 	if !strictlyInside(home, full) {
 		return outside()
-	}
-	// what is written: its directory resolved, the name as given
-	dir, err := resolveExisting(filepath.Dir(abs))
-	if err != nil {
-		return refuse("'" + p + "' cannot be resolved (" + cfgErrno(err) + ")")
 	}
 	out := filepath.Join(dir, filepath.Base(abs))
 	if !strictlyInside(home, out) {

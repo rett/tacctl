@@ -102,13 +102,25 @@ func serve(rw io.ReadWriteCloser, cfg Config, sm seams) error {
 	}
 	defer h.close()
 	s := newServer(h, cfg, sm)
-	rs := sftp.NewRequestServer(rw, sftp.Handlers{FileGet: s, FilePut: s, FileCmd: s, FileList: s})
+	// The library reads the client's packets through the filter that gives
+	// an open request the attributes it was sent in a form the handlers can
+	// read (openattrs.go); it writes and closes through rw.
+	rs := sftp.NewRequestServer(filtered{rw, newOpenFilter(rw)}, sftp.Handlers{FileGet: s, FilePut: s, FileCmd: s, FileList: s})
 	err = rs.Serve()
 	if errors.Is(err, io.EOF) {
 		return nil
 	}
 	return err
 }
+
+// filtered is the connection the library gets: reads come from the filter,
+// writes and the close go to the connection.
+type filtered struct {
+	io.ReadWriteCloser
+	r io.Reader
+}
+
+func (f filtered) Read(p []byte) (int, error) { return f.r.Read(p) }
 
 // newServer builds the state of one session. The home is measured here when
 // there is a quota, and not at all when there is none.

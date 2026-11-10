@@ -10755,6 +10755,9 @@ or variables, and writes only inside your home (the home of the account of the p
 .BR sudo ,
 else of the user running tacctl, never
 .BR $HOME ).
+The path is checked as that user, so a home exported by NFS with
+.B root_squash
+that others may not search is no obstacle.
 The success lines print the full paths. Logged:
 .B "auth.info device support-bundle user= device= vendor= login=own|local:<account> files= result=ok"
 (never a command's text). Exit status: 0, 1 refused or the login failed, 2 wrong arguments, 130 interrupted.
@@ -13456,7 +13459,7 @@ are 0600 and written as the user who ran sudo;
 .B \-\-out\-dir
 makes its directory with mode 0700 (an existing directory open to others is
 refused, and so is one that only a supplementary
-group of that user may write). The path may be relative to the current directory or absolute, but it must be inside the home of the person who ran \fBsudo\fR (else of the user running tacctl; taken from the account database, never from \fB$HOME\fR): tacctl does not expand \fB~\fR or variables, and refuses a path that leaves the home through \fB..\fR or a symbolic link.
+group of that user may write). The path may be relative to the current directory or absolute, but it must be inside the home of the person who ran \fBsudo\fR (else of the user running tacctl; taken from the account database, never from \fB$HOME\fR): tacctl does not expand \fB~\fR or variables, and refuses a path that leaves the home through \fB..\fR or a symbolic link. The path is checked as that user, so a home exported by NFS with \fBroot_squash\fR that others may not search is no obstacle.
 An existing file is refused, all of them before
 any is written, unless
 .BR \-\-force .
@@ -14647,7 +14650,9 @@ Print a report as it is stored, or with
 write it to a file, made as the caller with mode 0600 inside the home of the
 person who ran \fBsudo\fR (else of the user running tacctl; never \fB$HOME\fR: tacctl does not
 expand \fB~\fR or variables, and refuses a path that leaves the home through \fB..\fR or
-a symbolic link); a file that exists is refused unless
+a symbolic link). The path is checked as that user, so a home exported by NFS
+with \fBroot_squash\fR that others may not search is no obstacle. A file that
+exists is refused unless
 .B \-\-force
 is given. tacctl sends a report nowhere itself: the
 .B scp
@@ -16649,15 +16654,18 @@ refused whole. A new directory gets the mode 0755, which is 0700 after the umask
 of the console, whatever the client asks (the library does not hand the server
 the attributes of a request to make a directory); a client that wants another
 mode sets it afterwards. A new file gets
-the mode the client asks for in the request that opens it, when that request
-carries the permissions alone (which is what the OpenSSH
+the mode the client asks for in the request that opens it, whatever other
+attributes the request carries (the OpenSSH
 .B sftp
-and
-.B scp
-send), and 0644 otherwise (a request that carries other attributes with the
-permissions is read as carrying none, and so is one that asks for no permission
-bits (the mode 0, with or without file type bits), which cannot be told from a
-request with no attributes but the extended ones);
+sends the permissions alone and
+.B scp \-p
+the permissions with the times), and 0644 otherwise: a request without
+permissions gets it, and so does one that asks for no permission bits (the mode
+0, with or without file type bits), which is read as asking for nothing, and
+so does an open longer than 64 KiB, which is not read for its permissions (the
+opens real clients send are far shorter; one that long has a path padded with
+"\&./", which is cleaned to the same file, or a long block of extended
+attributes);
 a file that already exists keeps its
 mode, whatever the open asks. A new file asked at a mode without the owner's
 write bit (0444, which
@@ -16689,8 +16697,8 @@ sets nothing but the size of the file after an upload, so the mode is the one of
 the open. With
 .B \-p
 (preserve) it sends the times together with the permissions in the open request,
-which is read as carrying none, so the file is created with 0644 (0600 after the
-umask), and then sets the permissions and the times of the handle after the
+which gives the file its mode at creation (a script asked at 0755 is created
+0700), and then sets the permissions and the times of the handle after the
 upload, which are applied as given: a script ends with the mode of its source,
 0755. Changing the mode or the times of
 a file goes through

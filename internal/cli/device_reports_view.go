@@ -264,7 +264,7 @@ func (inv *invocation) deviceReportsExport(args []string) error {
 	// the file is written inside the caller's home only
 	out := ""
 	if p.Has("--out") {
-		if out, err = inv.outPath("--out", p.Value("--out")); err != nil {
+		if out, err = inv.outPathAsCaller("--out", p.Value("--out")); err != nil {
 			return inv.argErr(err.Error(), usage)
 		}
 	}

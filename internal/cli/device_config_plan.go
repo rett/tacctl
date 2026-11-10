@@ -133,7 +133,7 @@ func (inv *invocation) parsePlanOptions(p Parsed) (planOptions, error) {
 		if *f.path == "" {
 			continue
 		}
-		path, err := inv.outPath(f.flag, *f.path)
+		path, err := inv.outPathAsCaller(f.flag, *f.path)
 		if err != nil {
 			return bad(err.Error())
 		}

@@ -112,9 +112,10 @@ func TestOutPathRootSquashedEmptyDirIsRefusedPlainly(t *testing.T) {
 }
 
 // A home that others may not search (0700, 0750), seen as the unprivileged
-// account root is mapped to, is refused by the path check itself, for every
-// command that names a path (the three that write as root are run here): the
-// check cannot resolve the path. Mode 0000 stands for it here, since the test
+// account root is mapped to, is refused by the path check itself for the
+// commands that write as root (the three of them are run here): the check
+// cannot resolve the path, and says what the system says, with the path and
+// without the hint about '~'. Mode 0000 stands for it here, since the test
 // user owns the directory and could search anything less. Nothing is written.
 func TestOutPathRootSquashedHomeOthersCannotSearchIsRefusedByTheCheck(t *testing.T) {
 	hs := newHostSandbox(t)
@@ -143,11 +144,122 @@ func TestOutPathRootSquashedHomeOthersCannotSearchIsRefusedByTheCheck(t *testing
 		if want := flag + " '" + path + "' cannot be resolved (Permission denied)"; !strings.Contains(hs.err.String(), want) {
 			t.Errorf("%v: stderr %q, want it to hold %q", args, hs.err.String(), want)
 		}
+		if strings.Contains(hs.err.String(), "~") {
+			t.Errorf("%v: the refusal carries the hint about '~': %q", args, hs.err.String())
+		}
 	}
 	if err := os.Chmod(d, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if got := leftIn(t, d); len(got) != 0 {
 		t.Errorf("left %v", got)
+	}
+}
+
+// closedForRoot makes a mode-0000 directory in dir and returns it with a hook
+// that stands for the identity switch of asCaller: inside the function it runs
+// the directory can be searched (the caller owns it), outside it cannot (root
+// mapped to an unprivileged account by root_squash). The switch itself needs
+// root, so it cannot be done here (withFSIdentity is tested with the system
+// calls injected, TestWithFSIdentity): what is tested is that the check's file
+// system calls run inside the hook and the root variant's do not. calls counts
+// the runs.
+func closedForRoot(t *testing.T, dir string) (closed string, hook func(func() error) error, calls *int) {
+	t.Helper()
+	if os.Geteuid() == 0 {
+		t.Skip("root searches a directory without the search permission, so there is no refusal to see")
+	}
+	closed = filepath.Join(dir, "closed")
+	if err := os.Mkdir(closed, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(closed, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(closed, 0o700) })
+	n := 0
+	return closed, func(fn func() error) error {
+		n++
+		if err := os.Chmod(closed, 0o700); err != nil {
+			return err
+		}
+		defer func() { _ = os.Chmod(closed, 0o000) }()
+		return fn()
+	}, &n
+}
+
+// The check of the commands that write as the caller runs as the caller: a
+// home others cannot search is no obstacle to it, where the root variant,
+// which the commands that write as root keep, is refused.
+func TestOutPathAsCallerSearchesAsTheCaller(t *testing.T) {
+	inv, sb := outInv(t)
+	closed, hook, calls := closedForRoot(t, sb.home)
+	inv.hooks.asCallerRun = hook
+	path := filepath.Join(closed, "x")
+
+	if _, err := inv.outPath("--out", path); err == nil || !strings.Contains(err.Error(), "cannot be resolved (Permission denied)") {
+		t.Errorf("as root: %v, want the refusal", err)
+	}
+	if *calls != 0 {
+		t.Errorf("the root variant ran %d times as the caller", *calls)
+	}
+	got, err := inv.outPathAsCaller("--out", path)
+	if err != nil || got != path {
+		t.Errorf("as the caller: %q, %v; want %q", got, err, path)
+	}
+	if *calls != 1 {
+		t.Errorf("the check ran as the caller %d times, want 1", *calls)
+	}
+	// the other rules are the same: a spelling is refused with the hint,
+	// outside the home is refused, whoever asks
+	for _, c := range []struct{ p, want string }{{"~/x", "starts with '~'"}, {"/etc/x", "not inside your home"}} {
+		if _, err := inv.outPathAsCaller("--out", c.p); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v", c.p, err)
+		}
+	}
+	// a failure of the hook's own (the identity not taken) is a refusal too
+	inv.hooks.asCallerRun = func(func() error) error { return os.ErrPermission }
+	if _, err := inv.outPathAsCaller("--out", path); err == nil || !strings.Contains(err.Error(), "cannot be resolved (Permission denied)") {
+		t.Errorf("a failed switch: %v", err)
+	}
+}
+
+// The three commands that write as the caller run the check as the caller
+// (the hook stands for the identity switch, see closedForRoot): 'plan' gets
+// past the check in a directory that root, mapped by root_squash, cannot
+// search; 'support-bundle' names a folder of the home, so it is only seen to
+// take the hook.
+func TestOutPathCommandsThatWriteAsTheCallerCheckAsTheCaller(t *testing.T) {
+	b := newPullBox(t)
+	b.devices([3]string{"lab-j", "192.168.1.20", "juniper"})
+	closed, hook, calls := closedForRoot(t, b.sb.homePath("."))
+	b.sb.hooks.asCallerRun = hook
+	path := filepath.Join(closed, "p.txt")
+
+	b.run("device", "config", "plan", "lab-j", "--out", path)
+	if strings.Contains(b.sb.stderr(), "cannot be resolved") || *calls == 0 {
+		t.Errorf("plan --out: exit %d, %d runs as the caller: %q", b.sb.code, *calls, b.sb.stderr())
+	}
+	*calls = 0
+	b.run("device", "config", "plan", "lab-j", "--out-dir", filepath.Join(closed, "d"))
+	if strings.Contains(b.sb.stderr(), "cannot be resolved") || *calls == 0 {
+		t.Errorf("plan --out-dir: exit %d, %d runs as the caller: %q", b.sb.code, *calls, b.sb.stderr())
+	}
+	*calls = 0
+	b.run("device", "support-bundle", "lab-j")
+	if strings.Contains(b.sb.stderr(), "cannot be resolved") || *calls == 0 {
+		t.Errorf("support-bundle: exit %d, %d runs as the caller: %q", b.sb.code, *calls, b.sb.stderr())
+	}
+}
+
+// 'device reports export --out' too (a report that does not exist is no
+// matter: the check comes first).
+func TestOutPathReportsExportChecksAsTheCaller(t *testing.T) {
+	b := newReportsBox(t)
+	closed, hook, calls := closedForRoot(t, b.sb.homePath("."))
+	b.sb.hooks.asCallerRun = hook
+	b.as("alice", asSuper, "export", "anything", "--out", filepath.Join(closed, "x.csv"))
+	if strings.Contains(b.sb.stderr(), "cannot be resolved") || *calls == 0 {
+		t.Errorf("export --out: exit %d, %d runs as the caller: %q", b.sb.code, *calls, b.sb.stderr())
 	}
 }
