@@ -72,13 +72,17 @@ their own tree lists.
 The example is 0.2.1 (the release before it 0.2.0); replace it throughout.
 
 A release runs with qargi, the git-flow release tooling the maintainer
-uses. Its commands are plans: each prints what it will do before anything is
-applied. The division of labour is fixed. The maintainer's tooling drives the
-git-flow steps (verify, start, push, finish) and the after-steps that build,
-publish and clean up; the key holder alone signs; and every merge into
-`develop` or `master`, every push and every tag is a plan that needs the
-maintainer's explicit go-ahead. The hand commands are kept at the end, for a
-release made without the tooling.
+uses. The commands that change something (`release start`, `push`, `finish`
+and `publish`, and `branch prune`) are plans: each prints what it will do
+before anything is applied. `release verify`, `release assets` and `release
+step` print no plan. The division of labour is fixed. The maintainer's
+tooling drives the git-flow steps (verify, start, push, finish) and the
+after-steps that build, publish and clean up; the key holder alone signs; and
+every merge into `develop` or `master`, every push, every tag, every publish
+and every prune is a plan that needs the maintainer's explicit go-ahead
+(`start`, `finish` and `publish` also take a plan token; `push` opens the
+pull request; `prune` deletes branches). The hand commands are kept at the end,
+for a release made without the tooling.
 
 Before the first step, bring the tacquito fork's `main` up to upstream
 (`patches/README.md`, Following upstream) and run the gates on it: a host
@@ -118,22 +122,24 @@ Also before the first step, on `develop`:
   (step 7) uses them as the release's text.
 
 The steps, in order. The first four are the git-flow steps; the rest are the
-after-steps, each recorded with `qargi release step 0.2.1 <name>` once its
-proof holds.
+after-steps. Six of them are recorded with `qargi release step 0.2.1 <name>`
+once their proof holds, and they are exactly these: `assets`, `sign`,
+`publish`, `reproducible`, `site` and `prune`. Step 9, the check on a host, is
+not one of them: it is the maintainer's own check, and nothing records it.
 
 | # | Step | Who | What proves it |
 |---|---|---|---|
 | 1 | verify | the maintainer's tooling | a passing release gate at the head of `develop` |
 | 2 | start | the maintainer's tooling, on the maintainer's go-ahead | `release/0.2.1` exists, its first commit dates the release |
-| 3 | push | the maintainer's tooling | the checks of the pull request into `master` are green |
+| 3 | push | the maintainer's tooling, on the maintainer's go-ahead | the checks of the pull request into `master` are green |
 | 4 | finish | the maintainer's tooling, on the maintainer's go-ahead | `git describe master` prints `0.2.1`; `master`, `develop` and the tag are pushed |
 | 5 | assets | the maintainer's tooling | the worktree that `release assets` prints holds the two binaries and `SHA256SUMS` |
 | 6 | sign | the key holder only | `release sign` records that `make release-verify` passed |
-| 7 | publish | the maintainer's tooling | the GitHub release holds the four files |
+| 7 | publish | the maintainer's tooling, on the maintainer's go-ahead | the GitHub release holds the four files |
 | 8 | reproducible | the maintainer's tooling | the `release-reproducible` run of the tag is green |
-| 9 | check on a host | the maintainer | `tacctl upgrade` installs the verified binary |
+| 9 | check on a host | the maintainer, not recorded | `tacctl upgrade` installs the verified binary |
 | 10 | site | the maintainer's tooling | the `build` check of the `gh-pages` pull request is green, then it is merged |
-| 11 | prune | the maintainer's tooling | no merged branch is left, local or remote |
+| 11 | prune | the maintainer's tooling, on the maintainer's go-ahead | no merged branch is left, local or remote |
 
 ### 1. Verify
 
@@ -168,7 +174,8 @@ There is no `VERSION` file: the version is the CHANGELOG heading, the tag and
 qargi release push 0.2.1
 ```
 
-Pushes the release branch and opens the pull request into `master`, so that
+A plan, on the maintainer's go-ahead. Pushes the release branch and opens the
+pull request into `master`, so that
 the `test` workflow runs on the release commit (the date changes and the
 notes) before the tag exists; the workflow runs on a pull request and on a
 push to `develop`, not on a push to `master`, whose files are the same as
@@ -296,9 +303,9 @@ make release-verify ALLOWED_SIGNERS=/tmp/trial-signers
 qargi release publish 0.2.1 --notes-file docs/release-notes-0.2.1.md
 ```
 
-Creates the GitHub release of the tag with the four assets (the two
-binaries, `SHA256SUMS` and `SHA256SUMS.sig`) in one step, and the release
-notes as its text. All four go together: the `release-reproducible` workflow
+A plan, a token and the maintainer's go-ahead. Creates the GitHub release of
+the tag with the four assets (the two binaries, `SHA256SUMS` and
+`SHA256SUMS.sig`) in one step, and the release notes as its text. All four go together: the `release-reproducible` workflow
 starts on the publish and needs the signed sums.
 
 A release's title is always `tacctl <tag>` (`tacctl 0.2.1`), never the bare
@@ -418,8 +425,8 @@ passed.
 qargi branch prune
 ```
 
-Deletes the branches that are merged (the release's feature and agent
-branches, local and remote), as a plan like the others.
+A plan, on the maintainer's go-ahead, since it deletes branches: the ones
+that are merged (the release's feature and agent branches, local and remote).
 
 ## A hotfix
 
@@ -467,7 +474,15 @@ been exercised with the tooling yet, so read each plan before approving it.
 
 ## If the release tooling is unavailable (by hand)
 
-A release can be made without qargi. The git-flow steps 2 to 4 by hand:
+A release can be made without qargi. First the gate (step 1) and the notes
+check, on `develop`:
+
+```sh
+GATE_TMPFS=1 make gate-ci
+tests/tools/release-notes-check.sh 0.2.1
+```
+
+Then the git-flow steps 2 to 4 by hand:
 
 ```sh
 git checkout develop && git pull
@@ -480,10 +495,15 @@ git commit -am "docs: 0.2.1 release date"
 git push -u origin release/0.2.1
 gh pr create --base master --head release/0.2.1 --title "0.2.1" --body "Release 0.2.1"
 gh pr checks --watch          # the Go tests on the release commit; all green before the tag
+tests/tools/release-preflight.sh 0.2.1   # the release metadata (step 4); finish only when it passes
 git flow release finish -m "Release 0.2.1" 0.2.1
 git tag -f -a 0.2.1 -m "Release 0.2.1" master   # git-flow writes "Release 0.2.1 0.2.1"
 git describe master                               # 0.2.1
 ```
+
+The `sed` of `man/tacctl.1` sets the date and the version of its `.TH` line,
+which must carry the same date and version as the CHANGELOG heading
+(`tests/tools/release-preflight.sh` checks that they match).
 
 The tag is made and checked locally (`git tag -f`) and pushed once, with the
 signed assets already built from it, because a pushed tag is final. Build
@@ -501,7 +521,7 @@ gh release create 0.2.1 --verify-tag --title "tacctl 0.2.1" \
 
 The pull request closes by itself when `master` is pushed; delete the
 remote branch then: `git push origin --delete release/0.2.1`. Then steps 8
-to 10 as above. A host that upgrades between the push and the upload simply
+to 11 as above. A host that upgrades between the push and the upload simply
 builds from source (`could not download SHA256SUMS`).
 
 A hotfix by hand: `git flow hotfix start 0.2.6` (the branch is
