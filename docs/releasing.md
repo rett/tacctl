@@ -96,9 +96,9 @@ the fork catches up.
 Also before the first step, on `develop`:
 
 - **The rollback target.** Every release ships `tacctl rollback <previous
-  release>` (0.2.17 to 0.2.27 each did). Check that the release before this
-  one is a constant in `internal/lifecycle/rollback.go` (`RollbackTarget0227`
-  for 0.2.28) and is the one the refusal names "(the release before this
+  release>` (0.2.17 to 0.2.28 each did). Check that the release before this
+  one is a constant in `internal/lifecycle/rollback.go` (`RollbackTarget0228`
+  for 0.2.29) and is the one the refusal names "(the release before this
   one)" (`internal/lifecycle/rollback_test.go`), that the `rollback` entry of
   `man/tacctl.1` lists it the same way, that the CHANGELOG has its item, and
   that `const rollbackFrom` in `internal/cli/rollback.go` is this release (the

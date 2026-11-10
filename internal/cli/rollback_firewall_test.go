@@ -55,7 +55,7 @@ func TestRollbackRemovesTheFirewall(t *testing.T) {
 		"run no verb that changes the holds, their device or host names, the listeners or the setting ('tacctl breakglass hold|release', 'device address', 'device|host rename', 'device rename --replace', 'backup restore', 'server listen', 'config breakglass-firewall')",
 		"each writes the table, its rules file and the boot unit again, and the setting 0.2.23 refuses",
 		// the key was set: the apply took a snapshot, and the next steps say where the state is
-		"The snapshot the rollback took first (the newest entry of 'tacctl backup list') holds the 0.2.28 state. Restore it with 0.2.28 only:",
+		"The snapshot the rollback took first (the newest entry of 'tacctl backup list') holds the 0.2.29 state. Restore it with 0.2.29 only:",
 		"0.2.23's restore refuses a tacctl.yaml with a key it does not know.",
 	} {
 		if !strings.Contains(out, want) {

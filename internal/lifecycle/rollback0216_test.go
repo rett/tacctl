@@ -187,7 +187,7 @@ func TestCheckRollbackVersion0216(t *testing.T) {
 			t.Errorf("%s: %q %v", ok, v, err)
 		}
 	}
-	for _, bad := range []string{"0.2.15", "0.2.10", "0.2.28", "0.2.160", "0.2.170"} {
+	for _, bad := range []string{"0.2.15", "0.2.10", "0.2.29", "0.2.160", "0.2.170"} {
 		if _, err := CheckRollbackVersion(bad); err == nil {
 			t.Errorf("%s was accepted", bad)
 		}
