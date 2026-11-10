@@ -159,9 +159,13 @@ scp notes.txt alice@tacacs.example.net:
   another size (superusers have none until one is set), and the reports and
   support bundles count. A write over it is refused whole. A transfer may be
   slowed by a rate a superuser set; it waits and is not refused.
-- **New files are private.** The console's umask is 077: a new file is 0600
-  and a new directory 0700, so a file you upload with `scp` has no executable
-  bit. Set another mode afterwards (`chmod` in `sftp`).
+- **New files are private.** The console's umask is 077: a new file gets
+  the mode your client asks for, without the group and other bits, so a
+  script uploaded at 0755 is 0700 and keeps its execute bit, and a file at
+  0644 is 0600. A client that asks no mode gets 0600. A new directory is
+  0700, whatever the client asks. `scp -p` keeps the mode of the source
+  (0755). Set another mode afterwards with `chmod` in `sftp`. A file that
+  already exists keeps its mode.
 - **A transfer lasts as long as the connection.** The idle timeout of the
   console does not apply to it. A listing is in the order of the file system,
   not sorted.
