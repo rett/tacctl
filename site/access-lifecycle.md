@@ -9,7 +9,7 @@ doctype: how-to
 
 # Access Lifecycle
 
-*Joiners, movers and leavers · Checked against tacctl 0.2.28*
+*Joiners, movers and leavers · Checked against tacctl 0.2.29*
 
 [Printable PDF](../pdf/tacctl-access-lifecycle.pdf){: .pdf-link }
 
@@ -80,12 +80,23 @@ tacctl user email alice clear                # remove it
   `<redacted>`, and the `user email` line says only `op=set` or `op=clear`.
 
 Names are lower case: letters, digits, `_` and `-` (`alice-smith`). A period
-is refused, because every user has an account on the tacctl server and a
-period cannot be part of a Linux account name. Every `user` verb, `passwd`
-and `config linux uid` refuse it, whether the user exists or not, with
-`Username must contain only letters, numbers, underscores and hyphens (a
-period cannot be part of a Linux account name).` `root` and `tacquito` are
-reserved.
+is refused, because a user gets an account on the tacctl server only when
+the name is a Linux account name, and a period cannot be part of one. Every
+`user` verb, `passwd` and `config linux uid` refuse it, whether the user
+exists or not, with `Username must contain only letters, numbers,
+underscores and hyphens (a period cannot be part of a Linux account name).`
+`root` and `tacquito` are reserved.
+
+A new name is at most 32 characters, the longest a Linux account name can
+be (0.2.29). `user add` and the new name of `user rename` refuse a longer
+one and change nothing: `Username '<name>' is 33 characters; a user name is
+at most 32 (the longest a Linux account name can be).` A user an earlier
+release stored with a longer name keeps working (shown, changed, renamed
+and removed as before; `backup restore` and `tacctl upgrade` carry it), but
+has no account on the server or on a host; `tacctl config validate` lists it
+under `Names:`. Rename it with `tacctl user rename <name> <shorter name>`. A
+name that starts with a digit or `-` (`1alice`) is still accepted, but has
+no account either.
 
 **A user stored with a period: the upgrade renames it (0.2.26).** 0.2.20 and
 0.2.21 accepted a period, so a store from then can still hold a name with one
@@ -267,8 +278,9 @@ make the change; otherwise the command says why and sets nothing. A user
 cannot when:
 
 - the server is not enrolled (`tacctl host enroll --local`);
-- the name has upper case letters, so it is no Linux account name (a
-  leftover from before new names were lower case; rename it);
+- the name is no Linux account name: it has upper case letters or more
+  than 32 characters (a leftover from an earlier release), or starts with
+  a digit or `-` (rename it);
 - the user is disabled;
 - the user's group has no privilege level;
 - the server is still registered in a scope it shares with devices (an

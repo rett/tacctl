@@ -9,7 +9,7 @@ doctype: reference
 
 # Quick Reference
 
-*The most common tacctl commands on one card · Checked against tacctl 0.2.28*
+*The most common tacctl commands on one card · Checked against tacctl 0.2.29*
 
 [Printable PDF](../pdf/tacctl-quick-reference.pdf){: .pdf-link }
 
@@ -38,6 +38,7 @@ usage. In the console and `tacctl shell`, `?` shows help.
 | List / filter | `tacctl device list [--scope s] [--vendor v] [--stale] [--differs]` (`--differs`: O) | R |
 | Detail | `tacctl device show <n>` | R |
 | Connect | `tacctl ssh <n> [-- <cmd>]` | R |
+| Connect as a local account of the device | `tacctl ssh <n> --login <local-user>` | E |
 | Notices | `tacctl device notice list` | R |
 | Health check | `tacctl device check <n> [--sources]` | O |
 | Unregistered | `tacctl device discover [--snmp]` | O |
@@ -144,7 +145,7 @@ usage. In the console and `tacctl shell`, `?` shows help.
 | Diff / restore | `tacctl backup diff [ts]` · `backup restore <ts>` | S |
 | Keep / unkeep a snapshot | `tacctl backup keep <ts>` · `backup unkeep <ts>` | S |
 | Put back email or SNMPv3 users after a rollback | `tacctl backup recover <ts> [--only email,snmp-users]` | S |
-| Prepare the release before this one (dry run) | `tacctl rollback 0.2.27` | S |
+| Prepare the release before this one (dry run) | `tacctl rollback 0.2.28` | S |
 | Audit trail | `journalctl -t tacctl -t tacctl-console` | — |
 
 ## 9. Exit codes

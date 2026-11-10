@@ -10,7 +10,7 @@ commands: historical
 
 # What's New for Operators
 
-*The changes in each tacctl release that people on shift will notice · Checked against tacctl 0.2.28*
+*The changes in each tacctl release that people on shift will notice · Checked against tacctl 0.2.29*
 
 [Printable PDF](../pdf/tacctl-whats-new-for-operators.pdf){: .pdf-link }
 
@@ -24,7 +24,31 @@ first.
 
 ---
 
-## 1. tacctl 0.2.28
+## 1. tacctl 0.2.29
+
+Released 2026-11-09 ·
+[Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.29.md)
+
+| Change | What it means on shift | Page |
+|---|---|---|
+| **An uploaded script keeps its execute bit** | A new file uploaded through the console gets the mode the client asks for, less the umask 077: a script at 0755 is 0700, a file at 0644 is 0600. A client that asks no mode still gets 0600, and a new directory is 0700. `scp -p` keeps the mode of the source (0755). A file that already exists keeps its mode | [Getting Started](getting-started.md) §1.4 |
+| **`tacctl ssh <device> --login <local-user>`** | A session as one of the device's own accounts (also `device ssh`, and `ssh sw1 --login admin` in the console): the way in while break-glass is held. Engineer tier and up, registered devices in your scopes only (a host is refused), and the device needs a pinned host key. The device asks for the account's password; tacctl never asks for it or caches it. The audit lines carry `login=<local-user>` | [Connecting to Devices](connecting-to-devices.md) §2, [Break Glass](break-glass.md) §3 |
+| **A new user name is at most 32 characters** | `user add` and the new name of `user rename` refuse a longer one (`Username '<name>' is 33 characters; a user name is at most 32 ...`) and change nothing. A longer name from an earlier release keeps working but has no Linux account; `config validate` warns of it under `Names:` and names the rename | [Access Lifecycle](access-lifecycle.md) §2, [Troubleshooting](troubleshooting.md) §8 |
+| `tacctl rollback 0.2.28` | The release before this one is a target (fifteen in all). It converts nothing: no key or field removed, no snapshot, no `--yes`, no closing note | [Backups and Undo](backups-and-undo.md) §5 |
+
+> **Before upgrading from 0.2.28:**
+>
+> - `tacctl upgrade` converts nothing in this release. A user whose name is
+>   longer than 32 characters is carried unchanged; `tacctl config validate`
+>   lists it, and `tacctl user rename <name> <shorter name>` gives it an
+>   account.
+> - After `tacctl rollback 0.2.28` and the install of 0.2.28, a new uploaded
+>   file is 0600 again whatever the client asks; the files uploaded in
+>   between keep their mode.
+
+---
+
+## 2. tacctl 0.2.28
 
 Released 2026-11-09 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.28.md)
@@ -64,7 +88,7 @@ Released 2026-11-09 ·
 
 ---
 
-## 2. tacctl 0.2.27
+## 3. tacctl 0.2.27
 
 Released 2026-11-09 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.27.md)
@@ -102,7 +126,7 @@ Released 2026-11-09 ·
 
 ---
 
-## 3. tacctl 0.2.26
+## 4. tacctl 0.2.26
 
 Released 2026-11-06 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.26.md)
@@ -151,7 +175,7 @@ Released 2026-11-06 ·
 
 ---
 
-## 4. tacctl 0.2.25
+## 5. tacctl 0.2.25
 
 Released 2026-11-05 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.25.md)
@@ -178,7 +202,7 @@ Released 2026-11-05 ·
 
 ---
 
-## 5. tacctl 0.2.24
+## 6. tacctl 0.2.24
 
 Released 2026-11-05 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.24.md)
@@ -221,7 +245,7 @@ Released 2026-11-05 ·
 >   device whose `single-connection` was removed, 0.2.23's `diff` and `plan`
 >   show the line as missing, and applying that plan types it again.
 
-## 6. tacctl 0.2.23
+## 7. tacctl 0.2.23
 
 Released 2026-10-31 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.23.md)
@@ -258,7 +282,7 @@ Released 2026-10-31 ·
 >   again. The rollback is refused while an emergency lockdown has enrolled
 >   hosts: lift it and sync the hosts first.
 
-## 7. tacctl 0.2.22
+## 8. tacctl 0.2.22
 
 Released 2026-10-29 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.22.md)
@@ -319,7 +343,7 @@ sub-commands, and the one-letter form of `--yes` is refused:
 >   date until its first render writes its own comment, which restarts
 >   tacquito once; the rollback itself restarts nothing.
 
-## 8. tacctl 0.2.21
+## 9. tacctl 0.2.21
 
 Released 2026-10-28 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.21.md)
@@ -340,7 +364,7 @@ Released 2026-10-28 ·
 > `config validate` stop with one line. **After it,** check the line about
 > the machine's own login, and run `tacctl host sync <server>` as before.
 
-## 9. tacctl 0.2.20
+## 10. tacctl 0.2.20
 
 Released 2026-10-28 ·
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.20.md)
@@ -373,7 +397,7 @@ sub-commands:
 > and not before. No existing user must change their password until a
 > superuser says so.
 
-## 10. tacctl 0.2.19
+## 11. tacctl 0.2.19
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.19.md)
 
@@ -386,7 +410,7 @@ sub-commands:
 | Host names may contain dots | `tacctl host rename web1 web1.example.net` works | [Linux Host Operations](linux-host-operations.md) |
 | Unknown commands answered first | A mistyped command is answered before `sudo` asks for a password | — |
 
-## 11. tacctl 0.2.18
+## 12. tacctl 0.2.18
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.18.md)
 
@@ -405,7 +429,7 @@ you may have meant (`tacctl enroll` suggests `device enroll` and
 `host enroll`). Every tier can run `device notice list` and
 `device client-config`.
 
-## 12. tacctl 0.2.17
+## 13. tacctl 0.2.17
 
 [Full release notes](https://github.com/rett/tacctl/blob/master/docs/release-notes-0.2.17.md)
 
@@ -421,7 +445,7 @@ you may have meant (`tacctl enroll` suggests `device enroll` and
 
 ---
 
-## 13. Older releases
+## 14. Older releases
 
 Releases 0.2.0 to 0.2.16 are listed on the
 [releases page](https://github.com/rett/tacctl/releases), and every change is

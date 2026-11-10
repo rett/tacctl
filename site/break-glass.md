@@ -9,7 +9,7 @@ doctype: how-to
 
 # Break Glass
 
-*Local emergency accounts, and holding a device or host back from the server · Checked against tacctl 0.2.28*
+*Local emergency accounts, and holding a device or host back from the server · Checked against tacctl 0.2.29*
 
 [Printable PDF](../pdf/tacctl-break-glass.pdf){: .pdf-link }
 
@@ -162,6 +162,18 @@ refuses the connection before tacquito sees it.
 | WTI | Works only if the unit's TACACS+ *Fallback Local* is `On`. With `Off`, nobody gets in until you release the hold; use the serial console. |
 | Linux host | The host's local administrator and its console work. tacctl users cannot log in or use `sudo` there. |
 
+From the tacctl server (its console included), an engineer or superuser
+reaches a held device as its local account with `--login` (0.2.29):
+
+```bash
+tacctl ssh sw1 --login netadmin            # the device asks for netadmin's password
+```
+
+The device needs a pinned host key and must be in one of your scopes. The
+device asks for the account's password itself; tacctl never asks for it or
+keeps it. The session's audit lines carry `login=netadmin`. An enrolled host
+is refused: hosts are reached as you.
+
 The engineer can print the back-out for the failed change with
 `tacctl device config plan sw1 --backout`.
 
@@ -175,6 +187,8 @@ The engineer can print the back-out for the failed change with
 - `host sync`, `enroll`, `move`, `unenroll` and `forget` refuse a held host,
   and `host sync --all` skips it (and names it).
 - `tacctl ssh` warns you and connects; your tacctl login will fail there.
+  With `--login <local-user>` (§3) the warning says you log in as the
+  device's local account, and the session goes on.
 
 ---
 
@@ -206,6 +220,7 @@ held address again ([Backups and Undo](backups-and-undo.md) §5).
 | Record Junos `root` | `tacctl scope breakglass <scope> add root` | Superuser |
 | Hold | `tacctl breakglass hold <name> --reason "<ticket>"` | Superuser |
 | List holds | `tacctl breakglass list` | Engineer (own scopes) |
+| Log in to a held device as a local account | `tacctl ssh <name> --login <local-user>` | Engineer (own scopes) |
 | Release | `tacctl breakglass release <name>` | Superuser |
 | Set what the server does with a held address's TCP connections | `tacctl config breakglass-firewall [reject\|drop\|off]` | Superuser |
 | Back-out for the failed change | `tacctl device config plan <name> --backout` | Engineer |

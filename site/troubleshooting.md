@@ -9,7 +9,7 @@ doctype: how-to
 
 # Troubleshooting
 
-*Symptom-first fixes for login and device problems · Checked against tacctl 0.2.28*
+*Symptom-first fixes for login and device problems · Checked against tacctl 0.2.29*
 
 [Printable PDF](../pdf/tacctl-troubleshooting.pdf){: .pdf-link }
 
@@ -152,7 +152,8 @@ retry, run `tacctl log tail 50`, then set the log level back.
 | `sftp` or `scp` says only `Failure` on an upload | The write would take your home over its quota (256M by default; reports and support bundles count). Remove files, or ask a superuser for a larger quota. What was written before the refusal stays. `reason=quota` is in the audit log ([Audit and Compliance](audit-and-compliance.md) §3) |
 | `the tacctl console does not run programs or shell commands; file transfer is SFTP only (sftp, scp of OpenSSH 9 or later)` | You used `scp -O`, `rsync` or a program. Use `sftp`, or the `scp` of OpenSSH 9 or later without `-O` ([Getting Started](getting-started.md) §1.4) |
 | `A password change is required of '<user>'` | Only `passwd`, `version` and `help` run until you change your password: `tacctl passwd` |
-| A user cannot log in to the tacctl server or its console | Every user can, unless disabled or in a group of tier none (`tacctl user show <name>`). The account exists after the next `tacctl host sync <server>`. A name with upper case letters is no Linux account name and gets none: `tacctl user rename <name> <new-name>`. |
+| A user cannot log in to the tacctl server or its console | Every user can, unless disabled or in a group of tier none (`tacctl user show <name>`). The account exists after the next `tacctl host sync <server>`. A name with upper case letters or more than 32 characters (from an earlier release), or that starts with a digit or `-`, is no Linux account name and gets none: `tacctl user rename <name> <new-name>`. |
+| `Username '<name>' is 33 characters; a user name is at most 32 (the longest a Linux account name can be).` | `user add` or the new name of `user rename` is longer than 32 characters. Nothing was changed; choose a shorter name ([Access Lifecycle](access-lifecycle.md) §2). |
 | `Username must contain only letters, numbers, underscores and hyphens (a period cannot be part of a Linux account name).` | A `user` verb, `passwd` or `config linux uid` was given a name with a period, whether the user exists or not. Use `-` or `_`. |
 | `user 'alice.smith': invalid name (a period cannot be part of a Linux account name; 'tacctl upgrade' renames such a user)` on every write | The store still holds a user with a period (an upgrade that stopped, or a restored snapshot of 0.2.25 or earlier). Run `tacctl upgrade`, which renames the user; every write fails until then ([Access Lifecycle](access-lifecycle.md) §2). |
 | `The upgrade's rename of user alice.smith to alice_smith is not finished: run 'tacctl upgrade' first. Nothing was changed.` | An upgrade stopped after it renamed the user in the store. `tacctl upgrade` finishes the rename; `user add`, `user remove`, `user rename`, `store import` and the restore of an old-style backup refuse until it has. |

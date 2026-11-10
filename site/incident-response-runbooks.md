@@ -9,7 +9,7 @@ doctype: how-to
 
 # Incident Response Runbooks
 
-*Step-by-step security and availability runbooks · Checked against tacctl 0.2.28*
+*Step-by-step security and availability runbooks · Checked against tacctl 0.2.29*
 
 [Printable PDF](../pdf/tacctl-incident-response-runbooks.pdf){: .pdf-link }
 
@@ -170,7 +170,9 @@ tacctl breakglass hold sw1 --reason "INC-4821 failed AAA paste"
    and the local break-glass accounts for the scope
    (`tacctl scope breakglass site-a`).
 2. Log in with the local account. How, per vendor (Cisco, Junos, WTI):
-   [Break Glass](break-glass.md) §3.
+   [Break Glass](break-glass.md) §3. From the tacctl server an engineer
+   types `tacctl ssh sw1 --login <local-user>`; the device asks for that
+   account's password.
 3. Fix or back out. The engineer can print the back-out with
    `tacctl device config plan sw1 --backout`.
 4. Release, then verify:

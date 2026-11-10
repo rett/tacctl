@@ -9,7 +9,7 @@ doctype: how-to
 
 # Linux Host Operations
 
-*Keeping enrolled Linux hosts in step · Checked against tacctl 0.2.28*
+*Keeping enrolled Linux hosts in step · Checked against tacctl 0.2.29*
 
 [Printable PDF](../pdf/tacctl-linux-host-operations.pdf){: .pdf-link }
 
@@ -86,7 +86,7 @@ What a sync does:
 
 | User state | Effect on the host |
 |---|---|
-| New in the host's scope | Account created (with a UID consistent across hosts). A user name with upper case letters (from before new names were lower case) is skipped with a warning: it is no Linux account name, and `tacctl user rename` fixes it. |
+| New in the host's scope | Account created (with a UID consistent across hosts). A user name with upper case letters or more than 32 characters (from an earlier release), or that starts with a digit or `-`, is skipped with a warning: it is no Linux account name, and `tacctl user rename` fixes it. |
 | Disabled | Account expired: no login, ssh keys included. Files kept. |
 | Must change the password | As disabled, on every host but the tacctl server, until the user changes it there; the next sync opens it again. `host show` counts it with the disabled accounts. |
 | Re-enabled | Restored |

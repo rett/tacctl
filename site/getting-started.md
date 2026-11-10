@@ -9,7 +9,7 @@ doctype: tutorial
 
 # Getting Started
 
-*Your first login, the console and the shell, and where to go next · Checked against tacctl 0.2.28*
+*Your first login, the console and the shell, and where to go next · Checked against tacctl 0.2.29*
 
 [Printable PDF](../pdf/tacctl-getting-started.pdf){: .pdf-link }
 
@@ -131,7 +131,9 @@ Ctrl-C at the prompt ends the line with status 130 and starts nothing; an
 empty answer stores nothing. A wrong password stays only until the first ssh
 that ends with status 255, which forgets it. Without a terminal, for a device
 with no pinned host key, or with an option of ssh's own after `--`, ssh asks
-for the password itself, as it always did, and nothing is cached.
+for the password itself, as it always did, and nothing is cached. A line
+with `--login <local-user>` (a device's own account) never uses the cache:
+the device asks for that account's password, and it is not kept.
 
 ### 1.4 File transfer: your reports and bundles (0.2.28)
 
@@ -159,9 +161,13 @@ scp notes.txt alice@tacacs.example.net:
   another size (superusers have none until one is set), and the reports and
   support bundles count. A write over it is refused whole. A transfer may be
   slowed by a rate a superuser set; it waits and is not refused.
-- **New files are private.** The console's umask is 077: a new file is 0600
-  and a new directory 0700, so a file you upload with `scp` has no executable
-  bit. Set another mode afterwards (`chmod` in `sftp`).
+- **New files are private.** The console's umask is 077: a new file gets
+  the mode your client asks for, without the group and other bits, so a
+  script uploaded at 0755 is 0700 and keeps its execute bit, and a file at
+  0644 is 0600. A client that asks no mode gets 0600. A new directory is
+  0700, whatever the client asks. `scp -p` keeps the mode of the source
+  (0755). Set another mode afterwards with `chmod` in `sftp`. A file that
+  already exists keeps its mode.
 - **A transfer lasts as long as the connection.** The idle timeout of the
   console does not apply to it. A listing is in the order of the file system,
   not sorted.
