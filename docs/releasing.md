@@ -74,15 +74,17 @@ The example is 0.2.1 (the release before it 0.2.0); replace it throughout.
 A release runs with qargi, the git-flow release tooling the maintainer
 uses. The commands that change something (`release start`, `push`, `finish`
 and `publish`, and `branch prune`) are plans: each prints what it will do
-before anything is applied. `release verify`, `release assets` and `release
-step` print no plan. The division of labour is fixed. The maintainer's
+before anything is applied. `release verify`, `release assets`, `release
+step` and `release sign` print no plan (`sign` is run by the key holder on
+their own terminal). The division of labour is fixed. The maintainer's
 tooling drives the git-flow steps (verify, start, push, finish) and the
 after-steps that build, publish and clean up; the key holder alone signs; and
 every merge into `develop` or `master`, every push, every tag, every publish
 and every prune is a plan that needs the maintainer's explicit go-ahead
-(`start`, `finish` and `publish` also take a plan token; `push` opens the
-pull request; `prune` deletes branches). The hand commands are kept at the end,
-for a release made without the tooling.
+(`start`, `push`, `finish`, `publish` and `prune` each print a plan and take
+a plan token with `--plan` and the go-ahead with `--approved`; `push` opens
+the pull request; `prune` deletes branches). The hand commands are kept at
+the end, for a release made without the tooling.
 
 Before the first step, bring the tacquito fork's `main` up to upstream
 (`patches/README.md`, Following upstream) and run the gates on it: a host
