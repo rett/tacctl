@@ -659,3 +659,25 @@ func TestOpenModeWithoutOwnerWriteFailedOpenRestoresTheMode(t *testing.T) {
 		t.Errorf("mode %v, want -r--r--r--", got)
 	}
 }
+
+// A change of the permissions made outside the handle (another session, the
+// user's shell) between the data and the close is kept: the close puts the mode
+// asked for back only on a file that still has the mode the open gave it.
+func TestOpenModeWithoutOwnerWriteChmodElsewhereWins(t *testing.T) {
+	setUmask(t, 0o077)
+	home := newHome(t)
+	p := filepath.Join(home, "f")
+	r := newRawConn(t, home)
+	h, code := r.open("f", rawFlagWrite|rawFlagCreat|rawFlagTrunc, rawAttrPerm, permAttrs(0o444))
+	if h == "" {
+		t.Fatalf("open refused: status %d", code)
+	}
+	r.writeAt(h, "data")
+	if err := os.Chmod(p, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	r.closeHandle(h)
+	if got := modeOfFile(t, p); got != 0o640 {
+		t.Errorf("mode %v, want -rw-r-----", got)
+	}
+}

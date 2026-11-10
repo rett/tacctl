@@ -33,9 +33,11 @@ type file struct {
 
 	// restore, with restoring, is the mode the file gets when the handle
 	// closes: the open created it, for a mode without the owner's write bit,
-	// owner-writable (see openNew). Set before the handle is handed out, and
-	// not changed.
+	// owner-writable (see openNew). made is the mode the kernel gave it then:
+	// the file gets restore only while it still has made (see Close). Set
+	// before the handle is handed out, and not changed.
 	restore   uint32
+	made      uint32
 	restoring bool
 
 	mu     sync.Mutex
@@ -46,7 +48,8 @@ type file struct {
 // freshModes is the files of the session that the open created owner-writable
 // and that wait for their mode to be set when the handle closes. A setstat of
 // the permissions of such a file takes it out: the client has said what it
-// wants, and that is not undone at the close.
+// wants, and that is not undone at the close. (A change of the permissions
+// from elsewhere is told apart at the close, by the mode the file has then.)
 type freshModes struct {
 	mu sync.Mutex
 	m  map[inode]*file
@@ -239,7 +242,7 @@ func (s *server) openFile(r *sftp.Request, write bool) (*file, error) {
 		rate:   s.rate,
 	}
 	if restoring {
-		f.restore, f.restoring = asked, true
+		f.restore, f.made, f.restoring = asked, st.Mode&0o777, true
 		s.fresh.add(f)
 	}
 	if f.quota != nil {
@@ -387,6 +390,23 @@ func (f *file) TransferError(err error) {
 	f.mu.Unlock()
 }
 
+// giveRestoredMode sets the mode the client asked for, on the descriptor (the
+// name may have gone elsewhere), if the file still has the mode the open gave
+// it. A file whose mode is another was changed by someone else (a chmod of
+// another session or of the user's shell) after the open, and that is kept: the
+// check and the change are two calls, so a chmod between them is lost, which
+// is as narrow as it can be made.
+func (f *file) giveRestoredMode() error {
+	fi, err := f.f.Stat()
+	if err != nil {
+		return err
+	}
+	if fi.Mode() != os.FileMode(f.made) {
+		return nil
+	}
+	return f.f.Chmod(os.FileMode(f.restore))
+}
+
 // Close closes the file and audits the transfer: an upload for a handle
 // opened to write (with the bytes written), a download for one that was
 // read from (with the bytes read). It is safe to call twice.
@@ -398,9 +418,7 @@ func (f *file) Close() error {
 		}
 		var merr error
 		if f.restoring && f.s.fresh.take(f) {
-			// The mode the client asked for, on the descriptor (the name may
-			// have gone elsewhere), before it is closed.
-			merr = f.f.Chmod(os.FileMode(f.restore))
+			merr = f.giveRestoredMode()
 		}
 		cerr = f.f.Close()
 		if cerr == nil {
