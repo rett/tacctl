@@ -14,8 +14,8 @@ import (
 )
 
 // caseFindings are the names of devices, hosts, users and scopes with upper
-// case, each with its fix, in that order and sorted within a kind (a user over
-// names.UsernameMax is left to lengthFindings). Only the
+// case, each with its fix, in that order and sorted within a kind (a user whose
+// lower-case spelling is no name for a new user is left to userNameFindings). Only the
 // superuser's view has them (a restricted caller is told nothing: what they
 // would name is not theirs). A fix names the lower-case spelling, or <new>
 // when another name of the namespace is equal to it ignoring case.
@@ -85,10 +85,11 @@ func (inv *invocation) caseFindings() []hostFinding {
 				lowers[strings.ToLower(n)]++
 			}
 			for _, n := range set.all {
-				// A user over names.UsernameMax is not offered the lower-case
-				// spelling, which is over the limit too and which 'user
-				// rename' refuses: lengthFindings names the rename for it.
-				if set.kind == "user" && len(n) > names.UsernameMax {
+				// A user whose lower-case spelling a new user could not have
+				// (over names.UsernameMax, or not starting with a letter, or
+				// reserved) is not offered it: 'user rename' would refuse it.
+				// userNameFindings names the rename for such a user, once.
+				if set.kind == "user" && names.CheckNewUsername(strings.ToLower(n)) != nil {
 					continue
 				}
 				if names.HasUpper(n) {
@@ -104,15 +105,22 @@ func (inv *invocation) caseFindings() []hostFinding {
 	return out
 }
 
-// lengthFindings are the users whose name is longer than names.UsernameMax,
-// a user from an earlier release (new names are checked at 'user add' and
-// 'user rename'): each keeps working but has no Linux account, here or on a
-// host. They are warnings in 'config validate' with the verb that renames the
-// user, sorted by name, the superuser's view only. They carry no Kind, so
-// 'config validate --fix-names' (case findings only) does not read them. A user
-// that also has upper case gets this one finding, which says so: the rename it
-// names is the one that fixes both.
-func (inv *invocation) lengthFindings() []hostFinding {
+// userNameFindings are the users from before whose name a new user could not
+// have and for whom caseFindings offers no lower-case rename: a name longer
+// than names.UsernameMax or one that starts with a digit or '-' (a Linux
+// account name does not: the user keeps working but has no account, here or on
+// a host), and a name with upper case whose lower-case spelling 'user rename'
+// would refuse (it starts with '_', which has an account but is not a letter,
+// or is reserved). The rules are those of names.CheckNewUsername (the names
+// are checked at 'user add' and 'user rename' only). They are warnings in
+// 'config validate' with the verb that renames the user to a name of the
+// person's choice, sorted by name, the superuser's view only. They carry no
+// Kind, so 'config validate --fix-names' (case findings only) does not read
+// them. A user that has several of these faults, upper case included, gets
+// this one finding, which says so: the rename it names is the one that fixes
+// all of them, and caseFindings leaves the user out, so that no finding
+// proposes a rename that the creation rules refuse.
+func (inv *invocation) userNameFindings() []hostFinding {
 	if inv.callerScopes().restricted {
 		return nil
 	}
@@ -120,24 +128,65 @@ func (inv *invocation) lengthFindings() []hostFinding {
 	if err != nil {
 		return nil
 	}
-	var long []string
-	for _, n := range m.UserNames() {
-		if len(n) > names.UsernameMax {
-			long = append(long, n)
-		}
-	}
-	sort.Strings(long)
+	users := m.UserNames()
+	sort.Strings(users)
 	var out []hostFinding
-	for _, n := range long {
-		also, andLower := "", ""
-		if names.HasUpper(n) {
-			also, andLower = " and has upper case letters", " and lower case"
+	for _, n := range users {
+		long := len(n) > names.UsernameMax
+		digit := names.StartsWithNoAccountChar(n)
+		upper := names.HasUpper(n)
+		var text string
+		switch {
+		case long || digit:
+			var has, rules []string
+			start := "starts with a digit"
+			if n[0] == '-' {
+				start = "starts with '-'"
+			}
+			switch {
+			case long:
+				has = append(has, "has a name of "+strconv.Itoa(len(n))+" characters")
+				rules = append(rules, "at most "+strconv.Itoa(names.UsernameMax))
+				if digit {
+					has = append(has, start)
+				}
+			default:
+				has = append(has, "has a name that "+start)
+			}
+			if upper {
+				has = append(has, "has upper case letters")
+				rules = append(rules, "lower case")
+			}
+			var must []string
+			if len(rules) > 0 {
+				must = append(must, "are "+joinAnd(rules))
+			}
+			if digit {
+				must = append(must, "start with a letter (a to z)")
+			}
+			text = "the user '" + n + "' " + strings.Join(has, " and ") + "; new user names " + strings.Join(must, " and ") +
+				", and this user has no Linux account, here or on a host"
+		case upper:
+			// Only the lower-case spelling can be refused here: the user has an
+			// account (or a name another verb handles).
+			err := names.CheckNewUsername(strings.ToLower(n))
+			if err == nil {
+				continue
+			}
+			text = "the user '" + n + "' has upper case letters; new user names are lower case, but its lower-case spelling '" +
+				strings.ToLower(n) + "' is not a name 'user rename' takes: " + strings.TrimSuffix(strings.SplitN(err.Error(), "\n", 2)[0], ".")
+		default:
+			continue
 		}
-		out = append(out, hostFinding{
-			Text: "the user '" + n + "' has a name of " + strconv.Itoa(len(n)) + " characters" + also + "; new user names are at most " +
-				strconv.Itoa(names.UsernameMax) + andLower + ", and this user has no Linux account, here or on a host",
-			Fix: "tacctl user rename " + n + " <new-name>",
-		})
+		out = append(out, hostFinding{Text: text, Fix: "tacctl user rename " + n + " <new-name>"})
 	}
 	return out
+}
+
+// joinAnd joins phrases as "a", "a and b", "a, b and c".
+func joinAnd(parts []string) string {
+	if len(parts) < 2 {
+		return strings.Join(parts, "")
+	}
+	return strings.Join(parts[:len(parts)-1], ", ") + " and " + parts[len(parts)-1]
 }

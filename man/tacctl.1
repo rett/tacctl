@@ -419,8 +419,9 @@ The tacctl repo branch to install or upgrade from (default: the current one).
 Prepare tacctl's state for the release before this one; run on the newer
 release, before the older one is installed. A dry run by default: it lists
 every step and every warning and changes nothing. The versions it takes are
-.B 0.2.28
+.B 0.2.29
 (the release before this one),
+.BR 0.2.28 ,
 .BR 0.2.27 ,
 .BR 0.2.26 ,
 .BR 0.2.25 ,
@@ -443,12 +444,12 @@ and older are refused, with the way there (one release at a time: this
 rollback,
 .BR "tacctl upgrade \-\-branch 0.2.9" ,
 then the rollback of that release), and so is any other word (0.2.10 to
-0.2.15 included: the refusal names the targets). Every target but 0.2.28, 0.2.27, 0.2.26, 0.2.25, 0.2.24, 0.2.23, 0.2.22, 0.2.21, 0.2.20
+0.2.15 included: the refusal names the targets). Every target but 0.2.29, 0.2.28, 0.2.27, 0.2.26, 0.2.25, 0.2.24, 0.2.23, 0.2.22, 0.2.21, 0.2.20
 and 0.2.19 is refused while an emergency lockdown locks a group (the refusal lists each
 one and
 .B "emergency lockdown <scope> disable"
 lifts it; a release before 0.2.19 would render the locked users back into the
-scope; 0.2.19 has the record and keeps it), every target but 0.2.28, 0.2.27, 0.2.26, 0.2.25, 0.2.24 and 0.2.23 is refused while an emergency lockdown stands on a scope that has enrolled hosts, or a lifted one still waits for a host to drop sshd's lockdown drop\-in (older releases cannot lift it on a host; lift it and sync the hosts first), and every target is refused while a device's record says a confirmed commit of
+scope; 0.2.19 has the record and keeps it), every target but 0.2.29, 0.2.28, 0.2.27, 0.2.26, 0.2.25, 0.2.24 and 0.2.23 is refused while an emergency lockdown stands on a scope that has enrolled hosts, or a lifted one still waits for a host to drop sshd's lockdown drop\-in (older releases cannot lift it on a host; lift it and sync the hosts first), and every target is refused while a device's record says a confirmed commit of
 .B "device config apply"
 is
 .B pending
@@ -463,7 +464,7 @@ settles it). The
 and
 .B users
 mappings of console.yaml that this release ignores stay in the file, and a
-release before 0.2.20 (the targets 0.2.19 and older; 0.2.28 to 0.2.20 ignore
+release before 0.2.20 (the targets 0.2.19 and older; 0.2.29 to 0.2.20 ignore
 them too, and their rollback says nothing of it) reads them as it always did: a user or a tier
 switched off there gets a plain shell again, and the password cache is on again
 for every user of a tier that is allowed it, so the plan lists each user who
@@ -471,7 +472,7 @@ would gain a system shell or the cache, with the reason, as a warning that
 .B \-\-apply
 refuses without
 .BR \-\-yes .
-Every target before 0.2.20 (0.2.19 and older; 0.2.28 to 0.2.20 read them and leave them) also takes out of
+Every target before 0.2.20 (0.2.19 and older; 0.2.29 to 0.2.20 read them and leave them) also takes out of
 .I console.yaml
 the settings of 0.2.20 that no release before it reads:
 .BR settings.color ,
@@ -487,7 +488,7 @@ stay, for the releases that have them) are removed and a
 of \-1 (never ask) is written as 1000, with every other setting kept and a
 snapshot first.
 .IP
-Every target but 0.2.28, 0.2.27, 0.2.26, 0.2.25, 0.2.24, 0.2.23, 0.2.22 and 0.2.21, which have it themselves, keeps every user's
+Every target but 0.2.29, 0.2.28, 0.2.27, 0.2.26, 0.2.25, 0.2.24, 0.2.23, 0.2.22 and 0.2.21, which have it themselves, keeps every user's
 login to this server: an older release answers
 it only for the users that have the server's scope
 .RB ( tacctl )
@@ -496,16 +497,16 @@ to the server and lacks it (it counts and names them; a warning, so
 .B \-\-apply
 needs
 .BR \-\-yes ),
-after a snapshot. Every target but 0.2.28, 0.2.27, 0.2.26, 0.2.25, 0.2.24, 0.2.23 and 0.2.22 removes
+after a snapshot. Every target but 0.2.29, 0.2.28, 0.2.27, 0.2.26, 0.2.25, 0.2.24, 0.2.23 and 0.2.22 removes
 .B server.name
 (the name of
 .BR "server name" ),
-and every target but 0.2.28, 0.2.27, 0.2.26, 0.2.25, 0.2.24, 0.2.23, 0.2.22 and 0.2.21
+and every target but 0.2.29, 0.2.28, 0.2.27, 0.2.26, 0.2.25, 0.2.24, 0.2.23, 0.2.22 and 0.2.21
 .B server.addresses
 as well, from
 .IR tacctl.yaml ,
 which no older release knows; the host registry keeps the address in this
-server's entry. Every target but 0.2.28, 0.2.27, 0.2.26, 0.2.25, 0.2.24, 0.2.23 and 0.2.22 also removes the timing scale:
+server's entry. Every target but 0.2.29, 0.2.28, 0.2.27, 0.2.26, 0.2.25, 0.2.24, 0.2.23 and 0.2.22 also removes the timing scale:
 .B device.timeout_scale
 and
 .B timeout_scale_scope.\fIscope\fR
@@ -520,7 +521,7 @@ key it does not know). It is a note in the plan, not a warning: the older
 release connects to every device with its fixed timings again, which a slow or
 distant device may not meet, and the values stay in the snapshot.
 .IP
-Every target but 0.2.28, 0.2.27, 0.2.26, 0.2.25, 0.2.24 and 0.2.23 removes the users' email addresses
+Every target but 0.2.29, 0.2.28, 0.2.27, 0.2.26, 0.2.25, 0.2.24 and 0.2.23 removes the users' email addresses
 .RB ( "user email" ,
 .BR "user add \-\-email" )
 from
@@ -548,7 +549,7 @@ snapshot and the users. A store that cannot be read
 refuses every target. Until the older release is installed, the two verbs that
 set an address write the key again, and the command says so.
 .IP
-Every target but 0.2.28, 0.2.27, 0.2.26, 0.2.25, 0.2.24 and 0.2.23 writes the SNMP credential files
+Every target but 0.2.29, 0.2.28, 0.2.27, 0.2.26, 0.2.25, 0.2.24 and 0.2.23 writes the SNMP credential files
 .RI ( snmp.yaml ,
 .IR snmp/ scope .yaml ,
 .IR snmp/devices/ name .yaml )
@@ -577,7 +578,7 @@ the audit line adds
 and the apply names
 .BR "tacctl backup recover <snapshot> \-\-only snmp\-users" .
 .IP
-Every target but 0.2.28, 0.2.27, 0.2.26, 0.2.25, 0.2.24 and 0.2.23 drops from
+Every target but 0.2.29, 0.2.28, 0.2.27, 0.2.26, 0.2.25, 0.2.24 and 0.2.23 drops from
 .I state/staging
 the entries marked
 .B covered
@@ -591,7 +592,7 @@ A clone that still waits for its
 .B "device rename \-\-replace"
 loses its entry, and after a re-upgrade the verb refuses it as not staged: remove the clone and clone again from the original, or restore the snapshot. Every other entry stays.
 .IP
-Every target but 0.2.28, 0.2.27, 0.2.26, 0.2.25 and 0.2.24 removes the break\-glass firewall: the key
+Every target but 0.2.29, 0.2.28, 0.2.27, 0.2.26, 0.2.25 and 0.2.24 removes the break\-glass firewall: the key
 .B breakglass.firewall
 (when set; every older release refuses it, so it is removed after the snapshot
 like the other keys they do not know), the nftables table
@@ -637,7 +638,7 @@ and
 then
 .BR "systemctl daemon\-reload" .
 .IP
-Every target before 0.2.26 (0.2.25 and older; 0.2.26 to 0.2.28 read the limits and keep them) removes the limits of the stored reports of
+Every target before 0.2.26 (0.2.25 and older; 0.2.26 to 0.2.29 read the limits and keep them) removes the limits of the stored reports of
 .BR "device reports" :
 the settings
 .B reports.max_size
@@ -687,14 +688,14 @@ again (with
 .B \-\-yes
 while a user has a limit of their own).
 .IP
-Every target but 0.2.28 removes the file transfer settings of the console,
+Every target but 0.2.29 and 0.2.28 removes the file transfer settings of the console,
 .B settings.file_transfer
 in
 .I console.yaml
 .RB ( "console file\-transfer" ),
 the target
 .B 0.2.27
-included (0.2.28 reads the key, and so does this release): no release before 0.2.28 reads the key (its reader answers
+included (0.2.28 and 0.2.29 read the key, and so does this release): no release before 0.2.28 reads the key (its reader answers
 .BR "settings: unknown key" ,
 the console falls back to its defaults and the commands that write the file
 fail). It goes after the snapshot, with the other settings of the file the
@@ -708,11 +709,50 @@ installed, run no
 that sets something, which writes the key again (run the rollback again if one
 was run), and the snapshot may be restored with this release only.
 .IP
-.B "rollback 0.2.28"
-converts nothing: this release changed no stored file 0.2.28 reads strictly
-(the mode a file uploaded through the console gets, a test and the
-documentation are all that moved), so 0.2.28 reads every file this release
+.B "rollback 0.2.29"
+converts nothing: this release changed no stored file 0.2.29 reads strictly
+(the check of the name of a new user, which writes no new form of a file, and the
+documentation are all that moved), so 0.2.29 reads every file this release
 writes. It removes no key and no field (the file transfer settings of
+.IR console.yaml ,
+.B settings.file_transfer
+(0.2.29 has them), the limits of the stored reports, the settings
+.B reports.max_size
+and
+.B reports.max_count
+and a user's own limits, stay, and so do the break\-glass firewall and its setting, the
+email addresses, the SNMP credential files, the covered staging entries, the
+server name, the timing scale, the server address, the users' login to this
+server and an emergency lockdown, with or without enrolled hosts), leaves the
+per\-tier sudoers drop\-in (0.2.29 and this release write the same text), the
+pull records, every report in the users' homes, the PDF ones included, and the marker
+.I /var/lib/tacctl/pdf\-tools\-offered
+(the packages
+.B weasyprint
+and
+.B fonts\-dejavu\-core
+stay installed), takes no snapshot and needs no
+.BR \-\-yes .
+It is refused only while a device's apply is not settled.
+.B \-\-hosts
+is accepted and does nothing. The command ends with the next step,
+.BR "tacctl upgrade \-\-branch 0.2.29" ,
+with no note to follow: the settings, the limits and the reports are 0.2.29's own.
+After the upgrade
+.B "user add"
+and
+.B "user rename"
+take a new name that starts with a digit,
+.B \-
+or
+.BR _ ,
+as they did; every user keeps the name it has, whatever it is.
+.IP
+.B "rollback 0.2.28"
+converts nothing: 0.2.29 and this release changed no stored file 0.2.28 reads strictly
+(the mode a file uploaded through the console gets, the check of the name of a new user, a test and the
+documentation are all that moved), so 0.2.28 reads every file they
+write. It removes no key and no field (the file transfer settings of
 .IR console.yaml ,
 .B settings.file_transfer
 (0.2.28 has them), the limits of the stored reports, the settings
@@ -723,7 +763,7 @@ and a user's own limits, stay, and so do the break\-glass firewall and its setti
 email addresses, the SNMP credential files, the covered staging entries, the
 server name, the timing scale, the server address, the users' login to this
 server and an emergency lockdown, with or without enrolled hosts), leaves the
-per\-tier sudoers drop\-in (0.2.28 and this release write the same text), the
+per\-tier sudoers drop\-in (0.2.28 to 0.2.29 and this release write the same text), the
 pull records, every report in the users' homes, the PDF ones included, and the marker
 .I /var/lib/tacctl/pdf\-tools\-offered
 (the packages
@@ -738,14 +778,22 @@ is accepted and does nothing. The command ends with the next step,
 .BR "tacctl upgrade \-\-branch 0.2.28" ,
 with no note to follow: the settings, the limits and the reports are 0.2.28's own.
 After the upgrade a file a client uploads through the console is created with the
-mode 0644 (0600 after the umask of the console) whatever mode it asks for, as in 0.2.28.
+mode 0644 (0600 after the umask of the console) whatever mode it asks for, as in 0.2.28, and
+.B "user add"
+and
+.B "user rename"
+take a new name that starts with a digit,
+.B \-
+or
+.BR _ ,
+as they did.
 .IP
 .B "rollback 0.2.27"
 converts only the file transfer settings of
 .IR console.yaml :
-0.2.28 and this release changed no other stored file 0.2.27 reads strictly (how
+0.2.28 to 0.2.29 and this release changed no other stored file 0.2.27 reads strictly (how
 the answer of a Cisco IOS device to a long command is read, the mode of a file uploaded
-through the console, and the documentation, are all that moved), so 0.2.27 reads every other file
+through the console, the check of the name of a new user, and the documentation, are all that moved), so 0.2.27 reads every other file
 they write. It removes no other key and no field (the limits of the stored reports, the
 settings
 .B reports.max_size
@@ -755,7 +803,7 @@ and a user's own limits, stay: 0.2.27 has them, and so do the break\-glass firew
 email addresses, the SNMP credential files, the covered staging entries, the
 server name, the timing scale, the server address, the users' login to this
 server and an emergency lockdown, with or without enrolled hosts), leaves the
-per\-tier sudoers drop\-in (0.2.27, 0.2.28 and this release write the same text), the
+per\-tier sudoers drop\-in (0.2.27 to 0.2.29 and this release write the same text), the
 pull records, every report in the users' homes, the PDF ones included (0.2.27
 has the format and reads them), and the marker
 .I /var/lib/tacctl/pdf\-tools\-offered
@@ -777,13 +825,13 @@ limits and the reports are 0.2.27's own.
 .B "rollback 0.2.26"
 converts only the file transfer settings of
 .IR console.yaml :
-0.2.27, 0.2.28 and this release changed no other stored file 0.2.26 reads strictly (what
+0.2.27 to 0.2.29 and this release changed no other stored file 0.2.26 reads strictly (what
 the
 .B "show switch"
 reader accepts, what the reports of a user below the operator tier hold, the audit
 line of a prune of other users' reports, the PDF format of the reports and the offer
 of its tools, how the answer of a Cisco IOS device to a long command is read, the wording of two notes and the
-documentation are all that moved), so 0.2.26 reads every file 0.2.27, 0.2.28 and this release
+documentation are all that moved), so 0.2.26 reads every file 0.2.27 to 0.2.29 and this release
 write. It removes no other key and no field (the limits of the stored reports, the
 settings
 .B reports.max_size
@@ -793,7 +841,7 @@ and a user's own limits, stay: 0.2.26 has them, and so do the break\-glass firew
 email addresses, the SNMP credential files, the covered staging entries, the
 server name, the timing scale, the server address, the users' login to this
 server and an emergency lockdown, with or without enrolled hosts), leaves the
-per\-tier sudoers drop\-in (0.2.26 to 0.2.28 and this release write the same text), the
+per\-tier sudoers drop\-in (0.2.26 to 0.2.29 and this release write the same text), the
 pull records and every report in the users' homes (0.2.26 reads them; a PDF one as text, see Rolling back in the upgrading page), takes the snapshot
 only when the file transfer settings are set and needs no
 .BR \-\-yes .
@@ -804,8 +852,8 @@ is accepted and does nothing. The command ends with the next step,
 with no note to follow but the one above when the settings were removed: the limits and the reports are 0.2.26's own.
 .IP
 .B "rollback 0.2.25"
-removes the limits of the stored reports of 0.2.26 to 0.2.28 and this release and converts nothing
-else but the file transfer settings of the console: 0.2.25 reads every other file 0.2.26 to 0.2.28 and this release write (the break\-glass
+removes the limits of the stored reports of 0.2.26 to 0.2.29 and this release and converts nothing
+else but the file transfer settings of the console: 0.2.25 reads every other file 0.2.26 to 0.2.29 and this release write (the break\-glass
 firewall and its setting, the email addresses, the SNMP credential files, the
 covered staging entries, the server name, the timing scale, the server address,
 the users' login to this server and an emergency lockdown, with or without
@@ -832,7 +880,7 @@ refuses without
 naming each user and the values (see below). The per\-tier sudoers drop\-in is
 rewritten, after
 .BR "visudo \-cf" ,
-with the text 0.2.25 wrote, the text of 0.2.26 to 0.2.28 and this release without the rows of
+with the text 0.2.25 wrote, the text of 0.2.26 to 0.2.29 and this release without the rows of
 .BR "device reports" ,
 when the file is exactly that text (no snapshot holds it; a file tacctl
 did not write is left). The
@@ -879,14 +927,14 @@ is accepted and does nothing. The command ends with the next step,
 .B "rollback 0.2.23"
 converts no file but the key
 .B breakglass.firewall
-(0.2.24's) and the limits of the stored reports (0.2.26's; when either is set the snapshot is taken): 0.2.24 to 0.2.28 and this release changed no other stored file, so 0.2.23 reads every file they
+(0.2.24's) and the limits of the stored reports (0.2.26's; when either is set the snapshot is taken): 0.2.24 to 0.2.29 and this release changed no other stored file, so 0.2.23 reads every file they
 write (the email addresses, the SNMP credential files, the covered staging
 entries, the server name, the timing scale, the server address, the users' login
 to this server and an emergency lockdown, with or without enrolled hosts, all
 stay), the per\-tier sudoers drop\-in is put back as 0.2.23 wrote it
 (without the operator's
 .BR "log failures *" ;
-when it is exactly the text of 0.2.24 and 0.2.25, or the one 0.2.26 to 0.2.28 and this release write, it is rewritten, after
+when it is exactly the text of 0.2.24 and 0.2.25, or the one 0.2.26 to 0.2.29 and this release write, it is rewritten, after
 .BR "visudo \-cf" ,
 and any other file is left), no snapshot is taken for them and
 .B \-\-yes
@@ -924,7 +972,7 @@ converts nothing but the email addresses, the SNMP credential files, the covered
 with 0.2.22's: the engineer's rule of
 .B "device clone"
 is taken out; an edited drop\-in is left): 0.2.22
-reads every other file 0.2.23 to 0.2.28 and this release write, so the server name, the timing
+reads every other file 0.2.23 to 0.2.29 and this release write, so the server name, the timing
 scale, the server address, the users' login to this server and an emergency
 lockdown (of scopes with no enrolled host) stay. With no
 address in the store, no SNMP
@@ -1049,7 +1097,7 @@ An older release lints such a block as an error and plans nothing for the
 devices it reaches. The block files are not rewritten; take the statements
 out before the upgrade.
 .IP
-Every target before 0.2.20 (0.2.19 and older; 0.2.28 to 0.2.20 read it and leave it) removes the management filter mode of the scopes
+Every target before 0.2.20 (0.2.19 and older; 0.2.29 to 0.2.20 read it and leave it) removes the management filter mode of the scopes
 .RB ( scope_mgmt_acl.mode.\fIscope\fR ,
 only
 .B strict
@@ -1071,7 +1119,7 @@ or
 would put that filter back on a device that holds the strict one, without
 saying so. The rollback is not refused, and no device is contacted.
 .IP
-Every target but 0.2.28 to 0.2.20 (which read it) removes the required password change
+Every target but 0.2.29 to 0.2.20 (which read it) removes the required password change
 .RB ( password_change_required
 of a user in
 .IR store.yaml ,
@@ -1656,7 +1704,8 @@ Requires: \fBreadonly\fR.
 .\" END GENERATED: command user show
 .TP
 .BI "user add " "name group " [ "--hash " hash ] [ "--scopes " name[,name...] ] [ "--email " address ] [ --no\-change\-required ]
-Add a user. The name is lower case (lower\-case letters, digits,
+Add a user. The name is lower case and starts with a letter (a lower\-case letter,
+then lower\-case letters, digits,
 .BR _ " and " \- ):
 a name with upper case is refused with the lower\-case spelling to use, and a
 user that exists with upper case keeps working as it is
@@ -1674,9 +1723,27 @@ case letters or starts with a digit or
 .BR \- :
 a Linux account name starts with a lower case letter or
 .BR _ ,
+but every new user gets an account, so a new name must start with a lower case
+letter, a to z: a digit,
+.B \-
 and
-.B "user add"
-still accepts a name that starts with a digit or
+.B _
+are refused as the first character
+.RB ( "Username '1alice' must start with a letter (a to z): every new user gets a Linux account, and a name that starts with a digit or '-' is no account name (a new name does not start with '_' either)." ),
+and nothing is changed. The checks run in this order and the first that fails is
+the answer: the shape, the reserved names, upper case (so
+.B Alice
+and
+.B 1Alice
+are told the lower case spelling first), the length and the first character. A
+user that exists as
+.BR 9dave ,
+.B _svc
+or
+.B \-x
+keeps working as it is; only a new name is checked, and
+.B "config validate"
+warns of an existing name that starts with a digit or
 .BR \- .
 A period is refused: it
 cannot be part of a Linux account name, and a user whose name is not one has no
@@ -2020,7 +2087,7 @@ Requires: \fBsuperuser\fR.
 .BI "user rename " "old new"
 Rename a user. The user's
 .B "console system\-shell user"
-setting moves to the new name, and the command says so. The new name is lower case, at most 32 characters, and follows the rules of
+setting moves to the new name, and the command says so. The new name is lower case, starts with a letter, is at most 32 characters, and follows the rules of
 .BR "user add" ;
 a period is refused in either name, and the old name can be any name a user has
 (also one of more than 32 characters).
@@ -3216,15 +3283,26 @@ naming the rename that fixes it
 .RB ( "tacctl user rename Alice alice" ,
 and the like); the one for a user adds that devices match the typed login name
 exactly, so the rename changes what the person types at the device. A user from
-an earlier release whose name is longer than 32 characters (a new name is at
-most 32) is a warning under
+an earlier release whose name is longer than 32 characters or starts with a
+digit or
+.B \-
+(a new name is at most 32 and starts with a lower case letter) is a warning under
 .B Names:
 too: it works but has no Linux account, here or on a host, and the warning names
 .BR "tacctl user rename" " name " new\-name ;
 .B \-\-fix\-names
-does not offer that rename. A user whose name is both longer than 32 characters
-and has upper case gets that one warning only, which says so. Only the
-superuser's view has these findings.
+does not offer that rename. A name that starts with
+.B _
+has an account and is not warned of. A user with several of these faults, upper
+case included, gets that one warning only, which says so: the lower case
+spelling would be refused by
+.B "user rename"
+too, so no warning proposes it, and
+.B \-\-fix\-names
+offers nothing for the user and counts it as neither not offered nor failed. So
+does a user with upper case and a name that starts with
+.BR _ .
+Only the superuser's view has these findings.
 .IP
 Then, for every enabled backend, whether its rendered config is up to date
 with the store and whether any of its files was edited by hand (drift). With
