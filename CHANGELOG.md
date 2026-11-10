@@ -11,12 +11,16 @@ current behaviour; this file is where history lives.
    OpenSSH 9 or later (which speaks SFTP and sends the permissions in that
    request, and sets nothing afterwards) lost its execute bit. A new file now
    gets the mode the client asks for in the open request when the request
-   carries the permissions alone, which is what the OpenSSH `sftp` and `scp`
-   send: the permission bits only (set-user-ID, set-group-ID and sticky are
-   ignored, as for a new directory), reduced by the umask of the console, 077.
-   The owner's bits survive and the group and other bits go: a script asked
-   at 0755 is 0700, a file asked at 0644 is 0600. A request without
-   permissions still gives 0644, 0600 after the umask. A file that already
+   carries a block of four bytes, read as the permissions alone (the library
+   does not say which attributes a request holds; four bytes is what the
+   OpenSSH `sftp` and `scp` send): the permission bits only (set-user-ID,
+   set-group-ID and sticky are ignored, as for a new directory), reduced by
+   the umask of the console, 077. The
+   owner's bits survive and the group and other bits go: a script asked at
+   0755 is 0700, a file asked at 0644 is 0600. A request without permissions,
+   or that asks for the mode 0 (a block of four bytes of zero is also what a
+   request with no attributes but the extended ones looks like), still gives
+   0644, 0600 after the umask. A file that already
    exists keeps its mode, and a download changes nothing. A file asked at a
    mode without the owner's write bit (0444, or 0555, which `scp` sends for a
    read-only source) is created writable by its owner and gets the mode asked

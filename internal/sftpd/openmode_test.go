@@ -33,8 +33,9 @@ const (
 	rawFlagTrunc = 0x10
 	rawFlagExcl  = 0x20
 
-	rawAttrSize = 0x1
-	rawAttrPerm = 0x4
+	rawAttrSize     = 0x1
+	rawAttrExtended = 0x80000000
+	rawAttrPerm     = 0x4
 )
 
 // rawConn speaks SFTP by hand, so that a test can put attributes in an open
@@ -216,6 +217,10 @@ func TestOpenModeOfTheRequest(t *testing.T) {
 		{"no attributes: 0644 under umask 022", 0o022, creatTrunc, 0, nil, 0, 0o644},
 		{"no attributes: 0600 under the console umask", 0o077, creatTrunc, 0, nil, 0, 0o600},
 		{"create and exclusive", 0o022, rawFlagWrite | rawFlagCreat | rawFlagExcl, rawAttrPerm, permAttrs(0o755), 0, 0o755},
+		{"mode 0 asks for nothing: 0644 under umask 022", 0o022, creatTrunc, rawAttrPerm, permAttrs(0), 0, 0o644},
+		{"mode 0 asks for nothing: 0600 under the console umask", 0o077, creatTrunc, rawAttrPerm, permAttrs(0), 0, 0o600},
+		{"extended attributes without any: 0644 under umask 022", 0o022, creatTrunc, rawAttrExtended, permAttrs(0), 0, 0o644},
+		{"extended attributes without any: 0600 under the console umask", 0o077, creatTrunc, rawAttrExtended, permAttrs(0), 0, 0o600},
 		{"permissions with times are not read", 0o022, creatTrunc, rawAttrPerm | times, twelve, 0, 0o644},
 		{"an existing file keeps its mode", 0o022, creatTrunc, rawAttrPerm, permAttrs(0o755), 0o640, 0o640},
 		{"an existing file without create keeps its mode", 0o022, rawFlagWrite, rawAttrPerm, permAttrs(0o755), 0o640, 0o640},

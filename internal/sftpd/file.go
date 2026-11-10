@@ -93,16 +93,25 @@ func permBits(m uint32) uint32 { return m & 0o777 }
 // it asked. The library hands the handlers the attribute block of an open as
 // raw bytes and drops the attribute flags that say which fields it holds
 // (Request.Flags of an open is the open flags, so AttrFlags and Attributes
-// would read the wrong thing). A block of exactly four bytes can only be the
+// would read the wrong thing). A block of exactly four bytes is read as the
 // permissions: it is what the OpenSSH sftp and scp clients send, without a
-// size, owner or times. Any other length could be the permissions together
-// with a size, an owner or times, in an order that cannot be told apart, so it
-// asks for nothing and the new file gets the default mode, as before.
+// size, owner or times. It is not always so: a version 3 block that holds only
+// the flag of the extended attributes and a count of none is four bytes of
+// zero too, and would read as the mode 0000. A value of zero is therefore
+// read as asking for nothing (a client that really asks for 0000 gets the
+// default, and can set the mode afterwards). Any other length could be the
+// permissions together with a size, an owner or times, in an order that
+// cannot be told apart, so it asks for nothing and the new file gets the
+// default mode, as before.
 func openMode(r *sftp.Request) (uint32, bool) {
 	if len(r.Attrs) != 4 {
 		return 0, false
 	}
-	return permBits(binary.BigEndian.Uint32(r.Attrs)), true
+	v := binary.BigEndian.Uint32(r.Attrs)
+	if v == 0 {
+		return 0, false
+	}
+	return permBits(v), true
 }
 
 // openFile opens the file of r. write says the open is for an upload (the

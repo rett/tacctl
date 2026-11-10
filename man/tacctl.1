@@ -16484,7 +16484,9 @@ carries the permissions alone (which is what the OpenSSH
 and
 .B scp
 send), and 0644 otherwise (a request that carries other attributes with the
-permissions is read as carrying none); a file that already exists keeps its
+permissions is read as carrying none, and so is one that asks for the mode 0,
+which cannot be told from a request with no attributes but the extended ones);
+a file that already exists keeps its
 mode, whatever the open asks. A new file asked at a mode without the owner's
 write bit (0444, which
 .B scp
