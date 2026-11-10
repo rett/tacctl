@@ -7,13 +7,15 @@ package cli
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/rett/tacctl/internal/names"
 )
 
 // caseFindings are the names of devices, hosts, users and scopes with upper
-// case, each with its fix, in that order and sorted within a kind. Only the
+// case, each with its fix, in that order and sorted within a kind (a user over
+// names.UsernameMax is left to lengthFindings). Only the
 // superuser's view has them (a restricted caller is told nothing: what they
 // would name is not theirs). A fix names the lower-case spelling, or <new>
 // when another name of the namespace is equal to it ignoring case.
@@ -83,6 +85,12 @@ func (inv *invocation) caseFindings() []hostFinding {
 				lowers[strings.ToLower(n)]++
 			}
 			for _, n := range set.all {
+				// A user over names.UsernameMax is not offered the lower-case
+				// spelling, which is over the limit too and which 'user
+				// rename' refuses: lengthFindings names the rename for it.
+				if set.kind == "user" && len(n) > names.UsernameMax {
+					continue
+				}
 				if names.HasUpper(n) {
 					out = append(out, hostFinding{
 						Text: "the " + set.kind + " '" + n + "' has upper case in its name; new names are lower case" + set.note,
@@ -92,6 +100,44 @@ func (inv *invocation) caseFindings() []hostFinding {
 				}
 			}
 		}
+	}
+	return out
+}
+
+// lengthFindings are the users whose name is longer than names.UsernameMax,
+// a user from an earlier release (new names are checked at 'user add' and
+// 'user rename'): each keeps working but has no Linux account, here or on a
+// host. They are warnings in 'config validate' with the verb that renames the
+// user, sorted by name, the superuser's view only. They carry no Kind, so
+// 'config validate --fix-names' (case findings only) does not read them. A user
+// that also has upper case gets this one finding, which says so: the rename it
+// names is the one that fixes both.
+func (inv *invocation) lengthFindings() []hostFinding {
+	if inv.callerScopes().restricted {
+		return nil
+	}
+	m, err := inv.model()
+	if err != nil {
+		return nil
+	}
+	var long []string
+	for _, n := range m.UserNames() {
+		if len(n) > names.UsernameMax {
+			long = append(long, n)
+		}
+	}
+	sort.Strings(long)
+	var out []hostFinding
+	for _, n := range long {
+		also, andLower := "", ""
+		if names.HasUpper(n) {
+			also, andLower = " and has upper case letters", " and lower case"
+		}
+		out = append(out, hostFinding{
+			Text: "the user '" + n + "' has a name of " + strconv.Itoa(len(n)) + " characters" + also + "; new user names are at most " +
+				strconv.Itoa(names.UsernameMax) + andLower + ", and this user has no Linux account, here or on a host",
+			Fix: "tacctl user rename " + n + " <new-name>",
+		})
 	}
 	return out
 }

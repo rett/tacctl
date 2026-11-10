@@ -713,7 +713,7 @@ func TestShellExplain(t *testing.T) {
 		{[]string{"user", "add", "bob"}, []string{"Next: <group>\n"}},
 		{[]string{"user", "add", "bob", "ops"}, []string{"Next: <Enter> to run\n"}},
 		{[]string{"ssh", "core1"}, []string{
-			"Usage:\n  ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]  Open an ssh session",
+			"Usage:\n  ssh <name|address> [--login <local-user>] [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]  Open an ssh session",
 			"\n  -p <port>  ", "Connect to this port",
 			"Next: <Enter> to run\n",
 		}},

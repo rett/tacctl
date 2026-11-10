@@ -194,6 +194,12 @@ test_hash="243262243130246161616161616161616161616161616161616161616161616161616
 # first byte in every process: the same rule as the Go knob (each Rand() of
 # app.Knobs starts at the first byte), so a generated hash is the same on
 # both sides when the Go code takes its salt from the knob's source.
+# bcrypt 4.x and older call os.urandom(16) in gensalt; 5.x makes the salt
+# inside its Rust module and never calls it, so the same sitecustomize also
+# replaces bcrypt.gensalt by a function that builds the salt from
+# os.urandom(16) the way the old one did. It does so from an import hook, on
+# the first import of bcrypt, so a python3 that never uses bcrypt (and a host
+# without it) pays nothing.
 mkdir -p "${work}/pysite"
 cat > "${work}/pysite/sitecustomize.py" <<'PY'
 import os
@@ -212,6 +218,58 @@ def _urandom(n):
 
 
 os.urandom = _urandom
+
+# gensalt of bcrypt before 5.0: "$" prefix "$" two-digit rounds "$" and the 16
+# bytes in bcrypt's base64 (22 characters, no padding).
+_B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+_BCRYPT64 = "./ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+
+
+def _gensalt(rounds=12, prefix=b"2b"):
+    import base64
+
+    if prefix not in (b"2a", b"2b"):
+        raise ValueError("Invalid prefix")
+    if not 4 <= rounds <= 31:
+        raise ValueError("Invalid rounds")
+    enc = base64.b64encode(os.urandom(16)).decode("ascii").rstrip("=")
+    enc = enc.translate(str.maketrans(_B64, _BCRYPT64))
+    return b"$" + prefix + b"$" + ("%02d" % rounds).encode("ascii") + b"$" + enc.encode("ascii")
+
+
+def _patch(module):
+    module.gensalt = _gensalt
+
+
+class _BcryptHook:
+    # Wraps the loader of the first "import bcrypt" so that the module is
+    # patched right after it runs; never fails the import itself.
+    def find_spec(self, name, path=None, target=None):
+        if name != "bcrypt":
+            return None
+        import sys
+
+        try:
+            sys.meta_path.remove(self)
+            import importlib.util
+
+            spec = importlib.util.find_spec(name)
+            if spec is not None and spec.loader is not None:
+                run = spec.loader.exec_module
+
+                def exec_module(module):
+                    run(module)
+                    _patch(module)
+
+                spec.loader.exec_module = exec_module
+            return spec
+        except Exception:
+            return None
+
+
+import sys
+
+sys.meta_path.insert(0, _BcryptHook())
 PY
 
 # --- stubs -----------------------------------------------------------------------

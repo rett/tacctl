@@ -7,7 +7,8 @@ package cli
 // resolves the name, admits only an active tacctl user whose scopes hold
 // the entry's (every tier, superusers included), logs the session, and runs
 // ssh as SUDO_USER with the terminal, logging in as SUDO_USER by password
-// (no agent, no key, no other login), returning ssh's exit status. The
+// (no agent, no key, no other login; or, with --login, the device's local
+// account), returning ssh's exit status. The
 // shell and the console run the same line ('sudo -n tacctl ssh <name>'), so
 // there is one path to audit. 'device ssh' is the same command.
 //
@@ -33,6 +34,13 @@ package cli
 // line, in its environment and nowhere else. The cache forgets the password
 // when ssh ends with status 255 (a refusal cannot be told from other failures
 // of the connection).
+//
+// With '--login <local-user>' (a registered device only, the engineer's tier
+// and up, a pinned host key) ssh logs in as that local account of the device
+// instead of the caller: '-l <local-user>', the password asked by the device
+// itself. The password cache is not used for such a line (never read, never
+// asked, never told to forget; the shell leaves it shut, askpassWords), and
+// the log lines carry login=<local-user> (before from= and console=).
 
 import (
 	"context"
@@ -55,6 +63,7 @@ import (
 	"github.com/rett/tacctl/internal/devreg"
 	"github.com/rett/tacctl/internal/execx"
 	"github.com/rett/tacctl/internal/hosts"
+	"github.com/rett/tacctl/internal/tier"
 	"github.com/rett/tacctl/internal/ui"
 )
 
@@ -67,6 +76,9 @@ func init() {
 // handed to ssh as it is).
 var sshSpec = Spec{MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{
 	{Names: []string{"-p"}, Value: true},
+	{Names: []string{"--login"}, Value: true, Arg: "<local-user>",
+		Desc: "Log in as this local account of the device, not as you",
+		Long: "Log in as this local account of the device (a break-glass one, or any other) instead of as you; the account's password is asked by the device itself, never by tacctl, and is not cached or stored. For registered devices of any vendor with a pinned host key, not enrolled hosts; the engineer tier and up, for a device in one of your scopes"},
 	{Names: []string{"-X"}}, {Names: []string{"-Y"}}, {Names: []string{"-g"}},
 	{Names: []string{"-L"}, Value: true, Repeat: true},
 	{Names: []string{"-R"}, Value: true, Repeat: true},
@@ -78,8 +90,8 @@ var sshSpec = Spec{MaxArgs: 1, Args: []string{KindDevices}, Flags: []Flag{
 var reForwardSpec = regexp.MustCompile(`^[A-Za-z0-9.:/\[\]_*-]+$`)
 
 const (
-	sshUse   = "ssh <name|address> [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]"
-	sshShort = "Session to a registered device or enrolled host, as you (never root)"
+	sshUse   = "ssh <name|address> [--login <local-user>] [-p <port>] [-X|-Y] [-g] [-L|-R|-D <spec>]... [-- <ssh args>]"
+	sshShort = "Session to a device or host as you, or a device's local account"
 )
 
 func sshCmd(inv *invocation) *cobra.Command {
@@ -105,13 +117,22 @@ password-cache'), the first ssh to a device with a pinned host key asks for
 your password itself, before it connects, and keeps it for the session: the
 next ssh asks nothing. A refused password is forgotten.
 
-  -p <port>        Connect to this port (default: the device's port, else 22)
-  -X, -Y           Forward X11 (untrusted, trusted) to this server's display
-  -L <spec>        Forward a local port, as ssh -L (repeatable)
-  -R <spec>        Forward a remote port, as ssh -R (repeatable)
-  -D <spec>        Open a SOCKS proxy, as ssh -D (repeatable)
-  -g               Let -L and -D ports listen on every address, as ssh -g
-  -- <ssh args>    Pass the rest to ssh for this session (a remote command)
+--login <local-user> logs in as that local account of the device instead (a
+break-glass account, or any other; ssh's own -l is not available after --).
+It is for registered devices of any vendor, not enrolled hosts, with a pinned
+host key, and for engineers and up (the device must be in one of your scopes,
+as for every ssh). The device asks for the account's password itself: tacctl
+never asks for it, caches it or stores it, and the password cache is not used
+for the line.
+
+  --login <local-user>  Log in as this local account of the device, not as you
+  -p <port>             Connect to this port (default: the device's port, else 22)
+  -X, -Y                Forward X11 (untrusted, trusted) to this server's display
+  -L <spec>             Forward a local port, as ssh -L (repeatable)
+  -R <spec>             Forward a remote port, as ssh -R (repeatable)
+  -D <spec>             Open a SOCKS proxy, as ssh -D (repeatable)
+  -g                    Let -L and -D ports listen on every address, as ssh -g
+  -- <ssh args>         Pass the rest to ssh for this session (a remote command)
 
 Only active tacctl users reach a device, and only one in a scope of their own,
 whatever their tier; a device no scope covers is reached by no one. Every
@@ -127,6 +148,7 @@ Examples:
   tacctl ssh 10.99.0.1 -p 2222
   tacctl ssh core-sw1 -- show version
   tacctl ssh core-sw1 -L 8443:localhost:443
+  tacctl ssh core-sw1 --login admin
 
 `
 }
@@ -155,12 +177,19 @@ func (inv *invocation) ssh(args []string) error {
 		inv.write(sshUsage())
 		return nil
 	}
-	// The password cache's variable is read once and taken out of the
-	// environment before anything else runs.
-	cacheClient := inv.takeAskpass()
 	var extra []string
 	if i := slices.Index(args, "--"); i >= 0 {
 		args, extra = args[:i], args[i+1:]
+	}
+	// The password cache's variable is read once and taken out of the
+	// environment before anything else runs. A line with --login is a local
+	// account's, whose password the device asks and the cache never sees: the
+	// variable is dropped unread, with no client made from it.
+	var cacheClient *askpass.Client
+	if localLoginLine(args) {
+		inv.dropAskpass()
+	} else {
+		cacheClient = inv.takeAskpass()
 	}
 	usage := "Usage: tacctl " + sshUse
 	p, err := Parse(sshSpec, args)
@@ -192,11 +221,22 @@ func (inv *invocation) ssh(args []string) error {
 	if inv.sshConsole() && len(extra) > 0 && strings.HasPrefix(extra[0], "-") {
 		return inv.usageErr("In the tacctl console the words after -- are the remote command; ssh's own options are not available.")
 	}
+	login := ""
+	if p.Has("--login") {
+		if login, err = inv.localAccountOf(p.Value("--login"), usage); err != nil {
+			return err
+		}
+		// the engineer's, as the other --login verbs (a plain session is
+		// every tier's)
+		if err := inv.deviceVerbAllowed("device", "ssh --login", tier.Engineer); err != nil {
+			return err
+		}
+	}
 	fwd, kinds, err := inv.sshForwarding(p, caller)
 	if err != nil {
 		return err
 	}
-	plan, err := inv.sshResolve(p, caller, extra, fwd)
+	plan, err := inv.sshResolve(p, caller, login, extra, fwd)
 	if err != nil {
 		return err
 	}
@@ -220,6 +260,7 @@ func (inv *invocation) ssh(args []string) error {
 	cmd := plan.cmd.Cmd(plan.args...)
 	cacheNote := ""
 	var cachedCmd execx.Cmd
+	// (a --login line has no client: cacheClient is nil)
 	if cacheClient != nil && devreg.Pinned(e) && !optionAfterTarget {
 		if have, err := cacheClient.Have(inv.ctx); err == nil {
 			// Started as the user directly, not through sudo, so that the
@@ -239,7 +280,11 @@ func (inv *invocation) ssh(args []string) error {
 	switch e.Source {
 	case devreg.SourceDevice:
 		if _, held := inv.holdOf(e.Name, e.Address); held {
-			a.Out.Warn("break-glass is held on " + e.Name + ": it takes local accounts only")
+			if login != "" {
+				a.Out.Warn("break-glass is held on " + e.Name + ": you log in as its local account '" + login + "'")
+			} else {
+				a.Out.Warn("break-glass is held on " + e.Name + ": it takes local accounts only")
+			}
 		}
 	case devreg.SourceHost:
 		if reg, err := inv.registry(); err == nil {
@@ -261,7 +306,13 @@ func (inv *invocation) ssh(args []string) error {
 			cmd, cached, cacheNote = cachedCmd, true, " password=asked"
 		}
 	}
-	a.Audit().Raw("auth.info", "ssh user="+caller+" device="+e.Name+" addr="+addr+forward+cacheNote+inv.originFields())
+	// The local account of a --login line, in the start and end lines; no
+	// password field: the device asks it, tacctl never has it.
+	loginNote := ""
+	if login != "" {
+		loginNote = " login=" + login
+	}
+	a.Audit().Raw("auth.info", "ssh user="+caller+" device="+e.Name+" addr="+addr+forward+cacheNote+loginNote+inv.originFields())
 	start := a.Knobs.Now()
 	code, _, startErr := hosts.Attached(inv.ctx, a.Runner, cmd, a.Stdin, a.Out)
 	if cached && code == 255 {
@@ -273,7 +324,7 @@ func (inv *invocation) ssh(args []string) error {
 		code = 127
 	}
 	a.Audit().Raw("auth.info", "ssh end user="+caller+" device="+e.Name+" status="+strconv.Itoa(code)+
-		" duration="+console.Seconds(a.Knobs.Now().Sub(start))+inv.originFields())
+		" duration="+console.Seconds(a.Knobs.Now().Sub(start))+loginNote+inv.originFields())
 	if startErr != nil {
 		a.Out.Error("ssh could not be run (" + startErr.Error() + "); it comes with the openssh-client package.")
 		return exit(code)
@@ -330,7 +381,9 @@ func (inv *invocation) sshAskAndStore(c *askpass.Client, caller string) (stored 
 // the profile, the pinning options of a pinned entry (whose known_hosts is
 // brought up to date first), then -p, '-l <caller>', the target and the
 // extra arguments (after the target: ssh takes them as the remote command).
-func (inv *invocation) sshResolve(p Parsed, caller string, extra, fwd []string) (sshPlan, error) {
+// A --login line gets '-l <login>' in place of '-l <caller>' (sshLoginEntry
+// refuses first what it may not reach).
+func (inv *invocation) sshResolve(p Parsed, caller, login string, extra, fwd []string) (sshPlan, error) {
 	a := inv.app
 	key := p.Args[0]
 	_, res, err := inv.deviceLoad()
@@ -347,6 +400,11 @@ func (inv *invocation) sshResolve(p Parsed, caller string, extra, fwd []string) 
 	}
 	if err := inv.sshAdmit(caller, e); err != nil {
 		return sshPlan{}, err
+	}
+	if login != "" {
+		if err := inv.sshLoginEntry(caller, login, e); err != nil {
+			return sshPlan{}, err
+		}
 	}
 	target, ok := devreg.SSHTarget(e)
 	if !ok {
@@ -376,7 +434,12 @@ func (inv *invocation) sshResolve(p Parsed, caller string, extra, fwd []string) 
 	// No agent socket and no identity (an enrolled host's is the
 	// provisioning account's): the session is the caller's, by password.
 	opts := devreg.OptionArgs(devreg.SSHOptionsScaled(e, a.Paths.KnownHosts, inv.scaleOfEntry(e)))
-	plan.args = append(append(plan.args, fwd...), "-l", caller)
+	// the login is the caller's, or the local account of a --login line
+	user := caller
+	if login != "" {
+		user = login
+	}
+	plan.args = append(append(plan.args, fwd...), "-l", user)
 	if inConsole {
 		opts = append(sshConsoleOptions(inv.sshEscape(), len(fwd) > 0), opts...)
 		plan.args = append(plan.args, "--")
@@ -387,6 +450,27 @@ func (inv *invocation) sshResolve(p Parsed, caller string, extra, fwd []string) 
 	}
 	plan.args = append(append(plan.args, target), extra...)
 	return plan, nil
+}
+
+// sshLoginEntry is the refusal of an entry a --login line may not reach:
+// only a registered device (an enrolled host is reached as the caller) with a
+// pinned host key, since the local password is typed at a device whose key
+// was verified. The scope of the entry is sshAdmit's, the same as for a plain
+// session. A refusal is logged ('ssh DENY ... reason=login-host|login-unpinned
+// login=') and nothing is started.
+func (inv *invocation) sshLoginEntry(caller, login string, e devreg.Entry) error {
+	deny := func(reason, msg string, hint ...string) error {
+		inv.app.Audit().Raw("auth.warning", "ssh DENY user="+caller+" device="+e.Name+" scope="+dash(e.Scope)+" reason="+reason+" login="+login+inv.originFields())
+		return inv.usageErr(append([]string{msg}, hint...)...)
+	}
+	switch {
+	case e.Source == devreg.SourceHost:
+		return deny("login-host", "--login is for registered devices: '"+e.Name+"' is an enrolled Linux host, and hosts are reached as you. Nothing was started.")
+	case !devreg.Pinned(e):
+		return deny("login-unpinned", "'"+e.Name+"' has no pinned host key, and a local password goes only to a device whose key was verified. Nothing was started.",
+			"Pin it after comparing it with the device console: tacctl device hostkey "+e.Name+" accept")
+	}
+	return nil
 }
 
 // sshCachedOptions are the options ssh gets besides the plan's when it

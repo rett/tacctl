@@ -116,8 +116,9 @@ func manTiersBlock() manBlock {
 	l = append(l, ".PP", "The gate sees two words, so a verb that the code splits further is listed at its",
 		"two\\-word level and then limited by the code:")
 	for _, k := range slices.Sorted(maps.Keys(tierNotes)) {
-		note := strings.TrimPrefix(tierNotes[k], k+": ")
-		l = append(l, ".TP", ".B "+roff(k), roff(upperFirst(note)))
+		name := strings.TrimSpace(k) // the key of an AnySub row ends with a space
+		note := strings.TrimPrefix(tierNotes[k], name+": ")
+		l = append(l, ".TP", ".B "+roff(name), roff(upperFirst(note)))
 	}
 	return manBlock{name: "tiers", lines: l}
 }
@@ -172,7 +173,7 @@ func manCommandBlocks(t *testing.T) []manBlock {
 		l := []string{".RS", ".PP"}
 		req := `Requires: \fB` + string(lowestTier(p[0], sub)) + `\fR.`
 		if note, ok := tierNotes[p[0]+" "+sub]; ok {
-			req += " " + roff(upperFirst(strings.TrimPrefix(note, p[0]+" "+sub+": ")))
+			req += " " + roff(upperFirst(strings.TrimPrefix(note, strings.TrimSpace(p[0]+" "+sub)+": ")))
 		}
 		// The gate sees 'device config'; each of its verbs holds its own tier.
 		if need, ok := deviceConfigNeeds[strings.TrimPrefix(words, "device config ")]; ok && len(p) == 3 && p[0] == "device" && p[1] == "config" {

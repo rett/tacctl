@@ -1,6 +1,8 @@
 package sftpd
 
 import (
+	"encoding/binary"
+	"errors"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -29,9 +31,91 @@ type file struct {
 
 	read, written atomic.Int64
 
+	// restore, with restoring, is the mode the file gets when the handle
+	// closes: the open created it, for a mode without the owner's write bit,
+	// owner-writable (see openNew). made is the mode the kernel gave it then:
+	// the file gets restore only while it still has made (see Close). Set
+	// before the handle is handed out, and not changed.
+	restore   uint32
+	made      uint32
+	restoring bool
+
 	mu     sync.Mutex
 	xferr  error // the error that ended the session with the handle open
 	closed sync.Once
+}
+
+// freshModes is the files of the session that the open created owner-writable
+// and that wait for their mode to be set when the handle closes. A setstat of
+// the permissions of such a file takes it out: the client has said what it
+// wants, and that is not undone at the close. (A change of the permissions
+// from elsewhere is told apart at the close, by the mode the file has then.)
+type freshModes struct {
+	mu sync.Mutex
+	m  map[inode]*file
+}
+
+func (b *freshModes) add(f *file) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.m == nil {
+		b.m = map[inode]*file{}
+	}
+	b.m[f.key] = f
+}
+
+// take reports whether f is still waiting, and stops it from waiting.
+func (b *freshModes) take(f *file) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.m[f.key] != f {
+		return false
+	}
+	delete(b.m, f.key)
+	return true
+}
+
+// forget drops the file on disk k: its permissions were set by the client.
+func (b *freshModes) forget(k inode) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delete(b.m, k)
+}
+
+// defaultFileMode is the mode of a new file when the client's open request
+// does not carry one (the umask of the console still applies).
+const defaultFileMode = 0o644
+
+// permBits is the part of a mode a client may set: the permission bits. The
+// set-user-ID, set-group-ID and sticky bits, and any file type bits, are
+// dropped. Setstat and open take their mode through it (a mkdir takes none:
+// see mkdir).
+func permBits(m uint32) uint32 { return m & 0o777 }
+
+// openMode is the mode the client asks for in the open request r, and whether
+// it asked. The library hands the handlers the attribute block of an open as
+// raw bytes and drops the attribute flags that say which fields it holds
+// (Request.Flags of an open is the open flags, so AttrFlags and Attributes
+// would read the wrong thing). A block of exactly four bytes is read as the
+// permissions: it is what the OpenSSH sftp and scp clients send, without a
+// size, owner or times. It is not always so: a version 3 block that holds only
+// the flag of the extended attributes and a count of none is four bytes of
+// zero too, and would read as the mode 0000. A value without any permission
+// bit (zero, or only file type bits, which permBits drops) is therefore read
+// as asking for nothing (a client that really asks for 0000 gets the default,
+// and can set the mode afterwards). Any other length could be the
+// permissions together with a size, an owner or times, in an order that
+// cannot be told apart, so it asks for nothing and the new file gets the
+// default mode, as before.
+func openMode(r *sftp.Request) (uint32, bool) {
+	if len(r.Attrs) != 4 {
+		return 0, false
+	}
+	m := permBits(binary.BigEndian.Uint32(r.Attrs))
+	if m == 0 {
+		return 0, false
+	}
+	return m, true
 }
 
 // openFile opens the file of r. write says the open is for an upload (the
@@ -66,7 +150,8 @@ func (s *server) openFile(r *sftp.Request, write bool) (*file, error) {
 		s.quota.refresh()
 	}
 	flags := unix.O_NONBLOCK
-	mode := uint32(0o644) // the attributes of an open are not parsed: the client sets the mode with setstat
+	mode := uint32(defaultFileMode)
+	readOnlyNew := false // a create for a mode without the owner's write bit
 	if write {
 		flags |= unix.O_WRONLY
 		if pf.Read {
@@ -74,6 +159,10 @@ func (s *server) openFile(r *sftp.Request, write bool) (*file, error) {
 		}
 		if pf.Creat {
 			flags |= unix.O_CREAT
+			if m, ok := openMode(r); ok {
+				mode = m // only a file the open creates gets it; an existing one keeps its mode
+				readOnlyNew = m&0o200 == 0
+			}
 		}
 		if pf.Excl {
 			flags |= unix.O_EXCL
@@ -84,41 +173,62 @@ func (s *server) openFile(r *sftp.Request, write bool) (*file, error) {
 	} else {
 		flags |= unix.O_RDONLY
 	}
-	fd, err := t.open(flags, mode)
+	var fd int
+	created := false
+	if readOnlyNew {
+		fd, created, err = t.openNew(flags, mode|0o200)
+	} else {
+		fd, err = t.open(flags, mode)
+	}
 	if err != nil {
 		return nil, err
+	}
+	if s.afterOpen != nil {
+		s.afterOpen()
 	}
 	var st unix.Stat_t
 	if err := unix.Fstat(fd, &st); err != nil {
 		_ = unix.Close(fd)
 		return nil, t.pathErr("stat", err)
 	}
+	// st.Mode is what the kernel made of the mode and the umask, with the
+	// owner's write bit that openNew added; the mode the client asked for is
+	// that without it, exactly what open(2) would have made, whatever the
+	// umask is. (A umask that clears the owner's write bit leaves the file as
+	// the kernel made it, and nothing is restored.)
+	restoring := created && st.Mode&0o200 != 0
+	asked := st.Mode & 0o777 &^ 0o200
+	// fail ends an open that created the file and does not hand out the
+	// handle: the file stays, with the mode the client asked for and not with
+	// the owner's write bit the open added.
+	fail := func(err error) (*file, error) {
+		if restoring {
+			_ = unix.Fchmod(fd, asked)
+		}
+		_ = unix.Close(fd)
+		return nil, err
+	}
 	switch st.Mode & unix.S_IFMT {
 	case unix.S_IFREG:
 		// Judged on the open file, so that nothing between a look and the
 		// open can change what it is. Nothing has been truncated yet.
 		if st.Nlink > 1 {
-			_ = unix.Close(fd)
-			return nil, errLink()
+			return fail(errLink())
 		}
 	case unix.S_IFDIR:
-		_ = unix.Close(fd)
-		return nil, &os.PathError{Op: "open", Path: v.String(), Err: unix.EISDIR}
+		return fail(&os.PathError{Op: "open", Path: v.String(), Err: unix.EISDIR})
 	default:
-		_ = unix.Close(fd)
-		return nil, &statusError{reason: reasonUnsupported, code: sftp.ErrSSHFxOpUnsupported, msg: "not a regular file"}
+		return fail(&statusError{reason: reasonUnsupported, code: sftp.ErrSSHFxOpUnsupported, msg: "not a regular file"})
 	}
 	if err := unix.SetNonblock(fd, false); err != nil {
-		_ = unix.Close(fd)
-		return nil, t.pathErr("open", err)
+		return fail(t.pathErr("open", err))
 	}
 	if write && pf.Trunc {
 		if s.beforeTruncate != nil {
 			s.beforeTruncate()
 		}
 		if err := s.truncate(fd, t); err != nil {
-			_ = unix.Close(fd)
-			return nil, err
+			return fail(err)
 		}
 	}
 	f := &file{
@@ -132,11 +242,63 @@ func (s *server) openFile(r *sftp.Request, write bool) (*file, error) {
 		quota:  s.quota,
 		rate:   s.rate,
 	}
+	if restoring {
+		f.restore, f.made, f.restoring = asked, st.Mode&0o777, true
+		s.fresh.add(f)
+	}
 	if f.quota != nil {
 		f.quota.hold(f)
 	}
 	opened = true
 	return f, nil
+}
+
+// openNew is the open of a file that may be created, for a client that asked
+// for a mode without the owner's write bit (0444 for a read-only source file).
+// The file is created with mode, which the caller gives the owner's write bit:
+// the client's next steps on the handle are its own (an upload ends with a
+// size step, a truncate by path, which the kernel refuses on a file its owner
+// cannot write), and the mode it asked for is set when the handle closes (see
+// Close). A client that never closes the handle leaves nothing behind: the
+// session ending closes the handles it left open (Serve does, see
+// TestOpenModeWithoutOwnerWriteSessionEnds). Only a server process that is
+// killed leaves the file owner-writable, and it is the owner's own file.
+//
+// An existing file is never touched: only a file this open creates is changed
+// at the close, and the open that creates it is the one whose O_CREAT|O_EXCL
+// succeeds. When the client did not ask for O_EXCL, the create is tried with it
+// first. If the name exists (EEXIST), the file is opened again with the flags
+// and the mode the caller gave, O_CREAT included, which is the open the client
+// asked for: the kernel's checks of an open that may create (the sticky
+// directory rules of fs.protected_regular and fs.protected_fifos) then apply
+// to the existing file as they would without the first call, which an open
+// without O_CREAT would skip, and there is no loop to lose a race in. The
+// answer of that second call is the answer of the open, and it is "not
+// created": whether the file was created is the kernel's answer to the first
+// call, not a look at the file afterwards. If the file is created by someone
+// else between the two calls, the second call opens it, with nothing to give
+// back, and when the second call is the one that creates it (the name was
+// removed in the window) the file stays owner-writable, unregistered: the
+// client sets its mode itself, as it would for any file.
+//
+// A second handle on a file that is still waiting for its mode does not keep
+// it waiting: when the handle that created the file closes first, the mode the
+// client asked for is set and the size step of the other handle is refused.
+// The OpenSSH clients do not open a file twice in one upload.
+func (t *target) openNew(flags int, mode uint32) (fd int, created bool, err error) {
+	if flags&unix.O_EXCL != 0 {
+		fd, err = t.open(flags, mode)
+		return fd, err == nil, err
+	}
+	fd, err = t.open(flags|unix.O_EXCL, mode)
+	if err == nil {
+		return fd, true, nil
+	}
+	if !errors.Is(err, unix.EEXIST) {
+		return -1, false, err
+	}
+	fd, err = t.open(flags, mode)
+	return fd, false, err
 }
 
 // truncate empties the open file fd and takes the size it had off the usage.
@@ -229,6 +391,23 @@ func (f *file) TransferError(err error) {
 	f.mu.Unlock()
 }
 
+// giveRestoredMode sets the mode the client asked for, on the descriptor (the
+// name may have gone elsewhere), if the file still has the mode the open gave
+// it. A file whose mode is another was changed by someone else (a chmod of
+// another session or of the user's shell) after the open, and that is kept: the
+// check and the change are two calls, so a chmod between them is lost, which
+// is as narrow as it can be made.
+func (f *file) giveRestoredMode() error {
+	fi, err := f.f.Stat()
+	if err != nil {
+		return err
+	}
+	if fi.Mode() != os.FileMode(f.made) {
+		return nil
+	}
+	return f.f.Chmod(os.FileMode(f.restore))
+}
+
 // Close closes the file and audits the transfer: an upload for a handle
 // opened to write (with the bytes written), a download for one that was
 // read from (with the bytes read). It is safe to call twice.
@@ -238,7 +417,14 @@ func (f *file) Close() error {
 		if f.quota != nil {
 			f.quota.unhold(f) // while the descriptor is still open
 		}
+		var merr error
+		if f.restoring && f.s.fresh.take(f) {
+			merr = f.giveRestoredMode()
+		}
 		cerr = f.f.Close()
+		if cerr == nil {
+			cerr = merr
+		}
 		f.s.handles.release()
 		f.mu.Lock()
 		err := f.xferr

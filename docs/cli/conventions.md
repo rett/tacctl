@@ -42,9 +42,10 @@ tacctl uninstall [--yes]
 
 tacctl rollback <version> [--apply] [--yes] [--hosts]
 
-    Prepare the state for the release before this one (0.2.27), for 0.2.26, 0.2.25,
-    0.2.24, 0.2.23, 0.2.22, 0.2.21, 0.2.20, 0.2.19, 0.2.18, 0.2.17, 0.2.16, 0.2.9 or for 0.2.3: a
-    dry run unless --apply; see install/upgrading.md, "Rolling back"
+    Prepare the state for the release before this one (0.2.28), for 0.2.27, 0.2.26,
+    0.2.25, 0.2.24, 0.2.23, 0.2.22, 0.2.21, 0.2.20, 0.2.19, 0.2.18, 0.2.17, 0.2.16,
+    0.2.9 or for 0.2.3: a dry run unless --apply; see install/upgrading.md,
+    "Rolling back"
 
 tacctl status
 
@@ -87,9 +88,11 @@ tacctl server <subcommand>
 
     This server's settings (show, name, addresses, listen, metrics); see server.md
 
-tacctl ssh <name|address> [-p port] [-X|-Y] [-g] [-L|-R|-D spec]... [-- ssh args]
+tacctl ssh <name|address> [--login local-user] [-p port] [-X|-Y] [-g]
+          [-L|-R|-D spec]... [-- ssh args]
 
-    ssh session to a registered device or enrolled host, as you, by password (never root)
+    ssh session to a registered device or enrolled host, as you, by password (never root),
+    or as a local account of a device with --login
 
 tacctl console <subcommand>
 

@@ -14,7 +14,8 @@ tacctl/
   vendor/                   # vendored Go dependencies (builds need no network)
   go.mod, go.sum            # dependencies: github.com/spf13/cobra (with spf13/pflag and
                             # inconshreveable/mousetrap), golang.org/x/crypto (bcrypt, ssh),
-                            # golang.org/x/sys, golang.org/x/term, gopkg.in/yaml.v3
+                            # golang.org/x/sys, golang.org/x/term, gopkg.in/yaml.v3,
+                            # github.com/pkg/sftp (with kr/fs; the console's file transfer server)
   config/
     backends/tacacs/
       tacquito.yaml         # Reference layout of the rendered TACACS+ config
@@ -35,6 +36,9 @@ tacctl/
                             # hosts
                             # verify a release binary), radius-notes.md, release notes, plans/
   tests/                    # Go and bats suites, containers (tests/README.md)
+                            # tests/tools/doctor.sh is `make doctor` (checks the checkout's tools)
+  AGENTS.md                 # instructions for agents and contributors
+  CONTRIBUTING.md           # branches, pull requests
   CHANGELOG.md
   README.md
   LICENSE
@@ -42,6 +46,8 @@ tacctl/
 
 ## Working rules
 
+- Instructions for agents and contributors are in `AGENTS.md`; branches and
+  pull requests are in `CONTRIBUTING.md`.
 - Model routing: Opus reviews, Sonnet and Haiku implement, Fable decides
   important design questions. Subagents never commit; the coordinator
   reviews, merges, renumbers CHANGELOG items and commits.
@@ -80,7 +86,12 @@ tacctl/
   descriptions.
 - No secret, hash, password or community string in any log line, test
   golden or doc example.
-- Gates: build, gofmt, `go vet`, `make lint`, Go tests (`make gate-go`,
+- Gates. For each feature: `make lint` (shellcheck, gofmt, `go vet`,
+  golangci-lint and the repository's own static checks), the static checks
+  (gofmt, `go vet` with and without `-tags testknobs`, and
+  `tests/tools/go-test-shard.sh --check 2`) and `make gate-go`. For each
+  release: `make gate-ci`. The checks are: build, gofmt, `go vet`,
+  `make lint`, Go tests (`make gate-go`,
   which runs `internal/cli` under `setsid` with no stdin and ends with one
   `GATE-GO PASS|FAIL` line: start it with the Bash tool's
   `run_in_background`, never with a trailing `&` or a `pgrep -f` wait, and
@@ -102,9 +113,11 @@ tacctl/
   runs on. A test that needs the process environment, the lock wait or a
   package-wide registry calls `serial(t)` first; the others run in parallel
   (`hooks_test.go`).
-- A release: `docs/releasing.md`. The release branch is pushed and a pull
-  request opened to `master` so the Go tests run before the tag;
-  `release-reproducible` runs on the tag by `workflow_dispatch`.
+- A release: `docs/releasing.md`. The release gate is `make gate-ci`
+  (`qargi release verify` runs it after the feature gates); the release
+  branch is pushed and a pull request opened to `master` so the Go tests run
+  before the tag; `release-reproducible` runs when the release is published
+  (and by `workflow_dispatch` for any tag).
 - Plans are pruned once implemented: a plan, handoff, lab sheet or spike
   of a released version is deleted in the release that ships it (its
   decisions are in the CHANGELOG, the docs and git; the code cites them

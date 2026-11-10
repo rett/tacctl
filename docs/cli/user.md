@@ -18,7 +18,12 @@ user add <name> <group>
     Add a new user; lands in default scope. The name is lower case (`Names are lower case: use
     'alice'.`): lower-case letters, digits, `_` and `-`. A period is refused (`Username must
     contain only letters, numbers, underscores and hyphens (a period cannot be part of a Linux
-    account name).`): every user has an account on the tacctl server. Reserved names `root` and
+    account name).`). A name is at most 32 characters, the longest a Linux account name can be: a
+    longer one is refused with its length (`Username '<name>' is 33 characters; a user name is at
+    most 32 (the longest a Linux account name can be).`; see "A name of more than 32 characters").
+    A name that starts with a digit or `-` (`1alice`) is still accepted, but a Linux account name
+    starts with a lower case letter or `_`, so that user has no account on the tacctl server or
+    on a host. Reserved names `root` and
     `tacquito` are rejected (they collide with OS accounts tacquito resolves locally). A new user
     must change the password at the first login to this server (see "A required password
     change").
@@ -102,7 +107,8 @@ user enable <name>
 
 user rename <old> <new>
 
-    Rename a user; the new name is lower case and follows the rules of `user add`. The user's
+    Rename a user; the new name is lower case, at most 32 characters, and follows the rules of
+    `user add` (the old name can be any name a user has). The user's
     `console system-shell user` setting and its `console file-transfer` settings (the switch, the
     quota and the rate) move to the new name, and the command says so. Changing only the spelling
     (`user rename Alice alice`) fixes a name from before. Devices match the
@@ -171,7 +177,7 @@ max-count:` line for a user who has an own limit, to every tier that can run `us
 accounting sink takes none. Setting a limit renders and restarts nothing and takes a snapshot, like
 any change of the store, and writes the detail line `user reports-limit name= key=max-size|max-count
 op=set|clear value=`. A release before 0.2.26 refuses the fields, so every `tacctl rollback` target before 0.2.26
-(0.2.25 and older; `rollback 0.2.26` and `rollback 0.2.27` keep them) removes them after a snapshot, needs `--yes` while a user has one and names the users (see
+(0.2.25 and older; `rollback 0.2.26`, `rollback 0.2.27` and `rollback 0.2.28` keep them) removes them after a snapshot, needs `--yes` while a user has one and names the users (see
 [Rolling back](../install/upgrading.md#rolling-back)).
 
 ```
@@ -213,13 +219,13 @@ only when set, so a store without one is unchanged. No mail is sent to it.
   in any other `user` verb, and `…(redacted)` in place of the rest. Like any
   word on a command line it is in sudo's own log.
 - *Older releases.* A release before 0.2.23 refuses the key, so every `tacctl
-  rollback` target but 0.2.27, 0.2.26, 0.2.25, 0.2.24 and 0.2.23 (which read it) removes it after a
+  rollback` target but 0.2.28, 0.2.27, 0.2.26, 0.2.25, 0.2.24 and 0.2.23 (which read it) removes it after a
   snapshot that it keeps, and names the users; `backup recover` puts the addresses back (see
   [Rolling back](../install/upgrading.md#rolling-back)).
 
 **A name with a period.** A user name is letters, digits, `_` and `-`. A period cannot be part of a
-Linux account name, and every user has an account on the tacctl server, so every `user` verb, `passwd`
-and `config linux uid` refuse a name with a period with `Username must contain only letters, numbers,
+Linux account name, and a user whose name is not one has no account on the tacctl server, so every
+`user` verb, `passwd` and `config linux uid` refuse a name with a period with `Username must contain only letters, numbers,
 underscores and hyphens (a period cannot be part of a Linux account name).` 0.2.20 and 0.2.21 allowed
 periods: `tacctl upgrade` renames each user a store of theirs still holds, replacing every period with
 `_` (`alice.smith` becomes `alice_smith`), with the user's record, UID line and console settings,
@@ -230,6 +236,18 @@ user's scopes) the user gets `_` and four random letters or digits after it
 and `tacctl user rename` gives another name afterwards (see [Upgrading](../install/upgrading.md)). Until the
 upgrade runs, a store that still holds such a name fails every write with `user 'alice.smith':
 invalid name` and says that `tacctl upgrade` renames it.
+
+**A name of more than 32 characters.** A Linux account name is at most 32 characters, so `user add`
+and the new name of `user rename` refuse a longer one, and change nothing, with the length and the
+limit: `Username '<name>' is 33 characters; a user name is at most 32 (the longest a Linux account
+name can be).` A name of exactly 32 is accepted. Only a new name is checked: an earlier release
+took any length, and a user it stored with a longer name keeps working. It is shown, listed,
+changed, renamed away to a shorter name and removed as before, and `backup restore` and
+`tacctl upgrade` carry it unchanged (neither refuses or drops it), but it has no account on the tacctl
+server or on a host, so it gets none at a sync and cannot make a report (see
+[Upgrading](../install/upgrading.md)). Rename it with `tacctl user rename <name> <shorter name>`.
+The length is not the only reason a user has no account: a name with upper case letters, and a
+name that starts with a digit or `-`, which `user add` still accepts, have none either.
 
 **This server's accounts.** `user add`, `remove`, `rename`, `move`, `enable`,
 `disable`, `scope add|remove|replace|remove --all` and
@@ -345,7 +363,7 @@ only when set.
   the reason in `user show`), and one whom devices of a shared scope still accept `flagged, devices in
   a scope shared with the server still accept the password`; `status` names both groups.
 - *Older releases.* A release before 0.2.20 refuses the key, so every `tacctl rollback` target
-  but 0.2.27 to 0.2.20 (which read it) removes it after a snapshot and warns which users get their device access back (see
+  but 0.2.28 to 0.2.20 (which read it) removes it after a snapshot and warns which users get their device access back (see
   [Rolling back](../install/upgrading.md#rolling-back)).
 
 **A hash kept off the command line.** `--hash -` reads the hash from one line

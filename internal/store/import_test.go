@@ -1112,3 +1112,23 @@ func TestImportNotesNamesWithUpperCase(t *testing.T) {
 	contains(t, out, "1 user name(s) have upper case and are loaded as they are; new names are lower case")
 	contains(t, string(readFile(t, e.path)), "  Engineer:\n")
 }
+
+// A user from before with a name over 32 characters is imported as it is, and
+// one line says how many (a new name is at most 32; such a user has no Linux
+// account).
+func TestImportNotesNamesOverTheLimit(t *testing.T) {
+	long := strings.Repeat("e", 33)
+	e := newImportEnv(t)
+	e.place("legacy.fresh-install.yaml")
+	out, _ := e.imp("--check")
+	refute(t, out, "longer than")
+
+	e = newImportEnv(t)
+	text := string(readFile(t, fixtures+"legacy.fresh-install.yaml"))
+	text = strings.Replace(text, "  - name: engineer\n", "  - name: "+long+"\n", 1)
+	e.write(e.config, text)
+	out = e.mustImport()
+	contains(t, out, "1 user name(s) are longer than 32 characters and are loaded as they are; new names are at most 32, and such a user has no Linux account (tacctl config validate lists them).")
+	refute(t, out, "upper case")
+	contains(t, string(readFile(t, e.path)), "  "+long+":\n")
+}
