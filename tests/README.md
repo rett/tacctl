@@ -1047,6 +1047,18 @@ tests/diff/run.sh --self-test                # the runner against itself and aga
   0.2.19, the markers written for 0.2.1 to 0.2.18: most of the corpus). So
   do not drop a marker because a run against the previous release reports
   it; drop one only when no tag the corpus is run with differs from it.
+- **The run against the baseline is informational, not a gate.**
+  `tests/diff/run.sh --all` (A = the 0.1.18 tag) currently shows 0 stale
+  markers, 17 inert doubled markers (below) and about 281 unmarked
+  differences (added audit `logger` calls on failing commands, and usage
+  text). The gate is the run against the previous release tag
+  (`tests/diff/run.sh --all --against <tag>`).
+- **A doubled `@known` is inert.** The runner keeps one reason at a time, so
+  a `@known` directive directly followed by another `@known` replaces the
+  first, which is never consulted. 17 such pairs exist (in the `config`,
+  `devices`, `scopes` and `store` corpora); they are kept as a record under
+  the policy above. Merge a new doubled marker into one `@known` line that
+  gives both reasons.
 
 ## Characterisation tests: `tests/integration/characterisation.bats`
 
