@@ -86,6 +86,24 @@ current behaviour; this file is where history lives.
    and `docs/cli/conventions.md` and the manual page say to write the file on
    the local disk of the host and copy it to the home as yourself.
 
+5. **A file uploaded with `scp -p` is created with its mode.** The `scp` of
+   OpenSSH 9 or later sends the permissions together with the times in the
+   request that opens the file (twelve bytes of attributes), and the console
+   read only a block of four bytes, because the library that speaks SFTP does
+   not say which attributes a request holds: the file was created 0644 (0600
+   after the umask, 077) and got its mode only from the permissions that
+   follow the data. The console now reads the attribute flags of the open
+   request itself, before the library sees it, so the permissions are found
+   whatever else the request carries (the times, a size, an owner), and a
+   size is never read as a mode. A new file is created with the permission
+   bits asked for, reduced by the umask as before: a script asked at 0755 is
+   0700 from the start, and an upload of `scp -p` that is interrupted leaves
+   that mode and not 0600. A request without permissions, or that asks for no
+   permission bit, still gives 0644 (0600), a file that exists keeps its
+   mode, and the mode and the times the client sets at the end are applied as
+   given, as before. The page of the console (`docs/cli/console.md`, file
+   transfer) and the manual page say so.
+
 ## 0.2.29 (2026-11-09)
 
 1. **A file uploaded through the console keeps the owner's execute bit.** The

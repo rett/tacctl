@@ -16649,15 +16649,14 @@ refused whole. A new directory gets the mode 0755, which is 0700 after the umask
 of the console, whatever the client asks (the library does not hand the server
 the attributes of a request to make a directory); a client that wants another
 mode sets it afterwards. A new file gets
-the mode the client asks for in the request that opens it, when that request
-carries the permissions alone (which is what the OpenSSH
+the mode the client asks for in the request that opens it, whatever other
+attributes the request carries (the OpenSSH
 .B sftp
-and
-.B scp
-send), and 0644 otherwise (a request that carries other attributes with the
-permissions is read as carrying none, and so is one that asks for no permission
-bits (the mode 0, with or without file type bits), which cannot be told from a
-request with no attributes but the extended ones);
+sends the permissions alone and
+.B scp \-p
+the permissions with the times), and 0644 otherwise: a request without
+permissions gets it, and so does one that asks for no permission bits (the mode
+0, with or without file type bits), which is read as asking for nothing;
 a file that already exists keeps its
 mode, whatever the open asks. A new file asked at a mode without the owner's
 write bit (0444, which
@@ -16689,8 +16688,8 @@ sets nothing but the size of the file after an upload, so the mode is the one of
 the open. With
 .B \-p
 (preserve) it sends the times together with the permissions in the open request,
-which is read as carrying none, so the file is created with 0644 (0600 after the
-umask), and then sets the permissions and the times of the handle after the
+which gives the file its mode at creation (a script asked at 0755 is created
+0700), and then sets the permissions and the times of the handle after the
 upload, which are applied as given: a script ends with the mode of its source,
 0755. Changing the mode or the times of
 a file goes through
