@@ -38,6 +38,7 @@ usage. In the console and `tacctl shell`, `?` shows help.
 | List / filter | `tacctl device list [--scope s] [--vendor v] [--stale] [--differs]` (`--differs`: O) | R |
 | Detail | `tacctl device show <n>` | R |
 | Connect | `tacctl ssh <n> [-- <cmd>]` | R |
+| Connect as a local account of the device | `tacctl ssh <n> --login <local-user>` | E |
 | Notices | `tacctl device notice list` | R |
 | Health check | `tacctl device check <n> [--sources]` | O |
 | Unregistered | `tacctl device discover [--snmp]` | O |

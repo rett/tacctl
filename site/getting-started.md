@@ -131,7 +131,9 @@ Ctrl-C at the prompt ends the line with status 130 and starts nothing; an
 empty answer stores nothing. A wrong password stays only until the first ssh
 that ends with status 255, which forgets it. Without a terminal, for a device
 with no pinned host key, or with an option of ssh's own after `--`, ssh asks
-for the password itself, as it always did, and nothing is cached.
+for the password itself, as it always did, and nothing is cached. A line
+with `--login <local-user>` (a device's own account) never uses the cache:
+the device asks for that account's password, and it is not kept.
 
 ### 1.4 File transfer: your reports and bundles (0.2.28)
 

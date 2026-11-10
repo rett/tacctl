@@ -54,7 +54,8 @@ device brings you back.
 How the login works:
 
 - ssh runs **as you**, with your own tacctl username and password. No
-  agent, no key, no other login. As root it refuses.
+  agent, no key, no other login (but a device's local account, below). As
+  root it refuses.
 - Only an active tacctl user whose scopes include the device's scope may
   connect, at every tier. A refusal is logged (`ssh DENY`).
 - ssh accepts only the host keys pinned for that device in the registry.
@@ -74,6 +75,27 @@ tacacs> console forget              # drop the cached password now
 In a system shell, `tacctl shell --password-cache` does the same for one
 shell session. The ssh audit line ends `password=asked` for the line that
 prompted and `password=cached` for a line that used the cache.
+
+**As a local account of the device (0.2.29).** Engineers and superusers can
+log in as one of the device's own accounts instead of as themselves: the way
+in while a [break-glass hold](break-glass.md) stands, and the way to log in
+as another account in the console, where the words after `--` are the remote
+command and ssh's own `-l` is refused.
+
+```bash
+tacctl ssh sw1 --login admin             # as the device's local account admin
+```
+
+- It works for registered devices of any vendor; an enrolled host is
+  refused, since hosts are reached as you.
+- The device needs a pinned host key: without one the line is refused and
+  names `tacctl device hostkey <name> accept`, because a local password
+  goes only to a device whose key was verified.
+- The device must be in one of your scopes, as for every ssh.
+- The device asks for the account's password at its own prompt. tacctl never
+  asks for it, caches it or stores it, and the password cache is not used.
+- The session's audit lines carry `login=admin`; a refusal is
+  `ssh DENY ... reason=login-host` or `reason=login-unpinned`.
 
 ---
 
@@ -104,7 +126,7 @@ ssh sw1
 | Device `unconfigured` | No scope covers its address | A superuser adds the prefix to a scope | S |
 | **Pinned and offered fingerprints printed** | The device's host key changed: replaced, reset, upgraded, or something is wrong | **Stop.** Follow §5. Never bypass the pin. | E |
 | Unpinned device refused for a pull | No key is pinned | Check the key on the console, then `tacctl device hostkey <name> accept` | E |
-| Warning that break-glass is held | The server is deliberately not answering this device | Your tacctl login will fail there. `tacctl device show <name>` says who holds it and why. | — |
+| Warning that break-glass is held | The server is deliberately not answering this device | Your tacctl login will fail there. `tacctl device show <name>` says who holds it and why. An engineer can log in as a local account: `--login <local-user>` (§2). | — |
 | Red `EMERGENCY LOCKDOWN` line | Your group is locked out of the scope | Expected during an incident. Contact the superuser named in the line. | — |
 | Refused as root | ssh always runs as you | Run it from your own account | — |
 | Old IOS: ssh negotiation fails | The device offers only legacy algorithms | `tacctl device legacy-ssh <name> enable` | E |
@@ -245,6 +267,7 @@ run goes, use `--timing`
 | Find a device | `tacctl device list <text>` | Everyone |
 | Connect | `tacctl ssh <name>` | Everyone (own scopes) |
 | One command | `tacctl ssh <name> -- <command>` | Everyone |
+| As a local account of the device | `tacctl ssh <name> --login <local-user>` | Engineer |
 | Plain ssh config | `tacctl device client-config > ~/.ssh/tacctl.conf` | Everyone |
 | Show pinned keys | `tacctl device hostkey <name>` | Engineer |
 | Re-pin a verified key | `tacctl device hostkey <name> set SHA256:<fp>` | Engineer |
