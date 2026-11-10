@@ -5,7 +5,7 @@ package lifecycle
 // conf.Added0224 lists so that the key list of every target but 0.2.29, 0.2.28, 0.2.27, 0.2.26, 0.2.25 and 0.2.24 removes
 // it (a 0.2.23 binary refuses the key), the nftables table inet tacctl in the
 // kernel, the rules file under the state directory and the boot unit
-// tacctl-breakglass-firewall.service. Every target but 0.2.28, 0.2.27, 0.2.26, 0.2.25 and 0.2.24 (which have them)
+// tacctl-breakglass-firewall.service. Every target but 0.2.29, 0.2.28, 0.2.27, 0.2.26, 0.2.25 and 0.2.24 (which have them)
 // removes the last three, through RollbackInput.RemoveFirewall (the command's
 // seam over the runner; nil lists the step and does nothing), and says so; the nftables package stays,
 // and so does every hold: an older release that has holds (0.2.5 and later)

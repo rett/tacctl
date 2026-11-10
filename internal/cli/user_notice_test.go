@@ -272,6 +272,45 @@ func TestUserOfANameWithNoLinuxAccountNamesNoHost(t *testing.T) {
 	}
 }
 
+// The verbs that reach afterUserChange for a user from before whose name is no
+// Linux account name (otherHostsWith drops such a name): the same store with
+// bob as '9dave', who is in the scope of the enrolled host web1 and would be
+// named for any other name. 'user passwd' returns before it gets there
+// (the barrier), so it does not cover the filter.
+func TestUserVerbsOfANameWithNoLinuxAccountNameNoHost(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		setup []string
+		args  []string
+		stdin string
+	}{
+		{name: "disable", args: []string{"user", "disable", "9dave"}},
+		{name: "enable", setup: []string{"user", "disable", "9dave"}, args: []string{"user", "enable", "9dave"}},
+		{name: "move", args: []string{"user", "move", "9dave", "readonly"}},
+		{name: "scope", args: []string{"user", "scope", "9dave", "replace", "prod"}},
+		{name: "require-password-change", args: []string{"user", "require-password-change", "9dave"}},
+		{name: "remove", args: []string{"user", "remove", "9dave"}, stdin: "y\n"},
+		{name: "rename away", args: []string{"user", "rename", "9dave", "dave"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			hs := userHostsSandbox(t)
+			hs.legacyStoreCase("  bob:", "  9dave:")
+			if c.setup != nil {
+				hs.run(hs.localRunner(), c.setup...)
+				if hs.code != 0 {
+					t.Fatalf("%v: %d\n%s%s", c.setup, hs.code, hs.out.String(), hs.err.String())
+				}
+			}
+			hs.stdin = c.stdin
+			hs.run(hs.localRunner(), c.args...)
+			all := plain(hs.out.String() + hs.err.String())
+			if hs.code != 0 || strings.Contains(all, "web1") || strings.Contains(all, "enrolled host") || strings.Contains(all, "Sync these hosts now") || hs.pushed != "" {
+				t.Errorf("%d, pushed %q\n%s", hs.code, hs.pushed, all)
+			}
+		})
+	}
+}
+
 // A rename to a name that has a UID of its own: the hosts remove the old
 // account and create the new one, and are named, with the command and the
 // offer.

@@ -386,19 +386,30 @@ func TestStartsWithNoAccountChar(t *testing.T) {
 }
 
 // CheckNewUsername runs the checks in a fixed order: the shape, the reserved
-// names, upper case (the lower-case spelling is suggested first), the length,
-// then the first character.
+// names, upper case, the length, then the first character, for a name with no
+// upper case. A name with upper case is told to be lower case only when its
+// lower-case spelling would be accepted (the suggestion is a name the command
+// takes); otherwise the first check the lower-case spelling fails is the answer.
 func TestCheckNewUsernameOrder(t *testing.T) {
 	long := strings.Repeat("a", 40)
 	for _, c := range []struct{ name, want string }{
 		{"alice", ""},
 		{"a1_-", ""},
 		{"j.smith", usernameShape},
+		{"J.smith", usernameShape},
 		{"root", "Username 'root' is reserved as an accounting-only sink"},
 		{"tacquito", "Username 'tacquito' is reserved"},
 		{"Alice", "Names are lower case: use 'alice'. Nothing was changed."},
-		{"1Alice", "Names are lower case: use '1alice'. Nothing was changed."},
+		{"A1_-", "Names are lower case: use 'a1_-'. Nothing was changed."},
+		{"Root", "Username 'root' is reserved as an accounting-only sink"},
+		{"ROOT", "Username 'root' is reserved as an accounting-only sink"},
+		{"Tacquito", "Username 'tacquito' is reserved"},
+		{"1Alice", "Username '1Alice' must be lower case and start with a letter (a to z)"},
+		{"_Alice", "Username '_Alice' must be lower case and start with a letter (a to z)"},
+		{"-X", "Username '-X' must be lower case and start with a letter (a to z)"},
+		{"A" + long, "Username 'A" + long + "' is 41 characters; a user name is at most 32 (the longest a Linux account name can be). Names are lower case as well."},
 		{"1" + long, "Username '1" + long + "' is 41 characters"},
+		{"1A" + long, "Username '1A" + long + "' is 42 characters; a user name is at most 32 (the longest a Linux account name can be). Names are lower case as well."},
 		{"1alice", "Username '1alice' must start with a letter (a to z)"},
 		{"_svc", "Username '_svc' must start with a letter (a to z)"},
 		{"-x", "Username '-x' must start with a letter (a to z)"},
@@ -412,6 +423,21 @@ func TestCheckNewUsernameOrder(t *testing.T) {
 		}
 		if err == nil || !strings.HasPrefix(err.Error(), c.want) {
 			t.Errorf("%q: %v, want %q", c.name, err, c.want)
+		}
+	}
+}
+
+// What CheckNewUsername suggests, it takes: the lower-case spelling it names is
+// a name that passes, for every name it tells to be lower case.
+func TestCheckNewUsernameSuggestionIsAcceptedItself(t *testing.T) {
+	for _, name := range []string{"Alice", "ALICE", "A", "Z9_-", "aLICE", "Root2", "Tacquito2"} {
+		err := CheckNewUsername(name)
+		if err == nil || !strings.HasPrefix(err.Error(), "Names are lower case: use '") {
+			t.Errorf("%q: %v", name, err)
+			continue
+		}
+		if again := CheckNewUsername(strings.ToLower(name)); again != nil {
+			t.Errorf("%q: the suggestion %q is refused: %v", name, strings.ToLower(name), again)
 		}
 	}
 }

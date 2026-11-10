@@ -109,9 +109,10 @@ func (inv *invocation) caseFindings() []hostFinding {
 // have and for whom caseFindings offers no lower-case rename: a name longer
 // than names.UsernameMax or one that starts with a digit or '-' (a Linux
 // account name does not: the user keeps working but has no account, here or on
-// a host), and a name with upper case whose lower-case spelling 'user rename'
-// would refuse (it starts with '_', which has an account but is not a letter,
-// or is reserved). The rules are those of names.CheckNewUsername (the names
+// a host; a long name that starts with '_' is told the letter rule as well, so
+// that its replacement is not refused), and a name with upper case whose lower-case spelling 'user rename'
+// would refuse (it starts with '_', which Linux would take but a new name does
+// not, or is reserved). The rules are those of names.CheckNewUsername (the names
 // are checked at 'user add' and 'user rename' only). They are warnings in
 // 'config validate' with the verb that renames the user to a name of the
 // person's choice, sorted by name, the superuser's view only. They carry no
@@ -134,20 +135,27 @@ func (inv *invocation) userNameFindings() []hostFinding {
 	for _, n := range users {
 		long := len(n) > names.UsernameMax
 		digit := names.StartsWithNoAccountChar(n)
+		// A name that starts with '_' has an account if it is short enough and
+		// has no upper case; one that is over the length is told the letter rule
+		// as well, or a natural replacement such as '_svc' would be refused.
+		under := long && n[0] == '_'
 		upper := names.HasUpper(n)
 		var text string
 		switch {
 		case long || digit:
 			var has, rules []string
 			start := "starts with a digit"
-			if n[0] == '-' {
+			switch n[0] {
+			case '-':
 				start = "starts with '-'"
+			case '_':
+				start = "starts with '_'"
 			}
 			switch {
 			case long:
 				has = append(has, "has a name of "+strconv.Itoa(len(n))+" characters")
 				rules = append(rules, "at most "+strconv.Itoa(names.UsernameMax))
-				if digit {
+				if digit || under {
 					has = append(has, start)
 				}
 			default:
@@ -161,14 +169,15 @@ func (inv *invocation) userNameFindings() []hostFinding {
 			if len(rules) > 0 {
 				must = append(must, "are "+joinAnd(rules))
 			}
-			if digit {
+			if digit || under {
 				must = append(must, "start with a letter (a to z)")
 			}
 			text = "the user '" + n + "' " + strings.Join(has, " and ") + "; new user names " + strings.Join(must, " and ") +
 				", and this user has no Linux account, here or on a host"
 		case upper:
-			// Only the lower-case spelling can be refused here: the user has an
-			// account (or a name another verb handles).
+			// The name has upper case, so the user has no Linux account (a
+			// Linux account name is lower case); only the lower-case spelling
+			// can be refused here, and 'user rename' would refuse it.
 			err := names.CheckNewUsername(strings.ToLower(n))
 			if err == nil {
 				continue
