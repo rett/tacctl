@@ -19,8 +19,9 @@ A pull request from a contributor targets `develop`.
 
 ## What a change carries
 
-- A numbered item in the next release's section of `CHANGELOG.md` (the heading is
-  `## <next version> (unreleased)`). Use the next free number; the maintainer renumbers.
+- A numbered item in `CHANGELOG.md` under `## <next version> (unreleased)`; right after a
+  release that heading is not there yet, so create it above the newest release section. Use
+  the next free number; the maintainer renumbers.
 - For a user-visible change, also `man/tacctl.1` and the matching page under `docs/`.
 - Examples only from the table in `docs/development/README.md` (§ Examples).
 - No private names (hosts, addresses, users, home paths, domains) in files or commit messages.
