@@ -37,8 +37,8 @@ func TestNewUserNamesHaveNoPeriods(t *testing.T) {
 	sb.expect(1, "", noDotsWant)
 	sb.run("", []string{"user", "rename", "bob", "root"})
 	sb.expect(1, "", "Username 'root' is reserved")
-	// The names that are letters, digits, '_' and '-' still go.
-	for _, name := range []string{"alice-smith", "a_b-c_d", "15", "j_smith2"} {
+	// The names that start with a letter, then letters, digits, '_' and '-', still go.
+	for _, name := range []string{"alice-smith", "a_b-c_d", "j15", "j_smith2"} {
 		sb.run("", []string{"user", "add", name, "operator", "--hash", testHash, "--scopes", "lab"})
 		sb.expect(0, "[INFO] User '"+name+"' added (operator) with scopes: lab", "")
 	}

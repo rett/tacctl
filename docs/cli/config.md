@@ -89,12 +89,19 @@ config validate [--json | --fix-names [--yes]]
     names of new ones are lower case) gets a `Names:` warning that names the rename which fixes it
     (`tacctl user rename Alice alice`; for a user it adds that devices match the typed login name
     exactly, so the rename changes what the person types); the superuser's view only. A user from
-    an earlier release whose name is longer than 32 characters (a new name is at most 32, see
-    cli/user.md) gets a `Names:` warning too: it works but has no Linux account, here or on a
-    host, and the warning names `tacctl user rename <name> <new-name>`; `--fix-names` does not
-    offer that rename, since it has no name to propose. A user whose name is both longer than 32
-    characters and has upper case gets that one warning only, which says so (the lower-case
-    spelling is longer than 32 characters too, and `user rename` refuses it). Exits 1 on
+    an earlier release whose name is longer than 32 characters or starts with a digit or `-` (a
+    new name is at most 32 and starts with a lower-case letter, see cli/user.md) gets a `Names:`
+    warning too: it works but has no Linux account, here or on a host, and the warning names
+    `tacctl user rename <name> <new-name>` (the new name must pass the rules of a new name);
+    `--fix-names` does not offer that rename, since it has no name to propose. A name that starts
+    with `_` has an account and is not warned of, unless it is longer than 32 characters: its
+    warning then gives the letter rule next to the length, so that the replacement (`_svc` is no
+    new name) is not refused in turn. A user with several of these faults, upper
+    case included (`1Alice`, or `Alice` followed by 41 characters), gets that one warning only,
+    which says so: the lower-case spelling would be refused by `user rename` too (it is longer than
+    32 characters, or does not start with a letter, or is reserved), so no warning proposes it. A
+    user with upper case and a name that starts with `_` gets one warning that names
+    `tacctl user rename <name> <new-name>` the same way. Exits 1 on
     errors. The verb takes no argument: a word other than its options is refused (`Unknown
     argument`) and no report is printed. `--json` prints the findings as one JSON object and
     nothing else on standard output (the schema is below); the exit status is the same.
@@ -373,9 +380,11 @@ leftover under the new name, the scope) after this one. The findings are
 read again after each rename, so a scope that a host rename carried is not
 offered twice.
 
-A user whose name is longer than 32 characters is not offered, whatever its case:
-its lower-case spelling would be refused by `user rename` too, and the `Names:` warning for
-its length names the rename (it is counted neither as not offered nor as failed).
+A user whose lower-case spelling `user rename` would refuse, because it is longer than 32
+characters, does not start with a lower-case letter (`1Alice`, `_Alice`) or is reserved
+(`Root`), is not offered it: the `Names:` warning of that user names the rename to a name of
+your choice (it is counted neither as not offered nor as failed, and the run ends with status
+0 for it).
 
 A name whose lower-case spelling is another name's (`Alice` beside `alice`,
 two hosts equal ignoring case, a device and a host that are one name) is not

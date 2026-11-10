@@ -64,7 +64,7 @@ func TestRollback0225ConvertsNothingWithoutLimits(t *testing.T) {
 }
 
 // The two settings of the file go after a snapshot and need no --yes; the
-// users' own limits are data and need it. The snapshot holds the 0.2.29 state
+// users' own limits are data and need it. The snapshot holds the 0.2.30 state
 // and the note says 0.2.25 cannot restore it; the reports in the homes and the
 // pull records are not touched.
 func TestRollback0225RemovesTheLimitsAfterASnapshot(t *testing.T) {
@@ -112,7 +112,7 @@ func TestRollback0225RemovesTheLimitsAfterASnapshot(t *testing.T) {
 	hs.expect(0, "Applying.", "")
 	out = hs.all()
 	for _, want := range []string{"tacctl.yaml: removed 2 keys", "store.yaml: removed the report limits of 1 user", "  bob: max-count 7 reports",
-		"holds the 0.2.29 state", "0.2.25's restore refuses a tacctl.yaml with a key it does not know and a store.yaml with a field it does not know.",
+		"holds the 0.2.30 state", "0.2.25's restore refuses a tacctl.yaml with a key it does not know and a store.yaml with a field it does not know.",
 		"tacctl upgrade --branch 0.2.25", "The reports in the users' homes stay", "0.2.25 has no 'device reports' verbs"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("--apply lacks %q:\n%s", want, out)
@@ -178,7 +178,7 @@ func TestRollbackSnapshotNoteNamesWhatTheRestoreRefuses(t *testing.T) {
 			hs.run(hs.runner(), "rollback", c.target, "--apply", "--yes")
 			hs.expect(0, "Applying.", "")
 			out := hs.all()
-			if !strings.Contains(out, "holds the 0.2.29 state") || !strings.Contains(out, c.target+c.tail) {
+			if !strings.Contains(out, "holds the 0.2.30 state") || !strings.Contains(out, c.target+c.tail) {
 				t.Errorf("the note lacks %q:\n%s", c.target+c.tail, out)
 			}
 			if c.tail == fieldsTail && strings.Contains(out, "a tacctl.yaml with a key") {

@@ -293,7 +293,7 @@ Old-style `tacquito.yaml.<timestamp>` files (made before the store existed, or k
 
 `store import` of a rendered `tacquito.yaml` that cut users out of their scopes (a required password change, an emergency lockdown: the users section names them in a `# tacctl-carved reason= protocol= users=` comment) lists each as something the store cannot represent, since the file holds neither the scopes they had nor the requirement, and wants `--force`; `--check` reports them the same way.
 
-Names from before load as they are: one line says how many users and scopes have upper case, and one how many users have a name longer than 32 characters (a new name is at most 32; such a user has no Linux account, and `config validate` lists them).
+Names from before load as they are: one line says how many users and scopes have upper case, and one how many users have a name longer than 32 characters (a new name is at most 32 and starts with a lower-case letter; such a user has no Linux account, and `config validate` lists them, as it does a user whose name starts with a digit or `-`).
 
 The scope `tacctl` of a rendered file is the login of the server the file came from, which every user is in: `store import` does not import it and takes it out of the users' scopes, with one line that says so, so a migrated store enrols its own server cleanly (`host enroll --local`). A server that is registered in its own scope `tacctl` keeps it, with its secret and prefixes. A scope of that name that answers other addresses than a server's own login (one or two single-address prefixes, `127.0.0.1` among them) is yours and is imported as it is.
 
