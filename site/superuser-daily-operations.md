@@ -641,10 +641,11 @@ The console is the login shell of every tacctl user on the tacctl server,
 of every tier; there is no switch for it, and the user's scopes play no part:
 every user can log in to the server and its console unless disabled
 (`user disable`) or in a group of tier none. The accounts follow at the next
-`host sync` of the server; a user whose name has upper case letters (a name
-from before new names became lower case) is no Linux account name, so the sync
-skips it with a warning and that user has no console login until
-`tacctl user rename` gives it a lower case name. Local accounts that are not
+`host sync` of the server; a user whose name has upper case letters or more
+than 32 characters (a name from an earlier release), or starts with a digit
+or `-`, is no Linux account name, so the sync skips it with a warning and
+that user has no console login until `tacctl user rename` gives it a name
+that can be one (`config validate` lists the first two under `Names:`). Local accounts that are not
 tacctl users keep their own shells.
 
 ```bash
