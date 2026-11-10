@@ -189,10 +189,10 @@ func sizeAttrs(size uint64) []byte { return binary.BigEndian.AppendUint64(nil, s
 func permAttrs(mode uint32) []byte { return binary.BigEndian.AppendUint32(nil, mode) }
 
 // The open request carries the mode of the new file: its permission bits,
-// less the umask of the process (the console runs with 077). The attribute
-// flags of the request are not delivered to the handlers by the library, so
-// only a block of the permissions alone (the four bytes the OpenSSH clients
-// send) is read.
+// less the umask of the process (the console runs with 077). The library does
+// not deliver the attribute flags of the request to the handlers, so the
+// server rewrites the request before the library reads it (openattrs.go): the
+// permissions are found whatever else the block holds.
 func TestOpenModeOfTheRequest(t *testing.T) {
 	const (
 		creatTrunc = rawFlagWrite | rawFlagCreat | rawFlagTrunc
@@ -228,7 +228,9 @@ func TestOpenModeOfTheRequest(t *testing.T) {
 		{"only special bits ask for nothing: 0644 under umask 022", 0o022, creatTrunc, rawAttrPerm, permAttrs(0o7000), 0, 0o644},
 		{"extended attributes without any: 0644 under umask 022", 0o022, creatTrunc, rawAttrExtended, permAttrs(0), 0, 0o644},
 		{"extended attributes without any: 0600 under the console umask", 0o077, creatTrunc, rawAttrExtended, permAttrs(0), 0, 0o600},
-		{"permissions with times are not read", 0o022, creatTrunc, rawAttrPerm | times, twelve, 0, 0o644},
+		{"permissions with times are read: 0755 under umask 022", 0o022, creatTrunc, rawAttrPerm | times, twelve, 0, 0o755},
+		{"permissions with times are read: 0755 under the console umask", 0o077, creatTrunc, rawAttrPerm | times, twelve, 0, 0o700},
+		{"times alone ask for nothing: 0644 under umask 022", 0o022, creatTrunc, times, make([]byte, 8), 0, 0o644},
 		{"an existing file keeps its mode", 0o022, creatTrunc, rawAttrPerm, permAttrs(0o755), 0o640, 0o640},
 		{"an existing file without create keeps its mode", 0o022, rawFlagWrite, rawAttrPerm, permAttrs(0o755), 0o640, 0o640},
 		{"a read-only open changes nothing", 0o022, rawFlagRead, rawAttrPerm, permAttrs(0o755), 0o640, 0o640},
@@ -566,7 +568,7 @@ func TestMkdirIgnoresTheModeOfTheRequest(t *testing.T) {
 }
 
 // What scp -p does: the open carries the permissions and the times (twelve
-// bytes, read as asking for nothing, so the file is created 0644 less the
+// bytes, read as the permissions, so the file is created 0755 less the
 // umask), and after the data an fsetstat sets the same permissions and times,
 // which are applied as given: the umask of the console does not reduce them.
 func TestOpenModeWithTimesThenSetstat(t *testing.T) {
@@ -581,8 +583,8 @@ func TestOpenModeWithTimesThenSetstat(t *testing.T) {
 	if h == "" {
 		t.Fatalf("open refused: status %d", code)
 	}
-	if got := modeOfFile(t, p); got != 0o600 {
-		t.Errorf("mode after the open %v, want -rw-------", got)
+	if got := modeOfFile(t, p); got != 0o700 {
+		t.Errorf("mode after the open %v, want -rwx------", got)
 	}
 	r.writeAt(h, "#!/bin/sh\n")
 	if c := r.fsetstat(h, rawAttrPerm|rawAttrTimes, append(permAttrs(0o755), times...)); c != 0 {
