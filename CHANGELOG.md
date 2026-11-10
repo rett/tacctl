@@ -41,10 +41,10 @@ current behaviour; this file is where history lives.
    name of `user rename` now refuse a first character that is not a letter, a
    to z (a digit and `-`, which no Linux account name starts with, and `_`,
    which Linux would take, are refused so that every new name is an account
-   name everywhere): `Username '1alice'
-   must start with a letter (a to z): every new user gets a Linux account, and
-   a name that starts with a digit or '-' is no account name (a new name does
-   not start with '_' either).`, exit status 1, nothing changed. A new name is
+   name everywhere): `Username '1alice' must start with a letter (a to z):
+   every new user gets a Linux account, and a name that starts with a digit or
+   '-' is no account name (a new name does not start with '_' either).`, exit
+   status 1, nothing changed. A new name is
    now a lower-case letter, then lower-case letters, digits, `_` and `-`, at
    most 32 characters. The checks run in a fixed order and the first that
    fails is the answer (`names.CheckNewUsername`): the shape (no period), the
@@ -55,9 +55,10 @@ current behaviour; this file is where history lives.
    `Root`, `Tacquito` or `Alice` followed by 41 characters the answer is the
    first check the lower-case spelling fails, said with the name as typed and
    with the lower case among what to fix (`Username '1Alice' must be lower
-   case and start with a letter (a to z): ...`). Only a new name is checked: a user that exists as `9dave`, `_svc` or `-x` keeps working and is
-   shown, changed, renamed away, removed, restored and carried by the upgrade
-   as before. `config validate` warns, under `Names:`, of an existing user
+   case and start with a letter (a to z): ...`). Only a new name is checked:
+   a user that exists as `9dave`, `_svc` or `-x` keeps working and is shown,
+   changed, renamed away, removed, restored and carried by the upgrade as
+   before. `config validate` warns, under `Names:`, of an existing user
    whose name starts with a digit or `-` (no Linux account, here or on a host)
    and names `tacctl user rename <name> <new-name>`; a name that starts with
    `_` has an account and gets no warning, unless it is also longer than 32
