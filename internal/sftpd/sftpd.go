@@ -66,6 +66,13 @@ type seams struct {
 	measureDepth int // the depth of the quota walk, 0 for the default
 	maxHandles   int // the open handles a session may have, 0 for the default
 
+	// sleeping, when set, is called when the default rate sleep begins (a
+	// test that replaces the sleep does not see it).
+	sleeping func()
+
+	// afterOpen, when set, runs in an open after the file is open and before
+	// it is judged.
+	afterOpen func()
 	// beforeTruncate, when set, runs in an open that truncates, after the
 	// file is open and judged and before it is cut.
 	beforeTruncate func()
@@ -82,7 +89,12 @@ func serve(rw io.ReadWriteCloser, cfg Config, sm seams) error {
 		sm.now = time.Now
 	}
 	if sm.sleep == nil {
-		sm.sleep = func(d time.Duration) { sleepUntil(n.done, d) }
+		sm.sleep = func(d time.Duration) {
+			if sm.sleeping != nil {
+				sm.sleeping()
+			}
+			sleepUntil(n.done, d)
+		}
 	}
 	h, err := openHome(cfg.Home)
 	if err != nil {
@@ -101,7 +113,7 @@ func serve(rw io.ReadWriteCloser, cfg Config, sm seams) error {
 // newServer builds the state of one session. The home is measured here when
 // there is a quota, and not at all when there is none.
 func newServer(h *home, cfg Config, sm seams) *server {
-	s := &server{home: h, cfg: cfg, handles: handleCount{max: cmp.Or(sm.maxHandles, maxHandles)}, beforeTruncate: sm.beforeTruncate, afterPin: sm.afterPin}
+	s := &server{home: h, cfg: cfg, handles: handleCount{max: cmp.Or(sm.maxHandles, maxHandles)}, afterOpen: sm.afterOpen, beforeTruncate: sm.beforeTruncate, afterPin: sm.afterPin}
 	if cfg.Quota > 0 {
 		s.quota = newQuota(h, cfg.Quota, sm.now, sm.measureDepth)
 	}

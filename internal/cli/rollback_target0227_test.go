@@ -9,7 +9,7 @@ import (
 	"github.com/rett/tacctl/internal/tier"
 )
 
-// 'tacctl rollback 0.2.27', the release before this one, on the host sandbox
+// 'tacctl rollback 0.2.27', the release before 0.2.28, on the host sandbox
 // with this server enrolled. The plan's own cases are internal/lifecycle's.
 
 // rollback0227State is rollback0221State with this release's per-tier sudoers
@@ -163,12 +163,12 @@ func TestRollback0227LeavesTheDropIn(t *testing.T) {
 	hs.expect(0, "put back the per-tier sudoers drop-in 0.2.25 writes", "")
 }
 
-// 0.2.27 is the release before this one; this release is not a target, and
-// the refusal names 0.2.27 first.
-func TestRollback0227IsTheReleaseBeforeThisOne(t *testing.T) {
+// 0.2.27 is the release before 0.2.28; this release is not a target, and the
+// refusal names 0.2.28 as the release before this one, and 0.2.27 after it.
+func TestRollback0227IsAccepted(t *testing.T) {
 	hs := rollback0227State(t)
-	hs.run(hs.runner(), "rollback", "0.2.28")
-	hs.expect(1, "", "prepares the state for 0.2.27 (the release before this one), 0.2.26, 0.2.25, 0.2.24, 0.2.23")
+	hs.run(hs.runner(), "rollback", "0.2.29")
+	hs.expect(1, "", "prepares the state for 0.2.28 (the release before this one), 0.2.27, 0.2.26, 0.2.25, 0.2.24")
 	hs.run(hs.runner(), "rollback", "v0.2.27")
 	hs.expect(0, "Roll back to 0.2.27 (dry run)", "")
 }
@@ -209,7 +209,7 @@ func TestRollback0227RemovesTheFileTransferSettings(t *testing.T) {
 	hs.expect(0, "", "")
 	out = hs.all()
 	for _, want := range []string{"console.yaml: removed settings.file_transfer", "tacctl upgrade --branch 0.2.27",
-		"Restore it with 0.2.28 only", "0.2.27's restore puts back a console.yaml with a setting it does not know",
+		"Restore it with 0.2.29 only", "0.2.27's restore puts back a console.yaml with a setting it does not know",
 		"Until the upgrade, do not run 'tacctl console file-transfer' with a tier, a user, a quota or a rate to set"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("--apply lacks %q:\n%s", want, out)

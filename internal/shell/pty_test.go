@@ -689,6 +689,13 @@ func TestPtyPaste(t *testing.T) {
 	}
 	p.send("\r")
 	p.output("pasted line end")
+	// The output of echo comes before the shell takes the terminal back: while
+	// the command runs the terminal is in its normal (cooked) mode, and a paste
+	// sent then is echoed as '^[[200~' and handled by the terminal's line
+	// discipline, not by the editor (on a loaded runner the echo command is
+	// still running when the test went on). The prompt is the sign that the
+	// editor reads again.
+	p.expect(`tacctl> `)
 	// A paste over PasteMax is cut there, and Ctrl-U drops it: the line that
 	// follows is 'exit' alone (with the text left, it would run as a program
 	// and the shell would not end). The editor echoes every character it
