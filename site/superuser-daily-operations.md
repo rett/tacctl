@@ -645,8 +645,9 @@ every user can log in to the server and its console unless disabled
 than 32 characters (a name from an earlier release), or starts with a digit
 or `-`, is no Linux account name, so the sync skips it with a warning and
 that user has no console login until `tacctl user rename` gives it a name
-that can be one (`config validate` lists the first two under `Names:`). Local accounts that are not
-tacctl users keep their own shells.
+that can be one (`config validate` lists all three under `Names:`; a new
+name cannot start with a digit or `-`). Local accounts that are not tacctl
+users keep their own shells.
 
 ```bash
 tacctl console show       # settings, each user's shell, system-shell and file-transfer access

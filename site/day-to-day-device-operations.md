@@ -240,8 +240,8 @@ account`. Ask a superuser, or use `export`, which prints a report or writes
 it inside the home. `scp -O` and `rsync` are still refused
 ([Getting Started](getting-started.md) §1.4).
 
-A user whose name has upper case letters or is longer than 32 characters has
-no Linux account on the server, and so no home for a report: `generate` then
+A user whose name has upper case letters, is longer than 32 characters or
+starts with a digit or `-` has no Linux account on the server, and so no home for a report: `generate` then
 refuses and stores nothing, and `list`, `show`, `export`, `rename`, `remove`
 and `prune` say the same. `--stdout` still prints, and a superuser's `tacctl
 user rename` gives the user a name that can be an account.
