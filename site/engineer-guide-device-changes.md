@@ -9,7 +9,7 @@ doctype: how-to
 
 # Engineer Guide: Device Changes
 
-*Register, compare, plan and apply device AAA configuration · Checked against tacctl 0.2.29*
+*Register, compare, plan and apply device AAA configuration · Checked against tacctl 0.2.30*
 
 [Printable PDF](../pdf/tacctl-engineer-guide-device-changes.pdf){: .pdf-link }
 
@@ -443,7 +443,11 @@ does, before tacctl sees the word), and a path outside the home, one that
 leaves it through `..` or a link, an empty path and the home itself are
 refused with exit status 2 and the sentence `tacctl does not expand ~ or
 variables; name a path inside your home, relative to the current directory`,
-before a device is read. The files are made as you (0600, the directory 0700)
+before a device is read. The check of the path runs as you, so it works in a
+home on an NFS `root_squash` export that others may not search; a path that
+cannot be resolved (permission denied, a link that leads nowhere) is refused
+with the cause and the path, and without that sentence about `~`. The files
+are made as you (0600, the directory 0700)
 and never through a link; an existing file needs `--force`. The `out=` field
 of the audit line holds the full path.
 

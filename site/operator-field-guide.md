@@ -9,7 +9,7 @@ doctype: how-to
 
 # Operator Field Guide
 
-*For NOC, help-desk and network support staff · Checked against tacctl 0.2.29*
+*For NOC, help-desk and network support staff · Checked against tacctl 0.2.30*
 
 [Printable PDF](../pdf/tacctl-operator-field-guide.pdf){: .pdf-link }
 

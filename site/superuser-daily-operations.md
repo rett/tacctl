@@ -9,7 +9,7 @@ doctype: how-to
 
 # Superuser Daily Operations
 
-*Day-to-day operations for tacctl superusers · Checked against tacctl 0.2.29*
+*Day-to-day operations for tacctl superusers · Checked against tacctl 0.2.30*
 
 [Printable PDF](../pdf/tacctl-superuser-daily-operations.pdf){: .pdf-link }
 
@@ -645,8 +645,9 @@ every user can log in to the server and its console unless disabled
 than 32 characters (a name from an earlier release), or starts with a digit
 or `-`, is no Linux account name, so the sync skips it with a warning and
 that user has no console login until `tacctl user rename` gives it a name
-that can be one (`config validate` lists the first two under `Names:`). Local accounts that are not
-tacctl users keep their own shells.
+that can be one (`config validate` lists all three under `Names:`; a new
+name cannot start with a digit or `-`). Local accounts that are not tacctl
+users keep their own shells.
 
 ```bash
 tacctl console show       # settings, each user's shell, system-shell and file-transfer access
@@ -906,6 +907,24 @@ sudo tacctl config render --dry-run --out ~/render-check
   only, never through a link. A script that passed `--out ~/x` quoted, so that
   `~` reached tacctl unexpanded, gets the refusal; before, `device
   support-bundle --out ~/x` made a folder literally named `~`.
+- **A home on an NFS export with `root_squash` (0.2.30).** There root is
+  mapped to an unprivileged account, and a home that others may not search
+  (0700, 0750) is out of its reach. The three commands that write as you
+  (`device config plan`, `device reports export`, `device support-bundle`)
+  check the path as you too, so such a home is no obstacle to them. The two
+  commands that write as root (`config render --dry-run`, `config linux
+  script` and `remove-script`) check the path as root, so a home that others
+  may not search is refused by the check itself, with `<flag> '<path>' cannot
+  be resolved (Permission denied)`; that refusal gives the cause the system
+  gives and the path, and does not repeat the sentence about `~` and
+  variables. In a home that others may search the check passes and the two
+  commands cannot write: they write nothing, leave no half-made file (a file
+  of that name that was there stays as it was), say `Permission denied` with
+  the path (`Cannot write <path>: Permission denied`, `Cannot create
+  '<path>': Permission denied` or `install: cannot create regular file
+  '<path>': Permission denied`) and exit with status 1. Write the file
+  somewhere that is not root-squashed, such as the local disk of the host,
+  and copy it to your home as yourself.
 
 ---
 

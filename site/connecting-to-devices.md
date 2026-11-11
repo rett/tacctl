@@ -9,7 +9,7 @@ doctype: how-to
 
 # Connecting to Devices
 
-*tacctl ssh by name, plain ssh with pinned keys, and what to do when a connection is refused · Checked against tacctl 0.2.29*
+*tacctl ssh by name, plain ssh with pinned keys, and what to do when a connection is refused · Checked against tacctl 0.2.30*
 
 [Printable PDF](../pdf/tacctl-connecting-to-devices.pdf){: .pdf-link }
 

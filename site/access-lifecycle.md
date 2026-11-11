@@ -9,7 +9,7 @@ doctype: how-to
 
 # Access Lifecycle
 
-*Joiners, movers and leavers · Checked against tacctl 0.2.29*
+*Joiners, movers and leavers · Checked against tacctl 0.2.30*
 
 [Printable PDF](../pdf/tacctl-access-lifecycle.pdf){: .pdf-link }
 
@@ -79,8 +79,8 @@ tacctl user email alice clear                # remove it
 - The address is never in an audit line: the `--email` value is written as
   `<redacted>`, and the `user email` line says only `op=set` or `op=clear`.
 
-Names are lower case: letters, digits, `_` and `-` (`alice-smith`). A period
-is refused, because a user gets an account on the tacctl server only when
+Names are lower case and start with a letter: a lower-case letter, then
+letters, digits, `_` and `-` (`alice-smith`). A period is refused, because a user gets an account on the tacctl server only when
 the name is a Linux account name, and a period cannot be part of one. Every
 `user` verb, `passwd` and `config linux uid` refuse it, whether the user
 exists or not, with `Username must contain only letters, numbers,
@@ -94,9 +94,46 @@ at most 32 (the longest a Linux account name can be).` A user an earlier
 release stored with a longer name keeps working (shown, changed, renamed
 and removed as before; `backup restore` and `tacctl upgrade` carry it), but
 has no account on the server or on a host; `tacctl config validate` lists it
-under `Names:`. Rename it with `tacctl user rename <name> <shorter name>`. A
-name that starts with a digit or `-` (`1alice`) is still accepted, but has
-no account either.
+under `Names:`. Rename it with `tacctl user rename <name> <shorter name>`.
+
+**A new name starts with a letter (0.2.30).** Every new user gets a Linux
+account, on the tacctl server and on the enrolled hosts, and a name that
+starts with a digit or `-` is no account name. So `user add` and the new
+name of `user rename` take a lower-case letter, `a` to `z`, as the first
+character, and refuse a digit, `-` and `_` (Linux itself would take a leading
+`_`, but a new name does not start with one, so that every new name is an
+account name everywhere). Nothing is changed, and the command says `Username
+'1alice' must start with a letter (a to z): every new user gets a Linux
+account, and a name that starts with a digit or '-' is no account name (a new
+name does not start with '_' either).`
+
+- **The first check that fails is the answer.** The checks run in this
+  order: the shape (letters, digits, `_` and `-`; no period), the reserved
+  names, upper case, the length (at most 32) and the first character. The
+  lower-case spelling is suggested (`Names are lower case: use 'alice'.`)
+  only when it passes the other checks, so the retry is accepted. For
+  `1Alice` or `_Alice` the answer is that the name must be lower case and
+  start with a letter.
+- **Existing users are unaffected.** Only a new name is checked. A user from
+  an earlier release named `9dave`, `_svc` or `-x` keeps working: shown,
+  changed, renamed away to a name that passes the rules, removed and restored
+  as before, and `tacctl upgrade` and `backup restore` carry it. A name that
+  starts with `-` is typed as an ordinary word, and `--` is not an
+  end-of-options marker of the `user` verbs.
+- **`tacctl config validate` warns once per user with no account.** Under
+  `Names:` it warns of a name that starts with a digit or `-` and names
+  `tacctl user rename <name> <new-name>`. A name that starts with `_` has an
+  account and gets no warning, unless it is also longer than 32 characters.
+- **`--fix-names` never offers a refused rename.** `tacctl config validate
+  --fix-names` offers the lower-case spelling of a name with upper case only
+  when a new name of that spelling would be accepted. For `1Alice`, or a name
+  over 32 characters, it offers nothing: the warning names the rename to a
+  name of your choice, and the run still exits 0.
+
+```bash
+tacctl user rename 9dave dave
+tacctl config validate
+```
 
 **A user stored with a period: the upgrade renames it (0.2.26).** 0.2.20 and
 0.2.21 accepted a period, so a store from then can still hold a name with one

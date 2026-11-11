@@ -9,7 +9,7 @@ doctype: how-to
 
 # Troubleshooting
 
-*Symptom-first fixes for login and device problems · Checked against tacctl 0.2.29*
+*Symptom-first fixes for login and device problems · Checked against tacctl 0.2.30*
 
 [Printable PDF](../pdf/tacctl-troubleshooting.pdf){: .pdf-link }
 
@@ -154,6 +154,7 @@ retry, run `tacctl log tail 50`, then set the log level back.
 | `A password change is required of '<user>'` | Only `passwd`, `version` and `help` run until you change your password: `tacctl passwd` |
 | A user cannot log in to the tacctl server or its console | Every user can, unless disabled or in a group of tier none (`tacctl user show <name>`). The account exists after the next `tacctl host sync <server>`. A name with upper case letters or more than 32 characters (from an earlier release), or that starts with a digit or `-`, is no Linux account name and gets none: `tacctl user rename <name> <new-name>`. |
 | `Username '<name>' is 33 characters; a user name is at most 32 (the longest a Linux account name can be).` | `user add` or the new name of `user rename` is longer than 32 characters. Nothing was changed; choose a shorter name ([Access Lifecycle](access-lifecycle.md) §2). |
+| `Username '1alice' must start with a letter (a to z): every new user gets a Linux account, and a name that starts with a digit or '-' is no account name (a new name does not start with '_' either).` | `user add` or the new name of `user rename` was given a first character that is not a lower-case letter. Nothing was changed; choose a name that starts with a letter, `a` to `z`. A user that already exists with such a name keeps working; `tacctl config validate` lists it under `Names:` ([Access Lifecycle](access-lifecycle.md) §2). |
 | `Username must contain only letters, numbers, underscores and hyphens (a period cannot be part of a Linux account name).` | A `user` verb, `passwd` or `config linux uid` was given a name with a period, whether the user exists or not. Use `-` or `_`. |
 | `user 'alice.smith': invalid name (a period cannot be part of a Linux account name; 'tacctl upgrade' renames such a user)` on every write | The store still holds a user with a period (an upgrade that stopped, or a restored snapshot of 0.2.25 or earlier). Run `tacctl upgrade`, which renames the user; every write fails until then ([Access Lifecycle](access-lifecycle.md) §2). |
 | `The upgrade's rename of user alice.smith to alice_smith is not finished: run 'tacctl upgrade' first. Nothing was changed.` | An upgrade stopped after it renamed the user in the store. `tacctl upgrade` finishes the rename; `user add`, `user remove`, `user rename`, `store import` and the restore of an old-style backup refuse until it has. |
